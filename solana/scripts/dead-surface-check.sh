@@ -503,9 +503,9 @@ if run_check 3; then
   # `PersistentEvalTarget`, a crate description advertising "FHE eval requests". The pattern stops
   # before a `u` so that "evaluate" and "evaluation" stay out of it, and it is case-sensitive so the
   # CamelCase forms are distinguishable at all. Exempt: the frozen tag, the helpers named after it,
-  # and the one test whose subject is the derivation of that tag.
+  # the test whose subject is the derivation of that tag, and the shell builtin `eval`.
   check_alias 'eval — say execution; evaluate is the verb' all \
-    'FHE_eval|computed_eval_|eval_handle_derivation' --case-sensitive \
+    'FHE_eval|computed_eval_|eval_handle_derivation|use `eval' --case-sensitive \
     -E '(^|[^A-Za-z0-9])eval([^u]|$)|Eval[A-Z]'
   # Bare `born`, not just `born[-_ ]public`: the narrow pattern could not match the spellings that
   # actually survived — `*born* public` (asterisks between the two words), "are born with", "born in
@@ -616,15 +616,17 @@ if run_check 3; then
     'pool is big enough' \
     -iE '\bpools?\b'
   # persistent <- durable. The proof store's durability vocabulary (a durably ingested checkpoint) is
-  # a different axis from value persistence, and Solana's durable nonce is a protocol term.
+  # a different axis from value persistence. Database commits and lifecycle markers use that
+  # durability sense too; Solana's durable nonce is a protocol term.
   check_alias 'durable — a persistent value is persistent' all \
-    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed' \
+    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable' \
     -iE '\bdurable\b|\bdurably\b'
   # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
   # the only ones matched, and "supersession" went on naming the thing in about thirty places —
   # test names, a vector id, and the prose explaining what a sealed leaf survives. Scope is `kms`
   # for the same reason as the entry above: most of those were in the connector.
-  check_alias 'supersede — an updated handle is updated' kms '' \
+  # KMS context retirement uses supersession in its ordinary lifecycle sense.
+  check_alias 'supersede — an updated handle is updated' kms 'context, superseded by the rotation|superseded epoch across every layer' \
     -iE 'supersede|supersession|superseding'
   # `rotation` is matched in the update sense only, not as a bare word, and that narrowing is the
   # point rather than a concession: four other rotations are real and unrelated. Bit rotations

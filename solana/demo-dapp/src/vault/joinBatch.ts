@@ -1,3 +1,5 @@
+import { closeScratchInstruction, INSTRUCTIONS_SYSVAR } from './internal/scratch.js';
+import { scratchAddress } from './internal/batcherPdas.js';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -38,14 +40,10 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confide
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
-  pendingJoinValueAddress,
+  joinStateAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import {
-  associatedTokenAddress,
-  balanceValueAddress,
-  transferredAmountValueAddress,
-} from './internal/tokenValueAccount.js';
+import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -65,7 +63,7 @@ export type SolanaVaultJoinParameters = {
   readonly inputIndex: number;
   /** Joining user; the transfer authority over their confidential balance. */
   readonly user: TransactionSigner;
-  /** Pays join-record, transfer-output, and execution ACL rent. */
+  /** Pays JoinRecord/state growth and refundable scratch rent. */
   readonly payer: TransactionSigner;
   readonly batcher: Address;
   readonly batch: Address;
@@ -146,6 +144,8 @@ export async function joinBatch(
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
+  const joinState = await joinStateAddress(parameters.batch, user.address);
+  const scratch = await scratchAddress(joinState);
   const instruction = await getJoinInstructionAsync({
     user,
     payer: parameters.payer,
@@ -161,10 +161,11 @@ export async function joinBatch(
     ),
     userTokenAccount,
     batchJoinTokenAccount,
-    userBalanceValue: await balanceValueAddress(joinConfidentialMint, userTokenAccount),
-    batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
-    userTransferredValue: await transferredAmountValueAddress(joinConfidentialMint, userTokenAccount),
-    pendingJoinValue: await pendingJoinValueAddress(parameters.batch, batchAuthority, user.address),
+    userBalanceState: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
+    batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
+    joinState,
+    scratch,
+    instructions: INSTRUCTIONS_SYSVAR,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -184,7 +185,11 @@ export async function joinBatch(
     (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
     (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
-    (m) => appendTransactionMessageInstructions([instruction], m),
+    (m) =>
+      appendTransactionMessageInstructions(
+        [instruction, closeScratchInstruction(scratch, parameters.payer.address)],
+        m,
+      ),
   );
   const unsignedTransaction = compileTransaction(message);
   assertIsTransactionWithinSizeLimit(unsignedTransaction);

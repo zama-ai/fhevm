@@ -1,8 +1,8 @@
 //! The public-decrypt path, pinned from outside the module that hosts it.
 //!
 //! Solana public decrypt has no live on-chain "is public" flag: public-ness is a `PublicDecryptLeaf`
-//! sealed in the encrypted value account's MMR, and the account holds only the peaks. The request
-//! supplies one thing — which account the handle lives in, carried in the version-`0x03`
+//! sealed in the encrypted state's MMR, and the account holds only the peaks. The request
+//! supplies one thing — which account the handle lives in, carried in the version-`0x04`
 //! `extraData` — and the connector does the rest: it reads the account at `confirmed`, asks the
 //! coprocessors' leaf record for the leaf, and verifies the sibling path against the peaks it
 //! observed. Nothing the requester hands in is a proof, and nothing the record says is trusted
@@ -28,11 +28,11 @@ use kms_worker::core::solana::snapshot::{
 };
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
-use solana_support::{EncryptedValueAccountFixture, deployment, handle};
+use solana_support::{EncryptedStateFixture, deployment, handle};
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
 /// production constant.
-const CARRIER_VERSION: u8 = 0x03;
+const CARRIER_VERSION: u8 = 0x04;
 
 /// The coprocessor route the connector reads leaf proofs from. A literal, for the same reason.
 const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
@@ -43,8 +43,8 @@ const API_KEY: &str = "test-key";
 /// The FHE type byte of the fixture handles: any type will do, public-ness is per handle.
 const FHE_TYPE_UINT64: u8 = 5;
 
-/// The carrier as the client builds it: version, context id, the handle's encrypted value account.
-fn carrier(fixture: &EncryptedValueAccountFixture) -> Vec<u8> {
+/// The carrier as the client builds it: version, context id, the handle's encrypted state.
+fn carrier(fixture: &EncryptedStateFixture) -> Vec<u8> {
     let mut blob = vec![CARRIER_VERSION];
     blob.extend_from_slice(&[0x11; 32]);
     blob.extend_from_slice(&fixture.account_key);
@@ -53,8 +53,8 @@ fn carrier(fixture: &EncryptedValueAccountFixture) -> Vec<u8> {
 
 /// An account whose current handle was made public, then replaced: the public leaf survives
 /// the update because it names the handle, not the slot the handle occupied.
-fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedValueAccountFixture {
-    let mut fixture = EncryptedValueAccountFixture::new(public);
+fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedStateFixture {
+    let mut fixture = EncryptedStateFixture::new(public);
     fixture.mark_public();
     fixture.update(replacement);
     fixture
@@ -129,7 +129,7 @@ fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHo
 /// matched on the byte-exact leaf-proof request. Returns both servers (kept alive by the caller)
 /// and a host wired to them.
 async fn host_answering(
-    fixture: &EncryptedValueAccountFixture,
+    fixture: &EncryptedStateFixture,
     query: LeafQuery,
     outcome: LeafProofOutcome,
 ) -> (MockServer, MockServer, SolanaHost) {
@@ -203,7 +203,7 @@ async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
 #[tokio::test]
 async fn an_allow_leaf_does_not_prove_public_ness() {
     let allowed = handle(0x30, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedValueAccountFixture::allowing(allowed, [0x42; 32]);
+    let mut fixture = EncryptedStateFixture::allowing(allowed, [0x42; 32]);
     fixture.update(handle(0x31, FHE_TYPE_UINT64));
     let allow_query = fixture.allowed_query(allowed, [0x42; 32]);
     // The record answers the public query with the allow leaf's proof.
@@ -229,7 +229,7 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
 #[tokio::test]
 async fn a_handle_never_made_public_is_refused_terminally() {
     let private = handle(0x40, FHE_TYPE_UINT64);
-    let fixture = EncryptedValueAccountFixture::allowing(private, [0x42; 32]);
+    let fixture = EncryptedStateFixture::allowing(private, [0x42; 32]);
     let query = fixture.public_query(private);
     let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
@@ -325,18 +325,27 @@ async fn a_malformed_carrier_refuses_before_any_read() {
 
     let mut other_version = valid.clone();
     other_version[0] = 0x09;
+    let mut obsolete_value_account_version = valid.clone();
+    obsolete_value_account_version[0] = 0x03;
     let mut context_only = vec![0x01];
     context_only.extend_from_slice(&[0x11; 32]);
     let mut trailing = valid.clone();
     trailing.push(0);
     let truncated = valid[..valid.len() - 1].to_vec();
 
-    for blob in [Vec::new(), other_version, context_only, trailing, truncated] {
+    for blob in [
+        Vec::new(),
+        other_version,
+        obsolete_value_account_version,
+        context_only,
+        trailing,
+        truncated,
+    ] {
         let err =
             check_solana_handles_public_decrypt(&host, &[handle(0x60, FHE_TYPE_UINT64)], &blob)
                 .await
-                .expect_err("a carrier that is not the version-3 layout names no account");
-        irrecoverable_containing(err, "requires the version-3 extraData");
+                .expect_err("a carrier that is not the version-4 layout names no state");
+        irrecoverable_containing(err, "requires the version-4 extraData");
     }
 }
 
@@ -393,7 +402,7 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
 
     let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
         .await
-        .expect_err("a foreign program's account is not an encrypted value account");
+        .expect_err("a foreign program's account is not an encrypted state");
     irrecoverable_containing(err, "is owned by");
 }
 

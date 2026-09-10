@@ -39,9 +39,7 @@ pub fn revoke_delegation_for_user_decryption(
     let (expected, bump) = user_decryption_delegation_address(
         ctx.accounts.delegation_record.delegator,
         ctx.accounts.delegation_record.delegate,
-        ctx.accounts
-            .delegation_record
-            .encrypted_value_account_authority,
+        ctx.accounts.delegation_record.authority,
     );
     require_keys_eq!(
         expected,

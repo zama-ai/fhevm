@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO solana_encrypted_states\n                (encrypted_state, leaf_count, peaks, history_complete, last_slot)\n            VALUES ($1, $2, $3, $4, $5)\n            ON CONFLICT (encrypted_state) DO UPDATE SET\n                leaf_count = EXCLUDED.leaf_count,\n                peaks = EXCLUDED.peaks,\n                last_slot = EXCLUDED.last_slot\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "ByteaArray",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f56887c6b24334727e82ddb08afd52b4b7118280b78f48489ed0027f15f53cc1"
+}

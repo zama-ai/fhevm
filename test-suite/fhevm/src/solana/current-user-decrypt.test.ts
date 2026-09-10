@@ -10,7 +10,7 @@ const validEnvironment = (): Record<string, string> => ({
   UD_SECRET_KEY: hex32("2"),
   UD_CONTEXT_ID: hex32("3"),
   UD_EPOCH_ID: hex32("8"),
-  UD_ENCRYPTED_VALUE_ACCOUNT: hex32("5"),
+  UD_ENCRYPTED_STATE: hex32("5"),
   UD_VERIFYING_PROGRAM_ID: hex32("6"),
   UD_KMS_SIGNERS: "0x0000000000000000000000000000000000000001,0x0000000000000000000000000000000000000002",
   UD_GATEWAY_CHAIN_ID: "31337",
@@ -65,14 +65,14 @@ describe("solana-current-user-decrypt", () => {
       },
       request: {
         handle: Uint8Array.from(Buffer.from("1".repeat(64), "hex")),
-        encryptedValueAccount: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
+        encryptedState: Uint8Array.from(Buffer.from("5".repeat(64), "hex")),
         durationSeconds: 3600n,
       },
     });
     // The client names the account and nothing else: no proof, no scope, no derived id.
     expect(Object.keys((received as { request: object }).request).sort()).toEqual([
       "durationSeconds",
-      "encryptedValueAccount",
+      "encryptedState",
       "handle",
     ]);
   });

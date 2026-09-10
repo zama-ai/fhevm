@@ -50,9 +50,9 @@ describe("solana dependency-chain load smoke", () => {
 
       await Promise.all([stack.waitForSnsCommit(hex(chain.handle)), stack.waitForSnsCommit(hex(bystander.handle))]);
       const [tail, count] = await Promise.all([
-        userDecryptExpect(config, { encryptedValue: chain.value.encryptedValue, handle: chain.handle, secretKey, expected: TAIL }),
+        userDecryptExpect(config, { encryptedState: chain.value.encryptedState, handle: chain.handle, secretKey, expected: TAIL }),
         userDecryptExpect(config, {
-          encryptedValue: bystander.value.encryptedValue,
+          encryptedState: bystander.value.encryptedState,
           handle: bystander.handle,
           secretKey,
           expected: 7n,

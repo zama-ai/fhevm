@@ -3,11 +3,7 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getInitializeMintInstructionAsync } from './internal/generated/confidentialToken/instructions/initializeMint.js';
 import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
-import {
-  totalSupplyValueAddress,
-  tokenEventAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 export type SolanaVaultInitializeMintParameters = {
   /** Mint authority and rent payer. */
@@ -22,7 +18,7 @@ export type SolanaVaultInitializeMintParameters = {
 
 /**
  * Builds `confidential_token::initialize_mint`: creates a confidential mint wrapping `underlyingMint`
- * and its initial (zero) total-supply handle. The total-supply encrypted value account and the two Anchor
+ * and its initial (zero) total-supply handle. The total-supply encrypted State and the two Anchor
  * event authorities are derived from the mint here, so the seeder supplies only semantic roots. The
  * seeder assembles and sends the returned instruction.
  */
@@ -34,7 +30,7 @@ export async function buildInitializeMintInstruction(
     authority: parameters.authority,
     mint: parameters.mint,
     underlyingMint: parameters.underlyingMint,
-    totalSupplyEncryptedValue: await totalSupplyValueAddress(parameters.mint.address, totalSupplyAuthority),
+    totalSupplyEncryptedState: await tokenStateAddress(parameters.mint.address, totalSupplyAuthority),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     eventAuthority: await tokenEventAuthorityAddress(),

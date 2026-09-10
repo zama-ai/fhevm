@@ -125,7 +125,7 @@ pub fn map_solana_record(record: SolanaHostRecord) -> SolanaMappedRecord {
 
 // Solana computations and ciphertext-material preparation are scheduled as
 // soon as their instruction confirms. The KMS independently validates the live
-// EncryptedValue PDA and any MMR proof before releasing plaintext, so this eager
+// EncryptedState PDA and any MMR proof before releasing plaintext, so this eager
 // work can waste cycles after a rare rollback but cannot authorize decryption.
 pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,

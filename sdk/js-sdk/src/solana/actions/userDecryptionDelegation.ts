@@ -17,7 +17,7 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 
-import type { SolanaRpc } from '../encryptedValueAccount.js';
+import type { SolanaRpc } from '../encryptedState.js';
 import { getDelegateForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/delegateForUserDecryption.js';
 import { getRevokeDelegationForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/revokeDelegationForUserDecryption.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
@@ -42,7 +42,7 @@ export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('
  * refuses any encrypted value account that names it as its authority, so it exists only as the
  * scope of a wildcard grant.
  */
-export const SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY =
+export const SOLANA_WILDCARD_AUTHORITY =
   'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>;
 
 /**
@@ -68,10 +68,10 @@ export type SolanaUserDecryptionDelegationTuple = {
   /**
    * The encrypted value account authority the delegation is scoped over — every value of that
    * authority, not one value id (see the type's own note) — or
-   * [`SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY`] for a grant across every authority of
+   * [`SOLANA_WILDCARD_AUTHORITY`] for a grant across every authority of
    * the delegator's.
    */
-  readonly encryptedValueAccountAuthority: Address;
+  readonly encryptedStateAuthority: Address;
 };
 
 /** The full record PDA of a tuple — address and canonical bump — under one deployment. */
@@ -86,7 +86,7 @@ async function solanaUserDecryptionDelegationPda(
       SOLANA_USER_DECRYPTION_DELEGATION_SEED,
       encoder.encode(tuple.delegator),
       encoder.encode(tuple.delegate),
-      encoder.encode(tuple.encryptedValueAccountAuthority),
+      encoder.encode(tuple.encryptedStateAuthority),
     ],
   });
 }
@@ -118,9 +118,9 @@ export type SolanaDelegationWarning = {
  * proposal renderer and a script want to surface these differently.
  */
 export function solanaDelegationWarnings(params: {
-  readonly encryptedValueAccountAuthority: Address;
+  readonly encryptedStateAuthority: Address;
 }): SolanaDelegationWarning[] {
-  if (params.encryptedValueAccountAuthority === SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY) {
+  if (params.encryptedStateAuthority === SOLANA_WILDCARD_AUTHORITY) {
     return [{ code: 'WildcardAuthority', message: SOLANA_WILDCARD_AUTHORITY_WARNING }];
   }
   return [];
@@ -176,7 +176,7 @@ export async function buildDelegateForUserDecryptionInstruction(
   const tuple: SolanaUserDecryptionDelegationTuple = {
     delegator: resolvedAddress(params.delegator),
     delegate: params.delegate,
-    encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
+    encryptedStateAuthority: params.encryptedStateAuthority,
   };
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
@@ -190,7 +190,7 @@ export async function buildDelegateForUserDecryptionInstruction(
       hostConfig,
       delegationRecord,
       delegate: params.delegate,
-      encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
+      authority: params.encryptedStateAuthority,
       expirationSlot: params.expirationSlot,
     },
     { programAddress },
@@ -225,7 +225,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
   const tuple: SolanaUserDecryptionDelegationTuple = {
     delegator: resolvedAddress(params.delegator),
     delegate: params.delegate,
-    encryptedValueAccountAuthority: params.encryptedValueAccountAuthority,
+    encryptedStateAuthority: params.encryptedStateAuthority,
   };
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
@@ -246,7 +246,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
 // Reading the record
 ////////////////////////////////////////////////////////////////////////////////
 //
-// Hand-rolled like the EncryptedValue decoder, and for the same reason: the record is written by
+// Hand-rolled like the EncryptedState decoder, and for the same reason: the record is written by
 // the host program but read here without the framework, so the layout lives in two places by
 // construction. The account is a fixed 130 bytes — the 8-byte discriminator and a 122-byte body —
 // pinned byte-for-byte against the program's serializer by the Rust cross-pin fixtures.
@@ -265,7 +265,7 @@ const DELEGATION_RECORD_SIZE = 8 + 32 * 3 + 8 * 3 + 1 + 1;
 export interface SolanaUserDecryptionDelegationRecord {
   readonly delegator: Address;
   readonly delegate: Address;
-  readonly encryptedValueAccountAuthority: Address;
+  readonly encryptedStateAuthority: Address;
   /** The last slot the delegation is live at, inclusive. Zeroed by a revocation. */
   readonly expirationSlot: bigint;
   /** Strictly monotonic across grants, re-grants and revocations. Authorizes nothing. */
@@ -281,7 +281,7 @@ export interface SolanaUserDecryptionDelegationRecord {
 const delegationRecordBodyDecoder = getStructDecoder([
   ['delegator', fixDecoderSize(getBytesDecoder(), 32)],
   ['delegate', fixDecoderSize(getBytesDecoder(), 32)],
-  ['encryptedValueAccountAuthority', fixDecoderSize(getBytesDecoder(), 32)],
+  ['encryptedStateAuthority', fixDecoderSize(getBytesDecoder(), 32)],
   ['expirationSlot', getU64Decoder()],
   ['delegationCounter', getU64Decoder()],
   ['lastUpdateSlot', getU64Decoder()],
@@ -325,7 +325,7 @@ export function decodeSolanaUserDecryptionDelegation(
   return {
     delegator: addressDecoder.decode(decoded.delegator),
     delegate: addressDecoder.decode(decoded.delegate),
-    encryptedValueAccountAuthority: addressDecoder.decode(decoded.encryptedValueAccountAuthority),
+    encryptedStateAuthority: addressDecoder.decode(decoded.encryptedStateAuthority),
     expirationSlot: decoded.expirationSlot,
     delegationCounter: decoded.delegationCounter,
     lastUpdateSlot: decoded.lastUpdateSlot,
@@ -385,7 +385,7 @@ export async function fetchSolanaUserDecryptionDelegation(
   const { programAddress = ZAMA_HOST_PROGRAM_ADDRESS, ...fetchConfig } = config ?? {};
   const wildcardTuple: SolanaUserDecryptionDelegationTuple = {
     ...tuple,
-    encryptedValueAccountAuthority: SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+    encryptedStateAuthority: SOLANA_WILDCARD_AUTHORITY,
   };
   const [exactPda, wildcardPda] = await Promise.all([
     solanaUserDecryptionDelegationPda(tuple, programAddress),
@@ -407,7 +407,7 @@ export async function fetchSolanaUserDecryptionDelegation(
     if (
       record.delegator !== queried.delegator ||
       record.delegate !== queried.delegate ||
-      record.encryptedValueAccountAuthority !== queried.encryptedValueAccountAuthority
+      record.encryptedStateAuthority !== queried.encryptedStateAuthority
     ) {
       throw new Error(
         `delegation record ${address} names a (delegator, delegate, authority) tuple other than ` +

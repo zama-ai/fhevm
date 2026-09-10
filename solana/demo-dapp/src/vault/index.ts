@@ -16,19 +16,18 @@ export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js'
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
 export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameters } from './cancelDispatch.js';
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
-export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
+export { buildClaimInstructions, type SolanaVaultClaimParameters } from './claim.js';
 export {
   buildHarvestInstruction,
   getVaultMetrics,
   type SolanaVaultHarvestParameters,
   type SolanaVaultMetrics,
 } from './harvest.js';
-export { decryptPosition } from './decryptPosition.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
 // surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
-// its encrypted value account/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
+// its encrypted State/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
 export { buildInitializeVaultInstruction, type SolanaVaultInitializeVaultParameters } from './initializeVault.js';
 export {
   buildInitializeBatcherInstruction,
@@ -79,7 +78,7 @@ export {
   getBatcher,
   getBatchByIndex,
   getCurrentBatch,
-  getEncryptedValueState,
+  getEncryptedState,
   getJoinRecord,
   type BatcherState,
   type BatchState,
@@ -91,11 +90,10 @@ export {
   batchAddress,
   tokenAccountAddress,
   pendingBurnAddress,
-  burnedAmountValueAddress,
-  pendingJoinValueAddress,
-  claimAmountValueAddress,
+  tokenStateAddress,
+  joinStateAddress,
 } from './internal/batcherPdas.js';
-export { balanceValueAddress, totalSupplyValueAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenValueAccount.js';
+export { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 export {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,

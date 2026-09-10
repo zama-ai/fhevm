@@ -15,11 +15,12 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
-    self as host, AppScope, FheExecuteArgs, FheExecuteOutput, FheExecuteStep, HostConfig, PdaSeed,
+    self as host, AppScope, FheExecuteArgs, FheExecuteOutput, FheExecuteStep, HostConfig, SlotWrite,
 };
 use zama_solana_test_kit::{
-    anchor_ix, empty_system_account, event_authority, funded_system_account, host_svm, label,
-    readonly, system_program_account, writable, HostConfigParams,
+    anchor_ix, empty_system_account, encrypted_state_account, event_authority,
+    funded_system_account, host_svm, label, new_encrypted_state, readonly, system_program_account,
+    writable, HostConfigParams,
 };
 
 /// Seed tag of the fixture value authorities: `PDA("value-authority", seed_key)` of the program.
@@ -33,7 +34,7 @@ pub fn fixture_scope() -> [u8; 32] {
 /// The authority that signs for one application's encrypted values: a PDA of the application
 /// program, plus what a create needs to prove that (the seeds, bump last).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ValueAuthority {
+pub struct StateAuthority {
     pub program: Pubkey,
     pub key: Pubkey,
     pub seed_key: Pubkey,
@@ -41,10 +42,10 @@ pub struct ValueAuthority {
 }
 
 /// The fixture value authority `PDA("value-authority", seed_key)` of `program`.
-pub fn value_authority(program: Pubkey, seed_key: Pubkey) -> ValueAuthority {
+pub fn state_authority(program: Pubkey, seed_key: Pubkey) -> StateAuthority {
     let (key, bump) =
         Pubkey::find_program_address(&[VALUE_AUTHORITY_SEED, seed_key.as_ref()], &program);
-    ValueAuthority {
+    StateAuthority {
         program,
         key,
         seed_key,
@@ -53,11 +54,11 @@ pub fn value_authority(program: Pubkey, seed_key: Pubkey) -> ValueAuthority {
 }
 
 /// The one authority of a program that needs no second one: seeded on the program key itself.
-pub fn sole_value_authority(program: Pubkey) -> ValueAuthority {
-    value_authority(program, program)
+pub fn sole_state_authority(program: Pubkey) -> StateAuthority {
+    state_authority(program, program)
 }
 
-impl ValueAuthority {
+impl StateAuthority {
     pub fn app(&self, scope: [u8; 32]) -> AppScope {
         AppScope {
             program: self.program,
@@ -65,53 +66,31 @@ impl ValueAuthority {
         }
     }
 
-    /// The create-time proof that `key` is a PDA of `program`.
-    pub fn seeds(&self, dictionary: &mut ExecutionDictionary) -> Vec<PdaSeed> {
-        vec![
-            PdaSeed::Literal {
-                bytes: VALUE_AUTHORITY_SEED.to_vec(),
-            },
-            PdaSeed::Interned {
-                index: dictionary.intern_key(self.seed_key),
-            },
-            PdaSeed::Literal {
-                bytes: vec![self.bump],
-            },
-        ]
+    pub fn state_address(&self, scope: [u8; 32]) -> Pubkey {
+        host::encrypted_state_address(self.program, self.key, scope).0
     }
 
-    /// The canonical address of this authority's value at `value_label` in `scope`.
-    pub fn value_address(&self, scope: [u8; 32], value_label: [u8; 32]) -> Pubkey {
-        host::encrypted_value_address(self.program, self.key, scope, value_label).0
-    }
-
-    /// A persistent output of this authority: a create when `previous_handle` is `None` (carrying
-    /// the PDA proof), an update otherwise.
     #[allow(clippy::too_many_arguments)]
-    pub fn stored_output(
+    pub fn state_output(
         &self,
         dictionary: &mut ExecutionDictionary,
-        output_encrypted_value_index: u8,
-        scope: [u8; 32],
-        output_label: [u8; 32],
+        state_index: u8,
+        key: [u8; 32],
         allows: &[Pubkey],
         previous_handle: Option<[u8; 32]>,
+        previous_leaf_count: u64,
         make_public: bool,
     ) -> FheExecuteOutput {
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_authority_index: None,
-            output_program_index: dictionary.intern_key(self.program),
-            output_authority_key_index: dictionary.intern_key(self.key),
-            output_scope_index: dictionary.intern(scope),
-            output_label_index: dictionary.intern(output_label),
-            output_authority_seeds: match previous_handle {
-                None => self.seeds(dictionary),
-                Some(_) => Vec::new(),
-            },
-            output_allow_indexes: dictionary.intern_keys(allows.iter().copied()),
-            previous_handle_index: previous_handle.map(|handle| dictionary.intern(handle)),
+        FheExecuteOutput::State {
+            state_index,
+            previous_leaf_count,
+            slot: Some(SlotWrite {
+                key_index: dictionary.intern(key),
+                previous_handle_index: previous_handle.map(|handle| dictionary.intern(handle)),
+            }),
+            allow_indexes: dictionary.intern_keys(allows.iter().copied()),
             make_public,
+            grants: vec![],
         }
     }
 }
@@ -169,14 +148,14 @@ pub struct FheExecuteExtras {
 /// referenced by index from `args`.
 pub fn fhe_execute_ix(
     payer: Pubkey,
-    encrypted_value_account_authority: Pubkey,
+    authority: Pubkey,
     host_config: Pubkey,
     args: FheExecuteArgs,
     remaining: Vec<AccountMeta>,
 ) -> Instruction {
     fhe_execute_ix_with_extras(
         payer,
-        encrypted_value_account_authority,
+        authority,
         host_config,
         args,
         remaining,
@@ -186,7 +165,7 @@ pub fn fhe_execute_ix(
 
 pub fn fhe_execute_ix_with_extras(
     payer: Pubkey,
-    encrypted_value_account_authority: Pubkey,
+    authority: Pubkey,
     host_config: Pubkey,
     mut args: FheExecuteArgs,
     remaining: Vec<AccountMeta>,
@@ -201,7 +180,7 @@ pub fn fhe_execute_ix_with_extras(
         host::id(),
         host::accounts::FheExecute {
             payer,
-            encrypted_value_account_authority,
+            authority,
             host_config,
             system_program: system_program::ID,
             // Unrestricted block cap (u64::MAX) in every existing fixture: block_cap
@@ -235,7 +214,7 @@ pub fn created_public_batch(
         step_count,
         created_public_steps,
         payer,
-        sole_value_authority(Pubkey::new_unique()),
+        sole_state_authority(Pubkey::new_unique()),
         true,
         std::slice::from_ref(&payer),
     )
@@ -249,14 +228,24 @@ pub fn persistent_creates_batch(
     step_count: usize,
     created_public_steps: &[usize],
     payer: Pubkey,
-    authority: ValueAuthority,
+    authority: StateAuthority,
     make_public: bool,
     allows: &[Pubkey],
 ) -> CreatedPublicBatch {
     let (host_config, host_config_account) = host_config_account(payer);
     let scope = fixture_scope();
-    let mut output_metas = Vec::new();
-    let mut output_accounts = Vec::new();
+    let (state_address, state) = new_encrypted_state(authority.app(scope), authority.key, []);
+    let output_metas = if created_public_steps.is_empty() {
+        vec![]
+    } else {
+        vec![writable(state_address)]
+    };
+    let output_accounts = if created_public_steps.is_empty() {
+        vec![]
+    } else {
+        vec![(state_address, encrypted_state_account(&state))]
+    };
+    let mut leaf_count = 0;
     let mut outputs = Vec::new();
     let mut steps = Vec::with_capacity(step_count);
     let mut dictionary = ExecutionDictionary::default();
@@ -264,20 +253,18 @@ pub fn persistent_creates_batch(
     for step_index in 0..step_count {
         let output = if created_public_steps.contains(&step_index) {
             let output_label = label(&format!("created-public-{step_index}"));
-            let output_address = authority.value_address(scope, output_label);
-            let output_index = u8::try_from(output_metas.len()).unwrap();
-            output_metas.push(writable(output_address));
-            output_accounts.push((output_address, empty_system_account()));
-            outputs.push((step_index as u16, output_address));
-            authority.stored_output(
+            outputs.push((step_index as u16, state_address));
+            let output = authority.state_output(
                 &mut dictionary,
-                output_index,
-                scope,
+                0,
                 output_label,
                 allows,
                 None,
+                leaf_count,
                 make_public,
-            )
+            );
+            leaf_count += allows.len() as u64 + u64::from(make_public);
+            output
         } else {
             FheExecuteOutput::Transient
         };
@@ -293,6 +280,7 @@ pub fn persistent_creates_batch(
         authority.key,
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,

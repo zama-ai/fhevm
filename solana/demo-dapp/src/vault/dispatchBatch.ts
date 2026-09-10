@@ -2,30 +2,24 @@ import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 
-import {
-  burnedAmountValueAddress,
-  findBatchAuthorityPda,
-  pendingBurnAddress,
-  tokenAccountAddress,
-} from './internal/batcherPdas.js';
+import { findBatchAuthorityPda, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
-  balanceValueAddress,
+  tokenStateAddress,
   tokenEventAuthorityAddress,
   totalSupplyAuthorityAddress,
-  totalSupplyValueAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+} from './internal/tokenAccounts.js';
 
 /**
  * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
  * validates (`dispatch.rs`) — the batch authority, the join mint's total-supply
- * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted value accounts,
+ * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted States,
  * and both event authorities — is derived internally from these, so callers never hand-build the
  * account map.
  */
 export type SolanaVaultDispatchParameters = {
-  /** Pays the rent for the burn's output encrypted value account. Anyone — dispatch is permissionless. */
+  /** Pays the rent for the burn's output encrypted State. Anyone — dispatch is permissionless. */
   readonly payer: TransactionSigner;
   /** Batcher config account. */
   readonly batcher: Address;
@@ -65,9 +59,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     ),
     totalSupplyAuthority,
     batchJoinTokenAccount,
-    batchBalanceValue: await balanceValueAddress(joinConfidentialMint, batchJoinTokenAccount),
-    totalSupplyValue: await totalSupplyValueAddress(joinConfidentialMint, totalSupplyAuthority),
-    batchBurnedAmountValue: await burnedAmountValueAddress(joinConfidentialMint, batchJoinTokenAccount),
+    batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
+    totalSupplyState: await tokenStateAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: await pendingBurnAddress(joinConfidentialMint, batchJoinTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,

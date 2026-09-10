@@ -1387,7 +1387,7 @@ components:
           example: '1'
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana public decrypt: `0x03` + 32-byte contextId + 32-byte encrypted value account). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted state). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1431,7 +1431,7 @@ components:
           - "0x1234567890123456789012345678901234567890"
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana public decrypt: `0x03` + 32-byte contextId + 32-byte encrypted value account). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted state). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
           example: '0x00'
         handles:
           type: array
@@ -1695,7 +1695,7 @@ components:
           minItems: 1
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana public decrypt: `0x03` + 32-byte contextId + 32-byte encrypted value account). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted state). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
           example: '0x00'
     PublicDecryptResponseJson:
       type: object
@@ -1814,23 +1814,25 @@ components:
     SolanaHandleJson:
       type: object
       description: |-
-        One Solana handle entry: the handle, the key whose allow leaf authorizes it, and the account
-        the handle lives in. None of these fields are signed — a substituted value can fail the
+        One Solana handle entry: the handle, the key whose allow leaf authorizes it, and its state
+        account. None of these fields are signed — a substituted value can fail the
         request but never widen access — and none is a proof: the connector fetches the allow leaf
-        from the coprocessors and verifies it against the account it reads.
+        from the coprocessors and verifies it against the state it reads.
       required:
       - handle
       - allowedKey
-      - encryptedValueAccount
+      - encryptedState
       properties:
         allowedKey:
           type: string
           description: |-
             The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
             itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
-        encryptedValueAccount:
+        encryptedState:
           type: string
-          description: The 32-byte address of the `EncryptedValue` account the handle lives in (`0x` + 64 hex).
+          description: |-
+            The 32-byte address of the `EncryptedState` account whose history grants access
+            (`0x` + 64 hex).
         handle:
           type: string
           description: The 32-byte ciphertext handle (`0x` + 64 hex).
@@ -1963,7 +1965,7 @@ components:
           $ref: '#/components/schemas/ChainId'
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x03` (Solana public decrypt: `0x03` + 32-byte contextId + 32-byte encrypted value account). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted state). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
           example: '0x00'
         handleContractPairs:
           type: array

@@ -15,10 +15,9 @@ import {
   type FixedSizeEncoder,
 } from '@solana/kit';
 
-/** Token state field disclosed by [`HandleDisclosedEvent`]. */
+/** Current token state slot selected when requesting public decryption. */
 export enum DisclosedValueKind {
   Balance,
-  TransferredAmount,
   BurnedAmount,
   TotalSupply,
 }

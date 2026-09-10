@@ -1,3 +1,5 @@
+import { encryptedStateHandle } from "@sdk-src/solana/encryptedState.js";
+import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
 // decrypt, the live-cluster exercise of the confidential vault's forward path via
 // `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the solana-e2e
@@ -11,7 +13,7 @@
 // the burned value's account history + KMS burn certificate from the relayer + the on-chain settle
 // in one `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
 // one MulDiv execution + a confidential transfer) and DECRYPT her claimed amount through the KMS
-// user-decrypt path (`decryptPosition`: ed25519-signed request -> relayer -> signcrypted shares ->
+// user-decrypt path (`userDecrypt`: ed25519-signed request -> relayer -> signcrypted shares ->
 // in-SDK de-signcryption).
 //
 // STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
@@ -44,7 +46,7 @@
 //  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount encrypted value account
 //      account exists with a nonzero current handle (the claim execution's created output). The payout
 //      VALUE is encrypted on-chain by design; reading it is the decrypt phase's job.
-//  17. decryptPosition: alice user-decrypts her claimed amount; the cleartext equals the batch's
+//  17. userDecrypt: alice user-decrypts her claimed amount; the cleartext equals the batch's
 //      payoutReceived exactly (sole joiner: floor(joined x payout / total) = payout) [live, SDK].
 
 import fs from "node:fs/promises";
@@ -145,7 +147,7 @@ type SolanaSdkSurface = {
   solanaPermitWalletFromSecretKey(secretKey: Uint8Array): unknown;
   /**
    * The permit-path client: `signPermit` takes the permit to the wallet once, `userDecrypt` runs
-   * requests under that one signature; `decryptPosition` aliases the latter.
+   * requests under that one signature; `userDecrypt` aliases the latter.
    */
   createFhevmDecryptClient(parameters: { chain: unknown; trust: unknown }): {
     ready: Promise<unknown>;
@@ -487,6 +489,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         rpc,
         rpcSubscriptions,
         runtime: publicDecryptClient.runtime as never,
+        proofService: { url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`, apiKey: SOLANA_LEAF_PROOF_API_KEY },
         roots,
         contextId: asBytes32BigEndian(config.userDecryptContextId),
         lookupTableAddress: config.batchers.deposit.lookupTable,
@@ -509,22 +512,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(batchAfterSettle.state.totalJoined).toBe(wrapBaseUnits);
       expect(batchAfterSettle.state.payoutReceived > 0n).toBe(true);
 
-      // Step 15: claim. On-chain claims are permissionless pulls per join record (the payout can
-      // only land in the record's user), but the demo has alice play her own: she signs, pays the
-      // claim encrypted value account + transfer output rent, and receives the cShares in the account initialized
-      // back in step 2. One MulDiv execution computes her exact proportional payout
-      // (encrypted(joined) x payoutReceived / totalJoined) and a confidential transfer moves it
-      // from the batch's payout account to hers. The SDK builder derives every validated account
-      // from these six roots (its unit test pins each derivation against claim.rs), same as
-      // dispatch. The claim encrypted value account is still derived here for the decrypt phase: it
-      // is the account alice's decrypt request names in step 17.
+      // Claim into Alice's initially empty payout balance, then decrypt that balance to verify
+      // the transfer credited the full proportional payout. No separate claim output is stored.
       const payoutMint = config.mints.payoutConfidential;
-      const claimValueAccount = await vault.claimAmountValueAddress(batch, batchAuthority, alice.address);
+      const claimValueAccount = await vault.tokenStateAddress(payoutMint, await vault.tokenAccountAddress(payoutMint, alice.address));
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,
         [
-          await vault.buildClaimInstruction({
+          ...await vault.buildClaimInstructions({
             payer: alice,
             user: alice.address,
             batcher: roots.batcher,
@@ -538,11 +534,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         CLAIM_COMPUTE_UNIT_LIMIT,
       );
 
-      // Step 16: on-chain assertions for the claim phase. The join record's claimed flag is the
-      // program's own "this claim executed" marker, and the claim-amount encrypted value account is the account the
-      // claim execution created for alice's payout handle. The payout VALUE is encrypted on-chain by
-      // design, so existence + the flag are the honest cheap checks here; reading the value is the
-      // decrypt phase's job.
+      // The claimed flag and credited payout balance must both be committed.
       console.log("deposit-arc claim: asserting claimed flag + claim encrypted value account on-chain...");
       // `send` confirmed at `confirmed`; read the record at the same commitment (the RPC default
       // `finalized` lags ~31 slots and would race the fresh claim).
@@ -553,22 +545,17 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
-      // getEncryptedValueState throws while the account is missing and reads at the RPC default
+      // getEncryptedState throws while the account is missing and reads at the RPC default
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
       const claimValueState = await until(
         async () => {
-          const state = await vault.getEncryptedValueState(rpc, claimValueAccount);
-          return state.currentHandle.some((byte) => byte !== 0) ? state : false;
+          const state = await vault.getEncryptedState(rpc, claimValueAccount);
+          return encryptedStateHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
 
-      // Step 17: decrypt. claim.rs grants `owner(alice)` on the claim-amount encrypted value account — "the user
-      // decrypts their claimed amount" — so alice user-decrypts her fresh claim handle through the
-      // SDK's permit path (`decryptPosition`): one sRFC-38 permit signature mints a session, the
-      // request names the handle and its claim-amount account, and the Connector reads the
-      // account and proves alice's allow leaf itself. The TKMS WASM loads from local package
-      // assets, so this phase needs no minio fetch rewrite.
+      // Decrypt the credited balance through the signed permit and Connector proof path.
       console.log("deposit-arc decrypt: alice user-decrypting her claimed payout (KMS roundtrip)...");
       const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = solanaSdk.defineFhevmSolanaChain({
@@ -593,9 +580,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       await decryptClient.ready;
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
-      const clearValues = await vault.decryptPosition(decryptClient as never, {
+      const clearValues = await decryptClient.userDecrypt({
         session: permitSession,
-        entries: [{ handle: claimValueState.currentHandle, encryptedValueAccount: addressBytes(claimValueAccount) }],
+        entries: [{ handle: encryptedStateHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedState: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
       } as never);
 
@@ -604,7 +591,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // not just "> 0" — this is the one place the arc proves the encrypted plumbing carried the
       // right number end to end.
       expect(clearValues.length).toBe(1);
-      expect(BigInt(clearValues[0].value)).toBe(batchAfterSettle.state.payoutReceived);
+      const payout = clearValues[0]!.value;
+      expect(typeof payout).toBe("bigint");
+      expect(payout).toBe(batchAfterSettle.state.payoutReceived);
 
       // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
       // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either

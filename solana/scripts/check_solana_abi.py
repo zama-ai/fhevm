@@ -115,10 +115,16 @@ def vendored_idls() -> dict[str, dict[str, Any]]:
 
 
 PINNED_SCHEMAS = [
+    ("zama_host", "account", "EncryptedState", True),
+    ("zama_host", "instruction_args", "create_encrypted_state", True),
+    ("zama_host", "instruction_args", "open_scratch", True),
+    ("zama_host", "instruction_args", "close_scratch", True),
+    ("zama_host", "instruction_args", "make_state_handle_public", True),
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheExecuteArgs", True),
+    ("zama_host", "type", "ExecutionResultRef", True),
     ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
@@ -128,7 +134,6 @@ PINNED_SCHEMAS = [
     # `shared_crate_decoder_reads_what_the_program_serializes` for the value, the host's own
     # `state` tests for the deny record.
     ("zama_host", "account", "RandNonce", True),
-    ("zama_host", "instruction_args", "make_handle_public", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
     ("zama_host", "instruction_args", "destroy_kms_context", True),

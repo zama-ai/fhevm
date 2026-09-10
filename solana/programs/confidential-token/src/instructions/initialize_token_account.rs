@@ -25,7 +25,7 @@ pub struct InitializeTokenAccount<'info> {
     pub token_account: Account<'info, ConfidentialTokenAccount>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub balance_encrypted_value: UncheckedAccount<'info>,
+    pub balance_encrypted_state: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
@@ -54,22 +54,28 @@ pub fn initialize_token_account<'info>(
         let token_account = &mut ctx.accounts.token_account;
         token_account.owner = ctx.accounts.owner.key();
         token_account.mint = ctx.accounts.mint.key();
-        token_account.balance_encrypted_value = Pubkey::default();
         token_account.bump = ctx.bumps.token_account;
     }
     let mint_key = ctx.accounts.mint.key();
     let owner = ctx.accounts.owner.key();
     let token_account_key = ctx.accounts.token_account.key();
-    let balance_encrypted_value = ctx.accounts.balance_encrypted_value.key();
-    let authority = fhe::ValueAuthority::token_account(&ctx.accounts.token_account)?;
-    let balance_output = fhe::PersistentOutput::new(
-        ctx.accounts.balance_encrypted_value.to_account_info(),
-        balance_encrypted_value_id(mint_key, token_account_key),
+    let balance_encrypted_state = ctx.accounts.balance_encrypted_state.key();
+    let authority = fhe::StateAuthority::token_account(&ctx.accounts.token_account)?;
+    authority.create_state(
+        mint_key,
+        ctx.accounts.balance_encrypted_state.to_account_info(),
+        ctx.accounts.payer.to_account_info(),
+        ctx.accounts.host_config.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+    )?;
+    let balance_output = fhe::SlotOutput::new(
+        ctx.accounts.balance_encrypted_state.to_account_info(),
+        balance_slot(mint_key, token_account_key),
         &authority,
         [owner],
     )?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(token_account_key),
+        zama_fhe::ExecutionAuthority::new(token_account_key),
         |builder| {
             builder.trivial_encrypt_u64(0, balance_output.output())?;
             Ok(())
@@ -109,16 +115,15 @@ pub fn initialize_token_account<'info>(
     })?;
     let balance_handle = balance_output.handle()?;
     let token_account = &mut ctx.accounts.token_account;
-    token_account.balance_encrypted_value = balance_encrypted_value;
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: ctx.accounts.mint.key(),
         owner: ctx.accounts.owner.key(),
         token_account: token_account.key(),
         old_handle: [0; 32],
-        old_encrypted_value: Pubkey::default(),
+        old_encrypted_state: Pubkey::default(),
         new_handle: balance_handle,
-        new_encrypted_value: balance_encrypted_value,
+        new_encrypted_state: balance_encrypted_state,
         reason: BalanceHandleUpdateReason::Initialize,
     });
     Ok(())

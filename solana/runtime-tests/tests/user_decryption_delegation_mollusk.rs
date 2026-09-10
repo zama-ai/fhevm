@@ -84,7 +84,7 @@ fn grant_ix(
     delegator: Pubkey,
     delegation_record: Pubkey,
     delegate: Pubkey,
-    encrypted_value_account_authority: Pubkey,
+    authority: Pubkey,
     expiration_slot: u64,
 ) -> Instruction {
     let (host_config, _) = host::host_config_address();
@@ -98,7 +98,7 @@ fn grant_ix(
         },
         host::instruction::DelegateForUserDecryption {
             delegate,
-            encrypted_value_account_authority,
+            authority,
             expiration_slot,
         },
     )
@@ -150,7 +150,7 @@ fn live_record(actors: &Actors) -> UserDecryptionDelegation {
     UserDecryptionDelegation {
         delegator: actors.delegator,
         delegate: actors.delegate,
-        encrypted_value_account_authority: actors.authority,
+        authority: actors.authority,
         expiration_slot: EXPIRATION,
         delegation_counter: 1,
         last_update_slot: EARLIER_SLOT,
@@ -239,7 +239,7 @@ fn a_grant_creates_the_record_at_the_canonical_pda() {
     let record = decode_record(&created.data);
     assert_eq!(record.delegator, actors.delegator);
     assert_eq!(record.delegate, actors.delegate);
-    assert_eq!(record.encrypted_value_account_authority, actors.authority);
+    assert_eq!(record.authority, actors.authority);
     assert_eq!(record.expiration_slot, EXPIRATION);
     assert_eq!(record.delegation_counter, 1, "the first grant counts one");
     assert_eq!(record.last_update_slot, CURRENT_SLOT);
@@ -368,7 +368,7 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
 fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
     let delegator = Pubkey::new_unique();
     let delegate = Pubkey::new_unique();
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES);
+    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
     let (record_key, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
     let payer = Pubkey::new_unique();
     let (host_config, host_config_acc) = host_config_account(false);
@@ -386,7 +386,7 @@ fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
     );
 
     let record = decode_record(&result.get_account(&record_key).expect("record").data);
-    assert_eq!(record.encrypted_value_account_authority, wildcard);
+    assert_eq!(record.authority, wildcard);
     assert_eq!(record.delegation_counter, 1);
 }
 
@@ -447,7 +447,7 @@ fn a_grant_over_the_default_authority_is_rejected() {
 #[test]
 fn a_grant_to_the_wildcard_sentinel_is_rejected() {
     let actors = actors();
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES);
+    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
     let (record_key, _) =
         host::user_decryption_delegation_address(actors.delegator, wildcard, actors.authority);
     let mut accounts = grant_accounts(&actors, empty_system_account(), false);
@@ -1149,7 +1149,7 @@ fn grant_via_vault_ix(actors: &VaultActors, expiration_slot: u64) -> Instruction
         },
         vault::instruction::GrantViaVault {
             delegate: actors.delegate,
-            encrypted_value_account_authority: actors.authority,
+            authority: actors.authority,
             expiration_slot,
         },
     )
@@ -1192,7 +1192,7 @@ fn a_vault_pda_grants_a_delegation_via_cpi() {
         "the delegator is the vault PDA, not the executor"
     );
     assert_eq!(record.delegate, actors.delegate);
-    assert_eq!(record.encrypted_value_account_authority, actors.authority);
+    assert_eq!(record.authority, actors.authority);
     assert_eq!(record.delegation_counter, 1);
     assert!(!record.revoked);
 }
@@ -1206,7 +1206,7 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
     let existing = UserDecryptionDelegation {
         delegator: actors.vault,
         delegate: actors.delegate,
-        encrypted_value_account_authority: actors.authority,
+        authority: actors.authority,
         expiration_slot: EXPIRATION,
         delegation_counter: 1,
         last_update_slot: EARLIER_SLOT,
@@ -1275,7 +1275,7 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
 
     let grant = host::instruction::DelegateForUserDecryption {
         delegate,
-        encrypted_value_account_authority: authority,
+        authority,
         expiration_slot: 500,
     }
     .data();
@@ -1297,7 +1297,7 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let record = serialized(UserDecryptionDelegation {
         delegator,
         delegate,
-        encrypted_value_account_authority: authority,
+        authority,
         expiration_slot: 500,
         delegation_counter: 7,
         last_update_slot: 400,
@@ -1318,10 +1318,10 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
 /// inputs — a seed-order drift on either side breaks both suites on the same bytes. The
 /// authority-specific row shares the `5bK6ZBSp…` literal of the SDK fixture above.
 #[test]
-fn relayer_fixture_wildcard_row_and_encrypted_value_addresses() {
+fn relayer_fixture_wildcard_row_and_encrypted_state_addresses() {
     let delegator = Pubkey::new_from_array([0x11; 32]);
     let delegate = Pubkey::new_from_array([0x22; 32]);
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES);
+    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
 
     let (wildcard_row, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
     assert_eq!(
@@ -1329,15 +1329,11 @@ fn relayer_fixture_wildcard_row_and_encrypted_value_addresses() {
         "DjwWqTLQmSDxxCEXS8KmJBqvvmjhYTWKGsZyh343cKJJ"
     );
 
-    let (value_address, _) = host::encrypted_value_address(
-        Pubkey::new_from_array([0x33; 32]),
-        delegator,
-        [0x55; 32],
-        [0x66; 32],
-    );
+    let (value_address, _) =
+        host::encrypted_state_address(Pubkey::new_from_array([0x33; 32]), delegator, [0x55; 32]);
     assert_eq!(
         value_address.to_string(),
-        "FzQjUQC1pbszPUZeTUVMzojEBWUFj9yCJy8i2BmFTRKY"
+        "84mjyLg88hbMzH6suJKBS29kUPSc11D6MDPBnrRXDik3"
     );
 }
 

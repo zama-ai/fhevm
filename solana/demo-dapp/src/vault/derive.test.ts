@@ -71,7 +71,7 @@ describe('settle lookup-table addresses', () => {
     expect(fromAccounts).toEqual(fromDerive);
     // pending_burn is known at open_batch and rides in the ALT.
     expect(fromAccounts).toContain(accounts.pendingBurn);
-    expect(fromAccounts).toContain(accounts.batchBurnedAmountValue);
+    expect(fromAccounts).toContain(accounts.batchBurnedAmountState);
     expect(fromAccounts.length).toBe(Object.keys(accounts).length);
 
     // The ALT ordering is driven by the explicit SETTLE_ALT_FIELD_ORDER tuple, not by object-key
@@ -97,11 +97,11 @@ describe('settle lookup-table addresses', () => {
 
     // The exact ordered ALT address list mirrors `SETTLE_ALT_FIELD_ORDER` / SolanaVaultSettleAccounts:
     //   batcher, batch, joinConfidentialMint, batchJoinTokenAccount, joinUnderlyingMint,
-    //   joinMintVaultUnderlying, joinMintVaultAuthority, batchBurnedAmountValue, pendingBurn,
+    //   joinMintVaultUnderlying, joinMintVaultAuthority, batchBurnedAmountState, pendingBurn,
     //   hostConfig, kmsContext, vault, vaultAuthority, vaultTokenAccount, payoutConfidentialMint,
     //   payoutUnderlyingMint, batchPayoutTokenAccount, payoutMintVaultUnderlying,
     //   payoutMintVaultAuthority, payoutTotalSupplyAuthority,
-    //   batchPayoutBalanceValue, payoutTotalSupplyValue
+    //   batchPayoutBalanceState, payoutTotalSupplyState
     const GOLDEN_LOOKUP_TABLE_ADDRESSES = [
       '8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR',
       'Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX',
@@ -110,7 +110,7 @@ describe('settle lookup-table addresses', () => {
       'LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY',
       '8u7FMwPBNrQreRM2x2BM8rcxaKTSWKhf1zT7BcTjZfUs',
       '2zVia6PtH7dX6JPRMkykuv2V8ZXRWwBn1vzYtfUMKLD2',
-      '8A5XKVsR338v4JaUuBLFGvXVRYknNCNACqZo9DAe2hwe',
+      '4aCDtDK9NkErDbMH3A2feik1QVNjiT2eQ8EPvCWcow4C',
       '7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k',
       'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf',
       'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
@@ -123,16 +123,16 @@ describe('settle lookup-table addresses', () => {
       'HE7TPXRx8Dy4AZ2tuVV767SknKGXWHqPRDmXc836ZYe6',
       'DYpWU6FKz9dkW4a9HuqvBtDKgdnxD5fbtxaGuGevvDyr',
       'W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK',
-      '3i11PrkLtKRVttNh4XhLcrvVyZp4yfyZroUJeL1ijZrM',
-      'EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg',
+      'Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B',
+      'DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD',
     ];
     expect(settleAccountsToLookupTableAddresses(accounts)).toEqual(GOLDEN_LOOKUP_TABLE_ADDRESSES);
 
     // A couple of derived PDAs pinned individually, so a derivation-logic change (not just field
     // order) is caught with a named field rather than only as a list diff.
     expect(batch.batch).toBe('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
-    expect(accounts.batchBurnedAmountValue).toBe('8A5XKVsR338v4JaUuBLFGvXVRYknNCNACqZo9DAe2hwe');
+    expect(accounts.batchBurnedAmountState).toBe('4aCDtDK9NkErDbMH3A2feik1QVNjiT2eQ8EPvCWcow4C');
     expect(accounts.pendingBurn).toBe('7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k');
-    expect(accounts.payoutTotalSupplyValue).toBe('EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg');
+    expect(accounts.payoutTotalSupplyState).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD');
   });
 });

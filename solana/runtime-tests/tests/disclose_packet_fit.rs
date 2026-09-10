@@ -1,7 +1,8 @@
 //! Packet-size envelope for `disclose_secp` under high KMS threshold × deep MMR proofs.
 //!
 //! Kept out of `token_mollusk.rs` so wire-size measurements do not grow the behavioral suite.
-//! Validity is irrelevant here: only bincode-serialized legacy transaction length vs
+//! Signatures are placeholders; account and payload lengths match the current ABI.
+//! Bincode-serialized legacy transaction length vs
 //! `PACKET_DATA_SIZE` is asserted.
 
 use anchor_lang::prelude::Pubkey;
@@ -10,6 +11,10 @@ use solana_sdk::{message::Message, transaction::Transaction};
 use zama_host as host;
 use zama_solana_test_kit::{anchor_ix, canonical_test_context_id, event_authority};
 
+fn public_extra_data(state: Pubkey) -> Vec<u8> {
+    [&[4][..], &canonical_test_context_id(1), &state.to_bytes()].concat()
+}
+
 /// Builds a `disclose_secp` transaction carrying `sig_count` signatures and an MMR proof of
 /// `sibling_count` siblings over the real account layout, and returns its bincode-serialized wire
 /// size.
@@ -17,7 +22,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     let owner = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
     let token_account = Pubkey::new_unique();
-    let encrypted_value = Pubkey::new_unique();
+    let encrypted_state = Pubkey::new_unique();
     let host_config = host::host_config_address().0;
     let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
     let proof = host::instructions::MmrInclusionProof {
@@ -29,7 +34,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
         token::accounts::DiscloseSecp {
             mint,
             token_account: Some(token_account),
-            encrypted_value,
+            encrypted_state,
             host_config,
             kms_context,
             zama_program: host::id(),
@@ -37,11 +42,10 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
             program: token::id(),
         },
         token::instruction::DiscloseSecp {
-            kind: token::DisclosedValueKind::Balance,
             handle: [0u8; 32],
             cleartext: [0u8; 32],
             signatures: vec![[0u8; 65]; sig_count],
-            extra_data: vec![0x00u8],
+            extra_data: public_extra_data(encrypted_state),
             proof,
         },
     );
@@ -60,6 +64,7 @@ fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
 fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize {
     let owner = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
+    let encrypted_state = Pubkey::new_unique();
     let host_config = host::host_config_address().0;
     let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
     let proof = host::instructions::MmrInclusionProof {
@@ -76,7 +81,7 @@ fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize
             vault_usdc: Pubkey::new_unique(),
             destination_usdc: Pubkey::new_unique(),
             vault_authority: Pubkey::new_unique(),
-            burned_amount_value: Pubkey::new_unique(),
+            burned_amount_state: encrypted_state,
             pending_burn: Pubkey::new_unique(),
             host_config,
             kms_context,
@@ -89,7 +94,7 @@ fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize
             burned_handle: [0u8; 32],
             cleartext_amount: 0,
             signatures: vec![[0u8; 65]; sig_count],
-            extra_data: vec![0x00u8],
+            extra_data: public_extra_data(encrypted_state),
             proof,
         },
     );
@@ -108,7 +113,7 @@ fn redeem_burned_amount_threshold_fit_table() {
     // so at the same (t, depth) it is ~242B larger and its single-packet envelope is strictly
     // tighter. Measured fitting corner: t=7 at depth 0 (1159B); t=7/depth-10 already overflows
     // (1479B, over by 247), and t>=9 overflows before the proof. Same qualitative boundary as
-    // disclose, so the deep-encrypted value account × high-threshold redeem is the binding corner for the shared
+    // disclose, so the deep-encrypted State × high-threshold redeem is the binding corner for the shared
     // verifier path and needs the #1704 two-tx fallback when it overflows.
     let cases = [
         (7usize, 0usize, true),
@@ -147,7 +152,7 @@ fn disclose_secp_threshold_fit_table() {
     // Re-measured against the thin consume path (fhevm-internal#1704). Dropping the DisclosureRequest
     // witness did NOT shrink the tx enough to keep t=7/depth-10 inside the packet: disclose_secp is
     // ~24B larger than the old disclose_amount_secp at the same (t, depth). Fitting corner today:
-    // t=7 at depth 0 only. Deep-encrypted value account × high-threshold consumes need the #1704 two-tx fallback.
+    // t=7 at depth 0 only. Deep-encrypted State × high-threshold consumes need the #1704 two-tx fallback.
     let cases = [
         (7usize, 0usize, true),
         (7, 10, false),

@@ -16,12 +16,12 @@ export * from './permit/index.js';
 export * from './userDecrypt/index.js';
 
 export {
-  SOLANA_ENCRYPTED_VALUE_SEED,
-  decodeSolanaEncryptedValueState,
-  fetchSolanaEncryptedValueState,
-  solanaEncryptedValueAccountAddress,
-} from './encryptedValueAccount.js';
-export type { SolanaEncryptedValueSeeds, SolanaEncryptedValueState, SolanaRpc } from './encryptedValueAccount.js';
+  SOLANA_ENCRYPTED_STATE_SEED,
+  decodeSolanaEncryptedState,
+  fetchSolanaEncryptedState,
+  solanaEncryptedStateAddress,
+} from './encryptedState.js';
+export type { SolanaEncryptedStateSeeds, SolanaEncryptedState, SolanaRpc } from './encryptedState.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
@@ -34,11 +34,11 @@ export {
   buildPublicLeafProof,
   mmrBuildProof,
   mmrPeaksFromLeaves,
-  reconstructSolanaEncryptedValueAccount,
+  reconstructSolanaStateHistory,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
 } from './proof.js';
-export type { MmrProof, SolanaEncryptedValueAccountEvent, SolanaReconstructedEncryptedValueAccount } from './proof.js';
+export type { MmrProof, SolanaStateHistoryEvent, SolanaReconstructedStateHistory } from './proof.js';
 
 export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {
@@ -56,7 +56,7 @@ export type {
 export {
   SOLANA_USER_DECRYPTION_DELEGATION_SEED,
   SOLANA_WILDCARD_AUTHORITY_WARNING,
-  SOLANA_WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY,
+  SOLANA_WILDCARD_AUTHORITY,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   decodeSolanaUserDecryptionDelegation,

@@ -6,11 +6,9 @@
 //! On drop, an uncommitted step rolls back interned tables in place so a failed step leaves
 //! the builder as it found them.
 
-use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput, PdaSeed};
+use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
 
-use crate::accounts::{
-    ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionEncryptedValueAccountAuthority,
-};
+use crate::accounts::{ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAuthority};
 use crate::acl::{Output, OutputKind};
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::operand::{Operand, OperandKind};
@@ -37,7 +35,7 @@ struct MetaPromotion {
 pub(crate) struct StepTables<'b> {
     remaining_accounts: &'b mut TalliedVec<ExecutionAccountMeta>,
     dictionary: &'b mut TalliedVec<[u8; 32]>,
-    persistent_producers: &'b mut TalliedVec<anchor_lang::prelude::Pubkey>,
+    persistent_producers: &'b mut TalliedVec<(u8, Option<u8>)>,
     budget: &'b mut HeapBudget,
     remaining_accounts_len: usize,
     dictionary_len: usize,
@@ -58,7 +56,7 @@ impl<'b> StepTables<'b> {
     pub(crate) fn open(
         remaining_accounts: &'b mut TalliedVec<ExecutionAccountMeta>,
         dictionary: &'b mut TalliedVec<[u8; 32]>,
-        persistent_producers: &'b mut TalliedVec<anchor_lang::prelude::Pubkey>,
+        persistent_producers: &'b mut TalliedVec<(u8, Option<u8>)>,
         budget: &'b mut HeapBudget,
     ) -> Self {
         Self {
@@ -154,64 +152,72 @@ impl<'b> StepTables<'b> {
         Ok(index)
     }
 
-    /// The signer slot for a persistent value's authority: none when it is the execution's fixed
+    /// The signer slot for a State authority: none when it is the execution's fixed
     /// CPI signer, otherwise a readonly signing remaining account.
-    fn value_authority_index(
+    fn state_authority_index(
         &mut self,
         authority: anchor_lang::prelude::Pubkey,
-        execution_authority: ExecutionEncryptedValueAccountAuthority,
+        execution_authority: ExecutionAuthority,
     ) -> Result<Option<u8>> {
         if authority == execution_authority.pubkey() {
             return Ok(None);
         }
         self.account_index(ExecutionAccountMeta::readonly_signer(
             authority,
-            ExecutionAccountPurpose::PersistentValueAuthority,
+            ExecutionAccountPurpose::StateAuthority,
         ))
         .map(Some)
-    }
-
-    fn persistent_already_written(&self, encrypted_value: &anchor_lang::prelude::Pubkey) -> bool {
-        self.persistent_producers.contains(encrypted_value)
-    }
-
-    fn record_persistent_producer(
-        &mut self,
-        encrypted_value: anchor_lang::prelude::Pubkey,
-    ) -> Result<()> {
-        self.persistent_producers
-            .try_push(self.budget, encrypted_value)
     }
 }
 
 pub(crate) fn lower_operand(
     tables: &mut StepTables<'_>,
-    execution_authority: ExecutionEncryptedValueAccountAuthority,
+    execution_authority: ExecutionAuthority,
     produced_count: usize,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
     match operand.0 {
-        OperandKind::Persistent(persistent) => {
-            if tables.persistent_already_written(&persistent.encrypted_value) {
-                return Err(FheExecutionBuildError::PersistentOperandWrittenEarlier);
-            }
-            let handle_index = tables.dictionary_index(persistent.handle)?;
-            let encrypted_value_index = tables.account_index(ExecutionAccountMeta::readonly(
-                persistent.encrypted_value,
-                ExecutionAccountPurpose::PersistentInputAcl,
+        OperandKind::StateSlot { state, key, handle } => {
+            let state_index = tables.account_index(ExecutionAccountMeta::readonly(
+                state.address,
+                ExecutionAccountPurpose::StateInput,
             ))?;
-            // Reading a value is admitted by its authority's signature: the host looks the
-            // signer up by key, so the slot is not referenced from the wire.
-            tables.value_authority_index(
-                persistent.encrypted_value_account_authority,
-                execution_authority,
-            )?;
-            Ok(FheExecuteOperand::StoredValue {
-                handle_index,
-                encrypted_value_index,
+            let key_index = tables.dictionary_index(key)?;
+            if tables
+                .persistent_producers
+                .contains(&(state_index, Some(key_index)))
+            {
+                return Err(FheExecutionBuildError::StateSlotWrittenEarlier);
+            }
+            tables.state_authority_index(state.authority, execution_authority)?;
+            Ok(FheExecuteOperand::StateSlot {
+                state_index,
+                key_index,
+                handle_index: tables.dictionary_index(handle)?,
             })
         }
+        OperandKind::Granted {
+            consumer,
+            scratch,
+            handle,
+        } => {
+            let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
+                consumer.address,
+                ExecutionAccountPurpose::StateInput,
+            ))?;
+            tables.state_authority_index(consumer.authority, execution_authority)?;
+            let scratch_index = tables.account_index(ExecutionAccountMeta::readonly(
+                scratch,
+                ExecutionAccountPurpose::StateInput,
+            ))?;
+            Ok(FheExecuteOperand::TransientResult {
+                consumer_state_index,
+                scratch_index,
+                handle_index: tables.dictionary_index(handle)?,
+            })
+        }
+
         OperandKind::Transient { producer_index } => {
             if producer_index as usize >= produced_count {
                 return Err(FheExecutionBuildError::InvalidTransientReference);
@@ -244,64 +250,87 @@ pub(crate) fn lower_operand(
 
 pub(crate) fn lower_output(
     tables: &mut StepTables<'_>,
-    execution_authority: ExecutionEncryptedValueAccountAuthority,
+    execution_authority: ExecutionAuthority,
     output: Output,
 ) -> Result<FheExecuteOutput> {
     match output.0 {
-        OutputKind::Transient => Ok(FheExecuteOutput::Transient),
-        OutputKind::Persistent(output) => {
-            // Lowering owns the output, so the binding moves the seed and allow lists instead
-            // of cloning them — a persistent output allocates nothing here for data the app
-            // already built (the interned dictionary entries and the allow index list are the
-            // step's only new bytes).
-            let binding = output.into_binding()?;
-            let encrypted_value = binding.encrypted_value;
-            let output_encrypted_value_index =
-                tables.account_index(ExecutionAccountMeta::writable(
-                    encrypted_value,
-                    ExecutionAccountPurpose::PersistentOutputAcl,
-                ))?;
-            let output_authority = binding.encrypted_value_account_authority;
-            let output_authority_index =
-                tables.value_authority_index(output_authority, execution_authority)?;
-            // Seeds move in place: a 32-byte literal becomes an interned index (the mint or
-            // owner is usually already in the dictionary as the scope or authority), anything
-            // else stays a literal. No new allocation either way.
-            let mut output_authority_seeds = binding.authority_seeds;
-            for seed in &mut output_authority_seeds {
-                if let PdaSeed::Literal { bytes } = seed {
-                    if let Ok(entry) = <[u8; 32]>::try_from(bytes.as_slice()) {
-                        *seed = PdaSeed::Interned {
-                            index: tables.dictionary_index(entry)?,
-                        };
-                    }
-                }
+        OutputKind::State(output) => {
+            crate::validate::validate_allow_keys(&output.allows)?;
+            if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
+                return Err(FheExecutionBuildError::TooManyResultGrants);
             }
-            // One exact allocation for the allow index list, sized explicitly so the tally is exact.
-            let mut output_allow_indexes =
-                TalliedVec::try_with_capacity(tables.budget(), binding.allows.len())?;
-            for key in &binding.allows {
-                let index = tables.dictionary_index(key.to_bytes())?;
-                output_allow_indexes.try_push(tables.budget(), index)?;
-            }
-            let previous_handle_index = binding
-                .previous_handle
-                .map(|handle| tables.dictionary_index(handle))
+            let state_index = tables.account_index(
+                if output.slot.is_some() || !output.allows.is_empty() || output.make_public {
+                    ExecutionAccountMeta::writable(
+                        output.state.address,
+                        ExecutionAccountPurpose::StateOutput,
+                    )
+                } else {
+                    ExecutionAccountMeta::readonly(
+                        output.state.address,
+                        ExecutionAccountPurpose::StateOutput,
+                    )
+                },
+            )?;
+            tables.state_authority_index(output.state.authority, execution_authority)?;
+            let slot = output
+                .slot
+                .map(|(key, previous)| -> Result<_> {
+                    Ok(zama_host::SlotWrite {
+                        key_index: tables.dictionary_index(key)?,
+                        previous_handle_index: previous
+                            .map(|h| tables.dictionary_index(h))
+                            .transpose()?,
+                    })
+                })
                 .transpose()?;
-            let output = FheExecuteOutput::StoredValue {
-                output_encrypted_value_index,
-                output_authority_index,
-                output_program_index: tables.dictionary_index(binding.app.program.to_bytes())?,
-                output_authority_key_index: tables.dictionary_index(output_authority.to_bytes())?,
-                output_scope_index: tables.dictionary_index(binding.app.scope)?,
-                output_label_index: tables.dictionary_index(binding.label)?,
-                output_authority_seeds,
-                output_allow_indexes: output_allow_indexes.into_inner(),
-                previous_handle_index,
-                make_public: binding.make_public,
-            };
-            tables.record_persistent_producer(encrypted_value)?;
-            Ok(output)
+            if let Some(slot) = &slot {
+                let claim = (state_index, Some(slot.key_index));
+                if tables.persistent_producers.contains(&claim) {
+                    return Err(FheExecutionBuildError::StateSlotWrittenEarlier);
+                }
+                tables.persistent_producers.try_push(tables.budget, claim)?;
+            }
+            let mut allows = TalliedVec::try_with_capacity(tables.budget(), output.allows.len())?;
+            for subject in output.allows {
+                let index = tables.dictionary_index(subject.to_bytes())?;
+                allows.try_push(tables.budget(), index)?;
+            }
+            let mut grants = TalliedVec::try_with_capacity(tables.budget(), output.grants.len())?;
+            for (initiating, consumer) in output.grants {
+                tables.state_authority_index(initiating.authority, execution_authority)?;
+                let initiating_state_index =
+                    tables.account_index(ExecutionAccountMeta::readonly(
+                        initiating.address,
+                        ExecutionAccountPurpose::StateInput,
+                    ))?;
+                let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
+                    consumer.address,
+                    ExecutionAccountPurpose::StateInput,
+                ))?;
+                let scratch_index = tables.account_index(ExecutionAccountMeta::writable(
+                    initiating.scratch_address(),
+                    ExecutionAccountPurpose::StateOutput,
+                ))?;
+                grants.try_push(
+                    tables.budget(),
+                    zama_host::ResultGrant {
+                        initiating_state_index,
+                        consumer_state_index,
+                        scratch_index,
+                    },
+                )?;
+            }
+            Ok(FheExecuteOutput::State {
+                state_index,
+                previous_leaf_count: output.previous_leaf_count,
+                slot,
+                allow_indexes: allows.into_inner(),
+                make_public: output.make_public,
+                grants: grants.into_inner(),
+            })
         }
+
+        OutputKind::Transient => Ok(FheExecuteOutput::Transient),
     }
 }

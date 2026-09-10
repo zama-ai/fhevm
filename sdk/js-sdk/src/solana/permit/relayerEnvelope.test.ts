@@ -110,7 +110,7 @@ const PAYLOAD_KEYS = [
 ] as const;
 
 /** The keys one handle entry carries. */
-const HANDLE_KEYS = ['handle', 'allowedKey', 'encryptedValueAccount'] as const;
+const HANDLE_KEYS = ['handle', 'allowedKey', 'encryptedState'] as const;
 
 const named = <T extends { readonly name: string }>(records: readonly T[]): ReadonlyArray<readonly [string, T]> =>
   records.map((record) => [record.name, record] as const);
@@ -159,7 +159,7 @@ describe('an accepted record composed into a request', () => {
       expect(Object.keys(entry).sort()).toEqual([...HANDLE_KEYS].sort());
       expect(entry.handle).toMatch(/^0x[0-9a-f]{64}$/);
       expect(entry.allowedKey).toMatch(/^0x[0-9a-f]{64}$/);
-      expect(entry.encryptedValueAccount).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(entry.encryptedState).toMatch(/^0x[0-9a-f]{64}$/);
     }
   });
 

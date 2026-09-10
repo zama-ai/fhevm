@@ -251,11 +251,11 @@ fi
 
 # The local clients and demo import the public `@fhevm/sdk/solana` package exports. Each
 # consumer's postinstall replaces bun's `file:` snapshot with a symlink to the live source tree,
-# so `node_modules/@fhevm/sdk` always serves the current build: install the SDK build workspace
-# (the root graph its runtime dependencies resolve from), then generate the ESM and declaration
+# so `node_modules/@fhevm/sdk` serves the current build: install the SDK's own dependency
+# graph, then generate the ESM and declaration
 # trees the symlink serves. Rebuilds are visible to consumers immediately — nothing re-copies a
 # snapshot.
-( cd "$ROOT" && npm ci --prefix sdk/js-sdk )
+( cd "$ROOT/sdk/js-sdk" && npm ci )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$ROOT/solana/deploy" && bun install --frozen-lockfile )
 ( cd "$FHEVM" && bun install --frozen-lockfile )
@@ -329,11 +329,6 @@ PY
     --allow-schema-mismatch )
 cleanup_native_rust_builder_aliases
 trap - EXIT
-# `up`'s host-process step cargo-builds host-listener, whose build.rs runs
-# `npm ci` inside host-contracts and reifies the workspace root to that graph
-# alone — wiping the SDK install above. Restore it before Vite / e2e / seed
-# resolve `@fhevm/sdk` through the symlink.
-( cd "$ROOT" && npm ci --prefix sdk/js-sdk )
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
 # NOTE: relayer + kms-connector run the worktree code (via --override). SOLANA_E2E_LOCK_PINS can

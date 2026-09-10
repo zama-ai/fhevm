@@ -971,6 +971,7 @@ fn intern(bytes: [u8; 32]) -> u8 {
 
 fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
     FheExecuteArgs {
+        returned_results: Vec::new(),
         account_count: 0,
         dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
         steps,
@@ -988,9 +989,10 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 }
 
 fn persistent(handle: Handle) -> FheExecuteOperand {
-    FheExecuteOperand::StoredValue {
+    FheExecuteOperand::StateSlot {
         handle_index: intern(handle),
-        encrypted_value_index: 0,
+        state_index: 0,
+        key_index: intern([0; 32]),
     }
 }
 

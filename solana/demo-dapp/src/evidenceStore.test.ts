@@ -40,9 +40,7 @@ describe('public transaction evidence', () => {
     recordTransactionEvidence(session, { label: 'Deposit dispatch', signature: transactionSignature });
     recordTransactionEvidence(session, { label: 'Deposit settle', signature: transactionSignature });
 
-    expect(readTransactionEvidence(session)).toEqual([
-      { label: 'Deposit settle', signature: transactionSignature },
-    ]);
+    expect(readTransactionEvidence(session)).toEqual([{ label: 'Deposit settle', signature: transactionSignature }]);
   });
 
   test('ignores malformed stored evidence', () => {

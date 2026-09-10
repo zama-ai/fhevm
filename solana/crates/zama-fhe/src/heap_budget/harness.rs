@@ -6,7 +6,7 @@ use std::cell::Cell;
 use anchor_lang::prelude::Pubkey;
 
 use crate::builder::FheExecutionBuilder;
-use crate::{ExecutionEncryptedValueAccountAuthority, FheExecution};
+use crate::{ExecutionAuthority, FheExecution};
 
 thread_local! {
     /// Bytes this thread has requested so far. Thread-local so other tests in this binary — and the
@@ -51,7 +51,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
 /// (the budget widened) both fail until the change that moved the frontier updates this
 /// number and the documented tables with it.
-pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 57;
+pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 70;
 
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.
 pub(crate) type ShapeBuilder =
@@ -93,10 +93,7 @@ where
 {
     let authority = Pubkey::new_unique();
     let before_build = counted_bytes();
-    let mut execution = FheExecution::build(
-        ExecutionEncryptedValueAccountAuthority::new(authority),
-        build,
-    )?;
+    let mut execution = FheExecution::build(ExecutionAuthority::new(authority), build)?;
     let build_bytes = counted_bytes() - before_build;
     let cost = execution.cost();
 

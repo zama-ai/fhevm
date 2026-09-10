@@ -5,10 +5,13 @@
 //! re-exported from this module.
 
 mod common;
+mod transient;
+pub use transient::*;
+pub mod create_encrypted_state;
+pub use create_encrypted_state::*;
 pub mod define_kms_context;
 pub mod delegate_for_user_decryption;
 pub mod destroy_kms_context;
-mod encrypted_value;
 pub mod fhe_execute;
 pub mod initialize_host_config;
 pub mod input_verification;
@@ -24,12 +27,12 @@ pub mod set_hcu_block_cap_per_app;
 pub mod set_host_pause;
 pub mod set_max_hcu_depth_per_tx;
 pub mod set_max_hcu_per_tx;
+mod state_history;
 pub mod verify_public_decrypt;
 
 pub use define_kms_context::*;
 pub use delegate_for_user_decryption::*;
 pub use destroy_kms_context::*;
-pub use encrypted_value::*;
 pub use fhe_execute::*;
 pub use initialize_host_config::*;
 pub use revoke_delegation_for_user_decryption::*;
@@ -44,4 +47,5 @@ pub use set_hcu_block_cap_per_app::*;
 pub use set_host_pause::*;
 pub use set_max_hcu_depth_per_tx::*;
 pub use set_max_hcu_per_tx::*;
+pub use state_history::*;
 pub use verify_public_decrypt::*;

@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 
 use host_listener::database::solana_leaves::{
-    load_checkpoint, load_encrypted_value_states, load_recorded_leaves,
+    load_checkpoint, load_encrypted_state_histories, load_recorded_leaves,
     reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedValueWrite, LeafSource, StoredCheckpoint, TransactionLeafSources,
+    EncryptedStateWrite, StoredCheckpoint, TransactionStateWrites,
 };
 use host_listener::http_server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
@@ -28,22 +28,18 @@ fn hex32(bytes: &[u8; 32]) -> String {
 }
 
 fn write(
-    previous_handle: Option<[u8; 32]>,
+    previous_leaf_count: u64,
     handle: [u8; 32],
     allowed_keys: Vec<[u8; 32]>,
     make_public: bool,
-) -> LeafSource {
-    LeafSource::Write(EncryptedValueWrite {
-        encrypted_value_account: ACCOUNT,
-        program: [1; 32],
-        encrypted_value_account_authority: [2; 32],
-        scope: [3; 32],
-        label: [4; 32],
-        previous_handle,
+) -> EncryptedStateWrite {
+    EncryptedStateWrite {
+        encrypted_state: ACCOUNT,
+        previous_leaf_count,
         handle,
         allowed_keys,
         make_public,
-    })
+    }
 }
 
 #[tokio::test]
@@ -58,10 +54,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .await?;
 
     // A reused local database keeps rows between runs.
-    sqlx::query("DELETE FROM solana_encrypted_value_leaves")
+    sqlx::query("DELETE FROM solana_encrypted_state_leaves")
         .execute(&pool)
         .await?;
-    sqlx::query("DELETE FROM solana_encrypted_value_accounts")
+    sqlx::query("DELETE FROM solana_encrypted_states")
         .execute(&pool)
         .await?;
     sqlx::query("DELETE FROM solana_listener_checkpoint")
@@ -72,12 +68,12 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // Block 10 creates the value allowing the owner; block 11 replaces the handle,
     // allows the owner again and makes it public.
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_value_states(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_encrypted_state_histories(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 0,
-            sources: vec![write(None, [0x10; 32], vec![OWNER], false)],
+            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
         }],
         existing,
     )?;
@@ -93,18 +89,13 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_value_states(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_encrypted_state_histories(&mut tx, &[ACCOUNT]).await?;
     assert_eq!(existing.len(), 1);
-    assert_eq!(existing[&ACCOUNT].current_handle, [0x10; 32]);
+    assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 2,
-            sources: vec![write(
-                Some([0x10; 32]),
-                [0x11; 32],
-                vec![OWNER],
-                true,
-            )],
+            sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
         }],
         existing,
     )?;
@@ -129,7 +120,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let recorded = load_recorded_leaves(&pool, ACCOUNT)
         .await?
         .expect("account recorded");
-    assert_eq!(recorded.state, second.accounts[&ACCOUNT]);
+    assert_eq!(recorded.state, second.states[&ACCOUNT]);
     assert_eq!(recorded.leaves.len(), 3);
     assert_eq!(
         recorded.leaves[1..],
@@ -162,25 +153,25 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             .json(&LeafProofRequest {
                 leaves: vec![
                     LeafQuery {
-                        encrypted_value_account: hex32(&ACCOUNT),
+                        encrypted_state: hex32(&ACCOUNT),
                         handle: hex32(&[0x11; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
                     },
                     LeafQuery {
-                        encrypted_value_account: hex32(&ACCOUNT),
+                        encrypted_state: hex32(&ACCOUNT),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Allowed,
                         key: Some(hex32(&OWNER)),
                     },
                     LeafQuery {
-                        encrypted_value_account: hex32(&ACCOUNT),
+                        encrypted_state: hex32(&ACCOUNT),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
                     },
                     LeafQuery {
-                        encrypted_value_account: hex32(&[0xFF; 32]),
+                        encrypted_state: hex32(&[0xFF; 32]),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
@@ -239,7 +230,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // A record whose leaf rows disagree with its state cannot build a proof: the route
     // answers a retryable 502 rather than a path against the wrong peaks.
     sqlx::query(
-        "DELETE FROM solana_encrypted_value_leaves WHERE leaf_index = 1",
+        "DELETE FROM solana_encrypted_state_leaves WHERE leaf_index = 1",
     )
     .execute(&pool)
     .await?;
@@ -248,7 +239,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .bearer_auth("secret")
         .json(&LeafProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_value_account: hex32(&ACCOUNT),
+                encrypted_state: hex32(&ACCOUNT),
                 handle: hex32(&[0x11; 32]),
                 kind: LeafQueryKind::Public,
                 key: None,
@@ -264,30 +255,32 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // An account first seen through an update serves no proof.
     let mut tx = pool.begin().await?;
     let incomplete = reduce_block_leaves(
-        &[TransactionLeafSources {
+        &[TransactionStateWrites {
             transaction_index: 0,
-            sources: vec![LeafSource::Write(EncryptedValueWrite {
-                encrypted_value_account: [0xBB; 32],
-                program: [1; 32],
-                encrypted_value_account_authority: [2; 32],
-                scope: [3; 32],
-                label: [4; 32],
-                previous_handle: Some([0x20; 32]),
+            sources: vec![EncryptedStateWrite {
+                encrypted_state: [0xBB; 32],
+                previous_leaf_count: 7,
                 handle: [0x21; 32],
                 allowed_keys: vec![OWNER],
                 make_public: false,
-            })],
+            }],
         }],
         BTreeMap::new(),
     )?;
     store_block_leaves(&mut tx, 12, &incomplete).await?;
     tx.commit().await?;
+    let recorded_incomplete = load_recorded_leaves(&pool, [0xBB; 32])
+        .await?
+        .expect("incomplete cursor recorded");
+    assert_eq!(recorded_incomplete.state.leaf_count, 8);
+    assert!(recorded_incomplete.state.peaks.is_empty());
+    assert!(recorded_incomplete.leaves.is_empty());
     let response = client
         .post(&url)
         .bearer_auth("secret")
         .json(&LeafProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_value_account: hex32(&[0xBB; 32]),
+                encrypted_state: hex32(&[0xBB; 32]),
                 handle: hex32(&[0x21; 32]),
                 kind: LeafQueryKind::Allowed,
                 key: Some(hex32(&OWNER)),

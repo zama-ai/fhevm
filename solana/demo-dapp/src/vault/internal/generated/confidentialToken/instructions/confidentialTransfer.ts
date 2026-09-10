@@ -12,8 +12,6 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
-  getOptionDecoder,
-  getOptionEncoder,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -28,8 +26,6 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
-  type Option,
-  type OptionOrNullable,
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
@@ -42,12 +38,8 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getCoprocessorInputAttestationDecoder,
   getCoprocessorInputAttestationEncoder,
-  getTransferReceiptDecoder,
-  getTransferReceiptEncoder,
   type CoprocessorInputAttestation,
   type CoprocessorInputAttestationArgs,
-  type TransferReceipt,
-  type TransferReceiptArgs,
 } from '../types/index.js';
 
 export const CONFIDENTIAL_TRANSFER_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -68,17 +60,17 @@ export type ConfidentialTransferInstruction<
   TAccountToAta extends string | AccountMeta<string> = string,
   TAccountFromAccount extends string | AccountMeta<string> = string,
   TAccountToAccount extends string | AccountMeta<string> = string,
-  TAccountFromBalanceValue extends string | AccountMeta<string> = string,
-  TAccountToBalanceValue extends string | AccountMeta<string> = string,
-  TAccountTransferredAmountValue extends string | AccountMeta<string> = string,
+  TAccountFromState extends string | AccountMeta<string> = string,
+  TAccountToState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
-  TAccountReceiptValue extends string | AccountMeta<string> = string,
-  TAccountReceiptAuthority extends string | AccountMeta<string> = string,
+  TAccountResultState extends string | AccountMeta<string> = string,
+  TAccountResultScratch extends string | AccountMeta<string> = string,
+  TAccountResultAuthority extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -98,11 +90,8 @@ export type ConfidentialTransferInstruction<
       TAccountToAta extends string ? ReadonlyAccount<TAccountToAta> : TAccountToAta,
       TAccountFromAccount extends string ? WritableAccount<TAccountFromAccount> : TAccountFromAccount,
       TAccountToAccount extends string ? WritableAccount<TAccountToAccount> : TAccountToAccount,
-      TAccountFromBalanceValue extends string ? WritableAccount<TAccountFromBalanceValue> : TAccountFromBalanceValue,
-      TAccountToBalanceValue extends string ? WritableAccount<TAccountToBalanceValue> : TAccountToBalanceValue,
-      TAccountTransferredAmountValue extends string
-        ? WritableAccount<TAccountTransferredAmountValue>
-        : TAccountTransferredAmountValue,
+      TAccountFromState extends string ? WritableAccount<TAccountFromState> : TAccountFromState,
+      TAccountToState extends string ? WritableAccount<TAccountToState> : TAccountToState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -113,10 +102,11 @@ export type ConfidentialTransferInstruction<
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
         : TAccountHcuTrustedAppRecord,
-      TAccountReceiptValue extends string ? WritableAccount<TAccountReceiptValue> : TAccountReceiptValue,
-      TAccountReceiptAuthority extends string
-        ? ReadonlySignerAccount<TAccountReceiptAuthority> & AccountSignerMeta<TAccountReceiptAuthority>
-        : TAccountReceiptAuthority,
+      TAccountResultState extends string ? ReadonlyAccount<TAccountResultState> : TAccountResultState,
+      TAccountResultScratch extends string ? WritableAccount<TAccountResultScratch> : TAccountResultScratch,
+      TAccountResultAuthority extends string
+        ? ReadonlySignerAccount<TAccountResultAuthority> & AccountSignerMeta<TAccountResultAuthority>
+        : TAccountResultAuthority,
       TAccountEventAuthority extends string ? ReadonlyAccount<TAccountEventAuthority> : TAccountEventAuthority,
       TAccountProgram extends string ? ReadonlyAccount<TAccountProgram> : TAccountProgram,
       ...TRemainingAccounts,
@@ -126,12 +116,10 @@ export type ConfidentialTransferInstruction<
 export type ConfidentialTransferInstructionData = {
   discriminator: ReadonlyUint8Array;
   amountAttestation: CoprocessorInputAttestation;
-  receipt: Option<TransferReceipt>;
 };
 
 export type ConfidentialTransferInstructionDataArgs = {
   amountAttestation: CoprocessorInputAttestationArgs;
-  receipt: OptionOrNullable<TransferReceiptArgs>;
 };
 
 export function getConfidentialTransferInstructionDataEncoder(): Encoder<ConfidentialTransferInstructionDataArgs> {
@@ -139,7 +127,6 @@ export function getConfidentialTransferInstructionDataEncoder(): Encoder<Confide
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['amountAttestation', getCoprocessorInputAttestationEncoder()],
-      ['receipt', getOptionEncoder(getTransferReceiptEncoder())],
     ]),
     (value) => ({
       ...value,
@@ -152,7 +139,6 @@ export function getConfidentialTransferInstructionDataDecoder(): Decoder<Confide
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['amountAttestation', getCoprocessorInputAttestationDecoder()],
-    ['receipt', getOptionDecoder(getTransferReceiptDecoder())],
   ]);
 }
 
@@ -172,23 +158,23 @@ export type ConfidentialTransferInput<
   TAccountToAta extends string = string,
   TAccountFromAccount extends string = string,
   TAccountToAccount extends string = string,
-  TAccountFromBalanceValue extends string = string,
-  TAccountToBalanceValue extends string = string,
-  TAccountTransferredAmountValue extends string = string,
+  TAccountFromState extends string = string,
+  TAccountToState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountHcuBlockMeter extends string = string,
   TAccountHcuTrustedAppRecord extends string = string,
-  TAccountReceiptValue extends string = string,
-  TAccountReceiptAuthority extends string = string,
+  TAccountResultState extends string = string,
+  TAccountResultScratch extends string = string,
+  TAccountResultAuthority extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
   /** Sender and transfer authority. */
   owner: TransactionSigner<TAccountOwner>;
-  /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+  /** Pays rent for the transferred-amount encrypted State on its first bind. */
   payer: TransactionSigner<TAccountPayer>;
   /** Confidential mint. */
   mint: Address<TAccountMint>;
@@ -198,15 +184,10 @@ export type ConfidentialTransferInput<
   /** Sender token account. */
   fromAccount: Address<TAccountFromAccount>;
   toAccount: Address<TAccountToAccount>;
-  /**
-   * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-   * handle and replaced in place by this execution's CPI.
-   */
-  fromBalanceValue: Address<TAccountFromBalanceValue>;
-  /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-  toBalanceValue: Address<TAccountToBalanceValue>;
-  /** the sender's first transfer, replaced thereafter. */
-  transferredAmountValue: Address<TAccountTransferredAmountValue>;
+  /** Sender state: the host reads and updates its balance slot. */
+  fromState: Address<TAccountFromState>;
+  /** Recipient state: the host reads and updates its balance slot. */
+  toState: Address<TAccountToState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -221,14 +202,12 @@ export type ConfidentialTransferInput<
   hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
   /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  /** first write, accumulated thereafter. The host checks its canonical address. */
-  receiptValue?: Address<TAccountReceiptValue>;
-  /** The recipient program's PDA controlling the receipt, signing through `invoke_signed`. */
-  receiptAuthority?: TransactionSigner<TAccountReceiptAuthority>;
+  resultState?: Address<TAccountResultState>;
+  resultScratch?: Address<TAccountResultScratch>;
+  resultAuthority?: TransactionSigner<TAccountResultAuthority>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
   amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
-  receipt: ConfidentialTransferInstructionDataArgs['receipt'];
 };
 
 export function getConfidentialTransferInstruction<
@@ -240,17 +219,17 @@ export function getConfidentialTransferInstruction<
   TAccountToAta extends string,
   TAccountFromAccount extends string,
   TAccountToAccount extends string,
-  TAccountFromBalanceValue extends string,
-  TAccountToBalanceValue extends string,
-  TAccountTransferredAmountValue extends string,
+  TAccountFromState extends string,
+  TAccountToState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
   TAccountHcuBlockMeter extends string,
   TAccountHcuTrustedAppRecord extends string,
-  TAccountReceiptValue extends string,
-  TAccountReceiptAuthority extends string,
+  TAccountResultState extends string,
+  TAccountResultScratch extends string,
+  TAccountResultAuthority extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -264,17 +243,17 @@ export function getConfidentialTransferInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
-    TAccountTransferredAmountValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountReceiptValue,
-    TAccountReceiptAuthority,
+    TAccountResultState,
+    TAccountResultScratch,
+    TAccountResultAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -289,17 +268,17 @@ export function getConfidentialTransferInstruction<
   TAccountToAta,
   TAccountFromAccount,
   TAccountToAccount,
-  TAccountFromBalanceValue,
-  TAccountToBalanceValue,
-  TAccountTransferredAmountValue,
+  TAccountFromState,
+  TAccountToState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountSystemProgram,
   TAccountHcuBlockMeter,
   TAccountHcuTrustedAppRecord,
-  TAccountReceiptValue,
-  TAccountReceiptAuthority,
+  TAccountResultState,
+  TAccountResultScratch,
+  TAccountResultAuthority,
   TAccountEventAuthority,
   TAccountProgram
 > {
@@ -316,15 +295,8 @@ export function getConfidentialTransferInstruction<
     toAta: { value: input.toAta ?? null, isWritable: false },
     fromAccount: { value: input.fromAccount ?? null, isWritable: true },
     toAccount: { value: input.toAccount ?? null, isWritable: true },
-    fromBalanceValue: {
-      value: input.fromBalanceValue ?? null,
-      isWritable: true,
-    },
-    toBalanceValue: { value: input.toBalanceValue ?? null, isWritable: true },
-    transferredAmountValue: {
-      value: input.transferredAmountValue ?? null,
-      isWritable: true,
-    },
+    fromState: { value: input.fromState ?? null, isWritable: true },
+    toState: { value: input.toState ?? null, isWritable: true },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
@@ -337,9 +309,10 @@ export function getConfidentialTransferInstruction<
       value: input.hcuTrustedAppRecord ?? null,
       isWritable: false,
     },
-    receiptValue: { value: input.receiptValue ?? null, isWritable: true },
-    receiptAuthority: {
-      value: input.receiptAuthority ?? null,
+    resultState: { value: input.resultState ?? null, isWritable: false },
+    resultScratch: { value: input.resultScratch ?? null, isWritable: true },
+    resultAuthority: {
+      value: input.resultAuthority ?? null,
       isWritable: false,
     },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
@@ -370,17 +343,17 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('toAta', accounts.toAta),
       getAccountMeta('fromAccount', accounts.fromAccount),
       getAccountMeta('toAccount', accounts.toAccount),
-      getAccountMeta('fromBalanceValue', accounts.fromBalanceValue),
-      getAccountMeta('toBalanceValue', accounts.toBalanceValue),
-      getAccountMeta('transferredAmountValue', accounts.transferredAmountValue),
+      getAccountMeta('fromState', accounts.fromState),
+      getAccountMeta('toState', accounts.toState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
-      getAccountMeta('receiptValue', accounts.receiptValue),
-      getAccountMeta('receiptAuthority', accounts.receiptAuthority),
+      getAccountMeta('resultState', accounts.resultState),
+      getAccountMeta('resultScratch', accounts.resultScratch),
+      getAccountMeta('resultAuthority', accounts.resultAuthority),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
@@ -396,17 +369,17 @@ export function getConfidentialTransferInstruction<
     TAccountToAta,
     TAccountFromAccount,
     TAccountToAccount,
-    TAccountFromBalanceValue,
-    TAccountToBalanceValue,
-    TAccountTransferredAmountValue,
+    TAccountFromState,
+    TAccountToState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
-    TAccountReceiptValue,
-    TAccountReceiptAuthority,
+    TAccountResultState,
+    TAccountResultScratch,
+    TAccountResultAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >);
@@ -420,7 +393,7 @@ export type ParsedConfidentialTransferInstruction<
   accounts: {
     /** Sender and transfer authority. */
     owner: TAccountMetas[0];
-    /** Pays rent for the transferred-amount encrypted value account on its first bind. */
+    /** Pays rent for the transferred-amount encrypted State on its first bind. */
     payer: TAccountMetas[1];
     /** Confidential mint. */
     mint: TAccountMetas[2];
@@ -430,33 +403,27 @@ export type ParsedConfidentialTransferInstruction<
     /** Sender token account. */
     fromAccount: TAccountMetas[6];
     toAccount: TAccountMetas[7];
-    /**
-     * Sender's stable balance `EncryptedValue` encrypted value account; read for the current
-     * handle and replaced in place by this execution's CPI.
-     */
-    fromBalanceValue: TAccountMetas[8];
-    /** Recipient's stable balance `EncryptedValue` encrypted value account. */
-    toBalanceValue: TAccountMetas[9];
-    /** the sender's first transfer, replaced thereafter. */
-    transferredAmountValue: TAccountMetas[10];
-    zamaEventAuthority: TAccountMetas[11];
+    /** Sender state: the host reads and updates its balance slot. */
+    fromState: TAccountMetas[8];
+    /** Recipient state: the host reads and updates its balance slot. */
+    toState: TAccountMetas[9];
+    zamaEventAuthority: TAccountMetas[10];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[12];
+    zamaProgram: TAccountMetas[11];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[13];
+    hostConfig: TAccountMetas[12];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[14];
+    systemProgram: TAccountMetas[13];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
      * by an untrusted mint under a metering-band cap, omitted otherwise.
      */
-    hcuBlockMeter?: TAccountMetas[15] | undefined;
+    hcuBlockMeter?: TAccountMetas[14] | undefined;
     /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
-    hcuTrustedAppRecord?: TAccountMetas[16] | undefined;
-    /** first write, accumulated thereafter. The host checks its canonical address. */
-    receiptValue?: TAccountMetas[17] | undefined;
-    /** The recipient program's PDA controlling the receipt, signing through `invoke_signed`. */
-    receiptAuthority?: TAccountMetas[18] | undefined;
+    hcuTrustedAppRecord?: TAccountMetas[15] | undefined;
+    resultState?: TAccountMetas[16] | undefined;
+    resultScratch?: TAccountMetas[17] | undefined;
+    resultAuthority?: TAccountMetas[18] | undefined;
     eventAuthority: TAccountMetas[19];
     program: TAccountMetas[20];
   };
@@ -496,17 +463,17 @@ export function parseConfidentialTransferInstruction<
       toAta: getNextAccount(),
       fromAccount: getNextAccount(),
       toAccount: getNextAccount(),
-      fromBalanceValue: getNextAccount(),
-      toBalanceValue: getNextAccount(),
-      transferredAmountValue: getNextAccount(),
+      fromState: getNextAccount(),
+      toState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       systemProgram: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
-      receiptValue: getNextOptionalAccount(),
-      receiptAuthority: getNextOptionalAccount(),
+      resultState: getNextOptionalAccount(),
+      resultScratch: getNextOptionalAccount(),
+      resultAuthority: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

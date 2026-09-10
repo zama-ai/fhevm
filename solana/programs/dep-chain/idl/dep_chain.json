@@ -88,9 +88,9 @@
           }
         },
         {
-          "name": "tail_value",
+          "name": "encrypted_state",
           "docs": [
-            "Stable tail encrypted value account; read for the current handle and replaced by this",
+            "Stable tail encrypted State; read for the current handle and replaced by this",
             "execution."
           ],
           "writable": true
@@ -200,7 +200,7 @@
           }
         },
         {
-          "name": "tail_value",
+          "name": "encrypted_state",
           "writable": true
         },
         {
@@ -245,7 +245,7 @@
     {
       "code": 6001,
       "name": "TailValueInvalid",
-      "msg": "tail encrypted value account mismatch"
+      "msg": "tail encrypted State mismatch"
     },
     {
       "code": 6002,
@@ -275,42 +275,46 @@
       }
     },
     {
-      "name": "EncryptedValue",
-      "docs": [
-        "Canonical state for one encrypted value.",
-        "",
-        "PDA: `[ENCRYPTED_VALUE_SEED, program, encrypted_value_account_authority, scope, label]`.",
-        "The account name must stay exactly `EncryptedValue` — Anchor derives the discriminator from",
-        "the type name, and it must match `zama_solana_acl::encrypted_value_discriminator()`."
-      ],
+      "name": "EncryptedSlot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedState",
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "program",
-            "docs": [
-              "The application program this value belongs to. Proven on create: the authority must be a",
-              "PDA of this program (the create carries the seeds), so no other program can sign for it."
-            ],
             "type": "pubkey"
           },
           {
-            "name": "encrypted_value_account_authority",
-            "docs": [
-              "The account that controls this encrypted value: a PDA of `program` that must sign to create",
-              "it, read it into a computation, or update its handle. Enforced by address rather than by",
-              "comparing this field — the signer must equal the authority declared in the execution and",
-              "the account written must be the PDA rederived from the declared four seeds, which is what",
-              "ties the signer to the stored value. For a token balance this is the token account itself."
-            ],
+            "name": "authority",
             "type": "pubkey"
           },
           {
             "name": "scope",
-            "docs": [
-              "Program-declared scope within `program` (the mint for the token program).",
-              "`(program, scope)` is the application identity for HCU metering and the deny list."
-            ],
             "type": {
               "array": [
                 "u8",
@@ -319,41 +323,21 @@
             }
           },
           {
-            "name": "label",
-            "docs": [
-              "Which of the authority's values this is."
-            ],
+            "name": "slots",
             "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "current_handle",
-            "docs": [
-              "Current encrypted value identifier (the live handle)."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
+              "vec": {
+                "defined": {
+                  "name": "EncryptedSlot"
+                }
+              }
             }
           },
           {
             "name": "leaf_count",
-            "docs": [
-              "Number of MMR leaves appended; `0` means no history."
-            ],
             "type": "u64"
           },
           {
             "name": "peaks",
-            "docs": [
-              "MMR peaks, oldest mountain first (`popcount(leaf_count)` entries)."
-            ],
             "type": {
               "vec": {
                 "array": [
@@ -365,9 +349,6 @@
           },
           {
             "name": "bump",
-            "docs": [
-              "PDA bump."
-            ],
             "type": "u8"
           }
         ]

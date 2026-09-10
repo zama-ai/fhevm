@@ -1,3 +1,4 @@
+import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../src/generate/solana";
 import { createHash } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -1121,6 +1122,8 @@ export const authorizedServiceEnv = (
   bootId: string,
   tokenFile: string,
 ): Record<string, string> => ({
+  DEMO_PROOF_URL: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
+  DEMO_PROOF_API_KEY: SOLANA_LEAF_PROOF_API_KEY,
   [DEMO_ALLOWED_ORIGIN_ENV]: "http://127.0.0.1:5173",
   [DEMO_AUTH_TOKEN_FILE_ENV]: tokenFile,
   [DEMO_BOOT_ID_ENV]: bootId,

@@ -54,6 +54,7 @@ export const SOLANA_USER_DECRYPT_LABEL_ACTIONS: Readonly<Record<string, 'retry-u
   not_found: 'give-up',
   insufficient_balance: 'give-up',
   insufficient_allowance: 'give-up',
+  // The relayer observed disagreeing attestations; its API marks this as terminal.
   no_attestation_consensus: 'give-up',
   // A failure to read the host ACL, not a refusal by it: `not_allowed_on_host_acl` above is the
   // ACL saying no, this is the relayer not getting an answer — its own taxonomy marks it retryable.

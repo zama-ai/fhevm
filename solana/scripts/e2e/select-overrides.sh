@@ -109,7 +109,7 @@ groups_for_path() {
     # the Cargo.tomls and Dockerfile COPY lines cited above).
     solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
     # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
-    solana/crates/zama-solana-acl/*) echo "coprocessor kms-connector relayer" ;;
+    solana/crates/zama-solana-acl/*|solana/crates/zama-solana-request/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;
     *) echo "" ;;
   esac

@@ -1,6 +1,8 @@
 use alloy::primitives::U256;
 use anyhow::anyhow;
 
+use super::solana_extra_data::SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT;
+
 /// Version `0x00`: legacy default-context marker (no explicit context, no epoch).
 pub const EXTRA_DATA_V0_VERSION: u8 = 0x00;
 
@@ -16,9 +18,6 @@ pub const EXTRA_DATA_V2_VERSION: u8 = 0x02;
 /// The expected length of v2 `extra_data` (version + context_id + epoch_id).
 pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 
-/// Version `0x03`: Solana MMR-proof blob, context_id only for generic context validation.
-pub const EXTRA_DATA_V3_VERSION: u8 = 0x03;
-
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
@@ -30,7 +29,7 @@ pub struct ExtraData {
 
 /// Parses the `extra_data` bytes to extract a context ID and an optional epoch ID.
 ///
-/// Versions `0x00`, `0x01`, `0x02`, and `0x03` are accepted (rolling compatibility window).
+/// Versions `0x00`, `0x01`, `0x02`, and `0x04` are accepted.
 ///
 /// Format (v1, RFC 003):
 /// - Byte 0: version (`0x01`)
@@ -43,14 +42,17 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Format (v3, Solana encrypted value account; exactly 65 bytes):
-/// - Byte 0: version (`0x03`)
+/// Format (v4, Solana encrypted state; exactly 65 bytes):
+/// - Byte 0: version (`0x04`)
 /// - Bytes 1..33: context ID (32 bytes, big-endian U256)
-/// - Bytes 33..65: the encrypted value account whose public leaf the certificate is about
+/// - Bytes 33..65: the encrypted state whose public leaf the certificate is about
+///
+/// This generic parser consumes only the shared context prefix. The Solana public-decrypt path
+/// validates the exact v4 layout with `parse_solana_public_decrypt_extra_data`.
 ///
 /// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
-/// Version `0x03` → epoch_id is `None`.
+/// Version `0x04` → epoch_id is `None`.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     match extra_data.first().copied() {
         None | Some(EXTRA_DATA_V0_VERSION) => Ok(ExtraData {
@@ -97,10 +99,10 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 epoch_id: Some(U256::from_be_bytes(epoch_id_bytes)),
             })
         }
-        Some(EXTRA_DATA_V3_VERSION) => {
+        Some(SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT) => {
             if extra_data.len() < EXTRA_DATA_V1_LENGTH {
                 return Err(anyhow!(
-                    "extra_data too short for v3: {} bytes, expected at least {} bytes",
+                    "extra_data too short for v4: {} bytes, expected at least {} bytes",
                     extra_data.len(),
                     EXTRA_DATA_V1_LENGTH
                 ));
@@ -121,7 +123,7 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             EXTRA_DATA_V0_VERSION,
             EXTRA_DATA_V1_VERSION,
             EXTRA_DATA_V2_VERSION,
-            EXTRA_DATA_V3_VERSION
+            SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT
         )),
     }
 }
@@ -224,16 +226,12 @@ mod tests {
     }
 
     #[test]
-    fn solana_v3_extra_data_returns_context_only() {
+    fn solana_v4_extra_data_returns_context_only() {
         let context_id = U256::from(42u64);
-        let encrypted_value_account = U256::from(7u64);
-        let proof = [0x01u8, 0x02, 0x03];
-        let mut data = vec![EXTRA_DATA_V3_VERSION];
-        data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&encrypted_value_account.to_be_bytes::<32>());
-        data.extend_from_slice(&69u64.to_be_bytes());
-        data.extend_from_slice(&(proof.len() as u32).to_be_bytes());
-        data.extend_from_slice(&proof);
+        let data = super::super::solana_extra_data::encode_solana_public_decrypt_extra_data(
+            context_id.to_be_bytes::<32>(),
+            [7u8; 32],
+        );
 
         assert_eq!(
             parse_extra_data(&data).unwrap(),
@@ -245,13 +243,25 @@ mod tests {
     }
 
     #[test]
-    fn wrong_version_byte_errors() {
-        let mut data = vec![0x04];
+    fn removed_solana_v3_errors() {
+        let mut data = vec![0x03];
         data.extend_from_slice(&[0u8; 64]);
 
         let err = parse_extra_data(&data).unwrap_err();
         assert!(
             err.to_string().contains("Unsupported extra_data version"),
+            "Unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn v4_too_short_error() {
+        let mut data = vec![SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT];
+        data.extend_from_slice(&[0u8; 10]);
+
+        let err = parse_extra_data(&data).unwrap_err();
+        assert!(
+            err.to_string().contains("extra_data too short for v4"),
             "Unexpected error: {err}"
         );
     }

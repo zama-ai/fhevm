@@ -69,9 +69,9 @@ fn a_configured_chain_id_without_the_chain_kind_bit_fails_at_startup() {
 fn a_permit_naming_this_deployment_is_accepted() {
     let wallet = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
 
     check_deployment(&request, &deployment()).expect("the permit names this deployment");
@@ -84,11 +84,11 @@ fn a_permit_naming_this_deployment_is_accepted() {
 fn a_permit_signed_for_another_program_is_rejected() {
     let wallet = Wallet::new(1);
     let live = handle(0x11, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let other_program = [0x55; 32];
     let request = RequestBuilder::new(&wallet)
         .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(other_program, CHAIN_ID))
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
 
     let failure = check_deployment(&request, &deployment())
@@ -109,10 +109,10 @@ fn a_permit_signed_for_another_cluster_is_rejected() {
     let wallet = Wallet::new(1);
     let other_chain = SOLANA_CHAIN_TYPE_BIT | 0xdead_beef;
     let live = handle_on_chain(0x12, FHE_TYPE_UINT64, other_chain);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
         .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(PROGRAM_ID, other_chain))
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
 
     let failure = check_deployment(&request, &deployment())
@@ -134,14 +134,10 @@ fn handles_embedding_different_chain_ids_are_rejected() {
     let local = handle(0x13, FHE_TYPE_UINT64);
     let foreign_chain = SOLANA_CHAIN_TYPE_BIT | 0x1234;
     let foreign = handle_on_chain(0x14, FHE_TYPE_UINT64, foreign_chain);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(local, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(local, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, local)
-        .entry(
-            foreign,
-            wallet.pubkey(),
-            encrypted_value_account.account_key,
-        )
+        .direct(&encrypted_state, local)
+        .entry(foreign, wallet.pubkey(), encrypted_state.account_key)
         .typed();
 
     let failure = check_deployment(&request, &deployment()).expect_err("one request, one cluster");
@@ -167,9 +163,9 @@ fn handles_embedding_a_cluster_other_than_the_signed_one_are_rejected() {
     let wallet = Wallet::new(1);
     let foreign_chain = SOLANA_CHAIN_TYPE_BIT | 0x4321;
     let foreign = handle_on_chain(0x15, FHE_TYPE_UINT64, foreign_chain);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(foreign, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(foreign, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, foreign)
+        .direct(&encrypted_state, foreign)
         .typed();
 
     let failure = check_deployment(&request, &deployment())

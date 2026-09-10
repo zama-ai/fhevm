@@ -1,3 +1,4 @@
+import type { ProofService } from './vault/internal/publicProof.js';
 import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
@@ -31,6 +32,7 @@ const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
 const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
 
 export type DemoOperatorSession = {
+  readonly proofService: ProofService;
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
 };
@@ -159,6 +161,7 @@ export const settleVaultBatch = async (
   const signature = await settleBatch(chain, session.keeper, {
     rpc,
     rpcSubscriptions,
+    proofService: session.proofService,
     runtime: publicDecryptClient.runtime,
     roots,
     batchIndex: position.batchIndex,

@@ -142,13 +142,19 @@ sequenceDiagram
     Relayer-->>App: Return checked response
     Wallet->>Batch: Join deposit batch
     Batch->>Token: Move encrypted cUSDC
-    Token->>Host: Register new encrypted values
+    Token->>Host: Update balances and grant transferred handle to JoinRecord state
+    Token-->>Batch: Return transferred handle
+    Batch->>Host: Add granted handle to joined amount
+    Wallet->>Host: Final instruction closes scratch and refunds rent
     Host-->>Listener: Emit confirmed records
     Listener-->>Compute: Rebuild confirmed encrypted state
 ```
 
-Solana stores the current encrypted-value ID, who may use it, which app it belongs to, and its
-place in recorded history. The larger encrypted data stays with the encrypted math service.
+The host owns an encrypted state dictionary for each token account and each user’s JoinRecord.
+Named slots retain balances and contributions; one MMR per state records decrypt permissions.
+A transaction-local scratch account passes the transferred handle between programs and closes
+at the end of the transaction. No transferred-amount or claim-amount account is stored.
+The ciphertext data stays with the coprocessor.
 
 ### Settle and receive cShares
 
@@ -273,7 +279,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | Solana transactions; vault, batcher, token, and host programs | Local validator, test USDC, and toy vault |
 | Encrypted inputs, balances, math, and stored encrypted data | Test keys and local workers |
 | Chain listener and confirmed-state reconstruction | Local event stream |
-| History proof generation and Solana verification | Short local history |
+| History proof generation and Solana verification | Listener proof verified against the current shared-state MMR |
 | Request service, decryption worker, key service, and signed results | One centralized key service |
 | Wallet signing and authorized balance reveals | Built-in or external wallet; one signature per reveal |
 | Closing, settlement, and claims | Local keeper |
@@ -283,7 +289,7 @@ Yield is different: the demo faucet mints test USDC and a demo-only vault instru
 This proves share-price accounting, not a connection to a real yield strategy.
 
 Expand **Developer evidence** in the app to copy transaction signatures, compute use,
-encrypted-value accounts, and encrypted-value IDs. The local explorer shows each transaction. An
+encrypted state accounts, and encrypted handles. The local explorer shows each transaction. An
 encrypted-value ID can be searched in Jaeger for decryption-job intake, checks, key-service
 requests, polling, and result forwarding. It does not trace the key service internals, request
 service, encrypted computation, or native chain listener. Prometheus shows decryption-job

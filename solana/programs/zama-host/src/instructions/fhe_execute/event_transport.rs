@@ -56,7 +56,7 @@ mod tests {
         let outputs = (0..MAX_FHE_EXECUTION_STEPS)
             .map(|index| ProducedPublicOutput {
                 step_index: index as u16,
-                encrypted_value: Pubkey::new_unique(),
+                encrypted_state: Pubkey::new_unique(),
                 output_handle: [index as u8; 32],
             })
             .collect();
@@ -71,7 +71,7 @@ mod tests {
         assert!(instruction.accounts[0].is_signer);
         assert!(!instruction.accounts[0].is_writable);
         // 21 bytes of framing (ix tag + event discriminator + version + vec length) plus
-        // 66 bytes per record (u16 step index + encrypted value account pubkey + output handle).
+        // 66 bytes per record (u16 step index + encrypted State pubkey + output handle).
         assert_eq!(instruction.data.len(), 21 + MAX_FHE_EXECUTION_STEPS * 66);
         assert_eq!(instruction.data.len(), 2_133);
         // The cap itself, asserted rather than left in prose: the two lines above are a

@@ -1,46 +1,7 @@
-//! What one `fhe_execute` invocation costs against the transaction ceilings it must fit.
-//!
-//! Public API surface: app programs. An app composing a transaction with more than the minimal
-//! wrapper reads [`FheExecutionCost`]'s numbers — and the ceiling constants — to budget the
-//! rest of the transaction around the execution.
-//!
-//! Two of Solana's per-transaction ceilings are exact functions of an execution's shape, so the
-//! builder enforces them with typed errors instead of letting the transaction abort at runtime:
-//!
-//! - **Instruction trace.** A transaction may execute at most
-//!   [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`] instructions, top-level and CPI together. The host
-//!   issues one system-program CPI per persistent output it creates on the common path
-//!   (`create_account`; the three-step transfer/allocate/assign path is only the pre-funded
-//!   squat fallback), plus one event CPI per event kind the execution emits. The floor below
-//!   is what the transaction is guaranteed to spend even in the minimal production wrapper —
-//!   one app instruction invoking `fhe_execute` once. With one CPI per create the floor of the
-//!   largest admitted execution sits well under the limit, so the builder does not gate on it;
-//!   [`MAX_PERSISTENT_CREATES`] is the cap that binds.
-//! - **CPI packet size.** The runtime rejects any CPI whose instruction data exceeds
-//!   [`CPI_INSTRUCTION_DATA_LIMIT`] bytes, and an `fhe_execute` packet always travels by CPI —
-//!   a transaction itself carries at most 1,232 bytes, so no full-size packet can be submitted
-//!   top-level. `finish` counts the exact packet and rejects an oversized one with
-//!   [`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`].
-//!
-//! What is deliberately *not* enforced here: costs that depend on on-chain state rather than
-//! the execution's shape. A persistent create may spend three system CPIs instead of one if the
-//! output PDA is already pre-funded, a persistent update may add one rent top-up transfer if
-//! the account must grow, the host lazily creates its per-app block meter once under a finite
-//! block cap (three CPIs, first execution only), and the host's heap consumption for updates
-//! grows with the stored value's MMR peak count — none of which the builder can see. Those
-//! surface through [`FheExecutionCost::instruction_trace_worst_case`] (honest about squat
-//! creates; that number can exceed the trace limit) and the cost-snapshot data instead.
-//!
-//! One shape-dependent cost also stays measured rather than typed: the host's own **CPI frame**.
-//! The host CPI runs in a fresh 32 KB heap region of its own, and what it allocates there scales
-//! with the persistent values it decodes and the leaves it seals — each allowed key is one MMR
-//! append — plus the public-outputs event payload for `make_public` creates. The builder cannot
-//! price that from its side of the CPI boundary. The boundary sweeps in `runtime-tests` pin the
-//! measured walls.
-//!
-//! Both ceilings are runtime facts of the pinned agave 4.x toolchain, asserted against
-//! measurement by `runtime-tests/tests/fhe_execute_boundary.rs` (`cost_snapshot_solana_ceilings`
-//! and the boundary sweeps).
+//! Cost bounds for one app-to-host execution. State accounts are created separately;
+//! execution may grow them and top up rent, but never creates per-result accounts.
+//! Public API surface: application transaction planners inspect these bounds before composing CPIs.
+//! Host heap use still depends on live State/history and is measured by runtime tests.
 
 /// Instructions one transaction may execute, top-level and CPI together — agave's
 /// `MAX_INSTRUCTION_TRACE_LENGTH` (`solana-transaction-context`); exceeding it aborts the
@@ -76,52 +37,19 @@ pub const BUILD_HEAP_BUDGET_BYTES: usize = PROGRAM_HEAP_BYTES - APP_HEAP_RESERVE
 /// every invoke (`solana-program-runtime`'s `check_instruction_size`). Not extendable.
 pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 
-/// System-program CPIs the host issues to create one persistent output account on the common
-/// path: a single `create_account` (`create_pda_strict` via `fund_allocate_assign`). The
-/// three-step transfer/allocate/assign path is only the pre-funded squat fallback, so the
-/// builder's floor charges one CPI.
-pub const CPIS_PER_PERSISTENT_CREATE: usize = 1;
-
-/// System-program CPIs the host issues to lazily create the per-app block meter on an app's
-/// first execution under a finite block cap (the squat/meter path, not the common-path create).
+/// Lazy block-meter creation can transfer, allocate and assign.
 pub const CPIS_PER_SQUAT_CREATE: usize = 3;
 
-/// Persistent creates one execution can carry: an SDK policy cap, not a derived wall. The
-/// instruction trace no longer binds it (`instruction_trace_floor(20, true, true)` is 24 of
-/// 64) and the host heap walls measured in `runtime-tests/tests/fhe_execute_boundary.rs` sit
-/// on either side of it depending on audience width (16 shared-audience public creates, 22
-/// all-created-public). Twenty keeps the common shapes inside every wall the host has; raise
-/// it only with a new boundary sweep.
-pub const MAX_PERSISTENT_CREATES: usize = 20;
-
-/// The instructions a transaction is guaranteed to execute for one `fhe_execute` invocation in
-/// the minimal production wrapper: the app instruction, its `fhe_execute` CPI, one
-/// system-program CPI per created persistent output, and one event CPI per event kind emitted
-/// (random seeds, public outputs). Everything an app adds on top — its own CPIs, other
-/// instructions in the transaction — comes out of what the limit leaves over this floor.
-pub fn instruction_trace_floor(
-    persistent_creates: usize,
-    emits_random_seeds_event: bool,
-    emits_public_outputs_event: bool,
-) -> usize {
-    2 + CPIS_PER_PERSISTENT_CREATE * persistent_creates
-        + usize::from(emits_random_seeds_event)
-        + usize::from(emits_public_outputs_event)
+/// One app instruction, one host CPI, and the emitted host event CPIs.
+pub fn instruction_trace_floor(random_event: bool, public_event: bool) -> usize {
+    2 + usize::from(random_event) + usize::from(public_event)
 }
 
-/// Shape-derived cost of one built execution, computed by `finish` and carried on
-/// [`FheExecution`](crate::FheExecution) so an app composing a larger transaction can budget
-/// against the ceilings before submitting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FheExecutionCost {
-    /// Steps in the execution.
     pub steps: usize,
-    /// Persistent outputs this execution creates (one system CPI each on the common path).
-    pub persistent_creates: usize,
-    /// Persistent outputs this execution updates (no CPI, unless the account needs a rent
-    /// top-up to grow — see [`instruction_trace_worst_case`](Self::instruction_trace_worst_case)).
-    pub persistent_updates: usize,
-    /// Whether the host will emit the random-seeds event CPI (any rand step).
+    /// Conservative bound on State rent top-ups; multiple outputs may share one State.
+    pub state_outputs: usize,
     pub emits_random_seeds_event: bool,
     /// Whether the host will emit the public-outputs event CPI (any `make_public` output).
     pub emits_public_outputs_event: bool,
@@ -144,34 +72,22 @@ pub struct FheExecutionCost {
     /// Remaining accounts the app must supply as dynamic accounts to `resolve_accounts`.
     pub dynamic_accounts: usize,
     /// Value-authority witnesses the app must supply to `resolve_accounts` (the fixed
-    /// execution authority plus each persistent value's own authority that differs from it).
+    /// execution authority plus each State’s own authority that differs from it).
     pub value_authorities: usize,
 }
 
 impl FheExecutionCost {
-    /// See [`instruction_trace_floor`].
     pub fn instruction_trace_floor(&self) -> usize {
         instruction_trace_floor(
-            self.persistent_creates,
             self.emits_random_seeds_event,
             self.emits_public_outputs_event,
         )
     }
 
-    /// The floor plus every state-dependent instruction this execution *can* add: two extra
-    /// system CPIs per persistent create if the output PDA is already pre-funded (the squat
-    /// transfer/allocate/assign path instead of one `create_account`), one rent top-up transfer
-    /// per persistent update whose account must grow, and the three CPIs that lazily create the
-    /// per-app block meter on an app's first execution under a finite block cap.
-    ///
-    /// This number is honest about on-chain state; it is not a promise the shape fits. Twenty
-    /// squat creates plus both event CPIs plus the meter is 67, which exceeds
-    /// [`TRANSACTION_INSTRUCTION_TRACE_LIMIT`].
+    /// Includes a possible rent transfer per State output and lazy meter creation.
+    /// App-level State/scratch creation, final close and other CPIs must be added by the caller.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor()
-            + (CPIS_PER_SQUAT_CREATE - CPIS_PER_PERSISTENT_CREATE) * self.persistent_creates
-            + self.persistent_updates
-            + CPIS_PER_SQUAT_CREATE
+        self.instruction_trace_floor() + self.state_outputs + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -179,60 +95,36 @@ impl FheExecutionCost {
 mod tests {
     use super::*;
 
-    #[test]
-    fn the_floor_counts_the_wrapper_the_creates_and_the_events() {
-        // The minimal wrapper alone: app instruction + fhe_execute CPI.
-        assert_eq!(instruction_trace_floor(0, false, false), 2);
-        // Each create is one system CPI on the common path; each event kind is one CPI.
-        assert_eq!(instruction_trace_floor(1, false, false), 3);
-        // Trace no longer binds at 20; heap does. The floor with events sits well under 64.
-        assert_eq!(
-            instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true),
-            2 + MAX_PERSISTENT_CREATES + 2
-        );
-        assert!(
-            instruction_trace_floor(MAX_PERSISTENT_CREATES, true, true)
-                < TRANSACTION_INSTRUCTION_TRACE_LIMIT
-        );
-        assert_eq!(
-            instruction_trace_floor(MAX_PERSISTENT_CREATES + 1, false, false),
-            2 + MAX_PERSISTENT_CREATES + 1
-        );
-    }
-
-    #[test]
-    fn the_worst_case_adds_the_state_dependent_instructions() {
-        let cost = FheExecutionCost {
-            steps: 8,
-            persistent_creates: 2,
-            persistent_updates: 3,
-            emits_random_seeds_event: true,
-            emits_public_outputs_event: false,
+    fn cost(state_outputs: usize, random: bool, public: bool) -> FheExecutionCost {
+        FheExecutionCost {
+            steps: 1,
+            state_outputs,
+            emits_random_seeds_event: random,
+            emits_public_outputs_event: public,
             packet_bytes: 0,
             build_heap_bytes: 0,
             invoke_heap_bytes: 0,
             remaining_accounts: 0,
             dynamic_accounts: 0,
             value_authorities: 0,
-        };
-        // The floor: wrapper (2) + one CPI per create (2) + the rand event (1).
-        assert_eq!(cost.instruction_trace_floor(), 5);
-        // The worst case charges the squat path (3 CPIs) per create, one rent top-up per
-        // update, and the one-time three-CPI block-meter creation.
+        }
+    }
+
+    #[test]
+    fn trace_floor_counts_only_the_wrapper_and_emitted_event_kinds() {
+        assert_eq!(instruction_trace_floor(false, false), 2);
+        assert_eq!(instruction_trace_floor(true, false), 3);
+        assert_eq!(instruction_trace_floor(false, true), 3);
+        assert_eq!(instruction_trace_floor(true, true), 4);
+    }
+
+    #[test]
+    fn worst_case_charges_each_state_output_and_one_lazy_meter_creation() {
+        let cost = cost(3, true, true);
+        assert_eq!(cost.instruction_trace_floor(), 4);
         assert_eq!(
             cost.instruction_trace_worst_case(),
-            5 + (CPIS_PER_SQUAT_CREATE - CPIS_PER_PERSISTENT_CREATE) * cost.persistent_creates
-                + cost.persistent_updates
-                + CPIS_PER_SQUAT_CREATE
+            4 + 3 + CPIS_PER_SQUAT_CREATE
         );
-        // 20 squat creates + both events + the meter cannot fit the 64-entry trace.
-        let at_cap = FheExecutionCost {
-            persistent_creates: MAX_PERSISTENT_CREATES,
-            persistent_updates: 0,
-            emits_random_seeds_event: true,
-            emits_public_outputs_event: true,
-            ..cost
-        };
-        assert!(at_cap.instruction_trace_worst_case() > TRANSACTION_INSTRUCTION_TRACE_LIMIT);
     }
 }

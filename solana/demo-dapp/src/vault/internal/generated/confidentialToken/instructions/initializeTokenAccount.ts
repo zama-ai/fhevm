@@ -54,7 +54,7 @@ export type InitializeTokenAccountInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBalanceEncryptedValue extends string | AccountMeta<string> = string,
+  TAccountBalanceEncryptedState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -74,9 +74,9 @@ export type InitializeTokenAccountInstruction<
       TAccountOwner extends string ? ReadonlyAccount<TAccountOwner> : TAccountOwner,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
       TAccountTokenAccount extends string ? WritableAccount<TAccountTokenAccount> : TAccountTokenAccount,
-      TAccountBalanceEncryptedValue extends string
-        ? WritableAccount<TAccountBalanceEncryptedValue>
-        : TAccountBalanceEncryptedValue,
+      TAccountBalanceEncryptedState extends string
+        ? WritableAccount<TAccountBalanceEncryptedState>
+        : TAccountBalanceEncryptedState,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -125,7 +125,7 @@ export type InitializeTokenAccountAsyncInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountBalanceEncryptedValue extends string = string,
+  TAccountBalanceEncryptedState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -145,7 +145,7 @@ export type InitializeTokenAccountAsyncInput<
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   tokenAccount?: Address<TAccountTokenAccount>;
-  balanceEncryptedValue: Address<TAccountBalanceEncryptedValue>;
+  balanceEncryptedState: Address<TAccountBalanceEncryptedState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used to create the initial balance handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -172,7 +172,7 @@ export async function getInitializeTokenAccountInstructionAsync<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountBalanceEncryptedValue extends string,
+  TAccountBalanceEncryptedState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -188,7 +188,7 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedValue,
+    TAccountBalanceEncryptedState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -206,7 +206,7 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedValue,
+    TAccountBalanceEncryptedState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -226,8 +226,8 @@ export async function getInitializeTokenAccountInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    balanceEncryptedValue: {
-      value: input.balanceEncryptedValue ?? null,
+    balanceEncryptedState: {
+      value: input.balanceEncryptedState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -269,7 +269,7 @@ export async function getInitializeTokenAccountInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('balanceEncryptedValue', accounts.balanceEncryptedValue),
+      getAccountMeta('balanceEncryptedState', accounts.balanceEncryptedState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -287,7 +287,7 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedValue,
+    TAccountBalanceEncryptedState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -304,7 +304,7 @@ export type InitializeTokenAccountInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountBalanceEncryptedValue extends string = string,
+  TAccountBalanceEncryptedState extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -324,7 +324,7 @@ export type InitializeTokenAccountInput<
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   tokenAccount: Address<TAccountTokenAccount>;
-  balanceEncryptedValue: Address<TAccountBalanceEncryptedValue>;
+  balanceEncryptedState: Address<TAccountBalanceEncryptedState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program used to create the initial balance handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -351,7 +351,7 @@ export function getInitializeTokenAccountInstruction<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountBalanceEncryptedValue extends string,
+  TAccountBalanceEncryptedState extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -367,7 +367,7 @@ export function getInitializeTokenAccountInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedValue,
+    TAccountBalanceEncryptedState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -384,7 +384,7 @@ export function getInitializeTokenAccountInstruction<
   TAccountOwner,
   TAccountMint,
   TAccountTokenAccount,
-  TAccountBalanceEncryptedValue,
+  TAccountBalanceEncryptedState,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -403,8 +403,8 @@ export function getInitializeTokenAccountInstruction<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    balanceEncryptedValue: {
-      value: input.balanceEncryptedValue ?? null,
+    balanceEncryptedState: {
+      value: input.balanceEncryptedState ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -440,7 +440,7 @@ export function getInitializeTokenAccountInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('balanceEncryptedValue', accounts.balanceEncryptedValue),
+      getAccountMeta('balanceEncryptedState', accounts.balanceEncryptedState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -458,7 +458,7 @@ export function getInitializeTokenAccountInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedValue,
+    TAccountBalanceEncryptedState,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -486,7 +486,7 @@ export type ParsedInitializeTokenAccountInstruction<
     /** Confidential mint this account belongs to. */
     mint: TAccountMetas[2];
     tokenAccount: TAccountMetas[3];
-    balanceEncryptedValue: TAccountMetas[4];
+    balanceEncryptedState: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
     /** ZamaHost program used to create the initial balance handle. */
     zamaProgram: TAccountMetas[6];
@@ -539,7 +539,7 @@ export function parseInitializeTokenAccountInstruction<
       owner: getNextAccount(),
       mint: getNextAccount(),
       tokenAccount: getNextAccount(),
-      balanceEncryptedValue: getNextAccount(),
+      balanceEncryptedState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

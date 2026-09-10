@@ -20,9 +20,9 @@ pub struct UserDecryptionDelegation {
     pub delegator: Pubkey,
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
-    /// The encrypted value account authority the delegation is scoped over. A delegation covers
+    /// The encrypted State authority the delegation is scoped over. A delegation covers
     /// every value of that authority in every scope: the scope is not one of the PDA's seeds.
-    pub encrypted_value_account_authority: Pubkey,
+    pub authority: Pubkey,
     /// Slot after which the delegation is invalid.
     pub expiration_slot: u64,
     /// Monotonic counter incremented on every grant, regrant, and revoke.
@@ -78,7 +78,7 @@ mod tests {
         let record = UserDecryptionDelegation {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
-            encrypted_value_account_authority: Pubkey::new_unique(),
+            authority: Pubkey::new_unique(),
             expiration_slot: u64::MAX,
             delegation_counter: u64::MAX,
             last_update_slot: u64::MAX,
@@ -101,7 +101,7 @@ mod tests {
         let record = UserDecryptionDelegation {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
-            encrypted_value_account_authority: Pubkey::new_unique(),
+            authority: Pubkey::new_unique(),
             expiration_slot: 11,
             delegation_counter: 22,
             last_update_slot: 33,
@@ -117,10 +117,7 @@ mod tests {
 
         assert_eq!(decoded.delegator, record.delegator.to_bytes());
         assert_eq!(decoded.delegate, record.delegate.to_bytes());
-        assert_eq!(
-            decoded.encrypted_value_account_authority,
-            record.encrypted_value_account_authority.to_bytes()
-        );
+        assert_eq!(decoded.authority, record.authority.to_bytes());
         assert_eq!(decoded.expiration_slot, record.expiration_slot);
         assert_eq!(decoded.delegation_counter, record.delegation_counter);
         assert_eq!(decoded.last_update_slot, record.last_update_slot);

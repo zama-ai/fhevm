@@ -1,4 +1,4 @@
-//! Handle binding: which key may decrypt which handle of an encrypted value account, and on what
+//! Handle binding: which key may decrypt which handle of an encrypted state, and on what
 //! evidence.
 //!
 //! The evidence is always the same: an `Allowed(key, handle)` leaf sealed in the account's MMR,
@@ -7,7 +7,7 @@
 //! sealed, names its handle and its key forever, and a later write to the account changes which
 //! handle is current without touching what was allowed on the old one.
 //!
-//! The file is dominated by substitutions of the leaf commitment: another encrypted value account,
+//! The file is dominated by substitutions of the leaf commitment: another encrypted state,
 //! another key, another handle, another position, another leaf kind. Each of them is a proof that
 //! verifies against *something*, and the question is whether the code checks that it verifies
 //! against the thing that was asked. A leaf commitment binds four values and a domain prefix, and
@@ -23,7 +23,7 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    encrypted_value_account::{ResolvedEncryptedValueAccount, resolve_encrypted_value_account},
+    encrypted_state::{ResolvedEncryptedState, resolve_encrypted_state},
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
     pipeline::{AuthorizationContext, authorize_request},
@@ -34,26 +34,24 @@ use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
-/// Resolves an encrypted value account the way the pipeline does, so the binding rules are
+/// Resolves an encrypted state the way the pipeline does, so the binding rules are
 /// exercised against a validated account rather than a hand-made value.
-fn resolved(
-    encrypted_value_account: &EncryptedValueAccountFixture,
-) -> ResolvedEncryptedValueAccount {
-    let world = World::running_at_slot(1).with_encrypted_value_account(encrypted_value_account);
+fn resolved(encrypted_state: &EncryptedStateFixture) -> ResolvedEncryptedState {
+    let world = World::running_at_slot(1).with_encrypted_state(encrypted_state);
     let snapshot = world
-        .read(&SnapshotKeys::new([encrypted_value_account.account_key]))
+        .read(&SnapshotKeys::new([encrypted_state.account_key]))
         .expect("the world reads");
-    resolve_encrypted_value_account(&snapshot, PROGRAM_ID, encrypted_value_account.account_key)
-        .expect("the fixture encrypted value account resolves")
+    resolve_encrypted_state(&snapshot, PROGRAM_ID, encrypted_state.account_key)
+        .expect("the fixture encrypted state resolves")
 }
 
 /// The record's answer for `key` on `handle` when it has sealed exactly this account's leaves.
 fn answer(
-    encrypted_value_account: &EncryptedValueAccountFixture,
+    encrypted_state: &EncryptedStateFixture,
     handle: [u8; 32],
     key: SolanaPubkeyBytes,
 ) -> LeafProofOutcome {
-    encrypted_value_account.outcome(&encrypted_value_account.allowed_query(handle, key))
+    encrypted_state.outcome(&encrypted_state.allowed_query(handle, key))
 }
 
 fn context<'a>(
@@ -75,13 +73,13 @@ fn context<'a>(
 fn an_allow_leaf_the_record_serves_binds_the_handle_to_its_key() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
+    let encrypted_state = EncryptedStateFixture::allowing(live, key);
 
     check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
-        &answer(&encrypted_value_account, live, key),
+        &answer(&encrypted_state, live, key),
     )
     .expect("an allowed key decrypts its handle");
 }
@@ -93,15 +91,15 @@ fn an_allow_leaf_the_record_serves_binds_the_handle_to_its_key() {
 fn a_leaf_outlives_the_handle_it_names_being_replaced() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x11, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::allowing(sealed, key);
-    encrypted_value_account.update(handle(0x12, FHE_TYPE_UINT64));
-    encrypted_value_account.allow(key);
+    let mut encrypted_state = EncryptedStateFixture::allowing(sealed, key);
+    encrypted_state.update(handle(0x12, FHE_TYPE_UINT64));
+    encrypted_state.allow(key);
 
     check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         sealed,
         key,
-        &answer(&encrypted_value_account, sealed, key),
+        &answer(&encrypted_state, sealed, key),
     )
     .expect("the old handle is still the allowed key's to decrypt");
 }
@@ -113,14 +111,14 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
     let key = Wallet::new(1).pubkey();
     let allowed = handle(0x13, FHE_TYPE_UINT64);
     let never_allowed = handle(0x14, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::allowing(allowed, key);
-    encrypted_value_account.update(never_allowed);
+    let mut encrypted_state = EncryptedStateFixture::allowing(allowed, key);
+    encrypted_state.update(never_allowed);
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         never_allowed,
         key,
-        &answer(&encrypted_value_account, never_allowed, key),
+        &answer(&encrypted_state, never_allowed, key),
     )
     .expect_err("the current handle was never allowed to the key");
 
@@ -147,22 +145,22 @@ fn each_allowed_key_holds_its_own_leaf() {
     let first = Wallet::new(1).pubkey();
     let second = Wallet::new(2).pubkey();
     let live = handle(0x15, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::allowing(live, first);
-    encrypted_value_account.allow(second);
-    let account = resolved(&encrypted_value_account);
+    let mut encrypted_state = EncryptedStateFixture::allowing(live, first);
+    encrypted_state.allow(second);
+    let account = resolved(&encrypted_state);
 
     check_handle_binding(
         &account,
         live,
         first,
-        &answer(&encrypted_value_account, live, first),
+        &answer(&encrypted_state, live, first),
     )
     .expect("the first key's leaf verifies");
     check_handle_binding(
         &account,
         live,
         second,
-        &answer(&encrypted_value_account, live, second),
+        &answer(&encrypted_state, live, second),
     )
     .expect("the second key's leaf verifies");
 }
@@ -180,15 +178,15 @@ fn verdict_on_substituted_leaf(
 ) -> Result<(), HandleBindingFailure> {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x20, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::new(live);
-    let commitment = substitute(encrypted_value_account.account_key, live, key);
-    encrypted_value_account.append(encrypted_value_account.allowed_query(live, key), commitment);
+    let mut encrypted_state = EncryptedStateFixture::new(live);
+    let commitment = substitute(encrypted_state.account_key, live, key);
+    encrypted_state.append(encrypted_state.allowed_query(live, key), commitment);
 
     check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
-        &answer(&encrypted_value_account, live, key),
+        &answer(&encrypted_state, live, key),
     )
 }
 
@@ -208,9 +206,9 @@ fn assert_does_not_verify(verdict: Result<(), HandleBindingFailure>) {
     );
 }
 
-/// A leaf sealed for another encrypted value account authorizes nothing here.
+/// A leaf sealed for another encrypted state authorizes nothing here.
 #[test]
-fn a_leaf_committing_to_another_encrypted_value_account_does_not_verify() {
+fn a_leaf_committing_to_another_encrypted_state_does_not_verify() {
     assert_does_not_verify(verdict_on_substituted_leaf(|_, handle, key| {
         historical_access_leaf_commitment([0x99; 32], 0, handle, key)
     }));
@@ -254,12 +252,12 @@ fn a_public_decrypt_leaf_does_not_bind_a_key() {
 fn an_allow_leaf_does_not_prove_public_ness() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
+    let encrypted_state = EncryptedStateFixture::allowing(live, key);
 
     let failure = check_public_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
-        &answer(&encrypted_value_account, live, key),
+        &answer(&encrypted_state, live, key),
     )
     .expect_err("an allow leaf is not a public leaf");
 
@@ -273,13 +271,13 @@ fn an_allow_leaf_does_not_prove_public_ness() {
 #[test]
 fn a_public_decrypt_leaf_the_record_serves_proves_public_ness() {
     let live = handle(0x22, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::new(live);
-    encrypted_value_account.mark_public();
+    let mut encrypted_state = EncryptedStateFixture::new(live);
+    encrypted_state.mark_public();
 
     check_public_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
-        &encrypted_value_account.outcome(&encrypted_value_account.public_query(live)),
+        &encrypted_state.outcome(&encrypted_state.public_query(live)),
     )
     .expect("a public leaf proven against the peaks makes the handle public");
 }
@@ -290,13 +288,13 @@ fn a_public_decrypt_leaf_the_record_serves_proves_public_ness() {
 fn a_tampered_sibling_path_does_not_verify() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x23, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
-    encrypted_value_account.allow(Wallet::new(2).pubkey());
+    let mut encrypted_state = EncryptedStateFixture::allowing(live, key);
+    encrypted_state.allow(Wallet::new(2).pubkey());
     let LeafProofOutcome::Found {
         leaf_index,
         leaf_count,
         mut siblings,
-    } = answer(&encrypted_value_account, live, key)
+    } = answer(&encrypted_state, live, key)
     else {
         panic!("the record holds the leaf");
     };
@@ -304,7 +302,7 @@ fn a_tampered_sibling_path_does_not_verify() {
     siblings[0][0] ^= 1;
 
     assert_does_not_verify(check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::Found {
@@ -325,11 +323,10 @@ fn a_tampered_sibling_path_does_not_verify() {
 fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x30, FHE_TYPE_UINT64);
-    let encrypted_value_account =
-        EncryptedValueAccountFixture::allowing(live, Wallet::new(9).pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, Wallet::new(9).pubkey());
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::NotFound { leaf_count: 1 },
@@ -360,11 +357,10 @@ fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
 fn no_leaf_in_a_record_ahead_of_the_chain_is_terminal() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x31, FHE_TYPE_UINT64);
-    let encrypted_value_account =
-        EncryptedValueAccountFixture::allowing(live, Wallet::new(9).pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, Wallet::new(9).pubkey());
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::NotFound { leaf_count: 3 },
@@ -380,10 +376,10 @@ fn no_leaf_in_a_record_ahead_of_the_chain_is_terminal() {
 fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
+    let encrypted_state = EncryptedStateFixture::allowing(live, key);
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::NotFound { leaf_count: 0 },
@@ -413,10 +409,10 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
 fn an_account_unknown_to_the_record_is_retryable() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x33, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
+    let encrypted_state = EncryptedStateFixture::allowing(live, key);
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::UnknownAccount,
@@ -443,10 +439,10 @@ fn an_account_unknown_to_the_record_is_retryable() {
 fn an_incomplete_history_is_terminal() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x34, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
+    let encrypted_state = EncryptedStateFixture::allowing(live, key);
 
     let failure = check_handle_binding(
-        &resolved(&encrypted_value_account),
+        &resolved(&encrypted_state),
         live,
         key,
         &LeafProofOutcome::HistoryIncomplete,
@@ -475,13 +471,13 @@ fn an_incomplete_history_is_terminal() {
 fn a_proof_from_a_record_behind_the_chain_still_verifies_when_its_peak_survived() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x40, FHE_TYPE_UINT64);
-    let mut before = EncryptedValueAccountFixture::allowing(sealed, key);
+    let mut before = EncryptedStateFixture::allowing(sealed, key);
     before.allow(Wallet::new(2).pubkey());
-    assert_eq!(before.encrypted_value.leaf_count, 2);
+    assert_eq!(before.encrypted_state.leaf_count, 2);
     let proof_from_behind = answer(&before, sealed, key);
     let mut after = before.clone();
     after.allow(Wallet::new(3).pubkey());
-    assert_eq!(after.encrypted_value.leaf_count, 3);
+    assert_eq!(after.encrypted_state.leaf_count, 3);
 
     check_handle_binding(&resolved(&after), sealed, key, &proof_from_behind)
         .expect("the third leaf is its own peak; the proof of the first still reaches the second");
@@ -494,12 +490,12 @@ fn a_proof_from_a_record_behind_the_chain_still_verifies_when_its_peak_survived(
 fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x41, FHE_TYPE_UINT64);
-    let mut before = EncryptedValueAccountFixture::allowing(sealed, key);
-    assert_eq!(before.encrypted_value.leaf_count, 1);
+    let mut before = EncryptedStateFixture::allowing(sealed, key);
+    assert_eq!(before.encrypted_state.leaf_count, 1);
     let proof_from_behind = answer(&before, sealed, key);
     let mut after = before.clone();
     after.allow(Wallet::new(2).pubkey());
-    assert_eq!(after.encrypted_value.leaf_count, 2);
+    assert_eq!(after.encrypted_state.leaf_count, 2);
     before.allow(Wallet::new(9).pubkey());
 
     let failure = check_handle_binding(&resolved(&after), sealed, key, &proof_from_behind)
@@ -528,7 +524,7 @@ fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
 fn a_leaf_position_the_account_does_not_have_is_retryable() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x42, FHE_TYPE_UINT64);
-    let behind = EncryptedValueAccountFixture::new(live);
+    let behind = EncryptedStateFixture::new(live);
     let mut ahead = behind.clone();
     ahead.allow(key);
 
@@ -555,22 +551,25 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
 /// An account whose peak count does not match its leaf count is the host program's own
 /// inconsistency. No proof can match it, and none is tried.
 #[test]
-fn an_inconsistent_mmr_state_is_terminal() {
+fn resolver_rejects_inconsistent_mmr_state_as_terminal() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x43, FHE_TYPE_UINT64);
-    let mut encrypted_value_account = EncryptedValueAccountFixture::allowing(live, key);
-    let proof = answer(&encrypted_value_account, live, key);
-    encrypted_value_account.encrypted_value.peaks.push([0; 32]);
+    let mut encrypted_state = EncryptedStateFixture::allowing(live, key);
+    encrypted_state.encrypted_state.peaks.push([0; 32]);
 
-    let failure = check_handle_binding(&resolved(&encrypted_value_account), live, key, &proof)
-        .expect_err("two peaks for one leaf is not an MMR");
+    let world = World::running_at_slot(1).with_encrypted_state(&encrypted_state);
+    let snapshot = world
+        .read(&SnapshotKeys::new([encrypted_state.account_key]))
+        .expect("the world reads");
+    let failure = resolve_encrypted_state(&snapshot, PROGRAM_ID, encrypted_state.account_key)
+        .expect_err("two peaks for one leaf is not a valid state");
 
     assert!(matches!(
         failure,
-        HandleBindingFailure::MmrStateInconsistent
+        kms_worker::core::solana::encrypted_state::EncryptedStateFailure::Malformed { .. }
     ));
     assert_eq!(
-        AuthorizationFailure::HandleBinding {
+        AuthorizationFailure::EncryptedState {
             index: 0,
             source: failure
         }
@@ -590,12 +589,12 @@ fn an_inconsistent_mmr_state_is_terminal() {
 async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     let wallet = Wallet::new(1);
     let live = handle(0x50, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
@@ -614,7 +613,7 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     assert_eq!(
         proofs.calls(),
         vec![vec![LeafQuery {
-            encrypted_value_account: encrypted_value_account.account_key,
+            encrypted_state: encrypted_state.account_key,
             handle: live,
             kind: LeafKind::Allowed {
                 key: wallet.pubkey()
@@ -630,16 +629,11 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
     let wallet = Wallet::new(1);
     let first = handle(0x51, FHE_TYPE_UINT64);
     let second = handle(0x52, FHE_TYPE_UINT64);
-    let first_account = EncryptedValueAccountFixture::allowing(first, wallet.pubkey());
-    let mut other_label = LABEL;
-    other_label[0] = b'x';
-    let mut second_account = EncryptedValueAccountFixture::in_application(
-        APP_PROGRAM,
-        AUTHORITY,
-        SCOPE,
-        other_label,
-        second,
-    );
+    let first_account = EncryptedStateFixture::allowing(first, wallet.pubkey());
+    let mut other_authority = AUTHORITY;
+    other_authority[0] ^= 1;
+    let mut second_account =
+        EncryptedStateFixture::in_application(APP_PROGRAM, other_authority, SCOPE, LABEL, second);
     second_account.allow(wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
         .direct(&first_account, first)
@@ -647,8 +641,8 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
         .direct(&first_account, first)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&first_account)
-        .with_encrypted_value_account(&second_account)
+        .with_encrypted_state(&first_account)
+        .with_encrypted_state(&second_account)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
@@ -687,12 +681,12 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
 async fn an_unreachable_record_rejects_transiently() {
     let wallet = Wallet::new(1);
     let live = handle(0x53, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, wallet.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
@@ -717,15 +711,14 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
     let wallet = Wallet::new(1);
     let allowed = handle(0x54, FHE_TYPE_UINT64);
     let never_allowed = handle(0x55, FHE_TYPE_UINT64);
-    let mut encrypted_value_account =
-        EncryptedValueAccountFixture::allowing(allowed, wallet.pubkey());
-    encrypted_value_account.update(never_allowed);
+    let mut encrypted_state = EncryptedStateFixture::allowing(allowed, wallet.pubkey());
+    encrypted_state.update(never_allowed);
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_value_account, allowed)
-        .direct(&encrypted_value_account, never_allowed)
+        .direct(&encrypted_state, allowed)
+        .direct(&encrypted_state, never_allowed)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
@@ -757,7 +750,7 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
 fn ahead_paths_verify_against_every_earlier_mountain() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x61, FHE_TYPE_UINT64);
-    let mut history = EncryptedValueAccountFixture::allowing(sealed, key);
+    let mut history = EncryptedStateFixture::allowing(sealed, key);
     let mut snapshots = vec![history.clone()];
     for tag in 2..=16 {
         history.allow(Wallet::new(tag).pubkey());
@@ -779,13 +772,13 @@ fn ahead_paths_verify_against_every_earlier_mountain() {
 async fn valid_older_proof_does_not_trigger_a_refresh() {
     let wallet = Wallet::new(1);
     let sealed = handle(0x62, FHE_TYPE_UINT64);
-    let mut before = EncryptedValueAccountFixture::allowing(sealed, wallet.pubkey());
+    let mut before = EncryptedStateFixture::allowing(sealed, wallet.pubkey());
     before.allow(Wallet::new(2).pubkey());
     let mut after = before.clone();
     after.allow(Wallet::new(3).pubkey());
     let request = RequestBuilder::new(&wallet).direct(&after, sealed).typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&after)
+        .with_encrypted_state(&after)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
     authorize_request(
@@ -828,7 +821,7 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
 
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x63, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedValueAccountFixture::allowing(sealed, key);
+    let mut fixture = EncryptedStateFixture::allowing(sealed, key);
     fixture.allow(Wallet::new(2).pubkey());
     let account = resolved(&fixture);
     let query = fixture.allowed_query(sealed, key);

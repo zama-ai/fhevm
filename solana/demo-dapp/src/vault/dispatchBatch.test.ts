@@ -25,13 +25,12 @@ const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Addres
   (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 // PDA(zamaHost, ["encrypted-value", token program, authority, mint, label]) — the crate's
 // `encrypted_value_seeds` for a token-program value scoped to its mint.
-const tokenValuePda = (mint: Address, authority: Address, label: Uint8Array): Promise<Address> =>
+const tokenValuePda = (mint: Address, authority: Address): Promise<Address> =>
   pda(ZAMA_HOST_PROGRAM_ADDRESS, [
-    utf8('encrypted-value'),
+    utf8('encrypted-state'),
     base58.decode(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     base58.decode(authority),
     base58.decode(mint),
-    label,
   ]);
 
 describe('buildDispatchBatchInstruction', () => {
@@ -85,9 +84,8 @@ describe('buildDispatchBatchInstruction', () => {
       await ata(batchAuthority, joinUnderlyingMint),
       totalSupplyAuthority,
       batchJoinTokenAccount,
-      await tokenValuePda(joinConfidentialMint, batchJoinTokenAccount, utf8('balance_________________________')),
-      await tokenValuePda(joinConfidentialMint, totalSupplyAuthority, utf8('total_supply____________________')),
-      await tokenValuePda(joinConfidentialMint, batchJoinTokenAccount, utf8('burned_amount___________________')),
+      await tokenValuePda(joinConfidentialMint, batchJoinTokenAccount),
+      await tokenValuePda(joinConfidentialMint, totalSupplyAuthority),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [
         utf8('pending-burn'),
         base58.decode(joinConfidentialMint),
@@ -107,7 +105,7 @@ describe('buildDispatchBatchInstruction', () => {
   });
 
   // Golden pins for the fixed fixture: the encrypted value accounts are re-pinned from the RFC 035 seed
-  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedValueAccount
+  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedState
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
@@ -123,10 +121,10 @@ describe('buildDispatchBatchInstruction', () => {
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
     expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
-    expect(addresses[9]).toBe('3i11PrkLtKRVttNh4XhLcrvVyZp4yfyZroUJeL1ijZrM'); // batchBalanceValue
-    expect(addresses[10]).toBe('EHNVHNm2M214V2QXYwrXVPHFbCTCi9uPGBVcECRKBgqg'); // totalSupplyValue
+    expect(addresses[9]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchBalanceValue
+    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyState
     // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
-    expect(addresses[13]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[16]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
+    expect(addresses[15]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

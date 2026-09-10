@@ -8,10 +8,7 @@ use anchor_lang::solana_program::{
 
 use crate::{
     errors::ZamaHostError,
-    state::{
-        assert_handle_for_chain, deny_scope_address, host_config_address, AppScope,
-        DenyScopeRecord, EncryptedValue, HostConfig,
-    },
+    state::{deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig},
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
@@ -194,45 +191,6 @@ pub(super) fn assert_allow_keys(keys: &[Pubkey]) -> Result<()> {
             ZamaHostError::InvalidAllowKey
         );
     }
-    Ok(())
-}
-
-/// Decodes an `EncryptedValue` and checks it is program-owned and the canonical PDA for its
-/// stored `(program, encrypted_value_account_authority, scope, label)`.
-pub(super) fn read_canonical_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
-    require_keys_eq!(
-        *info.owner,
-        crate::ID,
-        ZamaHostError::EncryptedValueAccountInvalid
-    );
-    let data = info.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    let value = EncryptedValue::try_deserialize(&mut slice)?;
-    let (expected, expected_bump) = value.canonical_address();
-    require_keys_eq!(
-        info.key(),
-        expected,
-        ZamaHostError::EncryptedValuePdaMismatch
-    );
-    require!(
-        value.bump == expected_bump,
-        ZamaHostError::EncryptedValuePdaMismatch
-    );
-    Ok(value)
-}
-
-/// A persistent operand names the value's *current* handle (for this chain). Authority
-/// admission is settled in preflight; this is the state half of the read.
-pub(super) fn assert_current_handle(
-    value: &EncryptedValue,
-    handle: [u8; 32],
-    chain_id: u64,
-) -> Result<()> {
-    assert_handle_for_chain(value.current_handle, chain_id)?;
-    require!(
-        value.current_handle == handle,
-        ZamaHostError::PreviousStateMismatch
-    );
     Ok(())
 }
 

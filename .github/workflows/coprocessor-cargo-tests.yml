@@ -58,6 +58,7 @@ jobs:
       matrix:
         include:
           # Split across three machines because this job is by far the slowest.
+          # Coverage builds and restored caches exceed the default runner disk.
           - service: tfhe-worker-1
             use_nextest: true
             package: tfhe-worker

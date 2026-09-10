@@ -11,6 +11,91 @@
   ],
   "instructions": [
     {
+      "name": "close_scratch",
+      "discriminator": [
+        29,
+        191,
+        137,
+        78,
+        203,
+        150,
+        199,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_encrypted_state",
+      "discriminator": [
+        129,
+        248,
+        83,
+        252,
+        187,
+        184,
+        173,
+        144
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_state",
+          "writable": true
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateEncryptedStateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "define_kms_context",
       "docs": [
         "Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`)."
@@ -209,7 +294,7 @@
           "type": "pubkey"
         },
         {
-          "name": "encrypted_value_account_authority",
+          "name": "authority",
           "type": "pubkey"
         },
         {
@@ -333,18 +418,16 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any persistent output accounts."
+            "Pays rent for State growth and lazy meter creation."
           ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "encrypted_value_account_authority",
+          "name": "authority",
           "docs": [
-            "Default authority signer: admits every persistent value read or written that does not name",
-            "an authority of its own. An output that sets `authority_index` points at a remaining account",
-            "instead, and that account must sign and must equal the authority the output declares; an",
-            "operand's authority may likewise be any signing remaining account."
+            "Default authority signer. Each State read or written requires its stored authority to",
+            "sign, either here or among the remaining accounts."
           ],
           "signer": true
         },
@@ -379,7 +462,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for persistent output creation."
+            "System program used for rent top-ups and lazy meter creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -388,8 +471,8 @@
           "docs": [
             "Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs",
             "(`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the",
-            "persistent values the execution touches. Only the `program` half is proved (from the",
-            "output authority, on create), so no caller can rotate a fresh *signer* to reach another",
+            "States controlled by the default authority. State creation proves the authority is a PDA",
+            "of `program`, so no caller can rotate a fresh *signer* to reach another",
             "program's meter — but a program declares its own `scope` freely, and a fresh scope is a",
             "fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply",
             "this meter; trusted applications and the unrestricted default omit it. An",
@@ -569,20 +652,20 @@
       ]
     },
     {
-      "name": "make_handle_public",
+      "name": "make_state_handle_public",
       "docs": [
         "Seals the value's current handle as publicly decryptable. Every other allow happens",
         "inline on the `fhe_execute` write that produces the handle."
       ],
       "discriminator": [
-        66,
-        199,
-        252,
-        247,
-        244,
-        172,
-        42,
-        118
+        62,
+        63,
+        177,
+        193,
+        7,
+        10,
+        49,
+        65
       ],
       "accounts": [
         {
@@ -592,13 +675,10 @@
         },
         {
           "name": "authority",
-          "docs": [
-            "Must equal `EncryptedValue.encrypted_value_account_authority`."
-          ],
           "signer": true
         },
         {
-          "name": "encrypted_value",
+          "name": "encrypted_state",
           "writable": true
         },
         {
@@ -626,10 +706,6 @@
         },
         {
           "name": "deny_scope_record",
-          "docs": [
-            "The value's application deny record, required while the deny list is enabled: making a",
-            "handle public is an allow, and a denied application cannot allow."
-          ],
           "optional": true
         },
         {
@@ -639,6 +715,15 @@
       ],
       "args": [
         {
+          "name": "key",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
           "name": "handle",
           "type": {
             "array": [
@@ -646,8 +731,52 @@
               32
             ]
           }
+        },
+        {
+          "name": "previous_leaf_count",
+          "type": "u64"
         }
       ]
+    },
+    {
+      "name": "open_scratch",
+      "discriminator": [
+        194,
+        244,
+        203,
+        123,
+        137,
+        109,
+        255,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "encrypted_state"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "revoke_delegation_for_user_decryption",
@@ -1532,9 +1661,9 @@
           ]
         },
         {
-          "name": "encrypted_value",
+          "name": "encrypted_state",
           "docs": [
-            "The encrypted value account whose peaks the inclusion proof is checked against."
+            "The encrypted State whose peaks the inclusion proof is checked against."
           ]
         }
       ],
@@ -1584,6 +1713,19 @@
     }
   ],
   "accounts": [
+    {
+      "name": "EncryptedState",
+      "discriminator": [
+        40,
+        50,
+        14,
+        85,
+        213,
+        243,
+        124,
+        173
+      ]
+    },
     {
       "name": "HostConfig",
       "discriminator": [
@@ -1833,12 +1975,12 @@
     },
     {
       "code": 6020,
-      "name": "EncryptedValueAccountAuthorityMismatch",
-      "msg": "signer does not match the encrypted value account authority"
+      "name": "EncryptedStateAccountAuthorityMismatch",
+      "msg": "signer does not match the encrypted State authority"
     },
     {
       "code": 6021,
-      "name": "EncryptedValueAuthorityNotProgramPda",
+      "name": "EncryptedStateAuthorityNotProgramPda",
       "msg": "encrypted value authority is not a PDA of the declared program"
     },
     {
@@ -1953,178 +2095,198 @@
     },
     {
       "code": 6044,
-      "name": "EncryptedValuePdaMismatch",
-      "msg": "encrypted value account does not match the canonical PDA"
+      "name": "EncryptedStatePdaMismatch",
+      "msg": "encrypted State does not match the canonical PDA"
     },
     {
       "code": 6045,
-      "name": "EncryptedValueAccountInvalid",
-      "msg": "encrypted value account is not a valid EncryptedValue account"
-    },
-    {
-      "code": 6046,
       "name": "PreviousStateMismatch",
       "msg": "encrypted value previous handle does not match the account"
     },
     {
-      "code": 6047,
-      "name": "EncryptedValuePublicHandleMismatch",
+      "code": 6046,
+      "name": "EncryptedStatePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6048,
+      "code": 6047,
       "name": "InvalidAllowKey",
       "msg": "encrypted value allowed key is invalid"
     },
     {
-      "code": 6049,
-      "name": "EncryptedValueMmrInconsistent",
+      "code": 6048,
+      "name": "EncryptedStateMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6050,
-      "name": "EncryptedValueMmrPeakCapacityExceeded",
+      "code": 6049,
+      "name": "EncryptedStateMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6051,
+      "code": 6050,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6052,
+      "code": 6051,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6053,
+      "code": 6052,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6054,
+      "code": 6053,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6055,
+      "code": 6054,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6056,
+      "code": 6055,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6057,
+      "code": 6056,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6058,
+      "code": 6057,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6059,
+      "code": 6058,
       "name": "InvalidChainTypeBit",
       "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     },
     {
-      "code": 6060,
+      "code": 6059,
       "name": "FheExecuteUnanchoredUnderBlockCap",
       "msg": "FHE execution touches no persistent value under a finite HCU block cap"
     },
     {
-      "code": 6061,
+      "code": 6060,
       "name": "FheExecuteMixedScopes",
       "msg": "FHE execution mixes values of different application scopes"
     },
     {
-      "code": 6062,
+      "code": 6061,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
-      "code": 6063,
+      "code": 6062,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6064,
+      "code": 6063,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt inclusion proof is invalid"
     },
     {
-      "code": 6065,
+      "code": 6064,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6066,
+      "code": 6065,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6067,
+      "code": 6066,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6068,
+      "code": 6067,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6069,
+      "code": 6068,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6070,
+      "code": 6069,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6071,
+      "code": 6070,
       "name": "PermitInvalidationPdaMismatch",
       "msg": "permit invalidation account is not the canonical account for the signer"
     },
     {
-      "code": 6072,
+      "code": 6071,
       "name": "PermitInvalidationAccountInvalid",
       "msg": "permit invalidation account is not a valid watermark record"
     },
     {
-      "code": 6073,
+      "code": 6072,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6074,
+      "code": 6073,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6075,
+      "code": 6074,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6076,
+      "code": 6075,
       "name": "FheExecutePersistentOperandWrittenEarlier",
       "msg": "fhe_execute persistent operand was written earlier in the execution"
     },
     {
-      "code": 6077,
+      "code": 6076,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6078,
+      "code": 6077,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
+    },
+    {
+      "code": 6078,
+      "name": "TransientAccountInvalid",
+      "msg": "invalid transient workspace account"
+    },
+    {
+      "code": 6079,
+      "name": "TransientCloseMissing",
+      "msg": "matching final top-level scratch close is required"
+    },
+    {
+      "code": 6080,
+      "name": "TransientCapacityExceeded",
+      "msg": "transient workspace grant capacity exceeded"
+    },
+    {
+      "code": 6081,
+      "name": "EncryptedStateCapacityExceeded",
+      "msg": "encrypted state slot capacity exceeded"
+    },
+    {
+      "code": 6082,
+      "name": "InvalidReturnSelection",
+      "msg": "invalid execution return selection"
     }
   ],
   "types": [
@@ -2226,6 +2388,33 @@
       }
     },
     {
+      "name": "CreateEncryptedStateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "authority_seeds",
+            "type": {
+              "vec": "bytes"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "DenyScopeUpdatedEvent",
       "docs": [
         "Emitted when an application deny-list record is updated."
@@ -2279,6 +2468,111 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedSlot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EncryptedState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "slots",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "EncryptedSlot"
+                }
+              }
+            }
+          },
+          {
+            "name": "leaf_count",
+            "type": "u64"
+          },
+          {
+            "name": "peaks",
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExecutionResultRef",
+      "docs": [
+        "One selected result of an execution step. Current operators have exactly one output."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "step_index",
+            "docs": [
+              "Index of the producing step."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "output_index",
+            "docs": [
+              "Index within that step's outputs; must be zero for current operators."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -2410,6 +2704,21 @@
                 }
               }
             }
+          },
+          {
+            "name": "returned_results",
+            "docs": [
+              "Results copied to return data in this order, including repeated selections.",
+              "At most `MAX_RETURNED_HANDLES` entries; an empty list returns no handles.",
+              "Returning a handle grants no permission."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ExecutionResultRef"
+                }
+              }
+            }
           }
         ]
       }
@@ -2422,25 +2731,6 @@
       "type": {
         "kind": "enum",
         "variants": [
-          {
-            "name": "StoredValue",
-            "fields": [
-              {
-                "name": "handle_index",
-                "docs": [
-                  "Dictionary index of the handle expected as the encrypted value's current handle."
-                ],
-                "type": "u8"
-              },
-              {
-                "name": "encrypted_value_index",
-                "docs": [
-                  "Index into `remaining_accounts` for the `EncryptedValue` account."
-                ],
-                "type": "u8"
-              }
-            ]
-          },
           {
             "name": "EarlierStep",
             "fields": [
@@ -2480,6 +2770,40 @@
                 }
               }
             ]
+          },
+          {
+            "name": "StateSlot",
+            "fields": [
+              {
+                "name": "handle_index",
+                "type": "u8"
+              },
+              {
+                "name": "state_index",
+                "type": "u8"
+              },
+              {
+                "name": "key_index",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "TransientResult",
+            "fields": [
+              {
+                "name": "handle_index",
+                "type": "u8"
+              },
+              {
+                "name": "scratch_index",
+                "type": "u8"
+              },
+              {
+                "name": "consumer_state_index",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -2496,101 +2820,46 @@
             "name": "Transient"
           },
           {
-            "name": "StoredValue",
+            "name": "State",
             "fields": [
               {
-                "name": "output_encrypted_value_index",
-                "docs": [
-                  "Index into `remaining_accounts` for the output `EncryptedValue` PDA."
-                ],
+                "name": "state_index",
                 "type": "u8"
               },
               {
-                "name": "output_authority_index",
+                "name": "previous_leaf_count",
                 "docs": [
-                  "Optional index into `remaining_accounts` for the encrypted value account authority",
-                  "signer.",
-                  "",
-                  "`None` uses the fixed `encrypted_value_account_authority` account in the execution",
-                  "context. `Some(index)` requires that remaining account to be a signer",
-                  "and to match the declared output authority."
+                  "History position before this output, so indexers can detect missing writes."
                 ],
+                "type": "u64"
+              },
+              {
+                "name": "slot",
                 "type": {
-                  "option": "u8"
-                }
-              },
-              {
-                "name": "output_program_index",
-                "docs": [
-                  "Dictionary index of the application program the output value belongs to."
-                ],
-                "type": "u8"
-              },
-              {
-                "name": "output_authority_key_index",
-                "docs": [
-                  "Dictionary index of the encrypted value account authority declared for the output."
-                ],
-                "type": "u8"
-              },
-              {
-                "name": "output_scope_index",
-                "docs": [
-                  "Dictionary index of the program-declared scope of the output value."
-                ],
-                "type": "u8"
-              },
-              {
-                "name": "output_label_index",
-                "docs": [
-                  "Dictionary index of the encrypted value label for the output."
-                ],
-                "type": "u8"
-              },
-              {
-                "name": "output_authority_seeds",
-                "docs": [
-                  "On create, the seeds proving the authority is a PDA of the program (bump last). The",
-                  "host recomputes the address and refuses a create whose authority another program",
-                  "controls. Empty on update: the stored program was proven when the value was created,",
-                  "and the canonical address check binds the declared program to it."
-                ],
-                "type": {
-                  "vec": {
+                  "option": {
                     "defined": {
-                      "name": "PdaSeed"
+                      "name": "SlotWrite"
                     }
                   }
                 }
               },
               {
-                "name": "output_allow_indexes",
-                "docs": [
-                  "Dictionary indexes of the keys allowed to decrypt the NEW handle, sealed as one",
-                  "historical-access leaf each, in this order, right after the handle is written. Empty",
-                  "is legal: nobody can decrypt that handle."
-                ],
+                "name": "allow_indexes",
                 "type": "bytes"
               },
               {
-                "name": "previous_handle_index",
-                "docs": [
-                  "Dictionary index of the handle being replaced: `None` on create, the stored current",
-                  "handle on update (validated against the account, so an execution built on stale state",
-                  "fails instead of overwriting a newer handle)."
-                ],
-                "type": {
-                  "option": "u8"
-                }
+                "name": "make_public",
+                "type": "bool"
               },
               {
-                "name": "make_public",
-                "docs": [
-                  "When true, the new handle is sealed publicly decryptable after its allow leaves",
-                  "(byte-identical to `make_handle_public`). Carried in instruction data so indexers",
-                  "reconstruct that leaf without reading the account (DD-036)."
-                ],
-                "type": "bool"
+                "name": "grants",
+                "type": {
+                  "vec": {
+                    "defined": {
+                      "name": "ResultGrant"
+                    }
+                  }
+                }
               }
             ]
           }
@@ -3624,7 +3893,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted value account's MMR."
+              "Index of the proven leaf within the encrypted State's MMR."
             ],
             "type": "u64"
           },
@@ -3704,42 +3973,6 @@
       }
     },
     {
-      "name": "PdaSeed",
-      "docs": [
-        "One seed of the authority PDA a create proves, so the host can check the authority belongs",
-        "to the declared program. The bump is the last seed, as a one-byte literal."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Interned",
-            "fields": [
-              {
-                "name": "index",
-                "docs": [
-                  "Dictionary index."
-                ],
-                "type": "u8"
-              }
-            ]
-          },
-          {
-            "name": "Literal",
-            "fields": [
-              {
-                "name": "bytes",
-                "docs": [
-                  "The seed bytes, at most 32."
-                ],
-                "type": "bytes"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "name": "ProducedPublicOutput",
       "docs": [
         "One public persistent output produced by an `fhe_execute` execution."
@@ -3755,9 +3988,9 @@
             "type": "u16"
           },
           {
-            "name": "encrypted_value",
+            "name": "encrypted_state",
             "docs": [
-              "Host-owned persistent `EncryptedValue` account bound by the step."
+              "Host-owned persistent `EncryptedState` account bound by the step."
             ],
             "type": "pubkey"
           },
@@ -3840,6 +4073,44 @@
       }
     },
     {
+      "name": "ResultGrant",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "scratch_index",
+            "type": "u8"
+          },
+          {
+            "name": "initiating_state_index",
+            "type": "u8"
+          },
+          {
+            "name": "consumer_state_index",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SlotWrite",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "key_index",
+            "type": "u8"
+          },
+          {
+            "name": "previous_handle_index",
+            "type": {
+              "option": "u8"
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "UserDecryptionDelegation",
       "docs": [
         "PoC user-decryption delegation witness.",
@@ -3873,9 +4144,9 @@
             "type": "pubkey"
           },
           {
-            "name": "encrypted_value_account_authority",
+            "name": "authority",
             "docs": [
-              "The encrypted value account authority the delegation is scoped over. A delegation covers",
+              "The encrypted State authority the delegation is scoped over. A delegation covers",
               "every value of that authority in every scope: the scope is not one of the PDA's seeds."
             ],
             "type": "pubkey"

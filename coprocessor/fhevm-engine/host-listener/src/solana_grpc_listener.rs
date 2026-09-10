@@ -43,9 +43,9 @@ use zama_solana_transaction::{
 };
 
 use crate::database::solana_leaves::{
-    load_encrypted_value_states, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, EncryptedValueWrite, LeafSource, StoredCheckpoint,
-    TransactionLeafSources,
+    load_encrypted_state_histories, reduce_block_leaves, store_block_leaves,
+    store_checkpoint, EncryptedStateWrite, StoredCheckpoint,
+    TransactionStateWrites,
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
@@ -264,23 +264,21 @@ pub async fn run(
     }
 }
 
-/// Resolve a persistent `fhe_execute` step's output `EncryptedValue` PDA from the
-/// instruction's accounts.
+/// Resolve an index into `fhe_execute`'s dynamic account table.
 ///
-/// `remaining_index` (the program's `output_encrypted_value_index`) is relative to
+/// `remaining_index` is relative to
 /// `remaining_accounts`, which follow the 9 named `fhe_execute` accounts — payer,
-/// encrypted_value_account_authority, host_config, system_program, hcu_block_meter,
+/// authority, host_config, system_program, hcu_block_meter,
 /// hcu_trusted_app_record, rand_nonce, then `#[event_cpi]`'s event_authority + program
 /// (see `FheExecute` in fhe_execute.rs). The three optional accounts are always present
 /// in the account list (as program-id placeholders when `None`): the event_cpi pair
 /// follows them, so they can never be truncated off the tail. Returns `None` when the
-/// index is out of range; the caller treats that as a hard problem, since the persistent
-/// output would otherwise never request ciphertext material.
+/// index is out of range; the caller treats that as a hard reconstruction error.
 /// The number of named `fhe_execute` accounts before the dynamic tail the execution's
 /// `u8` indices refer to.
 const FHE_EXECUTE_REMAINING_BASE: usize = 9;
 
-fn fhe_execute_persistent_encrypted_value(
+fn fhe_execute_dynamic_account(
     accounts: &[[u8; 32]],
     remaining_index: u8,
 ) -> Option<[u8; 32]> {
@@ -602,7 +600,7 @@ fn transaction_context_requirement(
     has_block_time: bool,
 ) -> ContextRequirement {
     use crate::solana_reconstruct::{
-        is_fhe_execute_instruction, is_make_handle_public_instruction,
+        is_fhe_execute_instruction, is_make_state_handle_public_instruction,
     };
 
     let mut requirement = ContextRequirement::default();
@@ -614,7 +612,7 @@ fn transaction_context_requirement(
             requirement.slot_hashes = true;
             requirement.clock = true;
         } else if !has_block_time
-            && is_make_handle_public_instruction(&instruction.data)
+            && is_make_state_handle_public_instruction(&instruction.data)
         {
             requirement.clock = true;
         }
@@ -981,7 +979,7 @@ async fn apply_block(
         stats.material_requests += transaction_stats.material_requests;
         stats.inserted_rows += transaction_stats.inserted_rows;
         if !records.leaf_sources.is_empty() {
-            leaf_sources.push(TransactionLeafSources {
+            leaf_sources.push(TransactionStateWrites {
                 transaction_index: transaction.info.index,
                 sources: records.leaf_sources,
             });
@@ -991,21 +989,15 @@ async fn apply_block(
     let mut touched: Vec<[u8; 32]> = leaf_sources
         .iter()
         .flat_map(|transaction| transaction.sources.iter())
-        .map(|source| match source {
-            LeafSource::Write(write) => write.encrypted_value_account,
-            LeafSource::MakeHandlePublic {
-                encrypted_value_account,
-                ..
-            } => *encrypted_value_account,
-        })
+        .map(|source| source.encrypted_state)
         .collect();
     touched.sort_unstable();
     touched.dedup();
-    let existing = load_encrypted_value_states(&mut db_tx, &touched)
+    let existing = load_encrypted_state_histories(&mut db_tx, &touched)
         .await
         .map_err(|err| {
-            IngestFailure::retryable(err).context("load encrypted value states")
-        })?;
+        IngestFailure::retryable(err).context("load encrypted state histories")
+    })?;
     // The chain accepted every write; a write this record cannot follow means the
     // record diverged from chain state, and continuing would seal wrong leaves.
     let reduction =
@@ -1038,7 +1030,7 @@ async fn apply_block(
             material_requests = stats.material_requests,
             inserted_rows = stats.inserted_rows,
             leaves = reduction.leaves.len(),
-            encrypted_value_accounts = reduction.accounts.len(),
+            encrypted_states = reduction.states.len(),
             "ingested Solana host records (gRPC)"
         );
     }
@@ -1079,7 +1071,7 @@ fn reconstruct_context(
 #[derive(Debug, Default)]
 struct ReconstructedTransaction {
     records: Vec<crate::solana_adapter::SolanaHostRecord>,
-    leaf_sources: Vec<LeafSource>,
+    leaf_sources: Vec<EncryptedStateWrite>,
 }
 
 #[derive(Debug)]
@@ -1089,10 +1081,9 @@ enum ReconstructionOutcome {
 }
 
 /// Rebuilds the ingestable record set off-chain from a transaction's instructions.
-/// Covers `fhe_execute` (one op record per step, a material request for each
-/// persistent output's new and replaced handle, and the write each persistent
-/// output performs) and `make_handle_public` (a material request and the public
-/// leaf), decoded from the same ordered instruction list.
+/// Covers `fhe_execute` (one op record per step, plus a material request and
+/// history append for each state output), decoded from the same ordered
+/// instruction list.
 fn reconstruct_records_for_insert(
     config: &SolanaGrpcListenerConfig,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
@@ -1103,9 +1094,9 @@ fn reconstruct_records_for_insert(
     use crate::solana_adapter::{material_request, SolanaHostRecord};
     use crate::solana_reconstruct::{
         decode_fhe_execute_args, decode_fhe_execute_random_seeds_event,
-        decode_make_handle_public, is_fhe_execute_instruction,
-        is_make_handle_public_instruction, reconstruct_fhe_execute_steps,
-        ENCRYPTED_VALUE_ACCOUNT_INDEX,
+        decode_make_state_handle_public, is_fhe_execute_instruction,
+        is_make_state_handle_public_instruction, reconstruct_fhe_execute_steps,
+        MAKE_STATE_ENCRYPTED_STATE_INDEX,
     };
 
     let host_instructions = instructions
@@ -1120,21 +1111,21 @@ fn reconstruct_records_for_insert(
                 "reconstruct: known fhe_execute discriminator has undecodable arguments in slot {slot}"
             );
         }
-        if is_make_handle_public_instruction(&ix.data)
-            && decode_make_handle_public(&ix.data).is_none()
+        if is_make_state_handle_public_instruction(&ix.data)
+            && decode_make_state_handle_public(&ix.data).is_none()
         {
             anyhow::bail!(
-                "reconstruct: known make_handle_public discriminator has undecodable arguments in slot {slot}"
+                "reconstruct: known make_state_handle_public discriminator has undecodable arguments in slot {slot}"
             );
         }
     }
-    let has_make_public = host_instructions
-        .iter()
-        .any(|ix| is_make_handle_public_instruction(&ix.data));
     let has_fhe_execute = host_instructions
         .iter()
         .any(|ix| is_fhe_execute_instruction(&ix.data));
-    if !has_make_public && !has_fhe_execute {
+    let has_state_public = host_instructions
+        .iter()
+        .any(|ix| is_make_state_handle_public_instruction(&ix.data));
+    if !has_fhe_execute && !has_state_public {
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
@@ -1157,7 +1148,10 @@ fn reconstruct_records_for_insert(
                 .expect("covered fhe_execute requires reconstruction context");
             let random_seeds = instructions[instruction_index + 1..]
                 .iter()
-                .take_while(|later| !is_fhe_execute_instruction(&later.data))
+                .take_while(|later| {
+                    later.program != config.program_id
+                        || !is_fhe_execute_instruction(&later.data)
+                })
                 .filter(|later| later.program == config.program_id)
                 .find_map(|later| {
                     decode_fhe_execute_random_seeds_event(&later.data)
@@ -1176,20 +1170,18 @@ fn reconstruct_records_for_insert(
             };
             for step in steps {
                 reconstructed.records.push(step.record);
-                let Some(output) = step.persistent else {
+                let Some(output) = step.state_output else {
                     continue;
                 };
-                let Some(encrypted_value_account) =
-                    fhe_execute_persistent_encrypted_value(
-                        &ix.accounts,
-                        output.encrypted_value_index,
-                    )
-                else {
+                let Some(encrypted_state) = fhe_execute_dynamic_account(
+                    &ix.accounts,
+                    output.state_index,
+                ) else {
                     anyhow::bail!(
-                        "reconstruct: fhe_execute persistent bind encrypted_value \
+                        "reconstruct: fhe_execute state output \
                          out of range in slot {slot}; remaining_index={}, \
                          accounts={}, handle={}",
-                        output.encrypted_value_index,
+                        output.state_index,
                         ix.accounts.len(),
                         bs58::encode(output.handle).into_string()
                     );
@@ -1199,38 +1191,29 @@ fn reconstruct_records_for_insert(
                     .push(SolanaHostRecord::MaterialRequest(material_request(
                         output.handle,
                     )));
-                if let Some(previous_handle) = output.previous_handle {
-                    reconstructed.records.push(
-                        SolanaHostRecord::MaterialRequest(material_request(
-                            previous_handle,
-                        )),
-                    );
-                }
-                reconstructed.leaf_sources.push(LeafSource::Write(
-                    EncryptedValueWrite {
-                        encrypted_value_account,
-                        program: output.program,
-                        encrypted_value_account_authority: output
-                            .encrypted_value_account_authority,
-                        scope: output.scope,
-                        label: output.label,
-                        previous_handle: output.previous_handle,
-                        handle: output.handle,
-                        allowed_keys: output.allowed_keys,
-                        make_public: output.make_public,
-                    },
-                ));
+                reconstructed.leaf_sources.push(EncryptedStateWrite {
+                    encrypted_state,
+                    previous_leaf_count: output.previous_leaf_count,
+                    handle: output.handle,
+                    allowed_keys: output.allowed_keys,
+                    make_public: output.make_public,
+                });
             }
             continue;
         }
-
-        if let Some(handle) = decode_make_handle_public(&ix.data) {
-            let Some(encrypted_value_account) =
-                ix.accounts.get(ENCRYPTED_VALUE_ACCOUNT_INDEX).copied()
+        if is_make_state_handle_public_instruction(&ix.data) {
+            let Some((_key, handle, previous_leaf_count)) =
+                decode_make_state_handle_public(&ix.data)
             else {
                 anyhow::bail!(
-                    "reconstruct: make_handle_public account index {ENCRYPTED_VALUE_ACCOUNT_INDEX} \
-                     out of range in slot {slot}; accounts={}",
+                    "reconstruct: malformed make_state_handle_public instruction in slot {slot}"
+                );
+            };
+            let Some(encrypted_state) =
+                ix.accounts.get(MAKE_STATE_ENCRYPTED_STATE_INDEX).copied()
+            else {
+                anyhow::bail!(
+                    "reconstruct: make_state_handle_public account index {MAKE_STATE_ENCRYPTED_STATE_INDEX} out of range in slot {slot}; accounts={}",
                     ix.accounts.len()
                 );
             };
@@ -1239,12 +1222,13 @@ fn reconstruct_records_for_insert(
                 .push(SolanaHostRecord::MaterialRequest(material_request(
                     handle,
                 )));
-            reconstructed
-                .leaf_sources
-                .push(LeafSource::MakeHandlePublic {
-                    encrypted_value_account,
-                    handle,
-                });
+            reconstructed.leaf_sources.push(EncryptedStateWrite {
+                encrypted_state,
+                previous_leaf_count,
+                handle,
+                allowed_keys: Vec::new(),
+                make_public: true,
+            });
         }
     }
     Ok(ReconstructionOutcome::Complete(reconstructed))
@@ -1391,30 +1375,19 @@ mod account_resolution_tests {
 #[cfg(test)]
 mod fhe_execute_acl_tests {
     use super::{
-        fhe_execute_persistent_encrypted_value, reconstruct_records_for_insert,
-        sealed_block_timestamp, transaction_context_requirement,
-        ContextRequirement, ReconstructionOutcome, SolanaGrpcListenerConfig,
+        fhe_execute_dynamic_account, reconstruct_records_for_insert,
+        transaction_context_requirement, ReconstructionOutcome,
+        SolanaGrpcListenerConfig,
     };
-    use anchor_lang::AnchorSerialize;
-    use sha2::{Digest, Sha256};
+    use anchor_lang::{AnchorSerialize, Discriminator};
     use std::collections::HashMap;
-    use zama_host::state::{
-        FheBinaryOpCode as PgmBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-        FheExecuteOutput, FheExecuteStep,
-    };
+    use zama_host::state::{FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
 
-    use super::ReconstructedTransaction;
-    use crate::database::solana_leaves::{EncryptedValueWrite, LeafSource};
-    use crate::database::tfhe_event_propagate::Handle;
-    use crate::solana_adapter::SolanaHostRecord;
-    use crate::solana_grpc_source::SealedBlock;
-    use crate::solana_reconstruct::{
-        DecodedInstruction, ENCRYPTED_VALUE_ACCOUNT_INDEX,
-    };
+    use crate::database::solana_leaves::EncryptedStateWrite;
+    use crate::solana_reconstruct::DecodedInstruction;
 
-    fn acct(n: u8) -> [u8; 32] {
-        [n; 32]
-    }
+    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
+    const STATE: [u8; 32] = [0x22; 32];
 
     fn config() -> SolanaGrpcListenerConfig {
         SolanaGrpcListenerConfig {
@@ -1437,444 +1410,272 @@ mod fhe_execute_acl_tests {
         assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
 
-    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
-    const ENCRYPTED_VALUE: [u8; 32] = [0x22; 32];
-    const ALLOWED_KEY: [u8; 32] = [0x33; 32];
-    const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
-
-    fn discriminator(name: &str) -> [u8; 8] {
-        let digest = Sha256::digest(format!("global:{name}").as_bytes());
-        let mut out = [0u8; 8];
-        out.copy_from_slice(&digest[..8]);
-        out
-    }
-
-    fn encode_instruction(name: &str, args: impl AnchorSerialize) -> Vec<u8> {
-        let mut data = discriminator(name).to_vec();
-        args.serialize(&mut data).expect("serialize instruction");
+    fn encoded_execution(args: FheExecuteArgs) -> Vec<u8> {
+        let mut data =
+            zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
+        args.serialize(&mut data).unwrap();
         data
     }
 
-    fn decoded_ix(
-        data: Vec<u8>,
-        accounts: Vec<[u8; 32]>,
-        top_level_index: u32,
-        is_inner: bool,
-    ) -> DecodedInstruction {
-        DecodedInstruction {
+    #[test]
+    fn dynamic_account_index_is_relative_to_remaining_accounts() {
+        let accounts: Vec<[u8; 32]> = (0..11).map(|n| [n; 32]).collect();
+        assert_eq!(fhe_execute_dynamic_account(&accounts, 0), Some([9; 32]));
+        assert_eq!(fhe_execute_dynamic_account(&accounts, 1), Some([10; 32]));
+        assert_eq!(fhe_execute_dynamic_account(&accounts[..9], 0), None);
+    }
+
+    #[test]
+    fn random_seed_lookup_respects_program_discriminator_namespace() {
+        let execute = DecodedInstruction {
             program: ZAMA_HOST.to_owned(),
-            data,
-            accounts,
-            top_level_index,
-            is_inner,
-        }
-    }
-
-    fn encrypted_value_accounts() -> Vec<[u8; 32]> {
-        let mut accounts = vec![[0u8; 32]; 6];
-        accounts[ENCRYPTED_VALUE_ACCOUNT_INDEX] = ENCRYPTED_VALUE;
-        accounts
-    }
-
-    fn fhe_execute_accounts() -> Vec<[u8; 32]> {
-        // 9 named FheExecute accounts (0..=8, incl. the two optional HCU accounts and the
-        // event-cpi pair); the persistent output EncryptedValue is remaining_accounts[0]
-        // at absolute index 9 (FHE_EXECUTE_REMAINING_BASE).
-        let mut accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
-        accounts[9] = ENCRYPTED_VALUE;
-        accounts
-    }
-
-    fn fhe_execute_accounts_with_deny_record() -> Vec<[u8; 32]> {
-        // 9 named FheExecute accounts plus Anchor event-cpi accounts (0..=8). The
-        // optional deny record is remaining_accounts[0] (index 9), and the persistent
-        // output is remaining_accounts[1] (index 10).
-        let mut accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
-        accounts[10] = ENCRYPTED_VALUE;
-        accounts
-    }
-
-    fn slot_context() -> (HashMap<u64, [u8; 32]>, HashMap<u64, i64>) {
-        (
-            HashMap::from([(42, PREVIOUS_BANK_HASH)]),
-            HashMap::from([(42, 1_700_000_000)]),
-        )
-    }
-
-    /// The persistent `Add` output handle the fhe_execute fixtures produce, derived
-    /// exactly as the program does: content-addressed, no per-output binding
-    /// (persistent == instruction-local, matching EVM). Matches `config()`
-    /// (the Solana PoC host chain id, `PREVIOUS_BANK_HASH`), slot 42's clock ts,
-    /// scalar rhs.
-    fn derived_add_output_handle() -> [u8; 32] {
-        zama_host::state::computed_eval_handle(
-            PgmBinaryOpCode::Add,
-            [3; 32],
-            [1; 32],
-            true,
-            5,
-            &zama_host::state::HandleDerivationContext {
-                chain_id: zama_host::SOLANA_POC_CHAIN_ID,
-                previous_bank_hash: PREVIOUS_BANK_HASH,
-                unix_timestamp: 1_700_000_000,
-            },
-        )
-    }
-
-    fn complete_records(
-        outcome: ReconstructionOutcome,
-    ) -> ReconstructedTransaction {
-        match outcome {
-            ReconstructionOutcome::Complete(reconstructed) => reconstructed,
-            ReconstructionOutcome::NotCovered => {
-                panic!("expected reconstruction to cover transaction")
-            }
-        }
-    }
-
-    #[test]
-    fn persistent_output_as_sole_remaining_account_resolves() {
-        // The trivial-encrypt-execution shape: 9 named accounts (0..=8, including the two
-        // optional HCU accounts and the event_cpi pair) + exactly one remaining account,
-        // the persistent output EncryptedValue account, at absolute index 9 (remaining_index 0).
-        // A stale base (7, the pre-HCU count) read accounts.get(7) here — the
-        // trusted-app-record placeholder, not the persistent EncryptedValue account. This
-        // pins the base at 9.
-        let accounts: Vec<[u8; 32]> = (0..10).map(acct).collect();
-        assert_eq!(
-            fhe_execute_persistent_encrypted_value(&accounts, 0),
-            Some(acct(9))
-        );
-    }
-
-    #[test]
-    fn output_after_input_acl_records_resolves() {
-        // A persistent input EncryptedValue account at 9 and the persistent output at 10
-        // (remaining_index 1).
-        let accounts: Vec<[u8; 32]> = (0..11).map(acct).collect();
-        assert_eq!(
-            fhe_execute_persistent_encrypted_value(&accounts, 1),
-            Some(acct(10))
-        );
-    }
-
-    #[test]
-    fn persistent_output_after_optional_deny_record_resolves() {
-        let accounts = fhe_execute_accounts_with_deny_record();
-        assert_eq!(
-            fhe_execute_persistent_encrypted_value(&accounts, 1),
-            Some(ENCRYPTED_VALUE)
-        );
-    }
-
-    #[test]
-    fn missing_remaining_account_returns_none() {
-        // Only the 9 named accounts, no remaining: a persistent bind here is a layout drift
-        // the caller must surface, not silently drop.
-        let accounts: Vec<[u8; 32]> = (0..9).map(acct).collect();
-        assert_eq!(fhe_execute_persistent_encrypted_value(&accounts, 0), None);
-    }
-
-    #[test]
-    fn context_requirement_matches_persisted_work() {
-        let make_public = decoded_ix(
-            encode_instruction("make_handle_public", [4u8; 32]),
-            encrypted_value_accounts(),
-            0,
-            false,
-        );
-        let lifecycle_requirement = transaction_context_requirement(
-            &config(),
-            std::slice::from_ref(&make_public),
-            false,
-        );
-        assert_eq!(
-            lifecycle_requirement,
-            ContextRequirement {
-                slot_hashes: false,
-                clock: true,
-            }
-        );
-        let mut lifecycle_block = SealedBlock {
-            slot: 42,
-            block_hash: [4; 32],
-            parent_slot: 41,
-            parent_block_hash: [3; 32],
-            block_time: None,
-            block_height: None,
-            executed_transaction_count: 1,
-            transactions: vec![],
-            previous_bank_hash: None,
-            clock_unix_timestamp: None,
+            data: encoded_execution(FheExecuteArgs {
+                returned_results: Vec::new(),
+                account_count: 0,
+                dictionary: vec![],
+                steps: vec![FheExecuteStep::Rand {
+                    fhe_type: 5,
+                    output: FheExecuteOutput::Transient,
+                }],
+            }),
+            accounts: vec![],
+            top_level_index: 0,
+            is_inner: true,
         };
-        assert!(!lifecycle_requirement.is_satisfied_by(&lifecycle_block));
-        lifecycle_block.clock_unix_timestamp = Some(1_700_000_000);
-        assert!(lifecycle_requirement.is_satisfied_by(&lifecycle_block));
-        assert_eq!(
-            sealed_block_timestamp(&lifecycle_block),
-            super::unix_to_pdt(1_700_000_000)
-        );
-        assert_eq!(
-            transaction_context_requirement(&config(), &[make_public], true),
-            ContextRequirement::default()
-        );
-
-        let fhe_execute =
-            decoded_ix(discriminator("fhe_execute").to_vec(), vec![], 0, false);
-        assert_eq!(
-            transaction_context_requirement(&config(), &[fhe_execute], true),
-            ContextRequirement {
-                slot_hashes: true,
-                clock: true,
-            }
-        );
-    }
-
-    #[test]
-    fn known_but_undecodable_instructions_fail_ingest() {
-        let malformed = [
-            discriminator("fhe_execute").to_vec(),
-            discriminator("make_handle_public").to_vec(),
-        ];
-        let (slot_bank_hash, slot_clock_ts) = slot_context();
-
-        for data in malformed {
-            let err = reconstruct_records_for_insert(
-                &config(),
-                &[decoded_ix(data, encrypted_value_accounts(), 0, false)],
-                42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-            )
-            .expect_err(
-                "known discriminator with malformed args must fail ingest",
-            );
-            assert!(
-                err.to_string().contains("undecodable arguments"),
-                "got: {err}"
-            );
-        }
-    }
-
-    #[test]
-    fn lifecycle_with_missing_accounts_fails_ingest() {
-        let make_public_data =
-            encode_instruction("make_handle_public", [7u8; 32]);
-        let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let err = reconstruct_records_for_insert(
-            &config(),
-            &[decoded_ix(make_public_data, vec![[0u8; 32]], 0, false)],
-            42,
-            &slot_bank_hash,
-            &slot_clock_ts,
-        )
-        .expect_err("covered lifecycle instruction with missing accounts must fail ingest");
-
-        assert!(err.to_string().contains("account index 2 out of range"));
-    }
-
-    /// A updating persistent `fhe_execute` output recomputes its handle directly
-    /// from the execution's output material + block entropy (DD-015) — no raw update
-    /// handle hint and no encrypted-value-account leaf count. The
-    /// reconstructed compute result and current/historical material requests
-    /// must all come from the `fhe_execute` instruction itself.
-    #[test]
-    fn updating_fhe_execute_derives_output_handle_without_hint() {
-        let expected = derived_add_output_handle();
-
-        let execution = FheExecuteArgs {
-            account_count: 1,
-            dictionary: vec![[3; 32], [1; 32], [8; 32], [9; 32], [10; 32]],
-            steps: vec![FheExecuteStep::Binary {
-                op: PgmBinaryOpCode::Add,
-                lhs: FheExecuteOperand::StoredValue {
-                    handle_index: 0,
-                    encrypted_value_index: 0,
-                },
-                rhs: FheExecuteOperand::Scalar { value_index: 1 },
-                output_fhe_type: 5,
-                output: FheExecuteOutput::StoredValue {
-                    output_encrypted_value_index: 0,
-                    output_authority_index: None,
-                    output_program_index: 2,
-                    output_authority_key_index: 3,
-                    output_scope_index: 3,
-                    output_label_index: 4,
-                    output_authority_seeds: vec![],
-                    output_allow_indexes: vec![],
-                    previous_handle_index: Some(2),
-                    make_public: false,
-                },
+        let event = zama_host::FheExecuteRandomSeedsEvent {
+            version: zama_host::EVENT_VERSION,
+            seeds: vec![zama_host::FheExecuteRandomSeed {
+                step_index: 0,
+                seed: [7; 16],
             }],
         };
-        let fhe_execute_data = encode_instruction("fhe_execute", execution);
-        let instructions = vec![decoded_ix(
-            fhe_execute_data,
-            fhe_execute_accounts(),
-            0,
-            false,
-        )];
-        let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let reconstructed = complete_records(
-            reconstruct_records_for_insert(
+        let seed_event = DecodedInstruction {
+            data: anchor_lang::event::EVENT_IX_TAG_LE
+                .iter()
+                .copied()
+                .chain(anchor_lang::Event::data(&event))
+                .collect(),
+            ..execute.clone()
+        };
+        for same_program in [false, true] {
+            let mut collision = execute.clone();
+            if !same_program {
+                collision.program = "foreign-program".to_owned();
+            }
+            let outcome = reconstruct_records_for_insert(
                 &config(),
-                &instructions,
+                &[execute.clone(), collision, seed_event.clone()],
                 42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-            )
-            .expect("reconstruction should derive the update handle directly"),
-        );
-        let records = reconstructed.records;
-
-        assert!(records.iter().any(|record| {
-            matches!(
-                record,
-                SolanaHostRecord::FheBinaryOp(op) if op.result == expected
-            )
-        }));
-        let requested_handles = records
-            .iter()
-            .filter_map(|record| match record {
-                SolanaHostRecord::MaterialRequest(request) => {
-                    Some(request.handle)
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            requested_handles,
-            vec![Handle::from(expected), Handle::from([8; 32])],
-            "update must request the current and previous handles exactly once"
-        );
-        assert_eq!(
-            reconstructed.leaf_sources,
-            vec![LeafSource::Write(EncryptedValueWrite {
-                encrypted_value_account: ENCRYPTED_VALUE,
-                program: [8; 32],
-                encrypted_value_account_authority: [9; 32],
-                scope: [9; 32],
-                label: [10; 32],
-                previous_handle: Some([8; 32]),
-                handle: expected,
-                allowed_keys: vec![],
-                make_public: false,
-            })]
-        );
+                &HashMap::from([(42, [0x44; 32])]),
+                &HashMap::from([(42, 1_700_000_000)]),
+            );
+            if same_program {
+                assert!(outcome
+                    .unwrap_err()
+                    .to_string()
+                    .contains("incomplete fhe_execute reconstruction"));
+            } else {
+                assert!(matches!(
+                    outcome.unwrap(),
+                    ReconstructionOutcome::Complete(_)
+                ));
+            }
+        }
     }
 
-    /// A persistent output created public still requests material for its recomputed
-    /// handle. The persistent bind and public transition share that request.
     #[test]
-    fn created_public_fhe_execute_output_requests_material() {
-        let execution = FheExecuteArgs {
+    fn state_output_reconstructs_address_cursor_and_leaves() {
+        let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 1,
-            dictionary: vec![[8; 32], [9; 32], [10; 32], ALLOWED_KEY],
+            dictionary: vec![[0x33; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::StoredValue {
-                    output_encrypted_value_index: 0,
-                    output_authority_index: None,
-                    output_program_index: 0,
-                    output_authority_key_index: 1,
-                    output_scope_index: 1,
-                    output_label_index: 2,
-                    output_authority_seeds: vec![],
-                    output_allow_indexes: vec![3],
-                    // Fresh encrypted value account (create), created publicly decryptable inline.
-                    previous_handle_index: None,
+                output: FheExecuteOutput::State {
+                    state_index: 0,
+                    previous_leaf_count: 4,
+                    slot: None,
+                    allow_indexes: vec![0],
                     make_public: true,
+                    grants: vec![],
                 },
             }],
         };
-        let instructions = vec![decoded_ix(
-            encode_instruction("fhe_execute", execution),
-            fhe_execute_accounts(),
-            0,
-            false,
-        )];
-        let (slot_bank_hash, slot_clock_ts) = slot_context();
-        let reconstructed = complete_records(
-            reconstruct_records_for_insert(
-                &config(),
-                &instructions,
-                42,
-                &slot_bank_hash,
-                &slot_clock_ts,
-            )
-            .expect("created-public create reconstruction should succeed"),
-        );
-        let records = &reconstructed.records;
-
-        // The handle the trivial-encrypt bind recomputed for this output.
-        let bound_handle = records
-            .iter()
-            .find_map(|record| match record {
-                SolanaHostRecord::TrivialEncrypt(e) => Some(e.result),
-                _ => None,
-            })
-            .expect("trivial-encrypt op record with a result handle");
-
-        let material_request = records
-            .iter()
-            .find(|record| {
-                matches!(
-                    record,
-                    SolanaHostRecord::MaterialRequest(request)
-                        if request.handle == Handle::from(bound_handle)
-                )
-            })
-            .expect("material request for the created-public bound handle");
-        assert!(matches!(
-            material_request,
-            SolanaHostRecord::MaterialRequest(_)
-        ));
-        // The create seals one allow leaf then the public leaf, on the new handle.
+        let mut accounts: Vec<[u8; 32]> = (0..10).map(|n| [n; 32]).collect();
+        accounts[9] = STATE;
+        let instructions = [DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(args),
+            accounts,
+            top_level_index: 0,
+            is_inner: true,
+        }];
+        let outcome = reconstruct_records_for_insert(
+            &config(),
+            &instructions,
+            42,
+            &HashMap::from([(42, [0x44; 32])]),
+            &HashMap::from([(42, 1_700_000_000)]),
+        )
+        .unwrap();
+        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
+            panic!("expected covered transaction")
+        };
+        let handle = reconstructed.leaf_sources[0].handle;
         assert_eq!(
             reconstructed.leaf_sources,
-            vec![LeafSource::Write(EncryptedValueWrite {
-                encrypted_value_account: ENCRYPTED_VALUE,
-                program: [8; 32],
-                encrypted_value_account_authority: [9; 32],
-                scope: [9; 32],
-                label: [10; 32],
-                previous_handle: None,
-                handle: bound_handle,
-                allowed_keys: vec![ALLOWED_KEY],
+            vec![EncryptedStateWrite {
+                encrypted_state: STATE,
+                previous_leaf_count: 4,
+                handle,
+                allowed_keys: vec![[0x33; 32]],
                 make_public: true,
-            })]
+            }]
         );
     }
 
-    /// `make_handle_public` requests material for the handle and seals its public leaf.
     #[test]
-    fn make_handle_public_requests_material_and_seals_public_leaf() {
-        let instructions = vec![decoded_ix(
-            encode_instruction("make_handle_public", [4u8; 32]),
-            encrypted_value_accounts(),
-            0,
-            false,
-        )];
-        let reconstructed = complete_records(
-            reconstruct_records_for_insert(
+    fn grants_only_output_reconstructs_without_decrypt_permissions() {
+        let args = FheExecuteArgs {
+            returned_results: Vec::new(),
+            account_count: 2,
+            dictionary: vec![],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::State {
+                    state_index: 0,
+                    previous_leaf_count: 4,
+                    slot: None,
+                    allow_indexes: vec![],
+                    make_public: false,
+                    grants: vec![zama_host::ResultGrant {
+                        initiating_state_index: 0,
+                        consumer_state_index: 0,
+                        scratch_index: 1,
+                    }],
+                },
+            }],
+        };
+        let mut accounts: Vec<[u8; 32]> = (0..11).map(|n| [n; 32]).collect();
+        accounts[9] = STATE;
+        let outcome = reconstruct_records_for_insert(
+            &config(),
+            &[DecodedInstruction {
+                program: ZAMA_HOST.to_owned(),
+                data: encoded_execution(args),
+                accounts,
+                top_level_index: 0,
+                is_inner: true,
+            }],
+            42,
+            &HashMap::from([(42, [0x44; 32])]),
+            &HashMap::from([(42, 1_700_000_000)]),
+        )
+        .unwrap();
+        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
+            panic!("expected covered transaction")
+        };
+        assert_eq!(reconstructed.leaf_sources.len(), 1);
+        let write = &reconstructed.leaf_sources[0];
+        assert_eq!(write.encrypted_state, STATE);
+        assert_eq!(write.previous_leaf_count, 4);
+        assert!(write.allowed_keys.is_empty());
+        assert!(!write.make_public);
+    }
+
+    #[test]
+    fn state_output_with_missing_account_fails_ingest() {
+        let args = FheExecuteArgs {
+            returned_results: Vec::new(),
+            account_count: 1,
+            dictionary: vec![],
+            steps: vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [7; 32],
+                fhe_type: 5,
+                output: FheExecuteOutput::State {
+                    state_index: 0,
+                    previous_leaf_count: 0,
+                    slot: None,
+                    allow_indexes: vec![],
+                    make_public: false,
+                    grants: vec![],
+                },
+            }],
+        };
+        let error = reconstruct_records_for_insert(
+            &config(),
+            &[DecodedInstruction {
+                program: ZAMA_HOST.to_owned(),
+                data: encoded_execution(args),
+                accounts: vec![[0; 32]; 9],
+                top_level_index: 0,
+                is_inner: false,
+            }],
+            42,
+            &HashMap::from([(42, [0x44; 32])]),
+            &HashMap::from([(42, 1_700_000_000)]),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("state output out of range"));
+    }
+
+    #[test]
+    fn state_public_instruction_reconstructs_exact_public_leaf() {
+        let args = zama_host::instruction::MakeStateHandlePublic {
+            key: [0x11; 32],
+            handle: [0x22; 32],
+            previous_leaf_count: 8,
+        };
+        let mut data =
+            zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR
+                .to_vec();
+        args.serialize(&mut data).unwrap();
+        let mut accounts = vec![[0; 32]; 6];
+        accounts[2] = STATE;
+        let instruction = DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data,
+            accounts,
+            top_level_index: 0,
+            is_inner: true,
+        };
+        assert!(
+            !transaction_context_requirement(
                 &config(),
-                &instructions,
-                42,
-                &HashMap::new(),
-                &HashMap::new(),
+                std::slice::from_ref(&instruction),
+                true,
             )
-            .expect("make_handle_public needs no derivation context"),
+            .clock
         );
-        assert!(matches!(
-            &reconstructed.records[..],
-            [SolanaHostRecord::MaterialRequest(request)] if request.handle == Handle::from([4; 32])
-        ));
+        assert!(
+            transaction_context_requirement(
+                &config(),
+                std::slice::from_ref(&instruction),
+                false,
+            )
+            .clock
+        );
+        let outcome = reconstruct_records_for_insert(
+            &config(),
+            &[instruction],
+            42,
+            &HashMap::new(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
+            panic!("expected covered transaction")
+        };
         assert_eq!(
             reconstructed.leaf_sources,
-            vec![LeafSource::MakeHandlePublic {
-                encrypted_value_account: ENCRYPTED_VALUE,
-                handle: [4; 32],
+            vec![EncryptedStateWrite {
+                encrypted_state: STATE,
+                previous_leaf_count: 8,
+                handle: [0x22; 32],
+                allowed_keys: vec![],
+                make_public: true,
             }]
         );
     }

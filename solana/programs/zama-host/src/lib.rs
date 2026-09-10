@@ -1,12 +1,12 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
-//! `EncryptedValue` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
+//! `EncryptedState` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
 //! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which encrypted value account authorities,
+//! programs, such as `confidential-token`, decide which encrypted State authorities,
 //! scopes and labels they authorize and which keys each write allows, then call this program by
 //! CPI to create or verify host-owned ACL state.
 
@@ -60,6 +60,21 @@ declare_id!("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
 #[program]
 pub mod zama_host {
     use super::*;
+
+    pub fn open_scratch(ctx: Context<OpenScratch>) -> Result<()> {
+        instructions::open_scratch(ctx)
+    }
+
+    pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
+        instructions::close_scratch(ctx)
+    }
+
+    pub fn create_encrypted_state(
+        ctx: Context<CreateEncryptedState>,
+        args: CreateEncryptedStateArgs,
+    ) -> Result<()> {
+        instructions::create_encrypted_state(ctx, args)
+    }
 
     pub fn initialize_host_config(
         ctx: Context<InitializeHostConfig>,
@@ -162,15 +177,10 @@ pub mod zama_host {
     pub fn delegate_for_user_decryption(
         ctx: Context<DelegateForUserDecryption>,
         delegate: Pubkey,
-        encrypted_value_account_authority: Pubkey,
+        authority: Pubkey,
         expiration_slot: u64,
     ) -> Result<()> {
-        instructions::delegate_for_user_decryption(
-            ctx,
-            delegate,
-            encrypted_value_account_authority,
-            expiration_slot,
-        )
+        instructions::delegate_for_user_decryption(ctx, delegate, authority, expiration_slot)
     }
 
     pub fn revoke_delegation_for_user_decryption(
@@ -192,15 +202,17 @@ pub mod zama_host {
         instructions::fhe_execute(ctx, args)
     }
 
-    // ---- EncryptedValue ACL model ----
+    // ---- EncryptedState ACL model ----
 
     /// Seals the value's current handle as publicly decryptable. Every other allow happens
     /// inline on the `fhe_execute` write that produces the handle.
-    pub fn make_handle_public(
-        ctx: Context<MakeEncryptedValueHandlePublic>,
+    pub fn make_state_handle_public(
+        ctx: Context<MakeStateHandlePublic>,
+        key: [u8; 32],
         handle: [u8; 32],
+        previous_leaf_count: u64,
     ) -> Result<()> {
-        instructions::make_handle_public(ctx, handle)
+        instructions::make_state_handle_public(ctx, key, handle, previous_leaf_count)
     }
 
     /// Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt

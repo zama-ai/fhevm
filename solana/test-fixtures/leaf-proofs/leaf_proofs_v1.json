@@ -4,13 +4,13 @@
   "request": {
     "leaves": [
       {
-        "encryptedValueAccount": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+        "encryptedState": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
         "handle": "1010101010101010101010101010101010101010101010101010101010101010",
         "kind": "allowed",
         "key": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
       },
       {
-        "encryptedValueAccount": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+        "encryptedState": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
         "handle": "1111111111111111111111111111111111111111111111111111111111111111",
         "kind": "public"
       }

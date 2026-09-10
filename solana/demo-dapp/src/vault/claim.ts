@@ -1,34 +1,23 @@
+import { closeScratchInstruction, INSTRUCTIONS_SYSVAR } from './internal/scratch.js';
+import { scratchAddress } from './internal/batcherPdas.js';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import {
-  claimAmountValueAddress,
-  findBatchAuthorityPda,
-  pendingJoinValueAddress,
-  tokenAccountAddress,
-} from './internal/batcherPdas.js';
+import { findBatchAuthorityPda, joinStateAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
-  balanceValueAddress,
+  tokenStateAddress,
   tokenEventAuthorityAddress,
-  transferredAmountValueAddress,
   zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+} from './internal/tokenAccounts.js';
 
 /**
- * Semantic roots for the batcher `claim` instruction. Every other account the on-chain handler
- * validates (`claim.rs`) — the batch authority, the join record, the pending-join and claim-amount
- * encrypted value accounts, both payout token accounts with their balance /
- * transferred-amount encrypted value accounts, and both event authorities — is derived internally from these, so
- * callers never hand-build the account map.
- *
- * `user` is not a signer: claim is a permissionless pull, and the payout can only land in the
- * user's own account. That account (`token_account_address(payoutConfidentialMint, user)`) must
- * already exist; it may be initialized by the user or a sponsor because initialization cannot
- * assign a nonzero balance.
+ * Roots for a permissionless claim. The builder derives the JoinRecord state, temporary scratch,
+ * and payout token states. The user need not sign: the recipient is fixed by the JoinRecord.
+ * The user's payout token account must already exist.
  */
 export type SolanaVaultClaimParameters = {
-  /** Pays the rent for the claim-amount encrypted value account and the transfer output. Anyone — claim is a permissionless pull. */
+  /** Pays state growth and temporary scratch rent; scratch rent is refunded at transaction end. */
   readonly payer: TransactionSigner;
   /** The user being claimed for (pins the join record). Not a signer. */
   readonly user: Address;
@@ -51,19 +40,22 @@ export type SolanaVaultClaimParameters = {
  * (`encrypted(joined) * payout_received / total_joined`, one MulDiv batch) and transfers it to the
  * user.
  */
-export async function buildClaimInstruction(parameters: SolanaVaultClaimParameters): Promise<Instruction> {
+export async function buildClaimInstructions(parameters: SolanaVaultClaimParameters): Promise<readonly Instruction[]> {
   const { user, payoutConfidentialMint } = parameters;
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, batchAuthority);
   const userPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, user);
-  return getClaimInstructionAsync({
+  const joinState = await joinStateAddress(parameters.batch, user);
+  const scratch = await scratchAddress(joinState);
+  const instruction = await getClaimInstructionAsync({
     payer: parameters.payer,
     user,
     batcher: parameters.batcher,
     batch: parameters.batch,
     batchAuthority,
-    pendingJoinValue: await pendingJoinValueAddress(parameters.batch, batchAuthority, user),
-    claimAmountValue: await claimAmountValueAddress(parameters.batch, batchAuthority, user),
+    joinState,
+    scratch,
+    instructions: INSTRUCTIONS_SYSVAR,
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
     batchAuthorityPayoutAta: await associatedTokenAddress(
@@ -74,11 +66,11 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
-    batchPayoutBalanceValue: await balanceValueAddress(payoutConfidentialMint, batchPayoutTokenAccount),
-    userPayoutBalanceValue: await balanceValueAddress(payoutConfidentialMint, userPayoutTokenAccount),
-    batchPayoutTransferredValue: await transferredAmountValueAddress(payoutConfidentialMint, batchPayoutTokenAccount),
+    batchPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
+    userPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
   });
+  return [instruction, closeScratchInstruction(scratch, parameters.payer.address)];
 }

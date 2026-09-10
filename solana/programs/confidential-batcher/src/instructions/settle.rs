@@ -27,21 +27,11 @@
 //! `hcu_block_meter`, and `hcu_trusted_app_record` as hardcoded `None` (the
 //! PoC host fixtures never enable them).
 //!
-//! ## Known limitation (deposit direction only): a dust-total batch is stuck
-//! Dispatched forever
-//!
-//! If a DEPOSIT batch's certified total is small enough that the vault floors
-//! it to zero shares (`total < ~1 share's worth` at the current price), phase 2
-//! reverts with the vault's `ZeroShares` and the whole settle reverts
-//! atomically — retryable, but never to success: the demo vault's share price
-//! only rises (floor rounding favors the vault, `harvest` only donates, there
-//! is no loss path), so the batch stays Dispatched with its deposits burned
-//! and unrecoverable. The grief is cheap for an attacker holding ~all vault
-//! shares: `harvest`-donating pumps the price P (the donation accrues to
-//! their own shares), bricking any batch whose total is below P. The loss is
-//! bounded below one share's worth per batch. Pinned by
-//! `mollusk_dust_total_settle_reverts_and_batch_stays_dispatched`; the future
-//! fix is a cancel-and-refund path (tracked in fhevm-internal#1773).
+//! Deposit batches below one share's worth revert with `ZeroShares`; settlement rolls back
+//! atomically and leaves the batch Dispatched. Retrying at the same or higher price cannot
+//! succeed. The join mint authority can call `cancel_dispatch`, restoring the burn and opening
+//! `quit` refunds. Users cannot trigger this recovery without that authority's cooperation.
+//! `mollusk_dust_total_settle_reverts_and_batch_stays_dispatched` pins the settlement failure.
 //!
 //! REDEEM batches have no analog: the vault's share price never drops below
 //! 1:1 (floor rounding favors the vault; `harvest` only raises the price), so
@@ -88,8 +78,8 @@ pub struct Settle<'info> {
     /// Batch's plain SPL account receiving the redeemed batch total.
     #[account(mut, seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// CHECK: batch's burned-amount encrypted value account; validated by the token CPI.
-    pub batch_burned_amount_value: UncheckedAccount<'info>,
+    /// CHECK: batch's burned-amount encrypted State; validated by the token CPI.
+    pub batch_burned_amount_state: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token redeem CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
@@ -131,12 +121,12 @@ pub struct Settle<'info> {
     pub payout_mint_vault_authority: UncheckedAccount<'info>,
     /// CHECK: payout mint total-supply authority PDA; validated by the token CPI.
     pub payout_total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance encrypted value account; replaced by the wrap.
+    /// CHECK: batch's confidential payout balance encrypted State; replaced by the wrap.
     #[account(mut)]
-    pub batch_payout_balance_value: UncheckedAccount<'info>,
-    /// CHECK: payout mint's total-supply encrypted value account; replaced by the wrap.
+    pub batch_payout_balance_state: UncheckedAccount<'info>,
+    /// CHECK: payout mint's total-supply encrypted State; replaced by the wrap.
     #[account(mut)]
-    pub payout_total_supply_value: UncheckedAccount<'info>,
+    pub payout_total_supply_state: UncheckedAccount<'info>,
 
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -228,7 +218,7 @@ pub fn settle(
                 vault_usdc: ctx.accounts.join_mint_vault_underlying.to_account_info(),
                 destination_usdc: ctx.accounts.batch_join_underlying.to_account_info(),
                 vault_authority: ctx.accounts.join_mint_vault_authority.to_account_info(),
-                burned_amount_value: ctx.accounts.batch_burned_amount_value.to_account_info(),
+                burned_amount_state: ctx.accounts.batch_burned_amount_state.to_account_info(),
                 pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 kms_context: ctx.accounts.kms_context.to_account_info(),
@@ -334,8 +324,8 @@ pub fn settle(
                     .accounts
                     .payout_total_supply_authority
                     .to_account_info(),
-                balance_value: ctx.accounts.batch_payout_balance_value.to_account_info(),
-                total_supply_value: ctx.accounts.payout_total_supply_value.to_account_info(),
+                balance_state: ctx.accounts.batch_payout_balance_state.to_account_info(),
+                total_supply_state: ctx.accounts.payout_total_supply_state.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),

@@ -570,7 +570,7 @@ mod tests {
         };
         let keys = SnapshotKeys::new([[1; 32]]);
         let queries = [LeafQuery {
-            encrypted_value_account: [1; 32],
+            encrypted_state: [1; 32],
             handle: [2; 32],
             kind: LeafKind::Public,
         }];
