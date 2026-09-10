@@ -74,6 +74,20 @@ impl TestEnvironment {
         conf: ConfigSettings,
         force_per_test_localstack: bool,
     ) -> anyhow::Result<Self> {
+        Self::new_with_config_and_anvil_args(signer_type, conf, force_per_test_localstack, &[])
+            .await
+    }
+
+    /// Same as [`Self::new_with_config`], but replaces the default
+    /// `--block-time 1` anvil arguments with the given ones. Used by the nonce
+    /// sequence tests, which need mining paused so a submitted transaction stays
+    /// in the mempool.
+    pub async fn new_with_config_and_anvil_args(
+        signer_type: SignerType,
+        conf: ConfigSettings,
+        force_per_test_localstack: bool,
+        anvil_args: &[&str],
+    ) -> anyhow::Result<Self> {
         let _ = tracing_subscriber::fmt()
             .json()
             .with_level(true)
@@ -103,9 +117,13 @@ impl TestEnvironment {
         )
         .await?;
 
-        let anvil = Self::new_anvil()?;
+        let anvil = if anvil_args.is_empty() {
+            Self::new_anvil()?
+        } else {
+            Self::new_anvil_with_args(anvil_args)?
+        };
         let chain_id =
-            get_chain_id(anvil.ws_endpoint_url(), std::time::Duration::from_secs(1)).await;
+            get_chain_id(anvil.endpoint_url(), std::time::Duration::from_secs(1)).await?;
         let abstract_signer;
         let localstack;
         match signer_type {
@@ -150,8 +168,20 @@ impl TestEnvironment {
         })
     }
 
+    /// Address of the signer the transaction sender submits with.
+    pub fn signer_address(&self) -> Address {
+        use alloy::network::TxSigner;
+        self.signer.address()
+    }
+
     pub fn ws_endpoint_url(&self) -> Url {
         self.anvil.as_ref().unwrap().ws_endpoint_url()
+    }
+
+    /// Anvil's HTTP endpoint. Used as the upstream of the hotfix validation's
+    /// method-aware fault proxy, which speaks HTTP.
+    pub fn http_endpoint_url(&self) -> Url {
+        self.anvil.as_ref().unwrap().endpoint_url()
     }
 
     pub fn recreate_anvil(&mut self) -> anyhow::Result<()> {
@@ -177,6 +207,14 @@ impl TestEnvironment {
 
     fn new_anvil() -> anyhow::Result<AnvilInstance> {
         Ok(Anvil::new().block_time(1).try_spawn()?)
+    }
+
+    fn new_anvil_with_args(args: &[&str]) -> anyhow::Result<AnvilInstance> {
+        let mut anvil = Anvil::new();
+        for arg in args {
+            anvil = anvil.arg(*arg);
+        }
+        Ok(anvil.try_spawn()?)
     }
 
     fn new_anvil_with_port(port: u16) -> anyhow::Result<AnvilInstance> {

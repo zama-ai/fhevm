@@ -138,6 +138,8 @@ where
                 txn_request.1,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+                Duration::from_secs(self.conf.gas_estimation_timeout_secs.into()),
+                Duration::from_secs(self.conf.txn_receipt_timeout_secs.into()),
             )
             .await
         {
@@ -299,129 +301,166 @@ where
         info!(rows_count = rows.len(), "Selected rows to process");
         let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
-        for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
-            let span =
-                tracing::info_span!("prepare_verify_proof_resp", txn_id = tracing::field::Empty);
-            telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
+        // Capture preparation errors without dropping sends already in progress.
+        let preparation_result: anyhow::Result<()> = async {
+            for row in rows.into_iter() {
+                let transaction_id = row.transaction_id.clone();
+                let span = tracing::info_span!(
+                    "prepare_verify_proof_resp",
+                    txn_id = tracing::field::Empty
+                );
+                telemetry::record_short_hex_if_some(&span, "txn_id", transaction_id.as_deref());
 
-            let txn_request = match row.verified {
-                Some(true) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing verified proof");
-                    let handles = row
-                        .handles
-                        .ok_or(anyhow::anyhow!("handles field is None"))?;
-                    if handles.len() % 32 != 0 {
-                        error!(parent: &span,
-                            handles_len = handles.len(),
-                            "Bad handles field, len is not divisible by 32"
+                let txn_request = match row.verified {
+                    Some(true) => {
+                        info!(parent: &span,
+                            zk_proof_id = row.zk_proof_id,
+                            "Processing verified proof"
                         );
-                        self.remove_proof_by_id(row.zk_proof_id)
+                        let handles = row
+                            .handles
+                            .ok_or(anyhow::anyhow!("handles field is None"))?;
+                        if handles.len() % 32 != 0 {
+                            error!(parent: &span,
+                                handles_len = handles.len(),
+                                "Bad handles field, len is not divisible by 32"
+                            );
+                            self.remove_proof_by_id(row.zk_proof_id)
+                                .instrument(span.clone())
+                                .await?;
+                            continue;
+                        }
+                        let handles: Vec<FixedBytes<32>> = handles
+                            .chunks(32)
+                            .map(|chunk| {
+                                let array: [u8; 32] =
+                                    chunk.try_into().expect("chunk size must be 32");
+                                FixedBytes(array)
+                            })
+                            .collect();
+                        let domain = alloy::sol_types::eip712_domain! {
+                            name: "InputVerification",
+                            version: "1",
+                            chain_id: self.gw_chain_id,
+                            verifying_contract: self.input_verification_address,
+                        };
+                        let signing_hash = CiphertextVerification {
+                            ctHandles: handles.clone(),
+                            userAddress: row.user_address.parse()?,
+                            contractAddress: row.contract_address.parse()?,
+                            contractChainId: U256::from(row.chain_id),
+                            extraData: row.extra_data.clone().into(),
+                        }
+                        .eip712_signing_hash(&domain);
+                        let signature = self
+                            .signer
+                            .sign_hash(&signing_hash)
                             .instrument(span.clone())
                             .await?;
+
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request()
+                                    .with_gas_limit(gas),
+                            )
+                        } else {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .verifyProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        handles,
+                                        signature.as_bytes().into(),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request(),
+                            )
+                        }
+                    }
+                    Some(false) => {
+                        info!(parent: &span,
+                            zk_proof_id = row.zk_proof_id,
+                            "Processing rejected proof"
+                        );
+                        if let Some(gas) = self.gas {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .rejectProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request()
+                                    .with_gas_limit(gas),
+                            )
+                        } else {
+                            (
+                                row.zk_proof_id,
+                                input_verification
+                                    .rejectProofResponse(
+                                        U256::from(row.zk_proof_id),
+                                        row.extra_data.into(),
+                                    )
+                                    .into_transaction_request(),
+                            )
+                        }
+                    }
+                    None => {
+                        error!(parent: &span,
+                            zk_proof_id = row.zk_proof_id,
+                            "verified field is unexpectedly None for proof"
+                        );
                         continue;
                     }
-                    let handles: Vec<FixedBytes<32>> = handles
-                        .chunks(32)
-                        .map(|chunk| {
-                            let array: [u8; 32] = chunk.try_into().expect("chunk size must be 32");
-                            FixedBytes(array)
-                        })
-                        .collect();
-                    let domain = alloy::sol_types::eip712_domain! {
-                        name: "InputVerification",
-                        version: "1",
-                        chain_id: self.gw_chain_id,
-                        verifying_contract: self.input_verification_address,
-                    };
-                    let signing_hash = CiphertextVerification {
-                        ctHandles: handles.clone(),
-                        userAddress: row.user_address.parse().expect("invalid user address"),
-                        contractAddress: row
-                            .contract_address
-                            .parse()
-                            .expect("invalid contract address"),
-                        contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.clone().into(),
-                    }
-                    .eip712_signing_hash(&domain);
-                    let signature = self
-                        .signer
-                        .sign_hash(&signing_hash)
-                        .instrument(span.clone())
-                        .await?;
+                };
 
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
-                    } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .verifyProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    handles,
-                                    signature.as_bytes().into(),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
-                    }
-                }
-                Some(false) => {
-                    info!(parent: &span, zk_proof_id = row.zk_proof_id, "Processing rejected proof");
-                    if let Some(gas) = self.gas {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .rejectProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request()
-                                .with_gas_limit(gas),
-                        )
-                    } else {
-                        (
-                            row.zk_proof_id,
-                            input_verification
-                                .rejectProofResponse(
-                                    U256::from(row.zk_proof_id),
-                                    row.extra_data.into(),
-                                )
-                                .into_transaction_request(),
-                        )
-                    }
-                }
-                None => {
-                    error!(parent: &span,
-                        zk_proof_id = row.zk_proof_id,
-                        "verified field is unexpectedly None for proof"
-                    );
-                    continue;
-                }
-            };
-
-            let self_clone = self.clone();
-            let src_transaction_id = transaction_id;
-            join_set.spawn(async move {
-                self_clone
-                    .process_proof(txn_request, row.retry_count, src_transaction_id)
-                    .await
-            });
+                let self_clone = self.clone();
+                let src_transaction_id = transaction_id;
+                join_set.spawn(async move {
+                    self_clone
+                        .process_proof(txn_request, row.retry_count, src_transaction_id)
+                        .await
+                });
+            }
+            Ok(())
         }
-        while let Some(res) = join_set.join_next().await {
-            res??;
+        .await;
+        // Drain every task before returning. Using `res??` here aborted the
+        // JoinSet on the first error, cancelling sibling sends mid-flight: their
+        // transactions could already be in the mempool while their `retry_count`
+        // was never incremented, leaving on-chain work with no DB record.
+        let mut failed = 0usize;
+        let mut first_error = preparation_result.err();
+        if let Some(e) = &first_error {
+            error!(error = %e, "Batch preparation failed; draining started sends");
+        }
+        while let Some(joined) = join_set.join_next().await {
+            let task_result = match joined {
+                Ok(task_result) => task_result,
+                Err(join_error) => Err(anyhow::Error::new(join_error)),
+            };
+            if let Err(e) = task_result {
+                failed += 1;
+                error!(error = %e, "Verify proof task failed");
+                if first_error.is_none() || crate::is_backend_gone(&e) {
+                    first_error = Some(e);
+                }
+            }
+        }
+        if let Some(e) = first_error {
+            error!(
+                failed_tasks = failed,
+                "Verify proof batch failed after draining started sends"
+            );
+            return Err(e);
         }
         Ok(maybe_has_more_work)
     }

@@ -3,10 +3,7 @@ use std::{str::FromStr, time::Duration};
 use alloy::{
     network::EthereumWallet,
     primitives::Address,
-    providers::fillers::{
-        BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, WalletFiller,
-    },
-    providers::{Identity, ProviderBuilder, RootProvider, WsConnect},
+    providers::ProviderBuilder,
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
@@ -19,9 +16,10 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use transaction_sender::{
-    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, get_chain_id, http_server::HttpServer,
-    make_abstract_signer, metrics::spawn_gauge_update_routine, AbstractSigner, ConfigSettings,
-    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, gateway_http_client, get_chain_id,
+    http_server::HttpServer, make_abstract_signer, metrics::spawn_gauge_update_routine,
+    AbstractSigner, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
+    TransactionSender,
 };
 
 use fhevm_engine_common::{
@@ -46,6 +44,7 @@ struct Conf {
     #[arg(short, long)]
     ciphertext_commits_address: Address,
 
+    /// Gateway HTTP/HTTPS RPC endpoint (WSS is no longer supported).
     #[arg(short, long)]
     gateway_url: Url,
 
@@ -97,8 +96,33 @@ struct Conf {
     #[arg(long, default_value_t = 4)]
     error_sleep_max_secs: u16,
 
-    #[arg(long, default_value_t = 4, alias = "txn-receipt-timeout-secs")]
+    /// Deadline for the pending-nonce lookup and for submission acknowledgment
+    /// (`eth_sendRawTransaction`). Inclusion is bounded separately by
+    /// `--txn-receipt-timeout-secs`, which used to be an alias of this flag and
+    /// is now a distinct phase.
+    #[arg(long, default_value_t = 4)]
     send_txn_sync_timeout_secs: u16,
+
+    /// Deadline for waiting for a transaction to be mined, awaited outside the
+    /// nonce mutex so it does not block other sends. A timeout here does not
+    /// reset the nonce sequence: the transaction is already acknowledged.
+    #[arg(long, default_value_t = 30)]
+    txn_receipt_timeout_secs: u16,
+
+    /// Timeout for gas estimation, separate from `--send-txn-sync-timeout-secs`.
+    #[arg(long, default_value_t = 20)]
+    gas_estimation_timeout_secs: u16,
+
+    /// Maximum verify-proof / add-ciphertext *active attempts* at once, across
+    /// both operations. A permit covers gas estimation, the nonce-mutex wait,
+    /// submission and the wait for inclusion.
+    ///
+    /// This does not cap outstanding on-chain transactions: an attempt that
+    /// abandons its receipt releases its permit while the transaction may still
+    /// be pending.
+    #[arg(long, default_value_t = transaction_sender::DEFAULT_MAX_INFLIGHT_SENDS as u32,
+          value_parser = clap::value_parser!(u32).range(1..))]
+    max_inflight_sends: u32,
 
     #[deprecated(note = "no longer used and will be removed in future versions")]
     #[arg(long, default_value_t = 0, hide = true)]
@@ -107,9 +131,11 @@ struct Conf {
     #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    /// Legacy WSS reconnect setting; accepted for compatibility, ignored on HTTP.
+    #[arg(long, default_value_t = u32::MAX, hide = true)]
     provider_max_retries: u32,
 
+    /// Interval between failed startup chain-ID probes; RPCs are not auto-retried.
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
 
@@ -173,62 +199,6 @@ fn parse_args() -> Conf {
     args
 }
 
-type Provider = FillProvider<
-    JoinFill<
-        JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, ChainIdFiller>>>,
-        WalletFiller<EthereumWallet>,
-    >,
-    RootProvider,
->;
-
-async fn get_provider(
-    conf: &Conf,
-    url: &Url,
-    name: &str,
-    wallet: EthereumWallet,
-    cancel_token: &CancellationToken,
-) -> anyhow::Result<Provider> {
-    loop {
-        if cancel_token.is_cancelled() {
-            info!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-            anyhow::bail!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-        }
-        match ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(wallet.clone())
-            .connect_ws(
-                // Note here that max_retries and retry_interval apply to sending requests, not to initial connection.
-                // We assume they are set to big values such that when they are reached, the following `BackendGone` error
-                // means we can't move on and we would exit the whole sender.
-                WsConnect::new(url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(name, "Connected to chain");
-                return Ok(provider);
-            }
-            Err(e) => {
-                error!(
-                    name,
-                    error = %e,
-                    retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to chain on startup, retrying"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -248,8 +218,8 @@ async fn main() -> anyhow::Result<()> {
     let chain_id = tokio::select! {
         chain_id = get_chain_id(
             conf.gateway_url.clone(),
-            conf.graceful_shutdown_timeout,
-        ) => chain_id,
+            conf.provider_retry_interval,
+        ) => chain_id?,
 
         _ = cancel_token.cancelled() => {
             info!("Cancellation requested before getting chain ID during startup, exiting");
@@ -281,22 +251,20 @@ async fn main() -> anyhow::Result<()> {
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
 
-    let Ok(gateway_provider) = get_provider(
-        &conf,
-        &conf.gateway_url,
-        "Gateway",
-        wallet.clone(),
-        &cancel_token,
-    )
-    .await
-    else {
-        info!(
-            "Cancellation requested before gateway chain provider was created on startup, exiting"
+    let gateway_provider = ProviderBuilder::default()
+        .filler(FillersWithoutNonceManagement::default())
+        .wallet(wallet.clone())
+        .connect_reqwest(
+            gateway_http_client(&conf.gateway_url)?,
+            conf.gateway_url.clone(),
         );
-        return Ok(());
-    };
+    info!(
+        transport = "http",
+        "Gateway provider configured; legacy provider-max-retries is ignored"
+    );
     let gateway_provider =
-        NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
+        NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()))
+            .with_max_inflight(conf.max_inflight_sends as usize);
 
     let config = ConfigSettings {
         verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
@@ -310,6 +278,8 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_max_secs: conf.error_sleep_max_secs,
         add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
         send_txn_sync_timeout_secs: conf.send_txn_sync_timeout_secs,
+        txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
+        gas_estimation_timeout_secs: conf.gas_estimation_timeout_secs,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,

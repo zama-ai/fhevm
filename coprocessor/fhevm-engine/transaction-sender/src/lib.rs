@@ -11,7 +11,6 @@ use std::time::Duration;
 use alloy::network::TxSigner;
 use alloy::providers::Provider;
 use alloy::providers::ProviderBuilder;
-use alloy::providers::WsConnect;
 use alloy::signers::Signature;
 use alloy::signers::Signer;
 use alloy::transports::http::reqwest::Url;
@@ -21,6 +20,7 @@ use anyhow::Error;
 pub use config::ConfigSettings;
 pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
+pub use nonce_managed_provider::DEFAULT_MAX_INFLIGHT_SENDS;
 use tracing::error;
 pub use transaction_sender::TransactionSender;
 
@@ -77,43 +77,35 @@ impl HealthStatus {
     }
 }
 
-// Gets the chain ID from the given WebSocket URL.
-// This is a utility function that will try to connect until it succeeds.
-pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
-    loop {
-        let provider = match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(ws_url.clone())
-                    .with_max_retries(1)
-                    .with_retry_interval(retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => provider,
-            Err(e) => {
-                error!(
-                    ws_url = %ws_url,
-                    error = %e,
-                    retry_interval = ?retry_interval,
-                    "Failed to connect to Gateway, retrying"
-                );
-                tokio::time::sleep(retry_interval).await;
-                continue;
-            }
-        };
+/// Pooled HTTP client policy used by startup and transaction RPCs. No transport
+/// retries or redirects: ambiguous submissions belong to operation-level recovery.
+/// Phase deadlines remain authoritative when shorter than this request ceiling.
+pub fn gateway_http_client(url: &Url) -> anyhow::Result<alloy::transports::http::reqwest::Client> {
+    anyhow::ensure!(
+        matches!(url.scheme(), "http" | "https"),
+        "transaction sender requires an http:// or https:// Gateway URL"
+    );
+    Ok(alloy::transports::http::reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(4))
+        .timeout(Duration::from_secs(30))
+        .redirect(alloy::transports::http::reqwest::redirect::Policy::none())
+        .retry(alloy::transports::http::reqwest::retry::never())
+        .build()?)
+}
 
+/// Query chain ID over HTTP, retrying failed startup probes until cancelled by
+/// the caller. Invalid URL schemes fail immediately rather than retrying forever.
+pub async fn get_chain_id(url: Url, retry_interval: Duration) -> anyhow::Result<u64> {
+    let client = gateway_http_client(&url)?;
+    let provider = ProviderBuilder::new().connect_reqwest(client, url);
+    loop {
         match provider.get_chain_id().await {
             Ok(chain_id) => {
-                tracing::info!(chain_id = chain_id, "Found chain ID");
-                return chain_id;
+                tracing::info!(chain_id, "Found chain ID");
+                return Ok(chain_id);
             }
-            Err(e) => {
-                error!(
-                    ws_url = %ws_url,
-                    error = %e,
-                    retry_interval = ?retry_interval,
-                    "Failed to get chain ID from Gateway, retrying"
-                );
+            Err(_) => {
+                error!(?retry_interval, "Gateway chain ID query failed, retrying");
                 tokio::time::sleep(retry_interval).await;
             }
         }
