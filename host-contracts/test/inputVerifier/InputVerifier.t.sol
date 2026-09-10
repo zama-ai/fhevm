@@ -417,7 +417,7 @@ contract InputVerifierTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.3.0")));
         assertEq(inputVerifier.getThreshold(), initialThreshold);
     }
 
