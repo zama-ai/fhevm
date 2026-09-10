@@ -154,6 +154,23 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
+    // Solana history and its ingestion cursor move together. Isolate the dry-run
+    // listener; blue retains the canonical history and progress at cutover.
+    CoprocessorTable {
+        name: "solana_encrypted_states",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "solana_encrypted_state_leaves",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "solana_listener_checkpoint",
+        duplicated: true,
+        conflict_cols: &[],
+    },
     // Written by the GCS host-listener kms_generation module during the dry-run.
     CoprocessorTable {
         name: "kms_key_activation_events",

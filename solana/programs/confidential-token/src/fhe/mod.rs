@@ -8,12 +8,12 @@
 //! `(confidential_token::ID, mint)` ([`crate::token_app`]), and every value is controlled by a
 //! PDA of this program — the token account for holder-scoped values, the `total-supply` PDA for
 //! the encrypted total supply. Reading a value into a computation is admitted by that PDA's
-//! signature, so the token program signs for every value an execution touches and no "compute
-//! signer" identity exists. Who may decrypt a handle is said on the write that produces it
-//! (`PersistentOutput::allow`); the owner is allowed on every holder-scoped write.
+//! signature. The token signs for its own States; reading another program's State requires
+//! that program to supply its authority's signature. Decrypt permissions are declared on
+//! the producing output (`zama_fhe::StateOutput::allow`); holder balance writes allow the owner.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
-use zama_host::{program::ZamaHost, EncryptedValue, HostConfig};
+use zama_host::{program::ZamaHost, HostConfig};
 
 use crate::{
     token_account_address, token_app, total_supply_authority_address, ConfidentialTokenAccount,
@@ -23,123 +23,93 @@ use crate::{
 mod verify_public_decrypt;
 pub(crate) use verify_public_decrypt::*;
 
-/// A persistent execution output account bound to the exact `EncryptedValue` encrypted value
-/// account it is allowed to create or update.
-pub(crate) struct PersistentOutput<'info> {
-    encrypted_value: AccountInfo<'info>,
-    output: Box<zama_fhe::PersistentOutput>,
+pub(crate) struct SlotOutput<'info> {
+    state: AccountInfo<'info>,
+    key: [u8; 32],
+    output: Box<zama_fhe::StateOutput>,
 }
 
-impl<'info> PersistentOutput<'info> {
-    /// Binds `encrypted_value` as the output of a persistent execution step: creates the
-    /// encrypted value account's first handle if the PDA does not exist yet (carrying
-    /// `authority`'s seeds so the host can prove the value belongs to this program), or updates
-    /// it (echoing the current handle read off the on-chain account) if it does. `allows` are
-    /// the keys that may decrypt the handle this write produces.
+impl<'info> SlotOutput<'info> {
     pub(crate) fn new(
-        encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueId,
-        authority: &ValueAuthority<'info>,
+        state: AccountInfo<'info>,
+        target: (zama_fhe::StateId, [u8; 32]),
+        authority: &StateAuthority<'info>,
         allows: impl IntoIterator<Item = Pubkey>,
-    ) -> Result<Self> {
-        Self::new_inner(encrypted_value, key, authority, allows, false)
-    }
-
-    /// Like [`new`](Self::new), but binds the output created publicly decryptable: the host
-    /// seals a public-decrypt leaf for the new handle inside the same execution CPI
-    /// (EVM `unwrap` parity; DD-036). Used by `confidential_burn` for the burned
-    /// delta so every burn stays permanently redeemable with no second CPI.
-    pub(crate) fn new_public(
-        encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueId,
-        authority: &ValueAuthority<'info>,
-        allows: impl IntoIterator<Item = Pubkey>,
-    ) -> Result<Self> {
-        Self::new_inner(encrypted_value, key, authority, allows, true)
-    }
-
-    fn new_inner(
-        encrypted_value: AccountInfo<'info>,
-        key: zama_fhe::EncryptedValueId,
-        authority: &ValueAuthority<'info>,
-        allows: impl IntoIterator<Item = Pubkey>,
-        make_public: bool,
     ) -> Result<Self> {
         require_keys_eq!(
-            encrypted_value.key(),
-            key.address(),
-            ConfidentialTokenError::CurrentEncryptedValueMismatch
+            state.key(),
+            target.0.address(),
+            ConfidentialTokenError::CurrentEncryptedStateMismatch
         );
         require_keys_eq!(
             authority.key(),
-            key.encrypted_value_account_authority(),
-            ConfidentialTokenError::EncryptedValueAuthorityMismatch
+            target.0.authority(),
+            ConfidentialTokenError::EncryptedStateAuthorityMismatch
         );
-        let mut output = if *encrypted_value.owner == System::id() {
-            require!(
-                encrypted_value.data_is_empty() && !encrypted_value.executable,
-                ConfidentialTokenError::InvalidFheExecution
-            );
-            zama_fhe::PersistentOutput::create(key, authority.signer.seeds().as_slice())
-        } else {
-            let value = read_encrypted_value(&encrypted_value)?;
-            zama_fhe::PersistentOutput::update(key, value.current_handle)
-        };
-        for allowed in allows {
-            output = output.allow(allowed);
+        let account = read_state(&state)?;
+        let mut output = zama_fhe::State::new(&account).set(target.1);
+        for subject in allows {
+            output = output.allow(subject);
         }
-        if make_public {
-            output = output.make_public();
-        }
-        output.validate().map_err(|error| {
-            msg!("invalid persistent FHE output: {:?}", error);
-            error!(ConfidentialTokenError::InvalidFheExecution)
-        })?;
         Ok(Self {
-            encrypted_value,
+            state,
+            key: target.1,
             output: Box::new(output),
         })
     }
 
+    pub(crate) fn new_public(
+        state: AccountInfo<'info>,
+        target: (zama_fhe::StateId, [u8; 32]),
+        authority: &StateAuthority<'info>,
+        allows: impl IntoIterator<Item = Pubkey>,
+    ) -> Result<Self> {
+        let mut output = Self::new(state, target, authority, allows)?;
+        output.output = Box::new((*output.output).make_public());
+        Ok(output)
+    }
+
     pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::persistent((*self.output).clone())
+        zama_fhe::Output::state((*self.output).clone())
     }
-
-    /// Reads the handle the host bound into `encrypted_value` by this execution CPI.
-    /// Call only after the CPI that carries this output has executed.
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
-        let value = read_encrypted_value(&self.encrypted_value)?;
-        Ok(value.current_handle)
+        read_state(&self.state)?
+            .get(&self.key)
+            .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStateMismatch))
     }
-
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
-        self.encrypted_value.clone()
+        self.state.clone()
     }
 }
 
-/// Decodes a canonical, host-owned `EncryptedValue` account.
-pub(crate) fn read_encrypted_value(info: &AccountInfo) -> Result<EncryptedValue> {
+pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedState> {
     require_keys_eq!(
         *info.owner,
         zama_host::ID,
-        ConfidentialTokenError::CurrentEncryptedValueMismatch
+        ConfidentialTokenError::CurrentEncryptedStateMismatch
     );
-    let data = info.try_borrow_data()?;
-    let mut slice: &[u8] = &data;
-    EncryptedValue::try_deserialize(&mut slice)
+    let state = zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+    require_keys_eq!(
+        state.canonical_address().0,
+        info.key(),
+        ConfidentialTokenError::CurrentEncryptedStateMismatch
+    );
+    Ok(state)
 }
 
-/// A euint64 operand read from a stored value's own canonical fields, so the operand slot
-/// always matches the account the host re-validates.
-pub(crate) fn uint64_operand(value: &EncryptedValue) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Uint64Handle::persistent(
-        value.current_handle,
-        zama_fhe::EncryptedValueId::from_value(value),
-    )
-    .map_err(|error| {
-        msg!("invalid FHE execution: {:?}", error);
-        error!(ConfidentialTokenError::InvalidFheExecution)
-    })
+pub(crate) fn state_handle(state: &zama_host::EncryptedState, key: [u8; 32]) -> Result<[u8; 32]> {
+    state
+        .get(&key)
+        .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStateMismatch))
+}
+
+pub(crate) fn uint64_operand(
+    state: &zama_host::EncryptedState,
+    key: [u8; 32],
+) -> Result<zama_fhe::Uint64Handle> {
+    zama_fhe::State::new(state)
+        .get(key)
+        .map_err(|_| error!(ConfidentialTokenError::InvalidFheExecution))
 }
 
 /// The deny record witnesses for one `fhe_execute` CPI: exactly one remaining account per
@@ -195,7 +165,7 @@ pub(crate) fn deny_scope_record<'info>(
 
 /// Signer model for a value authority required by an execution.
 #[derive(Clone)]
-pub(crate) enum ValueAuthoritySigner {
+pub(crate) enum StateAuthoritySigner {
     TokenAccount {
         mint: Pubkey,
         owner: Pubkey,
@@ -205,15 +175,11 @@ pub(crate) enum ValueAuthoritySigner {
         mint: Pubkey,
         bump: u8,
     },
-    /// Another program's PDA whose signature the transaction already carries (through that
-    /// program's `invoke_signed`). `seeds` prove it to the host on a create; this program never
-    /// signs with them.
-    Foreign {
-        seeds: Vec<Vec<u8>>,
-    },
+    /// An authority already signed by the calling program or transaction.
+    External,
 }
 
-impl ValueAuthoritySigner {
+impl StateAuthoritySigner {
     pub(crate) fn token_account(account: &Account<'_, ConfidentialTokenAccount>) -> Self {
         Self::TokenAccount {
             mint: account.mint,
@@ -228,9 +194,9 @@ impl ValueAuthoritySigner {
 
     /// Signer seeds borrowed straight from the stored key material; assembling
     /// them allocates nothing on the never-freeing program heap.
-    fn seeds(&self) -> ValueAuthoritySeeds<'_> {
+    fn seeds(&self) -> StateAuthoritySeeds<'_> {
         match self {
-            Self::TokenAccount { mint, owner, bump } => ValueAuthoritySeeds {
+            Self::TokenAccount { mint, owner, bump } => StateAuthoritySeeds {
                 seeds: [
                     b"token-account",
                     mint.as_ref(),
@@ -239,7 +205,7 @@ impl ValueAuthoritySigner {
                 ],
                 len: 4,
             },
-            Self::TotalSupply { mint, bump } => ValueAuthoritySeeds {
+            Self::TotalSupply { mint, bump } => StateAuthoritySeeds {
                 seeds: [
                     b"total-supply",
                     mint.as_ref(),
@@ -248,33 +214,27 @@ impl ValueAuthoritySigner {
                 ],
                 len: 3,
             },
-            Self::Foreign { seeds } => {
-                let mut slots: [&[u8]; 4] = [&[], &[], &[], &[]];
-                for (slot, seed) in slots.iter_mut().zip(seeds) {
-                    *slot = seed;
-                }
-                ValueAuthoritySeeds {
-                    seeds: slots,
-                    len: seeds.len(),
-                }
-            }
+            Self::External => StateAuthoritySeeds {
+                seeds: [&[]; 4],
+                len: 0,
+            },
         }
     }
 
     /// Whether this program signs for the authority in the host CPI.
     fn signs_here(&self) -> bool {
-        !matches!(self, Self::Foreign { .. })
+        !matches!(self, Self::External)
     }
 }
 
 /// Seed slices for one value authority. The array is sized for the widest
 /// signer variant; `len` says how many slots the variant fills.
-struct ValueAuthoritySeeds<'a> {
+struct StateAuthoritySeeds<'a> {
     seeds: [&'a [u8]; 4],
     len: usize,
 }
 
-impl<'a> ValueAuthoritySeeds<'a> {
+impl<'a> StateAuthoritySeeds<'a> {
     fn as_slice(&self) -> &[&'a [u8]] {
         &self.seeds[..self.len]
     }
@@ -282,12 +242,41 @@ impl<'a> ValueAuthoritySeeds<'a> {
 
 /// A value authority account plus the signer model that authorizes it.
 #[derive(Clone)]
-pub(crate) struct ValueAuthority<'info> {
+pub(crate) struct StateAuthority<'info> {
     account: AccountInfo<'info>,
-    signer: Box<ValueAuthoritySigner>,
+    signer: Box<StateAuthoritySigner>,
 }
 
-impl<'info> ValueAuthority<'info> {
+impl<'info> StateAuthority<'info> {
+    pub(crate) fn create_state(
+        &self,
+        mint: Pubkey,
+        state: AccountInfo<'info>,
+        payer: AccountInfo<'info>,
+        host_config: AccountInfo<'info>,
+        system_program: AccountInfo<'info>,
+    ) -> Result<()> {
+        let seeds = self.signer.seeds();
+        zama_host::cpi::create_encrypted_state(
+            CpiContext::new_with_signer(
+                zama_host::ID,
+                zama_host::cpi::accounts::CreateEncryptedState {
+                    payer,
+                    authority: self.account_info(),
+                    encrypted_state: state,
+                    host_config,
+                    system_program,
+                },
+                &[seeds.as_slice()],
+            ),
+            zama_host::instructions::CreateEncryptedStateArgs {
+                program: crate::ID,
+                scope: mint.to_bytes(),
+                authority_seeds: seeds.as_slice().iter().map(|s| s.to_vec()).collect(),
+            },
+        )
+    }
+
     pub(crate) fn token_account(
         account: &Account<'info, ConfidentialTokenAccount>,
     ) -> Result<Self> {
@@ -303,7 +292,7 @@ impl<'info> ValueAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            signer: Box::new(ValueAuthoritySigner::token_account(account)),
+            signer: Box::new(StateAuthoritySigner::token_account(account)),
         })
     }
 
@@ -324,7 +313,7 @@ impl<'info> ValueAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            signer: Box::new(ValueAuthoritySigner::total_supply(mint, bump)),
+            signer: Box::new(StateAuthoritySigner::total_supply(mint, bump)),
         })
     }
 
@@ -333,24 +322,11 @@ impl<'info> ValueAuthority<'info> {
     pub(crate) fn external(account: AccountInfo<'info>) -> Self {
         Self {
             account,
-            signer: Box::new(ValueAuthoritySigner::Foreign { seeds: Vec::new() }),
+            signer: Box::new(StateAuthoritySigner::External),
         }
     }
 
-    /// Another program's signing PDA that a transfer writes a receipt for; `seeds` (bump last)
-    /// derive it under that program and let the host prove the value is that program's.
-    pub(crate) fn foreign(account: AccountInfo<'info>, seeds: Vec<Vec<u8>>) -> Result<Self> {
-        require!(
-            seeds.len() <= 4,
-            ConfidentialTokenError::InvalidFheExecution
-        );
-        Ok(Self {
-            account,
-            signer: Box::new(ValueAuthoritySigner::Foreign { seeds }),
-        })
-    }
-
-    fn key(&self) -> Pubkey {
+    pub(crate) fn key(&self) -> Pubkey {
         self.account.key()
     }
 
@@ -362,22 +338,22 @@ impl<'info> ValueAuthority<'info> {
 /// Pubkey-indexed accounts and authorities available to satisfy an execution.
 pub(crate) struct ExecutionAccountSet<'info> {
     accounts: zama_fhe::ResolvedExecutionAccounts<'info>,
-    value_authorities: Vec<ValueAuthority<'info>>,
+    value_authorities: Vec<StateAuthority<'info>>,
 }
 
 impl<'info> ExecutionAccountSet<'info> {
     pub(crate) fn for_execution(
         execution: &zama_fhe::FheExecution,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
-        value_authorities: impl IntoIterator<Item = ValueAuthority<'info>>,
+        value_authorities: impl IntoIterator<Item = StateAuthority<'info>>,
     ) -> Result<Self> {
         let value_authorities = value_authorities.into_iter().collect::<Vec<_>>();
-        let value_authority_accounts = value_authorities
+        let state_authority_accounts = value_authorities
             .iter()
-            .map(ValueAuthority::account_info)
+            .map(StateAuthority::account_info)
             .collect::<Vec<_>>();
         let accounts = execution
-            .resolve_accounts(available_accounts, value_authority_accounts)
+            .resolve_accounts(available_accounts, state_authority_accounts)
             .map_err(map_execution_account_resolution_error)?;
 
         Ok(Self {
@@ -386,12 +362,19 @@ impl<'info> ExecutionAccountSet<'info> {
         })
     }
 
-    fn value_authority(&self, pubkey: Pubkey) -> Result<ValueAuthority<'info>> {
-        self.value_authorities
-            .iter()
-            .find(|authority| authority.key() == pubkey)
-            .cloned()
-            .ok_or_else(|| error!(ConfidentialTokenError::MissingFheOutputAuthority))
+    fn signing_authorities(
+        &self,
+        execution: &zama_fhe::FheExecution,
+    ) -> Result<Vec<&StateAuthority<'info>>> {
+        execution
+            .value_authorities()
+            .map(|key| {
+                self.value_authorities
+                    .iter()
+                    .find(|authority| authority.key() == key)
+                    .ok_or_else(|| error!(ConfidentialTokenError::MissingFheOutputAuthority))
+            })
+            .collect()
     }
 
     fn resolved_accounts(&self) -> &zama_fhe::ResolvedExecutionAccounts<'info> {
@@ -416,13 +399,13 @@ fn map_execution_account_resolution_error(
         zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
             error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
         }
-        zama_fhe::ExecutionAccountResolutionError::DuplicateValueAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DuplicateStateAuthority { .. } => {
             error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
         }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedValueAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedStateAuthority { .. } => {
             error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
         }
-        zama_fhe::ExecutionAccountResolutionError::MissingValueAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::MissingStateAuthority { .. } => {
             error!(ConfidentialTokenError::MissingFheOutputAuthority)
         }
     }
@@ -452,55 +435,70 @@ pub(crate) struct ExecuteContext<'a, 'info> {
 }
 
 /// Inputs for one instruction-local FHE execution.
-pub(crate) struct Execute<'a, 'info> {
+pub(crate) struct Execute<'a, 'info, E = zama_fhe::FheExecution> {
     /// Fixed ZamaHost CPI accounts shared by every execution in this instruction.
     pub context: ExecuteContext<'a, 'info>,
     /// Typed resolver for dynamic accounts required by the execution.
     pub accounts: &'a ExecutionAccountSet<'info>,
     /// SDK-built host execution request and dynamic account roles.
-    pub execution: zama_fhe::FheExecution,
+    pub execution: E,
 }
 
 /// Invokes one FHE execution, signing for every value authority it requires that this program
 /// controls; a foreign authority's signature is already on the transaction. Token executions
 /// never draw randomness, so no rand nonce is passed.
 pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
-    let encrypted_value_account_authority = request.accounts.value_authority(
+    let authorities = request.accounts.signing_authorities(&request.execution)?;
+    invoke_with_authorities(request.context, &authorities, |accounts, seeds| {
         request
             .execution
-            .encrypted_value_account_authority()
-            .pubkey(),
-    )?;
-    let additional_authorities: Vec<ValueAuthority<'info>> = request
-        .execution
-        .additional_value_authorities()
-        .map(|authority| request.accounts.value_authority(authority))
-        .collect::<Result<_>>()?;
-    let authority_seeds: Vec<ValueAuthoritySeeds> =
-        std::iter::once(&encrypted_value_account_authority)
-            .chain(&additional_authorities)
-            .filter(|authority| authority.signer.signs_here())
-            .map(|authority| authority.signer.seeds())
-            .collect();
-    let signer_seeds: Vec<&[&[u8]]> = authority_seeds
-        .iter()
-        .map(ValueAuthoritySeeds::as_slice)
-        .collect();
+            .invoke(accounts, request.accounts.resolved_accounts(), seeds)
+    })
+}
 
-    request.execution.invoke(
+pub(crate) fn execute_returning<'info>(
+    request: Execute<'_, 'info, zama_fhe::ReturningFheExecution<zama_fhe::Uint<64>>>,
+) -> Result<[u8; 32]> {
+    let authorities = request
+        .accounts
+        .signing_authorities(request.execution.execution())?;
+    invoke_with_authorities(request.context, &authorities, |accounts, seeds| {
+        request
+            .execution
+            .invoke(accounts, request.accounts.resolved_accounts(), seeds)
+    })
+}
+
+fn invoke_with_authorities<'info, R>(
+    context: ExecuteContext<'_, 'info>,
+    authorities: &[&StateAuthority<'info>],
+    invoke: impl FnOnce(zama_fhe::ExecutionCpiAccounts<'info>, &[&[&[u8]]]) -> Result<R>,
+) -> Result<R> {
+    let primary = authorities
+        .first()
+        .ok_or(ConfidentialTokenError::MissingFheOutputAuthority)?;
+    let authority_seeds: Vec<_> = authorities
+        .iter()
+        .filter(|authority| authority.signer.signs_here())
+        .map(|authority| authority.signer.seeds())
+        .collect();
+    let signer_seeds: Vec<_> = authority_seeds
+        .iter()
+        .map(StateAuthoritySeeds::as_slice)
+        .collect();
+    invoke(
         zama_fhe::ExecutionCpiAccounts {
-            payer: request.context.payer.to_account_info(),
-            encrypted_value_account_authority: encrypted_value_account_authority.account_info(),
-            host_config: request.context.host_config.to_account_info(),
-            deny_scope_records: request.context.deny_scope_records,
-            system_program: request.context.system_program.to_account_info(),
-            hcu_block_meter: request.context.hcu_block_meter,
-            hcu_trusted_app_record: request.context.hcu_trusted_app_record,
+            payer: context.payer.to_account_info(),
+            authority: primary.account_info(),
+            host_config: context.host_config.to_account_info(),
+            deny_scope_records: context.deny_scope_records,
+            system_program: context.system_program.to_account_info(),
+            hcu_block_meter: context.hcu_block_meter,
+            hcu_trusted_app_record: context.hcu_trusted_app_record,
             rand_nonce: None,
-            event_authority: request.context.event_authority.to_account_info(),
-            program: request.context.zama_program.to_account_info(),
+            event_authority: context.event_authority.to_account_info(),
+            program: context.zama_program.to_account_info(),
         },
-        request.accounts.resolved_accounts(),
         &signer_seeds,
     )
 }
@@ -508,10 +506,6 @@ pub(crate) fn execute<'info>(request: Execute<'_, 'info>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn handle(tag: u8) -> [u8; 32] {
-        [tag; 32]
-    }
 
     fn balance_handle(tag: u8) -> [u8; 32] {
         let mut handle = [tag; 32];
@@ -529,40 +523,40 @@ mod tests {
 
     // The signer model is irrelevant to these tests — they resolve authorities by address, and the
     // seeds are only used when actually signing a CPI, which a host unit test never does.
-    fn value_authority(pubkey: Pubkey) -> ValueAuthority<'static> {
-        ValueAuthority::external(account_info(pubkey, false))
+    fn state_authority(pubkey: Pubkey) -> StateAuthority<'static> {
+        StateAuthority::external(account_info(pubkey, false))
     }
 
-    fn encrypted_value_id(account: Pubkey, label_tag: u8) -> zama_fhe::EncryptedValueId {
-        zama_fhe::EncryptedValueId::new(
-            token_app(Pubkey::new_from_array([9; 32])),
-            account,
-            zama_fhe::EncryptedValueLabel::new(handle(label_tag)),
-        )
-    }
-
-    fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey, Pubkey) {
+    fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
-        let input_key = encrypted_value_id(authority, 1);
-        let input_acl = input_key.address();
-        let output_key = encrypted_value_id(authority, 2);
-        let output_acl = output_key.address();
-        let input = zama_fhe::Uint64Handle::persistent(balance_handle(1), input_key).unwrap();
+        let input_account = zama_host::EncryptedState {
+            program: crate::ID,
+            authority,
+            scope: [1; 32],
+            slots: vec![zama_host::EncryptedSlot {
+                key: [1; 32],
+                handle: balance_handle(1),
+            }],
+            leaf_count: 0,
+            peaks: vec![],
+            bump: 0,
+        };
+        let state = zama_fhe::State::new(&input_account);
+        let state_address = state.id().address();
+        let input = state.get::<zama_fhe::Uint<64>>([1; 32]).unwrap();
         let execution = zama_fhe::FheExecution::build(
-            zama_fhe::ExecutionEncryptedValueAccountAuthority::new(authority),
+            zama_fhe::ExecutionAuthority::new(authority),
             |builder| {
                 builder.add(
                     input,
                     zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                    zama_fhe::Output::persistent(
-                        zama_fhe::PersistentOutput::create(output_key, &[]).allow(authority),
-                    ),
+                    zama_fhe::Output::state(state.set([2; 32]).allow(authority)),
                 )?;
                 Ok(())
             },
         )
         .unwrap();
-        (execution, input_acl, output_acl, authority)
+        (execution, state_address, authority)
     }
 
     fn token_error_number(error: Error) -> u32 {
@@ -581,16 +575,15 @@ mod tests {
 
     #[test]
     fn batch_account_set_maps_dynamic_account_errors() {
-        let (execution, input_acl, output_acl, authority) = sample_plan();
+        let (execution, state_address, authority) = sample_plan();
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
             vec![
-                account_info(input_acl, false),
-                account_info(input_acl, false),
-                account_info(output_acl, true),
+                account_info(state_address, true),
+                account_info(state_address, true),
             ],
-            vec![value_authority(authority)],
+            vec![state_authority(authority)],
         )
         .err()
         .unwrap();
@@ -599,11 +592,10 @@ mod tests {
         let error = ExecutionAccountSet::for_execution(
             &execution,
             vec![
-                account_info(input_acl, false),
-                account_info(output_acl, true),
+                account_info(state_address, true),
                 account_info(Pubkey::new_unique(), false),
             ],
-            vec![value_authority(authority)],
+            vec![state_authority(authority)],
         )
         .err()
         .unwrap();
@@ -611,8 +603,8 @@ mod tests {
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
-            vec![account_info(output_acl, true)],
-            vec![value_authority(authority)],
+            vec![],
+            vec![state_authority(authority)],
         )
         .err()
         .unwrap();
@@ -620,11 +612,8 @@ mod tests {
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
-            vec![
-                account_info(input_acl, false),
-                account_info(output_acl, false),
-            ],
-            vec![value_authority(authority)],
+            vec![account_info(state_address, false)],
+            vec![state_authority(authority)],
         )
         .err()
         .unwrap();
@@ -632,16 +621,13 @@ mod tests {
     }
 
     #[test]
-    fn batch_account_set_maps_value_authority_errors() {
-        let (execution, input_acl, output_acl, authority) = sample_plan();
+    fn batch_account_set_maps_state_authority_errors() {
+        let (execution, state_address, authority) = sample_plan();
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
-            vec![
-                account_info(input_acl, false),
-                account_info(output_acl, true),
-            ],
-            vec![value_authority(authority), value_authority(authority)],
+            vec![account_info(state_address, true)],
+            vec![state_authority(authority), state_authority(authority)],
         )
         .err()
         .unwrap();
@@ -649,13 +635,10 @@ mod tests {
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
+            vec![account_info(state_address, true)],
             vec![
-                account_info(input_acl, false),
-                account_info(output_acl, true),
-            ],
-            vec![
-                value_authority(authority),
-                value_authority(Pubkey::new_unique()),
+                state_authority(authority),
+                state_authority(Pubkey::new_unique()),
             ],
         )
         .err()
@@ -664,10 +647,7 @@ mod tests {
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
-            vec![
-                account_info(input_acl, false),
-                account_info(output_acl, true),
-            ],
+            vec![account_info(state_address, true)],
             Vec::new(),
         )
         .err()

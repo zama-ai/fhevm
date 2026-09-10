@@ -172,10 +172,10 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     pub handles: Vec<SolanaHandleJson>,
 }
 
-/// One Solana handle entry: the handle, the key whose allow leaf authorizes it, and the account
-/// the handle lives in. None of these fields are signed — a substituted value can fail the
+/// One Solana handle entry: the handle, the key whose allow leaf authorizes it, and its state
+/// account. None of these fields are signed — a substituted value can fail the
 /// request but never widen access — and none is a proof: the connector fetches the allow leaf
-/// from the coprocessors and verifies it against the account it reads.
+/// from the coprocessors and verifies it against the state it reads.
 #[derive(Deserialize, Serialize, Clone, ToSchema, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -185,6 +185,7 @@ pub struct SolanaHandleJson {
     /// The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
     /// itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
     pub allowed_key: String,
-    /// The 32-byte address of the `EncryptedValue` account the handle lives in (`0x` + 64 hex).
-    pub encrypted_value_account: String,
+    /// The 32-byte address of the `EncryptedState` account whose history grants access
+    /// (`0x` + 64 hex).
+    pub encrypted_state: String,
 }

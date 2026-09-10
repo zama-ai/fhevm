@@ -1,37 +1,5 @@
-// Scenario: the confidential-token consume arc — the [consume] phase ported from
-// `solana/scripts/e2e/full-vertical.sh`: wrap -> burn (attested external amount) -> seal ->
-// KMS-certified public decrypt -> redeem (SPL release) -> disclose (on-chain cleartext event).
-//
-// Assertion map — bash step -> this scenario:
-//   "OK wrap_usdc" grep -> `wrapUnderlying` throws on failure (simulate+send+confirm).
-//   burn input-proof handle scrape (`solana-input.ts` subprocess + python json) -> the in-process
-//     SDK encrypt client returns the typed submission; the attestation binds
-//     (user = owner, contract = the confidential-token program) exactly as the token requires.
-//   "burned handle"/"burned amount ACL" stdout scrapes -> typed reads: the burned-amount
-//     encrypted value account derives from (token program, token account, mint, burned_amount
-//     label) and its current handle is read from chain, not from a log line.
-//   burned-handle SNS poll (docker psql loop) -> `stack.waitForSnsCommit`.
-//   "OK make_handle_public" grep -> `sealBurnedAmountHandle` throws on failure.
-//   leaf_count / leaf_index proof assertions -> the consume proof is rebuilt client-side from the
-//     account's expected history (`livePublicLeafProof`): the burn's allow leaf (0) and public
-//     leaf (1) plus the explicit re-seal (2). The rebuild cross-checks the live peaks, so a history
-//     the account does not hold fails here, by name, not inside the on-chain verifier. The KMS
-//     certificate itself needs no proof: the Connector reads the public leaf through the coprocessors.
-//   cleartext == burn amount -> the certified decrypt's cleartext == BURN_AMOUNT.
-//   "OK redeem_burned_amount" grep -> `redeemBurnedAmount` throws on failure, PLUS a stronger
-//     assertion the bash never made: the owner's underlying token balance grows by exactly the
-//     certified cleartext.
-//   "OK disclose_secp" grep -> `discloseBurnedAmount` throws on failure.
-//
-// Adversarial tail — `adversarial-l4.sh` [L4-b] (context-mismatch cert reuse), ported here because
-// it needs exactly this provisioning: a disclose presenting the GENUINE certificate but with
-// extra_data naming KMS context 2 while the supplied on-chain kms_context account is the live
-// context 1 must be rejected on-chain (the host verifier checks the context binding FIRST, so the
-// still-valid MMR proof and signatures never rescue it) and no cleartext event is emitted.
-// [L4-a] (publicKey-substitution user-decrypt) is NOT ported: the attack lives in the kms repo's
-// live harness (`cargo test -p kms --test solana_user_decrypt_live` with
-// SOLANA_UD_ATTACK=pubkey_substitution), which signs a valid v3 request and swaps the ML-KEM
-// publicKey after signing — this repo only ever launched it, and that stays its vehicle.
+// Live token consume arc: wrap -> burn -> publish -> certified decrypt -> redeem -> disclose.
+// Also checks that changing the certificate's context id is rejected before signature verification.
 
 import { describe, expect, test } from "bun:test";
 
@@ -46,7 +14,6 @@ import {
   wrapUnderlying,
 } from "../../src/solana/provision";
 import {
-  burnedAmountLeafHistory,
   confidentialBurn,
   confidentialBurnTarget,
   discloseBurnedAmount,
@@ -136,24 +103,22 @@ describe("solana confidential-token consume vertical", () => {
       });
 
       const target = await confidentialBurnTarget(mint, wallet.signer.address);
-      const burnedHandle = await currentHandle(context, target.burnedAmountValue);
+      const burnedHandle = await currentHandle(context, target.burnedAmountState, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
-      // Seal through the token wrapper (it signs the Host CPI as the encrypted value account
-      // authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
+      // Seal through the token wrapper (it signs the Host CPI as the State authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
       // appends a third leaf. The proof below is built for the burn's own public leaf (index 1)
       // against the 3-leaf history, which is what proves both the lifecycle leaves and the re-seal
       // reached the account in order.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
       const inclusionProof = await livePublicLeafProof(
         context,
-        target.burnedAmountValue,
-        [...burnedAmountLeafHistory(burnedHandle, wallet.signer.address), { kind: "markedPublic", handle: burnedHandle }],
-        1n,
+        target.burnedAmountState,
+        burnedHandle,
       );
 
       const { cleartext, certificate } = await certifiedPublicDecrypt(config, {
-        encryptedValue: target.burnedAmountValue,
+        encryptedState: target.burnedAmountState,
         handle: burnedHandle,
       });
       expect(cleartext).toBe(BURN_AMOUNT);
@@ -170,18 +135,17 @@ describe("solana confidential-token consume vertical", () => {
       );
       expect(balanceAfter - balanceBefore).toBe(BURN_AMOUNT);
 
-      // Disclose: same verifier CPI, then the token-scoped cleartext event. Idempotent by design;
+      // Disclose: same verifier CPI, then the generic state/handle/cleartext event. Idempotent by design;
       // the burn already sealed the leaf, so the certificate's proof stays valid through both.
       await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate, inclusionProof });
 
-      // Adversarial (adversarial-l4.sh [L4-b]): the same genuine certificate, but its extra_data
-      // rewritten to name KMS context 2 (version byte 0x01 + 32-byte BE id) while the supplied
-      // kms_context account is the live context 1. extract_kms_context_id(extra) = 2 does not
-      // match the supplied account, so verify_public_decrypt fails closed on the context binding
-      // before ever weighing the (still valid) signatures and MMR proof. Not just any rejection
-      // counts: the evidence must name InvalidKmsContext (zama-host anchor error 6064 = 0x17b0),
-      // or a blockhash expiry / client encode error would read as the attack being repelled.
-      const wrongContextCertificate = { ...certificate, extraData: `0x01${(2n).toString(16).padStart(64, "0")}` };
+      // Keep the v4 carrier and state binding intact; change only the committed context id.
+      // The host must reject the context mismatch before checking the certificate signature.
+      const wrongContextExtraData = hexToBytes(certificate.extraData);
+      expect(wrongContextExtraData.length).toBe(65);
+      expect(wrongContextExtraData[0]).toBe(4);
+      wrongContextExtraData[32] = wrongContextExtraData[32]! ^ 1;
+      const wrongContextCertificate = { ...certificate, extraData: hex(wrongContextExtraData) };
       const rejection = await discloseBurnedAmount(context, {
         owner: wallet.signer,
         mint,
@@ -194,9 +158,8 @@ describe("solana confidential-token consume vertical", () => {
       if (rejection === undefined) {
         throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
       }
-      // zama-host InvalidKmsContext is anchor error 6062 (0x17ae) — pinning the code proves the
-      // context binding (not some unrelated failure) repelled the certificate.
-      expect(customProgramErrorCode(rejection)).toBe(6062);
+      // Pin the named rejection (zama_host IDL: InvalidKmsContext), not any transaction failure.
+      expect(customProgramErrorCode(rejection)).toBe(6061);
     },
     SCENARIO_TIMEOUT_MS,
   );

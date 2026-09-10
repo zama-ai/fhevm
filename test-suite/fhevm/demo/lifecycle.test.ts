@@ -6,7 +6,10 @@ import path from "node:path";
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
 import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
 import { gatewayAddHostChainArgs } from "../src/solana/deploy";
-import { SOLANA_E2E_PROGRAMS, seedProgramKeypairs } from "../src/solana/validator";
+import {
+  SOLANA_E2E_PROGRAMS,
+  seedProgramKeypairs,
+} from "../src/solana/validator";
 import { createDemoAuthorizationFile } from "./authorization";
 import {
   acceptableDockerContainerState,
@@ -57,8 +60,7 @@ const manifest = (): DemoManifest => ({
   observability: false,
   bootId: "12345678-1234-4123-8123-123456789abc",
   repoRoot: "/repo",
-  composeProject:
-    "fhevm-demo-12345678-1234-4123-8123-123456789abc",
+  composeProject: "fhevm-demo-12345678-1234-4123-8123-123456789abc",
   configPath: "/repo/.fhevm/runtime/solana-demo.json",
   createdAt: "2026-01-01T00:00:00.000Z",
   state: "running",
@@ -83,21 +85,37 @@ describe("demo lifecycle collision policy", () => {
 
   test("deployment overwrites stale target program identities", async () => {
     const demoDeploy = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/demo/deploy-demo-programs.sh"),
+      path.join(
+        import.meta.dir,
+        "../../../solana/scripts/demo/deploy-demo-programs.sh",
+      ),
       "utf8",
     );
-    expect(demoDeploy).toContain('cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"');
+    expect(demoDeploy).toContain(
+      'cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"',
+    );
     expect(demoDeploy).not.toContain("cp -n");
     // The e2e side, behaviorally: seed into a temp deploy dir that already holds a STALE keypair
     // (another branch's program identity) and require the committed identity to overwrite it.
-    const deployDir = await fs.mkdtemp(path.join(os.tmpdir(), "seed-keypairs-"));
+    const deployDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), "seed-keypairs-"),
+    );
     try {
-      await fs.writeFile(path.join(deployDir, "zama_host-keypair.json"), JSON.stringify(Array(64).fill(0)));
+      await fs.writeFile(
+        path.join(deployDir, "zama_host-keypair.json"),
+        JSON.stringify(Array(64).fill(0)),
+      );
       await seedProgramKeypairs(deployDir);
       for (const program of SOLANA_E2E_PROGRAMS) {
-        const seeded = await fs.readFile(path.join(deployDir, `${program}-keypair.json`), "utf8");
+        const seeded = await fs.readFile(
+          path.join(deployDir, `${program}-keypair.json`),
+          "utf8",
+        );
         const committed = await fs.readFile(
-          path.join(import.meta.dir, `../../../solana/scripts/e2e/test-keypairs/${program}-keypair.json`),
+          path.join(
+            import.meta.dir,
+            `../../../solana/scripts/e2e/test-keypairs/${program}-keypair.json`,
+          ),
           "utf8",
         );
         expect(seeded).toBe(committed);
@@ -148,9 +166,7 @@ describe("demo lifecycle collision policy", () => {
       minio: true,
       prometheus: true,
       jaeger: true,
-      containers: new Map([
-        ["kms-core", { ready: true, detail: "running" }],
-      ]),
+      containers: new Map([["kms-core", { ready: true, detail: "running" }]]),
     };
     expect(reseedHealthReady(health)).toBe(true);
     expect(reseedHealthReady({ ...health, relayer: false })).toBe(false);
@@ -207,10 +223,7 @@ describe("demo lifecycle collision policy", () => {
 
   test("observability compose has no global names or external network", async () => {
     const compose = await fs.readFile(
-      path.join(
-        import.meta.dir,
-        "observability-docker-compose.yml",
-      ),
+      path.join(import.meta.dir, "observability-docker-compose.yml"),
       "utf8",
     );
     expect(compose).not.toContain("container_name:");
@@ -222,10 +235,7 @@ describe("demo lifecycle collision policy", () => {
 
   test("Prometheus includes the relayer and centralized KMS targets", async () => {
     const prometheus = await fs.readFile(
-      path.join(
-        import.meta.dir,
-        "../static/config/prometheus/prometheus.yml",
-      ),
+      path.join(import.meta.dir, "../static/config/prometheus/prometheus.yml"),
       "utf8",
     );
     expect(prometheus).toContain('"relayer:9898"');
@@ -324,19 +334,30 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain('state") != "starting');
     expect(script).toContain('cd "$ROOT/solana/demo-dapp"');
     expect(script.match(/bun install --frozen-lockfile/g)).toHaveLength(1);
-    expect(script.match(/bun install --force --no-cache --frozen-lockfile/g)).toHaveLength(1);
+    expect(
+      script.match(/bun install --force --no-cache --frozen-lockfile/g),
+    ).toHaveLength(1);
     expect(script).toMatch(
       /if ! \( cd "\$ROOT\/solana\/demo-dapp" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/demo-dapp" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
     );
     expect(script).not.toContain("--no-verify");
-    expect(script).toContain('NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed');
+    expect(script).toContain(
+      'NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed',
+    );
   });
 
   test("root package exposes one-command observable start and owned stop", async () => {
     const rootPackage = JSON.parse(
-      await fs.readFile(path.join(import.meta.dir, "../../../package.json"), "utf8"),
-    ) as { scripts: Record<string, string> };
-    expect(rootPackage.scripts["demo:start"]).toBe("bun run demo serve --observability");
+      await fs.readFile(
+        path.join(import.meta.dir, "../../../package.json"),
+        "utf8",
+      ),
+    ) as {
+      scripts: Record<string, string>;
+    };
+    expect(rootPackage.scripts["demo:start"]).toBe(
+      "bun run demo serve --observability",
+    );
     expect(rootPackage.scripts["demo:stop"]).toBe("bun run demo down");
   });
 
@@ -345,17 +366,21 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
-    // The SDK's runtime dependencies resolve from the repository-root workspace graph (the
-    // consumers reach the SDK through a postinstall-created symlink), so the root install must
+    // The SDK's runtime dependencies resolve from the SDK's own dependency graph (the
+    // consumers reach the SDK through a postinstall-created symlink), so its install must
     // precede the canaries, and the ESM build must precede them because the symlink serves
     // built output.
-    const install = script.indexOf(
-      "npm ci --workspace=@fhevm/sdk-dev --workspace=@fhevm/sdk --include-workspace-root=false",
+    const install = script.indexOf('( cd "$ROOT/sdk/js-sdk" && npm ci )');
+    const build = script.indexOf(
+      "npm run clean && npm run build:esm && npm run build:types",
     );
-    const build = script.indexOf("npm run clean && npm run build:esm && npm run build:types");
     const consumerInstall = script.indexOf("bun install --frozen-lockfile");
-    const canary = script.indexOf('node --input-type=module -e "await import(\'@fhevm/sdk/solana\')"');
-    const bunCanary = script.indexOf('bun -e "await import(\'@fhevm/sdk/solana\')"');
+    const canary = script.indexOf(
+      "node --input-type=module -e \"await import('@fhevm/sdk/solana')\"",
+    );
+    const bunCanary = script.indexOf(
+      "bun -e \"await import('@fhevm/sdk/solana')\"",
+    );
     expect(install).toBeGreaterThan(-1);
     expect(build).toBeGreaterThan(install);
     expect(consumerInstall).toBeGreaterThan(build);
@@ -370,14 +395,26 @@ describe("demo lifecycle collision policy", () => {
 
   test("local SDK consumers reach the linked SDK only through exported subpaths", async () => {
     const sdkPackage = JSON.parse(
-      await fs.readFile(path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"), "utf8"),
+      await fs.readFile(
+        path.join(import.meta.dir, "../../../sdk/js-sdk/src/package.json"),
+        "utf8",
+      ),
     ) as { exports: Record<string, unknown> };
     const consumerPackage = JSON.parse(
       await fs.readFile(path.join(import.meta.dir, "../package.json"), "utf8"),
-    ) as { dependencies: Record<string, string>; scripts: Record<string, string> };
+    ) as {
+      dependencies: Record<string, string>;
+      scripts: Record<string, string>;
+    };
     const demoDappPackage = JSON.parse(
-      await fs.readFile(path.join(import.meta.dir, "../../../solana/demo-dapp/package.json"), "utf8"),
-    ) as { dependencies: Record<string, string>; scripts: Record<string, string> };
+      await fs.readFile(
+        path.join(import.meta.dir, "../../../solana/demo-dapp/package.json"),
+        "utf8",
+      ),
+    ) as {
+      dependencies: Record<string, string>;
+      scripts: Record<string, string>;
+    };
     const workflow = await fs.readFile(
       path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
       "utf8",
@@ -413,11 +450,15 @@ describe("demo lifecycle collision policy", () => {
       ["clean-e2e.sh", cleanE2e],
     ] as const) {
       const imports = canaryImports(source);
-      expect(imports.length, `${name} has no @fhevm/sdk runtime canary`).toBeGreaterThan(0);
+      expect(
+        imports.length,
+        `${name} has no @fhevm/sdk runtime canary`,
+      ).toBeGreaterThan(0);
       for (const subpath of imports) {
-        expect(exportedSubpaths, `${name} imports unexported subpath ${subpath}`).toContain(
-          subpath,
-        );
+        expect(
+          exportedSubpaths,
+          `${name} imports unexported subpath ${subpath}`,
+        ).toContain(subpath);
       }
     }
     expect(workflow).toContain("run: bun run demo reseed --direct");
@@ -432,12 +473,14 @@ describe("demo lifecycle collision policy", () => {
     // consumer's postinstall replaces the copy with the symlink. (bun's `link:` protocol names a
     // machine-global `bun link` registration, not a relative path, so the symlink cannot be
     // declared in the dependency spec itself.) Resolution must then follow the symlink to its
-    // real path so the SDK's runtime dependencies come from the repository-root workspace graph —
+    // real path so the SDK's runtime dependencies come from the SDK's own dependency graph —
     // which is why the vite config must not turn on `preserveSymlinks`.
     const swapSnapshotForSymlink =
       "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk";
     for (const consumer of [consumerPackage, demoDappPackage]) {
-      expect(consumer.dependencies["@fhevm/sdk"]).toBe("file:../../sdk/js-sdk/src");
+      expect(consumer.dependencies["@fhevm/sdk"]).toBe(
+        "file:../../sdk/js-sdk/src",
+      );
       expect(consumer.scripts.postinstall).toBe(swapSnapshotForSymlink);
     }
     expect(demoViteConfig).not.toContain("preserveSymlinks");
@@ -450,12 +493,8 @@ describe("demo lifecycle collision policy", () => {
     );
     expect(script).toContain("ensure_native_rust_builders");
     expect(script).toContain("docker info --format '{{.Architecture}}'");
-    expect(script).toContain(
-      '"$ROOT/golden-container-images/rust-glibc"',
-    );
-    expect(script).toContain(
-      '--build-arg "RUST_IMAGE_VERSION=$version"',
-    );
+    expect(script).toContain('"$ROOT/golden-container-images/rust-glibc"');
+    expect(script).toContain('--build-arg "RUST_IMAGE_VERSION=$version"');
     expect(script).toContain("org.zama.rust-glibc.recipe");
     expect(script).toContain("docker pull --platform linux/arm64");
     expect(script).toContain(
@@ -672,20 +711,14 @@ describe("demo lifecycle ownership primitives", () => {
       JSON.stringify({ pid: 42, identity: "identity:42" }),
     );
     expect(
-      await readLifecycleLockState(
-        lockPath,
-        async (pid) => `identity:${pid}`,
-      ),
+      await readLifecycleLockState(lockPath, async (pid) => `identity:${pid}`),
     ).toBe("active");
     expect(
       await readLifecycleLockState(lockPath, async () => "reused pid"),
     ).toBe("stale");
     await fs.rm(path.join(lockPath, "owner.json"));
     expect(
-      await readLifecycleLockState(
-        lockPath,
-        async (pid) => `identity:${pid}`,
-      ),
+      await readLifecycleLockState(lockPath, async (pid) => `identity:${pid}`),
     ).toBe("active");
   });
 
@@ -703,10 +736,7 @@ describe("demo lifecycle ownership primitives", () => {
       JSON.stringify({ pid: 42, identity: "identity:42" }),
     );
     expect(
-      await readLifecycleLockState(
-        lockPath,
-        async (pid) => `identity:${pid}`,
-      ),
+      await readLifecycleLockState(lockPath, async (pid) => `identity:${pid}`),
     ).toBe("active");
   });
 
@@ -822,23 +852,21 @@ describe("demo lifecycle ownership primitives", () => {
         state: "running",
       }),
     ).toBe("clean-stop");
-    expect(expectedBootShutdownAction(expectedBootId, null)).toBe(
-      "clean-stop",
-    );
+    expect(expectedBootShutdownAction(expectedBootId, null)).toBe("clean-stop");
   });
 
   test("supervised reseed cannot target a replacement boot", () => {
     const expectedBootId = manifest().bootId;
-    expect(
-      reseedTargetAction(expectedBootId, { bootId: expectedBootId }),
-    ).toBe("proceed");
+    expect(reseedTargetAction(expectedBootId, { bootId: expectedBootId })).toBe(
+      "proceed",
+    );
     expect(
       reseedTargetAction(expectedBootId, { bootId: crypto.randomUUID() }),
     ).toBe("replaced");
     expect(reseedTargetAction(expectedBootId, null)).toBe("replaced");
-    expect(
-      reseedTargetAction(undefined, { bootId: crypto.randomUUID() }),
-    ).toBe("proceed");
+    expect(reseedTargetAction(undefined, { bootId: crypto.randomUUID() })).toBe(
+      "proceed",
+    );
   });
 
   test("derives a private macOS-compatible supervisor socket path", () => {
@@ -883,9 +911,7 @@ describe("demo lifecycle ownership primitives", () => {
   });
 
   test("inventories only exact per-boot Compose labels with Docker's real format fields", async () => {
-    const project = demoComposeProject(
-      "12345678-1234-4123-8123-123456789abc",
-    );
+    const project = demoComposeProject("12345678-1234-4123-8123-123456789abc");
     const seen: (readonly string[])[] = [];
     const resources = await readOwnedDockerResources(project, async (argv) => {
       seen.push(argv);
@@ -916,9 +942,7 @@ describe("demo lifecycle ownership primitives", () => {
     });
     expect(
       seen.every((argv) =>
-        argv.includes(
-          `label=com.docker.compose.project=${project}`,
-        ),
+        argv.includes(`label=com.docker.compose.project=${project}`),
       ),
     ).toBe(true);
     expect(seen.find((argv) => argv[1] === "volume")?.at(-1)).toContain(
@@ -927,15 +951,10 @@ describe("demo lifecycle ownership primitives", () => {
   });
 
   test("does not capture an unlabeled concurrent Docker resource", async () => {
-    const project = demoComposeProject(
-      "12345678-1234-4123-8123-123456789abc",
-    );
+    const project = demoComposeProject("12345678-1234-4123-8123-123456789abc");
     await expect(
       readOwnedDockerResources(project, async (argv) => ({
-        stdout:
-          argv[1] === "ps"
-            ? "foreign-id\tforeign-same-project\t\n"
-            : "",
+        stdout: argv[1] === "ps" ? "foreign-id\tforeign-same-project\t\n" : "",
         stderr: "",
         code: 0,
       })),
@@ -943,9 +962,7 @@ describe("demo lifecycle ownership primitives", () => {
   });
 
   test("fails closed when any ownership-critical Docker inventory command fails", async () => {
-    const project = demoComposeProject(
-      "12345678-1234-4123-8123-123456789abc",
-    );
+    const project = demoComposeProject("12345678-1234-4123-8123-123456789abc");
     await expect(
       readOwnedDockerResources(project, async (argv) => ({
         stdout: "",
@@ -1007,9 +1024,9 @@ describe("demo lifecycle ownership primitives", () => {
         "",
       ),
     ).toBe(true);
-    expect(
-      acceptableDockerContainerState("kms-core-3", "exited", 0, ""),
-    ).toBe(false);
+    expect(acceptableDockerContainerState("kms-core-3", "exited", 0, "")).toBe(
+      false,
+    );
     expect(
       acceptableDockerContainerState("kms-core", "running", 0, "starting"),
     ).toBe(false);
@@ -1058,6 +1075,8 @@ describe("demo lifecycle ownership primitives", () => {
       "DEMO_ALLOWED_ORIGIN",
       "DEMO_AUTH_TOKEN_FILE",
       "DEMO_BOOT_ID",
+      "DEMO_PROOF_API_KEY",
+      "DEMO_PROOF_URL",
     ]);
     expect(Object.values(env)).not.toContain(second.authorization.token);
     expect(Object.keys(env)).not.toContain("DEMO_LIFECYCLE_MANIFEST");

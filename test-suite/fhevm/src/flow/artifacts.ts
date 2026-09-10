@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
 import { requiresMultichainAclAddress } from "../compat/compat";

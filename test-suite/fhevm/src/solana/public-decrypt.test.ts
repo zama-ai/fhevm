@@ -7,7 +7,7 @@ const environment = (): Record<string, string> => ({
   PD_RELAYER_URL: 'http://127.0.0.1:3000',
   PD_HANDLE: hex32('1'),
   PD_CONTEXT_ID: hex32('2'),
-  PD_ENCRYPTED_VALUE_ACCOUNT: hex32('4'),
+  PD_ENCRYPTED_STATE: hex32('4'),
 });
 const certificate = {
   handle: hex32('1'),
@@ -33,7 +33,7 @@ describe('solana-public-decrypt', () => {
       request: {
         handle: hex32('1'),
         contextId: Uint8Array.from(Buffer.from('2'.repeat(64), 'hex')),
-        encryptedValueAccount: Uint8Array.from(Buffer.from('4'.repeat(64), 'hex')),
+        encryptedState: Uint8Array.from(Buffer.from('4'.repeat(64), 'hex')),
       },
     });
   });
@@ -51,10 +51,10 @@ describe('solana-public-decrypt', () => {
   test('rejects an account that is not 32 bytes', async () => {
     await expect(
       runSolanaPublicDecrypt(
-        { ...environment(), PD_ENCRYPTED_VALUE_ACCOUNT: '0xabcd' },
+        { ...environment(), PD_ENCRYPTED_STATE: '0xabcd' },
         { publicDecryptCertificate: async () => certificate },
       ),
-    ).rejects.toThrow('PD_ENCRYPTED_VALUE_ACCOUNT must be a 0x-prefixed 32-byte hex value');
+    ).rejects.toThrow('PD_ENCRYPTED_STATE must be a 0x-prefixed 32-byte hex value');
   });
 
   test('interprets the certificate cleartext as unprefixed big-endian hex, never decimal', () => {

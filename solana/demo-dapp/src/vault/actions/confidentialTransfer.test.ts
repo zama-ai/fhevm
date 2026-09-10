@@ -26,7 +26,7 @@ import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenValueAccount.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenAccounts.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -82,8 +82,8 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     fromAccount: key(4),
     toAccount: key(5),
     toOwner: key(10),
-    fromBalanceValue: key(6),
-    toBalanceValue: key(7),
+    fromState: key(6),
+    toState: key(7),
     hostConfig: key(8),
     ...overrides,
   } satisfies SolanaConfidentialTransferParameters;
@@ -198,8 +198,8 @@ describe('confidentialTransfer attestation binding', () => {
       mint,
       fromAccount: key(4),
       toAccount: mode === 'same' ? key(4) : key(5),
-      fromBalanceValue: key(6),
-      toBalanceValue: mode === 'same' ? key(6) : key(7),
+      fromState: key(6),
+      toState: mode === 'same' ? key(6) : key(7),
       hcuBlockMeter: key(8),
       hcuTrustedAppRecord: key(9),
       ...(mode === 'same' ? {} : { denyRecords: [key(10), key(11)] }),
@@ -251,14 +251,14 @@ describe('confidentialTransfer attestation binding', () => {
     // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
     // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
     // program, host config, system program — then the meter and the trust witness.
-    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[14]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {
     const params = await parameters({
       toAccount: key(4),
-      toBalanceValue: key(6),
+      toState: key(6),
       denyRecords: [key(10), key(11)],
     });
     await expect(confidentialTransfer(context, params)).rejects.toThrow('self-transfers cannot include deny records');

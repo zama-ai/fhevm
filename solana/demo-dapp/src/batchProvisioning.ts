@@ -1,9 +1,4 @@
-import {
-  createSolanaRpc,
-  getAddressEncoder,
-  type Address,
-  type TransactionSigner,
-} from '@solana/kit';
+import { createSolanaRpc, getAddressEncoder, type Address, type TransactionSigner } from '@solana/kit';
 import {
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
   LOOKUP_TABLE_STILL_ACTIVE,
@@ -64,12 +59,8 @@ type BatchLookupEntry = {
 };
 type BatchLookupRegistry = Record<string, BatchLookupEntry>;
 
-const registryKey = (
-  config: DemoConfig,
-  direction: VaultDirection,
-  batchIndex: bigint,
-  batch: Address,
-): string => `${config.chainId}:${config.batchers[direction].batcher}:${batchIndex.toString()}:${batch}`;
+const registryKey = (config: DemoConfig, direction: VaultDirection, batchIndex: bigint, batch: Address): string =>
+  `${config.chainId}:${config.batchers[direction].batcher}:${batchIndex.toString()}:${batch}`;
 
 /** `chainId:batcher:batchIndex:batch` — the batch index is the third field. */
 const batchIndexFromKey = (key: string): bigint | null => {
@@ -232,7 +223,13 @@ const retireFinishedLookupTables = async (
       await sendTransaction(
         config,
         keeper,
-        [getCloseLookupTableInstruction({ lookupTable: table as Address, authority: keeper, recipient: keeper.address })],
+        [
+          getCloseLookupTableInstruction({
+            lookupTable: table as Address,
+            authority: keeper,
+            recipient: keeper.address,
+          }),
+        ],
         LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
       );
       closed.add(table);
@@ -300,13 +297,9 @@ export const prepareNextBatch = async (
   const key = registryKey(config, direction, batchIndex, batch);
   const recorded = registry[key];
   const candidateLookupTable = (
-    batchIndex === 0n ? config.batchers[direction].lookupTable : recorded?.table ?? prepared.lookupTableAddress
+    batchIndex === 0n ? config.batchers[direction].lookupTable : (recorded?.table ?? prepared.lookupTableAddress)
   ) as Address;
-  const candidatePrefix = await lookupTablePrefixLength(
-    config,
-    candidateLookupTable,
-    prepared.lookupTableAddresses,
-  );
+  const candidatePrefix = await lookupTablePrefixLength(config, candidateLookupTable, prepared.lookupTableAddresses);
   const lookupTable = candidatePrefix === null ? prepared.lookupTableAddress : candidateLookupTable;
   const prefixLength = candidatePrefix ?? 0;
   const remaining = prepared.lookupTableAddresses.slice(prefixLength);

@@ -11,7 +11,7 @@ mod schema;
 
 use schema::{LeafEvent, LeafVector, LeafVectorFile, Prefixes, ProofVector, LEAF_VECTOR_SCHEMA};
 use std::path::{Path, PathBuf};
-use zama_solana_acl::{mmr_verify, reconstruct, EncryptedValueAccountEvent, MmrProof};
+use zama_solana_acl::{mmr_verify, reconstruct, MmrProof, StateHistoryEvent};
 
 const UPDATE_ENV: &str = "ZAMA_UPDATE_LEAF_VECTORS";
 
@@ -31,13 +31,13 @@ fn from_hex32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
 }
 
-fn to_event(event: &LeafEvent) -> EncryptedValueAccountEvent {
+fn to_event(event: &LeafEvent) -> StateHistoryEvent {
     match event {
-        LeafEvent::Allowed { handle, key } => EncryptedValueAccountEvent::Allowed {
+        LeafEvent::Allowed { handle, key } => StateHistoryEvent::Allowed {
             handle: from_hex32(handle),
             key: from_hex32(key),
         },
-        LeafEvent::MarkedPublic { handle } => EncryptedValueAccountEvent::MarkedPublic {
+        LeafEvent::MarkedPublic { handle } => StateHistoryEvent::MarkedPublic {
             handle: from_hex32(handle),
         },
     }
@@ -71,7 +71,7 @@ fn vector(
     LeafVector {
         id: id.to_string(),
         comment: comment.to_string(),
-        encrypted_value_account: hex32(&acct),
+        encrypted_state_account: hex32(&acct),
         events,
         leaves: reconstructed.leaves.iter().map(hex32).collect(),
         leaf_count: reconstructed.leaf_count.to_string(),
@@ -174,7 +174,7 @@ fn every_committed_vector_recomputes_and_verifies() {
     assert_eq!(file.schema, LEAF_VECTOR_SCHEMA);
     assert_eq!(file.hash, "keccak256");
     for v in &file.vectors {
-        let acct = from_hex32(&v.encrypted_value_account);
+        let acct = from_hex32(&v.encrypted_state_account);
         let events: Vec<_> = v.events.iter().map(to_event).collect();
         let reconstructed = reconstruct(acct, &events);
         let leaves: Vec<_> = v.leaves.iter().map(|s| from_hex32(s)).collect();

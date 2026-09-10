@@ -1,16 +1,14 @@
-//! Whole-execution checks that run before any state mutates: every remaining account and every
-//! dictionary entry is referenced, every persistent operand's authority signed, every persistent
-//! value the default authority controls belongs to one application, and the deny record of every
-//! application the execution touches is present when the deny list is on. Returns the application
-//! identity the rest of the execution keys on and the applications to deny-check.
+//! Whole-execution checks before the walk: every remaining account and every dictionary entry is
+//! referenced, every State operand's authority signed, every State the default authority controls
+//! belongs to one application, and each application requiring a deny check has its deny record
+//! when the deny list is on. Returns the metered application and the applications to deny-check.
 //!
-//! A value admitted by an additional signing authority belongs to that authority's own
+//! A State admitted by an additional signing authority belongs to that authority's own
 //! application and does not fold: the signature is that program's consent, given through
-//! `invoke_signed`, for this execution to read the value or write it. That is how programs
-//! compose on Solana — the token program spends a batcher-owned amount, or writes the batcher a
-//! receipt of what it transferred — while the meter stays on the application that built the
-//! execution. The deny list is not scoped that way: a write is an allow in the value's own
-//! application, so every application touched is checked, whoever signed for it.
+//! `invoke_signed`, for this execution to read or write that State. The meter stays on the
+//! default authority's application.
+//! States read, written or used to initiate a grant are deny-checked independently of that meter;
+//! a grant's consumer State is deny-checked when the grant is consumed.
 
 use super::account_table::ExecutionAccountTable;
 use super::*;
@@ -24,10 +22,10 @@ pub(super) fn preflight_execution<'info>(
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
-        encrypted_value_account_authority: ctx.accounts.encrypted_value_account_authority.key(),
+        authority: ctx.accounts.authority.key(),
         app: None,
         touched_apps: Vec::new(),
-        persistent_outputs_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+        slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
     for (index, step) in args.steps.iter().enumerate() {
         preflight_step(step, index, &mut preflight)?;
@@ -52,31 +50,31 @@ pub(super) fn preflight_execution<'info>(
 
 #[derive(Debug)]
 pub(super) struct PreflightOutcome {
-    /// The application the default authority's persistent values belong to: what the execution
+    /// The application the default authority's States belong to: what the execution
     /// is metered and rand-seeded as. `None` when it controls none.
     pub(super) app: Option<AppScope>,
-    /// Every distinct application whose persistent value the execution reads or writes, under
-    /// any signing authority. Each is deny-checked.
+    /// Applications whose States the execution reads, writes or uses to initiate or consume a
+    /// grant. Each is deny-checked, regardless of which authority signs.
     pub(super) touched_apps: Vec<AppScope>,
 }
 
 /// Marks every account the execution references into the shared table so
 /// [`ExecutionAccountTable::assert_all_used`] can reject dangling accounts before
-/// any pass mutates state, and folds the application identity.
+/// the walk, and folds the application identity.
 struct Preflight<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
-    encrypted_value_account_authority: Pubkey,
-    /// The `(program, scope)` of every persistent value the default authority controls; a second
+    authority: Pubkey,
+    /// The `(program, scope)` of every State the default authority controls; a second
     /// one is an error.
     app: Option<AppScope>,
     /// Every distinct application touched, the default authority's included, in first-seen order.
     touched_apps: Vec<AppScope>,
-    /// Persistent accounts written by completed earlier steps. Operands are checked
+    /// State slots written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
     /// step remains valid.
-    persistent_outputs_written: Vec<Pubkey>,
+    slots_written: Vec<(u8, [u8; 32])>,
 }
 
 impl Preflight<'_, '_, '_> {
@@ -92,22 +90,27 @@ impl Preflight<'_, '_, '_> {
         Ok(entry)
     }
 
-    fn mark_output_authority(&mut self, authority_index: Option<u8>) -> Result<()> {
-        if let Some(index) = authority_index {
-            self.table.mark(u16::from(index))?;
-        }
-        Ok(())
+    fn admit_state(&mut self, index: u8) -> Result<()> {
+        self.table.mark(index.into())?;
+        let state = self.table.state(index.into())?;
+        let authority = state.authority;
+        let app = AppScope {
+            program: state.program,
+            scope: state.scope,
+        };
+        self.table.mark_signer(authority, self.authority)?;
+        self.fold_app(authority, app)
     }
 
-    /// Records one persistent value's application for the deny check and folds it into the
+    /// Records one State's application for the deny check and folds it into the
     /// execution's when the default authority controls it: the first one is adopted, every later
-    /// one must match (one execution, one meter). A value under an additional signing authority
+    /// one must match (one execution, one meter). A State under an additional signing authority
     /// is that program's own.
     fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
         if !self.touched_apps.contains(&app) {
             self.touched_apps.push(app);
         }
-        if authority != self.encrypted_value_account_authority {
+        if authority != self.authority {
             return Ok(());
         }
         match self.app {
@@ -205,31 +208,29 @@ fn preflight_encrypted_operand(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::StoredValue {
+        FheExecuteOperand::StateSlot {
             handle_index,
-            encrypted_value_index,
+            state_index,
+            key_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
-            let index = u16::from(*encrypted_value_index);
-            let key = preflight.table.account(index)?.key();
+            let key = preflight.mark_dictionary(*key_index)?;
             require!(
-                !preflight.persistent_outputs_written.contains(&key),
+                !preflight.slots_written.contains(&(*state_index, key)),
                 ZamaHostError::FheExecutePersistentOperandWrittenEarlier
             );
-            preflight.table.mark(index)?;
-            // Reading a value is admitted by its authority's signature, and the value carries the
-            // application it belongs to. Decoded once here; the walk reuses the cached decode.
-            let value = preflight.table.canonical_encrypted_value(index)?;
-            let authority = value.encrypted_value_account_authority;
-            let app = AppScope {
-                program: value.program,
-                scope: value.scope,
-            };
-            preflight
-                .table
-                .mark_signer(authority, preflight.encrypted_value_account_authority)?;
-            preflight.fold_app(authority, app)?;
+            preflight.admit_state(*state_index)?;
         }
+        FheExecuteOperand::TransientResult {
+            handle_index,
+            scratch_index,
+            consumer_state_index,
+        } => {
+            preflight.mark_dictionary(*handle_index)?;
+            preflight.table.mark((*scratch_index).into())?;
+            preflight.admit_state(*consumer_state_index)?;
+        }
+
         FheExecuteOperand::EarlierStep { producer_index } => {
             require!(
                 (*producer_index as usize) < step_index,
@@ -251,42 +252,40 @@ fn preflight_output(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match output {
-        FheExecuteOutput::Transient => {}
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_authority_index,
-            output_program_index,
-            output_authority_key_index,
-            output_scope_index,
-            output_label_index,
-            output_authority_seeds,
-            output_allow_indexes,
-            previous_handle_index,
+        FheExecuteOutput::State {
+            state_index,
+            slot,
+            allow_indexes,
+            grants,
             ..
         } => {
-            let index = u16::from(*output_encrypted_value_index);
-            let output_key = preflight.table.account(index)?.key();
-            preflight.table.mark(index)?;
-            let program = Pubkey::new_from_array(preflight.mark_dictionary(*output_program_index)?);
-            let authority =
-                Pubkey::new_from_array(preflight.mark_dictionary(*output_authority_key_index)?);
-            let scope = preflight.mark_dictionary(*output_scope_index)?;
-            preflight.mark_dictionary(*output_label_index)?;
-            preflight.mark_output_authority(*output_authority_index)?;
-            for seed in output_authority_seeds {
-                if let PdaSeed::Interned { index } = seed {
-                    preflight.mark_dictionary(*index)?;
+            preflight.admit_state(*state_index)?;
+            if let Some(slot) = slot {
+                let key = preflight.mark_dictionary(slot.key_index)?;
+                require!(
+                    !preflight.slots_written.contains(&(*state_index, key)),
+                    ZamaHostError::InvalidFheExecuteAccount
+                );
+                preflight.slots_written.push((*state_index, key));
+                if let Some(previous) = slot.previous_handle_index {
+                    preflight.mark_dictionary(previous)?;
                 }
             }
-            for allow_index in output_allow_indexes {
-                preflight.mark_dictionary(*allow_index)?;
-            }
-            if let Some(index) = previous_handle_index {
+            for index in allow_indexes {
                 preflight.mark_dictionary(*index)?;
             }
-            preflight.fold_app(authority, AppScope { program, scope })?;
-            preflight.persistent_outputs_written.push(output_key);
+            require!(
+                grants.len() <= MAX_TRANSIENT_GRANTS,
+                ZamaHostError::TransientCapacityExceeded
+            );
+            for grant in grants {
+                preflight.table.mark(grant.scratch_index.into())?;
+                preflight.admit_state(grant.initiating_state_index)?;
+                preflight.table.mark(grant.consumer_state_index.into())?;
+                preflight.table.state(grant.consumer_state_index.into())?;
+            }
         }
+        FheExecuteOutput::Transient => {}
     }
     Ok(())
 }
@@ -308,24 +307,25 @@ mod tests {
         AccountInfo::new(key, is_signer, false, lamports, data, owner, false)
     }
 
-    /// A canonical stored value of `app` controlled by `authority`, with `[1; 32]` as its handle.
-    fn stored_value(app: AppScope, authority: Pubkey) -> AccountInfo<'static> {
-        let mut value = EncryptedValue {
+    fn encrypted_state(app: AppScope, authority: Pubkey, key: [u8; 32]) -> AccountInfo<'static> {
+        let mut state = EncryptedState {
             program: app.program,
-            encrypted_value_account_authority: authority,
+            authority,
             scope: app.scope,
-            label: [9; 32],
-            current_handle: [1; 32],
+            slots: vec![EncryptedSlot {
+                key,
+                handle: [1; 32],
+            }],
             leaf_count: 0,
             peaks: Vec::new(),
             bump: 0,
         };
-        let (key, bump) = value.canonical_address();
-        value.bump = bump;
+        let (address, bump) = state.canonical_address();
+        state.bump = bump;
         let mut data = Vec::new();
-        value.try_serialize(&mut data).unwrap();
+        state.try_serialize(&mut data).unwrap();
         AccountInfo::new(
-            Box::leak(Box::new(key)),
+            Box::leak(Box::new(address)),
             false,
             true,
             Box::leak(Box::new(0)),
@@ -342,12 +342,13 @@ mod tests {
         }
     }
 
-    fn read_step(encrypted_value_index: u8) -> FheExecuteStep {
+    fn read_step(state_index: u8, key_index: u8) -> FheExecuteStep {
         FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StoredValue {
+            lhs: FheExecuteOperand::StateSlot {
                 handle_index: 0,
-                encrypted_value_index,
+                state_index,
+                key_index,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
@@ -357,8 +358,9 @@ mod tests {
 
     fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
-            dictionary: vec![[1; 32], [2; 32]],
+            dictionary: vec![[1; 32], [2; 32], [9; 32]],
             steps,
         }
     }
@@ -374,10 +376,11 @@ mod tests {
             table: &mut table,
             dictionary: &args.dictionary,
             dictionary_used: vec![false; args.dictionary.len()],
-            encrypted_value_account_authority: default_authority,
+            authority: default_authority,
             app: None,
             touched_apps: Vec::new(),
-            persistent_outputs_written: Vec::new(),
+
+            slots_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight)?;
@@ -391,69 +394,70 @@ mod tests {
 
     #[test]
     fn unused_remaining_account_fails_preflight() {
-        // One persistent operand, two passed accounts: the dangling second account
+        // One State-slot operand, two passed accounts: the dangling second account
         // must fail the whole-execution all-used check.
         let authority = Pubkey::new_unique();
         let accounts = vec![
-            stored_value(app(1), authority),
+            encrypted_state(app(1), authority, [9; 32]),
             test_account(Pubkey::new_unique()),
         ];
-        assert!(run(&accounts, &execution(vec![read_step(0)]), authority).is_err());
+        assert!(run(&accounts, &execution(vec![read_step(0, 2)]), authority).is_err());
     }
 
     #[test]
-    fn persistent_operand_cannot_alias_an_account_written_by_an_earlier_step() {
+    fn state_slot_cannot_be_read_after_an_earlier_step_writes_it() {
         let authority = Pubkey::new_unique();
         let args = execution(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
-                output: persistent_output(),
+                output: state_output(0, 2),
             },
-            read_step(0),
+            read_step(0, 2),
         ]);
-        let accounts = vec![stored_value(app(1), authority)];
+        let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_err());
     }
 
     #[test]
-    fn persistent_operand_may_update_its_account_in_the_same_step() {
+    fn state_slot_may_be_read_and_updated_in_the_same_step() {
         let authority = Pubkey::new_unique();
         let args = execution(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StoredValue {
+            lhs: FheExecuteOperand::StateSlot {
                 handle_index: 0,
-                encrypted_value_index: 0,
+                state_index: 0,
+                key_index: 2,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: persistent_output(),
+            output: state_output(0, 2),
         }]);
-        let accounts = vec![stored_value(app(1), authority)];
+        let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_ok());
     }
 
     /// Reading a value needs its authority's signature: the default context signer admits it,
     /// so does a signing remaining account, and nothing else does.
     #[test]
-    fn persistent_operand_is_admitted_by_its_authority_signature_only() {
+    fn state_slot_is_admitted_by_its_authority_signature_only() {
         let authority = Pubkey::new_unique();
-        let args = execution(vec![read_step(0)]);
+        let args = execution(vec![read_step(0, 2)]);
 
-        let by_default_signer = vec![stored_value(app(1), authority)];
+        let by_default_signer = vec![encrypted_state(app(1), authority, [9; 32])];
         assert_eq!(
             run(&by_default_signer, &args, authority).unwrap().app,
             Some(app(1))
         );
 
         let by_remaining_signer = vec![
-            stored_value(app(1), authority),
+            encrypted_state(app(1), authority, [9; 32]),
             signer_account(authority, true),
         ];
         assert!(run(&by_remaining_signer, &args, Pubkey::new_unique()).is_ok());
 
         let authority_present_but_not_signing = vec![
-            stored_value(app(1), authority),
+            encrypted_state(app(1), authority, [9; 32]),
             signer_account(authority, false),
         ];
         assert_eq!(
@@ -463,101 +467,43 @@ mod tests {
                 Pubkey::new_unique()
             )
             .unwrap_err(),
-            error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch)
+            error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
         );
 
-        let nobody = vec![stored_value(app(1), authority)];
+        let nobody = vec![encrypted_state(app(1), authority, [9; 32])];
         assert_eq!(
             run(&nobody, &args, Pubkey::new_unique()).unwrap_err(),
-            error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch)
+            error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
         );
     }
 
-    /// One execution, one application: values of two scopes cannot be mixed, whether the second
-    /// comes from another operand or from a declared output.
+    /// One execution under its default authority cannot mix States from two applications.
     #[test]
     fn values_of_two_scopes_cannot_share_an_execution() {
         let authority = Pubkey::new_unique();
-        let two_reads = execution(vec![read_step(0), read_step(1)]);
-        let same_scope = vec![
-            stored_value(app(1), authority),
-            stored_value(app(1), Pubkey::new_unique()),
-        ];
-        // The second value's authority did not sign, so use one authority for both.
-        let same_scope = vec![same_scope.into_iter().next().unwrap(), {
-            let mut value = EncryptedValue {
-                program: app(1).program,
-                encrypted_value_account_authority: authority,
-                scope: app(1).scope,
-                label: [8; 32],
-                current_handle: [1; 32],
-                leaf_count: 0,
-                peaks: Vec::new(),
-                bump: 0,
-            };
-            let (key, bump) = value.canonical_address();
-            value.bump = bump;
-            let mut data = Vec::new();
-            value.try_serialize(&mut data).unwrap();
-            AccountInfo::new(
-                Box::leak(Box::new(key)),
-                false,
-                true,
-                Box::leak(Box::new(0)),
-                Box::leak(data.into_boxed_slice()),
-                Box::leak(Box::new(crate::ID)),
-                false,
-            )
-        }];
+        let same_scope = vec![encrypted_state(app(1), authority, [9; 32])];
         assert_eq!(
-            run(&same_scope, &two_reads, authority).unwrap().app,
+            run(
+                &same_scope,
+                &execution(vec![read_step(0, 2), read_step(0, 2)]),
+                authority,
+            )
+            .unwrap()
+            .app,
             Some(app(1))
         );
 
         let mixed = vec![
-            stored_value(app(1), authority),
-            stored_value(app(2), authority),
+            encrypted_state(app(1), authority, [9; 32]),
+            encrypted_state(app(2), authority, [9; 32]),
         ];
         assert_eq!(
-            run(&mixed, &two_reads, authority).unwrap_err(),
-            error!(ZamaHostError::FheExecuteMixedScopes)
-        );
-
-        // Output declared for scope 2 under the default authority while reading scope 1:
-        // dictionary entry 2 is the program and scope of the output, entry 3 its authority.
-        let output_of_scope_2 = |output_authority_index| {
-            let mut args = execution(vec![FheExecuteStep::Binary {
-                op: FheBinaryOpCode::Add,
-                lhs: FheExecuteOperand::StoredValue {
-                    handle_index: 0,
-                    encrypted_value_index: 0,
-                },
-                rhs: FheExecuteOperand::Scalar { value_index: 1 },
-                output_fhe_type: 5,
-                output: FheExecuteOutput::StoredValue {
-                    output_encrypted_value_index: 1,
-                    output_authority_index,
-                    output_program_index: 2,
-                    output_authority_key_index: 3,
-                    output_scope_index: 2,
-                    output_label_index: 1,
-                    output_authority_seeds: Vec::new(),
-                    output_allow_indexes: Vec::new(),
-                    previous_handle_index: None,
-                    make_public: false,
-                },
-            }]);
-            args.dictionary.push([2; 32]);
-            args
-        };
-        let mut args = output_of_scope_2(None);
-        args.dictionary.push(authority.to_bytes());
-        let accounts = vec![
-            stored_value(app(1), authority),
-            test_account(Pubkey::new_unique()),
-        ];
-        assert_eq!(
-            run(&accounts, &args, authority).unwrap_err(),
+            run(
+                &mixed,
+                &execution(vec![read_step(0, 2), read_step(1, 2)]),
+                authority,
+            )
+            .unwrap_err(),
             error!(ZamaHostError::FheExecuteMixedScopes)
         );
     }
@@ -569,46 +515,13 @@ mod tests {
     fn values_of_another_signing_authority_keep_their_own_application() {
         let authority = Pubkey::new_unique();
         let foreign_authority = Pubkey::new_unique();
-        let two_reads = execution(vec![read_step(0), read_step(1)]);
+        let two_reads = execution(vec![read_step(0, 2), read_step(1, 2)]);
         let accounts = vec![
-            stored_value(app(1), authority),
-            stored_value(app(2), foreign_authority),
+            encrypted_state(app(1), authority, [9; 32]),
+            encrypted_state(app(2), foreign_authority, [9; 32]),
             signer_account(foreign_authority, true),
         ];
         let outcome = run(&accounts, &two_reads, authority).unwrap();
-        assert_eq!(outcome.app, Some(app(1)));
-        assert_eq!(outcome.touched_apps, vec![app(1), app(2)]);
-
-        // Written by the foreign authority (remaining account 2, signing) into its own scope.
-        let mut args = execution(vec![FheExecuteStep::Binary {
-            op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StoredValue {
-                handle_index: 0,
-                encrypted_value_index: 0,
-            },
-            rhs: FheExecuteOperand::Scalar { value_index: 1 },
-            output_fhe_type: 5,
-            output: FheExecuteOutput::StoredValue {
-                output_encrypted_value_index: 1,
-                output_authority_index: Some(2),
-                output_program_index: 2,
-                output_authority_key_index: 3,
-                output_scope_index: 2,
-                output_label_index: 1,
-                output_authority_seeds: Vec::new(),
-                output_allow_indexes: Vec::new(),
-                previous_handle_index: None,
-                make_public: false,
-            },
-        }]);
-        args.dictionary.push([2; 32]);
-        args.dictionary.push(foreign_authority.to_bytes());
-        let accounts = vec![
-            stored_value(app(1), authority),
-            test_account(Pubkey::new_unique()),
-            signer_account(foreign_authority, true),
-        ];
-        let outcome = run(&accounts, &args, authority).unwrap();
         assert_eq!(outcome.app, Some(app(1)));
         assert_eq!(outcome.touched_apps, vec![app(1), app(2)]);
     }
@@ -624,6 +537,7 @@ mod tests {
         }]);
         // Step 0 referencing itself as an earlier step is rejected; use a trivial first.
         let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             steps: vec![
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [0; 32],
@@ -641,10 +555,11 @@ mod tests {
             table: &mut table,
             dictionary: &args.dictionary,
             dictionary_used: vec![false; 2],
-            encrypted_value_account_authority: Pubkey::new_unique(),
+            authority: Pubkey::new_unique(),
             app: None,
             touched_apps: Vec::new(),
-            persistent_outputs_written: Vec::new(),
+
+            slots_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight).unwrap();
@@ -652,18 +567,17 @@ mod tests {
         assert_eq!(preflight.app, None);
     }
 
-    fn persistent_output() -> FheExecuteOutput {
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index: 0,
-            output_authority_index: None,
-            output_program_index: 0,
-            output_authority_key_index: 0,
-            output_scope_index: 0,
-            output_label_index: 1,
-            output_authority_seeds: Vec::new(),
-            output_allow_indexes: Vec::new(),
-            previous_handle_index: None,
+    fn state_output(state_index: u8, key_index: u8) -> FheExecuteOutput {
+        FheExecuteOutput::State {
+            state_index,
+            previous_leaf_count: 0,
+            slot: Some(SlotWrite {
+                key_index,
+                previous_handle_index: Some(0),
+            }),
+            allow_indexes: Vec::new(),
             make_public: false,
+            grants: Vec::new(),
         }
     }
 }

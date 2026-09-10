@@ -91,8 +91,8 @@ export interface SolanaSignPermitParameters {
 export interface SolanaUserDecryptEntry {
   /** The 32-byte ciphertext handle. */
   readonly handle: Uint8Array;
-  /** The 32-byte address of the `EncryptedValue` account holding this value. */
-  readonly encryptedValueAccount: Uint8Array;
+  /** The 32-byte address of the `EncryptedState` account holding this value. */
+  readonly encryptedState: Uint8Array;
   /**
    * The key whose allow on the handle this asks under: the delegator on a delegated entry.
    * Defaults to the permit's own user.
@@ -167,7 +167,7 @@ export function solanaPermitDecryptActions(
       const entries: readonly SolanaUserDecryptHandleEntry[] = parameters.entries.map((entry) => ({
         handle: entry.handle,
         allowedKey: entry.allowedKey ?? userPubkey,
-        encryptedValueAccount: entry.encryptedValueAccount,
+        encryptedState: entry.encryptedState,
       }));
 
       const plaintexts = await executeSolanaUserDecrypt({

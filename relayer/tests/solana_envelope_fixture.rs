@@ -30,6 +30,7 @@ use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
 use validator::Validate;
+use zama_solana_request::{decode_solana_request, SOLANA_REQUEST_VERSION};
 
 /// Schema identifier of the envelope fixture; an unrecognized one is refused rather than guessed at.
 const ENVELOPE_SCHEMA: &str = "zama-solana-user-decrypt-envelope/v1";
@@ -207,6 +208,12 @@ fn every_accepted_record_becomes_a_solana_request() {
             .unwrap_or_else(|err| panic!("{name}: should validate: {err}"));
 
         let handle_count = parsed.attested_payload.handles.len();
+        let encrypted_states = parsed
+            .attested_payload
+            .handles
+            .iter()
+            .map(|entry| hex::decode(entry.encrypted_state.trim_start_matches("0x")).unwrap())
+            .collect::<Vec<_>>();
         let request = UserDecryptRequest::try_from(parsed)
             .unwrap_or_else(|err| panic!("{name}: should convert: {err}"));
 
@@ -232,6 +239,16 @@ fn every_accepted_record_becomes_a_solana_request() {
                 assert!(
                     !solana_request.is_empty(),
                     "{name}: the encoded request carries the permit and the entries"
+                );
+                assert_eq!(solana_request[0], SOLANA_REQUEST_VERSION, "{name}: version");
+                let wire = decode_solana_request(solana_request).expect("relayer output decodes");
+                assert_eq!(
+                    wire.handles
+                        .iter()
+                        .map(|entry| entry.encrypted_state.clone())
+                        .collect::<Vec<_>>(),
+                    encrypted_states,
+                    "{name}: encryptedState travels into the canonical request"
                 );
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),

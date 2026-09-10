@@ -32,9 +32,9 @@ use crate::wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
 use borsh::{BorshDeserialize, BorshSerialize};
 use zama_solana_permit::PermitWireFields;
 
-/// The one known layout version byte. `0x01` carried client-built proofs and encrypted value
-/// IDs; that layout is not decoded.
-pub const SOLANA_REQUEST_VERSION: u8 = 0x02;
+/// The one known layout version byte. `0x01` carried client-built proofs and `0x02` named
+/// per-value accounts; neither obsolete layout is decoded.
+pub const SOLANA_REQUEST_VERSION: u8 = 0x03;
 
 /// The borsh body, mirroring [`SolanaUserDecryptRequestWire`] field for field over
 /// primitives. The field order below IS the canonical layout — the borsh-js schema on the
@@ -59,7 +59,7 @@ struct RequestBody {
 struct RequestBodyEntry {
     handle: Vec<u8>,
     allowed_key: Vec<u8>,
-    encrypted_value_account: Vec<u8>,
+    encrypted_state: Vec<u8>,
 }
 
 impl From<&SolanaUserDecryptRequestWire> for RequestBody {
@@ -103,13 +103,13 @@ impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
         let SolanaHandleEntryWire {
             handle,
             allowed_key,
-            encrypted_value_account,
+            encrypted_state,
         } = entry;
 
         Self {
             handle: handle.clone(),
             allowed_key: allowed_key.clone(),
-            encrypted_value_account: encrypted_value_account.clone(),
+            encrypted_state: encrypted_state.clone(),
         }
     }
 }
@@ -154,13 +154,13 @@ impl From<RequestBodyEntry> for SolanaHandleEntryWire {
         let RequestBodyEntry {
             handle,
             allowed_key,
-            encrypted_value_account,
+            encrypted_state,
         } = entry;
 
         Self {
             handle,
             allowed_key,
-            encrypted_value_account,
+            encrypted_state,
         }
     }
 }

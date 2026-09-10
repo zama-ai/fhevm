@@ -16,7 +16,9 @@ use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
 pub mod deny_scope_record;
-pub mod encrypted_value;
+pub mod encrypted_state;
+pub mod transient;
+pub use transient::*;
 pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_config;
@@ -27,7 +29,7 @@ mod type_gate;
 pub mod user_decryption_delegation;
 
 pub use deny_scope_record::*;
-pub use encrypted_value::*;
+pub use encrypted_state::*;
 pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
@@ -167,6 +169,19 @@ pub struct FheExecuteArgs {
     /// Ordered step list. Each `EarlierStep` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheExecuteStep>,
+    /// Results copied to return data in this order, including repeated selections.
+    /// At most `MAX_RETURNED_HANDLES` entries; an empty list returns no handles.
+    /// Returning a handle grants no permission.
+    pub returned_results: Vec<ExecutionResultRef>,
+}
+
+/// One selected result of an execution step. Current operators have exactly one output.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExecutionResultRef {
+    /// Index of the producing step.
+    pub step_index: u8,
+    /// Index within that step's outputs; must be zero for current operators.
+    pub output_index: u8,
 }
 
 /// Resolves an interned dictionary entry; an out-of-range index fails the execution.
@@ -321,15 +336,10 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOperand {
-    /// A value read out of persistent ACL state: a canonical `EncryptedValue` account in
+    /// A value read out of persistent ACL state: a canonical `EncryptedState` account in
     /// `remaining_accounts` whose current handle matches the interned one. Admission is the
     /// signature of the value's authority, found among the execution's signers.
-    StoredValue {
-        /// Dictionary index of the handle expected as the encrypted value's current handle.
-        handle_index: u8,
-        /// Index into `remaining_accounts` for the `EncryptedValue` account.
-        encrypted_value_index: u8,
-    },
+
     /// The output of an earlier step of this same `fhe_execute`: usable only inside the current
     /// evaluation scope and never stored.
     EarlierStep {
@@ -353,22 +363,30 @@ pub enum FheExecuteOperand {
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
     },
+
+    StateSlot {
+        handle_index: u8,
+        state_index: u8,
+        key_index: u8,
+    },
+    TransientResult {
+        handle_index: u8,
+        scratch_index: u8,
+        consumer_state_index: u8,
+    },
 }
 
-/// One seed of the authority PDA a create proves, so the host can check the authority belongs
-/// to the declared program. The bump is the last seed, as a one-byte literal.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub enum PdaSeed {
-    /// A 32-byte seed already in the dictionary (a mint, an owner, the program itself).
-    Interned {
-        /// Dictionary index.
-        index: u8,
-    },
-    /// Any other seed bytes: a tag such as `b"token-account"`, or the bump.
-    Literal {
-        /// The seed bytes, at most 32.
-        bytes: Vec<u8>,
-    },
+pub struct SlotWrite {
+    pub key_index: u8,
+    pub previous_handle_index: Option<u8>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ResultGrant {
+    pub scratch_index: u8,
+    pub initiating_state_index: u8,
+    pub consumer_state_index: u8,
 }
 
 /// Output policy for a composed fhe_execute operation.
@@ -376,43 +394,15 @@ pub enum PdaSeed {
 pub enum FheExecuteOutput {
     /// The result stays inside the current `fhe_execute` scope; no persistent ACL record.
     Transient,
-    /// The result is bound into persistent ACL state: the `EncryptedValue` account PDA is created
-    /// when absent, or its handle replaced when it exists.
-    StoredValue {
-        /// Index into `remaining_accounts` for the output `EncryptedValue` PDA.
-        output_encrypted_value_index: u8,
-        /// Optional index into `remaining_accounts` for the encrypted value account authority
-        /// signer.
-        ///
-        /// `None` uses the fixed `encrypted_value_account_authority` account in the execution
-        /// context. `Some(index)` requires that remaining account to be a signer
-        /// and to match the declared output authority.
-        output_authority_index: Option<u8>,
-        /// Dictionary index of the application program the output value belongs to.
-        output_program_index: u8,
-        /// Dictionary index of the encrypted value account authority declared for the output.
-        output_authority_key_index: u8,
-        /// Dictionary index of the program-declared scope of the output value.
-        output_scope_index: u8,
-        /// Dictionary index of the encrypted value label for the output.
-        output_label_index: u8,
-        /// On create, the seeds proving the authority is a PDA of the program (bump last). The
-        /// host recomputes the address and refuses a create whose authority another program
-        /// controls. Empty on update: the stored program was proven when the value was created,
-        /// and the canonical address check binds the declared program to it.
-        output_authority_seeds: Vec<PdaSeed>,
-        /// Dictionary indexes of the keys allowed to decrypt the NEW handle, sealed as one
-        /// historical-access leaf each, in this order, right after the handle is written. Empty
-        /// is legal: nobody can decrypt that handle.
-        output_allow_indexes: Vec<u8>,
-        /// Dictionary index of the handle being replaced: `None` on create, the stored current
-        /// handle on update (validated against the account, so an execution built on stale state
-        /// fails instead of overwriting a newer handle).
-        previous_handle_index: Option<u8>,
-        /// When true, the new handle is sealed publicly decryptable after its allow leaves
-        /// (byte-identical to `make_handle_public`). Carried in instruction data so indexers
-        /// reconstruct that leaf without reading the account (DD-036).
+    /// Write a slot, append decrypt permissions, or share the result with another State.
+    State {
+        state_index: u8,
+        /// History position before this output, so indexers can detect missing writes.
+        previous_leaf_count: u64,
+        slot: Option<SlotWrite>,
+        allow_indexes: Vec<u8>,
         make_public: bool,
+        grants: Vec<ResultGrant>,
     },
 }
 
@@ -559,14 +549,14 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    encrypted_value_account_authority: Pubkey,
+    authority: Pubkey,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            encrypted_value_account_authority.as_ref(),
+            authority.as_ref(),
         ],
         &crate::ID,
     )

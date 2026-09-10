@@ -21,7 +21,6 @@ describe('generated confidentialTransfer instruction', () => {
     const mint = key(3);
     const aliasedToken = key(4);
     const aliasedBalance = key(5);
-    const transferred = key(6);
     const zamaEvent = key(7);
     const hostConfig = key(8);
     const tokenEvent = key(10);
@@ -37,9 +36,8 @@ describe('generated confidentialTransfer instruction', () => {
       toAta,
       fromAccount: aliasedToken,
       toAccount: aliasedToken,
-      fromBalanceValue: aliasedBalance,
-      toBalanceValue: aliasedBalance,
-      transferredAmountValue: transferred,
+      fromState: aliasedBalance,
+      toState: aliasedBalance,
       zamaEventAuthority: zamaEvent,
       hostConfig,
       eventAuthority: tokenEvent,
@@ -54,7 +52,6 @@ describe('generated confidentialTransfer instruction', () => {
         extraData: new Uint8Array([0]),
         signatures: [new Uint8Array(65).fill(13)],
       },
-      receipt: null,
     });
 
     expect(instruction.accounts.map(({ address, role }) => [address, role])).toEqual([
@@ -68,12 +65,12 @@ describe('generated confidentialTransfer instruction', () => {
       [aliasedToken, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
-      [transferred, AccountRole.WRITABLE],
       [zamaEvent, AccountRole.READONLY],
       ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
       ['11111111111111111111111111111111', AccountRole.READONLY],
-      // The four omitted optionals (HCU pair, receipt pair) resolve to the program id.
+      // HCU witnesses and the optional result grant triple resolve to the program id.
+      [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],

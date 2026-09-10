@@ -1,9 +1,9 @@
 import type { Address, FetchAccountConfig, Rpc, SolanaRpcApi } from '@solana/kit';
 
 import {
-  fetchSolanaEncryptedValueState,
-  type SolanaEncryptedValueState,
-} from '@sdk-src/solana/encryptedValueAccount.js';
+  fetchSolanaEncryptedState,
+  type SolanaEncryptedState,
+} from '@sdk-src/solana/encryptedState.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
@@ -70,15 +70,11 @@ export async function getBatchByIndex(
   return { index, addresses, state: account.data };
 }
 
-/**
- * Reads the burned-amount value's `EncryptedValue` account: the live handle, the MMR leaf count and
- * the peaks a settle proof is verified against. The decoder is the SDK's — the account is defined
- * in the `zama-solana-acl` crate, appears in no IDL, and is hand-mirrored in exactly one place.
- */
-export function getEncryptedValueState(
+/** Reads the host-owned slot dictionary and shared MMR through the SDK decoder. */
+export function getEncryptedState(
   rpc: SolanaRpc,
   address: Address,
   config?: FetchAccountConfig,
-): Promise<SolanaEncryptedValueState> {
-  return fetchSolanaEncryptedValueState(rpc, address, config, ZAMA_HOST_PROGRAM_ADDRESS);
+): Promise<SolanaEncryptedState> {
+  return fetchSolanaEncryptedState(rpc, address, config, ZAMA_HOST_PROGRAM_ADDRESS);
 }

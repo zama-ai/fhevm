@@ -19,13 +19,12 @@ const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Addres
   (await getProgramDerivedAddress({ programAddress, seeds }))[0];
 // PDA(zamaHost, ["encrypted-value", token program, authority, mint, label]) — the crate's
 // `encrypted_value_seeds` for a token-program value scoped to its mint.
-const tokenValuePda = (mint: Address, authority: Address, label: string): Promise<Address> =>
+const tokenValuePda = (mint: Address, authority: Address): Promise<Address> =>
   pda(ZAMA_HOST_PROGRAM_ADDRESS, [
-    utf8('encrypted-value'),
+    utf8('encrypted-state'),
     base58.decode(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     base58.decode(authority),
     base58.decode(mint),
-    utf8(label),
   ]);
 
 describe('buildCancelDispatchInstruction', () => {
@@ -65,9 +64,8 @@ describe('buildCancelDispatchInstruction', () => {
       mint,
       totalSupplyAuthority,
       batchJoinTokenAccount,
-      await tokenValuePda(mint, batchJoinTokenAccount, 'balance_________________________'),
-      await tokenValuePda(mint, totalSupplyAuthority, 'total_supply____________________'),
-      await tokenValuePda(mint, batchJoinTokenAccount, 'burned_amount___________________'),
+      await tokenValuePda(mint, batchJoinTokenAccount),
+      await tokenValuePda(mint, totalSupplyAuthority),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [
         utf8('pending-burn'),
         base58.decode(mint),
@@ -84,7 +82,7 @@ describe('buildCancelDispatchInstruction', () => {
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     expect(instruction.accounts!.map((account) => account.address)).toEqual(expected);
     expect(instruction.accounts!.map((account) => account.role)).toEqual([
-      3, 0, 1, 1, 0, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0,
+      3, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
     ]);
 
     const decoded = getCancelDispatchInstructionDataDecoder().decode(instruction.data!);

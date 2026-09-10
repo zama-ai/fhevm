@@ -1,4 +1,4 @@
-//! Mollusk-based runtime tests for the RFC 035 `EncryptedValue` model.
+//! Mollusk-based runtime tests for the RFC 035 `EncryptedState` model.
 //!
 //! An encrypted value belongs to an application `(program, scope)` and is controlled by a value
 //! authority that is a PDA of `program`. Who may decrypt a handle is decided by the write that
@@ -23,26 +23,25 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
-    self as host, AppScope, EncryptedValue, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
+    self as host, AppScope, EncryptedState, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
     FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig,
 };
-use zama_solana_acl::encrypted_value_account::EncryptedValueAccountEvent;
+use zama_solana_acl::StateHistoryEvent;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_value_account,
+    cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_state_account,
     event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_value as new_encrypted_value_account, rand_nonce_account, read_encrypted_value,
-    read_encrypted_value_from_result, readonly, readonly_signer, serialized_account, signing,
-    system_account, system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
-    INPUT_VERIFICATION_CONTRACT,
+    new_encrypted_state, new_encrypted_state_with_slot, rand_nonce_account, read_encrypted_state,
+    readonly, readonly_signer, serialized_account, signing, system_account, system_program_account,
+    writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
 use host_fixtures::{
     created_public_batch, fhe_execute_ix, fhe_execute_ix_with_extras, fixture_scope,
     host_config_account, host_config_account_with_flags, mollusk_execute_context, read_host_config,
-    sole_value_authority, value_authority, FheExecuteExtras, ValueAuthority,
+    sole_state_authority, state_authority, FheExecuteExtras, StateAuthority,
 };
 
 // ---------------------------------------------------------------------------
@@ -54,7 +53,7 @@ use host_fixtures::{
 /// for `(program, authority, scope, label)`, which is what the host rederives on read and write.
 #[derive(Clone, Copy)]
 struct App {
-    authority: ValueAuthority,
+    authority: StateAuthority,
     scope: [u8; 32],
 }
 
@@ -67,7 +66,7 @@ impl App {
     /// the measured compute, so recorded addresses must not move between runs.
     fn with_program(program: Pubkey) -> Self {
         Self {
-            authority: sole_value_authority(program),
+            authority: sole_state_authority(program),
             scope: fixture_scope(),
         }
     }
@@ -83,7 +82,7 @@ impl App {
     /// The same application under a second value authority of its program.
     fn sibling_authority(&self, seed_key: Pubkey) -> Self {
         Self {
-            authority: value_authority(self.authority.program, seed_key),
+            authority: state_authority(self.authority.program, seed_key),
             scope: self.scope,
         }
     }
@@ -102,12 +101,12 @@ impl App {
     }
 
     /// A canonical value at `name` carrying `handle` and no history.
-    fn value(&self, name: &str, handle: [u8; 32]) -> (Pubkey, EncryptedValue) {
-        new_encrypted_value_account(self.app(), self.key(), label(name), handle)
+    fn value(&self, name: &str, handle: [u8; 32]) -> (Pubkey, EncryptedState) {
+        new_encrypted_state_with_slot(self.app(), self.key(), label(name), handle)
     }
 
-    fn address(&self, name: &str) -> Pubkey {
-        self.authority.value_address(self.scope, label(name))
+    fn address(&self, _name: &str) -> Pubkey {
+        self.authority.state_address(self.scope)
     }
 
     /// A persistent output of this application: a create when `previous_handle` is `None`
@@ -115,19 +114,19 @@ impl App {
     fn stored_output(
         &self,
         dictionary: &mut ExecutionDictionary,
-        output_encrypted_value_index: u8,
+        output_encrypted_state_index: u8,
         name: &str,
         allows: &[Pubkey],
         previous_handle: Option<[u8; 32]>,
         make_public: bool,
     ) -> FheExecuteOutput {
-        self.authority.stored_output(
+        self.authority.state_output(
             dictionary,
-            output_encrypted_value_index,
-            self.scope,
+            output_encrypted_state_index,
             label(name),
             allows,
             previous_handle,
+            0,
             make_public,
         )
     }
@@ -166,10 +165,10 @@ fn update_with_fhe_execute(
     host_config: Pubkey,
     host_config_account: Account,
     address: Pubkey,
-    value: &EncryptedValue,
+    value: &EncryptedState,
     allows: &[Pubkey],
     plaintext_tag: u8,
-) -> EncryptedValue {
+) -> EncryptedState {
     let result = run_update(
         payer,
         app,
@@ -177,12 +176,17 @@ fn update_with_fhe_execute(
         host_config_account,
         address,
         value,
-        Some(value.current_handle),
+        Some(
+            value
+                .get(&label("value"))
+                .unwrap_or_else(|| value.slots[0].handle),
+        ),
         allows,
         plaintext_tag,
         Check::success(),
     );
-    read_encrypted_value_from_result(&result, address)
+    let account = result.get_account(&address).expect("updated State");
+    EncryptedState::try_deserialize(&mut account.data.as_slice()).expect("valid State")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -192,40 +196,70 @@ fn run_update(
     host_config: Pubkey,
     host_config_account: Account,
     address: Pubkey,
-    value: &EncryptedValue,
+    value: &EncryptedState,
     previous_handle: Option<[u8; 32]>,
     allows: &[Pubkey],
     plaintext_tag: u8,
     expected: Check<'static>,
 ) -> mollusk_svm::result::InstructionResult {
-    assert_eq!(value.encrypted_value_account_authority, app.key());
+    assert_eq!(value.authority, app.key());
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: app.authority.stored_output(
+        output: app.authority.state_output(
             &mut dictionary,
             0,
-            value.scope,
-            value.label,
+            value.slots[0].key,
             allows,
             previous_handle,
+            value.leaf_count,
             false,
         ),
     }];
     let args = FheExecuteArgs {
+        returned_results: Vec::new(),
         account_count: 0,
         dictionary: dictionary.into_entries(),
         steps,
     };
     let ix = fhe_execute_ix(payer, app.key(), host_config, args, vec![writable(address)]);
     let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
-    accounts.push((address, encrypted_value_account(value)));
+    accounts.push((address, encrypted_state_account(value)));
     mollusk().process_and_validate_instruction(&ix, &accounts, &[expected])
 }
 
 fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
     anchor_error_check(error as u32)
+}
+
+fn read_encrypted_state_from_result(
+    result: &mollusk_svm::result::InstructionResult,
+    address: Pubkey,
+) -> EncryptedState {
+    let account = result
+        .get_account(&address)
+        .expect("updated encrypted State");
+    EncryptedState::try_deserialize(&mut account.data.as_slice()).expect("valid encrypted State")
+}
+
+fn shared_state(state: &EncryptedState) -> zama_solana_acl::EncryptedState {
+    zama_solana_acl::EncryptedState {
+        program: state.program.to_bytes(),
+        authority: state.authority.to_bytes(),
+        scope: state.scope,
+        slots: state
+            .slots
+            .iter()
+            .map(|slot| zama_solana_acl::EncryptedSlot {
+                key: slot.key,
+                handle: slot.handle,
+            })
+            .collect(),
+        leaf_count: state.leaf_count,
+        peaks: state.peaks.clone(),
+        bump: state.bump,
+    }
 }
 
 /// The leaves a write of `handle` allowing `keys` seals, appended onto `peaks`/`count`.
@@ -247,9 +281,9 @@ fn append_allow_leaves(
     }
 }
 
-fn allowed_events(handle: [u8; 32], keys: &[Pubkey]) -> Vec<EncryptedValueAccountEvent> {
+fn allowed_events(handle: [u8; 32], keys: &[Pubkey]) -> Vec<StateHistoryEvent> {
     keys.iter()
-        .map(|key| EncryptedValueAccountEvent::Allowed {
+        .map(|key| StateHistoryEvent::Allowed {
             handle,
             key: key.to_bytes(),
         })
@@ -260,25 +294,32 @@ fn allowed_events(handle: [u8; 32], keys: &[Pubkey]) -> Vec<EncryptedValueAccoun
 // Instruction builders
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn make_handle_public_ix(
     payer: Pubkey,
     authority: Pubkey,
-    encrypted_value: Pubkey,
+    encrypted_state: Pubkey,
     host_config: Pubkey,
+    key: [u8; 32],
     handle: [u8; 32],
+    previous_leaf_count: u64,
     deny_scope_record: Option<Pubkey>,
 ) -> Instruction {
     anchor_ix(
         host::id(),
-        host::accounts::MakeEncryptedValueHandlePublic {
+        host::accounts::MakeStateHandlePublic {
             payer,
             authority,
-            encrypted_value,
+            encrypted_state,
             host_config,
             deny_scope_record,
             system_program: system_program::ID,
         },
-        host::instruction::MakeHandlePublic { handle },
+        host::instruction::MakeStateHandlePublic {
+            key,
+            handle,
+            previous_leaf_count,
+        },
     )
 }
 
@@ -287,7 +328,7 @@ fn make_public_accounts(
     payer: Pubkey,
     app: &App,
     address: Pubkey,
-    value: &EncryptedValue,
+    value: &EncryptedState,
     host_config: Pubkey,
     host_config_account: Account,
 ) -> Vec<(Pubkey, Account)> {
@@ -295,7 +336,7 @@ fn make_public_accounts(
         (system_program::ID, system_program_account()),
         (payer, funded_system_account()),
         (app.key(), empty_system_account()),
-        (address, encrypted_value_account(value)),
+        (address, encrypted_state_account(value)),
         (host_config, host_config_account),
     ]
 }
@@ -322,6 +363,7 @@ fn create_case(
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
@@ -330,7 +372,8 @@ fn create_case(
         extras,
     );
     let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
-    accounts.push((output, empty_system_account()));
+    let (_, state) = new_encrypted_state(app.app(), app.key(), []);
+    accounts.push((output, encrypted_state_account(&state)));
     (output, ix, accounts)
 }
 
@@ -353,6 +396,105 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
         &accounts,
         &[custom_error(
             host::errors::ZamaHostError::PreviousBankHashUnavailable,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
+    let mut fixture = created_public_batch(3, &[0, 1, 2]);
+    let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
+    let svm = mollusk();
+    let baseline = svm.process_and_validate_instruction(
+        &fixture.instruction,
+        &fixture.accounts,
+        &[Check::success(), Check::return_data(&[])],
+    );
+    let state = read_encrypted_state_from_result(&baseline, fixture.outputs[0].1);
+    let handles: Vec<_> = (0..3)
+        .map(|step| {
+            state
+                .get(&label(&format!("created-public-{step}")))
+                .unwrap()
+        })
+        .collect();
+    assert_ne!(handles[0], handles[2]);
+
+    for selection in [vec![2, 0, 2], (0..32).map(|index| index % 3).collect()] {
+        args.returned_results = selection
+            .iter()
+            .map(|&step_index| host::ExecutionResultRef {
+                step_index,
+                output_index: 0,
+            })
+            .collect();
+        fixture.instruction.data = host::instruction::FheExecute { args: args.clone() }.data();
+        let expected: Vec<u8> = selection
+            .iter()
+            .flat_map(|&step| handles[usize::from(step)])
+            .collect();
+        let result = svm.process_and_validate_instruction(
+            &fixture.instruction,
+            &fixture.accounts,
+            &[Check::success(), Check::return_data(&expected)],
+        );
+        // Selecting handles changes neither slots nor decrypt history.
+        assert_eq!(result.resulting_accounts, baseline.resulting_accounts);
+    }
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
+    let mut fixture = created_public_batch(2, &[0, 1]);
+    let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
+    let first = host::ExecutionResultRef {
+        step_index: 0,
+        output_index: 0,
+    };
+    let svm = mollusk();
+    for selection in [
+        vec![first; 33],
+        vec![host::ExecutionResultRef {
+            step_index: 2,
+            ..first
+        }],
+        vec![host::ExecutionResultRef {
+            output_index: 1,
+            ..first
+        }],
+    ] {
+        args.returned_results = selection;
+        fixture.instruction.data = host::instruction::FheExecute { args: args.clone() }.data();
+        let result = svm.process_and_validate_instruction(
+            &fixture.instruction,
+            &fixture.accounts,
+            &[custom_error(
+                host::errors::ZamaHostError::InvalidReturnSelection,
+            )],
+        );
+        for (key, account) in &fixture.accounts {
+            assert_eq!(result.get_account(key), Some(account));
+        }
+    }
+
+    // A missing rand nonce would fail before the walk. The bad selection must fail first.
+    let output = match args.steps.remove(0) {
+        FheExecuteStep::TrivialEncrypt { output, .. } => output,
+        _ => unreachable!(),
+    };
+    args.steps.insert(
+        0,
+        FheExecuteStep::Rand {
+            fhe_type: 5,
+            output,
+        },
+    );
+    fixture.instruction.data = host::instruction::FheExecute { args }.data();
+    svm.process_and_validate_instruction(
+        &fixture.instruction,
+        &fixture.accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidReturnSelection,
         )],
     );
 }
@@ -381,7 +523,7 @@ fn mollusk_fhe_execute_update_seals_one_leaf_per_allowed_key_on_the_new_handle()
         &[viewer_a, viewer_b],
         4,
     );
-    assert_ne!(updated.current_handle, old_handle);
+    assert_ne!(updated.slots[0].handle, old_handle);
     assert_eq!(updated.leaf_count, 2);
 
     // The leaves commit to the NEW handle in declared allow order: nobody was allowed on the old
@@ -390,7 +532,7 @@ fn mollusk_fhe_execute_update_seals_one_leaf_per_allowed_key_on_the_new_handle()
     let mut expected_count = 0u64;
     append_allow_leaves(
         address,
-        updated.current_handle,
+        updated.slots[0].handle,
         &[viewer_a, viewer_b],
         &mut expected_peaks,
         &mut expected_count,
@@ -398,9 +540,9 @@ fn mollusk_fhe_execute_update_seals_one_leaf_per_allowed_key_on_the_new_handle()
     assert_eq!(updated.peaks, expected_peaks);
     // The identity fields never move on an update.
     assert_eq!(updated.program, app.program());
-    assert_eq!(updated.encrypted_value_account_authority, app.key());
+    assert_eq!(updated.authority, app.key());
     assert_eq!(updated.scope, app.scope);
-    assert_eq!(updated.label, value.label);
+    assert_eq!(updated.slots[0].key, value.slots[0].key);
 }
 
 #[test]
@@ -423,7 +565,7 @@ fn mollusk_fhe_execute_update_with_no_allows_seals_no_leaf() {
         &[],
         4,
     );
-    assert_ne!(updated.current_handle, old_handle);
+    assert_ne!(updated.slots[0].handle, old_handle);
     assert_eq!(updated.leaf_count, 0);
     assert!(updated.peaks.is_empty());
 }
@@ -444,14 +586,14 @@ fn mollusk_fhe_execute_rejects_duplicate_and_zero_allow_keys() {
             host_config_account.clone(),
             address,
             &value,
-            Some(value.current_handle),
+            Some(value.slots[0].handle),
             &allows,
             5,
             custom_error(host::errors::ZamaHostError::InvalidAllowKey),
         );
         assert_eq!(
-            read_encrypted_value_from_result(&result, address).current_handle,
-            value.current_handle
+            read_encrypted_state_from_result(&result, address).slots[0].handle,
+            value.slots[0].handle
         );
     }
 }
@@ -477,104 +619,81 @@ fn mollusk_fhe_execute_rejects_stale_previous_handle() {
 }
 
 #[test]
-fn mollusk_fhe_execute_rejects_wallet_as_value_authority_on_create() {
-    // A wallet can never be a value authority: the create carries the seeds that must derive the
-    // authority from the program, and no seeds derive a wallet.
+fn mollusk_create_encrypted_state_rejects_wallet_authority() {
     let wallet = Pubkey::new_unique();
     let app = App::new();
     let (host_config, host_config_account) = host_config_account(wallet);
-    let output_label = label("wallet-owned");
-    let output = host::encrypted_value_address(app.program(), wallet, app.scope, output_label).0;
-    let mut dictionary = ExecutionDictionary::default();
-    let steps = vec![FheExecuteStep::TrivialEncrypt {
-        plaintext: [1; 32],
-        fhe_type: 5,
-        output: FheExecuteOutput::StoredValue {
-            output_encrypted_value_index: 0,
-            output_authority_index: None,
-            output_program_index: dictionary.intern_key(app.program()),
-            output_authority_key_index: dictionary.intern_key(wallet),
-            output_scope_index: dictionary.intern(app.scope),
-            output_label_index: dictionary.intern(output_label),
-            output_authority_seeds: app.authority.seeds(&mut dictionary),
-            output_allow_indexes: dictionary.intern_keys([wallet]),
-            previous_handle_index: None,
-            make_public: false,
+    let output = host::encrypted_state_address(app.program(), wallet, app.scope).0;
+    let ix = anchor_ix(
+        host::id(),
+        host::accounts::CreateEncryptedState {
+            payer: wallet,
+            authority: wallet,
+            encrypted_state: output,
+            host_config,
+            system_program: system_program::ID,
         },
-    }];
-    let ix = fhe_execute_ix(
-        wallet,
-        wallet,
-        host_config,
-        FheExecuteArgs {
-            account_count: 0,
-            dictionary: dictionary.into_entries(),
-            steps,
+        host::instruction::CreateEncryptedState {
+            args: host::instructions::CreateEncryptedStateArgs {
+                program: app.program(),
+                scope: app.scope,
+                authority_seeds: vec![],
+            },
         },
-        vec![writable(output)],
     );
     let accounts = vec![
         (system_program::ID, system_program_account()),
         (wallet, funded_system_account()),
         (host_config, host_config_account),
-        (event_authority(host::id()), Account::default()),
         (output, empty_system_account()),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueAuthorityNotProgramPda,
+            host::errors::ZamaHostError::EncryptedStateAuthorityNotProgramPda,
         )],
     );
 }
 
 #[test]
-fn mollusk_fhe_execute_rejects_create_whose_seeds_derive_under_another_program() {
+fn mollusk_create_encrypted_state_rejects_seeds_from_another_program() {
     // The authority is a real PDA, but of a different program than the one the output names: the
     // proof fails, so no program can create values that claim another program's application.
     let payer = Pubkey::new_unique();
     let app = App::new();
     let claimed_program = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_account(payer);
-    let output_label = label("claimed");
-    let output =
-        host::encrypted_value_address(claimed_program, app.key(), app.scope, output_label).0;
-    let mut dictionary = ExecutionDictionary::default();
-    let steps = vec![FheExecuteStep::TrivialEncrypt {
-        plaintext: [1; 32],
-        fhe_type: 5,
-        output: FheExecuteOutput::StoredValue {
-            output_encrypted_value_index: 0,
-            output_authority_index: None,
-            output_program_index: dictionary.intern_key(claimed_program),
-            output_authority_key_index: dictionary.intern_key(app.key()),
-            output_scope_index: dictionary.intern(app.scope),
-            output_label_index: dictionary.intern(output_label),
-            output_authority_seeds: app.authority.seeds(&mut dictionary),
-            output_allow_indexes: dictionary.intern_keys([payer]),
-            previous_handle_index: None,
-            make_public: false,
+    let output = host::encrypted_state_address(claimed_program, app.key(), app.scope).0;
+    let ix = anchor_ix(
+        host::id(),
+        host::accounts::CreateEncryptedState {
+            payer,
+            authority: app.key(),
+            encrypted_state: output,
+            host_config,
+            system_program: system_program::ID,
         },
-    }];
-    let ix = fhe_execute_ix(
-        payer,
-        app.key(),
-        host_config,
-        FheExecuteArgs {
-            account_count: 0,
-            dictionary: dictionary.into_entries(),
-            steps,
+        host::instruction::CreateEncryptedState {
+            args: host::instructions::CreateEncryptedStateArgs {
+                program: claimed_program,
+                scope: app.scope,
+                authority_seeds: vec![
+                    host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
+                    app.authority.seed_key.to_bytes().to_vec(),
+                    vec![app.authority.bump],
+                ],
+            },
         },
-        vec![writable(output)],
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
+    accounts.retain(|(key, _)| *key != event_authority(host::id()));
     accounts.push((output, empty_system_account()));
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueAuthorityNotProgramPda,
+            host::errors::ZamaHostError::EncryptedStateAuthorityNotProgramPda,
         )],
     );
 }
@@ -595,9 +714,10 @@ fn read_foreign_value_case(
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(foreign_handle),
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("theirs")),
         },
         rhs: FheExecuteOperand::Scalar {
             value_index: dictionary.intern([0; 32]),
@@ -614,6 +734,7 @@ fn read_foreign_value_case(
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
@@ -622,8 +743,9 @@ fn read_foreign_value_case(
     );
     let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
     accounts.push((foreign.key(), empty_system_account()));
-    accounts.push((foreign_address, encrypted_value_account(&foreign_value)));
-    accounts.push((output, empty_system_account()));
+    accounts.push((foreign_address, encrypted_state_account(&foreign_value)));
+    let (_, output_state) = new_encrypted_state(app.app(), app.key(), []);
+    accounts.push((output, encrypted_state_account(&output_state)));
     mollusk().process_and_validate_instruction(&ix, &accounts, &[expected])
 }
 
@@ -637,7 +759,7 @@ fn mollusk_fhe_execute_rejects_read_of_a_value_whose_authority_did_not_sign() {
         &App::new(),
         &App::new(),
         false,
-        custom_error(host::errors::ZamaHostError::EncryptedValueAccountAuthorityMismatch),
+        custom_error(host::errors::ZamaHostError::EncryptedStateAccountAuthorityMismatch),
     );
 }
 
@@ -650,7 +772,7 @@ fn mollusk_fhe_execute_admits_read_signed_by_an_additional_authority() {
     let app = App::new();
     let foreign = App::new();
     let result = read_foreign_value_case(payer, &app, &foreign, true, Check::success());
-    let output = read_encrypted_value_from_result(&result, app.address("mine"));
+    let output = read_encrypted_state_from_result(&result, app.address("mine"));
     assert_eq!(output.program, app.program());
     assert_eq!(output.scope, app.scope);
     assert_eq!(output.leaf_count, 1);
@@ -670,9 +792,10 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(handle),
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("in")),
         },
         rhs: FheExecuteOperand::Scalar {
             value_index: dictionary.intern([0; 32]),
@@ -685,6 +808,7 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
@@ -692,8 +816,9 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
         vec![writable(input_address), writable(output)],
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
-    accounts.push((input_address, encrypted_value_account(&input_value)));
-    accounts.push((output, empty_system_account()));
+    accounts.push((input_address, encrypted_state_account(&input_value)));
+    let (_, output_state) = new_encrypted_state(other_scope.app(), other_scope.key(), []);
+    accounts.push((output, encrypted_state_account(&output_state)));
     mollusk().process_and_validate_instruction(
         &ix,
         &accounts,
@@ -714,7 +839,16 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
     let (host_config, host_config_account) = host_config_account(payer);
     let handle = handle_for_chain(5, 5);
     let (address, value) = app.value("balance", handle);
-    let ix = make_handle_public_ix(payer, app.key(), address, host_config, handle, None);
+    let ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        value.slots[0].key,
+        handle,
+        value.leaf_count,
+        None,
+    );
     let accounts = make_public_accounts(
         payer,
         &app,
@@ -724,7 +858,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
         host_config_account,
     );
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated = read_encrypted_value_from_result(&result, address);
+    let updated = read_encrypted_state_from_result(&result, address);
     assert_eq!(updated.leaf_count, 1);
     let expected = zama_solana_acl::public_decrypt_leaf_commitment(address.to_bytes(), 0, handle);
     let mut expected_peaks = Vec::new();
@@ -740,8 +874,17 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
     let (host_config, host_config_account) = host_config_account(payer);
     let handle = handle_for_chain(5, 5);
     let (address, value) = app.value("balance", handle);
-    let ix = make_handle_public_ix(payer, app.key(), address, host_config, handle, None);
-    let accounts = |value: &EncryptedValue| {
+    let ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        value.slots[0].key,
+        handle,
+        value.leaf_count,
+        None,
+    );
+    let accounts = |value: &EncryptedState| {
         make_public_accounts(
             payer,
             &app,
@@ -751,24 +894,38 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
             host_config_account.clone(),
         )
     };
-    let sealed = read_encrypted_value_from_result(
+    let sealed = read_encrypted_state_from_result(
         &mollusk().process_and_validate_instruction(&ix, &accounts(&value), &[Check::success()]),
         address,
     );
     // Sealing an already-sealed handle is accepted rather than guarded — INVARIANTS #53.
-    let resealed = read_encrypted_value_from_result(
-        &mollusk().process_and_validate_instruction(&ix, &accounts(&sealed), &[Check::success()]),
+    let reseal_ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        sealed.slots[0].key,
+        handle,
+        sealed.leaf_count,
+        None,
+    );
+    let resealed = read_encrypted_state_from_result(
+        &mollusk().process_and_validate_instruction(
+            &reseal_ix,
+            &accounts(&sealed),
+            &[Check::success()],
+        ),
         address,
     );
 
     assert_eq!(resealed.leaf_count, 2);
     let events = [
-        EncryptedValueAccountEvent::MarkedPublic { handle },
-        EncryptedValueAccountEvent::MarkedPublic { handle },
+        StateHistoryEvent::MarkedPublic { handle },
+        StateHistoryEvent::MarkedPublic { handle },
     ];
-    let shared = resealed.to_shared();
+    let shared = shared_state(&resealed);
     for leaf_index in 0..resealed.leaf_count {
-        let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+        let proof = zama_solana_acl::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &resealed.peaks,
@@ -778,9 +935,13 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
         .unwrap();
         // Both leaves commit to the same (account, handle) fact, so the duplicate authorizes
         // exactly what the first leaf already did and nothing more.
-        assert!(
-            zama_solana_acl::authorize_public(address.to_bytes(), &shared, handle, &proof).is_ok()
-        );
+        assert!(zama_solana_acl::authorize_state_public(
+            address.to_bytes(),
+            &shared,
+            handle,
+            &proof
+        )
+        .is_ok());
     }
     // What a redundant seal costs is bounded by the MMR shape — one peak per set bit of
     // leaf_count — so no number of reseals can grow the account past MAX_MMR_PEAKS peaks.
@@ -803,7 +964,9 @@ fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
         app.key(),
         address,
         host_config,
+        value.slots[0].key,
         handle_for_chain(6, 5),
+        value.leaf_count,
         None,
     );
     let accounts = make_public_accounts(
@@ -818,20 +981,63 @@ fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValuePublicHandleMismatch,
+            host::errors::ZamaHostError::EncryptedStatePublicHandleMismatch,
         )],
     );
 }
 
 #[test]
-fn mollusk_make_handle_public_rejects_signer_that_is_not_the_value_authority() {
+fn mollusk_make_state_handle_public_rejects_stale_leaf_count() {
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let handle = handle_for_chain(5, 5);
+    let (address, state) = app.value("balance", handle);
+    let ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        state.slots[0].key,
+        handle,
+        state.leaf_count + 1,
+        None,
+    );
+    let accounts = make_public_accounts(
+        payer,
+        &app,
+        address,
+        &state,
+        host_config,
+        host_config_account,
+    );
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedStateMmrInconsistent,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_make_handle_public_rejects_signer_that_is_not_the_state_authority() {
     // Being allowed on the handle grants decryption, not control: only the value authority seals.
     let payer = Pubkey::new_unique();
     let app = App::new();
     let (host_config, host_config_account) = host_config_account(payer);
     let handle = handle_for_chain(5, 5);
     let (address, value) = app.value("balance", handle);
-    let ix = make_handle_public_ix(payer, payer, address, host_config, handle, None);
+    let ix = make_handle_public_ix(
+        payer,
+        payer,
+        address,
+        host_config,
+        value.slots[0].key,
+        handle,
+        value.leaf_count,
+        None,
+    );
     let accounts = make_public_accounts(
         payer,
         &app,
@@ -844,7 +1050,42 @@ fn mollusk_make_handle_public_rejects_signer_that_is_not_the_value_authority() {
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::EncryptedValueAccountAuthorityMismatch,
+            host::errors::ZamaHostError::EncryptedStateAccountAuthorityMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_make_state_handle_public_rejects_wrong_stored_bump() {
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let handle = handle_for_chain(5, 5);
+    let (address, mut state) = app.value("balance", handle);
+    state.bump = state.bump.wrapping_add(1);
+    let ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        state.slots[0].key,
+        handle,
+        state.leaf_count,
+        None,
+    );
+    let accounts = make_public_accounts(
+        payer,
+        &app,
+        address,
+        &state,
+        host_config,
+        host_config_account,
+    );
+    mollusk().process_and_validate_instruction(
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedStatePdaMismatch,
         )],
     );
 }
@@ -890,7 +1131,9 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
         denied.key(),
         address,
         host_config,
-        value.current_handle,
+        value.slots[0].key,
+        value.slots[0].handle,
+        value.leaf_count,
         Some(denied_record),
     );
     let mut accounts = make_public_accounts(
@@ -923,13 +1166,15 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
     accounts.push((sibling_record, empty_system_account()));
     let result =
         mollusk().process_and_validate_instruction(&sibling_ix, &accounts, &[Check::success()]);
-    let created = read_encrypted_value_from_result(&result, sibling_output);
+    let created = read_encrypted_state_from_result(&result, sibling_output);
     let seal_ix = make_handle_public_ix(
         payer,
         sibling.key(),
         sibling_output,
         host_config,
-        created.current_handle,
+        created.slots[0].key,
+        created.slots[0].handle,
+        created.leaf_count,
         Some(sibling_record),
     );
     let mut accounts = make_public_accounts(
@@ -995,7 +1240,9 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         app.key(),
         address,
         deny_host_config,
-        value.current_handle,
+        value.slots[0].key,
+        value.slots[0].handle,
+        value.leaf_count,
         Some(other_record),
     );
     let mut accounts = make_public_accounts(
@@ -1023,7 +1270,9 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         app.key(),
         address,
         host_config,
-        value.current_handle,
+        value.slots[0].key,
+        value.slots[0].handle,
+        value.leaf_count,
         Some(record),
     );
     let mut accounts = make_public_accounts(
@@ -1069,42 +1318,18 @@ fn additional_authority_write_case(
             output: app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false),
         });
         remaining.push(writable(mine));
-        accounts.push((mine, empty_system_account()));
+        let (_, app_state) = new_encrypted_state(app.app(), app.key(), []);
+        accounts.push((mine, encrypted_state_account(&app_state)));
     }
     let theirs_index = remaining.len() as u8;
-    let receipt = match receiver.stored_output(
+    let receipt = receiver.stored_output(
         &mut dictionary,
         theirs_index,
         "theirs",
         &[payer],
         None,
         false,
-    ) {
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_program_index,
-            output_authority_key_index,
-            output_scope_index,
-            output_label_index,
-            output_authority_seeds,
-            output_allow_indexes,
-            previous_handle_index,
-            make_public,
-            ..
-        } => FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_authority_index: Some(theirs_index + 1),
-            output_program_index,
-            output_authority_key_index,
-            output_scope_index,
-            output_label_index,
-            output_authority_seeds,
-            output_allow_indexes,
-            previous_handle_index,
-            make_public,
-        },
-        FheExecuteOutput::Transient => unreachable!(),
-    };
+    );
     steps.push(FheExecuteStep::TrivialEncrypt {
         plaintext: [4; 32],
         fhe_type: 5,
@@ -1113,7 +1338,8 @@ fn additional_authority_write_case(
     remaining.push(writable(theirs));
     remaining.push(readonly_signer(receiver.key()));
     remaining.push(readonly(receiver_record.0));
-    accounts.push((theirs, empty_system_account()));
+    let (_, receiver_state) = new_encrypted_state(receiver.app(), receiver.key(), []);
+    accounts.push((theirs, encrypted_state_account(&receiver_state)));
     accounts.push((receiver.key(), empty_system_account()));
     accounts.push(receiver_record);
     if anchored {
@@ -1124,6 +1350,7 @@ fn additional_authority_write_case(
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
@@ -1156,9 +1383,9 @@ fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_applicati
         (receiver_record, empty_system_account()),
     );
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let created = read_encrypted_value_from_result(&result, theirs);
+    let created = read_encrypted_state_from_result(&result, theirs);
     assert_eq!(created.program, receiver.program());
-    assert_eq!(created.encrypted_value_account_authority, receiver.key());
+    assert_eq!(created.authority, receiver.key());
     assert_eq!(created.scope, receiver.scope);
     assert_eq!(created.leaf_count, 1);
 }
@@ -1198,7 +1425,9 @@ fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
         app.key(),
         address,
         host_config,
-        value.current_handle,
+        value.slots[0].key,
+        value.slots[0].handle,
+        value.leaf_count,
         None,
     );
     let accounts = make_public_accounts(
@@ -1236,7 +1465,7 @@ fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_updated_encrypted_value_account_matches_offchain_reconstruction() {
+fn mollusk_updated_encrypted_state_account_matches_offchain_reconstruction() {
     let payer = Pubkey::new_unique();
     let app = App::new();
     let (host_config, host_config_account) = host_config_account(payer);
@@ -1267,10 +1496,12 @@ fn mollusk_updated_encrypted_value_account_matches_offchain_reconstruction() {
 
     // Rebuild the leaves purely from what the two instructions declared — the handle each
     // installed and the keys it allowed — exactly as an off-chain indexer would.
-    let mut events = allowed_events(value1.current_handle, &[viewer_a, viewer_b]);
-    events.extend(allowed_events(value2.current_handle, &[viewer_a, viewer_b]));
-    let reconstructed =
-        zama_solana_acl::encrypted_value_account::reconstruct(address.to_bytes(), &events);
+    let mut events = allowed_events(value1.slots[0].handle, &[viewer_a, viewer_b]);
+    events.extend(allowed_events(
+        value2.slots[0].handle,
+        &[viewer_a, viewer_b],
+    ));
+    let reconstructed = zama_solana_acl::reconstruct(address.to_bytes(), &events);
     assert!(reconstructed.peaks_match(&value2.peaks, value2.leaf_count));
     assert_eq!(reconstructed.leaf_count, 4); // 2 allows x 2 writes
 }
@@ -1305,10 +1536,10 @@ fn mollusk_historical_proof_round_trip_after_two_updates() {
         22,
     );
 
-    let mut events = allowed_events(value1.current_handle, &[viewer]);
-    events.extend(allowed_events(value2.current_handle, &[viewer]));
+    let mut events = allowed_events(value1.slots[0].handle, &[viewer]);
+    events.extend(allowed_events(value2.slots[0].handle, &[viewer]));
     // Leaf 0 authorizes (handle1, viewer) historically against the live peaks.
-    let proof0 = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+    let proof0 = zama_solana_acl::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &value2.peaks,
@@ -1316,29 +1547,29 @@ fn mollusk_historical_proof_round_trip_after_two_updates() {
         0,
     )
     .unwrap();
-    let shared_value2 = value2.to_shared();
-    assert!(zama_solana_acl::authorize_historical(
+    let shared_value2 = shared_state(&value2);
+    assert!(zama_solana_acl::authorize_state_historical(
         address.to_bytes(),
         &shared_value2,
-        value1.current_handle,
+        value1.slots[0].handle,
         viewer.to_bytes(),
         &proof0,
     )
     .is_ok());
     // Wrong key rejected.
-    assert!(zama_solana_acl::authorize_historical(
+    assert!(zama_solana_acl::authorize_state_historical(
         address.to_bytes(),
         &shared_value2,
-        value1.current_handle,
+        value1.slots[0].handle,
         other.to_bytes(),
         &proof0,
     )
     .is_err());
     // Wrong handle rejected.
-    assert!(zama_solana_acl::authorize_historical(
+    assert!(zama_solana_acl::authorize_state_historical(
         address.to_bytes(),
         &shared_value2,
-        value2.current_handle,
+        value2.slots[0].handle,
         viewer.to_bytes(),
         &proof0,
     )
@@ -1354,8 +1585,16 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
     let handle0 = handle_for_chain(30, 5);
     let (address, value0) = app.value("balance", handle0);
 
-    let make_public_ix =
-        make_handle_public_ix(payer, app.key(), address, host_config, handle0, None);
+    let make_public_ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        value0.slots[0].key,
+        handle0,
+        value0.leaf_count,
+        None,
+    );
     let accounts0 = make_public_accounts(
         payer,
         &app,
@@ -1369,7 +1608,7 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         &accounts0,
         &[Check::success()],
     );
-    let value_public = read_encrypted_value_from_result(&result0, address);
+    let value_public = read_encrypted_state_from_result(&result0, address);
 
     let final_value = update_with_fhe_execute(
         payer,
@@ -1382,9 +1621,9 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         31,
     );
 
-    let mut events = vec![EncryptedValueAccountEvent::MarkedPublic { handle: handle0 }];
-    events.extend(allowed_events(final_value.current_handle, &[viewer]));
-    let proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+    let mut events = vec![StateHistoryEvent::MarkedPublic { handle: handle0 }];
+    events.extend(allowed_events(final_value.slots[0].handle, &[viewer]));
+    let proof = zama_solana_acl::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -1392,16 +1631,19 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         0,
     )
     .unwrap();
-    let shared_final = final_value.to_shared();
-    assert!(
-        zama_solana_acl::authorize_public(address.to_bytes(), &shared_final, handle0, &proof)
-            .is_ok()
-    );
-    // A proof built for the old handle never authorizes the newer handle: no roll-forward.
-    assert!(zama_solana_acl::authorize_public(
+    let shared_final = shared_state(&final_value);
+    assert!(zama_solana_acl::authorize_state_public(
         address.to_bytes(),
         &shared_final,
-        final_value.current_handle,
+        handle0,
+        &proof
+    )
+    .is_ok());
+    // A proof built for the old handle never authorizes the newer handle: no roll-forward.
+    assert!(zama_solana_acl::authorize_state_public(
+        address.to_bytes(),
+        &shared_final,
+        final_value.slots[0].handle,
         &proof
     )
     .is_err());
@@ -1418,56 +1660,56 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
     let (host_config, host_config_account) = host_config_account(payer);
     let lhs = handle_for_chain(40, 5);
     let rhs = handle_for_chain(41, 5);
-    let (lhs_address, lhs_value) = app.value("lhs", lhs);
-    let (rhs_address, rhs_value) = app.value("rhs", rhs);
+    let (lhs_address, lhs_value) = new_encrypted_state(
+        app.app(),
+        app.key(),
+        [(label("lhs"), lhs), (label("rhs"), rhs)],
+    );
     let output_address = app.address("sum");
 
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(lhs),
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("lhs")),
         },
-        rhs: FheExecuteOperand::StoredValue {
+        rhs: FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(rhs),
-            encrypted_value_index: 1,
+            state_index: 0,
+            key_index: dictionary.intern(label("rhs")),
         },
         output_fhe_type: 5,
-        output: app.stored_output(&mut dictionary, 2, "sum", &[payer], None, false),
+        output: app.stored_output(&mut dictionary, 0, "sum", &[payer], None, false),
     }];
     let ix = fhe_execute_ix(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
         },
-        vec![
-            writable(lhs_address),
-            writable(rhs_address),
-            writable(output_address),
-        ],
+        vec![writable(output_address)],
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
-    accounts.push((lhs_address, encrypted_value_account(&lhs_value)));
-    accounts.push((rhs_address, encrypted_value_account(&rhs_value)));
-    accounts.push((output_address, empty_system_account()));
+    accounts.push((lhs_address, encrypted_state_account(&lhs_value)));
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let output = read_encrypted_value_from_result(&result, output_address);
+    let output = read_encrypted_state_from_result(&result, output_address);
     assert_eq!(output.program, app.program());
-    assert_eq!(output.encrypted_value_account_authority, app.key());
+    assert_eq!(output.authority, app.key());
     assert_eq!(output.scope, app.scope);
-    assert_eq!(output.label, label("sum"));
+    let sum_handle = output.get(&label("sum")).expect("sum slot written");
     // The create seals its one allow.
     assert_eq!(output.leaf_count, 1);
     let mut expected_peaks = Vec::new();
     let mut expected_count = 0u64;
     append_allow_leaves(
         output_address,
-        output.current_handle,
+        sum_handle,
         &[payer],
         &mut expected_peaks,
         &mut expected_count,
@@ -1481,16 +1723,20 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
     let app = App::new();
     let (host_config, host_config_account) = host_config_account(payer);
     let input_handle = handle_for_chain(42, 5);
-    let (input_address, input_value) = app.value("in", input_handle);
     let output_handle = handle_for_chain(43, 5);
-    let (output_address, output_value) = app.value("out", output_handle);
+    let (output_address, output_value) = new_encrypted_state(
+        app.app(),
+        app.key(),
+        [(label("in"), input_handle), (label("out"), output_handle)],
+    );
 
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoredValue {
+        lhs: FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(input_handle),
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("in")),
         },
         rhs: FheExecuteOperand::Scalar {
             value_index: dictionary.intern([0; 32]),
@@ -1498,7 +1744,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
         output_fhe_type: 5,
         output: app.stored_output(
             &mut dictionary,
-            1,
+            0,
             "out",
             &[payer],
             Some(output_handle),
@@ -1510,18 +1756,23 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
         app.key(),
         host_config,
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
         },
-        vec![writable(input_address), writable(output_address)],
+        vec![writable(output_address)],
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
-    accounts.push((input_address, encrypted_value_account(&input_value)));
-    accounts.push((output_address, encrypted_value_account(&output_value)));
+    accounts.push((output_address, encrypted_state_account(&output_value)));
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-    let updated_output = read_encrypted_value_from_result(&result, output_address);
-    assert_ne!(updated_output.current_handle, output_handle);
+    let updated_output = read_encrypted_state_from_result(&result, output_address);
+    assert_ne!(
+        updated_output
+            .get(&label("out"))
+            .expect("out slot retained"),
+        output_handle
+    );
     // The update seals one leaf for its one allow.
     assert_eq!(updated_output.leaf_count, 1);
 }
@@ -1603,14 +1854,14 @@ fn assert_created_public_batch(
     let event = sole_emitted_event::<host::PublicOutputsProducedEvent>(result);
     assert_eq!(event.version, host::EVENT_VERSION);
     assert_eq!(event.outputs.len(), expected_outputs.len());
-    for (record, (step_index, encrypted_value)) in event.outputs.iter().zip(expected_outputs.iter())
+    for (record, (step_index, encrypted_state)) in event.outputs.iter().zip(expected_outputs.iter())
     {
         assert_eq!(record.step_index, *step_index);
-        assert_eq!(record.encrypted_value, *encrypted_value);
-        assert_eq!(
-            record.output_handle,
-            read_encrypted_value_from_result(result, *encrypted_value).current_handle
-        );
+        assert_eq!(record.encrypted_state, *encrypted_state);
+        assert!(read_encrypted_state_from_result(result, *encrypted_state)
+            .slots
+            .iter()
+            .any(|slot| slot.handle == record.output_handle));
     }
 }
 
@@ -1652,7 +1903,10 @@ fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
     // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
     // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
     // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
-    let created_public_steps = zama_fhe::MAX_PERSISTENT_CREATES;
+    // Each step writes a distinct slot, allows the payer, and makes the result public. The
+    // current 32 KiB host heap admits 30 of these; the State capacity is 32, but this heavier
+    // lifecycle shape reaches the heap wall first (tracked by fhe_execute_boundary.rs).
+    let created_public_steps = 30;
     let execution = created_public_batch(
         created_public_steps,
         &(0..created_public_steps).collect::<Vec<_>>(),
@@ -1684,21 +1938,37 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
     assert!(result.program_result.is_err());
     assert!(created_public_events(&result).is_empty());
     let output = result.get_account(&execution.outputs[0].1).unwrap();
-    assert_eq!(output.owner, system_program::ID);
-    assert!(output.data.is_empty());
+    let before = &execution
+        .accounts
+        .iter()
+        .find(|(key, _)| *key == execution.outputs[0].1)
+        .unwrap()
+        .1;
+    assert_eq!(
+        output, before,
+        "failed execution must preserve the pre-existing State"
+    );
 }
 
 #[test]
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
     let execution = created_public_batch(1, &[0]);
     let transaction = mollusk().process_transaction_instructions(
-        &[execution.instruction.clone(), execution.instruction],
+        &[execution.instruction.clone(), execution.instruction.clone()],
         &execution.accounts,
     );
     assert!(transaction.program_result.is_err());
     let output = transaction.get_account(&execution.outputs[0].1).unwrap();
-    assert_eq!(output.owner, system_program::ID);
-    assert!(output.data.is_empty());
+    let before = &execution
+        .accounts
+        .iter()
+        .find(|(key, _)| *key == execution.outputs[0].1)
+        .unwrap()
+        .1;
+    assert_eq!(
+        output, before,
+        "failed execution must preserve the pre-existing State"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2656,8 +2926,7 @@ struct FheExecutionFixture {
     host_config: Pubkey,
     balance_handle: [u8; 32],
     amount_handle: [u8; 32],
-    balance_value: Pubkey,
-    amount_value: Pubkey,
+    balance_state: Pubkey,
     output_value: Pubkey,
     context: mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
 }
@@ -2677,15 +2946,20 @@ impl FheExecutionFixture {
         let (host_config, host_config_account) = host_config_account_with_block_cap(payer, cap);
         let balance_handle = handle_for_chain(151, 5);
         let amount_handle = handle_for_chain(152, 5);
-        let (balance_value, balance_ev) = app.value("balance-hcu-fixture", balance_handle);
-        let (amount_value, amount_ev) = app.value("amount-hcu-fixture", amount_handle);
+        let (balance_state, state) = new_encrypted_state(
+            app.app(),
+            app.key(),
+            [
+                (label("balance-hcu-fixture"), balance_handle),
+                (label("amount-hcu-fixture"), amount_handle),
+            ],
+        );
         let output_value = app.address(FIXTURE_OUTPUT);
         let context = mollusk_execute_context(
             payer,
             vec![
                 (host_config, host_config_account),
-                (balance_value, encrypted_value_account(&balance_ev)),
-                (amount_value, encrypted_value_account(&amount_ev)),
+                (balance_state, encrypted_state_account(&state)),
                 (app.key(), empty_system_account()),
             ],
         );
@@ -2695,8 +2969,7 @@ impl FheExecutionFixture {
             host_config,
             balance_handle,
             amount_handle,
-            balance_value,
-            amount_value,
+            balance_state,
             output_value,
             context,
         }
@@ -2720,16 +2993,18 @@ impl FheExecutionFixture {
     }
 
     fn balance_operand(&self, dictionary: &mut ExecutionDictionary) -> FheExecuteOperand {
-        FheExecuteOperand::StoredValue {
+        FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(self.balance_handle),
-            encrypted_value_index: 0,
+            state_index: 0,
+            key_index: dictionary.intern(label("balance-hcu-fixture")),
         }
     }
 
     fn amount_operand(&self, dictionary: &mut ExecutionDictionary) -> FheExecuteOperand {
-        FheExecuteOperand::StoredValue {
+        FheExecuteOperand::StateSlot {
             handle_index: dictionary.intern(self.amount_handle),
-            encrypted_value_index: 1,
+            state_index: 0,
+            key_index: dictionary.intern(label("amount-hcu-fixture")),
         }
     }
 
@@ -2760,7 +3035,7 @@ impl FheExecutionFixture {
                 output_fhe_type: 5,
                 output: self.app.stored_output(
                     &mut dictionary,
-                    2,
+                    0,
                     FIXTURE_OUTPUT,
                     &[self.payer],
                     None,
@@ -2769,6 +3044,7 @@ impl FheExecutionFixture {
             },
         ];
         FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
             steps,
@@ -2786,6 +3062,7 @@ impl FheExecutionFixture {
         rand_nonce: Option<Pubkey>,
     ) -> Instruction {
         let args = FheExecuteArgs {
+            returned_results: Vec::new(),
             account_count: u8::try_from(remaining.len()).expect("remaining accounts fit u8"),
             ..args
         };
@@ -2793,7 +3070,7 @@ impl FheExecutionFixture {
             host::id(),
             host::accounts::FheExecute {
                 payer: self.payer,
-                encrypted_value_account_authority: self.app.key(),
+                authority: self.app.key(),
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -2812,11 +3089,7 @@ impl FheExecutionFixture {
     fn block_cap_instruction(&self, meter: Option<Pubkey>, trust: Option<Pubkey>) -> Instruction {
         self.instruction(
             self.success_batch(),
-            vec![
-                writable(self.balance_value),
-                writable(self.amount_value),
-                writable(self.output_value),
-            ],
+            vec![writable(self.output_value)],
             meter,
             trust,
             None,
@@ -2872,7 +3145,7 @@ impl FheExecutionFixture {
             output_fhe_type: 5,
             output: self.app.stored_output(
                 &mut dictionary,
-                2,
+                0,
                 FIXTURE_OUTPUT,
                 &[self.payer],
                 None,
@@ -2881,15 +3154,12 @@ impl FheExecutionFixture {
         });
         self.instruction(
             FheExecuteArgs {
+                returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: dictionary.into_entries(),
                 steps,
             },
-            vec![
-                writable(self.balance_value),
-                writable(self.amount_value),
-                writable(self.output_value),
-            ],
+            vec![writable(self.output_value)],
             None,
             None,
             None,
@@ -2913,11 +3183,12 @@ impl FheExecutionFixture {
         }];
         self.instruction(
             FheExecuteArgs {
+                returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: dictionary.into_entries(),
                 steps,
             },
-            vec![writable(self.balance_value), writable(self.amount_value)],
+            vec![writable(self.balance_state)],
             meter,
             trust,
             None,
@@ -2936,6 +3207,7 @@ impl FheExecutionFixture {
     ) -> Instruction {
         self.instruction(
             FheExecuteArgs {
+                returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: Vec::new(),
                 steps,
@@ -2988,6 +3260,15 @@ impl FheExecutionFixture {
         meter: Option<Pubkey>,
     ) -> (Pubkey, Instruction) {
         let output_value = authority.address(name);
+        let (_, state) = new_encrypted_state(authority.app(), authority.key(), []);
+        if !self
+            .context
+            .account_store
+            .borrow()
+            .contains_key(&output_value)
+        {
+            self.seed_account(output_value, encrypted_state_account(&state));
+        }
         let mut dictionary = ExecutionDictionary::default();
         let steps = vec![FheExecuteStep::TrivialEncrypt {
             plaintext: [7; 32],
@@ -2998,7 +3279,7 @@ impl FheExecutionFixture {
             host::id(),
             host::accounts::FheExecute {
                 payer,
-                encrypted_value_account_authority: authority.key(),
+                authority: authority.key(),
                 host_config: self.host_config,
                 system_program: system_program::ID,
                 hcu_block_meter: meter,
@@ -3009,6 +3290,7 @@ impl FheExecutionFixture {
             },
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
+                    returned_results: Vec::new(),
                     account_count: 1,
                     dictionary: dictionary.into_entries(),
                     steps,
@@ -3019,19 +3301,14 @@ impl FheExecutionFixture {
         (output_value, ix)
     }
 
-    /// Asserts the persistent output was never created, from a returned `InstructionResult`
-    /// (works whether or not the output account was ever persisted into `self.context`).
+    /// Asserts the rejected execution did not add its output slot to the pre-existing State.
     fn assert_no_output(&self, result: &mollusk_svm::result::InstructionResult) {
-        let owner = result
-            .resulting_accounts
-            .iter()
-            .find(|(key, _)| *key == self.output_value)
-            .map(|(_, account)| account.owner);
-        assert_ne!(
-            owner,
-            Some(host::id()),
-            "output EncryptedValue should not have been created"
-        );
+        let account = result
+            .get_account(&self.output_value)
+            .expect("fixture State remains present");
+        let state = EncryptedState::try_deserialize(&mut account.data.as_slice())
+            .expect("valid fixture State");
+        assert!(state.get(&label(FIXTURE_OUTPUT)).is_none());
     }
 }
 
@@ -3046,12 +3323,12 @@ fn mollusk_fhe_execute_unrestricted_cap_none_none_succeeds() {
         &fixture.block_cap_instruction(None, None),
         &[Check::success()],
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
     assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
 }
 
 #[test]
-fn mollusk_fhe_execute_unsigned_value_authority_is_rejected() {
+fn mollusk_fhe_execute_unsigned_state_authority_is_rejected() {
     // The value authority must SIGN: it is what admits every read and write of the
     // application's values, and the application the cap meters is derived from them. A
     // supplied-but-unsigned authority is rejected by the account layer, so no caller can name a
@@ -3145,7 +3422,7 @@ fn mollusk_fhe_execute_ban_cap_zero_trusted_witness_bypasses() {
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -3175,7 +3452,7 @@ fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
     assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
 }
 
@@ -3316,7 +3593,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
             >= anchor_lang::prelude::Rent::default()
                 .minimum_balance(8 + host::HcuBlockMeter::SPACE)
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -3346,19 +3623,43 @@ fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
 }
 
 #[test]
-fn mollusk_fhe_execute_prefunded_output_value_is_created_not_griefed() {
-    // The same anti-griefing property for the persistent output path (`create_pda_strict`): its
-    // address is predictable too, so a pre-funded (system-owned, empty) donation at the output
-    // PDA must not block the execution. Asserted under the unrestricted cap so the meter path is
-    // inert and only the output creation is exercised.
-    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    fixture.seed_account(fixture.output_value, system_account(1));
-
-    fixture.context.process_and_validate_instruction(
-        &fixture.block_cap_instruction(None, None),
-        &[Check::success()],
+fn mollusk_create_encrypted_state_accepts_prefunded_empty_pda() {
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let address = app.address("state");
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, host_config_account),
+            (app.key(), empty_system_account()),
+            (address, system_account(1)),
+        ],
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    let ix = anchor_ix(
+        host::id(),
+        host::accounts::CreateEncryptedState {
+            payer,
+            authority: app.key(),
+            encrypted_state: address,
+            host_config,
+            system_program: system_program::ID,
+        },
+        host::instruction::CreateEncryptedState {
+            args: host::instructions::CreateEncryptedStateArgs {
+                program: app.program(),
+                scope: app.scope,
+                authority_seeds: vec![
+                    host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
+                    app.authority.seed_key.to_bytes().to_vec(),
+                    vec![app.authority.bump],
+                ],
+            },
+        },
+    );
+    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let state = read_encrypted_state(&context, address);
+    assert!(state.slots.is_empty());
 }
 
 #[test]
@@ -3419,7 +3720,7 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
     let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
     assert_eq!(meter.used_hcu, 50_000 + FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -3486,7 +3787,7 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
         meter.last_seen_slot,
         fixture.context.mollusk.sysvars.clock.slot
     );
-    read_encrypted_value(&fixture.context, fixture.output_value);
+    read_encrypted_state(&fixture.context, fixture.output_value);
 }
 
 #[test]
@@ -3576,12 +3877,10 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
             .used_hcu,
         FIXTURE_BATCH_HCU
     );
-    let out2_owner = result
-        .resulting_accounts
-        .iter()
-        .find(|(key, _)| *key == out2)
-        .map(|(_, account)| account.owner);
-    assert_ne!(out2_owner, Some(host::id()));
+    let output = read_encrypted_state_from_result(&result, out2);
+    assert!(output.get(&label("execution-2-out")).is_none());
+    assert_eq!(output.leaf_count, 0);
+    assert!(output.peaks.is_empty());
 }
 
 #[test]
@@ -3652,7 +3951,7 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
     fixture
         .context
         .process_and_validate_instruction(&ix, &[Check::success()]);
-    read_encrypted_value(&fixture.context, output_value);
+    read_encrypted_state(&fixture.context, output_value);
     // The execution WAS metered onto the application (a single euint64 TrivialEncrypt, 32 HCU
     // in HCULimit.sol `checkHCUForTrivialEncrypt`).
     const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 32;
@@ -3724,11 +4023,7 @@ fn mollusk_fhe_execute_nonce_account_without_rand_is_rejected() {
     ix.accounts = fixture
         .instruction(
             fixture.success_batch(),
-            vec![
-                writable(fixture.balance_value),
-                writable(fixture.amount_value),
-                writable(fixture.output_value),
-            ],
+            vec![writable(fixture.output_value)],
             None,
             None,
             Some(nonce),
@@ -3870,7 +4165,7 @@ fn kms_context_account(context_id: [u8; 32]) -> (Pubkey, Account) {
 fn verify_public_decrypt_ix(
     host_config: Pubkey,
     kms_context: Pubkey,
-    encrypted_value: Pubkey,
+    encrypted_state: Pubkey,
     handle: [u8; 32],
     cleartext: [u8; 32],
     signatures: Vec<[u8; 65]>,
@@ -3882,7 +4177,7 @@ fn verify_public_decrypt_ix(
         host::accounts::VerifyPublicDecrypt {
             host_config,
             kms_context,
-            encrypted_value,
+            encrypted_state,
         },
         host::instruction::VerifyPublicDecrypt {
             handle,
@@ -3911,11 +4206,20 @@ fn seal_public_leaf(
     handle: [u8; 32],
 ) -> (
     Pubkey,
-    EncryptedValue,
+    EncryptedState,
     host::instructions::MmrInclusionProof,
 ) {
     let (address, value) = app.value("balance", handle);
-    let seal_ix = make_handle_public_ix(payer, app.key(), address, host_config, handle, None);
+    let seal_ix = make_handle_public_ix(
+        payer,
+        app.key(),
+        address,
+        host_config,
+        value.slots[0].key,
+        handle,
+        value.leaf_count,
+        None,
+    );
     let seal_accounts = make_public_accounts(
         payer,
         app,
@@ -3924,13 +4228,13 @@ fn seal_public_leaf(
         host_config,
         host_config_account.clone(),
     );
-    let sealed = read_encrypted_value_from_result(
+    let sealed = read_encrypted_state_from_result(
         &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
         address,
     );
-    let events = [EncryptedValueAccountEvent::MarkedPublic { handle }];
+    let events = [StateHistoryEvent::MarkedPublic { handle }];
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+        zama_solana_acl::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &sealed.peaks,
@@ -3988,7 +4292,7 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     // v0 extra_data resolves to the current context, so return_data carries the current id.
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
@@ -3999,8 +4303,8 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     );
     // return_data is exactly handle ++ cleartext ++ context_id, and nothing was written back.
     assert_eq!(result.return_data, expected);
-    let unchanged = read_encrypted_value_from_result(&result, address);
-    assert_eq!(unchanged.current_handle, sealed.current_handle);
+    let unchanged = read_encrypted_state_from_result(&result, address);
+    assert_eq!(unchanged.slots[0].handle, sealed.slots[0].handle);
     assert_eq!(unchanged.leaf_count, sealed.leaf_count);
     assert_eq!(unchanged.peaks, sealed.peaks);
 }
@@ -4077,7 +4381,7 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
     let accounts = vec![
         (host_config, rotated_host_config),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
     let result = mollusk().process_and_validate_instruction(
@@ -4136,7 +4440,7 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
     let accounts = vec![
         (host_config, rotated_host_config),
         (kms_context, destroyed_kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4173,7 +4477,7 @@ fn mollusk_verify_public_decrypt_rejects_destroyed_context() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4214,7 +4518,7 @@ fn mollusk_verify_public_decrypt_rejects_context_account_mismatch() {
     let accounts = vec![
         (host_config, rotated_host_config),
         (next_kms_context, next_kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4253,7 +4557,7 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
         (host_config, host_config_account),
         // No KmsContext exists at the canonical PDA for id 99; a system-owned account stands in.
         (nonexistent_kms_context, funded_system_account()),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4298,7 +4602,7 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4342,7 +4646,7 @@ fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4380,7 +4684,7 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
     let accounts = vec![
         (host_config, host_config_account),
         (wrong_kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4414,13 +4718,13 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
         &[viewer],
         31,
     );
-    assert_ne!(final_value.current_handle, handle0);
+    assert_ne!(final_value.slots[0].handle, handle0);
 
     // Rebuild the proof for the sealed leaf 0 against the post-update peaks.
-    let mut events = vec![EncryptedValueAccountEvent::MarkedPublic { handle: handle0 }];
-    events.extend(allowed_events(final_value.current_handle, &[viewer]));
+    let mut events = vec![StateHistoryEvent::MarkedPublic { handle: handle0 }];
+    events.extend(allowed_events(final_value.slots[0].handle, &[viewer]));
     let proof = mmr_inclusion_proof(
-        zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+        zama_solana_acl::build_verified_proof_from_events(
             address.to_bytes(),
             &events,
             &final_value.peaks,
@@ -4445,7 +4749,7 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&final_value)),
+        (address, encrypted_state_account(&final_value)),
     ];
     let expected = expected_return_data(handle0, cleartext, KMS_CONTEXT_ID);
     let result = mollusk().process_and_validate_instruction(
@@ -4479,10 +4783,10 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         &[viewer],
         41,
     );
-    let handle1 = final_value.current_handle;
+    let handle1 = final_value.slots[0].handle;
 
     let events = allowed_events(handle1, &[viewer]);
-    let shared_proof = zama_solana_acl::encrypted_value_account::build_verified_proof_from_events(
+    let shared_proof = zama_solana_acl::build_verified_proof_from_events(
         address.to_bytes(),
         &events,
         &final_value.peaks,
@@ -4491,8 +4795,8 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     )
     .unwrap();
     // The leaf really exists (it authorizes historically), but the public-decrypt domain rejects it.
-    let shared = final_value.to_shared();
-    assert!(zama_solana_acl::authorize_historical(
+    let shared = shared_state(&final_value);
+    assert!(zama_solana_acl::authorize_state_historical(
         address.to_bytes(),
         &shared,
         handle1,
@@ -4500,10 +4804,13 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         &shared_proof,
     )
     .is_ok());
-    assert!(
-        zama_solana_acl::authorize_public(address.to_bytes(), &shared, handle1, &shared_proof)
-            .is_err()
-    );
+    assert!(zama_solana_acl::authorize_state_public(
+        address.to_bytes(),
+        &shared,
+        handle1,
+        &shared_proof
+    )
+    .is_err());
 
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle1, &extra_data);
@@ -4520,7 +4827,7 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&final_value)),
+        (address, encrypted_state_account(&final_value)),
     ];
     mollusk().process_and_validate_instruction(
         &ix,
@@ -4564,7 +4871,7 @@ fn cost_snapshot_verify_public_decrypt() {
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_value_account(&sealed)),
+        (address, encrypted_state_account(&sealed)),
     ];
     let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
     cost_snapshot::assert_cost_snapshot(

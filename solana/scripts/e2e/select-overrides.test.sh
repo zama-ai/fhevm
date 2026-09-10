@@ -75,9 +75,15 @@ check "solana program change -> coprocessor + relayer" \
   "coprocessor relayer" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
-# zama-solana-acl is the one solana crate the kms-connector image consumes.
+# These shared crates are copied into the kms-worker image as well as the other Rust consumers.
 check "zama-solana-acl change -> all rust consumers" \
   "solana/crates/zama-solana-acl/src/lib.rs" \
+  "true" \
+  "coprocessor kms-connector relayer" \
+  "$PINS_GATEWAY $PINS_HOST"
+
+check "zama-solana-request change -> all rust consumers" \
+  "solana/crates/zama-solana-request/src/codec.rs" \
   "true" \
   "coprocessor kms-connector relayer" \
   "$PINS_GATEWAY $PINS_HOST"

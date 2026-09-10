@@ -69,14 +69,14 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// The signer for an output does not match the encrypted value account authority the
+    /// The signer for an output does not match the encrypted State authority the
     /// execution declared for it, or a persistent operand's authority did not sign.
-    #[msg("signer does not match the encrypted value account authority")]
-    EncryptedValueAccountAuthorityMismatch,
+    #[msg("signer does not match the encrypted State authority")]
+    EncryptedStateAccountAuthorityMismatch,
     /// A create's authority seeds do not derive the declared authority under the declared
     /// program: the authority is not that program's PDA.
     #[msg("encrypted value authority is not a PDA of the declared program")]
-    EncryptedValueAuthorityNotProgramPda,
+    EncryptedStateAuthorityNotProgramPda,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]
     DenyRecordMissing,
@@ -143,29 +143,26 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
-    // ---- EncryptedValue ACL model ----
-    /// An `EncryptedValue` account is not the canonical PDA for its identity seeds.
-    #[msg("encrypted value account does not match the canonical PDA")]
-    EncryptedValuePdaMismatch,
-    /// An `EncryptedValue` account has an unexpected owner or discriminator.
-    #[msg("encrypted value account is not a valid EncryptedValue account")]
-    EncryptedValueAccountInvalid,
+    // ---- EncryptedState ACL model ----
+    /// An `EncryptedState` account is not the canonical PDA for its identity seeds.
+    #[msg("encrypted State does not match the canonical PDA")]
+    EncryptedStatePdaMismatch,
     /// The declared previous handle did not match the account's current handle: a create on an
     /// existing value, an update on a fresh one, or an update built on stale state.
     #[msg("encrypted value previous handle does not match the account")]
     PreviousStateMismatch,
     /// `make_handle_public` named a handle that is not the account's current handle.
     #[msg("encrypted value public handle does not match the account")]
-    EncryptedValuePublicHandleMismatch,
+    EncryptedStatePublicHandleMismatch,
     /// An allowed key is the zero key or repeats another key of the same output.
     #[msg("encrypted value allowed key is invalid")]
     InvalidAllowKey,
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
-    EncryptedValueMmrInconsistent,
+    EncryptedStateMmrInconsistent,
     /// The MMR peak count reached the representational cap.
     #[msg("encrypted value MMR peak capacity exceeded")]
-    EncryptedValueMmrPeakCapacityExceeded,
+    EncryptedStateMmrPeakCapacityExceeded,
     /// The per-app in-slot HCU would exceed the block cap; also the `cap == 0` ban and a meter
     /// accumulation overflow (all fail closed). Analog of EVM `HCUBlockLimitExceeded`.
     #[msg("per-app in-slot HCU exceeds the block cap")]
@@ -228,7 +225,7 @@ pub enum ZamaHostError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
-    /// encrypted value account's current peaks.
+    /// encrypted State's current peaks.
     #[msg("public-decrypt inclusion proof is invalid")]
     PublicDecryptProofInvalid,
 
@@ -281,7 +278,7 @@ pub enum ZamaHostError {
     /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("fhe_execute declared account count mismatch")]
     FheExecuteAccountCountMismatch,
-    /// A `StoredValue` operand referenced an account written by an earlier step.
+    /// A `FheHandle` operand referenced an account written by an earlier step.
     /// In-execution dependencies must use `EarlierStep`.
     #[msg("fhe_execute persistent operand was written earlier in the execution")]
     FheExecutePersistentOperandWrittenEarlier,
@@ -293,4 +290,14 @@ pub enum ZamaHostError {
     /// sentinel across every HCU knob, and a `0` limit would reject every execution.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
     HcuLimitZeroReserved,
+    #[msg("invalid transient workspace account")]
+    TransientAccountInvalid,
+    #[msg("matching final top-level scratch close is required")]
+    TransientCloseMissing,
+    #[msg("transient workspace grant capacity exceeded")]
+    TransientCapacityExceeded,
+    #[msg("encrypted state slot capacity exceeded")]
+    EncryptedStateCapacityExceeded,
+    #[msg("invalid execution return selection")]
+    InvalidReturnSelection,
 }

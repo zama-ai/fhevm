@@ -18,7 +18,7 @@ const contextId = new Uint8Array(32).fill(5);
 const parameters = (): SolanaPublicDecryptCertificateParameters => ({
   handle,
   contextId,
-  encryptedValueAccount: account,
+  encryptedState: account,
   options: { fetchRetries: 1 },
 });
 
@@ -48,7 +48,7 @@ interface ExtraDataVectors {
     readonly name: string;
     readonly input: {
       readonly context_id_hex: string;
-      readonly encrypted_value_account_hex: string;
+      readonly encrypted_state_hex: string;
     };
     readonly blob_hex: string;
   }>;
@@ -74,7 +74,7 @@ describe('committed extraData byte vectors (solana/test-fixtures/user-decrypt)',
   it.each(extraData.records.map((record) => [record.name, record] as const))('extraData blob: %s', (_name, record) => {
     const blob = buildSolanaPublicDecryptExtraData(
       hexToBytes(`0x${record.input.context_id_hex}`),
-      hexToBytes(`0x${record.input.encrypted_value_account_hex}`),
+      hexToBytes(`0x${record.input.encrypted_state_hex}`),
     );
     expect(blob).toHaveLength(65);
     expect(bytesToHex(blob)).toBe(`0x${record.blob_hex}`);
@@ -83,7 +83,7 @@ describe('committed extraData byte vectors (solana/test-fixtures/user-decrypt)',
   it('refuses a field of the wrong width before anything is sent', () => {
     expect(() => buildSolanaPublicDecryptExtraData(new Uint8Array(31), account)).toThrow('contextId must be 32 bytes');
     expect(() => buildSolanaPublicDecryptExtraData(contextId, new Uint8Array(33))).toThrow(
-      'encryptedValueAccount must be 32 bytes',
+      'encryptedState must be 32 bytes',
     );
   });
 });

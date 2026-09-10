@@ -274,17 +274,17 @@ const main = async (): Promise<void> => {
     const opened = await vault.openBatchForBatcher({
       roots,
       batchIndex: 0n,
-      payer: deployer,
+      payer: keeper,
       recentSlot,
       authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
     });
     const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
-    await send(deployer, [openBatchInstruction!]);
+    await send(keeper, [openBatchInstruction!]);
     // The create must land in the same transaction that first extends the table (or immediately
     // before it); pair it with the first chunk, then send each later chunk on its own.
-    await send(deployer, [createLookupTable!, firstExtend!]);
+    await send(keeper, [createLookupTable!, firstExtend!]);
     for (const extendLookupTable of laterExtends) {
-      await send(deployer, [extendLookupTable]);
+      await send(keeper, [extendLookupTable]);
     }
     return opened.lookupTableAddress;
   };

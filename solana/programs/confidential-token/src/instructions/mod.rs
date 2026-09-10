@@ -35,7 +35,6 @@ use crate::{errors::*, events::*, fhe, state::*};
 pub use allow_balance_viewers::*;
 pub use allow_total_supply_viewers::*;
 pub use cancel_pending_burn::*;
-pub use common::TransferReceipt;
 pub(crate) use common::*;
 pub use confidential_burn::*;
 pub use confidential_transfer::*;

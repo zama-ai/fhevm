@@ -1,49 +1,55 @@
 {
   "schema": "zama-solana-public-decrypt-extra-data/v1",
-  "description": "Literal byte vectors for the Solana public-decrypt extraData blob — the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_public_decrypt_extra_data / parse_solana_public_decrypt_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptExtraData, TypeScript). The blob is 0x03 ‖ context_id(32) ‖ encrypted_value_account(32), exactly 65 bytes: the connector fetches the PublicDecryptLeaf proof itself from the coprocessors' leaf record, so nothing but the account the handle lives in travels here. Encoders on both sides must produce blob_hex from input; the strict parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed. Hand-committed literals, deliberately few — the layout is versioned and changes only with a new version byte.",
+  "description": "Literal byte vectors for the Solana public-decrypt extraData blob \u2014 the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_public_decrypt_extra_data / parse_solana_public_decrypt_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptExtraData, TypeScript). The blob is 0x04 \u2016 context_id(32) \u2016 encrypted_state(32), exactly 65 bytes: the connector fetches the PublicDecryptLeaf proof itself from the coprocessors' leaf record, so nothing but the account the handle lives in travels here. Encoders on both sides must produce blob_hex from input; the strict parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed. Hand-committed literals, deliberately few \u2014 the layout is versioned and changes only with a new version byte.",
   "records": [
     {
-      "name": "public-decrypt-v3",
-      "description": "v0x03: version, the 32-byte KMS context id, the 32-byte encrypted value account address.",
+      "name": "public-decrypt-v4",
+      "description": "v0x04: version, the 32-byte KMS context id, the 32-byte encrypted state address.",
       "input": {
         "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
-        "encrypted_value_account_hex": "0909090909090909090909090909090909090909090909090909090909090909"
+        "encrypted_state_hex": "0909090909090909090909090909090909090909090909090909090909090909"
       },
-      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
+      "blob_hex": "0407070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
     },
     {
-      "name": "public-decrypt-v3-zero-context",
-      "description": "v0x03 with an all-zero context id: the parser reads the fields positionally and gives no byte value a meaning of its own.",
+      "name": "public-decrypt-v4-zero-context",
+      "description": "v0x04 with an all-zero context id: the parser reads the fields positionally and gives no byte value a meaning of its own.",
       "input": {
         "context_id_hex": "0000000000000000000000000000000000000000000000000000000000000000",
-        "encrypted_value_account_hex": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
+        "encrypted_state_hex": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
       },
-      "blob_hex": "030000000000000000000000000000000000000000000000000000000000000000a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
+      "blob_hex": "040000000000000000000000000000000000000000000000000000000000000000a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
     }
   ],
   "malformed": [
     {
       "name": "trailing-byte",
-      "derived_from": "public-decrypt-v3",
-      "mutation": "one extra 0x00 byte appended — the blob is fixed-width and a longer one is not this layout",
-      "blob_hex": "030707070707070707070707070707070707070707070707070707070707070707090909090909090909090909090909090909090909090909090909090909090900"
+      "derived_from": "public-decrypt-v4",
+      "mutation": "one extra 0x00 byte appended \u2014 the blob is fixed-width and a longer one is not this layout",
+      "blob_hex": "040707070707070707070707070707070707070707070707070707070707070707090909090909090909090909090909090909090909090909090909090909090900"
     },
     {
       "name": "truncated-account",
-      "derived_from": "public-decrypt-v3",
-      "mutation": "last account byte removed — a 64-byte blob names no account",
-      "blob_hex": "03070707070707070707070707070707070707070707070707070707070707070709090909090909090909090909090909090909090909090909090909090909"
+      "derived_from": "public-decrypt-v4",
+      "mutation": "last account byte removed \u2014 a 64-byte blob names no account",
+      "blob_hex": "04070707070707070707070707070707070707070707070707070707070707070709090909090909090909090909090909090909090909090909090909090909"
     },
     {
       "name": "context-only-v1",
-      "derived_from": "public-decrypt-v3",
-      "mutation": "the retired v0x01 context-only form — a well-formed blob of another version must be rejected, not defaulted to any account",
+      "derived_from": "public-decrypt-v4",
+      "mutation": "the retired v0x01 context-only form \u2014 a well-formed blob of another version must be rejected, not defaulted to any account",
       "blob_hex": "010707070707070707070707070707070707070707070707070707070707070707"
     },
     {
+      "name": "retired-value-account-v3",
+      "derived_from": "public-decrypt-v4",
+      "mutation": "the version byte replaced with the retired per-value account version 0x03",
+      "blob_hex": "0307070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
+    },
+    {
       "name": "unknown-version",
-      "derived_from": "public-decrypt-v3",
-      "mutation": "the version byte replaced with 0x09 — the body is otherwise identical and must not be parsed under this layout",
+      "derived_from": "public-decrypt-v4",
+      "mutation": "the version byte replaced with 0x09 \u2014 the body is otherwise identical and must not be parsed under this layout",
       "blob_hex": "0907070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
     }
   ]

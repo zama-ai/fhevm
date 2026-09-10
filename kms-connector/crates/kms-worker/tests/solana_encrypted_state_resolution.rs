@@ -1,32 +1,29 @@
-//! Encrypted value account resolution and where an entry's authority comes from: what a request
+//! Encrypted state resolution and where each entry's authority comes from: what a request
 //! may name, and what it may never name.
 //!
-//! A handle entry names the encrypted value account that authorizes it, by address. That name is
+//! A handle entry names the encrypted state that authorizes it, by address. That name is
 //! unsigned, so every value read out of the named account has to be earned: the account must
-//! exist under this deployment's program, carry the encrypted value account type, and live at
-//! the address its own fields derive. Only then are its fields — the encrypted value account
+//! exist under this deployment's program, carry the encrypted state type, and live at
+//! the address its own fields derive. Only then are its fields — the encrypted state
 //! authority, the `(program, scope)` pair, the MMR peaks — allowed to decide anything.
 //!
 //! The tests here come in two shapes. The first shape substitutes something for the encrypted value
 //! account and demands a rejection: a foreign program's account, another account type of the same
-//! program, an account whose own fields describe a different encrypted value account. The second
+//! program, an account whose own fields describe a different encrypted state. The second
 //! shape asserts the opposite direction — that the authority and the application of every entry
-//! come from *its* encrypted value account, so a batch cannot smuggle a foreign-application handle
+//! come from *its* encrypted state, so a batch cannot smuggle a foreign-application handle
 //! past a narrowly scoped permit, and a request has no field with which to name an authority at
 //! all.
 //!
 //! One accept among the rejections deserves its own note: trailing bytes after the encrypted value
 //! account body are legal. The account is grown to its high-water mark and never shrunk, so an
-//! encrypted value account whose MMR once held more peaks than it holds now has a tail.
+//! encrypted state whose MMR once held more peaks than it holds now has a tail.
 //! Rejecting it would deny service to exactly the accounts that have been used the most.
 
 mod solana_support;
 
 use kms_worker::core::solana::{
-    encrypted_value_account::{
-        EncryptedValueAccountFailure, ResolvedEncryptedValueAccount,
-        resolve_encrypted_value_account,
-    },
+    encrypted_state::{EncryptedStateFailure, ResolvedEncryptedState, resolve_encrypted_state},
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::{AuthorizationContext, authorize_request},
@@ -35,28 +32,26 @@ use kms_worker::core::solana::{
 };
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
-use zama_solana_acl::encrypted_value_discriminator;
+use zama_solana_acl::encrypted_state_discriminator;
 
 /// Resolves the account at `account_key` from a world.
 fn resolve_from(
     world: &World,
     account_key: SolanaPubkeyBytes,
-) -> Result<ResolvedEncryptedValueAccount, EncryptedValueAccountFailure> {
+) -> Result<ResolvedEncryptedState, EncryptedStateFailure> {
     let snapshot = world
         .read(&SnapshotKeys::new([account_key]))
         .expect("the world reads");
-    resolve_encrypted_value_account(&snapshot, PROGRAM_ID, account_key)
+    resolve_encrypted_state(&snapshot, PROGRAM_ID, account_key)
 }
 
-/// An encrypted value account placed in a world, resolved.
-fn resolved(
-    encrypted_value_account: &EncryptedValueAccountFixture,
-) -> ResolvedEncryptedValueAccount {
+/// An encrypted state placed in a world, resolved.
+fn resolved(encrypted_state: &EncryptedStateFixture) -> ResolvedEncryptedState {
     resolve_from(
-        &World::running_at_slot(1).with_encrypted_value_account(encrypted_value_account),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_encrypted_state(encrypted_state),
+        encrypted_state.account_key,
     )
-    .expect("a well-formed encrypted value account resolves")
+    .expect("a well-formed encrypted state resolves")
 }
 
 fn context<'a>(
@@ -75,46 +70,39 @@ fn context<'a>(
 /// The reference case: an account written by the host program at the address its own fields
 /// derive, resolved through the same shared code the program runs.
 #[test]
-fn an_encrypted_value_account_named_by_its_address_resolves() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x10, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
+fn an_encrypted_state_named_by_its_address_resolves() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x10, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
 
     let resolved = resolve_from(
-        &World::running_at_slot(1).with_encrypted_value_account(&encrypted_value_account),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_encrypted_state(&encrypted_state),
+        encrypted_state.account_key,
     )
-    .expect("a well-formed encrypted value account resolves");
+    .expect("a well-formed encrypted state resolves");
 
-    assert_eq!(resolved.account_key(), encrypted_value_account.account_key);
-    assert_eq!(resolved.encrypted_value_account_authority(), AUTHORITY);
+    assert_eq!(resolved.account_key(), encrypted_state.account_key);
+    assert_eq!(resolved.authority(), AUTHORITY);
     assert_eq!(resolved.program(), APP_PROGRAM);
     assert_eq!(resolved.scope(), SCOPE);
 }
 
-/// An absent encrypted value account is a rejection that may resolve itself: the account may simply
+/// An absent encrypted state is a rejection that may resolve itself: the account may simply
 /// not have reached the observed commitment yet. Calling it terminal would strand requests that a
 /// later observation would authorize.
 #[test]
-fn an_encrypted_value_account_absent_at_the_observation_is_transient() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x11, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
+fn an_encrypted_state_absent_at_the_observation_is_transient() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x11, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
 
-    let failure = resolve_from(
-        &World::running_at_slot(1),
-        encrypted_value_account.account_key,
-    )
-    .expect_err("an account that does not exist authorizes nothing");
+    let failure = resolve_from(&World::running_at_slot(1), encrypted_state.account_key)
+        .expect_err("an account that does not exist authorizes nothing");
 
     assert!(matches!(
         failure,
-        EncryptedValueAccountFailure::Absent { account_key } if account_key == encrypted_value_account.account_key
+        EncryptedStateFailure::Absent { account_key } if account_key == encrypted_state.account_key
     ));
     assert_eq!(
-        AuthorizationFailure::EncryptedValueAccount {
+        AuthorizationFailure::EncryptedState {
             index: 0,
             source: failure
         }
@@ -127,26 +115,24 @@ fn an_encrypted_value_account_absent_at_the_observation_is_transient() {
 /// can produce data in an account it owns. An account with impeccable contents under another
 /// program's ownership proves nothing at all.
 #[test]
-fn an_encrypted_value_account_owned_by_another_program_is_terminal() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x12, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
-    let mut impostor = encrypted_value_account.account();
+fn an_encrypted_state_owned_by_another_program_is_terminal() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x12, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    let mut impostor = encrypted_state.account();
     impostor.owner = [0xee; 32];
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, impostor),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_account(encrypted_state.account_key, impostor),
+        encrypted_state.account_key,
     )
-    .expect_err("a foreign program's account is not an encrypted value account");
+    .expect_err("a foreign program's account is not an encrypted state");
 
     assert!(matches!(
         failure,
-        EncryptedValueAccountFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
+        EncryptedStateFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
     ));
     assert_eq!(
-        AuthorizationFailure::EncryptedValueAccount {
+        AuthorizationFailure::EncryptedState {
             index: 0,
             source: failure
         }
@@ -156,27 +142,26 @@ fn an_encrypted_value_account_owned_by_another_program_is_terminal() {
 }
 
 /// A host-owned account of a different type is caught by the discriminator rather than by whatever
-/// its bytes happen to mean when read as an encrypted value account. Here the substitute is a real
-/// delegation record — the account type most likely to be confused with an encrypted value account,
+/// its bytes happen to mean when read as an encrypted state. Here the substitute is a real
+/// delegation record — the account type most likely to be confused with an encrypted state,
 /// since both are written by the same program and both hold identities in their first bytes.
 #[test]
 fn a_host_owned_account_of_another_type_is_rejected() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
-    let encrypted_value_account =
-        EncryptedValueAccountFixture::allowing(handle(0x13, FHE_TYPE_UINT64), signer.pubkey());
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x13, FHE_TYPE_UINT64), signer.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
 
     let failure = resolve_from(
-        &World::running_at_slot(1)
-            .with_account(encrypted_value_account.account_key, delegation.account()),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_account(encrypted_state.account_key, delegation.account()),
+        encrypted_state.account_key,
     )
-    .expect_err("delegation-record bytes are not an encrypted value account");
+    .expect_err("delegation-record bytes are not an encrypted state");
 
     assert!(matches!(
         failure,
-        EncryptedValueAccountFailure::WrongAccountType { account_key } if account_key == encrypted_value_account.account_key
+        EncryptedStateFailure::WrongAccountType { account_key } if account_key == encrypted_state.account_key
     ));
 }
 
@@ -185,11 +170,11 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 /// read the authority, the application and the peaks out of somebody else's encrypted value
 /// account by naming its own address.
 #[test]
-fn an_encrypted_value_account_whose_fields_derive_another_address_is_rejected() {
+fn an_encrypted_state_whose_fields_derive_another_address_is_rejected() {
     let owner = Wallet::new(1).pubkey();
-    let claimed = EncryptedValueAccountFixture::allowing(handle(0x14, FHE_TYPE_UINT64), owner);
-    // An encrypted value account of another authority, placed at the claimed account's address.
-    let mut foreign = EncryptedValueAccountFixture::in_application(
+    let claimed = EncryptedStateFixture::allowing(handle(0x14, FHE_TYPE_UINT64), owner);
+    // An encrypted state of another authority, placed at the claimed account's address.
+    let mut foreign = EncryptedStateFixture::in_application(
         APP_PROGRAM,
         [0x33; 32],
         SCOPE,
@@ -203,15 +188,15 @@ fn an_encrypted_value_account_whose_fields_derive_another_address_is_rejected() 
         &World::running_at_slot(1).with_account(claimed.account_key, foreign.account()),
         claimed.account_key,
     )
-    .expect_err("an encrypted value account must live where its fields say");
+    .expect_err("an encrypted state must live where its fields say");
 
     assert!(matches!(
         failure,
-        EncryptedValueAccountFailure::AddressMismatch { account_key, derived: Some(derived) }
+        EncryptedStateFailure::AddressMismatch { account_key, derived: Some(derived) }
             if account_key == claimed.account_key && derived == foreign.account_key
     ));
     assert_eq!(
-        AuthorizationFailure::EncryptedValueAccount {
+        AuthorizationFailure::EncryptedState {
             index: 0,
             source: failure
         }
@@ -223,11 +208,11 @@ fn an_encrypted_value_account_whose_fields_derive_another_address_is_rejected() 
 /// The stored bump is part of the derivation. An account carrying another bump either derives
 /// another address or no address at all, and both are the same rejection.
 #[test]
-fn an_encrypted_value_account_with_an_altered_bump_is_rejected() {
+fn an_encrypted_state_with_an_altered_bump_is_rejected() {
     let owner = Wallet::new(1).pubkey();
-    let mut altered = EncryptedValueAccountFixture::allowing(handle(0x15, FHE_TYPE_UINT64), owner);
+    let mut altered = EncryptedStateFixture::allowing(handle(0x15, FHE_TYPE_UINT64), owner);
     let account_key = altered.account_key;
-    altered.encrypted_value.bump = altered.encrypted_value.bump.wrapping_sub(1);
+    altered.encrypted_state.bump = altered.encrypted_state.bump.wrapping_sub(1);
 
     let failure = resolve_from(
         &World::running_at_slot(1).with_account(account_key, altered.account()),
@@ -237,34 +222,32 @@ fn an_encrypted_value_account_with_an_altered_bump_is_rejected() {
 
     assert!(matches!(
         failure,
-        EncryptedValueAccountFailure::AddressMismatch { account_key: key, derived }
+        EncryptedStateFailure::AddressMismatch { account_key: key, derived }
             if key == account_key && derived != Some(account_key)
     ));
 }
 
-/// Trailing bytes are legal. An encrypted value account is realloc-grown to its high-water mark and
+/// Trailing bytes are legal. An encrypted state is realloc-grown to its high-water mark and
 /// never shrunk, so the tail is the normal state of any account whose MMR has held more peaks
 /// than it holds now.
 #[test]
-fn trailing_bytes_after_the_encrypted_value_account_body_are_accepted() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x16, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
-    let mut grown = encrypted_value_account.account();
+fn trailing_bytes_after_the_encrypted_state_body_are_accepted() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x16, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    let mut grown = encrypted_state.account();
     let body_len = grown.data.len();
     grown.data.extend_from_slice(&[0; 96]);
 
     let resolved = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, grown),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_account(encrypted_state.account_key, grown),
+        encrypted_state.account_key,
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.encrypted_value_account_authority(), AUTHORITY);
+    assert_eq!(resolved.authority(), AUTHORITY);
     assert_eq!(
-        8 + borsh::to_vec(resolved.encrypted_value())
-            .expect("the encrypted value account serializes")
+        8 + borsh::to_vec(resolved.encrypted_state())
+            .expect("the encrypted state serializes")
             .len(),
         body_len,
         "the decoded body ends where the account ended before the tail was appended, so the \
@@ -273,75 +256,65 @@ fn trailing_bytes_after_the_encrypted_value_account_body_are_accepted() {
 }
 
 /// A body cut short is not the same thing as a body followed by extra bytes: the first is an
-/// encrypted value account that cannot be read, the second is an encrypted value account with room
+/// encrypted state that cannot be read, the second is an encrypted state with room
 /// to spare.
 #[test]
-fn an_encrypted_value_account_with_a_truncated_body_is_rejected() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x17, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
-    let full = encrypted_value_account.account();
+fn an_encrypted_state_with_a_truncated_body_is_rejected() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x17, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    let full = encrypted_state.account();
     let truncated = SnapshotAccount {
         owner: PROGRAM_ID,
         data: full.data[..full.data.len() - 8].to_vec(),
     };
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, truncated),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_account(encrypted_state.account_key, truncated),
+        encrypted_state.account_key,
     )
-    .expect_err("a body that does not decode is not an encrypted value account");
+    .expect_err("a body that does not decode is not an encrypted state");
 
-    assert!(matches!(
-        failure,
-        EncryptedValueAccountFailure::Malformed { .. }
-    ));
+    assert!(matches!(failure, EncryptedStateFailure::Malformed { .. }));
 }
 
 /// An account holding only a discriminator is host-owned and of the right type, and still has no
-/// encrypted value account in it. The type check and the decode are two checks because an account
+/// encrypted state in it. The type check and the decode are two checks because an account
 /// can pass the first and fail the second.
 #[test]
-fn an_encrypted_value_account_holding_only_its_discriminator_is_rejected() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x18, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
+fn an_encrypted_state_holding_only_its_discriminator_is_rejected() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x18, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let empty = SnapshotAccount {
         owner: PROGRAM_ID,
-        data: encrypted_value_discriminator().to_vec(),
+        data: encrypted_state_discriminator().to_vec(),
     };
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_value_account.account_key, empty),
-        encrypted_value_account.account_key,
+        &World::running_at_slot(1).with_account(encrypted_state.account_key, empty),
+        encrypted_state.account_key,
     )
-    .expect_err("a discriminator alone is not an encrypted value account");
+    .expect_err("a discriminator alone is not an encrypted state");
 
-    assert!(matches!(
-        failure,
-        EncryptedValueAccountFailure::Malformed { .. }
-    ));
+    assert!(matches!(failure, EncryptedStateFailure::Malformed { .. }));
 }
 
 // ---------------------------------------------------------------------------
 // Authority and scope
 // ---------------------------------------------------------------------------
 
-/// Each entry's authority comes from its own encrypted value account. Two entries of the same
+/// Each entry's authority comes from its own encrypted state. Two entries of the same
 /// application and different authorities resolve to their own — there is no request-level
 /// authority to share, and no first-entry value to inherit.
 #[test]
-fn each_entry_takes_its_authority_from_its_own_encrypted_value_account() {
-    let first = EncryptedValueAccountFixture::in_application(
+fn each_entry_takes_its_authority_from_its_own_encrypted_state() {
+    let first = EncryptedStateFixture::in_application(
         APP_PROGRAM,
         [0x51; 32],
         SCOPE,
         LABEL,
         handle(0x19, FHE_TYPE_UINT64),
     );
-    let second = EncryptedValueAccountFixture::in_application(
+    let second = EncryptedStateFixture::in_application(
         APP_PROGRAM,
         [0x52; 32],
         SCOPE,
@@ -349,40 +322,29 @@ fn each_entry_takes_its_authority_from_its_own_encrypted_value_account() {
         handle(0x1a, FHE_TYPE_UINT64),
     );
 
-    assert_eq!(
-        resolved(&first).encrypted_value_account_authority(),
-        [0x51; 32]
-    );
-    assert_eq!(
-        resolved(&second).encrypted_value_account_authority(),
-        [0x52; 32]
-    );
+    assert_eq!(resolved(&first).authority(), [0x51; 32]);
+    assert_eq!(resolved(&second).authority(), [0x52; 32]);
     assert_eq!(resolved(&first).program(), APP_PROGRAM);
     assert_eq!(resolved(&first).scope(), SCOPE);
 }
 
 /// A scoped permit admits the `(program, scope)` pairs it signed.
 #[test]
-fn a_scoped_permit_admits_an_encrypted_value_account_of_a_signed_application() {
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(
-        handle(0x1b, FHE_TYPE_UINT64),
-        Wallet::new(1).pubkey(),
-    );
+fn a_scoped_permit_admits_an_encrypted_state_of_a_signed_application() {
+    let encrypted_state =
+        EncryptedStateFixture::allowing(handle(0x1b, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    check_scope(
-        permit.typed().allowed_scopes(),
-        &resolved(&encrypted_value_account),
-    )
-    .expect("a signed application is in scope");
+    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_state))
+        .expect("a signed application is in scope");
 }
 
 /// A scope outside the signed set is rejected, and the pair that gets tested is the encrypted
 /// value account's — the only place it exists.
 #[test]
-fn an_encrypted_value_account_outside_the_signed_scope_is_rejected() {
+fn an_encrypted_state_outside_the_signed_scope_is_rejected() {
     let foreign_scope: SolanaPubkeyBytes = [0x61; 32];
-    let encrypted_value_account = EncryptedValueAccountFixture::in_application(
+    let encrypted_state = EncryptedStateFixture::in_application(
         APP_PROGRAM,
         AUTHORITY,
         foreign_scope,
@@ -391,11 +353,8 @@ fn an_encrypted_value_account_outside_the_signed_scope_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(
-        permit.typed().allowed_scopes(),
-        &resolved(&encrypted_value_account),
-    )
-    .expect_err("an unsigned scope is out of scope");
+    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_state))
+        .expect_err("an unsigned scope is out of scope");
 
     assert!(matches!(
         failure,
@@ -409,7 +368,7 @@ fn an_encrypted_value_account_outside_the_signed_scope_is_rejected() {
 #[test]
 fn the_same_scope_under_another_program_is_rejected() {
     let other_program: SolanaPubkeyBytes = [0x62; 32];
-    let encrypted_value_account = EncryptedValueAccountFixture::in_application(
+    let encrypted_state = EncryptedStateFixture::in_application(
         other_program,
         AUTHORITY,
         SCOPE,
@@ -418,11 +377,8 @@ fn the_same_scope_under_another_program_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(
-        permit.typed().allowed_scopes(),
-        &resolved(&encrypted_value_account),
-    )
-    .expect_err("the pair is the identity, not the scope alone");
+    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_state))
+        .expect_err("the pair is the identity, not the scope alone");
 
     assert!(matches!(
         failure,
@@ -434,8 +390,8 @@ fn the_same_scope_under_another_program_is_rejected() {
 /// An empty signed list is permissive and the rule is skipped, which is parity with the EVM
 /// path rather than an optimization.
 #[test]
-fn a_permissive_permit_admits_an_encrypted_value_account_of_any_application() {
-    let encrypted_value_account = EncryptedValueAccountFixture::in_application(
+fn a_permissive_permit_admits_an_encrypted_state_of_any_application() {
+    let encrypted_state = EncryptedStateFixture::in_application(
         [0x71; 32],
         AUTHORITY,
         [0x72; 32],
@@ -448,11 +404,8 @@ fn a_permissive_permit_admits_an_encrypted_value_account_of_any_application() {
         permit.typed().allowed_scopes().is_permissive(),
         "the fixture really is permissive"
     );
-    check_scope(
-        permit.typed().allowed_scopes(),
-        &resolved(&encrypted_value_account),
-    )
-    .expect("permissive skips the scope rule");
+    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_state))
+        .expect("permissive skips the scope rule");
 }
 
 /// Scope is tested per handle, so a foreign-application handle mixed into a batch fails the whole
@@ -465,8 +418,8 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     let wallet = Wallet::new(1);
     let in_scope_handle = handle(0x1f, FHE_TYPE_UINT64);
     let out_of_scope_handle = handle(0x20, FHE_TYPE_UINT64);
-    let in_scope = EncryptedValueAccountFixture::allowing(in_scope_handle, wallet.pubkey());
-    let mut out_of_scope = EncryptedValueAccountFixture::in_application(
+    let in_scope = EncryptedStateFixture::allowing(in_scope_handle, wallet.pubkey());
+    let mut out_of_scope = EncryptedStateFixture::in_application(
         [0x81; 32],
         AUTHORITY,
         SCOPE,
@@ -480,8 +433,8 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         .direct(&out_of_scope, out_of_scope_handle)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&in_scope)
-        .with_encrypted_value_account(&out_of_scope)
+        .with_encrypted_state(&in_scope)
+        .with_encrypted_state(&out_of_scope)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
     let proofs = ScriptedProofReader::unreachable();
@@ -522,13 +475,13 @@ async fn a_permissive_permit_does_not_widen_the_allow_leaf() {
     let wallet = Wallet::new(1);
     let stranger = Wallet::new(9);
     let live = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_value_account = EncryptedValueAccountFixture::allowing(live, stranger.pubkey());
+    let encrypted_state = EncryptedStateFixture::allowing(live, stranger.pubkey());
     let request = RequestBuilder::new(&wallet)
         .permit(PermitBuilder::new(wallet.pubkey()).permissive())
-        .direct(&encrypted_value_account, live)
+        .direct(&encrypted_state, live)
         .typed();
     let world = World::running_at_slot(100)
-        .with_encrypted_value_account(&encrypted_value_account)
+        .with_encrypted_state(&encrypted_state)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);

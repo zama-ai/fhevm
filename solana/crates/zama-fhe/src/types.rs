@@ -2,9 +2,8 @@
 
 use std::marker::PhantomData;
 
-use crate::acl::EncryptedValueId;
 use crate::operand::{BuilderIdentity, Operand};
-use crate::validate::{handle_fhe_type, validate_encrypted_value_id, validate_supported_fhe_type};
+use crate::validate::{handle_fhe_type, validate_supported_fhe_type};
 use crate::{FheExecutionBuildError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
@@ -37,8 +36,8 @@ pub struct Bool;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Uint<const BITS: u16>;
 
-pub type BoolHandle = StoredValue<Bool>;
-pub type Uint64Handle = StoredValue<Uint<64>>;
+pub type BoolHandle = FheHandle<Bool>;
+pub type Uint64Handle = FheHandle<Uint<64>>;
 
 mod sealed {
     use super::{Bool, Uint};
@@ -113,37 +112,34 @@ pub struct Encrypted<'id, T> {
     identity: BuilderIdentity<'id>,
 }
 
-/// A persistent value as an operand: its handle plus the encrypted value account holding it.
+/// A persistent value as an operand: its handle plus the encrypted State holding it.
 ///
 /// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
 /// account state — with its own error handling — before it opens an execution, and then feed it to
 /// whichever builder needs it. Only the values a builder hands back carry an identity ([`Encrypted`]),
 /// because only those are meaningless outside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StoredValue<T> {
+pub struct FheHandle<T> {
     operand: Operand,
     marker: PhantomData<T>,
 }
 
-impl<T: FheTyped> StoredValue<T> {
-    /// Builds a persistent operand from a stable `EncryptedValue` account. `handle` must be that
-    /// account's current handle; the host re-verifies this on-chain.
-    pub fn persistent(handle: [u8; 32], key: EncryptedValueId) -> Result<Self> {
-        validate_encrypted_value_id(&key)?;
+impl<T: FheTyped> FheHandle<T> {
+    pub(crate) fn from_handle_operand(handle: [u8; 32], operand: Operand) -> Result<Self> {
         let fhe_type = handle_fhe_type(handle);
         validate_supported_fhe_type(fhe_type)?;
         if fhe_type != T::FHE_TYPE.byte() {
             return Err(FheExecutionBuildError::UnsupportedFheType);
         }
         Ok(Self {
-            operand: Operand::persistent(handle, &key),
+            operand,
             marker: PhantomData,
         })
     }
 }
 
-impl<T> From<StoredValue<T>> for Encrypted<'_, T> {
-    fn from(value: StoredValue<T>) -> Self {
+impl<T> From<FheHandle<T>> for Encrypted<'_, T> {
+    fn from(value: FheHandle<T>) -> Self {
         Self::from_operand(value.operand)
     }
 }
@@ -245,8 +241,8 @@ impl<T> From<Scalar<T>> for BinaryRhs<'_, T> {
     }
 }
 
-impl<T> From<StoredValue<T>> for BinaryRhs<'_, T> {
-    fn from(value: StoredValue<T>) -> Self {
+impl<T> From<FheHandle<T>> for BinaryRhs<'_, T> {
+    fn from(value: FheHandle<T>) -> Self {
         Self::Encrypted(value.into())
     }
 }

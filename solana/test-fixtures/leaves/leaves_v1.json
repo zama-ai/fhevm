@@ -13,7 +13,7 @@
     {
       "id": "single-allow",
       "comment": "One allow on the created handle: a one-leaf MMR whose proof has no siblings.",
-      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "encrypted_state_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
       "events": [
         {
           "kind": "allowed",
@@ -36,7 +36,7 @@
     {
       "id": "create-two-allows-then-public-update",
       "comment": "Create allowing two keys, then an update that allows one key and goes public: four leaves, two mountains, proof for the public leaf.",
-      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "encrypted_state_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
       "events": [
         {
           "kind": "allowed",
@@ -79,7 +79,7 @@
     {
       "id": "same-events-other-account",
       "comment": "The previous history under another account address: every leaf differs, because the account is bound into each commitment.",
-      "encrypted_value_account": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "encrypted_state_account": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "events": [
         {
           "kind": "allowed",
@@ -122,7 +122,7 @@
     {
       "id": "seventeen-allows",
       "comment": "Seventeen allows across three handles: peaks of heights 4 and 0, proof for a leaf deep in the first mountain.",
-      "encrypted_value_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
+      "encrypted_state_account": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
       "events": [
         {
           "kind": "allowed",

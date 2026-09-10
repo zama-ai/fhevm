@@ -1,28 +1,28 @@
 {
   "toolchain": {
     "anchor": "anchor-cli 1.1.2",
-    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 82757,
-      "unique_accounts": 9,
-      "instruction_data_bytes": 578,
-      "cpi_instructions": 1,
-      "total_cpi_instruction_data_bytes": 52,
-      "max_cpi_instruction_data_bytes": 52
+      "compute_units": 77864,
+      "unique_accounts": 7,
+      "instruction_data_bytes": 561,
+      "cpi_instructions": 0,
+      "total_cpi_instruction_data_bytes": 0,
+      "max_cpi_instruction_data_bytes": 0
     },
     "fhe_execute/three_steps": {
-      "compute_units": 31724,
-      "unique_accounts": 9,
-      "instruction_data_bytes": 317,
-      "cpi_instructions": 1,
-      "total_cpi_instruction_data_bytes": 52,
-      "max_cpi_instruction_data_bytes": 52
+      "compute_units": 23989,
+      "unique_accounts": 7,
+      "instruction_data_bytes": 271,
+      "cpi_instructions": 0,
+      "total_cpi_instruction_data_bytes": 0,
+      "max_cpi_instruction_data_bytes": 0
     },
     "verify_public_decrypt/happy": {
-      "compute_units": 39319,
+      "compute_units": 40885,
       "unique_accounts": 4,
       "instruction_data_bytes": 158,
       "cpi_instructions": 0,

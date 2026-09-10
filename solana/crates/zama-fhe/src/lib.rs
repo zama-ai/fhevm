@@ -16,12 +16,11 @@
 //! read the built execution first — for its value authorities, or for the application
 //! whose deny record and meter it must pass — needs the execution in hand anyway.
 //!
-//! The builder intentionally targets the current role-aware host fhe_execute ABI rather
-//! than the older `execute_frame` prototype (RFC-024's name for that sketch). Instruction-local intermediate
-//! values are returned by builder methods as typed transient [`Encrypted`] values;
-//! only [`Output::persistent`] creates ACL state, and it allows the keys that may read the
-//! new handle inline ([`PersistentOutput::allow`]). Binary, ternary, trivial-encrypt,
-//! rand, and verified input steps can be composed in one execution.
+//! [`State::get`] reads a typed handle from a slot. [`State::set`] describes a slot write,
+//! and [`State::result`] describes permissions on a result without storing it in a slot.
+//! [`StateOutput::allow`] appends decrypt permission to the State history;
+//! [`StateOutput::allow_transient`] shares computation rights through transaction scratch.
+//! Intermediate [`Encrypted`] values can be consumed by later steps in the same execution.
 
 #![allow(unexpected_cfgs)]
 
@@ -37,32 +36,31 @@ mod heap_tally;
 mod lower;
 mod operand;
 mod ops;
+mod state;
 #[cfg(test)]
 mod tests;
 mod types;
+pub use state::{State, StateId, StateOutput};
 mod validate;
 
 pub use accounts::{
-    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionEncryptedValueAccountAuthority,
-    ExecutionValueAuthorityRequirement,
+    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionAuthority,
+    ExecutionAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
 pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
-pub use acl::{
-    AppScope, BoundedU64UpperBound, EncryptedValueId, EncryptedValueLabel, Output,
-    PersistentOutput, PersistentOutputBinding,
-};
+pub use acl::{AppScope, BoundedU64UpperBound, Output};
 pub use builder::FheExecutionBuilder;
 pub use cost::{
     instruction_trace_floor, FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES,
-    CPIS_PER_PERSISTENT_CREATE, CPIS_PER_SQUAT_CREATE, CPI_INSTRUCTION_DATA_LIMIT,
-    MAX_PERSISTENT_CREATES, PROGRAM_HEAP_BYTES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+    CPIS_PER_SQUAT_CREATE, CPI_INSTRUCTION_DATA_LIMIT, PROGRAM_HEAP_BYTES,
+    TRANSACTION_INSTRUCTION_TRACE_LIMIT,
 };
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;
-pub use execution::FheExecution;
+pub use execution::{FheExecution, ReturningFheExecution};
 pub use types::{
-    BinaryRhs, Bool, BoolHandle, Encrypted, FheType, FheTyped, FheUint, Scalar, StoredValue, Uint,
+    BinaryRhs, Bool, BoolHandle, Encrypted, FheHandle, FheType, FheTyped, FheUint, Scalar, Uint,
     Uint64Handle,
 };
 
@@ -72,6 +70,10 @@ pub type Result<T> = std::result::Result<T, FheExecutionBuildError>;
 /// Builder failures that can be detected before invoking the host program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FheExecutionBuildError {
+    MissingStateSlot,
+    ResultNotProduced,
+    StateHistoryMismatch,
+    TooManyResultGrants,
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
     /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.
@@ -87,16 +89,12 @@ pub enum FheExecutionBuildError {
     /// A persistent operand referenced an account written by an earlier step.
     /// Use the producer returned by that step for the new value, or consume the
     /// old persistent value before writing the account.
-    PersistentOperandWrittenEarlier,
+    StateSlotWrittenEarlier,
     /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`) — the one step
     /// ceiling, on-chain and off. The heap no longer bounds the step count by itself: the
     /// builder's own budget ([`ExceedsBuildHeapBudget`](Self::ExceedsBuildHeapBudget)) holds
     /// every admitted shape inside the fixed 32 KB region, which cannot be raised (DD-046).
     TooManySteps,
-    /// The execution would create more persistent accounts than
-    /// [`MAX_PERSISTENT_CREATES`](crate::cost::MAX_PERSISTENT_CREATES) (20), the SDK's policy
-    /// cap. Split the creates across executions, or update existing accounts instead.
-    ExceedsPersistentCreateLimit,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
     /// runtime would reject the invoke. Verified-input attestations are the heavy term
@@ -135,11 +133,8 @@ pub enum FheExecutionBuildError {
     TernaryOperandTypeMismatch,
     /// An allowed key is the zero key or repeats another (host parity: `InvalidAllowKey`).
     InvalidAllowKey,
-    /// The program or the authority component of an encrypted value ID is the default pubkey,
-    /// which can never sign or own a PDA.
-    InvalidEncryptedValueId,
-    /// The fixed encrypted value account authority is the default pubkey, so it can never sign.
-    InvalidEncryptedValueAccountAuthority,
+    /// The fixed encrypted State authority is the default pubkey, so it can never sign.
+    InvalidExecutionAuthority,
     /// A lowered host account index does not match the execution account list.
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.

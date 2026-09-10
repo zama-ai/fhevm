@@ -51,8 +51,6 @@ export type JoinRecord = {
   batch: Address;
   /** Joining user. */
   user: Address;
-  /** `EncryptedValue` encrypted value account holding the user's accumulated joined amount. */
-  joinedEncryptedValue: Address;
   /** Whether the user's payout was claimed. */
   claimed: boolean;
   /** PDA bump for `(batch, user)`. */
@@ -64,8 +62,6 @@ export type JoinRecordArgs = {
   batch: Address;
   /** Joining user. */
   user: Address;
-  /** `EncryptedValue` encrypted value account holding the user's accumulated joined amount. */
-  joinedEncryptedValue: Address;
   /** Whether the user's payout was claimed. */
   claimed: boolean;
   /** PDA bump for `(batch, user)`. */
@@ -79,7 +75,6 @@ export function getJoinRecordEncoder(): FixedSizeEncoder<JoinRecordArgs> {
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['batch', getAddressEncoder()],
       ['user', getAddressEncoder()],
-      ['joinedEncryptedValue', getAddressEncoder()],
       ['claimed', getBooleanEncoder()],
       ['bump', getU8Encoder()],
     ]),
@@ -93,7 +88,6 @@ export function getJoinRecordDecoder(): FixedSizeDecoder<JoinRecord> {
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['batch', getAddressDecoder()],
     ['user', getAddressDecoder()],
-    ['joinedEncryptedValue', getAddressDecoder()],
     ['claimed', getBooleanDecoder()],
     ['bump', getU8Decoder()],
   ]);
@@ -155,5 +149,5 @@ export async function fetchAllMaybeJoinRecord(
 }
 
 export function getJoinRecordSize(): number {
-  return 106;
+  return 74;
 }

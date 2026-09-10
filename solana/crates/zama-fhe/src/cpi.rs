@@ -25,7 +25,7 @@ use crate::execution::FheExecution;
 #[cfg(feature = "cpi")]
 pub struct ExecutionCpiAccounts<'info> {
     pub payer: AccountInfo<'info>,
-    pub encrypted_value_account_authority: AccountInfo<'info>,
+    pub authority: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     /// One `DenyScopeRecord` per application the execution touches (the caller's, plus that of
     /// every value written or read under an additional signing authority), required while the
@@ -79,15 +79,13 @@ fn invoke_execution_signed_with_resolver<'info, R>(
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
-    if accounts.encrypted_value_account_authority.key()
-        != execution.encrypted_value_account_authority.pubkey()
-    {
+    if accounts.authority.key() != execution.authority.pubkey() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_scope_records = accounts.deny_scope_records;
     let fixed_accounts = zama_host::cpi::accounts::FheExecute {
         payer: accounts.payer,
-        encrypted_value_account_authority: accounts.encrypted_value_account_authority,
+        authority: accounts.authority,
         host_config: accounts.host_config,
         system_program: accounts.system_program,
         hcu_block_meter: accounts.hcu_block_meter,

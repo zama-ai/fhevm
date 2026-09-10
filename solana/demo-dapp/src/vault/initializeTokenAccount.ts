@@ -3,11 +3,7 @@ import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } 
 import { getInitializeTokenAccountInstructionAsync } from './internal/generated/confidentialToken/instructions/initializeTokenAccount.js';
 import { findTokenAccountPda } from './internal/generated/confidentialToken/pdas/tokenAccount.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
-import {
-  balanceValueAddress,
-  tokenEventAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenValueAccount.js';
+import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
   /** Signer funding the new confidential account and encrypted balance. */
@@ -31,7 +27,7 @@ export function needsConfidentialTokenAccountInitialization(accountOwner: Addres
 
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted value account, and
+ * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted State, and
  * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
  * sends the returned instruction.
  */
@@ -44,7 +40,7 @@ export async function buildInitializeTokenAccountInstruction(
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount,
-    balanceEncryptedValue: await balanceValueAddress(parameters.mint, tokenAccount),
+    balanceEncryptedState: await tokenStateAddress(parameters.mint, tokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     eventAuthority: await tokenEventAuthorityAddress(),

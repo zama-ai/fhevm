@@ -1,11 +1,7 @@
 import { createSolanaRpc, type Address, type Signature } from '@solana/kit';
 import { useEffect, useMemo, useState } from 'react';
 
-import {
-  readDecryptionEvidence,
-  readTransactionEvidence,
-  type DecryptionEvidenceRecord,
-} from './evidenceStore';
+import { readDecryptionEvidence, readTransactionEvidence, type DecryptionEvidenceRecord } from './evidenceStore';
 import {
   FHE_BATCH_P95_QUERY,
   jaegerDecryptUrl,
@@ -51,10 +47,13 @@ function CopyValue({ label, value }: { readonly label: string; readonly value: s
         aria-label={`Copy ${label}`}
         aria-live="polite"
         onClick={() => {
-          void navigator.clipboard.writeText(value).then(() => {
-            setCopyState('copied');
-            globalThis.setTimeout(() => setCopyState('idle'), 1_500);
-          }).catch(() => setCopyState('failed'));
+          void navigator.clipboard
+            .writeText(value)
+            .then(() => {
+              setCopyState('copied');
+              globalThis.setTimeout(() => setCopyState('idle'), 1_500);
+            })
+            .catch(() => setCopyState('failed'));
         }}
       >
         {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
@@ -93,8 +92,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
     if (state.deposit.kind === 'joined') {
       values.push({ address: state.deposit.result.batch, label: 'Deposit batch transaction' });
     }
-    const redeemPosition =
-      state.redeem.kind === 'joined' ? state.redeem.result : state.completedRedeemPosition;
+    const redeemPosition = state.redeem.kind === 'joined' ? state.redeem.result : state.completedRedeemPosition;
     if (redeemPosition !== null) {
       values.push({ address: redeemPosition.batch, label: 'Redeem batch transaction' });
     }
@@ -111,15 +109,11 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         const signatureLists = await Promise.all(
           addresses.map(async ({ address, label }) => ({
             label,
-            signatures: await rpc
-              .getSignaturesForAddress(address, { commitment: 'confirmed', limit: 4 })
-              .send(),
+            signatures: await rpc.getSignaturesForAddress(address, { commitment: 'confirmed', limit: 4 }).send(),
           })),
         );
         const discoveredTransactions = signatureLists
-          .flatMap(({ label, signatures }) =>
-            signatures.map(({ signature }) => ({ label, signature })),
-          )
+          .flatMap(({ label, signatures }) => signatures.map(({ signature }) => ({ label, signature })))
           .slice(0, addresses.length * 4);
         const storedTransactions = readTransactionEvidence(session);
         const seen = new Set<string>();
@@ -130,34 +124,28 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         });
         const transactionResults = await Promise.allSettled(
           transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence | null> => {
-              const transaction = await rpc
-                .getTransaction(signature, {
-                  commitment: 'confirmed',
-                  encoding: 'jsonParsed',
-                  maxSupportedTransactionVersion: 0,
-                })
-                .send();
-              if (transaction === null) return null;
-              return {
-                label,
-                signature,
-                slot: transaction.slot,
-                status:
-                  transaction.meta === null
-                    ? 'unavailable'
-                    : transaction.meta.err === null
-                      ? 'succeeded'
-                      : 'failed',
-                computeUnitsConsumed: transaction.meta?.computeUnitsConsumed ?? null,
-                programIds: [
-                  ...new Set(transaction.transaction.message.instructions.map(({ programId }) => programId)),
-                ],
-              } satisfies TransactionEvidence;
-            }),
+            const transaction = await rpc
+              .getTransaction(signature, {
+                commitment: 'confirmed',
+                encoding: 'jsonParsed',
+                maxSupportedTransactionVersion: 0,
+              })
+              .send();
+            if (transaction === null) return null;
+            return {
+              label,
+              signature,
+              slot: transaction.slot,
+              status:
+                transaction.meta === null ? 'unavailable' : transaction.meta.err === null ? 'succeeded' : 'failed',
+              computeUnitsConsumed: transaction.meta?.computeUnitsConsumed ?? null,
+              programIds: [...new Set(transaction.transaction.message.instructions.map(({ programId }) => programId))],
+            } satisfies TransactionEvidence;
+          }),
         );
         const transactionFailures = transactionResults.filter((result) => result.status === 'rejected').length;
         const nextTransactions = transactionResults
-          .flatMap((result) => result.status === 'fulfilled' && result.value !== null ? [result.value] : [])
+          .flatMap((result) => (result.status === 'fulfilled' && result.value !== null ? [result.value] : []))
           .sort((left, right) => (left.slot === right.slot ? 0 : left.slot > right.slot ? -1 : 1));
         const [nextShares, nextUsdc] = await Promise.all([
           readOptionalBalanceEvidence(() =>
@@ -194,11 +182,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
   if (session === null) return null;
 
   return (
-    <details
-      className="developer-evidence"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
+    <details className="developer-evidence" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>
         <span>
           <strong>Developer evidence</strong>
@@ -257,9 +241,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 </a>
               </div>
               <div>
-                <dt>Encrypted-value account</dt>
+                <dt>Encrypted state</dt>
                 <dd>
-                  <CopyValue label="encrypted-value account" value={shares.encryptedValue} />
+                  <CopyValue label="encrypted state" value={shares.encryptedState} />
                 </dd>
               </div>
             </>
@@ -298,11 +282,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                     </small>
                   </span>
                   <CopyValue label="transaction signature" value={transaction.signature} />
-                  <a
-                    href={explorerUrl(transaction.signature, session.config.rpcUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a href={explorerUrl(transaction.signature, session.config.rpcUrl)} target="_blank" rel="noreferrer">
                     Explorer
                   </a>
                   <details>
@@ -351,8 +331,8 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         )}
         <p className="evidence-note">
           Demo-only: faucet funding, automatic keeper actions, 7% illustrative APY, and fast-forwarding. Encryption,
-          settlement, claims, transactions, KMS authorization, and browser decryption use the real local stack.
-          Timings are individual observations, not a p95 benchmark.
+          settlement, claims, transactions, KMS authorization, and browser decryption use the real local stack. Timings
+          are individual observations, not a p95 benchmark.
         </p>
       </div>
     </details>

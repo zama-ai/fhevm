@@ -34,11 +34,26 @@ pub fn vault_address(executor: Pubkey) -> (Pubkey, u8) {
 pub mod delegator_vault {
     use super::*;
 
+    /// Exercises the host's rejection of nested scratch closure. Test-only; deployed nowhere.
+    pub fn close_scratch_via_cpi<'info>(
+        ctx: Context<'info, CloseScratchViaCpi<'info>>,
+    ) -> Result<()> {
+        zama_host::cpi::close_scratch(
+            CpiContext::new(
+                ctx.accounts.zama_host.key(),
+                zama_host::cpi::accounts::CloseScratch {
+                    instructions: ctx.accounts.instructions.to_account_info(),
+                },
+            )
+            .with_remaining_accounts(ctx.remaining_accounts.to_vec()),
+        )
+    }
+
     /// Grants a user-decryption delegation with the executor's vault PDA as the delegator.
     pub fn grant_via_vault(
         ctx: Context<VaultDelegation>,
         delegate: Pubkey,
-        encrypted_value_account_authority: Pubkey,
+        authority: Pubkey,
         expiration_slot: u64,
     ) -> Result<()> {
         let cpi_accounts = zama_host::cpi::accounts::DelegateForUserDecryption {
@@ -53,7 +68,7 @@ pub mod delegator_vault {
             accounts: cpi_accounts.to_account_metas(None),
             data: zama_host::instruction::DelegateForUserDecryption {
                 delegate,
-                encrypted_value_account_authority,
+                authority,
                 expiration_slot,
             }
             .data(),
@@ -109,4 +124,12 @@ pub struct VaultDelegation<'info> {
     pub delegation_record: UncheckedAccount<'info>,
     pub zama_host: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
+}
+
+/// Accounts forwarded to the host in the nested-close negative test.
+#[derive(Accounts)]
+pub struct CloseScratchViaCpi<'info> {
+    /// CHECK: validated by the host; this proxy deliberately adds no authorization.
+    pub instructions: UncheckedAccount<'info>,
+    pub zama_host: Program<'info, ZamaHost>,
 }

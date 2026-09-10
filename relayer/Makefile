@@ -423,7 +423,7 @@ BINS_sweep                  := sweep_test
 BINS_epoch-fencing          := epoch_fencing_test
 BINS_dispatch-gate          := dispatch_gate_test
 BINS_two-instance           := two_instance_test
-BINS_common                 := common_test
+BINS_common                 := common_test transaction_failure_sanitization
 BINS_solana                 := solana_v0_teardown solana_envelope_fixture
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))

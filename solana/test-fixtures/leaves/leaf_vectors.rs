@@ -39,7 +39,7 @@ pub struct LeafVector {
     pub id: String,
     pub comment: String,
     /// The encrypted value account address, hex.
-    pub encrypted_value_account: String,
+    pub encrypted_state_account: String,
     pub events: Vec<LeafEvent>,
     /// `keccak256`-domain leaf commitments in event order, hex.
     pub leaves: Vec<String>,

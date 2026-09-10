@@ -29,10 +29,10 @@ pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records — the shared crate's constant, so the
 /// program and the off-chain readers of the record cannot drift on the seed.
 pub use zama_solana_acl::DELEGATION_SEED;
-/// Reserved sentinel standing in for any encrypted value account authority, carried by a
+/// Reserved sentinel standing in for any encrypted State authority, carried by a
 /// wildcard user-decryption delegation row — the shared crate's constant, under the host's
 /// raw-bytes name.
-pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY as WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY_BYTES;
+pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///
@@ -53,6 +53,9 @@ pub use zama_solana_acl::WILDCARD_ENCRYPTED_VALUE_ACCOUNT_AUTHORITY as WILDCARD_
 /// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
 /// at 256.
 pub const MAX_FHE_EXECUTION_STEPS: usize = 32;
+/// At most 32 selected 32-byte handles fit the return-data channel, independently of step count.
+pub const MAX_RETURNED_HANDLES: usize =
+    anchor_lang::solana_program::program::MAX_RETURN_DATA / std::mem::size_of::<[u8; 32]>();
 /// Maximum number of external encrypted-input handles attested in one coprocessor attestation.
 pub const MAX_INPUT_ATTESTATION_HANDLES: usize = 16;
 /// Maximum opaque verifier payload bytes carried in one coprocessor attestation.

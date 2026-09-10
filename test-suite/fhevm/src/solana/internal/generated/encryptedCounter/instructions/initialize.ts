@@ -51,7 +51,7 @@ export type InitializeInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountCounter extends string | AccountMeta<string> = string,
   TAccountCounterAuthority extends string | AccountMeta<string> = string,
-  TAccountCountValue extends string | AccountMeta<string> = string,
+  TAccountEncryptedState extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
@@ -66,7 +66,7 @@ export type InitializeInstruction<
         : TAccountOwner,
       TAccountCounter extends string ? WritableAccount<TAccountCounter> : TAccountCounter,
       TAccountCounterAuthority extends string ? ReadonlyAccount<TAccountCounterAuthority> : TAccountCounterAuthority,
-      TAccountCountValue extends string ? WritableAccount<TAccountCountValue> : TAccountCountValue,
+      TAccountEncryptedState extends string ? WritableAccount<TAccountEncryptedState> : TAccountEncryptedState,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -103,7 +103,7 @@ export type InitializeAsyncInput<
   TAccountOwner extends string = string,
   TAccountCounter extends string = string,
   TAccountCounterAuthority extends string = string,
-  TAccountCountValue extends string = string,
+  TAccountEncryptedState extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -112,7 +112,7 @@ export type InitializeAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   counter?: Address<TAccountCounter>;
   counterAuthority?: Address<TAccountCounterAuthority>;
-  countValue: Address<TAccountCountValue>;
+  encryptedState: Address<TAccountEncryptedState>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -123,7 +123,7 @@ export async function getInitializeInstructionAsync<
   TAccountOwner extends string,
   TAccountCounter extends string,
   TAccountCounterAuthority extends string,
-  TAccountCountValue extends string,
+  TAccountEncryptedState extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -134,7 +134,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountCountValue,
+    TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -147,7 +147,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountCountValue,
+    TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -165,7 +165,7 @@ export async function getInitializeInstructionAsync<
       value: input.counterAuthority ?? null,
       isWritable: false,
     },
-    countValue: { value: input.countValue ?? null, isWritable: true },
+    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -201,7 +201,7 @@ export async function getInitializeInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('counter', accounts.counter),
       getAccountMeta('counterAuthority', accounts.counterAuthority),
-      getAccountMeta('countValue', accounts.countValue),
+      getAccountMeta('encryptedState', accounts.encryptedState),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -214,7 +214,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountCountValue,
+    TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -226,7 +226,7 @@ export type InitializeInput<
   TAccountOwner extends string = string,
   TAccountCounter extends string = string,
   TAccountCounterAuthority extends string = string,
-  TAccountCountValue extends string = string,
+  TAccountEncryptedState extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
@@ -235,7 +235,7 @@ export type InitializeInput<
   owner: TransactionSigner<TAccountOwner>;
   counter: Address<TAccountCounter>;
   counterAuthority: Address<TAccountCounterAuthority>;
-  countValue: Address<TAccountCountValue>;
+  encryptedState: Address<TAccountEncryptedState>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -246,7 +246,7 @@ export function getInitializeInstruction<
   TAccountOwner extends string,
   TAccountCounter extends string,
   TAccountCounterAuthority extends string,
-  TAccountCountValue extends string,
+  TAccountEncryptedState extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
@@ -257,7 +257,7 @@ export function getInitializeInstruction<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountCountValue,
+    TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -269,7 +269,7 @@ export function getInitializeInstruction<
   TAccountOwner,
   TAccountCounter,
   TAccountCounterAuthority,
-  TAccountCountValue,
+  TAccountEncryptedState,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
@@ -286,7 +286,7 @@ export function getInitializeInstruction<
       value: input.counterAuthority ?? null,
       isWritable: false,
     },
-    countValue: { value: input.countValue ?? null, isWritable: true },
+    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -312,7 +312,7 @@ export function getInitializeInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('counter', accounts.counter),
       getAccountMeta('counterAuthority', accounts.counterAuthority),
-      getAccountMeta('countValue', accounts.countValue),
+      getAccountMeta('encryptedState', accounts.encryptedState),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -325,7 +325,7 @@ export function getInitializeInstruction<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountCountValue,
+    TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
@@ -342,7 +342,7 @@ export type ParsedInitializeInstruction<
     owner: TAccountMetas[0];
     counter: TAccountMetas[1];
     counterAuthority: TAccountMetas[2];
-    countValue: TAccountMetas[3];
+    encryptedState: TAccountMetas[3];
     hostConfig: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
     zamaProgram: TAccountMetas[6];
@@ -372,7 +372,7 @@ export function parseInitializeInstruction<TProgram extends string, TAccountMeta
       owner: getNextAccount(),
       counter: getNextAccount(),
       counterAuthority: getNextAccount(),
-      countValue: getNextAccount(),
+      encryptedState: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),

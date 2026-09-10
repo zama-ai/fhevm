@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './closeScratch.js';
 export * from './delegateForUserDecryption.js';
 export * from './revokeDelegationForUserDecryption.js';
 export * from './revokePermits.js';

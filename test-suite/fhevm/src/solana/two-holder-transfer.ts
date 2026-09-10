@@ -186,8 +186,8 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
           TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
           TRANSFER_TO_ACCOUNT: bob.tokenAccount,
-          TRANSFER_FROM_BALANCE: alice.encryptedValueAccount,
-          TRANSFER_TO_BALANCE: bob.encryptedValueAccount,
+          TRANSFER_FROM_STATE: alice.encryptedState,
+          TRANSFER_TO_STATE: bob.encryptedState,
         },
       });
       parseTransferWorkerResult(result.stdout);
@@ -208,7 +208,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         UD_HANDLE: state.currentHandle,
         // The balance account the probe derived and verified; the Connector reads it and proves
         // the owner's allow leaf itself.
-        UD_ENCRYPTED_VALUE_ACCOUNT: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedValueAccount))).toString("hex")}`,
+        UD_ENCRYPTED_STATE: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedState))).toString("hex")}`,
         UD_SECRET_KEY: holder.secretKey,
         UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(kmsPair.kmsContextId),
         UD_EPOCH_ID: bytes32HexFromId(kmsPair.kmsEpochId),

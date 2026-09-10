@@ -52,10 +52,10 @@ pub struct RedeemBurnedAmount<'info> {
     /// CHECK: PDA authority for the underlying-token vault.
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
-    /// Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
-    /// account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+    /// Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token
+    /// account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,
     /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
-    pub burned_amount_value: Box<Account<'info, zama_host::EncryptedValue>>,
+    pub burned_amount_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// Pending-burn account opened at burn time; closed on successful redemption.
     #[account(
         mut,
@@ -150,20 +150,15 @@ pub fn redeem_burned_amount(
         pending.burned_handle == burned_handle,
         ConfidentialTokenError::PendingBurnMismatch
     );
-    require_keys_eq!(
-        pending.burned_encrypted_value,
-        ctx.accounts.burned_amount_value.key(),
-        ConfidentialTokenError::PendingBurnMismatch
-    );
 
     require!(
-        ctx.accounts.burned_amount_value.current_handle == burned_handle,
+        fhe::state_handle(&ctx.accounts.burned_amount_state, burned_amount_key())? == burned_handle,
         ConfidentialTokenError::PendingBurnHandleNotCurrent
     );
     // The sequential pending-burn invariant makes the burned handle current until redeem or cancel.
     // The exact-handle public-decrypt proof is checked inside the verifier CPI.
-    assert_burned_amount_value_account(
-        &ctx.accounts.burned_amount_value,
+    assert_burned_amount_state_account(
+        &ctx.accounts.burned_amount_state,
         burned_handle,
         mint_key,
         token_account_key,
@@ -179,7 +174,7 @@ pub fn redeem_burned_amount(
         signatures,
         extra_data,
         proof,
-        encrypted_value: ctx.accounts.burned_amount_value.to_account_info(),
+        encrypted_state: ctx.accounts.burned_amount_state.to_account_info(),
         host_config: &ctx.accounts.host_config,
         kms_context: ctx.accounts.kms_context.to_account_info(),
         zama_program: &ctx.accounts.zama_program,
@@ -215,7 +210,7 @@ pub fn redeem_burned_amount(
         owner: ctx.accounts.owner.key(),
         token_account: token_account_key,
         burned_handle,
-        burned_encrypted_value: ctx.accounts.burned_amount_value.key(),
+        burned_encrypted_state: ctx.accounts.burned_amount_state.key(),
         destination_usdc: ctx.accounts.destination_usdc.key(),
         cleartext_amount,
     });

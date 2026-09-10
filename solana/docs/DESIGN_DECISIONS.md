@@ -1,7 +1,11 @@
 # Solana PoC Design Decisions
 
+Last synced: 2026-09-10.
+
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
-Every statement here is true against the code on this branch. For the EVM mapping see
+Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
+and composition model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-046 keeps the
+allocator decision, restated against the current resource limits. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
@@ -2221,30 +2225,19 @@ Why not ship an allocator:
 
 1. The guild precedent (Pinocchio, 2026-06-25): a low-level win bought with permanent complexity
    is not worth it while the executor "doesn't do much compute at all" — stay on the framework
-   default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
-   heap after the fhevm-internal#1872 copy reductions exists.
-2. The current failure modes are good: every ceiling the app can hit at build time is a typed
-   error — `TooManySteps` at the host's one step cap, `ExceedsPersistentCreateLimit` at the
-   SDK's create cap, `ExceedsCpiInstructionDataLimit`
-   where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
-   builder's own byte tally — build, packet, and the invoke-side account tables together,
-   proven equal to a counting allocator across the shape frontier in `heap_budget/` — says
-   the instruction cannot survive the fixed region — plus a clean revert
-   committing nothing host-side. The forward-growing custom-allocator
-   pattern degrades past the mapped region into a VM access violation instead of a clean error,
-   and the granted heap size is not discoverable at runtime (no syscall), so a program can never
-   verify it got the frame it requested.
-3. A bigger heap would buy almost nothing. The `fhe_execute_boundary/*` snapshot entries show the
-   walls per execution shape: chain-shaped executions reach the host's step cap without touching
-   the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
-   non-extendable 64-entry instruction trace (common path: 1 CPI per created output; squat
-   fallback: 3) sit within one
-   step of each other — an allocator spending a raised frame would gain that shape at most one
-   step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
-   persistent updates of MMR-mature values, whose decode cost grows with on-chain state
-   (`mature_updates_peaks_8`, `mature_updates_peaks_32` and `mature_updates` at the peak cap: 19, 7, 4 steps) — is bounded by history the app accumulated
-   itself, not by anything a transaction can request more of. Storage rent and compute dominate
-   cost.
+   default for the PoC, revisit with a benchmark of the application that needs more heap.
+2. The builder has typed limits for steps (`TooManySteps`), CPI instruction data
+   (`ExceedsCpiInstructionDataLimit`) and its own requested heap
+   (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
+   These limits do not model live State size or prevent the host from exhausting its separate
+   heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
+3. State outputs no longer create an account per result, so the old create cap and
+   per-result system-CPI trace argument no longer apply. The runtime snapshots now show
+   32-step dependent chains reaching the step cap, shared-audience public outputs reaching
+   24 before the host heap fails at 25, and updates across States with 8, 32 and 64 MMR peaks
+   reaching 15, 7 and 4 steps. These are shape limits; the allocator decision does not make
+   a host heap failure acceptable for an application we intend to support. A failing application
+   benchmark is grounds to reopen fhevm-internal#1872.
 
 The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
 back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB
@@ -2393,3 +2386,35 @@ Consequences:
 - Delegation records are consumed (INVARIANTS #27 closed).
 - A handle with no allows and no public leaf is undecryptable by everyone, including its author;
   that is the author's choice, not a stranding.
+
+
+## DD-049 — Shared encrypted State and transaction-local result grants
+
+**Status:** adopted in RFC35 / PR3883. No compatibility with the retired PoC account model.
+
+A host-owned `EncryptedState` PDA uses `(program, authority, scope)` identity, with bounded
+slot keys and one shared MMR. State creation proves the program-owned authority; execution
+requires its signature. Slot keys are not PDA seeds. Each batch participant's JoinRecord
+is the authority of its contribution State, scoped to the batch.
+
+`State` outputs independently choose a slot write, exact-handle private/public permission
+leaves, and scratch grants. Scratch grants authorize an exact produced handle for a consumer
+State whose authority must sign use. Scratch opens and closes in one transaction, with a
+mandatory final top-level close and the recorded rent refund destination. It is not a decryption
+permission or a restriction on what authorized computations can subsequently reveal.
+
+Execution-level `returned_results` selects `(step_index, output_index)` pairs; current operations
+have output index zero. At most 32 handles are returned in requested order, including duplicates;
+empty selection returns none. Return bytes do not authorize use. Token transfer returns its
+result and the batcher performs its own contribution update; there is no transferred-amount
+register or token-owned accumulator API. Burn retains its result slot and PendingBurn lifecycle.
+
+Decryption uses State-based v4 extraData and exact-handle MMR proofs. Current-slot publication
+and fresh slotless permissions are supported. Adding new private/public permissions to a
+history-only handle is deferred to fhevm-internal#2007. Generic disclosure authenticates
+State/handle/cleartext, not a token-kind label. Original token events establish provenance.
+
+This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, standalone
+`make_handle_public`, v3 account extraData, and receipt-based transfer composition in this log.
+The existing input-attestation, threshold-KMS, program-upgrade and confirmed-RPC trust
+assumptions still apply. Resource limits remain shape-dependent; see runtime cost snapshots.

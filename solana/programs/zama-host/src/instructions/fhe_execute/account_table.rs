@@ -1,48 +1,24 @@
-//! Single owner of every remaining-accounts safety invariant for one
-//! `fhe_execute` execution.
+//! Validates and caches remaining accounts for one `fhe_execute` execution.
 //!
-//! Construction rejects duplicate account keys. Preflight marks every account
-//! the execution references and [`ExecutionAccountTable::assert_all_used`] rejects
-//! dangling accounts before any pass touches state, so later passes access by
-//! index without their own bookkeeping. Persistent-output claims (one write per
-//! account per execution), authority-signer lookup, deny-record location by
-//! canonical derived address, and output-PDA derivation also live here, so the
-//! invariants of the execution's account handling exist in exactly one place.
+//! Construction rejects duplicate keys. Preflight marks referenced accounts, and
+//! `assert_all_used` rejects unused accounts. Canonical State/scratch validation,
+//! authority-signer lookup, deny-record lookup and flushing dirty accounts live here.
+//! Preflight separately enforces one write per State slot.
 
 use super::*;
 
 pub(super) struct ExecutionAccountTable<'a, 'info> {
     accounts: &'a [AccountInfo<'info>],
+    states: Vec<Option<Box<EncryptedState>>>,
+    dirty_states: Vec<u16>,
+    scratches: Vec<Option<Box<TransientState>>>,
+    dirty_scratches: Vec<u16>,
     used: Vec<bool>,
-    /// Persistent output accounts already claimed by an earlier step. Reserved to
-    /// the op cap up front: the SBF bump allocator never frees, so growth by
-    /// doubling would leak, and the created-public maximum execution already runs
-    /// close to the 32KB heap ceiling. (For the same reason the table caches
-    /// no derived PDAs: the single walk derives each output PDA exactly once.)
-    persistent_outputs_claimed: Vec<Pubkey>,
-    /// Decode-once cache for canonical `EncryptedValue`s, parallel to `accounts`.
-    /// Each decode allocates the peak vector on the never-freeing bump heap, and one
-    /// execution reads the same account from up to three places (preflight admission,
-    /// operand resolution, the output write). Boxed so an empty slot costs a pointer,
-    /// not the ~180-byte struct: an unboxed `Vec<Option<EncryptedValue>>` sized to the
-    /// account list measurably lowered the all-created-public heap boundary, which never
-    /// decodes at all.
-    decoded_encrypted_values: Vec<Option<Box<EncryptedValue>>>,
-}
-
-/// Result of deriving a persistent output's canonical address: the PDA and its bump (needed
-/// again as a signer seed on create).
-#[derive(Clone, Copy)]
-pub(super) struct OutputPda {
-    pub key: Pubkey,
-    pub bump: u8,
 }
 
 impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
     /// Rejects duplicate keys up front so no index-referenced account can be
-    /// validated as one role and used as another. The scan is quadratic; the
-    /// bound is the transaction account limit (~64 keys today, `u16::MAX`
-    /// under SIMD-0406-style extensions), so it stays trivial.
+    /// validated as one role and used as another.
     pub(super) fn new(accounts: &'a [AccountInfo<'info>]) -> Result<Self> {
         for (index, account) in accounts.iter().enumerate() {
             require!(
@@ -54,43 +30,123 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
         }
         Ok(Self {
             accounts,
+            states: (0..accounts.len()).map(|_| None).collect(),
+            dirty_states: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            scratches: (0..accounts.len()).map(|_| None).collect(),
+            dirty_scratches: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
             used: vec![false; accounts.len()],
-            persistent_outputs_claimed: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
-            decoded_encrypted_values: (0..accounts.len()).map(|_| None).collect(),
         })
     }
 
-    /// Decode-once, validate-once read of a canonical `EncryptedValue`: the first read decodes
-    /// through `read_canonical_encrypted_value`, later reads reuse it. Safe against staleness
-    /// because within one execution every read of an account precedes its single write (the
-    /// one-write claim plus the read-after-write operand rejection, `preflight.rs`), and the
-    /// write path goes through [`Self::take_canonical_encrypted_value`], which empties the slot.
-    /// The contract is pinned by `cached_read_survives_byte_changes_and_take_invalidates` below.
-    pub(super) fn canonical_encrypted_value(&mut self, index: u16) -> Result<&EncryptedValue> {
+    pub(super) fn state(&mut self, index: u16) -> Result<&EncryptedState> {
         let account = self.account(index)?;
-        let slot = self
-            .decoded_encrypted_values
+        let cached = self
+            .states
             .get_mut(index as usize)
-            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))?;
-        if slot.is_none() {
-            *slot = Some(Box::new(read_canonical_encrypted_value(account)?));
+            .ok_or(ZamaHostError::InvalidFheExecuteAccount)?;
+        if cached.is_none() {
+            require_keys_eq!(
+                *account.owner,
+                crate::ID,
+                ZamaHostError::EncryptedStatePdaMismatch
+            );
+            let state = EncryptedState::try_deserialize(&mut &account.try_borrow_data()?[..])?;
+            state.validate(account.key())?;
+            *cached = Some(Box::new(state));
         }
-        Ok(slot.as_deref().expect("slot was just filled"))
+        cached
+            .as_deref()
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))
     }
 
-    /// The write path's decode: takes the cached value (or decodes when nothing read the account
-    /// earlier), transferring ownership to the caller who will mutate and rewrite it. Taking
-    /// doubles as cache invalidation — after the write, a fresh read would decode the new state.
-    pub(super) fn take_canonical_encrypted_value(&mut self, index: u16) -> Result<EncryptedValue> {
-        let account = self.account(index)?;
-        match self
-            .decoded_encrypted_values
-            .get_mut(index as usize)
-            .and_then(Option::take)
-        {
-            Some(value) => Ok(*value),
-            None => read_canonical_encrypted_value(account),
+    pub(super) fn state_mut(&mut self, index: u16) -> Result<&mut EncryptedState> {
+        self.state(index)?;
+        require!(
+            self.account(index)?.is_writable,
+            ZamaHostError::InvalidFheExecuteAccount
+        );
+        if !self.dirty_states.contains(&index) {
+            self.dirty_states.push(index);
         }
+        self.states[index as usize]
+            .as_deref_mut()
+            .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))
+    }
+
+    pub(super) fn flush_states(
+        &self,
+        payer: &AccountInfo<'info>,
+        system: &AccountInfo<'info>,
+    ) -> Result<()> {
+        for &index in &self.dirty_states {
+            let info = self.account(index)?;
+            let state = self.states[index as usize]
+                .as_deref()
+                .ok_or(ZamaHostError::InvalidFheExecuteAccount)?;
+            grow_account_if_needed(
+                payer,
+                info,
+                system,
+                zama_solana_acl::EncryptedState::account_size(state.slots.len(), state.peaks.len()),
+            )?;
+            write_account(info, state)?;
+        }
+        for &index in &self.dirty_scratches {
+            write_account(
+                self.account(index)?,
+                self.scratches[index as usize]
+                    .as_deref()
+                    .ok_or(ZamaHostError::TransientAccountInvalid)?,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn scratch(&mut self, index: u16) -> Result<&TransientState> {
+        if self
+            .scratches
+            .get(index as usize)
+            .ok_or(ZamaHostError::TransientAccountInvalid)?
+            .is_some()
+        {
+            return Ok(self.scratches[index as usize].as_deref().unwrap());
+        }
+        let info = self.account(index)?;
+        require_keys_eq!(
+            *info.owner,
+            crate::ID,
+            ZamaHostError::TransientAccountInvalid
+        );
+        require!(
+            info.data_len() == TransientState::SPACE,
+            ZamaHostError::TransientAccountInvalid
+        );
+        let mut scratch = TransientState::try_deserialize(&mut &info.try_borrow_data()?[..])
+            .map_err(|_| error!(ZamaHostError::TransientAccountInvalid))?;
+        let (address, bump) = transient_address(scratch.initiating_state);
+        require_keys_eq!(info.key(), address, ZamaHostError::TransientAccountInvalid);
+        require!(scratch.bump == bump, ZamaHostError::TransientAccountInvalid);
+        require!(
+            scratch.grants.len() <= MAX_TRANSIENT_GRANTS,
+            ZamaHostError::TransientAccountInvalid
+        );
+        scratch
+            .grants
+            .reserve_exact(MAX_TRANSIENT_GRANTS - scratch.grants.len());
+        self.scratches[index as usize] = Some(Box::new(scratch));
+        Ok(self.scratches[index as usize].as_deref().unwrap())
+    }
+
+    pub(super) fn scratch_mut(&mut self, index: u16) -> Result<&mut TransientState> {
+        self.scratch(index)?;
+        require!(
+            self.account(index)?.is_writable,
+            ZamaHostError::TransientAccountInvalid
+        );
+        if !self.dirty_scratches.contains(&index) {
+            self.dirty_scratches.push(index);
+        }
+        Ok(self.scratches[index as usize].as_deref_mut().unwrap())
     }
 
     pub(super) fn account(&self, index: u16) -> Result<&'a AccountInfo<'info>> {
@@ -119,7 +175,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             .accounts
             .iter()
             .position(|account| account.key() == authority && account.is_signer)
-            .ok_or_else(|| error!(ZamaHostError::EncryptedValueAccountAuthorityMismatch))?;
+            .ok_or_else(|| error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch))?;
         self.used[index] = true;
         Ok(())
     }
@@ -161,30 +217,6 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             return Err(error!(ZamaHostError::DenyRecordMissing));
         };
         self.used[index] = true;
-        Ok(())
-    }
-
-    /// Derived canonical PDA for a persistent output's declaration inputs. The
-    /// one place output-PDA derivation lives.
-    pub(super) fn expected_output_pda(
-        &self,
-        app: AppScope,
-        authority: Pubkey,
-        label: [u8; 32],
-    ) -> OutputPda {
-        let (key, bump) = encrypted_value_address(app.program, authority, app.scope, label);
-        OutputPda { key, bump }
-    }
-
-    /// Claims a persistent output account for this execution; a second claim of the same account is
-    /// rejected. One write per account per execution keeps the decode cache and the read-after-write
-    /// rule sound.
-    pub(super) fn claim_persistent_output(&mut self, key: Pubkey) -> Result<()> {
-        require!(
-            !self.persistent_outputs_claimed.contains(&key),
-            ZamaHostError::FheExecuteOutputAlreadyInitialized
-        );
-        self.persistent_outputs_claimed.push(key);
         Ok(())
     }
 
@@ -235,24 +267,23 @@ mod tests {
         table.assert_all_used().unwrap();
     }
 
-    /// A canonical encrypted value account: program-owned, PDA-addressed for its own
-    /// identity seeds, with the discriminator `read_canonical_encrypted_value`
-    /// checks. Returns the account and the value serialized into it.
-    fn canonical_value_account(tag: u8) -> (AccountInfo<'static>, EncryptedValue) {
-        let mut value = EncryptedValue {
+    fn canonical_state_account(tag: u8) -> (AccountInfo<'static>, EncryptedState) {
+        let mut state = EncryptedState {
             program: Pubkey::new_unique(),
-            encrypted_value_account_authority: Pubkey::new_unique(),
+            authority: Pubkey::new_unique(),
             scope: [tag; 32],
-            label: [tag; 32],
-            current_handle: [tag; 32],
+            slots: vec![EncryptedSlot {
+                key: [tag; 32],
+                handle: [tag; 32],
+            }],
             leaf_count: 0,
             peaks: Vec::new(),
             bump: 0,
         };
-        let (key, bump) = value.canonical_address();
-        value.bump = bump;
+        let (key, bump) = state.canonical_address();
+        state.bump = bump;
         let mut data = Vec::new();
-        value.try_serialize(&mut data).expect("serializes");
+        state.try_serialize(&mut data).expect("serializes");
         let info = AccountInfo::new(
             Box::leak(Box::new(key)),
             false,
@@ -262,27 +293,19 @@ mod tests {
             Box::leak(Box::new(crate::ID)),
             false,
         );
-        (info, value)
+        (info, state)
     }
 
-    /// The cache contract the doc comments promise: repeated reads return the first decode even
-    /// if the account bytes change underneath (within one execution every read of an account
-    /// precedes its single write, so serving the cached decode is correct), and `take` both hands
-    /// out that decode and empties the slot so the next read decodes the current bytes.
     #[test]
-    fn cached_read_survives_byte_changes_and_take_invalidates() {
-        let (info, original) = canonical_value_account(7);
+    fn state_read_is_decode_once_within_an_execution() {
+        let (info, original) = canonical_state_account(7);
         let accounts = vec![info];
         let mut table = ExecutionAccountTable::new(&accounts).unwrap();
 
-        let first = table.canonical_encrypted_value(0).unwrap();
-        assert_eq!(first.current_handle, original.current_handle);
+        assert_eq!(table.state(0).unwrap().slots, original.slots);
 
-        // Rewrite the account with a same-size value that differs only in its handle — still
-        // canonical for the same PDA, so a fresh decode would return it and pass validation.
-        // Only the cache distinguishes the two.
         let mut rewritten = original.clone();
-        rewritten.current_handle = [9; 32];
+        rewritten.slots[0].handle = [9; 32];
         let mut fresh_bytes = Vec::new();
         rewritten
             .try_serialize(&mut fresh_bytes)
@@ -292,65 +315,16 @@ mod tests {
             .unwrap()
             .copy_from_slice(&fresh_bytes);
 
-        let cached = table.canonical_encrypted_value(0).unwrap();
-        assert_eq!(cached.current_handle, original.current_handle);
-
-        let taken = table.take_canonical_encrypted_value(0).unwrap();
-        assert_eq!(taken.current_handle, original.current_handle);
-
-        let after_take = table.canonical_encrypted_value(0).unwrap();
-        assert_eq!(after_take.current_handle, rewritten.current_handle);
+        assert_eq!(table.state(0).unwrap().slots, original.slots);
     }
 
     #[test]
-    fn take_without_prior_read_decodes_the_account() {
-        let (info, original) = canonical_value_account(3);
+    fn state_mut_requires_a_writable_canonical_state() {
+        let (info, original) = canonical_state_account(3);
         let accounts = vec![info];
         let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-        let taken = table.take_canonical_encrypted_value(0).unwrap();
-        assert_eq!(taken.current_handle, original.current_handle);
-        assert_eq!(taken.program, original.program);
-    }
-
-    #[test]
-    fn second_claim_of_same_persistent_output_rejects() {
-        let accounts: Vec<AccountInfo> = Vec::new();
-        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
-        let output = Pubkey::new_unique();
-        table.claim_persistent_output(output).unwrap();
-        assert!(table.claim_persistent_output(output).is_err());
-    }
-
-    #[test]
-    fn output_pda_derivation_is_input_bound() {
-        let accounts: Vec<AccountInfo> = Vec::new();
-        let table = ExecutionAccountTable::new(&accounts).unwrap();
-        let app = AppScope {
-            program: Pubkey::new_unique(),
-            scope: [3; 32],
-        };
-        let authority = Pubkey::new_unique();
-        let first = table.expected_output_pda(app, authority, [1; 32]);
-        // Identical declaration inputs derive the identical address.
-        let again = table.expected_output_pda(app, authority, [1; 32]);
-        assert_eq!(first.key, again.key);
-        // Any changed declaration input derives a different address.
-        assert_ne!(
-            first.key,
-            table.expected_output_pda(app, authority, [2; 32]).key
-        );
-        assert_ne!(
-            first.key,
-            table
-                .expected_output_pda(
-                    AppScope {
-                        scope: [4; 32],
-                        ..app
-                    },
-                    authority,
-                    [1; 32]
-                )
-                .key
-        );
+        table.state_mut(0).unwrap().slots[0].handle = [8; 32];
+        assert_eq!(table.state(0).unwrap().slots[0].handle, [8; 32]);
+        assert_ne!(table.state(0).unwrap().slots, original.slots);
     }
 }

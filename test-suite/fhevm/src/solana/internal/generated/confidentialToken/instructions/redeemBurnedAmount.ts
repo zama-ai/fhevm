@@ -71,7 +71,7 @@ export type RedeemBurnedAmountInstruction<
   TAccountVaultUsdc extends string | AccountMeta<string> = string,
   TAccountDestinationUsdc extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
-  TAccountBurnedAmountValue extends string | AccountMeta<string> = string,
+  TAccountBurnedAmountState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
@@ -93,7 +93,7 @@ export type RedeemBurnedAmountInstruction<
       TAccountVaultUsdc extends string ? WritableAccount<TAccountVaultUsdc> : TAccountVaultUsdc,
       TAccountDestinationUsdc extends string ? WritableAccount<TAccountDestinationUsdc> : TAccountDestinationUsdc,
       TAccountVaultAuthority extends string ? ReadonlyAccount<TAccountVaultAuthority> : TAccountVaultAuthority,
-      TAccountBurnedAmountValue extends string ? ReadonlyAccount<TAccountBurnedAmountValue> : TAccountBurnedAmountValue,
+      TAccountBurnedAmountState extends string ? ReadonlyAccount<TAccountBurnedAmountState> : TAccountBurnedAmountState,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
@@ -165,7 +165,7 @@ export type RedeemBurnedAmountAsyncInput<
   TAccountVaultUsdc extends string = string,
   TAccountDestinationUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
-  TAccountBurnedAmountValue extends string = string,
+  TAccountBurnedAmountState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
@@ -191,11 +191,11 @@ export type RedeemBurnedAmountAsyncInput<
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   /**
-   * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
-   * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+   * Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token
+   * account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,
    * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
    */
-  burnedAmountValue: Address<TAccountBurnedAmountValue>;
+  burnedAmountState: Address<TAccountBurnedAmountState>;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
   pendingBurn?: Address<TAccountPendingBurn>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -226,7 +226,7 @@ export async function getRedeemBurnedAmountInstructionAsync<
   TAccountVaultUsdc extends string,
   TAccountDestinationUsdc extends string,
   TAccountVaultAuthority extends string,
-  TAccountBurnedAmountValue extends string,
+  TAccountBurnedAmountState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
@@ -244,7 +244,7 @@ export async function getRedeemBurnedAmountInstructionAsync<
     TAccountVaultUsdc,
     TAccountDestinationUsdc,
     TAccountVaultAuthority,
-    TAccountBurnedAmountValue,
+    TAccountBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -264,7 +264,7 @@ export async function getRedeemBurnedAmountInstructionAsync<
     TAccountVaultUsdc,
     TAccountDestinationUsdc,
     TAccountVaultAuthority,
-    TAccountBurnedAmountValue,
+    TAccountBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -286,8 +286,8 @@ export async function getRedeemBurnedAmountInstructionAsync<
     vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
     destinationUsdc: { value: input.destinationUsdc ?? null, isWritable: true },
     vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    burnedAmountValue: {
-      value: input.burnedAmountValue ?? null,
+    burnedAmountState: {
+      value: input.burnedAmountState ?? null,
       isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -334,7 +334,7 @@ export async function getRedeemBurnedAmountInstructionAsync<
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('destinationUsdc', accounts.destinationUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
-      getAccountMeta('burnedAmountValue', accounts.burnedAmountValue),
+      getAccountMeta('burnedAmountState', accounts.burnedAmountState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
@@ -354,7 +354,7 @@ export async function getRedeemBurnedAmountInstructionAsync<
     TAccountVaultUsdc,
     TAccountDestinationUsdc,
     TAccountVaultAuthority,
-    TAccountBurnedAmountValue,
+    TAccountBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -373,7 +373,7 @@ export type RedeemBurnedAmountInput<
   TAccountVaultUsdc extends string = string,
   TAccountDestinationUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
-  TAccountBurnedAmountValue extends string = string,
+  TAccountBurnedAmountState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
@@ -399,11 +399,11 @@ export type RedeemBurnedAmountInput<
   destinationUsdc: Address<TAccountDestinationUsdc>;
   vaultAuthority: Address<TAccountVaultAuthority>;
   /**
-   * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
-   * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+   * Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token
+   * account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,
    * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
    */
-  burnedAmountValue: Address<TAccountBurnedAmountValue>;
+  burnedAmountState: Address<TAccountBurnedAmountState>;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
   pendingBurn: Address<TAccountPendingBurn>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -434,7 +434,7 @@ export function getRedeemBurnedAmountInstruction<
   TAccountVaultUsdc extends string,
   TAccountDestinationUsdc extends string,
   TAccountVaultAuthority extends string,
-  TAccountBurnedAmountValue extends string,
+  TAccountBurnedAmountState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
@@ -452,7 +452,7 @@ export function getRedeemBurnedAmountInstruction<
     TAccountVaultUsdc,
     TAccountDestinationUsdc,
     TAccountVaultAuthority,
-    TAccountBurnedAmountValue,
+    TAccountBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -471,7 +471,7 @@ export function getRedeemBurnedAmountInstruction<
   TAccountVaultUsdc,
   TAccountDestinationUsdc,
   TAccountVaultAuthority,
-  TAccountBurnedAmountValue,
+  TAccountBurnedAmountState,
   TAccountPendingBurn,
   TAccountHostConfig,
   TAccountKmsContext,
@@ -492,8 +492,8 @@ export function getRedeemBurnedAmountInstruction<
     vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
     destinationUsdc: { value: input.destinationUsdc ?? null, isWritable: true },
     vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    burnedAmountValue: {
-      value: input.burnedAmountValue ?? null,
+    burnedAmountState: {
+      value: input.burnedAmountState ?? null,
       isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -529,7 +529,7 @@ export function getRedeemBurnedAmountInstruction<
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('destinationUsdc', accounts.destinationUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
-      getAccountMeta('burnedAmountValue', accounts.burnedAmountValue),
+      getAccountMeta('burnedAmountState', accounts.burnedAmountState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
@@ -549,7 +549,7 @@ export function getRedeemBurnedAmountInstruction<
     TAccountVaultUsdc,
     TAccountDestinationUsdc,
     TAccountVaultAuthority,
-    TAccountBurnedAmountValue,
+    TAccountBurnedAmountState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountKmsContext,
@@ -583,11 +583,11 @@ export type ParsedRedeemBurnedAmountInstruction<
     destinationUsdc: TAccountMetas[5];
     vaultAuthority: TAccountMetas[6];
     /**
-     * Burned amount `EncryptedValue` account whose handle is redeemed. Bound to the mint/token
-     * account by `assert_burned_amount_value_account`; its canonical PDA, layout, host ownership,
+     * Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token
+     * account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,
      * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
      */
-    burnedAmountValue: TAccountMetas[7];
+    burnedAmountState: TAccountMetas[7];
     /** Pending-burn account opened at burn time; closed on successful redemption. */
     pendingBurn: TAccountMetas[8];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
@@ -635,7 +635,7 @@ export function parseRedeemBurnedAmountInstruction<
       vaultUsdc: getNextAccount(),
       destinationUsdc: getNextAccount(),
       vaultAuthority: getNextAccount(),
-      burnedAmountValue: getNextAccount(),
+      burnedAmountState: getNextAccount(),
       pendingBurn: getNextAccount(),
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),

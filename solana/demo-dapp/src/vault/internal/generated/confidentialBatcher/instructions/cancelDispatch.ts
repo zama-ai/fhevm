@@ -57,9 +57,8 @@ export type CancelDispatchInstruction<
   TAccountJoinConfidentialMint extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchBalanceValue extends string | AccountMeta<string> = string,
-  TAccountTotalSupplyValue extends string | AccountMeta<string> = string,
-  TAccountBatchBurnedAmountValue extends string | AccountMeta<string> = string,
+  TAccountBatchBalanceState extends string | AccountMeta<string> = string,
+  TAccountTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
@@ -87,11 +86,8 @@ export type CancelDispatchInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountBatchBalanceValue extends string ? WritableAccount<TAccountBatchBalanceValue> : TAccountBatchBalanceValue,
-      TAccountTotalSupplyValue extends string ? WritableAccount<TAccountTotalSupplyValue> : TAccountTotalSupplyValue,
-      TAccountBatchBurnedAmountValue extends string
-        ? ReadonlyAccount<TAccountBatchBurnedAmountValue>
-        : TAccountBatchBurnedAmountValue,
+      TAccountBatchBalanceState extends string ? WritableAccount<TAccountBatchBalanceState> : TAccountBatchBalanceState,
+      TAccountTotalSupplyState extends string ? WritableAccount<TAccountTotalSupplyState> : TAccountTotalSupplyState,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountZamaEventAuthority extends string
@@ -150,9 +146,8 @@ export type CancelDispatchAsyncInput<
   TAccountJoinConfidentialMint extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchBalanceValue extends string = string,
-  TAccountTotalSupplyValue extends string = string,
-  TAccountBatchBurnedAmountValue extends string = string,
+  TAccountBatchBalanceState extends string = string,
+  TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -173,9 +168,8 @@ export type CancelDispatchAsyncInput<
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  totalSupplyValue: Address<TAccountTotalSupplyValue>;
-  batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  batchBalanceState: Address<TAccountBatchBalanceState>;
+  totalSupplyState: Address<TAccountTotalSupplyState>;
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -197,9 +191,8 @@ export async function getCancelDispatchInstructionAsync<
   TAccountJoinConfidentialMint extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchBalanceValue extends string,
-  TAccountTotalSupplyValue extends string,
-  TAccountBatchBurnedAmountValue extends string,
+  TAccountBatchBalanceState extends string,
+  TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
@@ -217,9 +210,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountJoinConfidentialMint,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceValue,
-    TAccountTotalSupplyValue,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
@@ -239,9 +231,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountJoinConfidentialMint,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceValue,
-    TAccountTotalSupplyValue,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
@@ -272,17 +263,13 @@ export async function getCancelDispatchInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchBalanceValue: {
-      value: input.batchBalanceValue ?? null,
+    batchBalanceState: {
+      value: input.batchBalanceState ?? null,
       isWritable: true,
     },
-    totalSupplyValue: {
-      value: input.totalSupplyValue ?? null,
+    totalSupplyState: {
+      value: input.totalSupplyState ?? null,
       isWritable: true,
-    },
-    batchBurnedAmountValue: {
-      value: input.batchBurnedAmountValue ?? null,
-      isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -334,9 +321,8 @@ export async function getCancelDispatchInstructionAsync<
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
-      getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
-      getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
+      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -356,9 +342,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountJoinConfidentialMint,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceValue,
-    TAccountTotalSupplyValue,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
@@ -377,9 +362,8 @@ export type CancelDispatchInput<
   TAccountJoinConfidentialMint extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchBalanceValue extends string = string,
-  TAccountTotalSupplyValue extends string = string,
-  TAccountBatchBurnedAmountValue extends string = string,
+  TAccountBatchBalanceState extends string = string,
+  TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -400,9 +384,8 @@ export type CancelDispatchInput<
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchBalanceValue: Address<TAccountBatchBalanceValue>;
-  totalSupplyValue: Address<TAccountTotalSupplyValue>;
-  batchBurnedAmountValue: Address<TAccountBatchBurnedAmountValue>;
+  batchBalanceState: Address<TAccountBatchBalanceState>;
+  totalSupplyState: Address<TAccountTotalSupplyState>;
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -424,9 +407,8 @@ export function getCancelDispatchInstruction<
   TAccountJoinConfidentialMint extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchBalanceValue extends string,
-  TAccountTotalSupplyValue extends string,
-  TAccountBatchBurnedAmountValue extends string,
+  TAccountBatchBalanceState extends string,
+  TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
@@ -444,9 +426,8 @@ export function getCancelDispatchInstruction<
     TAccountJoinConfidentialMint,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceValue,
-    TAccountTotalSupplyValue,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
@@ -465,9 +446,8 @@ export function getCancelDispatchInstruction<
   TAccountJoinConfidentialMint,
   TAccountTotalSupplyAuthority,
   TAccountBatchJoinTokenAccount,
-  TAccountBatchBalanceValue,
-  TAccountTotalSupplyValue,
-  TAccountBatchBurnedAmountValue,
+  TAccountBatchBalanceState,
+  TAccountTotalSupplyState,
   TAccountPendingBurn,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
@@ -497,17 +477,13 @@ export function getCancelDispatchInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchBalanceValue: {
-      value: input.batchBalanceValue ?? null,
+    batchBalanceState: {
+      value: input.batchBalanceState ?? null,
       isWritable: true,
     },
-    totalSupplyValue: {
-      value: input.totalSupplyValue ?? null,
+    totalSupplyState: {
+      value: input.totalSupplyState ?? null,
       isWritable: true,
-    },
-    batchBurnedAmountValue: {
-      value: input.batchBurnedAmountValue ?? null,
-      isWritable: false,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
@@ -554,9 +530,8 @@ export function getCancelDispatchInstruction<
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchBalanceValue', accounts.batchBalanceValue),
-      getAccountMeta('totalSupplyValue', accounts.totalSupplyValue),
-      getAccountMeta('batchBurnedAmountValue', accounts.batchBurnedAmountValue),
+      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
+      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -576,9 +551,8 @@ export function getCancelDispatchInstruction<
     TAccountJoinConfidentialMint,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceValue,
-    TAccountTotalSupplyValue,
-    TAccountBatchBurnedAmountValue,
+    TAccountBatchBalanceState,
+    TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
@@ -607,19 +581,18 @@ export type ParsedCancelDispatchInstruction<
     joinConfidentialMint: TAccountMetas[4];
     totalSupplyAuthority: TAccountMetas[5];
     batchJoinTokenAccount: TAccountMetas[6];
-    batchBalanceValue: TAccountMetas[7];
-    totalSupplyValue: TAccountMetas[8];
-    batchBurnedAmountValue: TAccountMetas[9];
-    pendingBurn: TAccountMetas[10];
-    hostConfig: TAccountMetas[11];
-    zamaEventAuthority: TAccountMetas[12];
+    batchBalanceState: TAccountMetas[7];
+    totalSupplyState: TAccountMetas[8];
+    pendingBurn: TAccountMetas[9];
+    hostConfig: TAccountMetas[10];
+    zamaEventAuthority: TAccountMetas[11];
     /** ZamaHost program. */
-    zamaProgram: TAccountMetas[13];
-    confidentialTokenEventAuthority: TAccountMetas[14];
+    zamaProgram: TAccountMetas[12];
+    confidentialTokenEventAuthority: TAccountMetas[13];
     /** Confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[15];
+    confidentialTokenProgram: TAccountMetas[14];
     /** System program used by the token execution and optional authority funding. */
-    systemProgram: TAccountMetas[16];
+    systemProgram: TAccountMetas[15];
   };
   data: CancelDispatchInstructionData;
 };
@@ -627,10 +600,10 @@ export type ParsedCancelDispatchInstruction<
 export function parseCancelDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCancelDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 16) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 17,
+      expectedAccountMetas: 16,
     });
   }
   let accountIndex = 0;
@@ -649,9 +622,8 @@ export function parseCancelDispatchInstruction<TProgram extends string, TAccount
       joinConfidentialMint: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      batchBalanceValue: getNextAccount(),
-      totalSupplyValue: getNextAccount(),
-      batchBurnedAmountValue: getNextAccount(),
+      batchBalanceState: getNextAccount(),
+      totalSupplyState: getNextAccount(),
       pendingBurn: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),

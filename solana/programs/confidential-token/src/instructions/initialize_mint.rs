@@ -16,12 +16,12 @@ pub struct InitializeMint<'info> {
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
     /// Classic Token or Token-2022 program owning `underlying_mint`.
     pub token_program: Interface<'info, TokenInterface>,
-    /// CHECK: Mint-scoped encrypted value account authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted State authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub total_supply_encrypted_value: UncheckedAccount<'info>,
+    pub total_supply_encrypted_state: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial total-supply handle.
@@ -47,20 +47,27 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     let mint_key = ctx.accounts.mint.key();
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let authority = fhe::ValueAuthority::total_supply(
+    let authority = fhe::StateAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
         ctx.bumps.total_supply_authority,
     )?;
-    let total_supply_encrypted_value = ctx.accounts.total_supply_encrypted_value.key();
-    let total_supply_output = fhe::PersistentOutput::new(
-        ctx.accounts.total_supply_encrypted_value.to_account_info(),
-        total_supply_encrypted_value_id(mint_key),
+    authority.create_state(
+        mint_key,
+        ctx.accounts.total_supply_encrypted_state.to_account_info(),
+        ctx.accounts.authority.to_account_info(),
+        ctx.accounts.host_config.to_account_info(),
+        ctx.accounts.system_program.to_account_info(),
+    )?;
+    let total_supply_encrypted_state = ctx.accounts.total_supply_encrypted_state.key();
+    let total_supply_output = fhe::SlotOutput::new(
+        ctx.accounts.total_supply_encrypted_state.to_account_info(),
+        total_supply_slot(mint_key),
         &authority,
         [],
     )?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionEncryptedValueAccountAuthority::new(total_supply_authority),
+        zama_fhe::ExecutionAuthority::new(total_supply_authority),
         |builder| {
             builder.trivial_encrypt_u64(0, total_supply_output.output())?;
             Ok(())
@@ -103,14 +110,13 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     mint.authority = ctx.accounts.authority.key();
     mint.underlying_mint = ctx.accounts.underlying_mint.key();
     mint.decimals = ctx.accounts.underlying_mint.decimals;
-    mint.total_supply_encrypted_value = total_supply_encrypted_value;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: [0; 32],
-        old_encrypted_value: Pubkey::default(),
+        old_encrypted_state: Pubkey::default(),
         new_handle: total_supply_handle,
-        new_encrypted_value: total_supply_encrypted_value,
+        new_encrypted_state: total_supply_encrypted_state,
         reason: TotalSupplyUpdateReason::Initialize,
     });
     Ok(())

@@ -5,11 +5,10 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::{
     binary_output_type_ok, is_supported_fhe_type, is_supported_uint_fhe_type,
     scalar_is_zero_for_type, unary_output_type_ok, FheBinaryOpCode, FheExecuteOperand,
-    FheExecuteOutput, FheExecuteStep, FheUnaryOpCode, PdaSeed,
+    FheExecuteOutput, FheExecuteStep, FheUnaryOpCode,
 };
 
-use crate::accounts::{ExecutionAccountMeta, ExecutionEncryptedValueAccountAuthority};
-use crate::acl::EncryptedValueId;
+use crate::accounts::{ExecutionAccountMeta, ExecutionAuthority};
 use crate::operand::{Operand, OperandKind};
 use crate::{FheExecutionBuildError, Result};
 
@@ -38,9 +37,9 @@ pub(crate) fn validate_lowered_execution(
         {
             return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
         }
-        // A value authority is found by key, never by wire index: it counts as used by the
+        // A State authority is found by key, never by wire index: it counts as used by the
         // operand or output whose authority it is.
-        if account.requires_value_authority() {
+        if account.requires_state_authority() {
             used_accounts[index] = true;
         }
     }
@@ -184,13 +183,25 @@ fn validate_lowered_encrypted_operand(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::StoredValue {
+        FheExecuteOperand::StateSlot {
             handle_index,
-            encrypted_value_index,
+            state_index,
+            key_index,
         } => {
+            mark_lowered_account(used_accounts, *state_index)?;
             mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
-            mark_lowered_account(used_accounts, *encrypted_value_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *key_index)?;
         }
+        FheExecuteOperand::TransientResult {
+            handle_index,
+            scratch_index,
+            consumer_state_index,
+        } => {
+            mark_lowered_account(used_accounts, *scratch_index)?;
+            mark_lowered_account(used_accounts, *consumer_state_index)?;
+            mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
+        }
+
         FheExecuteOperand::EarlierStep { producer_index } => {
             if usize::from(*producer_index) >= step_index {
                 return Err(FheExecutionBuildError::InvalidTransientReference);
@@ -212,39 +223,34 @@ fn validate_lowered_output(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match output {
-        FheExecuteOutput::Transient => {}
-        FheExecuteOutput::StoredValue {
-            output_encrypted_value_index,
-            output_authority_index,
-            output_program_index,
-            output_authority_key_index,
-            output_scope_index,
-            output_label_index,
-            output_authority_seeds,
-            output_allow_indexes,
-            previous_handle_index,
+        FheExecuteOutput::State {
+            state_index,
+            slot,
+            allow_indexes,
+            grants,
             ..
         } => {
-            mark_lowered_account(used_accounts, *output_encrypted_value_index)?;
-            if let Some(index) = output_authority_index {
-                mark_lowered_account(used_accounts, *index)?;
-            }
-            mark_lowered_dictionary_entry(used_dictionary, *output_program_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_authority_key_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_scope_index)?;
-            mark_lowered_dictionary_entry(used_dictionary, *output_label_index)?;
-            for seed in output_authority_seeds {
-                if let PdaSeed::Interned { index } = seed {
-                    mark_lowered_dictionary_entry(used_dictionary, *index)?;
+            mark_lowered_account(used_accounts, *state_index)?;
+            if let Some(slot) = slot {
+                mark_lowered_dictionary_entry(used_dictionary, slot.key_index)?;
+                if let Some(index) = slot.previous_handle_index {
+                    mark_lowered_dictionary_entry(used_dictionary, index)?;
                 }
             }
-            for index in output_allow_indexes {
+            for index in allow_indexes {
                 mark_lowered_dictionary_entry(used_dictionary, *index)?;
             }
-            if let Some(index) = previous_handle_index {
-                mark_lowered_dictionary_entry(used_dictionary, *index)?;
+            for grant in grants {
+                for index in [
+                    grant.scratch_index,
+                    grant.initiating_state_index,
+                    grant.consumer_state_index,
+                ] {
+                    mark_lowered_account(used_accounts, index)?;
+                }
             }
         }
+        FheExecuteOutput::Transient => {}
     }
     Ok(())
 }
@@ -304,7 +310,8 @@ where
                         return Err(FheExecutionBuildError::DivisionByZero);
                     }
                 }
-                OperandKind::Persistent(_)
+                OperandKind::StateSlot { .. }
+                | OperandKind::Granted { .. }
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
                     return Err(FheExecutionBuildError::DivisorMustBeScalar)
@@ -422,7 +429,9 @@ where
     F: Fn(u8) -> Option<u8>,
 {
     match &operand.0 {
-        OperandKind::Persistent(persistent) => Ok(Some(handle_fhe_type(persistent.handle))),
+        OperandKind::StateSlot { handle, .. } | OperandKind::Granted { handle, .. } => {
+            Ok(Some(handle_fhe_type(*handle)))
+        }
         OperandKind::Transient { producer_index } => {
             if *producer_index as usize >= produced_count {
                 return Err(FheExecutionBuildError::InvalidTransientReference);
@@ -473,20 +482,9 @@ pub(crate) fn validate_allow_keys(keys: &[Pubkey]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn validate_encrypted_value_id(key: &EncryptedValueId) -> Result<()> {
-    if key.app.program == Pubkey::default()
-        || key.encrypted_value_account_authority == Pubkey::default()
-    {
-        return Err(FheExecutionBuildError::InvalidEncryptedValueId);
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_encrypted_value_account_authority(
-    authority: ExecutionEncryptedValueAccountAuthority,
-) -> Result<()> {
+pub(crate) fn validate_authority(authority: ExecutionAuthority) -> Result<()> {
     if authority.pubkey() == Pubkey::default() {
-        return Err(FheExecutionBuildError::InvalidEncryptedValueAccountAuthority);
+        return Err(FheExecutionBuildError::InvalidExecutionAuthority);
     }
     Ok(())
 }

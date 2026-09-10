@@ -24,7 +24,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     let owner = Pubkey::new_unique();
     let chain = chain_program::chain_address(owner).0;
     let chain_authority = chain_program::chain_authority_address(chain).0;
-    let tail_value = chain_program::tail_encrypted_value_id(chain).address();
+    let encrypted_state = chain_program::chain_state_id(chain).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&chain_program::id(), "dep_chain");
     mollusk.add_program(&host::id(), "zama_host");
@@ -34,7 +34,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         (host_config, host_config_data),
         (event_authority(host::id()), system_account(0)),
     ]));
-    ensure_system_accounts(&context, &[chain, chain_authority, tail_value]);
+    ensure_system_accounts(&context, &[chain, chain_authority, encrypted_state]);
     let mut ledger = CleartextLedger::default();
 
     let initialize = || {
@@ -44,7 +44,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                tail_value,
+                encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -60,7 +60,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                tail_value,
+                encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -76,7 +76,14 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
-        assert_eq!(ledger.u64_at(&context, tail_value), expected);
+        assert_eq!(
+            ledger.u64_in_state(
+                &context,
+                encrypted_state,
+                chain_program::encrypted_tail_label()
+            ),
+            expected
+        );
     };
 
     assert_tail(&mut ledger, &initialize(), 0);

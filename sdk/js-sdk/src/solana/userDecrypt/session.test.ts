@@ -75,7 +75,7 @@ const handle = (): Uint8Array => {
 };
 
 const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
-  { handle: handle(), allowedKey: identity(0x11), encryptedValueAccount: identity(0xea) },
+  { handle: handle(), allowedKey: identity(0x11), encryptedState: identity(0xea) },
 ];
 
 /**
@@ -267,7 +267,7 @@ describe('a request refused before the network', () => {
     const overCap = Array.from({ length: MAX_SOLANA_USER_DECRYPT_HANDLES + 1 }, () => ({
       handle: handle(),
       allowedKey: identity(0x11),
-      encryptedValueAccount: identity(0xea),
+      encryptedState: identity(0xea),
     }));
 
     await expect(

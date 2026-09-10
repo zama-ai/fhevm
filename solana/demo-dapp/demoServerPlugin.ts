@@ -134,7 +134,10 @@ const loadDemoOperatorSession = async (demoBootId: string) => {
   if (keeper.address !== config.personas.keeper) {
     throw new Error(`keeper signer ${keeper.address} does not match seeded keeper ${config.personas.keeper}`);
   }
-  return { config, keeper };
+  const url = process.env.DEMO_PROOF_URL;
+  const apiKey = process.env.DEMO_PROOF_API_KEY;
+  if (!url || !apiKey) throw new Error('Demo listener proof endpoint configuration is missing');
+  return { config, keeper, proofService: { url, apiKey } };
 };
 
 const readDemoEncryptionKeyDescriptor = async (): Promise<DemoEncryptionKeyDescriptor> => {

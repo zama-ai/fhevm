@@ -6,10 +6,9 @@
 //! surface and fails while any of them exists. It is red by construction until the
 //! teardown lands, and it stays in the tree afterwards so the surface cannot grow back.
 //!
-//! What is deliberately NOT forbidden: the `0x03` extraData container and the
-//! public-decrypt surface that rides it. That carrier belongs to public decrypt (its
-//! teardown is a separate, gateway-interface-owned step), and the public-decrypt path
-//! survives the v0 user-decrypt teardown by being re-homed, not deleted.
+//! What is deliberately NOT forbidden: the `0x04` encrypted-state extraData container and the
+//! public-decrypt surface that rides it. That carrier belongs to public decrypt, and the
+//! public-decrypt path survives the v0 user-decrypt teardown by being re-homed, not deleted.
 
 use std::fs;
 use std::path::{Path, PathBuf};

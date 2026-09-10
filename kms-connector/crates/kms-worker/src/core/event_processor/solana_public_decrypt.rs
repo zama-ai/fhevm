@@ -1,11 +1,11 @@
 //! Solana public-decryption authorization, and the per-host handle both Solana paths read through.
 //!
 //! Public-ness has no live on-chain flag: it is a `PublicDecryptLeaf` sealed in the encrypted
-//! value account's MMR, and the account holds only the peaks. The check here is the user-decrypt
+//! state's MMR, and the state holds only the peaks. The check here is the user-decrypt
 //! pipeline's last three steps on their own — read the account, fetch the leaf proof from the
 //! coprocessors' record, verify it against the account's peaks — with the same readers, the same
 //! resolution rule and the same binding rule. The one thing the request supplies is which
-//! account the handle lives in, carried in the version-`0x03` `extraData` blob.
+//! state whose history contains the handle, carried in the version-`0x04` `extraData` blob.
 //!
 //! The external suite `kms-worker/tests/solana_public_decrypt_carrier.rs` pins the carrier and the
 //! whole path from outside the modules that make it up.
@@ -14,7 +14,7 @@ use crate::core::{
     event_processor::ProcessingError,
     solana::{
         deployment::DeploymentIdentity,
-        encrypted_value_account::{EncryptedValueAccountFailure, resolve_encrypted_value_account},
+        encrypted_state::{EncryptedStateFailure, resolve_encrypted_state},
         failure::FailureClass,
         handle_binding::{
             HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
@@ -99,18 +99,17 @@ where
         .ok_or(PublicDecryptFailure::MalformedExtraData)?;
 
     let program_id = deployment.program_id();
-    let keys = SnapshotKeys::new([extra.encrypted_value_account]);
+    let keys = SnapshotKeys::new([extra.encrypted_state]);
     let observation = reader.read_accounts(&keys).await?;
-    let encrypted_value_account =
-        resolve_encrypted_value_account(&observation, program_id, extra.encrypted_value_account)?;
+    let encrypted_state = resolve_encrypted_state(&observation, program_id, extra.encrypted_state)?;
 
     let batch = ProofBatch::new([(
         LeafQuery {
-            encrypted_value_account: encrypted_value_account.account_key(),
+            encrypted_state: encrypted_state.account_key(),
             handle,
             kind: LeafKind::Public,
         },
-        (&encrypted_value_account, handle),
+        (&encrypted_state, handle),
     )]);
     let bindings = verify_proofs_with_one_retry(proofs, &batch, |(account, handle), outcome| {
         check_public_binding(account, *handle, outcome)
@@ -129,18 +128,18 @@ pub enum PublicDecryptFailure {
         /// How many arrived.
         handles: usize,
     },
-    /// The `extraData` is not the version-3 carrier naming the encrypted value account.
+    /// The `extraData` is not the version-4 carrier naming the encrypted state.
     #[error(
-        "Solana public decryption requires the version-3 extraData naming the handle's encrypted \
-         value account"
+        "Solana public decryption requires the version-4 extraData naming the handle's encrypted \
+         state"
     )]
     MalformedExtraData,
     /// The account could not be observed.
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    /// The named account is not a valid encrypted value account.
-    #[error("encrypted value account: {0}")]
-    EncryptedValueAccount(#[from] EncryptedValueAccountFailure),
+    /// The named account is not a valid encrypted state.
+    #[error("encrypted state: {0}")]
+    EncryptedState(#[from] EncryptedStateFailure),
     /// The leaf record could not be read at all.
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),
@@ -156,7 +155,7 @@ impl PublicDecryptFailure {
         match self {
             Self::NotSingleHandle { .. } | Self::MalformedExtraData => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
-            Self::EncryptedValueAccount(source) => source.class(),
+            Self::EncryptedState(source) => source.class(),
             Self::ProofRead(source) => source.class(),
             Self::HandleBinding(source) => source.class(),
         }

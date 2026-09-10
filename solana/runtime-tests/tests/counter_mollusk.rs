@@ -20,7 +20,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
     let owner = Pubkey::new_unique();
     let counter = counter::counter_address(owner).0;
     let counter_authority = counter::counter_authority_address(counter).0;
-    let count_value = counter::count_encrypted_value_id(counter).address();
+    let encrypted_state = counter::counter_state_id(counter).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&counter::id(), "encrypted_counter");
     mollusk.add_program(&host::id(), "zama_host");
@@ -30,17 +30,17 @@ fn counter_initializes_to_zero_and_adds_increments() {
         (host_config, host_config_data),
         (event_authority(host::id()), system_account(0)),
     ]));
-    ensure_system_accounts(&context, &[counter, counter_authority, count_value]);
+    ensure_system_accounts(&context, &[counter, counter_authority, encrypted_state]);
     let mut ledger = CleartextLedger::default();
 
-    let initialize = |count_value: Pubkey| {
+    let initialize = |encrypted_state: Pubkey| {
         anchor_ix(
             counter::id(),
             counter::accounts::Initialize {
                 owner,
                 counter,
                 counter_authority,
-                count_value,
+                encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -56,7 +56,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
                 owner,
                 counter,
                 counter_authority,
-                count_value,
+                encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -72,20 +72,23 @@ fn counter_initializes_to_zero_and_adds_increments() {
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
-        assert_eq!(ledger.u64_at(&context, count_value), expected);
+        assert_eq!(
+            ledger.u64_in_state(&context, encrypted_state, counter::count_key()),
+            expected
+        );
     };
 
-    // A wrongly derived encrypted value account is rejected before any CPI runs.
-    let bogus_count_value = Pubkey::new_unique();
-    ensure_system_accounts(&context, &[bogus_count_value]);
+    // A wrongly derived encrypted State is rejected before any CPI runs.
+    let bogus_encrypted_state = Pubkey::new_unique();
+    ensure_system_accounts(&context, &[bogus_encrypted_state]);
     context.process_and_validate_instruction(
-        &initialize(bogus_count_value),
+        &initialize(bogus_encrypted_state),
         &[anchor_error_check(
             counter::CounterError::CountValueInvalid as u32,
         )],
     );
 
-    assert_count(&mut ledger, &initialize(count_value), 0);
+    assert_count(&mut ledger, &initialize(encrypted_state), 0);
     assert_count(&mut ledger, &increment(5), 5);
     assert_count(&mut ledger, &increment(37), 42);
 }
