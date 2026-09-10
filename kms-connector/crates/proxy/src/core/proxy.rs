@@ -8,7 +8,7 @@ use pingora::{
     listeners::tls::TlsSettings,
     prelude::Server,
     proxy::http_proxy_service_with_name,
-    server::{RunArgs, ShutdownSignalWatch, UnixShutdownSignalWatch, configuration::ServerConf},
+    server::{RunArgs, UnixShutdownSignalWatch, configuration::ServerConf},
 };
 use tracing::info;
 
@@ -47,18 +47,10 @@ impl Proxy {
 
     /// Runs the proxy until it receives `SIGTERM`, `SIGINT` or `SIGQUIT`.
     pub fn run(self) -> anyhow::Result<()> {
-        self.run_with_shutdown(UnixShutdownSignalWatch)
-    }
-
-    /// Same as [`Self::run`], with a custom shutdown signal source (used by tests).
-    pub fn run_with_shutdown(
-        self,
-        shutdown_signal: impl ShutdownSignalWatch + 'static,
-    ) -> anyhow::Result<()> {
         info!("Starting Proxy");
         let server = self.build_server()?;
         server.run(RunArgs {
-            shutdown_signal: Box::new(shutdown_signal),
+            shutdown_signal: Box::new(UnixShutdownSignalWatch),
         });
         info!("Proxy stopped");
         Ok(())

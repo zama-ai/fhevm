@@ -2,23 +2,19 @@
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use alloy::transports::http::reqwest::{Client, StatusCode};
-use async_trait::async_trait;
 use http::uri::Authority;
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
 };
-use pingora::server::{ShutdownSignal, ShutdownSignalWatch};
 use proxy::core::{Config, Proxy, TlsConfig};
 use serde_json::json;
 use std::{
     net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::Arc,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tokio::sync::Notify;
 
 const API_KEY: &str = "test";
 // sha256("test")
@@ -110,29 +106,40 @@ async fn test_rejects_unauthenticated_requests() {
 async fn test_default_deny_routing() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
-    for (request, expected) in [
-        (t.client.get(t.url("/")), StatusCode::NOT_FOUND),
-        (t.client.get(t.url("/healthz")), StatusCode::NOT_FOUND),
+    for (request, expected, expected_allow) in [
+        (t.client.get(t.url("/")), StatusCode::NOT_FOUND, None),
+        (t.client.get(t.url("/healthz")), StatusCode::NOT_FOUND, None),
         (
             t.client.post(t.url("/v2/public-decrypt")),
             StatusCode::NOT_FOUND,
+            None,
         ),
         (
             t.client.post(t.url("/v1/public-decrypt/extra")),
             StatusCode::NOT_FOUND,
+            None,
         ),
         (
             t.client.get(t.url(PUBLIC_DECRYPTION_ROUTE)),
             StatusCode::METHOD_NOT_ALLOWED,
+            Some("POST"),
         ),
         (
             t.client.post(t.url(VERSION_ROUTE)),
             StatusCode::METHOD_NOT_ALLOWED,
+            Some("GET"),
         ),
     ] {
         // Even with valid credentials.
         let response = request.bearer_auth(API_KEY).send().await.unwrap();
         assert_eq!(response.status(), expected);
+        assert_eq!(
+            response
+                .headers()
+                .get("allow")
+                .and_then(|v| v.to_str().ok()),
+            expected_allow
+        );
     }
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
@@ -213,10 +220,36 @@ async fn test_load_balances_across_endpoints() {
 }
 
 #[tokio::test]
+async fn test_upstream_timeout() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        Duration::from_millis(100),
+    )
+    .await;
+
+    let response = t
+        .client
+        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
+        .bearer_auth(API_KEY)
+        .header("x-stub-delay-ms", "500")
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    let error: ErrorResponse = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::Timeout);
+    assert!(error.retryable);
+}
+
+#[tokio::test]
 async fn test_unreachable_endpoint() {
     // Bind a port and close it right away: nothing listens there.
     let dead_addr = free_addr();
-    let t = TestProxy::start_with_addresses(vec![dead_addr.to_string().parse().unwrap()]).await;
+    let t =
+        TestProxy::start_with_addresses(vec![dead_addr.to_string().parse().unwrap()], vec![]).await;
 
     let response = t
         .client
@@ -226,9 +259,10 @@ async fn test_unreachable_endpoint() {
         .send()
         .await
         .unwrap();
-    // Pingora's default error response: a bare status, no body.
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-    assert!(response.bytes().await.unwrap().is_empty());
+    let error: ErrorResponse = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::UpstreamTransient);
+    assert!(error.retryable);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -281,6 +315,14 @@ async fn echo(
             .insert_header(("Retry-After", "2"))
             .json(ErrorResponse::new(ErrorCode::Overloaded, "busy", None));
     }
+    if let Some(delay_ms) = req
+        .headers()
+        .get("x-stub-delay-ms")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse().ok())
+    {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
     let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
     HttpResponse::Ok().json(json!({
         "body": String::from_utf8_lossy(&body),
@@ -290,26 +332,12 @@ async fn echo(
     }))
 }
 
-/// Stops the proxy when notified (instead of on `SIGINT`).
-struct NotifyShutdown(Arc<Notify>);
-
-#[async_trait]
-impl ShutdownSignalWatch for NotifyShutdown {
-    async fn recv(&self) -> ShutdownSignal {
-        self.0.notified().await;
-        ShutdownSignal::FastShutdown
-    }
-}
-
+/// Runs a `Proxy` for the lifetime of one test.
 struct TestProxy {
     client: Client,
     addr: SocketAddr,
     tls: TestTls,
     endpoints: Vec<StubEndpoint>,
-    // The thread running the `Proxy` (Pingora manages its own runtime, it cannot be spawned as a
-    // Tokio task). Stopped by `shutdown`, joined on drop.
-    proxy_thread: Option<JoinHandle<anyhow::Result<()>>>,
-    shutdown: Arc<Notify>,
 }
 
 impl TestProxy {
@@ -318,12 +346,21 @@ impl TestProxy {
             .iter()
             .map(|u| u.addr.to_string().parse().unwrap())
             .collect();
-        let mut proxy = Self::start_with_addresses(addresses).await;
-        proxy.endpoints = endpoints;
-        proxy
+        Self::start_with_addresses(addresses, endpoints).await
     }
 
-    async fn start_with_addresses(endpoint_addresses: Vec<Authority>) -> Self {
+    async fn start_with_addresses(
+        endpoint_addresses: Vec<Authority>,
+        endpoints: Vec<StubEndpoint>,
+    ) -> Self {
+        Self::start_with_config(endpoint_addresses, endpoints, Duration::from_secs(60)).await
+    }
+
+    async fn start_with_config(
+        endpoint_addresses: Vec<Authority>,
+        endpoints: Vec<StubEndpoint>,
+        endpoint_response_timeout: Duration,
+    ) -> Self {
         let addr = free_addr();
         let tls = TestTls::generate(addr);
         let config = Config {
@@ -335,14 +372,12 @@ impl TestProxy {
             api_key_digest: API_KEY_DIGEST.parse().unwrap(),
             endpoint_addresses,
             endpoint_connect_timeout: Duration::from_millis(500),
+            endpoint_response_timeout,
             max_body_bytes: MAX_BODY_BYTES,
             ..Config::default()
         };
         let proxy = Proxy::from_config(config).unwrap();
-
-        let shutdown = Arc::new(Notify::new());
-        let shutdown_signal = NotifyShutdown(Arc::clone(&shutdown));
-        let proxy_thread = std::thread::spawn(move || proxy.run_with_shutdown(shutdown_signal));
+        std::thread::spawn(move || proxy.run());
 
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
@@ -355,26 +390,12 @@ impl TestProxy {
             client,
             addr,
             tls,
-            endpoints: vec![],
-            proxy_thread: Some(proxy_thread),
-            shutdown,
+            endpoints,
         }
     }
 
     fn url(&self, route: &str) -> String {
         format!("https://{}{route}", self.addr)
-    }
-}
-
-impl Drop for TestProxy {
-    fn drop(&mut self) {
-        self.shutdown.notify_one();
-        if let Some(proxy_thread) = self.proxy_thread.take() {
-            proxy_thread
-                .join()
-                .expect("proxy thread panicked")
-                .expect("proxy stopped with an error");
-        }
     }
 }
 
