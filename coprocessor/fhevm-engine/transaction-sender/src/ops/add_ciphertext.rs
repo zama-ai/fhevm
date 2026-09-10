@@ -65,6 +65,8 @@ where
                 txn_request,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+                Duration::from_secs(self.conf.gas_estimation_timeout_secs.into()),
+                Duration::from_secs(self.conf.txn_receipt_timeout_secs.into()),
             )
             .await
         {
@@ -373,86 +375,117 @@ where
         let maybe_has_more_work = rows.len() == self.conf.add_ciphertexts_batch_limit as usize;
 
         let mut join_set = JoinSet::new();
-        for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
-            let _span =
-                tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
-            telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
-            let _enter = _span.enter();
+        // Capture preparation errors without dropping sends already in progress.
+        let preparation_result: anyhow::Result<()> = async {
+            for row in rows.into_iter() {
+                let transaction_id = row.transaction_id.clone();
+                let _span =
+                    tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
+                telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
+                let _enter = _span.enter();
 
-            let handle = row.handle.clone();
+                let handle = row.handle.clone();
 
-            let (ciphertext64_digest, ciphertext128_digest) =
-                match (row.ciphertext, row.ciphertext128) {
-                    (Some(ct), Some(ct128)) => (
-                        FixedBytes::from(try_into_array::<32>(ct)?),
-                        FixedBytes::from(try_into_array::<32>(ct128)?),
-                    ),
-                    _ => {
-                        error!(handle = to_hex(&handle), "Missing ciphertext(s)");
-                        continue;
-                    }
+                let (ciphertext64_digest, ciphertext128_digest) =
+                    match (row.ciphertext, row.ciphertext128) {
+                        (Some(ct), Some(ct128)) => (
+                            FixedBytes::from(try_into_array::<32>(ct)?),
+                            FixedBytes::from(try_into_array::<32>(ct128)?),
+                        ),
+                        _ => {
+                            error!(handle = to_hex(&handle), "Missing ciphertext(s)");
+                            continue;
+                        }
+                    };
+
+                let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
+                let key_id_gw_bytes32: [u8; 32] =
+                    row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
+                        anyhow::anyhow!(
+                            "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
+                            bad.len(),
+                            to_hex(&bad)
+                        )
+                    })?;
+                let key_id_gw = U256::from_be_bytes(key_id_gw_bytes32);
+
+                info!(
+                    handle = to_hex(&handle),
+                    host_chain_id = row.host_chain_id,
+                    key_id_gw = to_hex(&key_id_gw_bytes32),
+                    ct64_digest = to_hex(ciphertext64_digest.as_ref()),
+                    ct128_digest = to_hex(ciphertext128_digest.as_ref()),
+                    "Adding ciphertext"
+                );
+
+                let txn_request = match self.gas {
+                    Some(gas_limit) => ciphertext_manager
+                        .addCiphertextMaterial(
+                            handle_bytes32,
+                            key_id_gw,
+                            ciphertext64_digest,
+                            ciphertext128_digest,
+                        )
+                        .into_transaction_request()
+                        .with_gas_limit(gas_limit),
+                    None => ciphertext_manager
+                        .addCiphertextMaterial(
+                            handle_bytes32,
+                            key_id_gw,
+                            ciphertext64_digest,
+                            ciphertext128_digest,
+                        )
+                        .into_transaction_request(),
                 };
 
-            let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
-            let key_id_gw_bytes32: [u8; 32] =
-                row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
-                    anyhow::anyhow!(
-                        "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
-                        bad.len(),
-                        to_hex(&bad)
-                    )
-                })?;
-            let key_id_gw = U256::from_be_bytes(key_id_gw_bytes32);
+                drop(_enter);
+                drop(_span);
 
-            info!(
-                handle = to_hex(&handle),
-                host_chain_id = row.host_chain_id,
-                key_id_gw = to_hex(&key_id_gw_bytes32),
-                ct64_digest = to_hex(ciphertext64_digest.as_ref()),
-                ct128_digest = to_hex(ciphertext128_digest.as_ref()),
-                "Adding ciphertext"
-            );
+                let operation = self.clone();
+                join_set.spawn(async move {
+                    operation
+                        .send_transaction(
+                            &row.handle,
+                            txn_request,
+                            row.txn_limited_retries_count,
+                            row.txn_unlimited_retries_count,
+                            transaction_id,
+                        )
+                        .await
+                });
+            }
 
-            let txn_request = match &self.gas {
-                Some(gas_limit) => ciphertext_manager
-                    .addCiphertextMaterial(
-                        handle_bytes32,
-                        key_id_gw,
-                        ciphertext64_digest,
-                        ciphertext128_digest,
-                    )
-                    .into_transaction_request()
-                    .with_gas_limit(*gas_limit),
-                None => ciphertext_manager
-                    .addCiphertextMaterial(
-                        handle_bytes32,
-                        key_id_gw,
-                        ciphertext64_digest,
-                        ciphertext128_digest,
-                    )
-                    .into_transaction_request(),
-            };
-
-            drop(_enter);
-            drop(_span);
-
-            let operation = self.clone();
-            join_set.spawn(async move {
-                operation
-                    .send_transaction(
-                        &row.handle,
-                        txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
-                        transaction_id,
-                    )
-                    .await
-            });
+            Ok(())
         }
-
-        while let Some(res) = join_set.join_next().await {
-            res??;
+        .await;
+        // Drain every task before returning. Using `res??` here aborted the
+        // JoinSet on the first error, cancelling sibling sends mid-flight: their
+        // transactions could already be in the mempool while their `retry_count`
+        // was never incremented, leaving on-chain work with no DB record.
+        let mut failed = 0usize;
+        let mut first_error = preparation_result.err();
+        if let Some(e) = &first_error {
+            error!(error = %e, "Batch preparation failed; draining started sends");
+        }
+        while let Some(joined) = join_set.join_next().await {
+            let task_result = match joined {
+                Ok(task_result) => task_result,
+                Err(join_error) => Err(anyhow::Error::new(join_error)),
+            };
+            if let Err(e) = task_result {
+                failed += 1;
+                error!(error = %e, "Add ciphertext task failed");
+                if first_error.is_none() || crate::is_backend_gone(&e) {
+                    first_error = Some(e);
+                }
+            }
+        }
+        if let Some(e) = first_error {
+            error!(
+                failed_tasks = failed,
+                "Add ciphertext batch failed after draining started sends"
+            );
+            return Err(e);
         }
 
         Ok(maybe_has_more_work)

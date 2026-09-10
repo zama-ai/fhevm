@@ -20,7 +20,18 @@ pub struct ConfigSettings {
     pub error_sleep_initial_secs: u16,
     pub error_sleep_max_secs: u16,
 
+    /// Deadline for nonce lookup and for submission acknowledgment
+    /// (`eth_sendRawTransaction`). Does not cover waiting for inclusion.
     pub send_txn_sync_timeout_secs: u16,
+
+    /// Deadline for waiting for inclusion, awaited outside the nonce mutex.
+    /// A timeout here leaves the transaction acknowledged and possibly still
+    /// pending, so it never resets the nonce sequence.
+    pub txn_receipt_timeout_secs: u16,
+
+    /// Timeout for gas estimation, separate from `send_txn_sync_timeout_secs`.
+    /// Bounds estimation on both first attempts and retries in the binary.
+    pub gas_estimation_timeout_secs: u16,
 
     pub review_after_unlimited_retries: u16,
 
@@ -47,6 +58,8 @@ impl Default for ConfigSettings {
             add_ciphertexts_batch_limit: 10,
             add_ciphertexts_max_retries: i32::MAX,
             send_txn_sync_timeout_secs: 4,
+            txn_receipt_timeout_secs: 30,
+            gas_estimation_timeout_secs: 20,
             review_after_unlimited_retries: 30,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
