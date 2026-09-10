@@ -58,8 +58,8 @@ export type SolanaConfidentialTransferParameters = {
   readonly toAccount: Address;
   /** Recipient owner; used to derive the destination freeze ATA. */
   readonly toOwner: Address;
-  readonly fromState: Address;
-  readonly toState: Address;
+  readonly fromStore: Address;
+  readonly toStore: Address;
   readonly hostConfig: Address;
   readonly hcuBlockMeter?: Address | undefined;
   readonly hcuTrustedAppRecord?: Address | undefined;
@@ -131,8 +131,8 @@ export async function confidentialTransfer(
     toAta: await associatedTokenAddress(parameters.toOwner, parameters.underlyingMint, parameters.tokenProgram),
     fromAccount: parameters.fromAccount,
     toAccount: parameters.toAccount,
-    fromState: parameters.fromState,
-    toState: parameters.toState,
+    fromStore: parameters.fromStore,
+    toStore: parameters.toStore,
     zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
     hostConfig: parameters.hostConfig,

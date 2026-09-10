@@ -1,8 +1,8 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
 //! Two signers cover two roles, and they are only sometimes the same key: `payer` funds rent for
-//! State growth and lazy meter creation; `authority` is the default signer for the States the
-//! execution reads and writes. Every State an execution touches is admitted by its own authority's
+//! Store growth and lazy meter creation; `authority` is the default signer for the Stores the
+//! execution reads and writes. Every Store an execution touches is admitted by its own authority's
 //! signature, found among the default signer and the signing remaining accounts, and by nothing
 //! else. An application program signs for its PDAs by CPI and forwards a user wallet as `payer`.
 
@@ -10,7 +10,7 @@ use anchor_lang::prelude::*;
 
 use super::common::*;
 use super::input_verification::verify_input_attestation;
-use super::state_history::grow_account_if_needed;
+use super::store_history::grow_account_if_needed;
 use crate::{
     errors::ZamaHostError,
     events::{
@@ -25,7 +25,7 @@ mod block_cap;
 mod event_transport;
 mod hcu;
 mod preflight;
-mod state_output;
+mod store_output;
 mod walk;
 
 use account_table::ExecutionAccountTable;
@@ -35,15 +35,15 @@ use walk::{walk_steps, ExecutionHandleContext, RandContext};
 
 /// Accounts for one composed, instruction-local fhe_execute.
 ///
-/// Persistent input and output `EncryptedState` accounts are supplied in
+/// Persistent input and output `EncryptedStore` accounts are supplied in
 /// `remaining_accounts` and referenced by index from [`FheExecuteArgs`].
 #[derive(Accounts)]
 #[event_cpi]
 pub struct FheExecute<'info> {
-    /// Pays rent for State growth and lazy meter creation.
+    /// Pays rent for Store growth and lazy meter creation.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Default authority signer. Each State read or written requires its stored authority to
+    /// Default authority signer. Each Store read or written requires its stored authority to
     /// sign, either here or among the remaining accounts.
     pub authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
@@ -55,7 +55,7 @@ pub struct FheExecute<'info> {
     pub system_program: Program<'info, System>,
     /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
-    /// States controlled by the default authority. State creation proves the authority is a PDA
+    /// Stores controlled by the default authority. Store creation proves the authority is a PDA
     /// of `program`, so no caller can rotate a fresh *signer* to reach another
     /// program's meter — but a program declares its own `scope` freely, and a fresh scope is a
     /// fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply
@@ -114,10 +114,10 @@ pub fn fhe_execute<'info>(
     let call_start = transient_store.len();
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
-    // preflight), canonical State validation, and cached State/transient store writes.
+    // preflight), canonical Store validation, and cached Store/transient store writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
-    // every State the default authority controls belongs to. Metering and rand seeds key on it;
+    // every Store the default authority controls belongs to. Metering and rand seeds key on it;
     // the deny list gates every application the execution touches.
     let preflight = preflight_execution(&mut account_table, &ctx, &args)?;
     let app = preflight.app;
@@ -268,12 +268,12 @@ fn execute_steps<'a, 'info>(
     handle_context: &ExecutionHandleContext,
     host_config: &HostConfig,
 ) -> Result<Vec<ProducedPublicOutput>> {
-    let producer_state = table.account(args.execution_state_index.into())?.key();
+    let producer_store = table.account(args.execution_store_index.into())?.key();
     let mut execution = ExecutionState {
         table,
         transient_store,
         call_start,
-        producer_state,
+        producer_store,
         dictionary: &args.dictionary,
         app,
         chain_id: handle_context.derivation.chain_id,
@@ -287,11 +287,11 @@ fn execute_steps<'a, 'info>(
             .result(call_start + usize::from(effect.result.step_index))
             .ok_or(ZamaHostError::InvalidReturnSelection)?
             .handle;
-        let state = state_output::accept_state_output(
+        let state = store_output::accept_store_output(
             execution.table,
             &args.dictionary,
             execution.transient_store,
-            effect.state_index,
+            effect.store_index,
             effect.previous_leaf_count,
             &effect.slot,
             &effect.allow_indexes,
@@ -302,7 +302,7 @@ fn execute_steps<'a, 'info>(
         if effect.make_public {
             public_outputs.push(ProducedPublicOutput {
                 step_index: u16::from(effect.result.step_index),
-                encrypted_state: state,
+                encrypted_store: state,
                 output_handle: handle,
             });
         }
@@ -321,7 +321,7 @@ struct ExecutionState<'t, 'a, 'info> {
     dictionary: &'t [[u8; 32]],
     transient_store: &'t mut TransientStore,
     call_start: usize,
-    producer_state: Pubkey,
+    producer_store: Pubkey,
     /// The application every persistent value of the execution belongs to; `None` when the
     /// execution touches none.
     app: AppScope,
@@ -372,7 +372,7 @@ impl<'info> ExecutionState<'_, '_, 'info> {
             ZamaHostError::HcuTransactionDepthLimitExceeded,
         )?;
         self.transient_store
-            .record(result, self.producer_state, depth)?;
+            .record(result, self.producer_store, depth)?;
         self.transient_store.total_hcu = total;
         Ok(())
     }

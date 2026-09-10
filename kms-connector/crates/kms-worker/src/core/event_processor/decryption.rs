@@ -1804,8 +1804,8 @@ mod tests {
         use ring::signature::{Ed25519KeyPair, KeyPair};
         use solana_pubkey::Pubkey;
         use zama_solana_acl::{
-            ENCRYPTED_STATE_SEED, EncryptedSlot, EncryptedState, HostConfigRecord,
-            encrypted_state_discriminator, historical_access_leaf_commitment, mmr_leaf_node,
+            ENCRYPTED_STORE_SEED, EncryptedSlot, EncryptedStore, HostConfigRecord,
+            encrypted_store_discriminator, historical_access_leaf_commitment, mmr_leaf_node,
         };
         use zama_solana_permit::{
             Identity, KmsRouting, PermitFields, PermitWireFields, TRANSPORT_KEY_LEN, build_envelope,
@@ -1869,16 +1869,16 @@ mod tests {
             .as_ref()
             .to_vec();
 
-        // The encrypted state that authorizes the victim's direct entry: owned by the
+        // The encrypted store that authorizes the victim's direct entry: owned by the
         // program, at the address its own fields derive, with one allow leaf sealed for the victim
         // on this handle.
         let (account_key, bump) = Pubkey::find_program_address(
-            &[ENCRYPTED_STATE_SEED, &APP_PROGRAM, &AUTHORITY, &SCOPE],
+            &[ENCRYPTED_STORE_SEED, &APP_PROGRAM, &AUTHORITY, &SCOPE],
             &Pubkey::new_from_array(PROGRAM_ID),
         );
         let account_key = account_key.to_bytes();
         let leaf = historical_access_leaf_commitment(account_key, 0, handle, victim_pubkey);
-        let encrypted_state = EncryptedState {
+        let encrypted_store = EncryptedStore {
             program: APP_PROGRAM,
             authority: AUTHORITY,
             scope: SCOPE,
@@ -1893,12 +1893,12 @@ mod tests {
             handles: vec![SolanaHandleEntryWire {
                 handle: handle.to_vec(),
                 allowed_key: victim_pubkey.to_vec(),
-                encrypted_state: account_key.to_vec(),
+                encrypted_store: account_key.to_vec(),
             }],
         };
-        let mut account_data = encrypted_state_discriminator().to_vec();
+        let mut account_data = encrypted_store_discriminator().to_vec();
         account_data.extend_from_slice(
-            &borsh::to_vec(&encrypted_state).expect("the encrypted state serializes"),
+            &borsh::to_vec(&encrypted_store).expect("the encrypted store serializes"),
         );
 
         // A mock Solana RPC serving the one authorizing read: the deployment's config singleton
@@ -1953,7 +1953,7 @@ mod tests {
         // of the account, whose proof is the empty sibling path.
         // Mocktail compares bytes; converting through Value would reorder the typed fields.
         let proof_request_body = serde_json::to_string(&leaf_proof_request_body(&[LeafQuery {
-            encrypted_state: account_key,
+            encrypted_store: account_key,
             handle,
             kind: LeafKind::Allowed { key: victim_pubkey },
         }]))

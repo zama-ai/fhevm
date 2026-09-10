@@ -2,7 +2,7 @@
 //!
 //! This is the liveness path when a KMS certificate is unavailable or settlement cannot succeed.
 //! The confidential-token CPI restores the burned amount to the batch token account and encrypted
-//! total supply, closes the pending burn, and leaves the burned-amount encrypted State
+//! total supply, closes the pending burn, and leaves the burned-amount encrypted store
 //! unchanged. The batch becomes refund-only: no new joins or dispatch are accepted, while each user
 //! may retrieve their recorded amount through `quit`.
 
@@ -30,12 +30,12 @@ pub struct CancelDispatch<'info> {
     /// CHECK: batch's confidential join token account; validated here and by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch balance encrypted State; restored by the token CPI.
+    /// CHECK: batch balance encrypted store; restored by the token CPI.
     #[account(mut)]
-    pub batch_balance_state: UncheckedAccount<'info>,
-    /// CHECK: mint total-supply encrypted State; restored by the token CPI.
+    pub batch_balance_store: UncheckedAccount<'info>,
+    /// CHECK: mint total-supply encrypted store; restored by the token CPI.
     #[account(mut)]
-    pub total_supply_state: UncheckedAccount<'info>,
+    pub total_supply_store: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
@@ -109,8 +109,8 @@ pub fn cancel_dispatch<'info>(
                 mint: ctx.accounts.join_confidential_mint.to_account_info(),
                 token_account: ctx.accounts.batch_join_token_account.to_account_info(),
                 total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
-                balance_state: ctx.accounts.batch_balance_state.to_account_info(),
-                total_supply_state: ctx.accounts.total_supply_state.to_account_info(),
+                balance_store: ctx.accounts.batch_balance_store.to_account_info(),
+                total_supply_store: ctx.accounts.total_supply_store.to_account_info(),
                 pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),

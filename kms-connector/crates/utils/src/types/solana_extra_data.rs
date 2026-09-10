@@ -2,7 +2,7 @@
 //!
 //! A gateway public-decryption request carries one opaque `extraData` blob, and the gateway reads
 //! only its version byte and the KMS context id. For a Solana handle the connector also needs to
-//! know which encrypted state contains the handle's history — a state is not derivable from a
+//! know which encrypted store contains the handle's history — a state is not derivable from a
 //! handle — so the version-`0x04` form carries that address after the context id. Nothing else
 //! travels here: the `PublicDecryptLeaf` proof that establishes public-ness is fetched by the
 //! connector from the coprocessor's leaf record and verified against the account's own peaks. A
@@ -14,7 +14,7 @@
 //! `solana/test-fixtures/user-decrypt/extra_data_v1.json`.
 
 /// `extraData` version byte of the Solana public-decrypt form:
-/// `0x04 ‖ context_id(32) ‖ encrypted_state(32)`. Version `0x03` named a per-value account and
+/// `0x04 ‖ context_id(32) ‖ encrypted_store(32)`. Version `0x03` named a per-value account and
 /// is intentionally not decoded.
 pub const SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT: u8 = 0x04;
 
@@ -26,8 +26,8 @@ pub const SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN: usize = 1 + 32 + 32;
 pub struct SolanaPublicDecryptExtraData {
     /// The 32-byte KMS context id.
     pub context_id: [u8; 32],
-    /// The encrypted state whose history contains the requested handle.
-    pub encrypted_state: [u8; 32],
+    /// The encrypted store whose history contains the requested handle.
+    pub encrypted_store: [u8; 32],
 }
 
 /// Parses the public-decrypt form strictly: the version byte and the exact length, nothing
@@ -43,23 +43,23 @@ pub fn parse_solana_public_decrypt_extra_data(
     }
     let mut context_id = [0; 32];
     context_id.copy_from_slice(&extra_data[1..33]);
-    let mut encrypted_state = [0; 32];
-    encrypted_state.copy_from_slice(&extra_data[33..65]);
+    let mut encrypted_store = [0; 32];
+    encrypted_store.copy_from_slice(&extra_data[33..65]);
     Some(SolanaPublicDecryptExtraData {
         context_id,
-        encrypted_state,
+        encrypted_store,
     })
 }
 
 /// Encodes the public-decrypt form.
 pub fn encode_solana_public_decrypt_extra_data(
     context_id: [u8; 32],
-    encrypted_state: [u8; 32],
+    encrypted_store: [u8; 32],
 ) -> Vec<u8> {
     let mut data = Vec::with_capacity(SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN);
     data.push(SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT);
     data.extend_from_slice(&context_id);
-    data.extend_from_slice(&encrypted_state);
+    data.extend_from_slice(&encrypted_store);
     data
 }
 
@@ -75,7 +75,7 @@ mod tests {
             parse_solana_public_decrypt_extra_data(&blob),
             Some(SolanaPublicDecryptExtraData {
                 context_id: [7; 32],
-                encrypted_state: [9; 32],
+                encrypted_store: [9; 32],
             })
         );
     }

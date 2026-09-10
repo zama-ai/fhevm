@@ -6,7 +6,7 @@ use crate::builder::*;
 use crate::execution::*;
 use crate::lower::StepTables;
 use crate::operand::*;
-use crate::state::{StateId, StateOutput};
+use crate::store::{StoreId, StoreOutput};
 use crate::types::*;
 use crate::validate::{validate_binary_step, validate_unary_step};
 use crate::FheExecutionBuildError;
@@ -32,8 +32,8 @@ fn balance_handle(tag: u8) -> [u8; 32] {
     typed_handle(tag, 5)
 }
 
-fn execution_authority(pubkey: Pubkey) -> StateId {
-    StateId::new(app().program, pubkey, app().scope)
+fn execution_authority(pubkey: Pubkey) -> StoreId {
+    StoreId::new(app().program, pubkey, app().scope)
 }
 
 #[cfg(feature = "cpi")]
@@ -54,53 +54,53 @@ fn app() -> AppScope {
 }
 
 #[derive(Clone)]
-struct TestStateSlot {
-    state: StateId,
+struct TestStoreSlot {
+    store: StoreId,
     key: [u8; 32],
 }
 
-impl TestStateSlot {
+impl TestStoreSlot {
     fn new(app: AppScope, authority: Pubkey, key: [u8; 32]) -> Self {
         Self {
-            state: StateId::new(app.program, authority, app.scope),
+            store: StoreId::new(app.program, authority, app.scope),
             key,
         }
     }
 
     fn address(&self) -> Pubkey {
-        self.state.address()
+        self.store.address()
     }
 }
 
-fn state_output(key: TestStateSlot) -> StateOutput {
-    let account = zama_host::EncryptedState {
-        program: key.state.app().program,
-        authority: key.state.authority(),
-        scope: key.state.app().scope,
+fn store_output(key: TestStoreSlot) -> StoreOutput {
+    let account = zama_host::EncryptedStore {
+        program: key.store.app().program,
+        authority: key.store.authority(),
+        scope: key.store.app().scope,
         slots: vec![],
         leaf_count: 0,
         peaks: vec![],
         bump: 0,
     };
-    crate::State::new(&account).set(key.key)
+    crate::Store::new(&account).set(key.key)
 }
 
-fn state_slot_operand(handle: [u8; 32], key: &TestStateSlot) -> Operand {
-    Operand(OperandKind::StateSlot {
-        state: key.state,
+fn store_slot_operand(handle: [u8; 32], key: &TestStoreSlot) -> Operand {
+    Operand(OperandKind::StoreSlot {
+        store: key.store,
         key: key.key,
         handle,
     })
 }
 
-fn typed_state_slot<T: FheTyped>(
+fn typed_store_slot<T: FheTyped>(
     handle: [u8; 32],
-    key: TestStateSlot,
+    key: TestStoreSlot,
 ) -> crate::Result<FheHandle<T>> {
-    let account = zama_host::EncryptedState {
-        program: key.state.app().program,
-        authority: key.state.authority(),
-        scope: key.state.app().scope,
+    let account = zama_host::EncryptedStore {
+        program: key.store.app().program,
+        authority: key.store.authority(),
+        scope: key.store.app().scope,
         slots: vec![zama_host::EncryptedSlot {
             key: key.key,
             handle,
@@ -109,15 +109,15 @@ fn typed_state_slot<T: FheTyped>(
         peaks: vec![],
         bump: 0,
     };
-    crate::State::new(&account).get(key.key)
+    crate::Store::new(&account).get(key.key)
 }
 
-fn test_state_slot(account: Pubkey, label_tag: u8) -> TestStateSlot {
-    TestStateSlot::new(app(), account, handle(label_tag))
+fn test_store_slot(account: Pubkey, label_tag: u8) -> TestStoreSlot {
+    TestStoreSlot::new(app(), account, handle(label_tag))
 }
 
 fn foreign_operand(handle: [u8; 32]) -> Operand {
-    state_slot_operand(handle, &test_state_slot(Pubkey::new_unique(), 0xEE))
+    store_slot_operand(handle, &test_store_slot(Pubkey::new_unique(), 0xEE))
 }
 
 fn scalar_operand_u64(value: u64) -> Operand {
@@ -140,18 +140,18 @@ fn dummy_attestation(input_handle: [u8; 32], contract: Pubkey) -> CoprocessorInp
 #[test]
 fn batch_build_runs_closure_and_finishes_batch() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
-    let output_key = test_state_slot(primary_authority, 7);
+    let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
 
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
         let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1))?;
         builder
             .add(incremented, Scalar::<Uint<64>>::u64(2))
             .and_then(|result| {
-                builder.output(result, state_output(output_key).allow(primary_authority))?;
+                builder.output(result, store_output(output_key).allow(primary_authority))?;
                 Ok(result)
             })?;
         Ok(())
@@ -166,41 +166,41 @@ fn batch_build_runs_closure_and_finishes_batch() {
     assert_eq!(
         execution.remaining_accounts[0].purposes.as_slice(),
         &[
-            ExecutionAccountPurpose::StateInput,
-            ExecutionAccountPurpose::StateOutput,
+            ExecutionAccountPurpose::StoreInput,
+            ExecutionAccountPurpose::StoreOutput,
         ]
     );
     assert_eq!(execution.args.steps.len(), 2);
     match &execution.args.steps[1] {
         FheExecuteStep::Binary { lhs, .. } => {
             assert_eq!(*lhs, FheExecuteOperand::EarlierStep { producer_index: 0 });
-            assert_eq!(execution.args.effects[0].state_index, 0);
+            assert_eq!(execution.args.effects[0].store_index, 0);
         }
         other => panic!("unexpected step: {other:?}"),
     }
 }
 
 #[test]
-fn state_slot_reads_remain_snapshot_reads_after_declaring_an_effect() {
+fn store_slot_reads_remain_snapshot_reads_after_declaring_an_effect() {
     let authority = Pubkey::new_unique();
-    let key = test_state_slot(authority, 7);
+    let key = test_store_slot(authority, 7);
     let mut builder = FheExecutionBuilder::new(execution_authority(authority));
     builder
         .trivial_encrypt_u64(7)
         .and_then(|result| {
-            builder.output(result, state_output(key.clone()).allow(authority))?;
+            builder.output(result, store_output(key.clone()).allow(authority))?;
             Ok(result)
         })
         .unwrap();
 
-    let reconstructed = typed_state_slot::<Uint<64>>(balance_handle(99), key).unwrap();
+    let reconstructed = typed_store_slot::<Uint<64>>(balance_handle(99), key).unwrap();
     builder
         .add(reconstructed, Scalar::<Uint<64>>::u64(1))
         .unwrap();
     assert!(matches!(
         builder.steps[1],
         FheExecuteStep::Binary {
-            lhs: FheExecuteOperand::StateSlot { .. },
+            lhs: FheExecuteOperand::StoreSlot { .. },
             ..
         }
     ));
@@ -209,7 +209,7 @@ fn state_slot_reads_remain_snapshot_reads_after_declaring_an_effect() {
 #[test]
 fn batch_build_lowers_verified_input_operand() {
     let primary_authority = Pubkey::new_unique();
-    let output_key = test_state_slot(primary_authority, 7);
+    let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
     let input_handle = balance_handle(2);
     let attestation = dummy_attestation(input_handle, primary_authority);
@@ -219,7 +219,7 @@ fn batch_build_lowers_verified_input_operand() {
         builder
             .add(amount, Scalar::<Uint<64>>::u64(1))
             .and_then(|result| {
-                builder.output(result, state_output(output_key).allow(primary_authority))?;
+                builder.output(result, store_output(output_key).allow(primary_authority))?;
                 Ok(result)
             })?;
         Ok(())
@@ -251,8 +251,8 @@ fn batch_build_lowers_verified_input_operand() {
     assert_eq!(
         meta.purposes.as_slice(),
         &[
-            ExecutionAccountPurpose::StateInput,
-            ExecutionAccountPurpose::StateOutput
+            ExecutionAccountPurpose::StoreInput,
+            ExecutionAccountPurpose::StoreOutput
         ]
     );
 }
@@ -302,9 +302,9 @@ fn finish_preflights_lowered_remaining_account_indices() {
     builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StateSlot {
+        lhs: FheExecuteOperand::StoreSlot {
             handle_index: 0,
-            state_index: 1,
+            store_index: 1,
             key_index: 0,
         },
         rhs: FheExecuteOperand::Scalar { value_index: 1 },
@@ -341,16 +341,16 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         FheExecutionBuildError::InvalidTransientReference
     );
 
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder.add(balance, Scalar::<Uint<64>>::u64(1)).unwrap();
     builder
         .remaining_accounts
         .push(ExecutionAccountMeta::readonly(
             input_acl,
-            ExecutionAccountPurpose::StateInput,
+            ExecutionAccountPurpose::StoreInput,
         ));
 
     assert_eq!(
@@ -395,15 +395,15 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
 #[test]
 fn resolve_accounts_requires_the_cpi_authority_witness() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
-    let output_key = test_state_slot(primary_authority, 7);
+    let input_key = test_store_slot(primary_authority, 1);
+    let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
         .add(balance, Scalar::<Uint<64>>::u64(1))
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            builder.output(result, store_output(output_key).allow(primary_authority))?;
             Ok(result)
         })
         .unwrap();
@@ -419,7 +419,7 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
         .unwrap_err();
     assert_eq!(
         missing,
-        ExecutionAccountResolutionError::MissingStateAuthority {
+        ExecutionAccountResolutionError::MissingStoreAuthority {
             authority: ExecutionAuthorityRequirement {
                 pubkey: primary_authority,
             }
@@ -437,21 +437,21 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
 #[test]
 fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
-    let balance_key = test_state_slot(primary_authority, 1);
-    let amount_key = test_state_slot(primary_authority, 2);
+    let balance_key = test_store_slot(primary_authority, 1);
+    let amount_key = test_store_slot(primary_authority, 2);
     let balance_acl = balance_key.address();
     let amount_acl = amount_key.address();
-    let output_key = test_state_slot(primary_authority, 7);
+    let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), balance_key).unwrap();
-    let amount = typed_state_slot::<Uint<64>>(balance_handle(2), amount_key).unwrap();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), balance_key).unwrap();
+    let amount = typed_store_slot::<Uint<64>>(balance_handle(2), amount_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let success = builder.ge(balance, amount).unwrap();
     let debit_candidate = builder.sub(balance, amount).unwrap();
     builder
         .if_then_else(success, debit_candidate, balance)
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            builder.output(result, store_output(output_key).allow(primary_authority))?;
             Ok(result)
         })
         .unwrap();
@@ -467,8 +467,8 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     assert_eq!(
         execution.remaining_accounts[0].purposes.as_slice(),
         &[
-            ExecutionAccountPurpose::StateInput,
-            ExecutionAccountPurpose::StateOutput,
+            ExecutionAccountPurpose::StoreInput,
+            ExecutionAccountPurpose::StoreOutput,
         ]
     );
     assert_eq!(execution.args.steps.len(), 3);
@@ -499,12 +499,12 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
                 FheExecuteOperand::EarlierStep { producer_index: 1 }
             );
             match if_false {
-                FheExecuteOperand::StateSlot { state_index, .. } => {
-                    assert_eq!(*state_index, 0)
+                FheExecuteOperand::StoreSlot { store_index, .. } => {
+                    assert_eq!(*store_index, 0)
                 }
                 other => panic!("unexpected if_false: {other:?}"),
             }
-            assert_eq!(execution.args.effects[0].state_index, 0);
+            assert_eq!(execution.args.effects[0].store_index, 0);
         }
         other => panic!("unexpected step: {other:?}"),
     }
@@ -513,18 +513,18 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
 #[test]
 fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = test_state_slot(extra_authority, 7);
+    let output_key = test_store_slot(extra_authority, 7);
     let output_acl = output_key.address();
-    let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
 
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
         builder
             .add(input, Scalar::<Uint<64>>::u64(2))
             .and_then(|result| {
-                builder.output(result, state_output(output_key).allow(extra_authority))?;
+                builder.output(result, store_output(output_key).allow(extra_authority))?;
                 Ok(result)
             })?;
         Ok(())
@@ -541,36 +541,36 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     );
     assert_eq!(
         requirements[0].purposes(),
-        &[ExecutionAccountPurpose::StateInput]
+        &[ExecutionAccountPurpose::StoreInput]
     );
     assert_eq!(
         requirements[1].purposes(),
-        &[ExecutionAccountPurpose::StateOutput]
+        &[ExecutionAccountPurpose::StoreOutput]
     );
     assert_eq!(
         requirements[2].purposes(),
-        &[ExecutionAccountPurpose::StateAuthority]
+        &[ExecutionAccountPurpose::StoreAuthority]
     );
     assert!(requirements[1].is_writable());
     assert!(requirements[2].is_signer());
     assert!(!requirements[2].requires_dynamic_account());
-    assert!(requirements[2].requires_state_authority());
+    assert!(requirements[2].requires_store_authority());
 }
 
 #[test]
 fn lowers_explicit_output_authority_witness() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let acl_record = input_key.address();
     let authority = Pubkey::new_unique();
-    let output_key = test_state_slot(authority, 7);
+    let output_key = test_store_slot(authority, 7);
     let output_acl = output_key.address();
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
         .add(balance, Scalar::<Uint<64>>::u64(2))
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(authority))?;
+            builder.output(result, store_output(output_key).allow(authority))?;
             Ok(result)
         })
         .unwrap();
@@ -580,11 +580,11 @@ fn lowers_explicit_output_authority_witness() {
     assert_eq!(
         execution.remaining_accounts,
         vec![
-            ExecutionAccountMeta::readonly(acl_record, ExecutionAccountPurpose::StateInput),
-            ExecutionAccountMeta::writable(output_acl, ExecutionAccountPurpose::StateOutput),
+            ExecutionAccountMeta::readonly(acl_record, ExecutionAccountPurpose::StoreInput),
+            ExecutionAccountMeta::writable(output_acl, ExecutionAccountPurpose::StoreOutput),
             ExecutionAccountMeta::readonly_signer(
                 authority,
-                ExecutionAccountPurpose::StateAuthority,
+                ExecutionAccountPurpose::StoreAuthority,
             ),
         ]
     );
@@ -592,7 +592,7 @@ fn lowers_explicit_output_authority_witness() {
         execution.additional_value_authorities().collect::<Vec<_>>(),
         vec![authority]
     );
-    let authority_requirements = execution.state_authority_requirements().collect::<Vec<_>>();
+    let authority_requirements = execution.store_authority_requirements().collect::<Vec<_>>();
     assert_eq!(
         authority_requirements,
         vec![
@@ -602,24 +602,24 @@ fn lowers_explicit_output_authority_witness() {
             ExecutionAuthorityRequirement { pubkey: authority },
         ]
     );
-    assert_eq!(execution.args.effects[0].state_index, 1);
+    assert_eq!(execution.args.effects[0].store_index, 1);
 }
 
 #[cfg(feature = "cpi")]
 #[test]
 fn resolve_accounts_orders_and_validates_batch_requirements() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = test_state_slot(extra_authority, 7);
+    let output_key = test_store_slot(extra_authority, 7);
     let output_acl = output_key.address();
-    let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
         .add(input, Scalar::<Uint<64>>::u64(2))
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(extra_authority))?;
+            builder.output(result, store_output(output_key).allow(extra_authority))?;
             Ok(result)
         })
         .unwrap();
@@ -725,7 +725,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         duplicate_authority,
-        ExecutionAccountResolutionError::DuplicateStateAuthority {
+        ExecutionAccountResolutionError::DuplicateStoreAuthority {
             pubkey: extra_authority
         }
     );
@@ -745,7 +745,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert!(matches!(
         unexpected_authority,
-        ExecutionAccountResolutionError::UnexpectedStateAuthority { .. }
+        ExecutionAccountResolutionError::UnexpectedStoreAuthority { .. }
     ));
 
     let missing_authority = execution
@@ -759,7 +759,7 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
         .unwrap_err();
     assert_eq!(
         missing_authority,
-        ExecutionAccountResolutionError::MissingStateAuthority {
+        ExecutionAccountResolutionError::MissingStoreAuthority {
             authority: ExecutionAuthorityRequirement {
                 pubkey: extra_authority,
             }
@@ -771,17 +771,17 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
 #[test]
 fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
+    let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
     let extra_authority = Pubkey::new_unique();
-    let output_key = test_state_slot(extra_authority, 7);
+    let output_key = test_store_slot(extra_authority, 7);
     let output_acl = output_key.address();
-    let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
         .add(input, Scalar::<Uint<64>>::u64(2))
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(extra_authority))?;
+            builder.output(result, store_output(output_key).allow(extra_authority))?;
             Ok(result)
         })
         .unwrap();
@@ -822,7 +822,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         input_acl_in_authority_bucket,
-        ExecutionAccountResolutionError::UnexpectedStateAuthority { pubkey: input_acl }
+        ExecutionAccountResolutionError::UnexpectedStoreAuthority { pubkey: input_acl }
     );
 
     let output_acl_in_authority_bucket = execution
@@ -840,21 +840,21 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
         .unwrap_err();
     assert_eq!(
         output_acl_in_authority_bucket,
-        ExecutionAccountResolutionError::UnexpectedStateAuthority { pubkey: output_acl }
+        ExecutionAccountResolutionError::UnexpectedStoreAuthority { pubkey: output_acl }
     );
 }
 
 #[test]
 fn lowers_create_steps() {
     let primary_authority = Pubkey::new_unique();
-    let output_key = test_state_slot(primary_authority, 7);
+    let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let trivial = builder.trivial_encrypt_u64(1).unwrap();
     builder
         .rand_u64()
         .and_then(|result| {
-            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            builder.output(result, store_output(output_key).allow(primary_authority))?;
             Ok(result)
         })
         .unwrap();
@@ -868,8 +868,8 @@ fn lowers_create_steps() {
     assert_eq!(
         meta.purposes.as_slice(),
         &[
-            ExecutionAccountPurpose::StateInput,
-            ExecutionAccountPurpose::StateOutput
+            ExecutionAccountPurpose::StoreInput,
+            ExecutionAccountPurpose::StoreOutput
         ]
     );
     assert!(matches!(
@@ -907,8 +907,8 @@ fn rejects_invalid_references_and_types() {
         .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
 
-    let input_key = test_state_slot(primary_authority, 1);
-    let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let input_key = test_store_slot(primary_authority, 1);
+    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder.trivial_encrypt_u64(1).unwrap();
     let current_index = builder
@@ -956,7 +956,7 @@ fn validates_execution_authority_pubkey() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::default()));
     builder.trivial_encrypt_u64(1).unwrap();
     let error = match builder.finish() {
-        Ok(_) => panic!("invalid encrypted State authority unexpectedly built"),
+        Ok(_) => panic!("invalid encrypted store authority unexpectedly built"),
         Err(error) => error,
     };
     assert_eq!(error, FheExecutionBuildError::InvalidExecutionAuthority);
@@ -1093,7 +1093,7 @@ fn mul_div_rejects_zero_divisor() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let balance =
-        typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(primary_authority, 1))
+        typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(primary_authority, 1))
             .unwrap();
     assert_eq!(
         builder
@@ -1112,21 +1112,21 @@ fn div_rem_require_nonzero_scalar_divisor() {
     let auth = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(auth));
     // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
-    let lhs = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(auth, 1)).unwrap();
+    let lhs = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
     let enc_divisor =
-        typed_state_slot::<Uint<64>>(balance_handle(2), test_state_slot(auth, 2)).unwrap();
+        typed_store_slot::<Uint<64>>(balance_handle(2), test_store_slot(auth, 2)).unwrap();
     assert_eq!(
         builder.div(lhs, enc_divisor).unwrap_err(),
         FheExecutionBuildError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
-    let lhs2 = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(auth, 1)).unwrap();
+    let lhs2 = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
     assert_eq!(
         builder.rem(lhs2, Scalar::<Uint<64>>::u64(0)).unwrap_err(),
         FheExecutionBuildError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
-    let lhs3 = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(auth, 1)).unwrap();
+    let lhs3 = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
     assert!(builder.div(lhs3, Scalar::<Uint<64>>::u64(3)).is_ok());
 }
 
@@ -1137,26 +1137,26 @@ fn builder_exposes_the_host_operator_type_surface() {
     let auth = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(auth));
 
-    let bool_a = typed_state_slot::<Bool>(
+    let bool_a = typed_store_slot::<Bool>(
         typed_handle(1, FheType::BOOL.byte()),
-        test_state_slot(auth, 1),
+        test_store_slot(auth, 1),
     )
     .unwrap();
-    let bool_b = typed_state_slot::<Bool>(
+    let bool_b = typed_store_slot::<Bool>(
         typed_handle(2, FheType::BOOL.byte()),
-        test_state_slot(auth, 2),
+        test_store_slot(auth, 2),
     )
     .unwrap();
     assert!(builder.and(bool_a, bool_b).is_ok());
 
-    let bool_c = typed_state_slot::<Bool>(
+    let bool_c = typed_store_slot::<Bool>(
         typed_handle(6, FheType::BOOL.byte()),
-        test_state_slot(auth, 6),
+        test_store_slot(auth, 6),
     )
     .unwrap();
-    let bool_d = typed_state_slot::<Bool>(
+    let bool_d = typed_store_slot::<Bool>(
         typed_handle(7, FheType::BOOL.byte()),
-        test_state_slot(auth, 7),
+        test_store_slot(auth, 7),
     )
     .unwrap();
     assert!(builder.eq(bool_c, bool_d).is_ok());
@@ -1183,11 +1183,11 @@ fn builder_exposes_the_host_operator_type_surface() {
 /// Reading a value whose authority is not the execution's fixed signer needs that authority to
 /// sign: the builder adds the signer slot and the CPI resolver demands the witness.
 #[test]
-fn state_slot_with_its_own_authority_requires_that_signer() {
+fn store_slot_with_its_own_authority_requires_that_signer() {
     let primary_authority = Pubkey::new_unique();
     let other_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(other_authority, 1);
-    let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key.clone()).unwrap();
+    let input_key = test_store_slot(other_authority, 1);
+    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key.clone()).unwrap();
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
         builder.add(input, Scalar::<Uint<64>>::u64(1))?;
         Ok(())
@@ -1197,16 +1197,16 @@ fn state_slot_with_its_own_authority_requires_that_signer() {
         execution.remaining_accounts,
         vec![
             ExecutionAccountMeta::readonly(
-                execution.state().address(),
-                ExecutionAccountPurpose::StateInput
+                execution.store().address(),
+                ExecutionAccountPurpose::StoreInput
             ),
             ExecutionAccountMeta::readonly(
                 input_key.address(),
-                ExecutionAccountPurpose::StateInput
+                ExecutionAccountPurpose::StoreInput
             ),
             ExecutionAccountMeta::readonly_signer(
                 other_authority,
-                ExecutionAccountPurpose::StateAuthority,
+                ExecutionAccountPurpose::StoreAuthority,
             ),
         ]
     );
@@ -1226,10 +1226,10 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
         scope: [7; 32],
     };
     let same =
-        typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(authority, 1)).unwrap();
-    let other = typed_state_slot::<Uint<64>>(
+        typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(authority, 1)).unwrap();
+    let other = typed_store_slot::<Uint<64>>(
         balance_handle(2),
-        TestStateSlot::new(other_app, authority, [2; 32]),
+        TestStoreSlot::new(other_app, authority, [2; 32]),
     )
     .unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(authority));
@@ -1243,7 +1243,7 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
         builder
             .output(
                 value,
-                state_output(TestStateSlot::new(other_app, authority, [3; 32]))
+                store_output(TestStoreSlot::new(other_app, authority, [3; 32]))
             )
             .unwrap_err(),
         FheExecutionBuildError::MixedScopes
@@ -1265,23 +1265,23 @@ fn transient_only_execution_uses_its_producing_state_application() {
 
 #[test]
 fn typed_handle_constructor_rejects_mismatched_handle_tag() {
-    let error = typed_state_slot::<Uint<64>>(
+    let error = typed_store_slot::<Uint<64>>(
         typed_handle(1, FheType::UINT32.byte()),
-        test_state_slot(Pubkey::new_unique(), 7),
+        test_store_slot(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 
 #[test]
-fn state_slot_rejects_unsupported_handle_type_bytes() {
-    let key = test_state_slot(Pubkey::new_unique(), 1);
+fn store_slot_rejects_unsupported_handle_type_bytes() {
+    let key = test_store_slot(Pubkey::new_unique(), 1);
     assert_eq!(
-        typed_state_slot::<Uint<64>>(typed_handle(1, 7u8), key.clone()).unwrap_err(),
+        typed_store_slot::<Uint<64>>(typed_handle(1, 7u8), key.clone()).unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
     assert_eq!(
-        typed_state_slot::<Uint<64>>(typed_handle(1, 8u8), key).unwrap_err(),
+        typed_store_slot::<Uint<64>>(typed_handle(1, 8u8), key).unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
     );
 }
@@ -1339,8 +1339,8 @@ fn finish_rejects_empty_steps() {
 #[test]
 fn rejects_more_than_max_ops() {
     let primary_authority = Pubkey::new_unique();
-    let input_key = test_state_slot(primary_authority, 1);
-    let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let input_key = test_store_slot(primary_authority, 1);
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     for index in 0..MAX_FHE_EXECUTION_STEPS {
         builder
@@ -1361,7 +1361,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
     remaining_accounts
         .try_push(
             &mut budget,
-            ExecutionAccountMeta::readonly(shared, ExecutionAccountPurpose::StateInput),
+            ExecutionAccountMeta::readonly(shared, ExecutionAccountPurpose::StoreInput),
         )
         .unwrap();
     let mut dictionary = crate::heap_tally::TalliedVec::new();
@@ -1376,7 +1376,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         tables
             .account_index(ExecutionAccountMeta::writable(
                 shared,
-                ExecutionAccountPurpose::StateOutput,
+                ExecutionAccountPurpose::StoreOutput,
             ))
             .unwrap(),
         0
@@ -1385,7 +1385,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         tables
             .account_index(ExecutionAccountMeta::readonly_signer(
                 shared,
-                ExecutionAccountPurpose::StateAuthority,
+                ExecutionAccountPurpose::StoreAuthority,
             ))
             .unwrap(),
         0
@@ -1394,7 +1394,7 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         tables
             .account_index(ExecutionAccountMeta::readonly(
                 Pubkey::new_unique(),
-                ExecutionAccountPurpose::StateInput,
+                ExecutionAccountPurpose::StoreInput,
             ))
             .unwrap(),
         1
@@ -1415,10 +1415,10 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     builder.trivial_encrypt_u64(7).unwrap();
     let accounts_before = builder.remaining_accounts.clone();
     let dictionary_before = builder.dictionary.clone();
-    // Lhs interns its State and handle; rhs belongs to another scope under this signer.
+    // Lhs interns its Store and handle; rhs belongs to another scope under this signer.
     let fresh =
-        typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(authority, 1)).unwrap();
-    let foreign = TestStateSlot::new(
+        typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(authority, 1)).unwrap();
+    let foreign = TestStoreSlot::new(
         AppScope {
             program: app().program,
             scope: [9; 32],
@@ -1426,7 +1426,7 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
         authority,
         [2; 32],
     );
-    let other = typed_state_slot::<Uint<64>>(balance_handle(2), foreign).unwrap();
+    let other = typed_store_slot::<Uint<64>>(balance_handle(2), foreign).unwrap();
     assert_eq!(
         builder.add(fresh, other).unwrap_err(),
         FheExecutionBuildError::MixedScopes

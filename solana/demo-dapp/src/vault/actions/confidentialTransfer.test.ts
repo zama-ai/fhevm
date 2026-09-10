@@ -82,8 +82,8 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     fromAccount: key(4),
     toAccount: key(5),
     toOwner: key(10),
-    fromState: key(6),
-    toState: key(7),
+    fromStore: key(6),
+    toStore: key(7),
     hostConfig: key(8),
     ...overrides,
   } satisfies SolanaConfidentialTransferParameters;
@@ -198,8 +198,8 @@ describe('confidentialTransfer attestation binding', () => {
       mint,
       fromAccount: key(4),
       toAccount: mode === 'same' ? key(4) : key(5),
-      fromState: key(6),
-      toState: mode === 'same' ? key(6) : key(7),
+      fromStore: key(6),
+      toStore: mode === 'same' ? key(6) : key(7),
       hcuBlockMeter: key(8),
       hcuTrustedAppRecord: key(9),
       ...(mode === 'same' ? {} : { denyRecords: [key(10), key(11)] }),
@@ -258,7 +258,7 @@ describe('confidentialTransfer attestation binding', () => {
   it('rejects deny records on the program self-transfer no-op path', async () => {
     const params = await parameters({
       toAccount: key(4),
-      toState: key(6),
+      toStore: key(6),
       denyRecords: [key(10), key(11)],
     });
     await expect(confidentialTransfer(context, params)).rejects.toThrow('self-transfers cannot include deny records');

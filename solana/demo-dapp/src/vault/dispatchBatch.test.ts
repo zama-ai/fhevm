@@ -109,7 +109,7 @@ describe('buildDispatchBatchInstruction', () => {
   });
 
   // Golden pins for the fixed fixture: the encrypted value accounts are re-pinned from the RFC 035 seed
-  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedState
+  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedStore
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
@@ -127,7 +127,7 @@ describe('buildDispatchBatchInstruction', () => {
     expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
     expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
     expect(addresses[9]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchBalanceValue
-    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyState
+    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyStore
     // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
     expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
     expect(addresses[17]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority

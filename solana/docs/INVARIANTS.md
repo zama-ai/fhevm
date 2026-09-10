@@ -29,7 +29,7 @@ entry that moves between them keeps its number.
 
 Scope note: this register covers the Solana feature branch: `zama-host`, the `zama-fhe` SDK, the host-listener
 reconstruction path and its leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
-confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, State, slot, allow, result
+confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, Store, slot, allow, result
 grant, transient store, application.
 
 ---
@@ -53,15 +53,15 @@ sealed from instruction data, and the leaf record republishes it.
 
 ## B. Handles & access state
 
-**5. [HOLDS]** A State slot changes only through an `fhe_execute` output. No instruction accepts a caller-chosen handle
-into a slot; `make_state_handle_public` seals a leaf for the handle a slot already holds.
+**5. [HOLDS]** A Store slot changes only through an `fhe_execute` output. No instruction accepts a caller-chosen handle
+into a slot; `make_store_handle_public` seals a leaf for the handle a slot already holds.
 
 **6. [HOLDS]** A slot write states what the slot holds now: the exact current handle, or nothing for a first write. A
-State output also states the State's leaf count as the builder saw it. If either is stale the whole execution fails
-(`PreviousStateMismatch`), so two writers cannot lose an update. The new handle's allows are declared on the write; the
+Store output also states the Store's leaf count as the builder saw it. If either is stale the whole execution fails
+(`PreviousStoreMismatch`), so two writers cannot lose an update. The new handle's allows are declared on the write; the
 old handle's leaves stay sealed.
 
-**7. [HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
+**7. [HOLDS]** Every encrypted store lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
 
 **8. [HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
 stays provable after any number of later updates.
@@ -71,17 +71,17 @@ stays provable after any number of later updates.
 no public leaf is undecryptable by everyone, which is its author's choice, not
 a stranding — the next write declares the next handle's allows.
 
-**10. [HOLDS]** Every allow the host seals passes the deny list when it is enabled. A State output, with or without a
-slot write, and `make_state_handle_public` both require the application's record `["deny-scope", program, scope]` to be
+**10. [HOLDS]** Every allow the host seals passes the deny list when it is enabled. A Store output, with or without a
+slot write, and `make_store_handle_public` both require the application's record `["deny-scope", program, scope]` to be
 present at its canonical address and not denied (`DenyRecordMissing`, `ScopeDenied`). With the list disabled no record
-may be passed. An `fhe_execute` checks every application whose State it reads or writes, and its explicit producing State's application. Naming a consumer State in a new grant only validates that State's identity; the consumer's
+may be passed. An `fhe_execute` checks every application whose Store it reads or writes, and its explicit producing Store's application. Naming a consumer Store in a new grant only validates that Store's identity; the consumer's
 application is checked by the execution that consumes the grant. A denied application can therefore neither use a grant
-nor receive a State write from another program's execution. The list names applications, not keys (DD-048): a denied key
+nor receive a Store write from another program's execution. The list names applications, not keys (DD-048): a denied key
 can still be allowed by a clean application, and user-decryption delegation is a separate access path with no deny
 check.
 
-**11. [HOLDS]** Only the State authority writes its slots or appends permissions: it signs State creation, State outputs
-and `make_state_handle_public`, and it is a PDA of the State's `program` (#7). A viewer is not a co-admin — an allow
+**11. [HOLDS]** Only the Store authority writes its slots or appends permissions: it signs Store creation, Store outputs
+and `make_store_handle_public`, and it is a PDA of the Store's `program` (#7). A viewer is not a co-admin — an allow
 grants decrypt and nothing else, and later new permissions on history-only handles are deferred to #2007 (DD-048).
 Confidential-token ships owner-gated wrappers that `invoke_signed` as the **token-account** PDA
 (`allow_balance_viewers`, which re-writes the balance onto a handle allowed to the viewers, and
@@ -89,7 +89,7 @@ Confidential-token ships owner-gated wrappers that `invoke_signed` as the **toke
 total-supply authority PDA (`allow_total_supply_viewers`, `make_total_supply_handle_public`). (fhevm-internal#1862 #13;
 RFC 035.) Related token/Host lifecycle guardrails are:
 
-- **11b [HOLDS].** `make_state_handle_public` requires the signer to equal `EncryptedState.authority` and the handle to
+- **11b [HOLDS].** `make_store_handle_public` requires the signer to equal `EncryptedStore.authority` and the handle to
   be the current handle in the named slot. A viewer cannot directly publish through this authority-only instruction;
   history-only publication and EVM-style re-sharing are deferred to #2007. The deny list is consulted for the value's
   application, because sealing a public leaf is an allow (#10). Confidential-token owner/mint-authority wrappers
@@ -98,7 +98,7 @@ RFC 035.) Related token/Host lifecycle guardrails are:
   `["pending-burn", mint, token_account]`. A second burn is rejected before FHE execution until `redeem_burned_amount`
   or `cancel_pending_burn` closes the account and returns its rent to the owner. Parallel burns for one token account
   are deliberately deferred; applications can aggregate an amount or use separate app-owned token accounts.
-- **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal the State’s current burned-amount
+- **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal the Store’s current burned-amount
   slot handle. A stale or mismatched pending burn cannot restore value.
 - **11e [HOLDS].** `cancel_pending_burn` restores both confidential balance and encrypted `total_supply` (mirrors wrap's
   dual add; undoes burn's dual sub). Redeem does not restore encrypted supply — it exits via underlying payout.
@@ -108,17 +108,17 @@ RFC 035.) Related token/Host lifecycle guardrails are:
   requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
   gov surface in this PoC (out of scope; zama-ai/fhevm-internal#1634).
 
-**62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its State authority's
-signature and the exact current handle. Each execution names a canonical producing State; its authority must sign.
-Every produced result, including unstored intermediates, is usable by that State for the rest of the transaction.
-Another State needs an explicit exact-handle grant and its authority's signature at consumption. Merely returning
+**62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its Store authority's
+signature and the exact current handle. Each execution names a canonical producing Store; its authority must sign.
+Every produced result, including unstored intermediates, is usable by that Store for the rest of the transaction.
+Another Store needs an explicit exact-handle grant and its authority's signature at consumption. Merely returning
 bytes, sharing the payer or appearing as an additional signer grants no permission.
 
 Every FHE call requires the same host-owned transient store PDA `["transient", payer]`. A signed top-level open creates it;
 the exact final top-level close refunds its recorded payer. Open and every FHE call validate that final close;
-a second context, reopening or early/nested closure fails. The payer is a rent role, independent of State authority.
+a second context, reopening or early/nested closure fails. The payer is a rent role, independent of Store authority.
 A failed transaction rolls back all writes. Decrypt permission remains a separate exact-handle MMR leaf.
-In the batcher, each JoinRecord controls its participant's contribution State, scoped to the batch.
+In the batcher, each JoinRecord controls its participant's contribution Store, scoped to the batch.
 Pinned by `transient_mollusk.rs`, including producer reuse across calls, foreign grant/signature negatives,
 second-context rejection, capacity rollback and final-close tests.
 
@@ -127,10 +127,10 @@ computation may reveal: the consumer's output can be written to a slot, allowed 
 leaves outlive the transient store account. A producer that grants a result trusts the consumer's program with the information
 in it.
 
-**53. [ANTI]** `make_state_handle_public` is not idempotent. Sealing a handle that is already sealed appends a second
+**53. [ANTI]** `make_store_handle_public` is not idempotent. Sealing a handle that is already sealed appends a second
 leaf committing to the same `(account, handle)` fact: it authorizes nothing the first leaf did not, and its cost is
 bounded — peaks are one per set bit of `leaf_count`, capped at `MAX_MMR_PEAKS` (64) — and funded by the caller's own
-payer. Guarding it on-chain would need the account to remember which handle is sealed, which is new `EncryptedState`
+payer. Guarding it on-chain would need the account to remember which handle is sealed, which is new `EncryptedStore`
 state in four consumers; a state-free guard could only read back the last leaf when `leaf_count` is odd, so the same
 call would be accepted or rejected by parity. Pinned by
 `mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
@@ -177,8 +177,8 @@ instruction arguments without the SDK. Pinned by the `compile_fail` doctest on `
 
 **61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
 builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
-depends on the live State size, the number of MMR peaks and the permissions sealed per output, none of which the builder
-can see. The gap is measurable: `shared_audience_state_outputs_fit_the_builder_at_full_depth` admits 32 slot outputs
+depends on the live Store size, the number of MMR peaks and the permissions sealed per output, none of which the builder
+can see. The gap is measurable: `shared_audience_store_outputs_fit_the_builder_at_full_depth` admits 32 slot outputs
 with the same eight viewers and a public leaf, while the runtime sweep `fhe_execute_boundary/allow_heavy_public_creates`
 succeeds at 24 such outputs and exhausts the host heap at 25. These are shape measurements, not an output cap. No
 host-side admission model exists; an app validates its shapes against the sweeps and budgets the whole transaction. Why
@@ -199,10 +199,10 @@ inclusion proof that the exact handle was sealed public.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.
 Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id.
-Solana version 4 is exactly 65 bytes: version, context id, then the State address used to route the decrypt request.
+Solana version 4 is exactly 65 bytes: version, context id, then the Store address used to route the decrypt request.
 Version 3 is rejected. The verifier authenticates the context, handle and cleartext through the certificate and
-independently verifies the exact handle's public leaf against the supplied State's current peaks. It does not require
-that State to equal the routing address in `extra_data`. Destroying a context invalidates its certificates; rotation
+independently verifies the exact handle's public leaf against the supplied Store's current peaks. It does not require
+that Store to equal the routing address in `extra_data`. Destroying a context invalidates its certificates; rotation
 alone invalidates none.
 
 **23. [ASSUMPTION]** The coprocessor and KMS committees are honest at their
@@ -224,7 +224,7 @@ type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
 **27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
-delegation record for the encrypted State's authority and the delegator's wildcard row in the deciding snapshot. Either
+delegation record for the encrypted store's authority and the delegator's wildcard row in the deciding snapshot. Either
 row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
@@ -268,7 +268,7 @@ instruction data to find one (DD-044). The event only makes the change visible: 
 state, never from event bytes.
 
 **36. [HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path: the production-shaped host instructions
-(`fhe_execute`, `make_state_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
+(`fhe_execute`, `make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
 connector user decryption — the KMS connector's authorization reads the `HostConfig` PDA in the account read it already
 makes and refuses while paused (transiently: the same request authorizes once the pause is lifted). One switch, on the
 host, and no gateway-side pause is involved. The connector decodes the singleton through `zama-solana-acl`'s shared
@@ -307,10 +307,10 @@ it does not control. `fhe_execute` validates the trust witness and charges the a
 the cap rolls back the transaction. The meter account is only a counter.
 
 **41. [ANTI]** HCU block budgets do not impose a program-wide limit. Each `(program, scope)` has its own per-slot
-budget, and a program chooses its scopes freely. The host proves the State authority belongs to `program` (#40), but
+budget, and a program chooses its scopes freely. The host proves the Store authority belongs to `program` (#40), but
 that does not prevent the program from creating more scopes and funding their meters. This provides separate budgets
 for cooperating application instances. The shipped configuration disables the cap (#37).
-All steps are charged to the default authority's application, including work on States admitted by additional signing
+All steps are charged to the default authority's application, including work on Stores admitted by additional signing
 authorities (#62). Pinned by `mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap` and
 `mollusk_fhe_execute_same_application_accumulates_across_payers_and_authorities_and_trips_cap`.
 
@@ -351,7 +351,7 @@ with `InvalidationTimestampInTheFuture`. Pinned by the connector authorization v
 `future-start-permit-outliving-a-revocation` and the host test
 `first_revocation_creates_the_account_and_records_the_clock`.
 
-**45. [HOLDS]** The connector authorizes against the canonical EncryptedState PDA, program-owned, rederived from the seeds the account carries,
+**45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
 using the same compiled `zama_solana_acl` code the on-chain program runs
 (decode, seeds, MMR verification, both authorize functions). The leaf proof
 comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
@@ -375,7 +375,7 @@ chain type first.
 
 ## H. Reference confidential applications
 
-**55. [HOLDS]** `disclose_secp` binds a certificate to this token program, the mint as scope, the canonical State of one
+**55. [HOLDS]** `disclose_secp` binds a certificate to this token program, the mint as scope, the canonical Store of one
 token account or of the total supply, the exact handle and the certified cleartext, then emits `HandleDisclosedEvent`
 with those fields. The event carries no slot key and no token kind; which operation produced the handle is known from
 that operation's own event. A public leaf stays usable after the slot moves on, so an old handle can be disclosed at any
@@ -401,7 +401,7 @@ accidentally because those mint extensions fail closed under #56.
 total supply onto a handle with new viewers (`allow_total_supply_viewers`)
 or seal its handle public (`make_total_supply_handle_public`). The wrapper
 signs the Host CPI as the canonical total-supply authority PDA; callers
-cannot substitute another State, State authority, slot key, or scope.
+cannot substitute another Store, Store authority, slot key, or scope.
 
 **59. [HOLDS]** `ConfidentialMint.authority` is the wrapper's policy authority.
 It is distinct from the authority that can upgrade the Zama Host program.
@@ -477,10 +477,10 @@ membership cannot diverge (`solana/demo-dapp/src/vault`).
   occur. The remaining `APP_HEAP_RESERVE_BYTES` (8 KiB) covers allocator padding, Anchor deserialization and the app's
   own allocations; an app needing more must leave additional headroom.
 
-State creation is a separate instruction. Execution can grow existing States and top up rent; there is no per-result
+Store creation is a separate instruction. Execution can grow existing Stores and top up rent; there is no per-result
 account-creation cap. `FheExecution::cost` reports packet bytes, tallied heap, and instruction-trace bounds. The
-worst-case trace includes a possible rent transfer per State output and lazy meter creation. The caller must add
-State/transient store creation, final transient store close and all other app CPIs when budgeting the transaction.
+worst-case trace includes a possible rent transfer per Store output and lazy meter creation. The caller must add
+Store/transient store creation, final transient store close and all other app CPIs when budgeting the transaction.
 
 Counting-allocator tests in `solana/crates/zama-fhe/src/heap_budget/` compare requested build/packet and invoke-table
 bytes with their tallies across the current shape frontier. `the_tally_never_crosses_the_budget_even_transiently` also
@@ -488,7 +488,7 @@ checks rejection paths. `print_build_frontier_grid` prints the current measureme
 for the admission frontier.
 
 The host heap remains a separate limit (#61). Runtime sweeps cover wide audiences, reductions and mature history. In the
-committed snapshots, updates across States with 8, 32 and 64 MMR peaks reach 15, 7 and 4 steps, respectively; 60-operand
+committed snapshots, updates across Stores with 8, 32 and 64 MMR peaks reach 15, 7 and 4 steps, respectively; 60-operand
 reductions reach 4. These shape measurements do not guarantee that an arbitrary composition fits.
 
 ## J. Roadmap

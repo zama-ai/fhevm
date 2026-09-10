@@ -20,7 +20,7 @@ pub struct UserDecryptionDelegation {
     pub delegator: Pubkey,
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
-    /// The encrypted State authority the delegation is scoped over. A delegation covers
+    /// The encrypted store authority the delegation is scoped over. A delegation covers
     /// every value of that authority in every scope: the scope is not one of the PDA's seeds.
     pub authority: Pubkey,
     /// Slot after which the delegation is invalid.

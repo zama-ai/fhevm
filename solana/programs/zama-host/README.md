@@ -4,7 +4,7 @@
 checks FHE operation authorization, emits generic host events, and provides the CPI surface used by
 application programs such as `confidential-token`.
 
-## State
+## Accounts
 
 ```text
 HostConfig
@@ -14,16 +14,18 @@ HostConfig
   pause state, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
   persistent-grant deny-list policy
 
-EncryptedValue
-  PDA("encrypted-value", program, encrypted_value_account_authority, scope, label)
-  one stable PDA per logical encrypted value, reused across every handle update; stores its
-  four identity seeds, current_handle, and an on-account keccak Merkle Mountain Range
-  (peaks + leaf_count) sealing one HistoricalAccessLeaf per key allowed on every handle a
-  write installs, and a PublicDecryptLeaf when a handle is made public. It stores nothing about
-  who may decrypt: every allow is a leaf. `program` is verified on every write (the authority
-  must be a PDA of it); `scope` is what that program declares. 181 + 32·peaks bytes, at most
-  2229. See `solana/crates/zama-solana-acl/src/lib.rs` for the shared MMR/leaf-commitment math
-  and `docs/DESIGN_DECISIONS.md` DD-032/DD-047/DD-048 for the rationale.
+EncryptedStore
+  PDA("encrypted-state", program, authority, scope)
+  up to 32 keyed current handles and one shared decryption-history MMR (peaks + leaf_count).
+  Creation proves that authority is a PDA of program. Subsequent access validates the canonical
+  address and required signer. Slot keys select handles within the store; they are not PDA seeds.
+  Each private allow seals a HistoricalAccessLeaf; public decryption seals a PublicDecryptLeaf.
+  The seed literal remains "encrypted-state" so the naming change preserves existing addresses.
+
+TransientStore
+  PDA("transient", payer)
+  produced handles, their producing stores and dependency depths, explicit consumer grants,
+  and cumulative transaction HCU. Opened and closed within one transaction; rent is refunded.
 
 DenyScopeRecord
   PDA("deny-scope", program, scope)
@@ -39,46 +41,47 @@ RandNonce
   the host's global rand counter; every execution with a rand step passes and advances it
 
 UserDecryptionDelegation
-  PDA("user-decryption-delegation", delegator, delegate, encrypted_value_account_authority)
+  PDA("user-decryption-delegation", delegator, delegate, authority)
   read by the KMS connector on a delegated decrypt (INVARIANTS #27); counter-changing updates are
   slot-guarded to reject same-slot regrant/revoke races
 ```
 
-Handles are stored inside `EncryptedValue` accounts; they are not PDA seeds.
+Persistent handles occupy slots in `EncryptedStore`; ciphertext material lives off chain.
 
 ## Materiality
 
 Whether ciphertext material is available and bound to the right key is no longer host-chain state on
 Solana. The earlier `HandleMaterialCommitment` subsystem (`commit_handle_material`) was deleted;
 materiality is now the gateway's `CiphertextCommits`, where the coprocessor already registers Solana
-handles (`docs/DESIGN_DECISIONS.md` DD-031). `EncryptedValue` only answers "who may use or decrypt
+handles (`docs/DESIGN_DECISIONS.md` DD-031). `EncryptedStore` answers "who may use or decrypt
 this handle" — an MMR-proven allow or public-decrypt leaf.
 
 ## Composed FHE execution
 
 A client calls `open_transient_store`, submits application instructions, then calls `close_transient_store` as the
 final top-level instruction. The SDK transaction wrapper inserts both lifecycle instructions. Applications forward the same transient store and Instructions sysvar through every host CPI.
-`TransientStore` records all produced handles, their producing State, cumulative HCU depth, and explicit cross-State grants.
+`TransientStore` records all produced handles, their producing Store, cumulative HCU depth, and explicit cross-Store grants.
 Its payer funds rent and receives the refund; the payer acquires no handle permission.
 
-`fhe_execute` takes an explicit canonical producing `EncryptedState` and that State authority's signature. It runs
+`fhe_execute` takes an explicit canonical producing `EncryptedStore` and that Store authority's signature. It runs
 1–32 ordered operations: Binary, Ternary, Unary, TrivialEncrypt, Rand, RandBounded, Sum, IsIn and MulDiv. The Rust SDK
 builds typed expressions and attaches separate output effects:
 
 ```rust
-let execution = FheExecution::build(state.id(), |fhe| {
+let store = zama_fhe::Store::new(&encrypted_store);
+let execution = FheExecution::build(store.id(), |fhe| {
     let next = fhe.add(balance, amount)?;
-    fhe.output(next, state.set(balance_key).allow(owner))?;
+    fhe.output(next, store.set(balance_key).allow(owner))?;
     Ok(())
 })?;
 ```
 
-A current-call `EarlierStep` names one produced occurrence. A later call by the same State can use the handle from
-transient store without another grant. A different State must receive an explicit `StateOutput::allow_transient` grant and
+A current-call `EarlierStep` names one produced occurrence. A later call by the same Store can use the handle from
+transient store without another grant. A different Store must receive an explicit `StoreOutput::allow_transient` grant and
 its authority must sign consumption. A slot operand requires its authority's signature and the expected current
 handle. Other participating signatures do not implicitly share every intermediate result.
 
-All arithmetic reads the execution's initial State snapshots. Up to 32 ordered effects then optionally write slots,
+All arithmetic reads the execution's initial Store snapshots. Up to 32 ordered effects then optionally write slots,
 append private/public MMR leaves and grant consumers. A slot may be written once per execution; its previous handle
 and the ordered shared leaf count are checked. Effects can authorize a fresh result without storing it in a slot.
 Historical re-sharing remains outside this interface.
@@ -93,7 +96,7 @@ order from instruction data; random operations also use their execution's `FheEx
 
 The host checks pause, canonical accounts, signers, all touched application deny records, operand types and current
 slot handles. Transaction HCU total and depth span calls and applications; block meters charge each execution to
-its producing State's `(program, scope)`. Random steps require the host nonce. All failures roll back atomically.
+its producing Store's `(program, scope)`. Random steps require the host nonce. All failures roll back atomically.
 Resource bounds and their SBF measurements are documented in `docs/INVARIANTS.md` and runtime cost snapshots.
 
 ## External Inputs
@@ -127,10 +130,11 @@ is retained only as the replaced-design stub in DD-007.
 
 The account keeps no list of who may decrypt. **Use** is the authority's: a stored value is read
 into a computation, written, or made public only under the signature of its
-`encrypted_value_account_authority`, a PDA of the value's `program`. **Decrypt** is a leaf: a write
-declares the keys allowed on the handle it installs and the host seals one `HistoricalAccessLeaf`
-per key, in list order, then a `PublicDecryptLeaf` when the output is `make_public`;
-`make_handle_public` seals the same leaf for the current handle later. A key so allowed is a
+store's `authority`, a PDA of its `program`. **Decrypt** is a leaf: an output effect
+declares keys allowed on a produced handle and the host seals one `HistoricalAccessLeaf`
+per key, in list order, then a `PublicDecryptLeaf` when the output is `make_public`.
+These effects can seal permissions without writing a slot. `make_store_handle_public` seals
+the public leaf for a current slot handle later. A key so allowed is a
 viewer — it decrypts that handle, current or replaced, by proving its leaf — and nothing more: it
 cannot grant peers, seal the handle public, or write. There is no instruction to add or remove an
 allow after the write; changing viewers is the authority's next write (confidential-token's
@@ -147,4 +151,5 @@ deployed program (DD-014). Registered-signer threshold policy and real proof/tra
 validation are still external/open design items.
 Trivial and random handle creation paths (now `fhe_execute` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
-output entropy in handle derivation before binding the result into an `EncryptedValue`.
+output entropy in handle derivation before recording the result in `TransientStore`. An output
+effect can then write it into an `EncryptedStore` slot.

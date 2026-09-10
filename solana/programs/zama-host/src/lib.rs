@@ -1,12 +1,12 @@
 //! Anchor program for the Solana FHEVM host PoC.
 //!
 //! `zama-host` owns the protocol-facing parts of the PoC: the append-only
-//! `EncryptedState` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
+//! `EncryptedStore` ACL/MMR model, handle derivation, fhe_execute, public-decrypt
 //! state and the small set of account witnesses that a future
 //! Gateway/KMS request must verify.
 //!
 //! The program intentionally keeps app semantics outside this crate. App
-//! programs, such as `confidential-token`, decide which encrypted State authorities,
+//! programs, such as `confidential-token`, decide which encrypted store authorities,
 //! scopes and labels they authorize and which keys each write allows, then call this program by
 //! CPI to create or verify host-owned ACL state.
 
@@ -68,11 +68,11 @@ pub mod zama_host {
         instructions::close_transient_store(ctx)
     }
 
-    pub fn create_encrypted_state(
-        ctx: Context<CreateEncryptedState>,
-        args: CreateEncryptedStateArgs,
+    pub fn create_encrypted_store(
+        ctx: Context<CreateEncryptedStore>,
+        args: CreateEncryptedStoreArgs,
     ) -> Result<()> {
-        instructions::create_encrypted_state(ctx, args)
+        instructions::create_encrypted_store(ctx, args)
     }
 
     pub fn initialize_host_config(
@@ -201,17 +201,17 @@ pub mod zama_host {
         instructions::fhe_execute(ctx, args)
     }
 
-    // ---- EncryptedState ACL model ----
+    // ---- EncryptedStore ACL model ----
 
     /// Seals the value's current handle as publicly decryptable. Every other allow happens
     /// inline on the `fhe_execute` write that produces the handle.
-    pub fn make_state_handle_public(
-        ctx: Context<MakeStateHandlePublic>,
+    pub fn make_store_handle_public(
+        ctx: Context<MakeStoreHandlePublic>,
         key: [u8; 32],
         handle: [u8; 32],
         previous_leaf_count: u64,
     ) -> Result<()> {
-        instructions::make_state_handle_public(ctx, key, handle, previous_leaf_count)
+        instructions::make_store_handle_public(ctx, key, handle, previous_leaf_count)
     }
 
     /// Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt

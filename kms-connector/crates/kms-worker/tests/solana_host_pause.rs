@@ -27,23 +27,23 @@ fn context<'a>(
 
 /// A running world whose single direct entry every other rule authorizes, so a refusal in these
 /// tests can only be the pause rule.
-fn direct_scenario() -> (Wallet, EncryptedStateFixture, [u8; 32], World) {
+fn direct_scenario() -> (Wallet, EncryptedStoreFixture, [u8; 32], World) {
     let wallet = Wallet::new(1);
     let handle = handle(0x31, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(handle, wallet.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(handle, wallet.pubkey());
     let world = World::running_at_slot(100)
-        .with_encrypted_state(&encrypted_state)
+        .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
-    (wallet, encrypted_state, handle, world)
+    (wallet, encrypted_store, handle, world)
 }
 
 /// A paused host refuses a request every other rule authorizes, and the refusal is transient:
 /// nothing about the request died, so the identical bytes authorize once the operator lifts it.
 #[tokio::test]
 async fn a_paused_host_refuses_until_the_switch_is_lifted() {
-    let (wallet, encrypted_state, handle, running) = direct_scenario();
+    let (wallet, encrypted_store, handle, running) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_state, handle)
+        .direct(&encrypted_store, handle)
         .typed();
     let deployment = deployment();
 
@@ -84,13 +84,13 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let handle = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(handle, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, handle, delegator.pubkey())
+        .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
     let running = World::running_at_slot(100)
-        .with_encrypted_state(&encrypted_state)
+        .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
     let deployment = deployment();
@@ -134,9 +134,9 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
 /// funded it" must refuse rather than read as "not paused".
 #[tokio::test]
 async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_running() {
-    let (wallet, encrypted_state, handle, running) = direct_scenario();
+    let (wallet, encrypted_store, handle, running) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_state, handle)
+        .direct(&encrypted_store, handle)
         .typed();
     let (key, _) = host_config_address();
     let deployment = deployment();

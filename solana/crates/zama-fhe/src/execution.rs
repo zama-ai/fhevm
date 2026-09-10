@@ -2,7 +2,7 @@
 //!
 //! Public API surface: app programs. The requirement accessors
 //! ([`FheExecution::dynamic_account_requirements`],
-//! [`FheExecution::state_authority_requirements`]) are how a caller that assembles the
+//! [`FheExecution::store_authority_requirements`]) are how a caller that assembles the
 //! transaction's account list — an off-chain client or a wrapping instruction — learns which
 //! dynamic accounts the execution needs and in which roles; resolution itself re-reads the
 //! account metas directly.
@@ -32,7 +32,7 @@ use anchor_lang::prelude::AccountInfo;
 /// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
-    pub(crate) state: crate::StateId,
+    pub(crate) store: crate::StoreId,
     /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
     pub(crate) has_rand_step: bool,
     pub(crate) args: FheExecuteArgs,
@@ -56,10 +56,10 @@ impl FheExecution {
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, Scalar, StateId, Uint};
+    /// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
     ///
-    /// let state = StateId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
-    /// let execution = FheExecution::build(state, |builder| {
+    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// let execution = FheExecution::build(store, |builder| {
     ///     let value = builder.trivial_encrypt_u64(7)?;
     ///     builder.add(value, Scalar::<Uint<64>>::u64(1))?;
     ///     Ok(())
@@ -71,12 +71,12 @@ impl FheExecution {
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, Scalar, StateId, Uint};
+    /// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
     ///
-    /// let state = StateId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
-    /// FheExecution::build(state, |outer| {
+    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// FheExecution::build(store, |outer| {
     ///     let borrowed = outer.trivial_encrypt_u64(7)?;
-    ///     FheExecution::build(state, |inner| {
+    ///     FheExecution::build(store, |inner| {
     ///         inner.add(borrowed, Scalar::<Uint<64>>::u64(1))?;
     ///         Ok(())
     ///     })
@@ -85,11 +85,11 @@ impl FheExecution {
     /// })
     /// .unwrap();
     /// ```
-    pub fn build<F>(state: crate::StateId, build: F) -> Result<Self>
+    pub fn build<F>(store: crate::StoreId, build: F) -> Result<Self>
     where
         F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<()>,
     {
-        let mut builder = FheExecutionBuilder::new(state);
+        let mut builder = FheExecutionBuilder::new(store);
         build(&mut builder)?;
         builder.finish()
     }
@@ -97,13 +97,13 @@ impl FheExecution {
     /// Returns only the produced value selected by the closure, preserving its FHE type.
     /// Return bytes convey a handle, not permission: cross-program use still requires a grant.
     pub fn build_returning<T: crate::FheTyped, F>(
-        state: crate::StateId,
+        store: crate::StoreId,
         build: F,
     ) -> Result<ReturningFheExecution<T>>
     where
         F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<crate::Encrypted<'id, T>>,
     {
-        let mut builder = FheExecutionBuilder::new(state);
+        let mut builder = FheExecutionBuilder::new(store);
         let selected = build(&mut builder)?;
         let crate::operand::OperandKind::Transient { producer_index } = selected.operand().0 else {
             return Err(crate::FheExecutionBuildError::ResultNotProduced);
@@ -119,19 +119,19 @@ impl FheExecution {
         })
     }
 
-    pub fn state(&self) -> crate::StateId {
-        self.state
+    pub fn store(&self) -> crate::StoreId {
+        self.store
     }
 
     pub fn authority(&self) -> Pubkey {
-        self.state.authority()
+        self.store.authority()
     }
 
-    /// The producing State's application. The host keys its HCU meter and trust record on it.
+    /// The producing Store's application. The host keys its HCU meter and trust record on it.
     /// States under additional signing authorities may belong to other applications; each
     /// application's deny record is checked independently.
     pub fn app(&self) -> AppScope {
-        self.state.app()
+        self.store.app()
     }
 
     /// Whether the invoke must carry the host's rand nonce account (any rand step).
@@ -140,7 +140,7 @@ impl FheExecution {
     }
 
     /// What this execution costs against the transaction ceilings: exact packet bytes, the
-    /// guaranteed instruction-trace floor, and the state-dependent worst case. An app composing
+    /// guaranteed instruction-trace floor, and the store-dependent worst case. An app composing
     /// a transaction with more than the minimal wrapper budgets its own instructions and CPIs
     /// out of what [`crate::TRANSACTION_INSTRUCTION_TRACE_LIMIT`] leaves over the floor.
     pub fn cost(&self) -> crate::cost::FheExecutionCost {
@@ -160,8 +160,8 @@ impl FheExecution {
     /// `remaining_accounts` order for this execution.
     ///
     /// `dynamic_accounts` must contain only non-authority execution accounts: persistent input
-    /// and writable persistent output `EncryptedState` accounts. `value_authorities` must contain
-    /// signer witnesses for every State whose authority is not the fixed CPI
+    /// and writable persistent output `EncryptedStore` accounts. `value_authorities` must contain
+    /// signer witnesses for every Store whose authority is not the fixed CPI
     /// `authority`.
     pub fn resolve_accounts<'info>(
         &self,
@@ -172,13 +172,13 @@ impl FheExecution {
         resolve_execution_accounts(self, dynamic_accounts, value_authorities)
     }
 
-    /// Every authority that must sign: the fixed CPI signer first, then each State’s
+    /// Every authority that must sign: the fixed CPI signer first, then each Store’s
     /// own authority that differs from it.
-    pub fn state_authority_requirements(
+    pub fn store_authority_requirements(
         &self,
     ) -> impl Iterator<Item = ExecutionAuthorityRequirement> + '_ {
         std::iter::once(ExecutionAuthorityRequirement {
-            pubkey: self.state.authority(),
+            pubkey: self.store.authority(),
         })
         .chain(
             self.additional_value_authorities()
@@ -187,14 +187,14 @@ impl FheExecution {
     }
 
     pub fn value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
-        self.state_authority_requirements()
+        self.store_authority_requirements()
             .map(|requirement| requirement.pubkey())
     }
 
     pub fn additional_value_authorities(&self) -> impl Iterator<Item = Pubkey> + '_ {
         self.remaining_accounts
             .iter()
-            .filter(|account| account.requires_state_authority())
+            .filter(|account| account.requires_store_authority())
             .map(|account| account.pubkey)
     }
 
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn hand_assembled_packet_matches_the_generated_wrapper() {
         let args = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
             returned_results: vec![zama_host::ExecutionResultRef {
                 step_index: 1,
@@ -352,7 +352,7 @@ mod returning_tests {
     #[test]
     fn selected_result_stays_paired_with_its_execution_and_checks_return_data() {
         let execution = FheExecution::build_returning(
-            crate::StateId::new(
+            crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
                 [0xA5; 32],

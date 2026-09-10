@@ -51,7 +51,7 @@ export type InitializeInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountCounter extends string | AccountMeta<string> = string,
   TAccountCounterAuthority extends string | AccountMeta<string> = string,
-  TAccountEncryptedState extends string | AccountMeta<string> = string,
+  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
@@ -68,7 +68,7 @@ export type InitializeInstruction<
         : TAccountOwner,
       TAccountCounter extends string ? WritableAccount<TAccountCounter> : TAccountCounter,
       TAccountCounterAuthority extends string ? ReadonlyAccount<TAccountCounterAuthority> : TAccountCounterAuthority,
-      TAccountEncryptedState extends string ? WritableAccount<TAccountEncryptedState> : TAccountEncryptedState,
+      TAccountEncryptedStore extends string ? WritableAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -107,7 +107,7 @@ export type InitializeAsyncInput<
   TAccountOwner extends string = string,
   TAccountCounter extends string = string,
   TAccountCounterAuthority extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -118,7 +118,7 @@ export type InitializeAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   counter?: Address<TAccountCounter>;
   counterAuthority?: Address<TAccountCounterAuthority>;
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -131,7 +131,7 @@ export async function getInitializeInstructionAsync<
   TAccountOwner extends string,
   TAccountCounter extends string,
   TAccountCounterAuthority extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -144,7 +144,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -159,7 +159,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -179,7 +179,7 @@ export async function getInitializeInstructionAsync<
       value: input.counterAuthority ?? null,
       isWritable: false,
     },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -217,7 +217,7 @@ export async function getInitializeInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('counter', accounts.counter),
       getAccountMeta('counterAuthority', accounts.counterAuthority),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -232,7 +232,7 @@ export async function getInitializeInstructionAsync<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -246,7 +246,7 @@ export type InitializeInput<
   TAccountOwner extends string = string,
   TAccountCounter extends string = string,
   TAccountCounterAuthority extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -257,7 +257,7 @@ export type InitializeInput<
   owner: TransactionSigner<TAccountOwner>;
   counter: Address<TAccountCounter>;
   counterAuthority: Address<TAccountCounterAuthority>;
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -270,7 +270,7 @@ export function getInitializeInstruction<
   TAccountOwner extends string,
   TAccountCounter extends string,
   TAccountCounterAuthority extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -283,7 +283,7 @@ export function getInitializeInstruction<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -297,7 +297,7 @@ export function getInitializeInstruction<
   TAccountOwner,
   TAccountCounter,
   TAccountCounterAuthority,
-  TAccountEncryptedState,
+  TAccountEncryptedStore,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
   TAccountTransientStore,
@@ -316,7 +316,7 @@ export function getInitializeInstruction<
       value: input.counterAuthority ?? null,
       isWritable: false,
     },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -344,7 +344,7 @@ export function getInitializeInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('counter', accounts.counter),
       getAccountMeta('counterAuthority', accounts.counterAuthority),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -359,7 +359,7 @@ export function getInitializeInstruction<
     TAccountOwner,
     TAccountCounter,
     TAccountCounterAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -378,7 +378,7 @@ export type ParsedInitializeInstruction<
     owner: TAccountMetas[0];
     counter: TAccountMetas[1];
     counterAuthority: TAccountMetas[2];
-    encryptedState: TAccountMetas[3];
+    encryptedStore: TAccountMetas[3];
     hostConfig: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
     transientStore: TAccountMetas[6];
@@ -410,7 +410,7 @@ export function parseInitializeInstruction<TProgram extends string, TAccountMeta
       owner: getNextAccount(),
       counter: getNextAccount(),
       counterAuthority: getNextAccount(),
-      encryptedState: getNextAccount(),
+      encryptedStore: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),

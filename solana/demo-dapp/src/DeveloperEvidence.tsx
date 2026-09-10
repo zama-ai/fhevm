@@ -189,7 +189,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
       <summary>
         <span>
           <strong>Developer evidence</strong>
-          <small>Localnet transactions & encrypted state</small>
+          <small>Localnet transactions & encrypted store</small>
         </span>
       </summary>
       <div className="evidence-content">
@@ -244,9 +244,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 </a>
               </div>
               <div>
-                <dt>Encrypted state</dt>
+                <dt>Encrypted store</dt>
                 <dd>
-                  <CopyValue label="encrypted state" value={shares.encryptedState} />
+                  <CopyValue label="encrypted store" value={shares.encryptedStore} />
                 </dd>
               </div>
             </>

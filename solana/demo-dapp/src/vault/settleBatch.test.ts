@@ -13,8 +13,8 @@ const certificate = vi.hoisted(() => vi.fn());
 vi.mock('@sdk-src/solana/actions/publicDecryptCertificate.js', () => ({ publicDecryptCertificate: certificate }));
 
 const getCurrentBatch = vi.hoisted(() => vi.fn());
-const getEncryptedState = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedState }));
+const getEncryptedStore = vi.hoisted(() => vi.fn());
+vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedStore }));
 
 import {
   address,
@@ -118,7 +118,7 @@ describe('settleBatch', () => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
     getCurrentBatch.mockReset();
-    getEncryptedState.mockReset();
+    getEncryptedStore.mockReset();
     publicProof.mockReset();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -136,7 +136,7 @@ describe('settleBatch', () => {
     expect(certificate.mock.calls[0]![1]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
       contextId: opts.contextId,
-      encryptedState: base58.decode(batchAddresses.batchBurnedAmountState),
+      encryptedStore: base58.decode(batchAddresses.batchBurnedAmountStore),
       options: undefined,
     });
 

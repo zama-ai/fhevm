@@ -28,9 +28,9 @@
 pub mod delegation;
 /// Deployment identity: which program, which cluster.
 pub mod deployment;
-/// Encrypted state resolution: presence, ownership, type, address binding, and the
+/// Encrypted store resolution: presence, ownership, type, address binding, and the
 /// authority and application the account carries.
-pub mod encrypted_state;
+pub mod encrypted_store;
 /// Parity between the gateway event's typed fields and the signed request they carry.
 pub mod event_parity;
 /// Failure taxonomy and the terminal / transient / retryable classification.

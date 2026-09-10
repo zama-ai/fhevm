@@ -4,8 +4,8 @@ use anchor_lang::prelude::*;
 
 /// Confidential token account state.
 ///
-/// The balance's current handle and access encrypted State live in the
-/// `EncryptedState` account at `balance_encrypted_state`, not here — addressing
+/// The balance's current handle and access encrypted store live in the
+/// `EncryptedStore` account at `balance_encrypted_store`, not here — addressing
 /// is stable per token account, so no nonce/sequence bookkeeping is needed.
 #[account]
 #[derive(InitSpace)]

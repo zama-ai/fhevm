@@ -86,7 +86,7 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
 
 // Solana computations and ciphertext-material preparation are scheduled as
 // soon as their instruction confirms. The KMS independently validates the live
-// EncryptedState PDA and any MMR proof before releasing plaintext, so this eager
+// EncryptedStore PDA and any MMR proof before releasing plaintext, so this eager
 // work can waste cycles after a rare rollback but cannot authorize decryption.
 pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,

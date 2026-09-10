@@ -1,5 +1,5 @@
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStateHandle } from '@sdk-src/solana/encryptedState.js';
+import { encryptedStoreHandle } from '@sdk-src/solana/encryptedStore.js';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
 // This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
@@ -329,13 +329,13 @@ export const readHostChainId = async (context: SolanaProvisioningContext): Promi
   return config.chainId;
 };
 
-/** A holder's live confidential balance identity, as proven by `readTokenBalanceState`. */
-export type BalanceState = {
+/** A holder's live confidential balance identity, as proven by `readTokenBalanceStore`. */
+export type BalanceStore = {
   version: 1;
   mint: string;
   owner: string;
   tokenAccount: string;
-  encryptedState: string;
+  encryptedStore: string;
   currentHandle: string;
   chainId: string;
 };
@@ -346,8 +346,8 @@ export type BalanceState = {
  * consumes it. Ported assertions, in order:
  * - the confidential token account PDA exists and is owned by the confidential-token program (its
  *   `(mint, owner)` identity is pinned by the PDA derivation itself, so the body is not re-decoded);
- * - the balance `EncryptedState` account decodes cleanly (MMR invariant — enforced inside
- *   `getEncryptedState`) and its body is the canonical balance identity: the token program,
+ * - the balance `EncryptedStore` account decodes cleanly (MMR invariant — enforced inside
+ *   `getEncryptedStore`) and its body is the canonical balance identity: the token program,
  *   the token account as authority, the mint as scope, and the balance label;
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
  * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
@@ -358,22 +358,22 @@ export type BalanceState = {
  * derived client-side rather than followed from a pointer, so there is no indirection to race —
  * the reads are simply all taken at `confirmed`.
  */
-export const readTokenBalanceState = async (
+export const readTokenBalanceStore = async (
   context: SolanaProvisioningContext,
   params: { readonly mint: Address; readonly owner: Address },
-): Promise<BalanceState> => {
+): Promise<BalanceStore> => {
   const vault = await vaultModule();
   const { bytes32HexToHandle } = await sdkHandleModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
-  const encryptedStateAddress = await vault.tokenStateAddress(mint, tokenAccount);
+  const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
 
   const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: 'confirmed' });
   if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await vault.getEncryptedState(context.rpc, encryptedStateAddress, { commitment: 'confirmed' });
+  const state = await vault.getEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' });
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||
@@ -382,7 +382,7 @@ export const readTokenBalanceState = async (
     throw new Error('balance encrypted value body does not match its canonical derivation');
   }
 
-  const currentHandle = `0x${Buffer.from(encryptedStateHandle(state, BALANCE_LABEL)).toString('hex')}` as Bytes32Hex;
+  const currentHandle = `0x${Buffer.from(encryptedStoreHandle(state, BALANCE_LABEL)).toString('hex')}` as Bytes32Hex;
   const handle = bytes32HexToHandle(currentHandle); // throws on a bad handle version or FHE type id
   if (handle.fheTypeId !== EUINT64_FHE_TYPE_ID) {
     throw new Error(`balance handle is not a euint64 handle (FHE type id ${handle.fheTypeId})`);
@@ -398,7 +398,7 @@ export const readTokenBalanceState = async (
     mint,
     owner,
     tokenAccount,
-    encryptedState: encryptedStateAddress,
+    encryptedStore: encryptedStoreAddress,
     currentHandle,
     chainId: chainId.toString(),
   };

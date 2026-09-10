@@ -43,7 +43,7 @@ describe("solana specimen decrypt vertical", () => {
       await stack.waitForSnsCommit(hex(handle));
 
       const decrypted = await userDecryptExpect(config, {
-        encryptedState: value.encryptedState,
+        encryptedStore: value.encryptedStore,
         handle,
         secretKey,
         expected: 42n,
@@ -65,12 +65,12 @@ describe("solana specimen decrypt vertical", () => {
 
       const updated = await incrementCounter(context, wallet.signer, 7n);
       expect(hex(updated.handle)).not.toBe(hex(original.handle));
-      expect(updated.value.encryptedState).toBe(original.value.encryptedState);
+      expect(updated.value.encryptedStore).toBe(original.value.encryptedStore);
       await stack.waitForSnsCommit(hex(updated.handle));
 
-      const encryptedState = original.value.encryptedState;
-      expect(await userDecryptExpect(config, { encryptedState, handle: original.handle, secretKey, expected: 42n })).toBe(42n);
-      expect(await userDecryptExpect(config, { encryptedState, handle: updated.handle, secretKey, expected: 49n })).toBe(49n);
+      const encryptedStore = original.value.encryptedStore;
+      expect(await userDecryptExpect(config, { encryptedStore, handle: original.handle, secretKey, expected: 42n })).toBe(42n);
+      expect(await userDecryptExpect(config, { encryptedStore, handle: updated.handle, secretKey, expected: 49n })).toBe(49n);
     },
     SCENARIO_TIMEOUT_MS,
   );

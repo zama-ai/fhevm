@@ -4,8 +4,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{sha256, AclError, MAX_MMR_PEAKS};
 
-pub const ENCRYPTED_STATE_SEED: &[u8] = b"encrypted-state";
-pub const MAX_STATE_SLOTS: usize = 32;
+pub const ENCRYPTED_STORE_SEED: &[u8] = b"encrypted-state";
+pub const MAX_STORE_SLOTS: usize = 32;
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct EncryptedSlot {
@@ -14,7 +14,7 @@ pub struct EncryptedSlot {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct EncryptedState {
+pub struct EncryptedStore {
     pub program: [u8; 32],
     pub authority: [u8; 32],
     pub scope: [u8; 32],
@@ -24,10 +24,10 @@ pub struct EncryptedState {
     pub bump: u8,
 }
 
-impl EncryptedState {
+impl EncryptedStore {
     pub fn seeds(&self) -> [&[u8]; 4] {
         [
-            ENCRYPTED_STATE_SEED,
+            ENCRYPTED_STORE_SEED,
             &self.program,
             &self.authority,
             &self.scope,
@@ -46,7 +46,7 @@ impl EncryptedState {
     }
 
     pub fn validate(&self) -> Result<(), AclError> {
-        validate_state_shape(
+        validate_store_shape(
             self.slots.iter().map(|slot| slot.key),
             self.leaf_count,
             self.peaks.len(),
@@ -54,12 +54,12 @@ impl EncryptedState {
     }
 }
 
-pub fn validate_state_shape(
+pub fn validate_store_shape(
     keys: impl ExactSizeIterator<Item = [u8; 32]> + Clone,
     leaf_count: u64,
     peak_count: usize,
 ) -> Result<(), AclError> {
-    if keys.len() > MAX_STATE_SLOTS
+    if keys.len() > MAX_STORE_SLOTS
         || keys
             .clone()
             .enumerate()
@@ -73,19 +73,19 @@ pub fn validate_state_shape(
     Ok(())
 }
 
-pub fn encrypted_state_discriminator() -> [u8; 8] {
-    let digest = sha256(&[b"account:EncryptedState"]);
+pub fn encrypted_store_discriminator() -> [u8; 8] {
+    let digest = sha256(&[b"account:EncryptedStore"]);
     let mut discriminator = [0; 8];
     discriminator.copy_from_slice(&digest[..8]);
     discriminator
 }
 
-pub fn decode_encrypted_state(data: &[u8]) -> Result<EncryptedState, AclError> {
-    if data.len() < 8 || data[..8] != encrypted_state_discriminator() {
+pub fn decode_encrypted_store(data: &[u8]) -> Result<EncryptedStore, AclError> {
+    if data.len() < 8 || data[..8] != encrypted_store_discriminator() {
         return Err(AclError::BadDiscriminator);
     }
     let state =
-        EncryptedState::deserialize(&mut &data[8..]).map_err(|_| AclError::BadAccountData)?;
+        EncryptedStore::deserialize(&mut &data[8..]).map_err(|_| AclError::BadAccountData)?;
     state.validate()?;
     Ok(state)
 }
@@ -96,26 +96,26 @@ mod tests {
 
     #[test]
     fn decoder_rejects_duplicate_keys_and_inconsistent_history() {
-        let mut state = EncryptedState::default();
+        let mut state = EncryptedStore::default();
         state.slots.push(EncryptedSlot {
             key: [1; 32],
             handle: [2; 32],
         });
-        let encode = |state: &EncryptedState| {
-            let mut bytes = encrypted_state_discriminator().to_vec();
+        let encode = |state: &EncryptedStore| {
+            let mut bytes = encrypted_store_discriminator().to_vec();
             state.serialize(&mut bytes).unwrap();
             bytes
         };
-        assert_eq!(decode_encrypted_state(&encode(&state)), Ok(state.clone()));
+        assert_eq!(decode_encrypted_store(&encode(&state)), Ok(state.clone()));
         state.slots.push(state.slots[0].clone());
         assert_eq!(
-            decode_encrypted_state(&encode(&state)),
+            decode_encrypted_store(&encode(&state)),
             Err(AclError::BadAccountData)
         );
         state.slots.pop();
         state.leaf_count = 1;
         assert_eq!(
-            decode_encrypted_state(&encode(&state)),
+            decode_encrypted_store(&encode(&state)),
             Err(AclError::MmrInconsistent)
         );
     }

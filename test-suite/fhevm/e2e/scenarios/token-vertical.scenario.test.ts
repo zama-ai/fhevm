@@ -106,7 +106,7 @@ describe("solana confidential-token consume vertical", () => {
       });
 
       const target = await confidentialBurnTarget(mint, wallet.signer.address);
-      const burnedHandle = await currentHandle(context, target.burnedAmountState, new TextEncoder().encode("burned_amount___________________"));
+      const burnedHandle = await currentHandle(context, target.burnedAmountStore, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
       // Seal through the token wrapper (it signs the Host CPI as the State authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
@@ -116,12 +116,12 @@ describe("solana confidential-token consume vertical", () => {
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
       const inclusionProof = await livePublicLeafProof(
         context,
-        target.burnedAmountState,
+        target.burnedAmountStore,
         burnedHandle,
       );
 
       const { cleartext, certificate } = await certifiedPublicDecrypt(config, {
-        encryptedState: target.burnedAmountState,
+        encryptedStore: target.burnedAmountStore,
         handle: burnedHandle,
       });
       expect(cleartext).toBe(BURN_AMOUNT);

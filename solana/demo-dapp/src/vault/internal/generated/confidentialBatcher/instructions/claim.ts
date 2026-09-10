@@ -54,7 +54,7 @@ export type ClaimInstruction<
   TAccountBatch extends string | AccountMeta<string> = string,
   TAccountBatchAuthority extends string | AccountMeta<string> = string,
   TAccountJoinRecord extends string | AccountMeta<string> = string,
-  TAccountJoinState extends string | AccountMeta<string> = string,
+  TAccountJoinStore extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountPayoutConfidentialMint extends string | AccountMeta<string> = string,
@@ -63,8 +63,8 @@ export type ClaimInstruction<
   TAccountUserPayoutAta extends string | AccountMeta<string> = string,
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
   TAccountUserPayoutTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
-  TAccountUserPayoutBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
+  TAccountUserPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
@@ -84,7 +84,7 @@ export type ClaimInstruction<
       TAccountBatch extends string ? ReadonlyAccount<TAccountBatch> : TAccountBatch,
       TAccountBatchAuthority extends string ? ReadonlyAccount<TAccountBatchAuthority> : TAccountBatchAuthority,
       TAccountJoinRecord extends string ? WritableAccount<TAccountJoinRecord> : TAccountJoinRecord,
-      TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
+      TAccountJoinStore extends string ? WritableAccount<TAccountJoinStore> : TAccountJoinStore,
       TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountPayoutConfidentialMint extends string
@@ -103,12 +103,12 @@ export type ClaimInstruction<
       TAccountUserPayoutTokenAccount extends string
         ? WritableAccount<TAccountUserPayoutTokenAccount>
         : TAccountUserPayoutTokenAccount,
-      TAccountBatchPayoutBalanceState extends string
-        ? WritableAccount<TAccountBatchPayoutBalanceState>
-        : TAccountBatchPayoutBalanceState,
-      TAccountUserPayoutBalanceState extends string
-        ? WritableAccount<TAccountUserPayoutBalanceState>
-        : TAccountUserPayoutBalanceState,
+      TAccountBatchPayoutBalanceStore extends string
+        ? WritableAccount<TAccountBatchPayoutBalanceStore>
+        : TAccountBatchPayoutBalanceStore,
+      TAccountUserPayoutBalanceStore extends string
+        ? WritableAccount<TAccountUserPayoutBalanceStore>
+        : TAccountUserPayoutBalanceStore,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -151,7 +151,7 @@ export type ClaimAsyncInput<
   TAccountBatch extends string = string,
   TAccountBatchAuthority extends string = string,
   TAccountJoinRecord extends string = string,
-  TAccountJoinState extends string = string,
+  TAccountJoinStore extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
@@ -160,8 +160,8 @@ export type ClaimAsyncInput<
   TAccountUserPayoutAta extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
-  TAccountUserPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
+  TAccountUserPayoutBalanceStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -169,7 +169,7 @@ export type ClaimAsyncInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim encrypted State and transfer output rent. Anyone. */
+  /** Pays the claim encrypted store and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -181,7 +181,7 @@ export type ClaimAsyncInput<
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record; marked claimed here. */
   joinRecord?: Address<TAccountJoinRecord>;
-  joinState: Address<TAccountJoinState>;
+  joinStore: Address<TAccountJoinStore>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** Confidential mint claims pay out in. */
@@ -196,8 +196,8 @@ export type ClaimAsyncInput<
    * token CPI and pinned below.
    */
   userPayoutTokenAccount: Address<TAccountUserPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
-  userPayoutBalanceState: Address<TAccountUserPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
+  userPayoutBalanceStore: Address<TAccountUserPayoutBalanceStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -216,7 +216,7 @@ export async function getClaimInstructionAsync<
   TAccountBatch extends string,
   TAccountBatchAuthority extends string,
   TAccountJoinRecord extends string,
-  TAccountJoinState extends string,
+  TAccountJoinStore extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountPayoutConfidentialMint extends string,
@@ -225,8 +225,8 @@ export async function getClaimInstructionAsync<
   TAccountUserPayoutAta extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
-  TAccountUserPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
+  TAccountUserPayoutBalanceStore extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -242,7 +242,7 @@ export async function getClaimInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinRecord,
-    TAccountJoinState,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
@@ -251,8 +251,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
-    TAccountUserPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
+    TAccountUserPayoutBalanceStore,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -270,7 +270,7 @@ export async function getClaimInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinRecord,
-    TAccountJoinState,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
@@ -279,8 +279,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
-    TAccountUserPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
+    TAccountUserPayoutBalanceStore,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -300,7 +300,7 @@ export async function getClaimInstructionAsync<
     batch: { value: input.batch ?? null, isWritable: false },
     batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
     joinRecord: { value: input.joinRecord ?? null, isWritable: true },
-    joinState: { value: input.joinState ?? null, isWritable: true },
+    joinStore: { value: input.joinStore ?? null, isWritable: true },
     transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     payoutConfidentialMint: {
@@ -324,12 +324,12 @@ export async function getClaimInstructionAsync<
       value: input.userPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
-    userPayoutBalanceState: {
-      value: input.userPayoutBalanceState ?? null,
+    userPayoutBalanceStore: {
+      value: input.userPayoutBalanceStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -383,7 +383,7 @@ export async function getClaimInstructionAsync<
       getAccountMeta('batch', accounts.batch),
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinRecord', accounts.joinRecord),
-      getAccountMeta('joinState', accounts.joinState),
+      getAccountMeta('joinStore', accounts.joinStore),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
@@ -392,8 +392,8 @@ export async function getClaimInstructionAsync<
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
-      getAccountMeta('userPayoutBalanceState', accounts.userPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
+      getAccountMeta('userPayoutBalanceStore', accounts.userPayoutBalanceStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -411,7 +411,7 @@ export async function getClaimInstructionAsync<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinRecord,
-    TAccountJoinState,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
@@ -420,8 +420,8 @@ export async function getClaimInstructionAsync<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
-    TAccountUserPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
+    TAccountUserPayoutBalanceStore,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -438,7 +438,7 @@ export type ClaimInput<
   TAccountBatch extends string = string,
   TAccountBatchAuthority extends string = string,
   TAccountJoinRecord extends string = string,
-  TAccountJoinState extends string = string,
+  TAccountJoinStore extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
@@ -447,8 +447,8 @@ export type ClaimInput<
   TAccountUserPayoutAta extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
   TAccountUserPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
-  TAccountUserPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
+  TAccountUserPayoutBalanceStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
@@ -456,7 +456,7 @@ export type ClaimInput<
   TAccountConfidentialTokenProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
-  /** Pays the claim encrypted State and transfer output rent. Anyone. */
+  /** Pays the claim encrypted store and transfer output rent. Anyone. */
   payer: TransactionSigner<TAccountPayer>;
   /** seeds. Not a signer — claims are permissionless pulls. */
   user: Address<TAccountUser>;
@@ -468,7 +468,7 @@ export type ClaimInput<
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record; marked claimed here. */
   joinRecord: Address<TAccountJoinRecord>;
-  joinState: Address<TAccountJoinState>;
+  joinStore: Address<TAccountJoinStore>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** Confidential mint claims pay out in. */
@@ -483,8 +483,8 @@ export type ClaimInput<
    * token CPI and pinned below.
    */
   userPayoutTokenAccount: Address<TAccountUserPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
-  userPayoutBalanceState: Address<TAccountUserPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
+  userPayoutBalanceStore: Address<TAccountUserPayoutBalanceStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -503,7 +503,7 @@ export function getClaimInstruction<
   TAccountBatch extends string,
   TAccountBatchAuthority extends string,
   TAccountJoinRecord extends string,
-  TAccountJoinState extends string,
+  TAccountJoinStore extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountPayoutConfidentialMint extends string,
@@ -512,8 +512,8 @@ export function getClaimInstruction<
   TAccountUserPayoutAta extends string,
   TAccountBatchPayoutTokenAccount extends string,
   TAccountUserPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
-  TAccountUserPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
+  TAccountUserPayoutBalanceStore extends string,
   TAccountZamaEventAuthority extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
@@ -529,7 +529,7 @@ export function getClaimInstruction<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinRecord,
-    TAccountJoinState,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
@@ -538,8 +538,8 @@ export function getClaimInstruction<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
-    TAccountUserPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
+    TAccountUserPayoutBalanceStore,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -556,7 +556,7 @@ export function getClaimInstruction<
   TAccountBatch,
   TAccountBatchAuthority,
   TAccountJoinRecord,
-  TAccountJoinState,
+  TAccountJoinStore,
   TAccountTransientStore,
   TAccountInstructions,
   TAccountPayoutConfidentialMint,
@@ -565,8 +565,8 @@ export function getClaimInstruction<
   TAccountUserPayoutAta,
   TAccountBatchPayoutTokenAccount,
   TAccountUserPayoutTokenAccount,
-  TAccountBatchPayoutBalanceState,
-  TAccountUserPayoutBalanceState,
+  TAccountBatchPayoutBalanceStore,
+  TAccountUserPayoutBalanceStore,
   TAccountZamaEventAuthority,
   TAccountZamaProgram,
   TAccountHostConfig,
@@ -585,7 +585,7 @@ export function getClaimInstruction<
     batch: { value: input.batch ?? null, isWritable: false },
     batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
     joinRecord: { value: input.joinRecord ?? null, isWritable: true },
-    joinState: { value: input.joinState ?? null, isWritable: true },
+    joinStore: { value: input.joinStore ?? null, isWritable: true },
     transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     payoutConfidentialMint: {
@@ -609,12 +609,12 @@ export function getClaimInstruction<
       value: input.userPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
-    userPayoutBalanceState: {
-      value: input.userPayoutBalanceState ?? null,
+    userPayoutBalanceStore: {
+      value: input.userPayoutBalanceStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -657,7 +657,7 @@ export function getClaimInstruction<
       getAccountMeta('batch', accounts.batch),
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinRecord', accounts.joinRecord),
-      getAccountMeta('joinState', accounts.joinState),
+      getAccountMeta('joinStore', accounts.joinStore),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
@@ -666,8 +666,8 @@ export function getClaimInstruction<
       getAccountMeta('userPayoutAta', accounts.userPayoutAta),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
       getAccountMeta('userPayoutTokenAccount', accounts.userPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
-      getAccountMeta('userPayoutBalanceState', accounts.userPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
+      getAccountMeta('userPayoutBalanceStore', accounts.userPayoutBalanceStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -685,7 +685,7 @@ export function getClaimInstruction<
     TAccountBatch,
     TAccountBatchAuthority,
     TAccountJoinRecord,
-    TAccountJoinState,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountPayoutConfidentialMint,
@@ -694,8 +694,8 @@ export function getClaimInstruction<
     TAccountUserPayoutAta,
     TAccountBatchPayoutTokenAccount,
     TAccountUserPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
-    TAccountUserPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
+    TAccountUserPayoutBalanceStore,
     TAccountZamaEventAuthority,
     TAccountZamaProgram,
     TAccountHostConfig,
@@ -711,7 +711,7 @@ export type ParsedClaimInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Pays the claim encrypted State and transfer output rent. Anyone. */
+    /** Pays the claim encrypted store and transfer output rent. Anyone. */
     payer: TAccountMetas[0];
     /** seeds. Not a signer — claims are permissionless pulls. */
     user: TAccountMetas[1];
@@ -723,7 +723,7 @@ export type ParsedClaimInstruction<
     batchAuthority: TAccountMetas[4];
     /** The user's join record; marked claimed here. */
     joinRecord: TAccountMetas[5];
-    joinState: TAccountMetas[6];
+    joinStore: TAccountMetas[6];
     transientStore: TAccountMetas[7];
     instructions: TAccountMetas[8];
     /** Confidential mint claims pay out in. */
@@ -738,8 +738,8 @@ export type ParsedClaimInstruction<
      * token CPI and pinned below.
      */
     userPayoutTokenAccount: TAccountMetas[14];
-    batchPayoutBalanceState: TAccountMetas[15];
-    userPayoutBalanceState: TAccountMetas[16];
+    batchPayoutBalanceStore: TAccountMetas[15];
+    userPayoutBalanceStore: TAccountMetas[16];
     zamaEventAuthority: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
     zamaProgram: TAccountMetas[18];
@@ -777,7 +777,7 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       batch: getNextAccount(),
       batchAuthority: getNextAccount(),
       joinRecord: getNextAccount(),
-      joinState: getNextAccount(),
+      joinStore: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       payoutConfidentialMint: getNextAccount(),
@@ -786,8 +786,8 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       userPayoutAta: getNextAccount(),
       batchPayoutTokenAccount: getNextAccount(),
       userPayoutTokenAccount: getNextAccount(),
-      batchPayoutBalanceState: getNextAccount(),
-      userPayoutBalanceState: getNextAccount(),
+      batchPayoutBalanceStore: getNextAccount(),
+      userPayoutBalanceStore: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),

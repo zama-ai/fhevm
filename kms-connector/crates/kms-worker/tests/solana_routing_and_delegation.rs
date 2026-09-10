@@ -4,7 +4,7 @@
 //! Routing is per entry and decided by one comparison: the entry's allowed key against the
 //! permit's signer. Equal means the signer's own allow leaf is what is proven; unequal means the
 //! allowed key is a delegator whose leaf is proven and who, additionally, has delegated to the
-//! signer for the encrypted state's authority. One request mixes both freely, and
+//! signer for the encrypted store's authority. One request mixes both freely, and
 //! different delegators freely — there is no delegated mode and no delegated route.
 //!
 //! The negative test that matters most is the substitution of the key. In the delegated branch it
@@ -20,7 +20,7 @@
 //! unrelated update to any delegation record invalidate requests already in flight, and would make
 //! a mixed-delegator batch impossible to build.
 //!
-//! Two rows can carry one grant — the encrypted state's authority, and the delegator's
+//! Two rows can carry one grant — the encrypted store's authority, and the delegator's
 //! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
@@ -29,7 +29,7 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     delegation::{AuthorizedRow, DelegationFailure, check_delegation, wildcard_delegation_address},
-    encrypted_state::EncryptedStateFailure,
+    encrypted_store::EncryptedStoreFailure,
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
@@ -57,11 +57,11 @@ async fn authorize_in(
     (outcome, reader.call_count())
 }
 
-/// A world holding an encrypted state, the signer's zero watermark, and whatever else is
+/// A world holding an encrypted store, the signer's zero watermark, and whatever else is
 /// added.
-fn world_with(encrypted_state: &EncryptedStateFixture, signer: SolanaPubkeyBytes) -> World {
+fn world_with(encrypted_store: &EncryptedStoreFixture, signer: SolanaPubkeyBytes) -> World {
     World::running_at_slot(OBSERVED_SLOT)
-        .with_encrypted_state(encrypted_state)
+        .with_encrypted_store(encrypted_store)
         .with_watermark(signer, 0)
 }
 
@@ -74,13 +74,13 @@ fn world_with(encrypted_state: &EncryptedStateFixture, signer: SolanaPubkeyBytes
 async fn a_direct_entry_authorizes_as_the_signer() {
     let signer = Wallet::new(1);
     let live = handle(0x10, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, signer.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, signer.pubkey());
     let request = RequestBuilder::new(&signer)
-        .direct(&encrypted_state, live)
+        .direct(&encrypted_store, live)
         .typed();
 
     let (outcome, reads) =
-        authorize_in(world_with(&encrypted_state, signer.pubkey()), &request).await;
+        authorize_in(world_with(&encrypted_store, signer.pubkey()), &request).await;
 
     let authorized = outcome.expect("the signer holds the allow leaf on the handle");
     assert_eq!(authorized.entries()[0].allowed_key, signer.pubkey());
@@ -95,14 +95,14 @@ async fn a_delegated_entry_authorizes_as_the_delegator() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x11, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, reads) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&delegation),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&delegation),
         &request,
     )
     .await;
@@ -129,14 +129,14 @@ async fn a_delegated_entry_is_not_authorized_by_the_delegates_own_leaf() {
     let delegator = Wallet::new(2);
     let live = handle(0x12, FHE_TYPE_UINT64);
     // The signer holds the leaf; the delegator does not.
-    let encrypted_state = EncryptedStateFixture::allowing(live, signer.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, signer.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&delegation),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&delegation),
         &request,
     )
     .await;
@@ -165,15 +165,15 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     let own = handle(0x20, FHE_TYPE_UINT64);
     let first = handle(0x21, FHE_TYPE_UINT64);
     let second = handle(0x22, FHE_TYPE_UINT64);
-    let own_encrypted_state = EncryptedStateFixture::allowing(own, signer.pubkey());
+    let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
     let first_authority = [0xa1; 32];
-    let mut first_encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
-    first_encrypted_state.allow(first_delegator.pubkey());
+    let mut first_encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
+    first_encrypted_store.allow(first_delegator.pubkey());
     let second_authority = [0xb1; 32];
-    let mut second_encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
-    second_encrypted_state.allow(second_delegator.pubkey());
+    let mut second_encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
+    second_encrypted_store.allow(second_delegator.pubkey());
     let mut first_delegation =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     first_delegation.authority = first_authority;
@@ -182,14 +182,14 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     second_delegation.authority = second_authority;
 
     let request = RequestBuilder::new(&signer)
-        .direct(&own_encrypted_state, own)
-        .delegated(&first_encrypted_state, first, first_delegator.pubkey())
-        .delegated(&second_encrypted_state, second, second_delegator.pubkey())
+        .direct(&own_encrypted_store, own)
+        .delegated(&first_encrypted_store, first, first_delegator.pubkey())
+        .delegated(&second_encrypted_store, second, second_delegator.pubkey())
         .typed();
     let world = World::running_at_slot(OBSERVED_SLOT)
-        .with_encrypted_state(&own_encrypted_state)
-        .with_encrypted_state(&first_encrypted_state)
-        .with_encrypted_state(&second_encrypted_state)
+        .with_encrypted_store(&own_encrypted_store)
+        .with_encrypted_store(&first_encrypted_store)
+        .with_encrypted_store(&second_encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&first_delegation)
         .with_delegation(&second_delegation);
@@ -224,11 +224,11 @@ async fn authorize_delegated(
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
-    let world = world_with(&encrypted_state, signer.pubkey()).with_delegation(&delegation);
+    let world = world_with(&encrypted_store, signer.pubkey()).with_delegation(&delegation);
     authorize_in(world, &request).await.0
 }
 
@@ -345,11 +345,11 @@ async fn authorize_delegated_with_rows(
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x31, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
-    let mut world = world_with(&encrypted_state, signer.pubkey());
+    let mut world = world_with(&encrypted_store, signer.pubkey());
     for row in rows {
         world = world.with_delegation(row);
     }
@@ -365,11 +365,11 @@ fn live_wildcard() -> DelegationFixture {
     )
 }
 
-/// A wildcard row covers an encrypted state that has no row of its own — the EVM ACL's
-/// wildcard delegation, with the sentinel standing where an encrypted state authority
+/// A wildcard row covers an encrypted store that has no row of its own — the EVM ACL's
+/// wildcard delegation, with the sentinel standing where an encrypted store authority
 /// would.
 #[tokio::test]
-async fn a_wildcard_row_authorizes_a_encrypted_state_with_no_app_specific_row() {
+async fn a_wildcard_row_authorizes_a_encrypted_store_with_no_app_specific_row() {
     let authorized = authorize_delegated_with_rows(&[live_wildcard()])
         .await
         .expect("a wildcard row covers every app of its delegator");
@@ -506,12 +506,12 @@ async fn authorize_with_wildcard_account(
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x39, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
     let (wildcard_key, _) = live_wildcard().address();
-    let world = world_with(&encrypted_state, signer.pubkey()).with_account(wildcard_key, account);
+    let world = world_with(&encrypted_store, signer.pubkey()).with_account(wildcard_key, account);
     authorize_in(world, &request).await.0
 }
 
@@ -623,14 +623,14 @@ async fn a_missing_delegation_rejects_its_entry() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x31, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (expected_key, _) = expected.address();
 
-    let (outcome, _) = authorize_in(world_with(&encrypted_state, signer.pubkey()), &request).await;
+    let (outcome, _) = authorize_in(world_with(&encrypted_store, signer.pubkey()), &request).await;
 
     let failure = outcome.expect_err("an absent delegation authorizes nothing");
     assert!(matches!(
@@ -655,9 +655,9 @@ async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
     let delegator = Wallet::new(2);
     let stranger = Wallet::new(9);
     let live = handle(0x3f, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
@@ -679,7 +679,7 @@ async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
         ("tuple mismatch", mismatched),
     ] {
         let (outcome, _) = authorize_in(
-            world_with(&encrypted_state, signer.pubkey())
+            world_with(&encrypted_store, signer.pubkey())
                 .with_account(expected_key, delegation.account()),
             &request,
         )
@@ -693,24 +693,24 @@ async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
     }
 }
 
-/// A delegation is scoped to an encrypted state authority, and the authority is the
-/// encrypted state's. A delegation for another authority is simply not the record that
-/// gets read — the address derived from the encrypted state's authority is empty.
+/// A delegation is scoped to an encrypted store authority, and the authority is the
+/// encrypted store's. A delegation for another authority is simply not the record that
+/// gets read — the address derived from the encrypted store's authority is empty.
 #[tokio::test]
 async fn a_delegation_for_another_authority_does_not_authorize() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let other_authority: SolanaPubkeyBytes = [0x77; 32];
     let live = handle(0x32, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     elsewhere.authority = other_authority;
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&elsewhere),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&elsewhere),
         &request,
     )
     .await;
@@ -734,18 +734,18 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     let delegator = Wallet::new(2);
     let stranger = Wallet::new(9);
     let live = handle(0x33, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (expected_key, _) = expected.address();
     // A record for a different delegator, planted at the address the request will read.
     let mut foreign = DelegationFixture::live(stranger.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     foreign.authority = AUTHORITY;
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_account(expected_key, foreign.account()),
+        world_with(&encrypted_store, signer.pubkey()).with_account(expected_key, foreign.account()),
         &request,
     )
     .await;
@@ -769,18 +769,18 @@ async fn a_delegation_record_naming_another_delegate_is_rejected() {
     let delegator = Wallet::new(2);
     let stranger = Wallet::new(9);
     let live = handle(0x38, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let expected = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (expected_key, _) = expected.address();
     // A record delegating to somebody else, planted at the address the request will read.
     let other_delegate =
         DelegationFixture::live(delegator.pubkey(), stranger.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey())
+        world_with(&encrypted_store, signer.pubkey())
             .with_account(expected_key, other_delegate.account()),
         &request,
     )
@@ -805,7 +805,7 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x34, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (key, canonical_bump) = delegation.address();
     let mut wrong_bump = delegation.account();
@@ -816,11 +816,11 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     );
     wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_account(key, wrong_bump),
+        world_with(&encrypted_store, signer.pubkey()).with_account(key, wrong_bump),
         &request,
     )
     .await;
@@ -841,17 +841,17 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x34, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let (key, _) = delegation.address();
     let mut impostor = delegation.account();
     impostor.owner = [0xee; 32];
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_account(key, impostor),
+        world_with(&encrypted_store, signer.pubkey()).with_account(key, impostor),
         &request,
     )
     .await;
@@ -874,9 +874,9 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x35, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
     let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let mut revoked = granted;
@@ -884,14 +884,14 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     revoked.last_update_slot = OBSERVED_SLOT;
 
     let (first, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&granted),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&granted),
         &request,
     )
     .await;
     first.expect("the first request is authorized");
 
     let (second, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&revoked),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&revoked),
         &request,
     )
     .await;
@@ -981,31 +981,31 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
 // Sentinel injection
 // ---------------------------------------------------------------------------
 
-/// An encrypted state naming the wildcard sentinel as its authority is rejected at
+/// An encrypted store naming the wildcard sentinel as its authority is rejected at
 /// resolution, before any delegation row is read. The address of the authority-specific row is
 /// derived from that authority, and with the sentinel in it the derivation lands on the wildcard
 /// row itself — the authority-specific check would be structurally a wildcard check. On-chain the
-/// authority signs `fhe_execute`, so no legal encrypted state carries the sentinel; one
+/// authority signs `fhe_execute`, so no legal encrypted store carries the sentinel; one
 /// that does is rejected, not interpreted.
 ///
 /// The world here holds a live wildcard row — exactly the row a sentinel authority resolves to —
 /// so an implementation without the guard authorizes this request.
 #[tokio::test]
-async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_delegated_entry() {
+async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_delegated_entry() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x36, FHE_TYPE_UINT64);
-    let mut encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
-    encrypted_state.allow(delegator.pubkey());
+    let mut encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
+    encrypted_store.allow(delegator.pubkey());
     let wildcard =
         DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (outcome, _) = authorize_in(
-        world_with(&encrypted_state, signer.pubkey()).with_delegation(&wildcard),
+        world_with(&encrypted_store, signer.pubkey()).with_delegation(&wildcard),
         &request,
     )
     .await;
@@ -1015,39 +1015,39 @@ async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_delegated_entry()
     assert!(
         matches!(
             failure,
-            AuthorizationFailure::EncryptedState {
+            AuthorizationFailure::EncryptedStore {
                 index: 0,
-                source: EncryptedStateFailure::SentinelAuthority { .. }
+                source: EncryptedStoreFailure::SentinelAuthority { .. }
             }
         ),
-        "the rejection belongs to the encrypted state resolution, got {failure}"
+        "the rejection belongs to the encrypted store resolution, got {failure}"
     );
     assert_eq!(failure.class(), FailureClass::Terminal);
 }
 
-/// The guard lives in the resolution of the encrypted state, so a direct entry under a
+/// The guard lives in the resolution of the encrypted store, so a direct entry under a
 /// sentinel authority is rejected the same way. Deliberate: such an account is illegitimate
 /// whether or not a delegation is in play, and one rule at the chokepoint beats a rule that only
 /// the delegated branch remembers to apply.
 #[tokio::test]
-async fn a_sentinel_authority_in_the_encrypted_state_rejects_a_direct_entry_too() {
+async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_direct_entry_too() {
     let signer = Wallet::new(1);
     let live = handle(0x37, FHE_TYPE_UINT64);
-    let mut encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
-    encrypted_state.allow(signer.pubkey());
+    let mut encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, WILDCARD_AUTHORITY, SCOPE, LABEL, live);
+    encrypted_store.allow(signer.pubkey());
     let request = RequestBuilder::new(&signer)
-        .direct(&encrypted_state, live)
+        .direct(&encrypted_store, live)
         .typed();
 
-    let (outcome, _) = authorize_in(world_with(&encrypted_state, signer.pubkey()), &request).await;
+    let (outcome, _) = authorize_in(world_with(&encrypted_store, signer.pubkey()), &request).await;
 
     let failure = outcome.expect_err("the sentinel is not an authority any account may name");
     assert!(matches!(
         failure,
-        AuthorizationFailure::EncryptedState {
+        AuthorizationFailure::EncryptedStore {
             index: 0,
-            source: EncryptedStateFailure::SentinelAuthority { .. }
+            source: EncryptedStoreFailure::SentinelAuthority { .. }
         }
     ));
     assert_eq!(failure.class(), FailureClass::Terminal);
@@ -1100,15 +1100,15 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     let own = handle(0x41, FHE_TYPE_UINT64);
     let first = handle(0x42, FHE_TYPE_UINT64);
     let second = handle(0x43, FHE_TYPE_UINT64);
-    let own_encrypted_state = EncryptedStateFixture::allowing(own, signer.pubkey());
+    let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
     let first_authority = [0xa2; 32];
-    let mut first_encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
-    first_encrypted_state.allow(first_delegator.pubkey());
+    let mut first_encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
+    first_encrypted_store.allow(first_delegator.pubkey());
     let second_authority = [0xb2; 32];
-    let mut second_encrypted_state =
-        EncryptedStateFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
-    second_encrypted_state.allow(second_delegator.pubkey());
+    let mut second_encrypted_store =
+        EncryptedStoreFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
+    second_encrypted_store.allow(second_delegator.pubkey());
     let mut first_delegation =
         DelegationFixture::live(first_delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     first_delegation.authority = first_authority;
@@ -1118,14 +1118,14 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     second_delegation.revoked = true;
 
     let request = RequestBuilder::new(&signer)
-        .direct(&own_encrypted_state, own)
-        .delegated(&first_encrypted_state, first, first_delegator.pubkey())
-        .delegated(&second_encrypted_state, second, second_delegator.pubkey())
+        .direct(&own_encrypted_store, own)
+        .delegated(&first_encrypted_store, first, first_delegator.pubkey())
+        .delegated(&second_encrypted_store, second, second_delegator.pubkey())
         .typed();
     let world = World::running_at_slot(OBSERVED_SLOT)
-        .with_encrypted_state(&own_encrypted_state)
-        .with_encrypted_state(&first_encrypted_state)
-        .with_encrypted_state(&second_encrypted_state)
+        .with_encrypted_store(&own_encrypted_store)
+        .with_encrypted_store(&first_encrypted_store)
+        .with_encrypted_store(&second_encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&first_delegation)
         .with_delegation(&second_delegation);
@@ -1154,13 +1154,13 @@ async fn the_delegators_permit_watermark_is_not_read() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x44, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
     // A watermark that would invalidate any permit — were it ever read for this request.
-    let world = world_with(&encrypted_state, signer.pubkey())
+    let world = world_with(&encrypted_store, signer.pubkey())
         .with_delegation(&delegation)
         .with_watermark(delegator.pubkey(), u64::MAX);
 

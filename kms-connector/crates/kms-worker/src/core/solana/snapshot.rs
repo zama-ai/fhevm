@@ -13,7 +13,7 @@
 //!
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
 //! `(delegator, delegate, authority)`, and the authoritative
-//! `authority` is a field of the encrypted state — a request cannot
+//! `authority` is a field of the encrypted store — a request cannot
 //! supply it (see [`super::request`]). So a first read is needed to learn it. That read is a
 //! **discovery read**: it produces addresses, not decisions, and its account values are discarded.
 //! The second read covers the first read's whole key set alongside the delegation records, and it
@@ -24,7 +24,7 @@
 //! between two round trips, and a slot is about 400 milliseconds, while proving nothing that a
 //! single deciding snapshot does not already give. Nor can the discarded read smuggle a stale value
 //! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
-//! value account inside [`super::delegation::check_delegation`], and an encrypted state that
+//! value account inside [`super::delegation::check_delegation`], and an encrypted store that
 //! resolves at a given address has exactly one `authority`, because that
 //! field is one of the seeds the address is derived from. A discovery read
 //! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
@@ -227,7 +227,7 @@ pub trait HostStateReader: Send + Sync {
 }
 
 /// Plans the first read: the deployment's config singleton, the invalidation record of the request
-/// signer, and one encrypted state per entry.
+/// signer, and one encrypted store per entry.
 ///
 /// Pure, and total over any validated request: every key here is derivable from the request and the
 /// deployment alone. There is no scan in the authorization path, so the plan is the complete set of
@@ -243,14 +243,14 @@ pub fn plan_first_read(
     let signer = *request.permit().user_pubkey().as_bytes();
     let (host_config_key, _) = crate::core::solana_acl::host_config_address(program_id);
     let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
-    let encrypted_states = request
+    let encrypted_stores = request
         .handles()
         .iter()
-        .map(|entry| entry.encrypted_state());
+        .map(|entry| entry.encrypted_store());
     SnapshotKeys::new(
         [host_config_key, watermark_key]
             .into_iter()
-            .chain(encrypted_states),
+            .chain(encrypted_stores),
     )
 }
 
@@ -258,7 +258,7 @@ pub fn plan_first_read(
 /// records whose addresses the discovery read has just made computable.
 ///
 /// The first set is carried over because the second read is the one every rule is evaluated
-/// against, so it has to hold the encrypted states and the invalidation record too — not in
+/// against, so it has to hold the encrypted stores and the invalidation record too — not in
 /// order to compare the two reads, which this path deliberately does not do (see the module
 /// documentation). Starting from `first` is what makes the coverage a property of this function
 /// rather than a discipline of its callers.

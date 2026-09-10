@@ -7,7 +7,7 @@
 //! Cap sentinels: `u64::MAX` = unrestricted (touch nothing), `0` = ban untrusted
 //! applications (trusted still bypass), otherwise the metering band.
 //!
-//! The application is the explicit execution State's `(program, scope)`, authenticated by
+//! The application is the explicit execution Store's `(program, scope)`, authenticated by
 //! its authority signer. Calls without persistent outputs have the same metered identity.
 
 use anchor_lang::prelude::*;

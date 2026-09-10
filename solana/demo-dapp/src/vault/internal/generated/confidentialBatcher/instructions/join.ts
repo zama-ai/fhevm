@@ -71,9 +71,9 @@ export type JoinInstruction<
   TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
   TAccountUserTokenAccount extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountUserBalanceState extends string | AccountMeta<string> = string,
-  TAccountBatchBalanceState extends string | AccountMeta<string> = string,
-  TAccountJoinState extends string | AccountMeta<string> = string,
+  TAccountUserBalanceStore extends string | AccountMeta<string> = string,
+  TAccountBatchBalanceStore extends string | AccountMeta<string> = string,
+  TAccountJoinStore extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
@@ -109,9 +109,9 @@ export type JoinInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountUserBalanceState extends string ? WritableAccount<TAccountUserBalanceState> : TAccountUserBalanceState,
-      TAccountBatchBalanceState extends string ? WritableAccount<TAccountBatchBalanceState> : TAccountBatchBalanceState,
-      TAccountJoinState extends string ? WritableAccount<TAccountJoinState> : TAccountJoinState,
+      TAccountUserBalanceStore extends string ? WritableAccount<TAccountUserBalanceStore> : TAccountUserBalanceStore,
+      TAccountBatchBalanceStore extends string ? WritableAccount<TAccountBatchBalanceStore> : TAccountBatchBalanceStore,
+      TAccountJoinStore extends string ? WritableAccount<TAccountJoinStore> : TAccountJoinStore,
       TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaEventAuthority extends string
@@ -217,9 +217,9 @@ export type JoinAsyncInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceState extends string = string,
-  TAccountBatchBalanceState extends string = string,
-  TAccountJoinState extends string = string,
+  TAccountUserBalanceStore extends string = string,
+  TAccountBatchBalanceStore extends string = string,
+  TAccountJoinStore extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -242,7 +242,7 @@ export type JoinAsyncInput<
   batch: Address<TAccountBatch>;
   /** Owns the batch's destination token account. */
   batchAuthority?: Address<TAccountBatchAuthority>;
-  /** The user's join record for this batch; created on first join and controls its contribution State. */
+  /** The user's join record for this batch; created on first join and controls its contribution Store. */
   joinRecord?: Address<TAccountJoinRecord>;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
@@ -253,9 +253,9 @@ export type JoinAsyncInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceState: Address<TAccountUserBalanceState>;
-  batchBalanceState: Address<TAccountBatchBalanceState>;
-  joinState: Address<TAccountJoinState>;
+  userBalanceStore: Address<TAccountUserBalanceStore>;
+  batchBalanceStore: Address<TAccountBatchBalanceStore>;
+  joinStore: Address<TAccountJoinStore>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -290,9 +290,9 @@ export async function getJoinInstructionAsync<
   TAccountBatchAuthorityAta extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceState extends string,
-  TAccountBatchBalanceState extends string,
-  TAccountJoinState extends string,
+  TAccountUserBalanceStore extends string,
+  TAccountBatchBalanceStore extends string,
+  TAccountJoinStore extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaEventAuthority extends string,
@@ -316,9 +316,9 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceState,
-    TAccountBatchBalanceState,
-    TAccountJoinState,
+    TAccountUserBalanceStore,
+    TAccountBatchBalanceStore,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
@@ -344,9 +344,9 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceState,
-    TAccountBatchBalanceState,
-    TAccountJoinState,
+    TAccountUserBalanceStore,
+    TAccountBatchBalanceStore,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
@@ -389,15 +389,15 @@ export async function getJoinInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    userBalanceState: {
-      value: input.userBalanceState ?? null,
+    userBalanceStore: {
+      value: input.userBalanceStore ?? null,
       isWritable: true,
     },
-    batchBalanceState: {
-      value: input.batchBalanceState ?? null,
+    batchBalanceStore: {
+      value: input.batchBalanceStore ?? null,
       isWritable: true,
     },
-    joinState: { value: input.joinState ?? null, isWritable: true },
+    joinStore: { value: input.joinStore ?? null, isWritable: true },
     transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaEventAuthority: {
@@ -460,9 +460,9 @@ export async function getJoinInstructionAsync<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('userBalanceState', accounts.userBalanceState),
-      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
-      getAccountMeta('joinState', accounts.joinState),
+      getAccountMeta('userBalanceStore', accounts.userBalanceStore),
+      getAccountMeta('batchBalanceStore', accounts.batchBalanceStore),
+      getAccountMeta('joinStore', accounts.joinStore),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -488,9 +488,9 @@ export async function getJoinInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceState,
-    TAccountBatchBalanceState,
-    TAccountJoinState,
+    TAccountUserBalanceStore,
+    TAccountBatchBalanceStore,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
@@ -515,9 +515,9 @@ export type JoinInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountUserTokenAccount extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceState extends string = string,
-  TAccountBatchBalanceState extends string = string,
-  TAccountJoinState extends string = string,
+  TAccountUserBalanceStore extends string = string,
+  TAccountBatchBalanceStore extends string = string,
+  TAccountJoinStore extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
   TAccountZamaEventAuthority extends string = string,
@@ -540,7 +540,7 @@ export type JoinInput<
   batch: Address<TAccountBatch>;
   /** Owns the batch's destination token account. */
   batchAuthority: Address<TAccountBatchAuthority>;
-  /** The user's join record for this batch; created on first join and controls its contribution State. */
+  /** The user's join record for this batch; created on first join and controls its contribution Store. */
   joinRecord: Address<TAccountJoinRecord>;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
@@ -551,9 +551,9 @@ export type JoinInput<
   userTokenAccount: Address<TAccountUserTokenAccount>;
   /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceState: Address<TAccountUserBalanceState>;
-  batchBalanceState: Address<TAccountBatchBalanceState>;
-  joinState: Address<TAccountJoinState>;
+  userBalanceStore: Address<TAccountUserBalanceStore>;
+  batchBalanceStore: Address<TAccountBatchBalanceStore>;
+  joinStore: Address<TAccountJoinStore>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
@@ -588,9 +588,9 @@ export function getJoinInstruction<
   TAccountBatchAuthorityAta extends string,
   TAccountUserTokenAccount extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceState extends string,
-  TAccountBatchBalanceState extends string,
-  TAccountJoinState extends string,
+  TAccountUserBalanceStore extends string,
+  TAccountBatchBalanceStore extends string,
+  TAccountJoinStore extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
   TAccountZamaEventAuthority extends string,
@@ -614,9 +614,9 @@ export function getJoinInstruction<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceState,
-    TAccountBatchBalanceState,
-    TAccountJoinState,
+    TAccountUserBalanceStore,
+    TAccountBatchBalanceStore,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
@@ -641,9 +641,9 @@ export function getJoinInstruction<
   TAccountBatchAuthorityAta,
   TAccountUserTokenAccount,
   TAccountBatchJoinTokenAccount,
-  TAccountUserBalanceState,
-  TAccountBatchBalanceState,
-  TAccountJoinState,
+  TAccountUserBalanceStore,
+  TAccountBatchBalanceStore,
+  TAccountJoinStore,
   TAccountTransientStore,
   TAccountInstructions,
   TAccountZamaEventAuthority,
@@ -685,15 +685,15 @@ export function getJoinInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    userBalanceState: {
-      value: input.userBalanceState ?? null,
+    userBalanceStore: {
+      value: input.userBalanceStore ?? null,
       isWritable: true,
     },
-    batchBalanceState: {
-      value: input.batchBalanceState ?? null,
+    batchBalanceStore: {
+      value: input.batchBalanceStore ?? null,
       isWritable: true,
     },
-    joinState: { value: input.joinState ?? null, isWritable: true },
+    joinStore: { value: input.joinStore ?? null, isWritable: true },
     transientStore: { value: input.transientStore ?? null, isWritable: true },
     instructions: { value: input.instructions ?? null, isWritable: false },
     zamaEventAuthority: {
@@ -745,9 +745,9 @@ export function getJoinInstruction<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('userTokenAccount', accounts.userTokenAccount),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('userBalanceState', accounts.userBalanceState),
-      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
-      getAccountMeta('joinState', accounts.joinState),
+      getAccountMeta('userBalanceStore', accounts.userBalanceStore),
+      getAccountMeta('batchBalanceStore', accounts.batchBalanceStore),
+      getAccountMeta('joinStore', accounts.joinStore),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
@@ -773,9 +773,9 @@ export function getJoinInstruction<
     TAccountBatchAuthorityAta,
     TAccountUserTokenAccount,
     TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceState,
-    TAccountBatchBalanceState,
-    TAccountJoinState,
+    TAccountUserBalanceStore,
+    TAccountBatchBalanceStore,
+    TAccountJoinStore,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaEventAuthority,
@@ -806,7 +806,7 @@ export type ParsedJoinInstruction<
     batch: TAccountMetas[3];
     /** Owns the batch's destination token account. */
     batchAuthority: TAccountMetas[4];
-    /** The user's join record for this batch; created on first join and controls its contribution State. */
+    /** The user's join record for this batch; created on first join and controls its contribution Store. */
     joinRecord: TAccountMetas[5];
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[6];
@@ -817,9 +817,9 @@ export type ParsedJoinInstruction<
     userTokenAccount: TAccountMetas[10];
     /** validated by the token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[11];
-    userBalanceState: TAccountMetas[12];
-    batchBalanceState: TAccountMetas[13];
-    joinState: TAccountMetas[14];
+    userBalanceStore: TAccountMetas[12];
+    batchBalanceStore: TAccountMetas[13];
+    joinStore: TAccountMetas[14];
     transientStore: TAccountMetas[15];
     instructions: TAccountMetas[16];
     zamaEventAuthority: TAccountMetas[17];
@@ -865,9 +865,9 @@ export function parseJoinInstruction<TProgram extends string, TAccountMetas exte
       batchAuthorityAta: getNextAccount(),
       userTokenAccount: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      userBalanceState: getNextAccount(),
-      batchBalanceState: getNextAccount(),
-      joinState: getNextAccount(),
+      userBalanceStore: getNextAccount(),
+      batchBalanceStore: getNextAccount(),
+      joinStore: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaEventAuthority: getNextAccount(),

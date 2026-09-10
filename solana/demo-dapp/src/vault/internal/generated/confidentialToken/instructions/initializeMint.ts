@@ -53,7 +53,7 @@ export type InitializeMintInstruction<
   TAccountUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
-  TAccountTotalSupplyEncryptedState extends string | AccountMeta<string> = string,
+  TAccountTotalSupplyEncryptedStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
@@ -80,9 +80,9 @@ export type InitializeMintInstruction<
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
-      TAccountTotalSupplyEncryptedState extends string
-        ? WritableAccount<TAccountTotalSupplyEncryptedState>
-        : TAccountTotalSupplyEncryptedState,
+      TAccountTotalSupplyEncryptedStore extends string
+        ? WritableAccount<TAccountTotalSupplyEncryptedStore>
+        : TAccountTotalSupplyEncryptedStore,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -131,7 +131,7 @@ export type InitializeMintAsyncInput<
   TAccountUnderlyingMint extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyEncryptedState extends string = string,
+  TAccountTotalSupplyEncryptedStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
@@ -152,7 +152,7 @@ export type InitializeMintAsyncInput<
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
   tokenProgram?: Address<TAccountTokenProgram>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
-  totalSupplyEncryptedState: Address<TAccountTotalSupplyEncryptedState>;
+  totalSupplyEncryptedStore: Address<TAccountTotalSupplyEncryptedStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
@@ -182,7 +182,7 @@ export async function getInitializeMintInstructionAsync<
   TAccountUnderlyingMint extends string,
   TAccountTokenProgram extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyEncryptedState extends string,
+  TAccountTotalSupplyEncryptedStore extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
@@ -201,7 +201,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountUnderlyingMint,
     TAccountTokenProgram,
     TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedState,
+    TAccountTotalSupplyEncryptedStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -222,7 +222,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountUnderlyingMint,
     TAccountTokenProgram,
     TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedState,
+    TAccountTotalSupplyEncryptedStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -248,8 +248,8 @@ export async function getInitializeMintInstructionAsync<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    totalSupplyEncryptedState: {
-      value: input.totalSupplyEncryptedState ?? null,
+    totalSupplyEncryptedStore: {
+      value: input.totalSupplyEncryptedStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -297,7 +297,7 @@ export async function getInitializeMintInstructionAsync<
       getAccountMeta('underlyingMint', accounts.underlyingMint),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('totalSupplyEncryptedState', accounts.totalSupplyEncryptedState),
+      getAccountMeta('totalSupplyEncryptedStore', accounts.totalSupplyEncryptedStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
@@ -318,7 +318,7 @@ export async function getInitializeMintInstructionAsync<
     TAccountUnderlyingMint,
     TAccountTokenProgram,
     TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedState,
+    TAccountTotalSupplyEncryptedStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -338,7 +338,7 @@ export type InitializeMintInput<
   TAccountUnderlyingMint extends string = string,
   TAccountTokenProgram extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyEncryptedState extends string = string,
+  TAccountTotalSupplyEncryptedStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
   TAccountInstructions extends string = string,
@@ -359,7 +359,7 @@ export type InitializeMintInput<
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
   tokenProgram?: Address<TAccountTokenProgram>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
-  totalSupplyEncryptedState: Address<TAccountTotalSupplyEncryptedState>;
+  totalSupplyEncryptedStore: Address<TAccountTotalSupplyEncryptedStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
@@ -389,7 +389,7 @@ export function getInitializeMintInstruction<
   TAccountUnderlyingMint extends string,
   TAccountTokenProgram extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyEncryptedState extends string,
+  TAccountTotalSupplyEncryptedStore extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
   TAccountInstructions extends string,
@@ -408,7 +408,7 @@ export function getInitializeMintInstruction<
     TAccountUnderlyingMint,
     TAccountTokenProgram,
     TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedState,
+    TAccountTotalSupplyEncryptedStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -428,7 +428,7 @@ export function getInitializeMintInstruction<
   TAccountUnderlyingMint,
   TAccountTokenProgram,
   TAccountTotalSupplyAuthority,
-  TAccountTotalSupplyEncryptedState,
+  TAccountTotalSupplyEncryptedStore,
   TAccountZamaEventAuthority,
   TAccountTransientStore,
   TAccountInstructions,
@@ -453,8 +453,8 @@ export function getInitializeMintInstruction<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    totalSupplyEncryptedState: {
-      value: input.totalSupplyEncryptedState ?? null,
+    totalSupplyEncryptedStore: {
+      value: input.totalSupplyEncryptedStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
@@ -497,7 +497,7 @@ export function getInitializeMintInstruction<
       getAccountMeta('underlyingMint', accounts.underlyingMint),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('totalSupplyEncryptedState', accounts.totalSupplyEncryptedState),
+      getAccountMeta('totalSupplyEncryptedStore', accounts.totalSupplyEncryptedStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
@@ -518,7 +518,7 @@ export function getInitializeMintInstruction<
     TAccountUnderlyingMint,
     TAccountTokenProgram,
     TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedState,
+    TAccountTotalSupplyEncryptedStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -547,7 +547,7 @@ export type ParsedInitializeMintInstruction<
     /** Classic Token or Token-2022 program owning `underlying_mint`. */
     tokenProgram: TAccountMetas[3];
     totalSupplyAuthority: TAccountMetas[4];
-    totalSupplyEncryptedState: TAccountMetas[5];
+    totalSupplyEncryptedStore: TAccountMetas[5];
     zamaEventAuthority: TAccountMetas[6];
     transientStore: TAccountMetas[7];
     instructions: TAccountMetas[8];
@@ -600,7 +600,7 @@ export function parseInitializeMintInstruction<TProgram extends string, TAccount
       underlyingMint: getNextAccount(),
       tokenProgram: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
-      totalSupplyEncryptedState: getNextAccount(),
+      totalSupplyEncryptedStore: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),

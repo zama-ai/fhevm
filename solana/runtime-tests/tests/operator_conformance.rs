@@ -941,7 +941,7 @@ fn intern(bytes: [u8; 32]) -> u8 {
 
 fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
     FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         effects: vec![],
         returned_results: Vec::new(),
         account_count: 0,
@@ -957,9 +957,9 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 }
 
 fn persistent(handle: Handle) -> FheExecuteOperand {
-    FheExecuteOperand::StateSlot {
+    FheExecuteOperand::StoreSlot {
         handle_index: intern(handle),
-        state_index: 0,
+        store_index: 0,
         key_index: intern([0; 32]),
     }
 }

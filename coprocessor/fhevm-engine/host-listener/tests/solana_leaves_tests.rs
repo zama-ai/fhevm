@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 
 use host_listener::database::solana_leaves::{
-    load_checkpoint, load_encrypted_state_histories, load_recorded_leaves,
+    load_checkpoint, load_encrypted_store_histories, load_recorded_leaves,
     reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedStateWrite, StoredCheckpoint, TransactionStateWrites,
+    EncryptedStoreWrite, StoredCheckpoint, TransactionStoreWrites,
 };
 use host_listener::http_server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
@@ -32,9 +32,9 @@ fn write(
     handle: [u8; 32],
     allowed_keys: Vec<[u8; 32]>,
     make_public: bool,
-) -> EncryptedStateWrite {
-    EncryptedStateWrite {
-        encrypted_state: ACCOUNT,
+) -> EncryptedStoreWrite {
+    EncryptedStoreWrite {
+        encrypted_store: ACCOUNT,
         previous_leaf_count,
         handle,
         allowed_keys,
@@ -68,10 +68,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // Block 10 creates the value allowing the owner; block 11 replaces the handle,
     // allows the owner again and makes it public.
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_state_histories(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
-        &[TransactionStateWrites {
+        &[TransactionStoreWrites {
             transaction_index: 0,
             sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
         }],
@@ -89,11 +89,11 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_state_histories(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
     assert_eq!(existing.len(), 1);
     assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
-        &[TransactionStateWrites {
+        &[TransactionStoreWrites {
             transaction_index: 2,
             sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
         }],
@@ -153,25 +153,25 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             .json(&LeafProofRequest {
                 leaves: vec![
                     LeafQuery {
-                        encrypted_state: hex32(&ACCOUNT),
+                        encrypted_store: hex32(&ACCOUNT),
                         handle: hex32(&[0x11; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
                     },
                     LeafQuery {
-                        encrypted_state: hex32(&ACCOUNT),
+                        encrypted_store: hex32(&ACCOUNT),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Allowed,
                         key: Some(hex32(&OWNER)),
                     },
                     LeafQuery {
-                        encrypted_state: hex32(&ACCOUNT),
+                        encrypted_store: hex32(&ACCOUNT),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
                     },
                     LeafQuery {
-                        encrypted_state: hex32(&[0xFF; 32]),
+                        encrypted_store: hex32(&[0xFF; 32]),
                         handle: hex32(&[0x10; 32]),
                         kind: LeafQueryKind::Public,
                         key: None,
@@ -239,7 +239,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .bearer_auth("secret")
         .json(&LeafProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_state: hex32(&ACCOUNT),
+                encrypted_store: hex32(&ACCOUNT),
                 handle: hex32(&[0x11; 32]),
                 kind: LeafQueryKind::Public,
                 key: None,
@@ -255,10 +255,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // An account first seen through an update serves no proof.
     let mut tx = pool.begin().await?;
     let incomplete = reduce_block_leaves(
-        &[TransactionStateWrites {
+        &[TransactionStoreWrites {
             transaction_index: 0,
-            sources: vec![EncryptedStateWrite {
-                encrypted_state: [0xBB; 32],
+            sources: vec![EncryptedStoreWrite {
+                encrypted_store: [0xBB; 32],
                 previous_leaf_count: 7,
                 handle: [0x21; 32],
                 allowed_keys: vec![OWNER],
@@ -280,7 +280,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .bearer_auth("secret")
         .json(&LeafProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_state: hex32(&[0xBB; 32]),
+                encrypted_store: hex32(&[0xBB; 32]),
                 handle: hex32(&[0x21; 32]),
                 kind: LeafQueryKind::Allowed,
                 key: Some(hex32(&OWNER)),

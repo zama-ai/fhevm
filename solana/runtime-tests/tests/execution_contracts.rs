@@ -272,12 +272,12 @@ fn token_idl_drops_transfer_and_call_callback_surface() {
 #[test]
 fn token_redeem_consumes_stateless_verifier_with_value_account_binding() {
     // The BurnRedemptionRequest witness lifecycle was dissolved (fhevm-internal#1763): redeem is now
-    // a single thin consumer that binds the burned encrypted State (`assert_burned_amount_state_account`), CPIs the
+    // a single thin consumer that binds the burned encrypted store (`assert_burned_amount_store_account`), CPIs the
     // stateless host `verify_public_decrypt` against the live KMS context the cert names, asserts the certified
     // cleartext equals the claimed amount, and closes the token account's `PendingBurn`. The grant
     // deny-list is deliberately not consulted during settlement, so it cannot trap funds.
     for required in [
-        "assert_burned_amount_state_account",
+        "assert_burned_amount_store_account",
         "fhe::verify_public_decrypt",
         "kms_decrypted_result_bytes(cleartext_amount)",
         "PENDING_BURN_SEED",
@@ -424,7 +424,7 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "VerifierSet",
         "OperatorSetEvent",
         "OperatorClosedEvent",
-        // Deleted by the EncryptedState ACL rewrite.
+        // Deleted by the EncryptedStore ACL rewrite.
         "AclRecord",
         "HandleMaterialCommitment",
         // Dissolved by fhevm-internal#1704 (DisclosureRequest lifecycle -> thin host verifier).
@@ -452,8 +452,8 @@ fn abi_golden_drift_checks_cover_host_token_listener_and_kms_layouts() {
         "confidential_token.json",
         "HostConfig",
         "KmsContext",
-        // The ACL rewrite's encrypted State replaces AclRecord/HandleMaterialCommitment.
-        "EncryptedState",
+        // The ACL rewrite's encrypted store replaces AclRecord/HandleMaterialCommitment.
+        "EncryptedStore",
     ] {
         assert!(
             IDL_CHECK_SCRIPT.contains(required)

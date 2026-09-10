@@ -16,13 +16,13 @@ pub(crate) struct Operand(pub(crate) OperandKind);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OperandKind {
-    StateSlot {
-        state: crate::StateId,
+    StoreSlot {
+        store: crate::StoreId,
         key: [u8; 32],
         handle: [u8; 32],
     },
     Granted {
-        consumer: crate::StateId,
+        consumer: crate::StoreId,
         handle: [u8; 32],
     },
     Transient {

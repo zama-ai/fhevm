@@ -4,7 +4,7 @@
 //! `dep_chain_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::StateId;
+use zama_fhe::StoreId;
 
 /// Seed of the per-owner chain state PDA.
 pub const CHAIN_SEED: &[u8] = b"dep-chain";
@@ -25,8 +25,8 @@ pub fn chain_authority_address(chain: Pubkey) -> (Pubkey, u8) {
 }
 
 /// The chain's encrypted tail value: the chain's application, authority its PDA.
-pub fn chain_state_id(chain: Pubkey) -> StateId {
-    StateId::new(
+pub fn chain_state_id(chain: Pubkey) -> StoreId {
+    StoreId::new(
         crate::id(),
         chain_authority_address(chain).0,
         chain.to_bytes(),

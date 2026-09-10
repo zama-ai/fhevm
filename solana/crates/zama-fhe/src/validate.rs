@@ -38,9 +38,9 @@ pub(crate) fn validate_lowered_execution(
         {
             return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
         }
-        // A State authority is found by key, never by wire index: it counts as used by the
+        // A Store authority is found by key, never by wire index: it counts as used by the
         // operand or output whose authority it is.
-        if account.requires_state_authority() {
+        if account.requires_store_authority() {
             used_accounts[index] = true;
         }
     }
@@ -170,20 +170,20 @@ fn validate_lowered_encrypted_operand(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::StateSlot {
+        FheExecuteOperand::StoreSlot {
             handle_index,
-            state_index,
+            store_index,
             key_index,
         } => {
-            mark_lowered_account(used_accounts, *state_index)?;
+            mark_lowered_account(used_accounts, *store_index)?;
             mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
             mark_lowered_dictionary_entry(used_dictionary, *key_index)?;
         }
         FheExecuteOperand::TransientResult {
             handle_index,
-            consumer_state_index,
+            consumer_store_index,
         } => {
-            mark_lowered_account(used_accounts, *consumer_state_index)?;
+            mark_lowered_account(used_accounts, *consumer_store_index)?;
             mark_lowered_dictionary_entry(used_dictionary, *handle_index)?;
         }
 
@@ -208,13 +208,13 @@ fn validate_lowered_effect(
     used_dictionary: &mut [bool],
 ) -> Result<()> {
     let FheExecuteEffect {
-        state_index,
+        store_index,
         slot,
         allow_indexes,
         grants,
         ..
     } = effect;
-    mark_lowered_account(used_accounts, *state_index)?;
+    mark_lowered_account(used_accounts, *store_index)?;
     if let Some(slot) = slot {
         mark_lowered_dictionary_entry(used_dictionary, slot.key_index)?;
         if let Some(index) = slot.previous_handle_index {
@@ -225,7 +225,7 @@ fn validate_lowered_effect(
         mark_lowered_dictionary_entry(used_dictionary, *index)?;
     }
     for grant in grants {
-        mark_lowered_account(used_accounts, grant.consumer_state_index)?;
+        mark_lowered_account(used_accounts, grant.consumer_store_index)?;
     }
     Ok(())
 }
@@ -285,7 +285,7 @@ where
                         return Err(FheExecutionBuildError::DivisionByZero);
                     }
                 }
-                OperandKind::StateSlot { .. }
+                OperandKind::StoreSlot { .. }
                 | OperandKind::Granted { .. }
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
@@ -404,7 +404,7 @@ where
     F: Fn(u8) -> Option<u8>,
 {
     match &operand.0 {
-        OperandKind::StateSlot { handle, .. } | OperandKind::Granted { handle, .. } => {
+        OperandKind::StoreSlot { handle, .. } | OperandKind::Granted { handle, .. } => {
             Ok(Some(handle_fhe_type(*handle)))
         }
         OperandKind::Transient { producer_index } => {

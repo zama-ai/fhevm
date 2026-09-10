@@ -39,7 +39,7 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confide
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
-  joinStateAddress,
+  joinStoreAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
@@ -143,7 +143,7 @@ export async function joinBatch(
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
-  const joinState = await joinStateAddress(parameters.batch, user.address);
+  const joinStore = await joinStoreAddress(parameters.batch, user.address);
   const fhe = await createSolanaFheTransaction({ payer: parameters.payer });
   const instruction = await getJoinInstructionAsync({
     user,
@@ -160,9 +160,9 @@ export async function joinBatch(
     ),
     userTokenAccount,
     batchJoinTokenAccount,
-    userBalanceState: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
-    batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
-    joinState,
+    userBalanceStore: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
+    batchBalanceStore: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
+    joinStore,
     ...fhe.accounts,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,

@@ -9,14 +9,14 @@ pub const MAX_TRANSIENT_RESULTS: usize = 112;
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransientGrant {
     pub handle: [u8; 32],
-    pub consumer_state: Pubkey,
+    pub consumer_store: Pubkey,
 }
 
 #[zero_copy]
 #[derive(Debug, PartialEq, Eq)]
 pub struct TransientResult {
     pub handle: [u8; 32],
-    pub producer_state: Pubkey,
+    pub producer_store: Pubkey,
     pub depth: u64,
 }
 
@@ -71,7 +71,7 @@ impl TransientStore {
             .max()
     }
 
-    pub fn authorized_depth(&self, handle: [u8; 32], consumer_state: Pubkey) -> Option<u64> {
+    pub fn authorized_depth(&self, handle: [u8; 32], consumer_store: Pubkey) -> Option<u64> {
         let mut depth = None;
         let mut allowed = false;
         for result in self.results[..self.len()]
@@ -79,16 +79,16 @@ impl TransientStore {
             .filter(|result| result.handle == handle)
         {
             depth = Some(depth.unwrap_or(0).max(result.depth));
-            allowed |= result.producer_state == consumer_state;
+            allowed |= result.producer_store == consumer_store;
         }
         allowed |= self.grants[..usize::from(self.grant_count)].contains(&TransientGrant {
             handle,
-            consumer_state,
+            consumer_store,
         });
         depth.filter(|_| allowed)
     }
 
-    pub fn record(&mut self, handle: [u8; 32], producer_state: Pubkey, depth: u64) -> Result<()> {
+    pub fn record(&mut self, handle: [u8; 32], producer_store: Pubkey, depth: u64) -> Result<()> {
         let index = self.len();
         require!(
             index < MAX_TRANSIENT_RESULTS,
@@ -97,15 +97,15 @@ impl TransientStore {
         // Keep occurrences: call-local result indexes must survive a repeated handle.
         self.results[index] = TransientResult {
             handle,
-            producer_state,
+            producer_store,
             depth,
         };
         self.result_count += 1;
         Ok(())
     }
 
-    pub fn allow(&mut self, handle: [u8; 32], consumer_state: Pubkey) -> Result<()> {
-        if self.authorized_depth(handle, consumer_state).is_some() {
+    pub fn allow(&mut self, handle: [u8; 32], consumer_store: Pubkey) -> Result<()> {
+        if self.authorized_depth(handle, consumer_store).is_some() {
             return Ok(());
         }
         let index = usize::from(self.grant_count);
@@ -115,7 +115,7 @@ impl TransientStore {
         );
         self.grants[index] = TransientGrant {
             handle,
-            consumer_state,
+            consumer_store,
         };
         self.grant_count += 1;
         Ok(())

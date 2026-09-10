@@ -1,5 +1,5 @@
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStateHandle } from "@sdk-src/solana/encryptedState.js";
+import { encryptedStoreHandle } from "@sdk-src/solana/encryptedStore.js";
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
 // decrypt, the live-cluster exercise of the confidential vault's forward path via
@@ -553,12 +553,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
-      // getEncryptedState throws while the account is missing and reads at the RPC default
+      // getEncryptedStore throws while the account is missing and reads at the RPC default
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
       const claimValueState = await until(
         async () => {
-          const state = await vault.getEncryptedState(rpc, claimValueAccount);
-          return encryptedStateHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
+          const state = await vault.getEncryptedStore(rpc, claimValueAccount);
+          return encryptedStoreHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
@@ -590,7 +590,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
       const clearValues = await decryptClient.userDecrypt({
         session: permitSession,
-        entries: [{ handle: encryptedStateHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedState: addressBytes(claimValueAccount) }],
+        entries: [{ handle: encryptedStoreHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedStore: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
       } as never);
 

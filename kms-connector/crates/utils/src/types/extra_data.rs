@@ -42,10 +42,10 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Format (v4, Solana encrypted state; exactly 65 bytes):
+/// Format (v4, Solana encrypted store; exactly 65 bytes):
 /// - Byte 0: version (`0x04`)
 /// - Bytes 1..33: context ID (32 bytes, big-endian U256)
-/// - Bytes 33..65: the encrypted state whose public leaf the certificate is about
+/// - Bytes 33..65: the encrypted store whose public leaf the certificate is about
 ///
 /// This generic parser consumes only the shared context prefix. The Solana public-decrypt path
 /// validates the exact v4 layout with `parse_solana_public_decrypt_extra_data`.

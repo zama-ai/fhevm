@@ -24,7 +24,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     let owner = Pubkey::new_unique();
     let chain = chain_program::chain_address(owner).0;
     let chain_authority = chain_program::chain_authority_address(chain).0;
-    let encrypted_state = chain_program::chain_state_id(chain).address();
+    let encrypted_store = chain_program::chain_state_id(chain).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&chain_program::id(), "dep_chain");
     mollusk.add_program(&host::id(), "zama_host");
@@ -34,7 +34,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         (host_config, host_config_data),
         (event_authority(host::id()), system_account(0)),
     ]));
-    ensure_system_accounts(&context, &[chain, chain_authority, encrypted_state]);
+    ensure_system_accounts(&context, &[chain, chain_authority, encrypted_store]);
     let mut ledger = CleartextLedger::default();
 
     let initialize = || {
@@ -44,7 +44,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 transient_store: host::transient_store_address(owner).0,
@@ -62,7 +62,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 transient_store: host::transient_store_address(owner).0,
@@ -84,7 +84,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         assert_eq!(
             ledger.u64_in_state(
                 &context,
-                encrypted_state,
+                encrypted_store,
                 chain_program::encrypted_tail_label()
             ),
             expected

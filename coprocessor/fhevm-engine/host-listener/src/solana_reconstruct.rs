@@ -61,22 +61,22 @@ pub fn decode_fhe_execute_random_seeds_event(
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
-pub const MAKE_STATE_ENCRYPTED_STATE_INDEX: usize = 2;
+pub const MAKE_STATE_ENCRYPTED_STORE_INDEX: usize = 2;
 
-pub fn is_make_state_handle_public_instruction(data: &[u8]) -> bool {
+pub fn is_make_store_handle_public_instruction(data: &[u8]) -> bool {
     data.get(..8)
-        == Some(zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR)
+        == Some(zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR)
 }
 
-pub fn decode_make_state_handle_public(
+pub fn decode_make_store_handle_public(
     data: &[u8],
 ) -> Option<([u8; 32], [u8; 32], u64)> {
-    if !is_make_state_handle_public_instruction(data) {
+    if !is_make_store_handle_public_instruction(data) {
         return None;
     }
     let mut body = data.get(8..)?;
     let args =
-        zama_host::instruction::MakeStateHandlePublic::deserialize(&mut body)
+        zama_host::instruction::MakeStoreHandlePublic::deserialize(&mut body)
             .ok()?;
     Some((args.key, args.handle, args.previous_leaf_count))
 }
@@ -122,7 +122,7 @@ fn resolve_operand(
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StoreSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
@@ -460,7 +460,7 @@ pub fn reconstruct_fhe_execute(
         };
         records.push(record);
     }
-    let mut state_outputs = Vec::new();
+    let mut store_outputs = Vec::new();
     for effect in &execution.effects {
         if effect.result.output_index != 0 {
             return None;
@@ -471,7 +471,7 @@ pub fn reconstruct_fhe_execute(
             || !effect.allow_indexes.is_empty()
             || effect.make_public
         {
-            state_outputs.push(state_leaf_output(
+            store_outputs.push(state_leaf_output(
                 effect,
                 &execution.dictionary,
                 handle,
@@ -480,7 +480,7 @@ pub fn reconstruct_fhe_execute(
     }
     Some(ReconstructedExecution {
         records,
-        state_outputs,
+        store_outputs,
     })
 }
 
@@ -496,15 +496,15 @@ fn boundary_mask(
 
 pub struct ReconstructedExecution {
     pub records: Vec<SolanaHostRecord>,
-    pub state_outputs: Vec<StateLeafOutput>,
+    pub store_outputs: Vec<StoreLeafOutput>,
 }
 
 /// The leaves a `State` output appends, read from instruction data the host
 /// validated before accepting the confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StateLeafOutput {
-    /// Index into `remaining_accounts` of the `EncryptedState` PDA.
-    pub state_index: u8,
+pub struct StoreLeafOutput {
+    /// Index into `remaining_accounts` of the `EncryptedStore` PDA.
+    pub store_index: u8,
     /// The state's leaf count before this output.
     pub previous_leaf_count: u64,
     pub handle: [u8; 32],
@@ -518,9 +518,9 @@ fn state_leaf_output(
     effect: &FheExecuteEffect,
     dictionary: &[[u8; 32]],
     handle: [u8; 32],
-) -> Option<StateLeafOutput> {
-    Some(StateLeafOutput {
-        state_index: effect.state_index,
+) -> Option<StoreLeafOutput> {
+    Some(StoreLeafOutput {
+        store_index: effect.store_index,
         previous_leaf_count: effect.previous_leaf_count,
         handle,
         allowed_keys: effect
@@ -548,38 +548,38 @@ mod tests {
 
     #[test]
     fn decodes_state_public_args_from_program_type() {
-        let args = zama_host::instruction::MakeStateHandlePublic {
+        let args = zama_host::instruction::MakeStoreHandlePublic {
             key: [1; 32],
             handle: [2; 32],
             previous_leaf_count: 7,
         };
         let mut data =
-            zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR
+            zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR
                 .to_vec();
         args.serialize(&mut data).unwrap();
-        assert!(is_make_state_handle_public_instruction(&data));
+        assert!(is_make_store_handle_public_instruction(&data));
         assert_eq!(
-            decode_make_state_handle_public(&data),
+            decode_make_store_handle_public(&data),
             Some(([1; 32], [2; 32], 7))
         );
         data.pop();
-        assert_eq!(decode_make_state_handle_public(&data), None);
+        assert_eq!(decode_make_store_handle_public(&data), None);
 
         // A create-state payload starts with enough fixed-width bytes to deserialize as the
         // public-seal arguments if the discriminator is ignored. It must never fabricate a
         // history write.
-        let create = zama_host::instruction::CreateEncryptedState {
-            args: zama_host::instructions::CreateEncryptedStateArgs {
+        let create = zama_host::instruction::CreateEncryptedStore {
+            args: zama_host::instructions::CreateEncryptedStoreArgs {
                 program: Pubkey::new_unique(),
                 scope: [4; 32],
                 authority_seeds: vec![vec![12; 4]],
             },
         };
         let mut create_data =
-            zama_host::instruction::CreateEncryptedState::DISCRIMINATOR
+            zama_host::instruction::CreateEncryptedStore::DISCRIMINATOR
                 .to_vec();
         create.serialize(&mut create_data).unwrap();
-        assert_eq!(decode_make_state_handle_public(&create_data), None);
+        assert_eq!(decode_make_store_handle_public(&create_data), None);
     }
 
     #[test]
@@ -589,7 +589,7 @@ mod tests {
             FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
         };
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
 
             returned_results: Vec::new(),
@@ -664,7 +664,7 @@ mod tests {
     #[test]
     fn fhe_execute_walk_chains_transient_handles() {
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
 
             returned_results: Vec::new(),
@@ -721,13 +721,13 @@ mod tests {
         // On-chain preflight requires a rand execution to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![zama_host::FheExecuteEffect {
                 result: zama_host::ExecutionResultRef {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: Some(zama_host::SlotWrite {
                     key_index: 2,
@@ -779,13 +779,13 @@ mod tests {
         // The execution ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its identity and allow list.
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![zama_host::FheExecuteEffect {
                 result: zama_host::ExecutionResultRef {
                     step_index: 6,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: Some(zama_host::SlotWrite {
                     key_index: 3,
@@ -943,7 +943,7 @@ mod tests {
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
 
             returned_results: Vec::new(),
@@ -969,15 +969,15 @@ mod tests {
     /// A `State` output exposes only proof-history inputs; slot and grant policy
     /// do not enter leaf reconstruction.
     #[test]
-    fn fhe_execute_walk_extracts_state_output() {
+    fn fhe_execute_walk_extracts_store_output() {
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![zama_host::FheExecuteEffect {
                 result: zama_host::ExecutionResultRef {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index: 3,
+                store_index: 3,
                 previous_leaf_count: 9,
                 slot: None,
                 allow_indexes: vec![0, 1],
@@ -1005,9 +1005,9 @@ mod tests {
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         assert_eq!(
-            steps.state_outputs,
-            vec![StateLeafOutput {
-                state_index: 3,
+            steps.store_outputs,
+            vec![StoreLeafOutput {
+                store_index: 3,
                 previous_leaf_count: 9,
                 handle,
                 allowed_keys: vec![[0xB1; 32], [0xB2; 32]],
@@ -1017,9 +1017,9 @@ mod tests {
     }
 
     #[test]
-    fn transient_has_no_state_output() {
+    fn transient_has_no_store_output() {
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
 
             returned_results: Vec::new(),
@@ -1037,19 +1037,19 @@ mod tests {
             &mut HashSet::new(),
         )
         .expect("walk");
-        assert!(steps.state_outputs.is_empty());
+        assert!(steps.store_outputs.is_empty());
     }
 
     #[test]
-    fn rejects_state_output_dictionary_overflow() {
+    fn rejects_store_output_dictionary_overflow() {
         let execution = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![zama_host::FheExecuteEffect {
                 result: zama_host::ExecutionResultRef {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: None,
                 allow_indexes: vec![1],

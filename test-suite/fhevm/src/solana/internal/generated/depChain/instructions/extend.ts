@@ -55,7 +55,7 @@ export type ExtendInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountChain extends string | AccountMeta<string> = string,
   TAccountChainAuthority extends string | AccountMeta<string> = string,
-  TAccountEncryptedState extends string | AccountMeta<string> = string,
+  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
@@ -72,7 +72,7 @@ export type ExtendInstruction<
         : TAccountOwner,
       TAccountChain extends string ? ReadonlyAccount<TAccountChain> : TAccountChain,
       TAccountChainAuthority extends string ? ReadonlyAccount<TAccountChainAuthority> : TAccountChainAuthority,
-      TAccountEncryptedState extends string ? WritableAccount<TAccountEncryptedState> : TAccountEncryptedState,
+      TAccountEncryptedStore extends string ? WritableAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -123,7 +123,7 @@ export type ExtendAsyncInput<
   TAccountOwner extends string = string,
   TAccountChain extends string = string,
   TAccountChainAuthority extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -135,10 +135,10 @@ export type ExtendAsyncInput<
   chain?: Address<TAccountChain>;
   chainAuthority?: Address<TAccountChainAuthority>;
   /**
-   * Stable tail encrypted State; read for the current handle and replaced by this
+   * Stable tail encrypted store; read for the current handle and replaced by this
    * execution.
    */
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -153,7 +153,7 @@ export async function getExtendInstructionAsync<
   TAccountOwner extends string,
   TAccountChain extends string,
   TAccountChainAuthority extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -166,7 +166,7 @@ export async function getExtendInstructionAsync<
     TAccountOwner,
     TAccountChain,
     TAccountChainAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -181,7 +181,7 @@ export async function getExtendInstructionAsync<
     TAccountOwner,
     TAccountChain,
     TAccountChainAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -198,7 +198,7 @@ export async function getExtendInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: true },
     chain: { value: input.chain ?? null, isWritable: false },
     chainAuthority: { value: input.chainAuthority ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -239,7 +239,7 @@ export async function getExtendInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('chain', accounts.chain),
       getAccountMeta('chainAuthority', accounts.chainAuthority),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -254,7 +254,7 @@ export async function getExtendInstructionAsync<
     TAccountOwner,
     TAccountChain,
     TAccountChainAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -268,7 +268,7 @@ export type ExtendInput<
   TAccountOwner extends string = string,
   TAccountChain extends string = string,
   TAccountChainAuthority extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -280,10 +280,10 @@ export type ExtendInput<
   chain: Address<TAccountChain>;
   chainAuthority: Address<TAccountChainAuthority>;
   /**
-   * Stable tail encrypted State; read for the current handle and replaced by this
+   * Stable tail encrypted store; read for the current handle and replaced by this
    * execution.
    */
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -298,7 +298,7 @@ export function getExtendInstruction<
   TAccountOwner extends string,
   TAccountChain extends string,
   TAccountChainAuthority extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -311,7 +311,7 @@ export function getExtendInstruction<
     TAccountOwner,
     TAccountChain,
     TAccountChainAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -325,7 +325,7 @@ export function getExtendInstruction<
   TAccountOwner,
   TAccountChain,
   TAccountChainAuthority,
-  TAccountEncryptedState,
+  TAccountEncryptedStore,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
   TAccountTransientStore,
@@ -341,7 +341,7 @@ export function getExtendInstruction<
     owner: { value: input.owner ?? null, isWritable: true },
     chain: { value: input.chain ?? null, isWritable: false },
     chainAuthority: { value: input.chainAuthority ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
@@ -372,7 +372,7 @@ export function getExtendInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('chain', accounts.chain),
       getAccountMeta('chainAuthority', accounts.chainAuthority),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -387,7 +387,7 @@ export function getExtendInstruction<
     TAccountOwner,
     TAccountChain,
     TAccountChainAuthority,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -407,10 +407,10 @@ export type ParsedExtendInstruction<
     chain: TAccountMetas[1];
     chainAuthority: TAccountMetas[2];
     /**
-     * Stable tail encrypted State; read for the current handle and replaced by this
+     * Stable tail encrypted store; read for the current handle and replaced by this
      * execution.
      */
-    encryptedState: TAccountMetas[3];
+    encryptedStore: TAccountMetas[3];
     hostConfig: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
     transientStore: TAccountMetas[6];
@@ -442,7 +442,7 @@ export function parseExtendInstruction<TProgram extends string, TAccountMetas ex
       owner: getNextAccount(),
       chain: getNextAccount(),
       chainAuthority: getNextAccount(),
-      encryptedState: getNextAccount(),
+      encryptedStore: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),

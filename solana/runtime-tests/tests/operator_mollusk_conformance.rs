@@ -21,13 +21,13 @@ use zama_host::{
 };
 use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, empty_system_account, encrypted_state_account, event_authority,
-    funded_system_account, handle_for_chain, host_config_account, new_encrypted_state,
+    anchor_error_check, anchor_ix, empty_system_account, encrypted_store_account, event_authority,
+    funded_system_account, handle_for_chain, host_config_account, new_encrypted_store,
     rand_nonce_account, system_program_account, HostConfigParams,
 };
 
 mod host_fixtures;
-use host_fixtures::{fixture_scope, sole_state_authority, StateAuthority};
+use host_fixtures::{fixture_scope, sole_store_authority, StoreAuthority};
 
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x44; 32];
 const UNIX_TIMESTAMP: i64 = 0;
@@ -208,7 +208,7 @@ fn system_owned_encrypted_operand_is_rejected() {
             rhs: scalar(be(2)),
             output_fhe_type: 5,
         },
-        host::errors::ZamaHostError::EncryptedStatePdaMismatch,
+        host::errors::ZamaHostError::EncryptedStorePdaMismatch,
     );
 }
 
@@ -234,7 +234,7 @@ struct ExecutionFlow {
     payer: Pubkey,
     /// The application: one value authority PDA of a fresh program, signing for every value it
     /// reads and writes in `fixture_scope()`.
-    authority: StateAuthority,
+    authority: StoreAuthority,
     host_config: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
     remaining: Vec<AccountMeta>,
@@ -282,10 +282,10 @@ impl ExecutionFlow {
     fn new() -> Self {
         INTERNED_DICTIONARY.with(|dictionary| dictionary.borrow_mut().clear());
         let payer = Pubkey::new_unique();
-        let authority = sole_state_authority(Pubkey::new_unique());
+        let authority = sole_store_authority(Pubkey::new_unique());
         let (host_config, host_config_account) = host_config_account(&HostConfigParams::new(payer));
         let (state_address, state) =
-            new_encrypted_state(authority.app(fixture_scope()), authority.key, []);
+            new_encrypted_store(authority.app(fixture_scope()), authority.key, []);
         Self {
             payer,
             authority,
@@ -293,7 +293,7 @@ impl ExecutionFlow {
             accounts: vec![
                 (system_program::ID, system_program_account()),
                 (payer, funded_system_account()),
-                (state_address, encrypted_state_account(&state)),
+                (state_address, encrypted_store_account(&state)),
                 (authority.key, empty_system_account()),
                 (host_config, host_config_account),
                 (event_authority(host::id()), Account::default()),
@@ -316,8 +316,8 @@ impl ExecutionFlow {
         let handle = handle_for_chain(seed, fhe_type);
         self.cleartext
             .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
-        let (address, mut state) = new_encrypted_state(self.app(), self.authority.key, []);
-        let state_index = if let Some(index) = self
+        let (address, mut state) = new_encrypted_store(self.app(), self.authority.key, []);
+        let store_index = if let Some(index) = self
             .remaining
             .iter()
             .position(|meta| meta.pubkey == address)
@@ -328,12 +328,12 @@ impl ExecutionFlow {
                 .find(|(key, _)| *key == address)
                 .unwrap()
                 .1;
-            state = host::EncryptedState::try_deserialize(&mut &account.data[..]).unwrap();
+            state = host::EncryptedStore::try_deserialize(&mut &account.data[..]).unwrap();
             state.slots.push(host::EncryptedSlot {
                 key: [seed; 32],
                 handle,
             });
-            *account = encrypted_state_account(&state);
+            *account = encrypted_store_account(&state);
             index as u8
         } else {
             state.slots.push(host::EncryptedSlot {
@@ -344,12 +344,12 @@ impl ExecutionFlow {
             self.remaining
                 .push(AccountMeta::new_readonly(address, false));
             self.accounts
-                .push((address, encrypted_state_account(&state)));
+                .push((address, encrypted_store_account(&state)));
             index
         };
-        FheExecuteOperand::StateSlot {
+        FheExecuteOperand::StoreSlot {
             handle_index: intern(handle),
-            state_index,
+            store_index,
             key_index: intern([seed; 32]),
         }
     }
@@ -365,8 +365,8 @@ impl ExecutionFlow {
     }
 
     fn persistent_output(&mut self, key: [u8; 32], writable: bool) -> (FheExecuteEffect, Pubkey) {
-        let (address, state) = new_encrypted_state(self.app(), self.authority.key, []);
-        let state_index = if let Some(index) = self
+        let (address, state) = new_encrypted_store(self.app(), self.authority.key, []);
+        let store_index = if let Some(index) = self
             .remaining
             .iter()
             .position(|meta| meta.pubkey == address)
@@ -381,7 +381,7 @@ impl ExecutionFlow {
                 AccountMeta::new_readonly(address, false)
             });
             self.accounts
-                .push((address, encrypted_state_account(&state)));
+                .push((address, encrypted_store_account(&state)));
             index
         };
         (
@@ -390,7 +390,7 @@ impl ExecutionFlow {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index,
+                store_index,
                 previous_leaf_count: 0,
                 slot: Some(SlotWrite {
                     key_index: intern(key),
@@ -435,7 +435,7 @@ impl ExecutionFlow {
             .expect("accepted host execution must have valid cleartext semantics");
         let output_account = result.get_account(&output_address).unwrap();
         let mut output_data: &[u8] = &output_account.data;
-        let output_handle = host::EncryptedState::try_deserialize(&mut output_data)
+        let output_handle = host::EncryptedStore::try_deserialize(&mut output_data)
             .expect("state result account")
             .get(&[100; 32])
             .expect("output slot");
@@ -459,7 +459,7 @@ impl ExecutionFlow {
 
     fn instruction(&self, step: FheExecuteStep) -> (FheExecuteArgs, Instruction) {
         let args = FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: self.effects.clone(),
             returned_results: Vec::new(),
             account_count: u8::try_from(self.remaining.len()).expect("test accounts fit u8"),
@@ -537,7 +537,7 @@ fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
 
 fn operand_handle(operand: &FheExecuteOperand) -> [u8; 32] {
     match operand {
-        FheExecuteOperand::StateSlot { handle_index, .. } => pool_entry(*handle_index),
+        FheExecuteOperand::StoreSlot { handle_index, .. } => pool_entry(*handle_index),
         FheExecuteOperand::Scalar { value_index } => pool_entry(*value_index),
         _ => panic!("representative flow uses only persistent or scalar operands"),
     }

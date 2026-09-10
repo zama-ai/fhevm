@@ -1,10 +1,10 @@
 use super::*;
 
-pub(super) fn accept_state_output(
+pub(super) fn accept_store_output(
     table: &mut ExecutionAccountTable<'_, '_>,
     dictionary: &[[u8; 32]],
     transient_store: &mut TransientStore,
-    state_index: u8,
+    store_index: u8,
     previous_leaf_count: u64,
     slot: &Option<SlotWrite>,
     allow_indexes: &[u8],
@@ -12,15 +12,15 @@ pub(super) fn accept_state_output(
     grants: &[ResultGrant],
     result: [u8; 32],
 ) -> Result<Pubkey> {
-    let state_key = table.account(state_index.into())?.key();
+    let state_key = table.account(store_index.into())?.key();
     require!(
-        table.state(state_index.into())?.leaf_count == previous_leaf_count,
-        ZamaHostError::PreviousStateMismatch
+        table.state(store_index.into())?.leaf_count == previous_leaf_count,
+        ZamaHostError::PreviousStoreMismatch
     );
     let allows = resolve_dictionary_keys(dictionary, allow_indexes)?;
     assert_allow_keys(&allows)?;
     if slot.is_some() || !allows.is_empty() || make_public {
-        let state = table.state_mut(state_index.into())?;
+        let state = table.state_mut(store_index.into())?;
         if let Some(slot) = slot {
             let key = dictionary_bytes(dictionary, slot.key_index)?;
             let expected = slot
@@ -50,7 +50,7 @@ pub(super) fn accept_state_output(
         }
     }
     for grant in grants {
-        let consumer = table.account(grant.consumer_state_index.into())?.key();
+        let consumer = table.account(grant.consumer_store_index.into())?.key();
         transient_store.allow(result, consumer)?;
     }
     Ok(state_key)

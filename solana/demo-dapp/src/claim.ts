@@ -23,7 +23,7 @@ type ClaimSession = {
   readonly keeper: TransactionSigner;
 };
 
-const readClaimState = async (
+const readClaimStore = async (
   session: ClaimSession,
   position: BatchTarget,
   direction: VaultDirection,
@@ -52,7 +52,7 @@ const buildClaimInstructions = async (
   direction: VaultDirection,
   user: Address,
 ): Promise<{ readonly instructions: readonly Instruction[]; readonly initializesAccount: boolean } | null> => {
-  const { rpc, roots, claimed } = await readClaimState(session, position, direction, user);
+  const { rpc, roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
 
   const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);

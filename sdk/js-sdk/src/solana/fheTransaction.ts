@@ -30,7 +30,7 @@ export type SolanaFheTransaction = {
 
 /**
  * Prepares a shared transaction context. The payer funds its refundable rent; each program still
- * authenticates its own encrypted State. Build all participating instructions with `accounts`,
+ * authenticates its own encrypted store. Build all participating instructions with `accounts`,
  * then call `wrap` once. This helper does not sign, simulate, or send the transaction.
  */
 export async function createSolanaFheTransaction(parameters: {

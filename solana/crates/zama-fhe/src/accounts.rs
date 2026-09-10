@@ -15,11 +15,11 @@ use crate::execution::FheExecution;
 /// Why an execution needs a dynamic account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionAccountPurpose {
-    StateInput,
-    StateOutput,
-    /// A State authority that is not the execution's fixed CPI signer; it signs
+    StoreInput,
+    StoreOutput,
+    /// A Store authority that is not the execution's fixed CPI signer; it signs
     /// for every read and write of that value.
-    StateAuthority,
+    StoreAuthority,
 }
 
 /// At most one of each [`ExecutionAccountPurpose`]. Three variants, so a stack array — never a
@@ -80,11 +80,11 @@ impl PurposeList {
     pub(crate) fn requires_dynamic_account(&self) -> bool {
         self.as_slice()
             .iter()
-            .any(|purpose| *purpose != ExecutionAccountPurpose::StateAuthority)
+            .any(|purpose| *purpose != ExecutionAccountPurpose::StoreAuthority)
     }
 
-    pub(crate) fn requires_state_authority(&self) -> bool {
-        self.contains(ExecutionAccountPurpose::StateAuthority)
+    pub(crate) fn requires_store_authority(&self) -> bool {
+        self.contains(ExecutionAccountPurpose::StoreAuthority)
     }
 }
 
@@ -127,8 +127,8 @@ impl ExecutionAccountRequirement {
         self.purposes.requires_dynamic_account()
     }
 
-    pub fn requires_state_authority(&self) -> bool {
-        self.purposes.requires_state_authority()
+    pub fn requires_store_authority(&self) -> bool {
+        self.purposes.requires_store_authority()
     }
 }
 
@@ -173,8 +173,8 @@ impl ExecutionAccountMeta {
         self.purposes.requires_dynamic_account()
     }
 
-    pub(crate) fn requires_state_authority(&self) -> bool {
-        self.purposes.requires_state_authority()
+    pub(crate) fn requires_store_authority(&self) -> bool {
+        self.purposes.requires_store_authority()
     }
 }
 
@@ -219,11 +219,11 @@ pub enum ExecutionAccountResolutionError {
         requirement: ExecutionAccountRequirement,
     },
     /// The same value authority witness was supplied more than once.
-    DuplicateStateAuthority { pubkey: Pubkey },
+    DuplicateStoreAuthority { pubkey: Pubkey },
     /// A supplied value authority is not required by this execution.
-    UnexpectedStateAuthority { pubkey: Pubkey },
+    UnexpectedStoreAuthority { pubkey: Pubkey },
     /// A required value authority witness could not be resolved.
-    MissingStateAuthority {
+    MissingStoreAuthority {
         authority: ExecutionAuthorityRequirement,
     },
 }
@@ -234,11 +234,11 @@ impl ExecutionAccountResolutionError {
         match self {
             Self::DuplicateDynamicAccount { pubkey }
             | Self::UnexpectedDynamicAccount { pubkey }
-            | Self::DuplicateStateAuthority { pubkey }
-            | Self::UnexpectedStateAuthority { pubkey } => *pubkey,
+            | Self::DuplicateStoreAuthority { pubkey }
+            | Self::UnexpectedStoreAuthority { pubkey } => *pubkey,
             Self::MissingDynamicAccount { requirement }
             | Self::DynamicAccountNotWritable { requirement } => requirement.pubkey(),
-            Self::MissingStateAuthority { authority } => authority.pubkey(),
+            Self::MissingStoreAuthority { authority } => authority.pubkey(),
         }
     }
 }
@@ -310,22 +310,22 @@ pub(crate) fn resolve_execution_accounts<'info>(
             .iter()
             .any(|candidate| candidate.key() == pubkey)
         {
-            return Err(ExecutionAccountResolutionError::DuplicateStateAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::DuplicateStoreAuthority { pubkey });
         }
         if !execution
             .value_authorities()
             .any(|required| required == pubkey)
         {
-            return Err(ExecutionAccountResolutionError::UnexpectedStateAuthority { pubkey });
+            return Err(ExecutionAccountResolutionError::UnexpectedStoreAuthority { pubkey });
         }
     }
 
-    for authority in execution.state_authority_requirements() {
+    for authority in execution.store_authority_requirements() {
         if !value_authorities
             .iter()
             .any(|candidate| candidate.key() == authority.pubkey())
         {
-            return Err(ExecutionAccountResolutionError::MissingStateAuthority { authority });
+            return Err(ExecutionAccountResolutionError::MissingStoreAuthority { authority });
         }
     }
 
@@ -334,12 +334,12 @@ pub(crate) fn resolve_execution_accounts<'info>(
     // instruction anyway.
     let mut accounts = Vec::with_capacity(execution.remaining_accounts.len());
     for required in &execution.remaining_accounts {
-        let account = if required.requires_state_authority() {
+        let account = if required.requires_store_authority() {
             value_authorities
                 .iter()
                 .find(|candidate| candidate.key() == required.pubkey)
                 .cloned()
-                .ok_or(ExecutionAccountResolutionError::MissingStateAuthority {
+                .ok_or(ExecutionAccountResolutionError::MissingStoreAuthority {
                     authority: ExecutionAuthorityRequirement {
                         pubkey: required.pubkey,
                     },

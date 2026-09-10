@@ -41,22 +41,22 @@ describe('buildDiscloseSecpInstruction', () => {
   it('maps a claim onto the token disclose_secp instruction with the right accounts', async () => {
     const mint = addr(5);
     const tokenAccount = addr(8);
-    const encryptedState = addr(6);
+    const encryptedStore = addr(6);
     const kmsContext = addr(7);
     const hostConfig = addr(9);
     const instruction = await buildDiscloseSecpInstruction(
-      { mint, tokenAccount, encryptedState, kmsContext, hostConfig },
+      { mint, tokenAccount, encryptedStore, kmsContext, hostConfig },
       claim(),
       inclusionProof,
     );
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const addresses = instruction.accounts?.map((a: { readonly address: Address }) => a.address) ?? [];
-    // mint, tokenAccount, encryptedState, hostConfig, kmsContext, zamaProgram, eventAuthority, program
+    // mint, tokenAccount, encryptedStore, hostConfig, kmsContext, zamaProgram, eventAuthority, program
     expect(addresses).toHaveLength(8);
     expect(addresses[0]).toBe(mint);
     expect(addresses[1]).toBe(tokenAccount);
-    expect(addresses[2]).toBe(encryptedState);
+    expect(addresses[2]).toBe(encryptedStore);
     expect(addresses[3]).toBe(hostConfig);
     expect(addresses[4]).toBe(kmsContext);
     expect(addresses[5]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);

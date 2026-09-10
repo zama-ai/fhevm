@@ -120,9 +120,9 @@ describe('Decryption', function () {
     return hre.ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
   }
 
-  // Build the Solana public-decrypt payload: version 4, contextId, EncryptedState address.
-  function extraDataV4(contextId: bigint, encryptedState: string): string {
-    return hre.ethers.solidityPacked(['uint8', 'uint256', 'bytes32'], [4, contextId, encryptedState]);
+  // Build the Solana public-decrypt payload: version 4, contextId, EncryptedStore address.
+  function extraDataV4(contextId: bigint, encryptedStore: string): string {
+    return hre.ethers.solidityPacked(['uint8', 'uint256', 'bytes32'], [4, contextId, encryptedStore]);
   }
 
   // Full event signatures. Solidity event overloading makes bare-name lookups ambiguous in
@@ -702,10 +702,10 @@ describe('Decryption', function () {
       expect(await decryption.isDecryptionDone(decryptionId)).to.be.true;
     });
 
-    it('Should admit Solana public decrypt extraData v4 carrying an EncryptedState address', async function () {
+    it('Should admit Solana public decrypt extraData v4 carrying an EncryptedStore address', async function () {
       const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-      const encryptedState = createBytes32s(1)[0];
-      const v4ExtraData = extraDataV4(currentContextId, encryptedState);
+      const encryptedStore = createBytes32s(1)[0];
+      const v4ExtraData = extraDataV4(currentContextId, encryptedStore);
 
       const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v4ExtraData);
       await expect(requestTx)

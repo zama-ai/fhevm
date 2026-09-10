@@ -39,16 +39,16 @@
       "args": []
     },
     {
-      "name": "create_encrypted_state",
+      "name": "create_encrypted_store",
       "discriminator": [
-        129,
-        248,
-        83,
+        15,
+        246,
+        59,
+        113,
+        120,
+        213,
         252,
-        187,
-        184,
-        173,
-        144
+        151
       ],
       "accounts": [
         {
@@ -61,7 +61,7 @@
           "signer": true
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "writable": true
         },
         {
@@ -97,7 +97,7 @@
           "name": "args",
           "type": {
             "defined": {
-              "name": "CreateEncryptedStateArgs"
+              "name": "CreateEncryptedStoreArgs"
             }
           }
         }
@@ -426,7 +426,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for State growth and lazy meter creation."
+            "Pays rent for Store growth and lazy meter creation."
           ],
           "writable": true,
           "signer": true
@@ -434,7 +434,7 @@
         {
           "name": "authority",
           "docs": [
-            "Default authority signer. Each State read or written requires its stored authority to",
+            "Default authority signer. Each Store read or written requires its stored authority to",
             "sign, either here or among the remaining accounts."
           ],
           "signer": true
@@ -479,7 +479,7 @@
           "docs": [
             "Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs",
             "(`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the",
-            "States controlled by the default authority. State creation proves the authority is a PDA",
+            "Stores controlled by the default authority. Store creation proves the authority is a PDA",
             "of `program`, so no caller can rotate a fresh *signer* to reach another",
             "program's meter — but a program declares its own `scope` freely, and a fresh scope is a",
             "fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply",
@@ -671,20 +671,20 @@
       ]
     },
     {
-      "name": "make_state_handle_public",
+      "name": "make_store_handle_public",
       "docs": [
         "Seals the value's current handle as publicly decryptable. Every other allow happens",
         "inline on the `fhe_execute` write that produces the handle."
       ],
       "discriminator": [
-        62,
-        63,
-        177,
-        193,
-        7,
-        10,
-        49,
-        65
+        191,
+        70,
+        139,
+        210,
+        118,
+        2,
+        132,
+        47
       ],
       "accounts": [
         {
@@ -697,7 +697,7 @@
           "signer": true
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "writable": true
         },
         {
@@ -1673,9 +1673,9 @@
           ]
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "docs": [
-            "The encrypted State whose peaks the inclusion proof is checked against."
+            "The encrypted store whose peaks the inclusion proof is checked against."
           ]
         }
       ],
@@ -1726,16 +1726,16 @@
   ],
   "accounts": [
     {
-      "name": "EncryptedState",
+      "name": "EncryptedStore",
       "discriminator": [
-        40,
-        50,
-        14,
-        85,
-        213,
-        243,
-        124,
-        173
+        161,
+        143,
+        137,
+        73,
+        233,
+        30,
+        46,
+        118
       ]
     },
     {
@@ -2000,12 +2000,12 @@
     },
     {
       "code": 6020,
-      "name": "EncryptedStateAccountAuthorityMismatch",
-      "msg": "signer does not match the encrypted State authority"
+      "name": "EncryptedStoreAccountAuthorityMismatch",
+      "msg": "signer does not match the encrypted store authority"
     },
     {
       "code": 6021,
-      "name": "EncryptedStateAuthorityNotProgramPda",
+      "name": "EncryptedStoreAuthorityNotProgramPda",
       "msg": "encrypted value authority is not a PDA of the declared program"
     },
     {
@@ -2115,17 +2115,17 @@
     },
     {
       "code": 6043,
-      "name": "EncryptedStatePdaMismatch",
-      "msg": "encrypted State does not match the canonical PDA"
+      "name": "EncryptedStorePdaMismatch",
+      "msg": "encrypted store does not match the canonical PDA"
     },
     {
       "code": 6044,
-      "name": "PreviousStateMismatch",
+      "name": "PreviousStoreMismatch",
       "msg": "encrypted value previous handle does not match the account"
     },
     {
       "code": 6045,
-      "name": "EncryptedStatePublicHandleMismatch",
+      "name": "EncryptedStorePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
@@ -2135,12 +2135,12 @@
     },
     {
       "code": 6047,
-      "name": "EncryptedStateMmrInconsistent",
+      "name": "EncryptedStoreMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
       "code": 6048,
-      "name": "EncryptedStateMmrPeakCapacityExceeded",
+      "name": "EncryptedStoreMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
@@ -2290,8 +2290,8 @@
     },
     {
       "code": 6078,
-      "name": "EncryptedStateCapacityExceeded",
-      "msg": "encrypted state slot capacity exceeded"
+      "name": "EncryptedStoreCapacityExceeded",
+      "msg": "encrypted store slot capacity exceeded"
     },
     {
       "code": 6079,
@@ -2398,7 +2398,7 @@
       }
     },
     {
-      "name": "CreateEncryptedStateArgs",
+      "name": "CreateEncryptedStoreArgs",
       "type": {
         "kind": "struct",
         "fields": [
@@ -2509,7 +2509,7 @@
       }
     },
     {
-      "name": "EncryptedState",
+      "name": "EncryptedStore",
       "type": {
         "kind": "struct",
         "fields": [
@@ -2664,9 +2664,9 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "execution_state_index",
+            "name": "execution_store_index",
             "docs": [
-              "Canonical State whose authority signs and produces this execution."
+              "Canonical Store whose authority signs and produces this execution."
             ],
             "type": "u8"
           },
@@ -2722,7 +2722,7 @@
           {
             "name": "effects",
             "docs": [
-              "Applied in order after all arithmetic has read the initial State snapshots."
+              "Applied in order after all arithmetic has read the initial Store snapshots."
             ],
             "type": {
               "vec": {
@@ -2753,7 +2753,7 @@
     {
       "name": "FheExecuteEffect",
       "docs": [
-        "An ordered State write, decrypt permission or cross-State grant on a produced result."
+        "An ordered Store write, decrypt permission or cross-Store grant on a produced result."
       ],
       "type": {
         "kind": "struct",
@@ -2767,7 +2767,7 @@
             }
           },
           {
-            "name": "state_index",
+            "name": "store_index",
             "type": "u8"
           },
           {
@@ -2857,14 +2857,14 @@
             ]
           },
           {
-            "name": "StateSlot",
+            "name": "StoreSlot",
             "fields": [
               {
                 "name": "handle_index",
                 "type": "u8"
               },
               {
-                "name": "state_index",
+                "name": "store_index",
                 "type": "u8"
               },
               {
@@ -2881,7 +2881,7 @@
                 "type": "u8"
               },
               {
-                "name": "consumer_state_index",
+                "name": "consumer_store_index",
                 "type": "u8"
               }
             ]
@@ -3817,7 +3817,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted State's MMR."
+              "Index of the proven leaf within the encrypted store's MMR."
             ],
             "type": "u64"
           },
@@ -3912,9 +3912,9 @@
             "type": "u16"
           },
           {
-            "name": "encrypted_state",
+            "name": "encrypted_store",
             "docs": [
-              "Host-owned persistent `EncryptedState` account bound by the step."
+              "Host-owned persistent `EncryptedStore` account bound by the step."
             ],
             "type": "pubkey"
           },
@@ -4002,7 +4002,7 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "consumer_state_index",
+            "name": "consumer_store_index",
             "type": "u8"
           }
         ]
@@ -4045,7 +4045,7 @@
             }
           },
           {
-            "name": "consumer_state",
+            "name": "consumer_store",
             "type": "pubkey"
           }
         ]
@@ -4070,7 +4070,7 @@
             }
           },
           {
-            "name": "producer_state",
+            "name": "producer_store",
             "type": "pubkey"
           },
           {
@@ -4187,7 +4187,7 @@
           {
             "name": "authority",
             "docs": [
-              "The encrypted State authority the delegation is scoped over. A delegation covers",
+              "The encrypted store authority the delegation is scoped over. A delegation covers",
               "every value of that authority in every scope: the scope is not one of the PDA's seeds."
             ],
             "type": "pubkey"

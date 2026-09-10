@@ -2,7 +2,7 @@ import { getProgramDerivedAddress, getU64Encoder, type Address } from '@solana/k
 import { base58 } from '@scure/base';
 import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinRecord.js';
 
-import { solanaEncryptedStateAddress } from '@sdk-src/solana/encryptedState.js';
+import { solanaEncryptedStoreAddress } from '@sdk-src/solana/encryptedStore.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
@@ -28,12 +28,12 @@ function addressBytes(value: Address): Uint8Array {
 }
 
 /**
- * The canonical `EncryptedState` PDA of a confidential-token value: the token program's value,
+ * The canonical `EncryptedStore` PDA of a confidential-token value: the token program's value,
  * scoped to its mint, controlled by `authority` (a token account, or a mint's total-supply
  * authority), under one of the program's fixed labels (`token_slot` in the token program).
  */
 export function tokenStateAddress(mint: Address, authority: Address): Promise<Address> {
-  return solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+  return solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     authority: addressBytes(authority),
     scope: addressBytes(mint),
@@ -59,9 +59,9 @@ export async function pendingBurnAddress(mint: Address, tokenAccount: Address): 
   return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [PENDING_BURN_SEED, addressBytes(mint), addressBytes(tokenAccount)]);
 }
 
-export async function joinStateAddress(batch: Address, user: Address): Promise<Address> {
+export async function joinStoreAddress(batch: Address, user: Address): Promise<Address> {
   const [record] = await findJoinRecordPda({ batch, user });
-  return solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+  return solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
     authority: addressBytes(record),
     scope: addressBytes(batch),

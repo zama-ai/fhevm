@@ -34,8 +34,8 @@ use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use zama_solana_acl::{
-    EncryptedSlot, EncryptedState, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
-    encode_host_config, encrypted_state_discriminator, historical_access_leaf_commitment,
+    EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
+    encode_host_config, encrypted_store_discriminator, historical_access_leaf_commitment,
     mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
@@ -53,13 +53,13 @@ pub const GENESIS_HASH: [u8; 32] = [9; 32];
 /// chain id must.
 pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
 
-/// The application program of the default encrypted state.
+/// The application program of the default encrypted store.
 pub const APP_PROGRAM: SolanaPubkeyBytes = [1; 32];
-/// The encrypted state authority of the default encrypted state.
+/// The encrypted store authority of the default encrypted store.
 pub const AUTHORITY: SolanaPubkeyBytes = [2; 32];
-/// The program-declared scope of the default encrypted state.
+/// The program-declared scope of the default encrypted store.
 pub const SCOPE: SolanaPubkeyBytes = [3; 32];
-/// The label of the default encrypted state.
+/// The label of the default encrypted store.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
 /// FHE type byte of a boolean handle — the narrowest type, two bits.
@@ -296,20 +296,20 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a direct entry: the signer's own allow leaf on the handle authorizes it.
-    pub fn direct(self, encrypted_state: &EncryptedStateFixture, handle: [u8; 32]) -> Self {
+    pub fn direct(self, encrypted_store: &EncryptedStoreFixture, handle: [u8; 32]) -> Self {
         let signer = self.wallet.pubkey();
-        self.entry(handle, signer, encrypted_state.account_key)
+        self.entry(handle, signer, encrypted_store.account_key)
     }
 
     /// Adds a delegated entry: `delegator`'s allow leaf on the handle authorizes it, through a
     /// delegation to the signer.
     pub fn delegated(
         self,
-        encrypted_state: &EncryptedStateFixture,
+        encrypted_store: &EncryptedStoreFixture,
         handle: [u8; 32],
         delegator: SolanaPubkeyBytes,
     ) -> Self {
-        self.entry(handle, delegator, encrypted_state.account_key)
+        self.entry(handle, delegator, encrypted_store.account_key)
     }
 
     /// Adds an entry verbatim, for the malformed and substitution cases.
@@ -317,12 +317,12 @@ impl<'a> RequestBuilder<'a> {
         mut self,
         handle: [u8; 32],
         allowed_key: SolanaPubkeyBytes,
-        encrypted_state: SolanaPubkeyBytes,
+        encrypted_store: SolanaPubkeyBytes,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
             allowed_key: allowed_key.to_vec(),
-            encrypted_state: encrypted_state.to_vec(),
+            encrypted_store: encrypted_store.to_vec(),
         });
         self
     }
@@ -356,26 +356,26 @@ pub struct SealedLeaf {
     pub commitment: [u8; 32],
 }
 
-/// An encrypted state as the host program would hold it, with the leaves the
+/// An encrypted store as the host program would hold it, with the leaves the
 /// coprocessors' record would hold for it.
 #[derive(Clone, Debug)]
-pub struct EncryptedStateFixture {
-    /// The encrypted state state.
-    pub encrypted_state: EncryptedState,
+pub struct EncryptedStoreFixture {
+    /// The encrypted store state.
+    pub encrypted_store: EncryptedStore,
     /// Its canonical address.
     pub account_key: SolanaPubkeyBytes,
     /// Every leaf sealed so far, in leaf order, so proofs can be rebuilt.
     pub leaves: Vec<SealedLeaf>,
 }
 
-impl EncryptedStateFixture {
-    /// An encrypted state of the fixture application holding `current_handle`, with no
+impl EncryptedStoreFixture {
+    /// An encrypted store of the fixture application holding `current_handle`, with no
     /// leaf sealed yet.
     pub fn new(current_handle: [u8; 32]) -> Self {
         Self::in_application(APP_PROGRAM, AUTHORITY, SCOPE, LABEL, current_handle)
     }
 
-    /// An encrypted state of an arbitrary application, authority, scope and label.
+    /// An encrypted store of an arbitrary application, authority, scope and label.
     pub fn in_application(
         program: SolanaPubkeyBytes,
         authority: SolanaPubkeyBytes,
@@ -388,7 +388,7 @@ impl EncryptedStateFixture {
             &Pubkey::new_from_array(PROGRAM_ID),
         );
         Self {
-            encrypted_state: EncryptedState {
+            encrypted_store: EncryptedStore {
                 program,
                 authority,
                 scope,
@@ -415,7 +415,7 @@ impl EncryptedStateFixture {
 
     /// The current handle.
     pub fn current_handle(&self) -> [u8; 32] {
-        self.encrypted_state.slots[0].handle
+        self.encrypted_store.slots[0].handle
     }
 
     /// Seals an allow leaf naming `key` on the current handle — what the host program does when
@@ -427,12 +427,12 @@ impl EncryptedStateFixture {
 
     /// Seals an allow leaf for an exact handle. The handle need not still occupy a slot.
     pub fn allow_handle(&mut self, handle: [u8; 32], key: SolanaPubkeyBytes) {
-        let leaf_index = self.encrypted_state.leaf_count;
+        let leaf_index = self.encrypted_store.leaf_count;
         let commitment =
             historical_access_leaf_commitment(self.account_key, leaf_index, handle, key);
         self.append(
             LeafQuery {
-                encrypted_state: self.account_key,
+                encrypted_store: self.account_key,
                 handle,
                 kind: LeafKind::Allowed { key },
             },
@@ -442,7 +442,7 @@ impl EncryptedStateFixture {
 
     /// Adds another current slot to this state.
     pub fn insert_slot(&mut self, key: [u8; 32], handle: [u8; 32]) {
-        self.encrypted_state
+        self.encrypted_store
             .slots
             .push(EncryptedSlot { key, handle });
     }
@@ -450,11 +450,11 @@ impl EncryptedStateFixture {
     /// Seals a public-decrypt leaf for the current handle.
     pub fn mark_public(&mut self) {
         let handle = self.current_handle();
-        let leaf_index = self.encrypted_state.leaf_count;
+        let leaf_index = self.encrypted_store.leaf_count;
         let commitment = public_decrypt_leaf_commitment(self.account_key, leaf_index, handle);
         self.append(
             LeafQuery {
-                encrypted_state: self.account_key,
+                encrypted_store: self.account_key,
                 handle,
                 kind: LeafKind::Public,
             },
@@ -465,14 +465,14 @@ impl EncryptedStateFixture {
     /// Replaces the current handle, as a write does. Seals nothing: the leaves already sealed
     /// keep naming the handle they were sealed for.
     pub fn update(&mut self, new_handle: [u8; 32]) {
-        self.encrypted_state.slots[0].handle = new_handle;
+        self.encrypted_store.slots[0].handle = new_handle;
     }
 
     /// Appends a commitment, keeping the leaf list in step with the MMR.
     pub fn append(&mut self, query: LeafQuery, commitment: [u8; 32]) {
         mmr_append(
-            &mut self.encrypted_state.peaks,
-            &mut self.encrypted_state.leaf_count,
+            &mut self.encrypted_store.peaks,
+            &mut self.encrypted_store.leaf_count,
             commitment,
         )
         .expect("the fixture MMR accepts an append");
@@ -492,7 +492,7 @@ impl EncryptedStateFixture {
     /// What the coprocessors' record answers for `query` when it has sealed exactly this
     /// account's leaves.
     pub fn outcome(&self, query: &LeafQuery) -> LeafProofOutcome {
-        let leaf_count = self.encrypted_state.leaf_count;
+        let leaf_count = self.encrypted_store.leaf_count;
         match self.leaves.iter().position(|leaf| leaf.query == *query) {
             Some(index) => {
                 let proof = self.proof(index as u64);
@@ -509,7 +509,7 @@ impl EncryptedStateFixture {
     /// The allow query for `key` on `handle` under this account.
     pub fn allowed_query(&self, handle: [u8; 32], key: SolanaPubkeyBytes) -> LeafQuery {
         LeafQuery {
-            encrypted_state: self.account_key,
+            encrypted_store: self.account_key,
             handle,
             kind: LeafKind::Allowed { key },
         }
@@ -518,7 +518,7 @@ impl EncryptedStateFixture {
     /// The public query for `handle` under this account.
     pub fn public_query(&self, handle: [u8; 32]) -> LeafQuery {
         LeafQuery {
-            encrypted_state: self.account_key,
+            encrypted_store: self.account_key,
             handle,
             kind: LeafKind::Public,
         }
@@ -526,9 +526,9 @@ impl EncryptedStateFixture {
 
     /// The account as the host program would write it: discriminator then body.
     pub fn account(&self) -> SnapshotAccount {
-        let mut data = encrypted_state_discriminator().to_vec();
+        let mut data = encrypted_store_discriminator().to_vec();
         data.extend_from_slice(
-            &borsh::to_vec(&self.encrypted_state).expect("the encrypted state serializes"),
+            &borsh::to_vec(&self.encrypted_store).expect("the encrypted store serializes"),
         );
         SnapshotAccount {
             owner: PROGRAM_ID,
@@ -677,9 +677,9 @@ pub struct World {
     /// The slot a read of this world reports as its observation point.
     pub slot: u64,
     accounts: BTreeMap<SolanaPubkeyBytes, SnapshotAccount>,
-    /// The encrypted states placed whole, so the leaf record that agrees with this world
+    /// The encrypted stores placed whole, so the leaf record that agrees with this world
     /// can be derived from it.
-    sealed: BTreeMap<SolanaPubkeyBytes, EncryptedStateFixture>,
+    sealed: BTreeMap<SolanaPubkeyBytes, EncryptedStoreFixture>,
 }
 
 impl World {
@@ -704,16 +704,16 @@ impl World {
         self
     }
 
-    /// Places an encrypted state in the world.
-    pub fn with_encrypted_state(mut self, encrypted_state: &EncryptedStateFixture) -> Self {
+    /// Places an encrypted store in the world.
+    pub fn with_encrypted_store(mut self, encrypted_store: &EncryptedStoreFixture) -> Self {
         self.accounts
-            .insert(encrypted_state.account_key, encrypted_state.account());
+            .insert(encrypted_store.account_key, encrypted_store.account());
         self.sealed
-            .insert(encrypted_state.account_key, encrypted_state.clone());
+            .insert(encrypted_store.account_key, encrypted_store.clone());
         self
     }
 
-    /// The leaf record that has sealed exactly what this world's encrypted states hold:
+    /// The leaf record that has sealed exactly what this world's encrypted stores hold:
     /// the record a coprocessor in step with this observation would serve.
     pub fn record(&self) -> ProofRecord {
         self.sealed
@@ -855,7 +855,7 @@ impl HostStateReader for ScriptedReader {
 enum RecordedAccount {
     /// The record has sealed exactly this account's leaves — possibly an older state of the
     /// account than the chain shows, which is how a record behind the chain is expressed.
-    Sealed(Box<EncryptedStateFixture>),
+    Sealed(Box<EncryptedStoreFixture>),
     /// The record's history for the account has a gap.
     Incomplete,
 }
@@ -873,17 +873,17 @@ pub struct ProofRecord {
 
 impl ProofRecord {
     /// A record that has sealed the leaves of the given accounts, as they stand.
-    pub fn of(accounts: &[&EncryptedStateFixture]) -> Self {
+    pub fn of(accounts: &[&EncryptedStoreFixture]) -> Self {
         accounts
             .iter()
             .fold(Self::default(), |record, account| record.with(account))
     }
 
     /// Adds an account's leaves to the record.
-    pub fn with(mut self, encrypted_state: &EncryptedStateFixture) -> Self {
+    pub fn with(mut self, encrypted_store: &EncryptedStoreFixture) -> Self {
         self.accounts.insert(
-            encrypted_state.account_key,
-            RecordedAccount::Sealed(Box::new(encrypted_state.clone())),
+            encrypted_store.account_key,
+            RecordedAccount::Sealed(Box::new(encrypted_store.clone())),
         );
         self
     }
@@ -915,7 +915,7 @@ impl ProofRecord {
         if let Some(outcome) = self.answers.get(query) {
             return outcome.clone();
         }
-        match self.accounts.get(&query.encrypted_state) {
+        match self.accounts.get(&query.encrypted_store) {
             Some(RecordedAccount::Sealed(account)) => account.outcome(query),
             Some(RecordedAccount::Incomplete) => LeafProofOutcome::HistoryIncomplete,
             None => LeafProofOutcome::UnknownAccount,
@@ -949,7 +949,7 @@ impl ScriptedProofReader {
     }
 
     /// A reader over a record that has sealed exactly these accounts' leaves.
-    pub fn serving(accounts: &[&EncryptedStateFixture]) -> Self {
+    pub fn serving(accounts: &[&EncryptedStoreFixture]) -> Self {
         Self::constant(ProofRecord::of(accounts))
     }
 

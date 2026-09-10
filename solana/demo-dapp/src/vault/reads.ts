@@ -1,9 +1,9 @@
 import type { Address, FetchAccountConfig, Rpc, SolanaRpcApi } from '@solana/kit';
 
 import {
-  fetchSolanaEncryptedState,
-  type SolanaEncryptedState,
-} from '@sdk-src/solana/encryptedState.js';
+  fetchSolanaEncryptedStore,
+  type SolanaEncryptedStore,
+} from '@sdk-src/solana/encryptedStore.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
@@ -71,10 +71,10 @@ export async function getBatchByIndex(
 }
 
 /** Reads the host-owned slot dictionary and shared MMR through the SDK decoder. */
-export function getEncryptedState(
+export function getEncryptedStore(
   rpc: SolanaRpc,
   address: Address,
   config?: FetchAccountConfig,
-): Promise<SolanaEncryptedState> {
-  return fetchSolanaEncryptedState(rpc, address, config, ZAMA_HOST_PROGRAM_ADDRESS);
+): Promise<SolanaEncryptedStore> {
+  return fetchSolanaEncryptedStore(rpc, address, config, ZAMA_HOST_PROGRAM_ADDRESS);
 }

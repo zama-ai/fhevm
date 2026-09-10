@@ -28,7 +28,7 @@ impl Fixture {
         let program = Pubkey::new_unique();
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], &program);
         let scope = [3; 32];
-        let (state, bump) = host::encrypted_state_address(program, authority, scope);
+        let (state, bump) = host::encrypted_store_address(program, authority, scope);
         let (transient_store, _) = host::transient_store_address(payer);
         let mut transient_store_account = empty_system_account();
         transient_store_account.lamports = prefund;
@@ -45,7 +45,7 @@ impl Fixture {
                     Account {
                         lamports: 10_000_000,
                         owner: host::ID,
-                        data: serialized_account(host::EncryptedState {
+                        data: serialized_account(host::EncryptedStore {
                             program,
                             authority,
                             scope,
@@ -290,7 +290,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
             step_index: key_index,
             output_index: 0,
         },
-        state_index: 0,
+        store_index: 0,
         previous_leaf_count: key_index as u64,
         slot: Some(host::SlotWrite {
             key_index,
@@ -305,7 +305,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
     let mut two = [0; 32];
     two[31] = 2;
     let args = host::FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         returned_results: vec![
             host::ExecutionResultRef {
                 step_index: 0,
@@ -363,7 +363,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
         .find(|(key, _)| *key == fixture.state)
         .unwrap()
         .1;
-    let state = zama_solana_acl::decode_encrypted_state(&state_account.data).unwrap();
+    let state = zama_solana_acl::decode_encrypted_store(&state_account.data).unwrap();
     assert_eq!(state.slots.len(), 2);
     assert_eq!(state.leaf_count, 2);
     let handles = [state.get(&[11; 32]).unwrap(), state.get(&[12; 32]).unwrap()];
@@ -469,7 +469,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
         stale.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(6000 + host::ZamaHostError::PreviousStateMismatch as u32)
+            ProgramError::Custom(6000 + host::ZamaHostError::PreviousStoreMismatch as u32)
         )
     );
     assert_eq!(stale.resulting_accounts, result.resulting_accounts);
@@ -499,7 +499,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         ),
     ]);
     let args = host::FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         returned_results: vec![],
         account_count: 2,
         dictionary: vec![],
@@ -519,13 +519,13 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
                     step_index: index as u8,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: None,
                 allow_indexes: vec![],
                 make_public: false,
                 grants: vec![host::ResultGrant {
-                    consumer_state_index: 1,
+                    consumer_store_index: 1,
                 }],
             })
             .collect(),
@@ -559,7 +559,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
         .find(|(key, _)| *key == fixture.state)
         .unwrap()
         .1;
-    let state = zama_solana_acl::decode_encrypted_state(&state.data).unwrap();
+    let state = zama_solana_acl::decode_encrypted_store(&state.data).unwrap();
     assert_eq!(state.leaf_count, 0);
     assert!(state.peaks.is_empty());
     assert!(state.slots.is_empty());
@@ -706,7 +706,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
     let has_grant = !matches!(case, GrantConsumptionCase::NoGrant);
     let grant_is_foreign = has_grant && grant_to != producer.state;
     let mut produce_args = host::FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         account_count: if grant_is_foreign { 2 } else { 1 },
         dictionary: vec![],
         steps: vec![host::FheExecuteStep::TrivialEncrypt {
@@ -719,13 +719,13 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: None,
                 allow_indexes: vec![],
                 make_public: false,
                 grants: vec![host::ResultGrant {
-                    consumer_state_index: if grant_is_foreign { 1 } else { 0 },
+                    consumer_store_index: if grant_is_foreign { 1 } else { 0 },
                 }],
             }]
         } else {
@@ -741,7 +741,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
             .unwrap()
             .1;
         let state =
-            host::EncryptedState::try_deserialize(&mut state_account.data.as_slice()).unwrap();
+            host::EncryptedStore::try_deserialize(&mut state_account.data.as_slice()).unwrap();
         host::AppScope {
             program: state.program,
             scope: state.scope,
@@ -772,7 +772,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         producer_accounts,
     );
     let mut consume_args = host::FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         account_count: 1,
         dictionary: vec![
             if matches!(case, GrantConsumptionCase::UngrantedHandle) {
@@ -786,7 +786,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
             op: host::FheBinaryOpCode::Add,
             lhs: host::FheExecuteOperand::TransientResult {
                 handle_index: 0,
-                consumer_state_index: 0,
+                consumer_store_index: 0,
             },
             rhs: host::FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
@@ -831,7 +831,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
 }
 
 #[test]
-fn transient_result_accepts_the_exact_granted_handle_and_consumer_state() {
+fn transient_result_accepts_the_exact_granted_handle_and_consumer_store() {
     let valid = grant_then_consume(GrantConsumptionCase::Valid);
     assert!(valid.raw_result.is_ok(), "{:?}", valid.raw_result);
 }
@@ -865,7 +865,7 @@ fn execution_cannot_substitute_an_unopened_transient_store_account() {
 }
 
 #[test]
-fn transient_result_requires_the_consumer_state_authority_signature() {
+fn transient_result_requires_the_consumer_store_authority_signature() {
     assert_eq!(
         grant_then_consume(GrantConsumptionCase::UnsignedConsumer).program_result,
         TransactionProgramResult::Failure(
@@ -939,7 +939,7 @@ fn result_journal_capacity_is_shared_across_calls_and_fails_atomically() {
         let mut instructions = vec![fixture.open()];
         for start in (0..count).step_by(host::MAX_FHE_EXECUTION_STEPS) {
             let args = host::FheExecuteArgs {
-                execution_state_index: 0,
+                execution_store_index: 0,
                 account_count: 1,
                 dictionary: vec![],
                 returned_results: vec![],
@@ -1020,7 +1020,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                     step_index: 0,
                     output_index: 0,
                 },
-                state_index: 0,
+                store_index: 0,
                 previous_leaf_count: 0,
                 slot: Some(host::SlotWrite {
                     key_index,
@@ -1031,7 +1031,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                 grants: vec![],
             };
             let produce_args = host::FheExecuteArgs {
-                execution_state_index: 0,
+                execution_store_index: 0,
                 account_count: 1,
                 dictionary: if reload_slot { vec![[1; 32]] } else { vec![] },
                 steps: vec![host::FheExecuteStep::TrivialEncrypt {
@@ -1042,7 +1042,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                 returned_results: vec![],
             };
             let consume_args = host::FheExecuteArgs {
-                execution_state_index: 0,
+                execution_store_index: 0,
                 account_count: 1,
                 dictionary: if reload_slot {
                     vec![first, [0; 32], [2; 32], [1; 32]]
@@ -1052,15 +1052,15 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                 steps: vec![host::FheExecuteStep::Binary {
                     op: host::FheBinaryOpCode::Add,
                     lhs: if reload_slot {
-                        host::FheExecuteOperand::StateSlot {
+                        host::FheExecuteOperand::StoreSlot {
                             handle_index: 0,
-                            state_index: 0,
+                            store_index: 0,
                             key_index: 3,
                         }
                     } else {
                         host::FheExecuteOperand::TransientResult {
                             handle_index: 0,
-                            consumer_state_index: 0,
+                            consumer_store_index: 0,
                         }
                     },
                     rhs: host::FheExecuteOperand::Scalar { value_index: 1 },
@@ -1110,7 +1110,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
             }
             assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
             let read = |result: &TransactionResult| {
-                host::EncryptedState::try_deserialize(
+                host::EncryptedStore::try_deserialize(
                     &mut result.get_account(&fixture.state).unwrap().data.as_slice(),
                 )
                 .unwrap()
@@ -1167,7 +1167,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
     );
     let (nonce, nonce_account) = zama_solana_test_kit::rand_nonce_account(7);
     let args = host::FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         account_count: 1,
         dictionary: vec![],
         steps: vec![
@@ -1235,7 +1235,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
     ledger.u64_for_handle(first);
     assert!(ledger.u64_for_handle(second) < 16);
     assert!(
-        zama_solana_test_kit::read_encrypted_state(&context, fixture.state)
+        zama_solana_test_kit::read_encrypted_store(&context, fixture.state)
             .slots
             .is_empty()
     );

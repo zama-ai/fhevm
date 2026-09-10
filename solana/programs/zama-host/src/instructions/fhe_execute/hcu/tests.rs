@@ -69,15 +69,15 @@ fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
         output_fhe_type: ty,
     }
 }
-fn add_state_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
+fn add_store_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
     FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::EarlierStep {
             producer_index: lhs_producer,
         },
-        rhs: FheExecuteOperand::StateSlot {
+        rhs: FheExecuteOperand::StoreSlot {
             handle_index: 1,
-            state_index: 0,
+            store_index: 0,
             key_index: 2,
         },
         output_fhe_type: ty,
@@ -371,14 +371,14 @@ fn meter_comparison_prices_dictionary_and_verified_input_width() {
     let handle = handle_of(EU64);
     let stored = FheExecuteStep::Binary {
         op: FheBinaryOpCode::Ge,
-        lhs: FheExecuteOperand::StateSlot {
+        lhs: FheExecuteOperand::StoreSlot {
             handle_index: 1,
-            state_index: 0,
+            store_index: 0,
             key_index: 2,
         },
-        rhs: FheExecuteOperand::StateSlot {
+        rhs: FheExecuteOperand::StoreSlot {
             handle_index: 1,
-            state_index: 0,
+            store_index: 0,
             key_index: 2,
         },
         output_fhe_type: EBOOL,
@@ -599,7 +599,7 @@ fn meter_operands_never_add_to_total() {
         trivial(EU64),
         add_local(EU64, 0, 0),
         add_scalar(EU64, 1),
-        add_state_slot(EU64, 2),
+        add_store_slot(EU64, 2),
     ];
     let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let expected = trivial_encrypt_hcu(EU64).unwrap()
@@ -610,10 +610,10 @@ fn meter_operands_never_add_to_total() {
 }
 
 #[test]
-fn meter_state_slot_input_is_zero_depth_leaf() {
-    // A State-slot operand contributes depth 0 (in-execution reset), so a
-    // chain split across a State boundary resets depth there rather than carrying it forward.
-    let steps = vec![trivial(EU64), add_state_slot(EU64, 0)];
+fn meter_store_slot_input_is_zero_depth_leaf() {
+    // A Store-slot operand contributes depth 0 (in-execution reset), so a
+    // chain split across a Store boundary resets depth there rather than carrying it forward.
+    let steps = vec![trivial(EU64), add_store_slot(EU64, 0)];
     let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
@@ -735,13 +735,13 @@ fn run_walk(
     depth: u64,
     transient_store: &mut crate::TransientStore,
 ) -> Result<Metered> {
-    use crate::{AppScope, EncryptedSlot, EncryptedState, FheExecuteArgs, HostConfig};
+    use crate::{AppScope, EncryptedSlot, EncryptedStore, FheExecuteArgs, HostConfig};
     let app = AppScope {
         program: Pubkey::new_from_array([2; 32]),
         scope: [3; 32],
     };
     let authority = Pubkey::new_from_array([4; 32]);
-    let mut state = EncryptedState {
+    let mut state = EncryptedStore {
         program: app.program,
         scope: app.scope,
         authority,
@@ -799,7 +799,7 @@ fn run_walk(
         rand: Some(super::super::walk::RandContext { nonce: 0, app }),
     };
     let args = FheExecuteArgs {
-        execution_state_index: 0,
+        execution_store_index: 0,
         account_count: 1,
         dictionary: dictionary.to_vec(),
         steps: steps.to_vec(),

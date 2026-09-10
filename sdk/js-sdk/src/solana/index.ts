@@ -16,12 +16,12 @@ export * from './permit/index.js';
 export * from './userDecrypt/index.js';
 
 export {
-  SOLANA_ENCRYPTED_STATE_SEED,
-  decodeSolanaEncryptedState,
-  fetchSolanaEncryptedState,
-  solanaEncryptedStateAddress,
-} from './encryptedState.js';
-export type { SolanaEncryptedStateSeeds, SolanaEncryptedState, SolanaRpc } from './encryptedState.js';
+  SOLANA_ENCRYPTED_STORE_SEED,
+  decodeSolanaEncryptedStore,
+  fetchSolanaEncryptedStore,
+  solanaEncryptedStoreAddress,
+} from './encryptedStore.js';
+export type { SolanaEncryptedStoreSeeds, SolanaEncryptedStore, SolanaRpc } from './encryptedStore.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
@@ -34,11 +34,11 @@ export {
   buildPublicLeafProof,
   mmrBuildProof,
   mmrPeaksFromLeaves,
-  reconstructSolanaStateHistory,
+  reconstructSolanaStoreHistory,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
 } from './proof.js';
-export type { MmrProof, SolanaStateHistoryEvent, SolanaReconstructedStateHistory } from './proof.js';
+export type { MmrProof, SolanaStoreHistoryEvent, SolanaReconstructedStoreHistory } from './proof.js';
 
 export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {

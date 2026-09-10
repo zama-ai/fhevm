@@ -54,10 +54,10 @@ export interface BatchAddresses {
   readonly batchJoinUnderlying: Address;
   /** Plain SPL account receiving the vault phase's output (payout underlying). */
   readonly batchPayoutUnderlying: Address;
-  /** The batch's burned-amount encrypted State on the join mint (the settle proof's `encrypted_state`). */
-  readonly batchBurnedAmountState: Address;
-  /** The batch payout token account's confidential balance encrypted State. */
-  readonly batchPayoutBalanceState: Address;
+  /** The batch's burned-amount encrypted store on the join mint (the settle proof's `encrypted_store`). */
+  readonly batchBurnedAmountStore: Address;
+  /** The batch payout token account's confidential balance encrypted store. */
+  readonly batchPayoutBalanceStore: Address;
 }
 
 /**
@@ -82,8 +82,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchPayoutUnderlying,
     // Burned amount: the join mint's `burned_amount` value of the batch's join token account.
     // Payout balance: the payout mint's `balance` value of the batch's payout token account.
-    batchBurnedAmountState: await tokenStateAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
-    batchPayoutBalanceState: await tokenStateAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
+    batchBurnedAmountStore: await tokenStateAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
+    batchPayoutBalanceStore: await tokenStateAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
 }
 
@@ -107,7 +107,7 @@ export interface SolanaVaultSettleAccounts {
   readonly joinUnderlyingMint: Address;
   readonly joinMintVaultUnderlying: Address;
   readonly joinMintVaultAuthority: Address;
-  readonly batchBurnedAmountState: Address;
+  readonly batchBurnedAmountStore: Address;
   /** The batch join token account's single pending burn, known before dispatch. */
   readonly pendingBurn: Address;
   readonly hostConfig: Address;
@@ -121,8 +121,8 @@ export interface SolanaVaultSettleAccounts {
   readonly payoutMintVaultUnderlying: Address;
   readonly payoutMintVaultAuthority: Address;
   readonly payoutTotalSupplyAuthority: Address;
-  readonly batchPayoutBalanceState: Address;
-  readonly payoutTotalSupplyState: Address;
+  readonly batchPayoutBalanceStore: Address;
+  readonly payoutTotalSupplyStore: Address;
   readonly batchAuthority: Address;
   readonly batchJoinUnderlying: Address;
   readonly batchPayoutUnderlying: Address;
@@ -160,7 +160,7 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'joinUnderlyingMint',
   'joinMintVaultUnderlying',
   'joinMintVaultAuthority',
-  'batchBurnedAmountState',
+  'batchBurnedAmountStore',
   'pendingBurn',
   'hostConfig',
   'kmsContext',
@@ -173,8 +173,8 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'payoutMintVaultUnderlying',
   'payoutMintVaultAuthority',
   'payoutTotalSupplyAuthority',
-  'batchPayoutBalanceState',
-  'payoutTotalSupplyState',
+  'batchPayoutBalanceStore',
+  'payoutTotalSupplyStore',
   'batchAuthority',
   'batchJoinUnderlying',
   'batchPayoutUnderlying',
@@ -213,7 +213,7 @@ export async function deriveSettleAccounts(
       TOKEN_PROGRAM_ADDRESS,
     ),
     joinMintVaultAuthority,
-    batchBurnedAmountState: batch.batchBurnedAmountState,
+    batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: await pendingBurnAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
     hostConfig: roots.hostConfig,
     kmsContext: roots.kmsContext,
@@ -230,10 +230,10 @@ export async function deriveSettleAccounts(
     ),
     payoutMintVaultAuthority,
     payoutTotalSupplyAuthority,
-    batchPayoutBalanceState: batch.batchPayoutBalanceState,
-    // Total supply: domain = payout mint, encrypted State authority = its total-supply
+    batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
+    // Total supply: domain = payout mint, encrypted store authority = its total-supply
     // authority, encrypted value label =
     // `total_supply`.
-    payoutTotalSupplyState: await tokenStateAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
+    payoutTotalSupplyStore: await tokenStateAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
   };
 }

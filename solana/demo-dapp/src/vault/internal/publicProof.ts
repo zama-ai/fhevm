@@ -1,6 +1,6 @@
 import { type Address, type Rpc, type SolanaRpcApi } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { fetchSolanaEncryptedState } from '@sdk-src/solana/encryptedState.js';
+import { fetchSolanaEncryptedStore } from '@sdk-src/solana/encryptedStore.js';
 import { bytesToHex, hexToBytes, verifyPublicDecryptProof, type MmrProof } from '@sdk-src/solana/proof.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
 
@@ -14,7 +14,7 @@ export async function publicProof(
   do {
     const response = await fetch(`${service.url}/v1/solana/leaf-proofs`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${service.apiKey}` },
-      body: JSON.stringify({ leaves: [{ encryptedState: bytesToHex(base58.decode(state)), handle: bytesToHex(handle), kind: 'public' }] }),
+      body: JSON.stringify({ leaves: [{ encryptedStore: bytesToHex(base58.decode(state)), handle: bytesToHex(handle), kind: 'public' }] }),
       signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) throw new Error(`public listener proof endpoint returned HTTP ${response.status}`);
@@ -25,7 +25,7 @@ export async function publicProof(
         throw new Error('public listener proof endpoint returned a malformed proof');
       }
       const proof = { leafIndex: BigInt(answer.leafIndex!), siblings: answer.siblings.map(hexToBytes) };
-      const live = await fetchSolanaEncryptedState(rpc, state, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
+      const live = await fetchSolanaEncryptedStore(rpc, state, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
       if (verifyPublicDecryptProof(base58.decode(state), live.peaks, live.leafCount, handle, proof)) return proof;
     } else if (answer?.status !== 'notFound' && answer?.status !== 'unknownAccount') {
       throw new Error(`public proof unavailable: ${answer?.status ?? 'missing response'}`);

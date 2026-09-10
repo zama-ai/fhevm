@@ -78,7 +78,7 @@ describe('vault provisioning builders', () => {
     expect(decoded.direction).toBe(BatchDirection.Deposit);
   });
 
-  it('initialize_mint: right program + discriminator (encrypted State/event PDAs derived internally)', async () => {
+  it('initialize_mint: right program + discriminator (encrypted store/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
       fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       authority: signer(addr(1)),

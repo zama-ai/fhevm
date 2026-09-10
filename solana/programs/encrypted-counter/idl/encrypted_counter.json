@@ -85,7 +85,7 @@
           }
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "docs": [
             "Host-owned dictionary holding the current count and decrypt history."
           ],
@@ -199,7 +199,7 @@
           }
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "writable": true
         },
         {
@@ -251,7 +251,7 @@
     {
       "code": 6001,
       "name": "CountValueInvalid",
-      "msg": "counter encrypted state address mismatch"
+      "msg": "counter encrypted store address mismatch"
     }
   ],
   "types": [
@@ -302,7 +302,7 @@
       }
     },
     {
-      "name": "EncryptedState",
+      "name": "EncryptedStore",
       "type": {
         "kind": "struct",
         "fields": [

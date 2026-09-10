@@ -54,7 +54,7 @@ use crate::{eip712, errors::ZamaHostError, state::*};
 /// Defined in the host program so CPI callers depend only on the host IDL, never on token types.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default, PartialEq, Eq)]
 pub struct MmrInclusionProof {
-    /// Index of the proven leaf within the encrypted State's MMR.
+    /// Index of the proven leaf within the encrypted store's MMR.
     pub leaf_index: u64,
     /// Authentication path from the leaf up to its mountain peak.
     pub siblings: Vec<[u8; 32]>,
@@ -95,9 +95,9 @@ pub struct VerifyPublicDecrypt<'info> {
     /// KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
     /// signed `extra_data`, and must not be destroyed. Verified in the handler.
     pub kms_context: Account<'info, KmsContext>,
-    /// The encrypted State whose peaks the inclusion proof is checked against.
-    /// CHECK: layout, ownership, and canonical PDA are validated in the handler via `read_canonical_encrypted_state`.
-    pub encrypted_state: UncheckedAccount<'info>,
+    /// The encrypted store whose peaks the inclusion proof is checked against.
+    /// CHECK: layout, ownership, and canonical PDA are validated in the handler via `read_canonical_encrypted_store`.
+    pub encrypted_store: UncheckedAccount<'info>,
 }
 
 /// Verifies a KMS public-decrypt certificate against the context the cert names (any live context)
@@ -161,17 +161,17 @@ pub fn verify_public_decrypt(
         ZamaHostError::InvalidKmsCertificate
     );
 
-    // Exact-handle public-decrypt proof against the encrypted State's current peaks (no roll-forward): a
+    // Exact-handle public-decrypt proof against the encrypted store's current peaks (no roll-forward): a
     // handle sealed public stays provable after later updates move the peaks.
-    let info = ctx.accounts.encrypted_state.to_account_info();
+    let info = ctx.accounts.encrypted_store.to_account_info();
     require_keys_eq!(
         *info.owner,
         crate::ID,
         ZamaHostError::PublicDecryptProofInvalid
     );
-    let state = zama_solana_acl::decode_encrypted_state(&info.try_borrow_data()?)
+    let state = zama_solana_acl::decode_encrypted_store(&info.try_borrow_data()?)
         .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
-    let (expected, bump) = encrypted_state_address(
+    let (expected, bump) = encrypted_store_address(
         Pubkey::new_from_array(state.program),
         Pubkey::new_from_array(state.authority),
         state.scope,

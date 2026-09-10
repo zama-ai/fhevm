@@ -16,7 +16,7 @@ use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
 
 pub mod deny_scope_record;
-pub mod encrypted_state;
+pub mod encrypted_store;
 pub mod transient;
 pub use transient::*;
 pub mod hcu_block_meter;
@@ -29,7 +29,7 @@ mod type_gate;
 pub mod user_decryption_delegation;
 
 pub use deny_scope_record::*;
-pub use encrypted_state::*;
+pub use encrypted_store::*;
 pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
@@ -151,8 +151,8 @@ pub const MAX_FHE_EXECUTION_EFFECTS: usize = 32;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteArgs {
-    /// Canonical State whose authority signs and produces this execution.
-    pub execution_state_index: u8,
+    /// Canonical Store whose authority signs and produces this execution.
+    pub execution_store_index: u8,
     /// Declared `remaining_accounts` length, asserted equal to the actual list. Carried in
     /// instruction data so stateless indexers can validate account references without the
     /// transaction envelope (DD-033 self-description).
@@ -174,7 +174,7 @@ pub struct FheExecuteArgs {
     /// Ordered step list. Each `EarlierStep` operand may only reference an output
     /// produced by an earlier index in this vector.
     pub steps: Vec<FheExecuteStep>,
-    /// Applied in order after all arithmetic has read the initial State snapshots.
+    /// Applied in order after all arithmetic has read the initial Store snapshots.
     pub effects: Vec<FheExecuteEffect>,
     /// Results copied to return data in this order, including repeated selections.
     /// At most `MAX_RETURNED_HANDLES` entries; an empty list returns no handles.
@@ -325,11 +325,11 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOperand {
-    /// A value read out of persistent ACL state: a canonical `EncryptedState` account in
+    /// A value read out of persistent ACL state: a canonical `EncryptedStore` account in
     /// `remaining_accounts` whose current handle matches the interned one. Admission is the
     /// signature of the value's authority, found among the execution's signers.
 
-    /// Compact reference to an earlier result, authorized by the execution State in transient store.
+    /// Compact reference to an earlier result, authorized by the execution Store in transient store.
     EarlierStep {
         /// Producer operation index.
         producer_index: u8,
@@ -352,14 +352,14 @@ pub enum FheExecuteOperand {
         attestation: Box<CoprocessorInputAttestation>,
     },
 
-    StateSlot {
+    StoreSlot {
         handle_index: u8,
-        state_index: u8,
+        store_index: u8,
         key_index: u8,
     },
     TransientResult {
         handle_index: u8,
-        consumer_state_index: u8,
+        consumer_store_index: u8,
     },
 }
 
@@ -371,14 +371,14 @@ pub struct SlotWrite {
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ResultGrant {
-    pub consumer_state_index: u8,
+    pub consumer_store_index: u8,
 }
 
-/// An ordered State write, decrypt permission or cross-State grant on a produced result.
+/// An ordered Store write, decrypt permission or cross-Store grant on a produced result.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteEffect {
     pub result: ExecutionResultRef,
-    pub state_index: u8,
+    pub store_index: u8,
     /// History position before this effect, so indexers can detect missing writes.
     pub previous_leaf_count: u64,
     pub slot: Option<SlotWrite>,

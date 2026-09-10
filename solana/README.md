@@ -28,7 +28,7 @@ flowchart LR
     LISTENER --> LEAVES[leaf record]
     CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
     GATEWAY --> CONNECTOR[KMS connectors, one per party]
-    CONNECTOR -.->|reads encrypted States| HOST
+    CONNECTOR -.->|reads encrypted stores| HOST
     CONNECTOR -.->|fetches leaf proofs| LEAVES
     CONNECTOR --> KMS[KMS core]
 ```
@@ -43,7 +43,7 @@ Each component owns exactly one kind of trust decision:
 | `zama-host` program | `solana/programs/zama-host` | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates + MMR proofs, HCU caps. |
 | Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs executions and MMR leaves from transaction bytes, schedules FHE compute eagerly, and serves leaf proofs from its record; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31). |
 | Gateway + relayer | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42). |
-| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted State from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
+| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core | `zama-ai/kms` repo | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key. |
 
 The division worth remembering: the host program is the authorization
@@ -57,17 +57,17 @@ trusted for authorization.
   event-free (DD-033): the listener re-derives every output handle from raw
   transaction bytes with the program's own derivation functions, so replay
   from bytes alone reconstructs full history (INVARIANTS #28, #29).
-- **Shared encrypted State.** One host-owned PDA per `(program, authority, scope)`
+- **Shared encrypted store.** One host-owned PDA per `(program, authority, scope)`
   contains bounded named slots and a shared append-only MMR. Slots hold current
   handles; permission leaves authorize exact handles even after slot replacement.
-  Creating State proves the authority belongs to the app program.
+  Creating Store proves the authority belongs to the app program.
 - **Explicit output permissions.** Fresh results may write a slot, append decrypt
-  permissions, or grant a consuming State access through the transient store.
+  permissions, or grant a consuming Store access through the transient store.
   These choices are independent. Adding permissions to history-only handles later
   is deferred to fhevm-internal#2007.
 - **Return data is transport.** `returned_results` selects at most 32 handles, in
   order; empty selection returns none. It grants no permission. The transient store carries
-  all result occurrences, implicit producer-State permission and explicit consumer grants.
+  all result occurrences, implicit producer-Store permission and explicit consumer grants.
   One signed top-level open and exact final close delimit the shared transaction context.
 - **The 1,232-byte packet is a design input.** Execution wire data interns
   repeated 32-byte values in a dictionary; the KMS settle transaction requires
@@ -77,7 +77,7 @@ trusted for authorization.
   handles ride the shared gateway and coprocessor infrastructure while every
   consumer can branch on chain type where the shapes genuinely differ.
 - **Roles are account positions, not `msg.sender`.** An execution names a
-  payer and an execution authority, with State authority signers resolved separately, and the
+  payer and an execution authority, with Store authority signers resolved separately, and the
   application it runs as is `(program, scope)` — the program proven from the
   authority's seeds, the scope that program declares (DD-047). That pair is
   what the HCU meter charges and the deny list names.
@@ -96,7 +96,7 @@ capability to its Solana counterpart.
 Inside this workspace (`solana/`):
 
 ```text
-programs/zama-host              Protocol host program: encrypted States, execution
+programs/zama-host              Protocol host program: encrypted stores, execution
                                 (fhe_execute), input attestations, public-decrypt verification,
                                 KMS contexts, HCU metering.
 programs/confidential-token     App program: minimal confidential-token wrapper (ERC-7984 spirit):
@@ -191,10 +191,10 @@ An app program drives compute by CPI into `zama-host`, using
   input transiently, for that execution only. The host enforces that the
   attestation names your program; check the attested `user_address` yourself.
 - Compose atomic multi-account effects (debit sender + credit receiver) as
-  one execution with the required State authority signers, using `FheExecution::build`.
+  one execution with the required Store authority signers, using `FheExecution::build`.
 - To receive confidential funds, expose your own instruction that CPIs
   `confidential_transfer` with the user signer and the app’s PDA signatures. In `confidential-batcher::join`,
-  the token returns the transferred handle and grants the JoinRecord State access
+  the token returns the transferred handle and grants the JoinRecord Store access
   through the transaction's shared transient store; the batcher adds it to the contribution slot.
   The client opens the transient store before application calls and closes it last, refunding its rent. There is no
   receiver-callback path — that EVM workaround is unnecessary on Solana.
@@ -213,7 +213,7 @@ const instructions = fhe.wrap([initialize, join]);
 ```
 
 `buildInitialize` and `buildJoin` stand for the app's instruction builders. Every
-CPI forwards the same transient store and instructions sysvar; each State authority still
+CPI forwards the same transient store and instructions sysvar; each Store authority still
 signs independently. The transient store payer conveys no compute or decrypt permission.
 For a stored multisig proposal, declare that transient store payer up front and supply
 its signature on the outer execution transaction. Transient store rent is refunded to

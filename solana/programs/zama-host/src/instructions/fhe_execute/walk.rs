@@ -126,27 +126,27 @@ impl ExecutionState<'_, '_, '_> {
         operand: &FheExecuteOperand,
     ) -> Result<ResolvedOperand> {
         match operand {
-            FheExecuteOperand::StateSlot {
+            FheExecuteOperand::StoreSlot {
                 handle_index,
-                state_index,
+                store_index,
                 key_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
                 let key = self.dictionary_bytes(*key_index)?;
                 assert_handle_for_chain(handle, self.chain_id)?;
                 require!(
-                    self.table.state((*state_index).into())?.get(&key) == Some(handle),
-                    ZamaHostError::PreviousStateMismatch
+                    self.table.state((*store_index).into())?.get(&key) == Some(handle),
+                    ZamaHostError::PreviousStoreMismatch
                 );
                 Ok(self.encrypted_operand(handle))
             }
             FheExecuteOperand::TransientResult {
                 handle_index,
-                consumer_state_index,
+                consumer_store_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
                 assert_handle_for_chain(handle, self.chain_id)?;
-                let consumer = self.table.account((*consumer_state_index).into())?.key();
+                let consumer = self.table.account((*consumer_store_index).into())?.key();
                 let depth = self
                     .transient_store
                     .authorized_depth(handle, consumer)

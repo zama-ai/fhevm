@@ -1,14 +1,14 @@
-//! Mollusk-based runtime tests for `confidential-token` against the RFC-035 `EncryptedState`
+//! Mollusk-based runtime tests for `confidential-token` against the RFC-035 `EncryptedStore`
 //! ACL model.
 //!
 //! Every encrypted field of the token (`balance`, `total_supply`, `transferred_amount`,
-//! `burned_amount`) lives in one stable `EncryptedState` PDA keyed by the token application
+//! `burned_amount`) lives in one stable `EncryptedStore` PDA keyed by the token application
 //! (`token_app(mint)` = this program in the mint's scope), the value's signing authority (the
 //! token-account or total-supply PDA) and a label. Who may decrypt a handle is decided by the write
 //! that produces it: each write allows its holder(s) on the new handle and seals one leaf per allow
 //! into the value's MMR. The account keeps no viewer list to rotate; granting a viewer is a re-write
 //! (`allow_balance_viewers`, `allow_total_supply_viewers`). See `confidential-token/src/fhe`,
-//! `zama-host/src/state/encrypted_state.rs`, and `zama_solana_acl` for the model this exercises.
+//! `zama-host/src/state/encrypted_store.rs`, and `zama_solana_acl` for the model this exercises.
 //!
 //! Scope note: the suite covers mint/token-account creation, `confidential_transfer`'s persistent
 //! outputs and their allow leaves, the viewer re-writes, the deny list keyed by the mint's scope,
@@ -17,7 +17,7 @@
 //! `PendingBurn` exactly once), confidential burn, cancellation and `wrap_usdc` with SPL Token and
 //! Token-2022 fixtures, and the from-value spend arms.
 //!
-//! Encrypted state is asserted through the cleartext ledger: the tests evaluate the canonical
+//! Encrypted store is asserted through the cleartext ledger: the tests evaluate the canonical
 //! `FheExecuteArgs` captured from the real token -> host CPI and bind those clear values to the
 //! handles emitted by the host.
 
@@ -45,9 +45,9 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_state_account,
-    event_authority, handle_for_chain, new_encrypted_state, read_account, read_encrypted_state,
-    read_spl_amount, read_state_handle, serialized_account, spl_mint_account, spl_token_account,
+    cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
+    event_authority, handle_for_chain, new_encrypted_store, read_account, read_encrypted_store,
+    read_spl_amount, read_store_handle, serialized_account, spl_mint_account, spl_token_account,
     system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT,
     GATEWAY_CHAIN_ID,
 };
@@ -129,7 +129,7 @@ trait TokenLedgerExt {
 
 impl TokenLedgerExt for CleartextLedger {
     /// Applies the exact FHE execution invoked by the token program and associates each persistent
-    /// result with the handle persisted in its canonical `EncryptedState` account.
+    /// result with the handle persisted in its canonical `EncryptedStore` account.
     fn evaluate_fhe_cpi(&mut self, context: &Ctx, result: &InstructionResult) -> usize {
         let replay = self.replay_fhe_cpis(context, result);
         assert_eq!(
@@ -143,7 +143,7 @@ impl TokenLedgerExt for CleartextLedger {
         let account = read_token_account(context, token_account);
         self.u64_in_state(
             context,
-            token::encrypted_state_address(account.mint, token_account).0,
+            token::encrypted_store_address(account.mint, token_account).0,
             token::balance_key(),
         )
     }
@@ -206,10 +206,10 @@ fn read_confidential_mint(context: &Ctx, address: Pubkey) -> token::Confidential
     read_account(context, address)
 }
 
-/// The MMR leaves one write appends to `encrypted_state`: one historical-access leaf per allowed
+/// The MMR leaves one write appends to `encrypted_store`: one historical-access leaf per allowed
 /// key on the handle it wrote, in allow order, from `first_index`.
 fn allow_leaves(
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     first_index: u64,
     handle: [u8; 32],
     allows: &[Pubkey],
@@ -219,7 +219,7 @@ fn allow_leaves(
         .enumerate()
         .map(|(offset, key)| {
             zama_solana_acl::historical_access_leaf_commitment(
-                encrypted_state.to_bytes(),
+                encrypted_store.to_bytes(),
                 first_index + offset as u64,
                 handle,
                 key.to_bytes(),
@@ -230,11 +230,11 @@ fn allow_leaves(
 
 /// Peaks of a value written exactly once, allowing `allows` on `handle`.
 fn expected_allow_peaks(
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     handle: [u8; 32],
     allows: &[Pubkey],
 ) -> Vec<[u8; 32]> {
-    zama_solana_acl::mmr_peaks_from_leaves(&allow_leaves(encrypted_state, 0, handle, allows))
+    zama_solana_acl::mmr_peaks_from_leaves(&allow_leaves(encrypted_store, 0, handle, allows))
 }
 
 fn token_error(error: token::ConfidentialTokenError) -> Check<'static> {
@@ -254,11 +254,11 @@ fn new_test_state(
     authority: Pubkey,
     key: [u8; 32],
     handle: [u8; 32],
-) -> (Pubkey, host::EncryptedState) {
-    new_encrypted_state(app, authority, [(key, handle)])
+) -> (Pubkey, host::EncryptedStore) {
+    new_encrypted_store(app, authority, [(key, handle)])
 }
 
-fn insert_state_slot(
+fn insert_store_slot(
     accounts: &mut HashMap<Pubkey, Account>,
     app: host::AppScope,
     authority: Pubkey,
@@ -267,18 +267,18 @@ fn insert_state_slot(
 ) -> Pubkey {
     let (address, state) = new_test_state(app, authority, key, handle);
     if let Some(account) = accounts.get_mut(&address) {
-        let mut current = host::EncryptedState::try_deserialize(&mut &account.data[..])
-            .expect("existing encrypted state");
+        let mut current = host::EncryptedStore::try_deserialize(&mut &account.data[..])
+            .expect("existing encrypted store");
         current.slots.push(host::EncryptedSlot { key, handle });
         account.data = serialized_account(current);
     } else {
-        accounts.insert(address, encrypted_state_account(&state));
+        accounts.insert(address, encrypted_store_account(&state));
     }
     address
 }
 
-fn state_handle(state: &host::EncryptedState, key: [u8; 32]) -> [u8; 32] {
-    state.get(&key).expect("encrypted state slot")
+fn store_handle(state: &host::EncryptedStore, key: [u8; 32]) -> [u8; 32] {
+    state.get(&key).expect("encrypted store slot")
 }
 
 // ---------------------------------------------------------------------------
@@ -293,8 +293,8 @@ struct TokenFixture {
     host_config: Pubkey,
     alice_token: Pubkey,
     bob_token: Pubkey,
-    alice_balance_state: Pubkey,
-    bob_balance_state: Pubkey,
+    alice_balance_store: Pubkey,
+    bob_balance_store: Pubkey,
     alice_initial: [u8; 32],
     bob_initial: [u8; 32],
     extra_token_owners: RefCell<HashMap<Pubkey, Pubkey>>,
@@ -316,8 +316,8 @@ impl TokenFixture {
         let host_config = host::host_config_address().0;
         let alice_token = token::token_account_address(mint, owner).0;
         let bob_token = token::token_account_address(mint, bob_owner).0;
-        let alice_balance_state = token::encrypted_state_address(mint, alice_token).0;
-        let bob_balance_state = token::encrypted_state_address(mint, bob_token).0;
+        let alice_balance_store = token::encrypted_store_address(mint, alice_token).0;
+        let bob_balance_store = token::encrypted_store_address(mint, bob_token).0;
         let underlying_mint =
             Pubkey::find_program_address(&[b"test-underlying", mint.as_ref()], &token::id()).0;
         Self {
@@ -328,8 +328,8 @@ impl TokenFixture {
             host_config,
             alice_token,
             bob_token,
-            alice_balance_state,
-            bob_balance_state,
+            alice_balance_store,
+            bob_balance_store,
             alice_initial: handle_for_chain(1, BALANCE_FHE_TYPE),
             bob_initial: handle_for_chain(2, BALANCE_FHE_TYPE),
             extra_token_owners: RefCell::new(HashMap::new()),
@@ -356,7 +356,7 @@ impl TokenFixture {
         }
     }
 
-    fn confidential_token_account(&self, owner: Pubkey, _balance_state: Pubkey) -> Account {
+    fn confidential_token_account(&self, owner: Pubkey, _balance_store: Pubkey) -> Account {
         Account {
             lamports: 1_000_000_000,
             data: serialized_account(token::ConfidentialTokenAccount {
@@ -371,18 +371,18 @@ impl TokenFixture {
     }
 
     fn base_accounts(&self) -> HashMap<Pubkey, Account> {
-        let (alice_balance_address, alice_balance_state) = new_encrypted_state(
+        let (alice_balance_address, alice_balance_store) = new_encrypted_store(
             self.app(),
             self.alice_token,
             [(token::balance_key(), self.alice_initial)],
         );
-        assert_eq!(alice_balance_address, self.alice_balance_state);
-        let (bob_balance_address, bob_balance_state) = new_encrypted_state(
+        assert_eq!(alice_balance_address, self.alice_balance_store);
+        let (bob_balance_address, bob_balance_store) = new_encrypted_store(
             self.app(),
             self.bob_token,
             [(token::balance_key(), self.bob_initial)],
         );
-        assert_eq!(bob_balance_address, self.bob_balance_state);
+        assert_eq!(bob_balance_address, self.bob_balance_store);
 
         HashMap::from([
             (self.owner, system_account(5_000_000_000)),
@@ -394,19 +394,19 @@ impl TokenFixture {
             ),
             (
                 self.alice_token,
-                self.confidential_token_account(self.owner, self.alice_balance_state),
+                self.confidential_token_account(self.owner, self.alice_balance_store),
             ),
             (
                 self.bob_token,
-                self.confidential_token_account(self.bob_owner, self.bob_balance_state),
+                self.confidential_token_account(self.bob_owner, self.bob_balance_store),
             ),
             (
-                self.alice_balance_state,
-                encrypted_state_account(&alice_balance_state),
+                self.alice_balance_store,
+                encrypted_store_account(&alice_balance_store),
             ),
             (
-                self.bob_balance_state,
-                encrypted_state_account(&bob_balance_state),
+                self.bob_balance_store,
+                encrypted_store_account(&bob_balance_store),
             ),
             (event_authority(host::id()), system_account(0)),
             (event_authority(token::id()), system_account(0)),
@@ -416,8 +416,8 @@ impl TokenFixture {
         ])
     }
 
-    fn transferred_amount_state_address(&self, from_token: Pubkey) -> Pubkey {
-        token::encrypted_state_address(self.mint, from_token).0
+    fn transferred_amount_store_address(&self, from_token: Pubkey) -> Pubkey {
+        token::encrypted_store_address(self.mint, from_token).0
     }
 
     fn owner_ata(&self, owner: Pubkey) -> Pubkey {
@@ -453,7 +453,7 @@ impl TokenFixture {
     fn key_for_state(&self, state: Pubkey) -> [u8; 32] {
         if let Some(key) = self.state_keys.borrow().get(&state).copied() {
             key
-        } else if state == self.alice_balance_state || state == self.bob_balance_state {
+        } else if state == self.alice_balance_store || state == self.bob_balance_store {
             token::balance_key()
         } else {
             panic!("unknown state slot for {state}")
@@ -485,7 +485,7 @@ fn initialize_mint_ix(
             underlying_mint,
             token_program: spl_token::id(),
             total_supply_authority: token::total_supply_authority_address(mint).0,
-            total_supply_encrypted_state: token::encrypted_state_address(
+            total_supply_encrypted_store: token::encrypted_store_address(
                 mint,
                 token::total_supply_authority_address(mint).0,
             )
@@ -519,7 +519,7 @@ fn initialize_token_account_ix(
             owner,
             mint,
             token_account,
-            balance_encrypted_state: token::encrypted_state_address(mint, token_account).0,
+            balance_encrypted_store: token::encrypted_store_address(mint, token_account).0,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config,
@@ -537,16 +537,16 @@ fn confidential_transfer_ix(
     fixture: &TokenFixture,
     from_token: Pubkey,
     to_token: Pubkey,
-    from_state: Pubkey,
-    to_state: Pubkey,
+    from_store: Pubkey,
+    to_store: Pubkey,
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
     confidential_transfer_ix_with_remaining(
         fixture,
         from_token,
         to_token,
-        from_state,
-        to_state,
+        from_store,
+        to_store,
         amount_attestation,
         Vec::new(),
     )
@@ -554,7 +554,7 @@ fn confidential_transfer_ix(
 
 fn confidential_self_transfer_with_result_grant_ix(
     fixture: &TokenFixture,
-    result_state: Pubkey,
+    result_store: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -569,15 +569,15 @@ fn confidential_self_transfer_with_result_grant_ix(
             to_ata: fixture.owner_ata(fixture.owner),
             from_account: fixture.alice_token,
             to_account: fixture.alice_token,
-            from_state: fixture.alice_balance_state,
-            to_state: fixture.alice_balance_state,
+            from_store: fixture.alice_balance_store,
+            to_store: fixture.alice_balance_store,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
-            result_state: Some(result_state),
+            result_store: Some(result_store),
 
             event_authority: event_authority(token::id()),
             program: token::id(),
@@ -592,8 +592,8 @@ fn confidential_transfer_ix_with_remaining(
     fixture: &TokenFixture,
     from_token: Pubkey,
     to_token: Pubkey,
-    from_state: Pubkey,
-    to_state: Pubkey,
+    from_store: Pubkey,
+    to_store: Pubkey,
     amount_attestation: host::CoprocessorInputAttestation,
     remaining: Vec<Pubkey>,
 ) -> Instruction {
@@ -601,8 +601,8 @@ fn confidential_transfer_ix_with_remaining(
         fixture,
         from_token,
         to_token,
-        from_state,
-        to_state,
+        from_store,
+        to_store,
         amount_attestation,
         remaining,
         None,
@@ -619,8 +619,8 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     fixture: &TokenFixture,
     from_token: Pubkey,
     to_token: Pubkey,
-    from_state: Pubkey,
-    to_state: Pubkey,
+    from_store: Pubkey,
+    to_store: Pubkey,
     amount_attestation: host::CoprocessorInputAttestation,
     remaining: Vec<Pubkey>,
     hcu_block_meter: Option<Pubkey>,
@@ -639,15 +639,15 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             to_ata: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
-            from_state,
-            to_state,
+            from_store,
+            to_store,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
             system_program: system_program::ID,
             hcu_block_meter,
             hcu_trusted_app_record,
-            result_state: None,
+            result_store: None,
 
             event_authority: event_authority(token::id()),
             program: token::id(),
@@ -663,7 +663,7 @@ fn confidential_transfer_ix_with_block_cap_accounts(
 }
 
 /// Builds a `confidential_transfer_from_value` instruction: the amount is taken from the existing
-/// on-chain `EncryptedState` at `amount_state` (a computed or received handle) rather than a fresh
+/// on-chain `EncryptedStore` at `amount_store` (a computed or received handle) rather than a fresh
 /// attestation. `signer_owner` signs and pays; it must own `from_token`, and the amount value must
 /// be under its own or `from_token`'s authority.
 #[allow(clippy::too_many_arguments)]
@@ -672,9 +672,9 @@ fn confidential_transfer_from_value_ix(
     signer_owner: Pubkey,
     from_token: Pubkey,
     to_token: Pubkey,
-    from_state: Pubkey,
-    to_state: Pubkey,
-    amount_state: Pubkey,
+    from_store: Pubkey,
+    to_store: Pubkey,
+    amount_store: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
@@ -689,9 +689,9 @@ fn confidential_transfer_from_value_ix(
             to_ata: fixture.underlying_ata_for_token(to_token),
             from_account: from_token,
             to_account: to_token,
-            from_state,
-            to_state,
-            amount_state: Some(amount_state),
+            from_store,
+            to_store,
+            amount_store: Some(amount_store),
             amount_authority: None,
 
             zama_event_authority: event_authority(host::id()),
@@ -705,29 +705,29 @@ fn confidential_transfer_from_value_ix(
         },
         token::instruction::ConfidentialTransferFromValue {
             amount_source: token::TransferInput::Slot {
-                key: fixture.key_for_state(amount_state),
+                key: fixture.key_for_state(amount_store),
             },
         },
     )
 }
 
-/// Seeds a spendable amount encrypted State (a stand-in for a computed/received `euint64`
+/// Seeds a spendable amount encrypted store (a stand-in for a computed/received `euint64`
 /// handle) of this mint's application under `authority` at `label`, and returns its address.
-fn seed_amount_state(
+fn seed_amount_store(
     fixture: &TokenFixture,
     accounts: &mut HashMap<Pubkey, Account>,
     authority: Pubkey,
-    encrypted_state_label: [u8; 32],
+    encrypted_store_label: [u8; 32],
     handle: [u8; 32],
 ) -> Pubkey {
-    let address = insert_state_slot(
+    let address = insert_store_slot(
         accounts,
         fixture.app(),
         authority,
-        encrypted_state_label,
+        encrypted_store_label,
         handle,
     );
-    fixture.register_state_key(address, encrypted_state_label);
+    fixture.register_state_key(address, encrypted_store_label);
     address
 }
 
@@ -738,7 +738,7 @@ fn allow_balance_viewers_ix(
     owner: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
-    balance_state: Pubkey,
+    balance_store: Pubkey,
     host_config: Pubkey,
     viewers: Vec<Pubkey>,
 ) -> Instruction {
@@ -751,7 +751,7 @@ fn allow_balance_viewers_ix(
             owner,
             mint,
             token_account,
-            balance_state,
+            balance_store,
             host_config,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -779,7 +779,7 @@ fn allow_total_supply_viewers_ix(
             authority,
             mint: fixture.mint,
             total_supply_authority: fixture.total_supply_authority,
-            total_supply_state: fixture.total_supply_state,
+            total_supply_store: fixture.total_supply_store,
             host_config: fixture.host_config,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -796,7 +796,7 @@ fn allow_total_supply_viewers_ix(
 fn make_token_account_handle_public_ix(
     fixture: &BurnRedeemFixture,
     kind: token::DisclosedValueKind,
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     handle: [u8; 32],
 ) -> Instruction {
     anchor_ix(
@@ -806,7 +806,7 @@ fn make_token_account_handle_public_ix(
             owner: fixture.owner,
             mint: fixture.mint,
             token_account: fixture.token_account,
-            encrypted_state,
+            encrypted_store,
             host_config: fixture.host_config,
             zama_program: host::id(),
             system_program: system_program::ID,
@@ -827,7 +827,7 @@ fn make_total_supply_handle_public_ix(
             authority,
             mint: fixture.mint,
             total_supply_authority: fixture.total_supply_authority,
-            total_supply_state: fixture.total_supply_state,
+            total_supply_store: fixture.total_supply_store,
             host_config: fixture.host_config,
             zama_program: host::id(),
             system_program: system_program::ID,
@@ -860,22 +860,22 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         5_000
     );
-    let value = read_encrypted_state(&context, fixture.total_supply_state);
+    let value = read_encrypted_store(&context, fixture.total_supply_store);
     assert_ne!(
-        state_handle(&value, token::total_supply_key()),
+        store_handle(&value, token::total_supply_key()),
         fixture.initial_total_supply
     );
     assert_eq!(value.leaf_count, 1);
     assert_eq!(
         value.peaks,
         expected_allow_peaks(
-            fixture.total_supply_state,
-            state_handle(&value, token::total_supply_key()),
+            fixture.total_supply_store,
+            store_handle(&value, token::total_supply_key()),
             &[auditor]
         )
     );
@@ -888,7 +888,7 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
     assert_eq!(events[0].old_handle, fixture.initial_total_supply);
     assert_eq!(
         events[0].new_handle,
-        state_handle(&value, token::total_supply_key())
+        store_handle(&value, token::total_supply_key())
     );
     assert_eq!(
         events[0].reason,
@@ -910,7 +910,7 @@ fn mollusk_owner_allows_balance_viewers() {
             fixture.owner,
             fixture.mint,
             fixture.alice_token,
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
             fixture.host_config,
             vec![auditor],
         ),
@@ -920,17 +920,17 @@ fn mollusk_owner_allows_balance_viewers() {
 
     // The owner stays allowed on every balance write; the auditor is allowed on this handle only.
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 1_000);
-    let value = read_encrypted_state(&context, fixture.alice_balance_state);
+    let value = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_ne!(
-        state_handle(&value, token::balance_key()),
+        store_handle(&value, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(value.leaf_count, 2);
     assert_eq!(
         value.peaks,
         expected_allow_peaks(
-            fixture.alice_balance_state,
-            state_handle(&value, token::balance_key()),
+            fixture.alice_balance_store,
+            store_handle(&value, token::balance_key()),
             &[fixture.owner, auditor]
         )
     );
@@ -947,7 +947,7 @@ fn mollusk_owner_allows_balance_viewers() {
     assert_eq!(events[0].old_handle, fixture.alice_initial);
     assert_eq!(
         events[0].new_handle,
-        state_handle(&value, token::balance_key())
+        store_handle(&value, token::balance_key())
     );
 
     // The next balance write allows the owner alone again: the grant covered one handle.
@@ -955,8 +955,8 @@ fn mollusk_owner_allows_balance_viewers() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         amount_attestation_for(
             handle_for_chain(21, BALANCE_FHE_TYPE),
             fixture.owner,
@@ -965,24 +965,24 @@ fn mollusk_owner_allows_balance_viewers() {
     );
     let transfer_result = check_token_instruction(&context, &transfer, &[Check::success()]);
     let transferred_handle: [u8; 32] = transferred_event_handle(&transfer_result);
-    let after = read_encrypted_state(&context, fixture.alice_balance_state);
+    let after = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_eq!(after.leaf_count, 5);
     let mut leaves = allow_leaves(
-        fixture.alice_balance_state,
+        fixture.alice_balance_store,
         0,
-        state_handle(&value, token::balance_key()),
+        store_handle(&value, token::balance_key()),
         &[fixture.owner, auditor],
     );
     leaves.extend(allow_leaves(
-        fixture.alice_balance_state,
+        fixture.alice_balance_store,
         2,
         transferred_handle,
         &[fixture.owner, fixture.bob_owner],
     ));
     leaves.extend(allow_leaves(
-        fixture.alice_balance_state,
+        fixture.alice_balance_store,
         4,
-        state_handle(&after, token::balance_key()),
+        store_handle(&after, token::balance_key()),
         &[fixture.owner],
     ));
     assert_eq!(after.peaks, zama_solana_acl::mmr_peaks_from_leaves(&leaves));
@@ -1002,7 +1002,7 @@ fn mollusk_non_owner_cannot_allow_balance_viewers() {
             stranger,
             fixture.mint,
             fixture.alice_token,
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
             fixture.host_config,
             vec![Pubkey::new_unique()],
         ),
@@ -1045,8 +1045,8 @@ fn mollusk_total_supply_allow_rejects_wrong_value_shape() {
         fixture.initial_total_supply,
     );
     accounts.insert(
-        fixture.total_supply_state,
-        encrypted_state_account(&wrong_value),
+        fixture.total_supply_store,
+        encrypted_store_account(&wrong_value),
     );
     let context = mollusk().with_context(accounts);
 
@@ -1054,7 +1054,7 @@ fn mollusk_total_supply_allow_rejects_wrong_value_shape() {
         &context,
         &allow_total_supply_viewers_ix(&fixture, fixture.owner, vec![Pubkey::new_unique()]),
         &[token_error(
-            token::ConfidentialTokenError::TokenEncryptedStateMismatch,
+            token::ConfidentialTokenError::TokenEncryptedStoreMismatch,
         )],
     );
 }
@@ -1070,17 +1070,17 @@ fn mollusk_owner_seals_exact_token_account_state_field() {
         &make_token_account_handle_public_ix(
             &fixture,
             token::DisclosedValueKind::Balance,
-            fixture.balance_state,
+            fixture.balance_store,
             fixture.initial_balance,
         ),
         &[Check::success()],
     );
-    let value = read_encrypted_state(&context, fixture.balance_state);
+    let value = read_encrypted_store(&context, fixture.balance_store);
     assert_eq!(value.leaf_count, 1);
     assert_eq!(
         value.peaks,
         zama_solana_acl::mmr_peaks_from_leaves(&[zama_solana_acl::public_decrypt_leaf_commitment(
-            fixture.balance_state.to_bytes(),
+            fixture.balance_store.to_bytes(),
             0,
             fixture.initial_balance,
         ),])
@@ -1091,7 +1091,7 @@ fn mollusk_owner_seals_exact_token_account_state_field() {
         &make_token_account_handle_public_ix(
             &fixture,
             token::DisclosedValueKind::BurnedAmount,
-            fixture.balance_state,
+            fixture.balance_store,
             fixture.initial_balance,
         ),
         &[token_error(
@@ -1111,7 +1111,7 @@ fn mollusk_mint_authority_seals_total_supply() {
         &[Check::success()],
     );
     assert_eq!(
-        read_encrypted_state(&context, fixture.total_supply_state).leaf_count,
+        read_encrypted_store(&context, fixture.total_supply_store).leaf_count,
         1
     );
 }
@@ -1140,12 +1140,12 @@ fn deny_enabled_transfer_accounts(
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mollusk_initialize_mint_creates_total_supply_encrypted_state() {
+fn mollusk_initialize_mint_creates_total_supply_encrypted_store() {
     let authority = Pubkey::new_unique();
     let mint = Pubkey::new_unique();
     let underlying_mint = Pubkey::new_unique();
     let total_supply_authority = token::total_supply_authority_address(mint).0;
-    let total_supply_encrypted_state = token::total_supply_slot(mint).0.address();
+    let total_supply_encrypted_store = token::total_supply_slot(mint).0.address();
     let host_config_key = host::host_config_address().0;
     let context = mollusk().with_context(HashMap::from([
         (authority, system_account(5_000_000_000)),
@@ -1175,7 +1175,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_state() {
             },
         ),
         (total_supply_authority, system_account(0)),
-        (total_supply_encrypted_state, system_account(0)),
+        (total_supply_encrypted_store, system_account(0)),
         (host_config_key, host_config_account(authority, [0u8; 20])),
         (event_authority(host::id()), system_account(0)),
         (event_authority(token::id()), system_account(0)),
@@ -1188,7 +1188,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_state() {
     assert_eq!(stored.authority, authority);
     // The supply belongs to the token application in the mint's scope, under the total-supply
     // PDA; nobody is allowed on it by default, so the create seals no leaf.
-    let supply_value = read_encrypted_state(&context, total_supply_encrypted_state);
+    let supply_value = read_encrypted_store(&context, total_supply_encrypted_store);
     assert_eq!(supply_value.program, token::id());
     assert_eq!(supply_value.scope, mint.to_bytes());
     assert_eq!(supply_value.authority, total_supply_authority);
@@ -1197,15 +1197,15 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_state() {
 }
 
 #[test]
-fn mollusk_initialize_token_account_creates_initial_balance_encrypted_state() {
+fn mollusk_initialize_token_account_creates_initial_balance_encrypted_store() {
     let fixture = TokenFixture::new();
     let owner = Pubkey::new_unique();
     let (token_account, token_bump) = token::token_account_address(fixture.mint, owner);
-    let balance_encrypted_state = token::balance_slot(fixture.mint, token_account).0.address();
+    let balance_encrypted_store = token::balance_slot(fixture.mint, token_account).0.address();
     let mut accounts = fixture.base_accounts();
     accounts.insert(owner, system_account(5_000_000_000));
     accounts.insert(token_account, system_account(0));
-    accounts.insert(balance_encrypted_state, system_account(0));
+    accounts.insert(balance_encrypted_store, system_account(0));
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
@@ -1218,17 +1218,17 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_state() {
 
     // The balance is the token application's value under the token-account PDA, allowed to the
     // owner on its first handle.
-    let balance_state = read_encrypted_state(&context, balance_encrypted_state);
-    assert_eq!(balance_state.program, token::id());
-    assert_eq!(balance_state.scope, fixture.mint.to_bytes());
-    assert_eq!(balance_state.authority, token_account);
-    assert!(balance_state.get(&token::balance_key()).is_some());
-    assert_eq!(balance_state.leaf_count, 1);
+    let balance_store = read_encrypted_store(&context, balance_encrypted_store);
+    assert_eq!(balance_store.program, token::id());
+    assert_eq!(balance_store.scope, fixture.mint.to_bytes());
+    assert_eq!(balance_store.authority, token_account);
+    assert!(balance_store.get(&token::balance_key()).is_some());
+    assert_eq!(balance_store.leaf_count, 1);
     assert_eq!(
-        balance_state.peaks,
+        balance_store.peaks,
         expected_allow_peaks(
-            balance_encrypted_state,
-            state_handle(&balance_state, token::balance_key()),
+            balance_encrypted_store,
+            store_handle(&balance_store, token::balance_key()),
             &[owner]
         )
     );
@@ -1243,14 +1243,14 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_state() {
     assert_eq!(balance_events[0].owner, owner);
     assert_eq!(balance_events[0].token_account, token_account);
     assert_eq!(balance_events[0].old_handle, [0; 32]);
-    assert_eq!(balance_events[0].old_encrypted_state, Pubkey::default());
+    assert_eq!(balance_events[0].old_encrypted_store, Pubkey::default());
     assert_eq!(
         balance_events[0].new_handle,
-        state_handle(&balance_state, token::balance_key())
+        store_handle(&balance_store, token::balance_key())
     );
     assert_eq!(
-        balance_events[0].new_encrypted_state,
-        balance_encrypted_state
+        balance_events[0].new_encrypted_store,
+        balance_encrypted_store
     );
     assert_eq!(
         balance_events[0].reason,
@@ -1264,12 +1264,12 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
     let payer = Pubkey::new_unique();
     let owner = Pubkey::new_unique();
     let (token_account, _bump) = token::token_account_address(fixture.mint, owner);
-    let balance_encrypted_state = token::balance_slot(fixture.mint, token_account).0.address();
+    let balance_encrypted_store = token::balance_slot(fixture.mint, token_account).0.address();
     let mut accounts = fixture.base_accounts();
     accounts.insert(payer, system_account(5_000_000_000));
     accounts.insert(owner, system_account(0));
     accounts.insert(token_account, system_account(0));
-    accounts.insert(balance_encrypted_state, system_account(0));
+    accounts.insert(balance_encrypted_store, system_account(0));
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(payer, owner, fixture.mint, fixture.host_config);
 
@@ -1278,13 +1278,13 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
     let stored = read_token_account(&context, token_account);
     assert_eq!(stored.owner, owner);
     // The sponsor pays; only the owner is allowed on the balance.
-    let balance_state = read_encrypted_state(&context, balance_encrypted_state);
-    assert_eq!(balance_state.leaf_count, 1);
+    let balance_store = read_encrypted_store(&context, balance_encrypted_store);
+    assert_eq!(balance_store.leaf_count, 1);
     assert_eq!(
-        balance_state.peaks,
+        balance_store.peaks,
         expected_allow_peaks(
-            balance_encrypted_state,
-            state_handle(&balance_state, token::balance_key()),
+            balance_encrypted_store,
+            store_handle(&balance_store, token::balance_key()),
             &[owner]
         )
     );
@@ -1292,13 +1292,13 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
     let retry = check_token_instruction(&context, &ix, &[]);
     assert!(retry.raw_result.is_err());
     let stored_after_retry = read_token_account(&context, token_account);
-    let balance_after_retry = read_encrypted_state(&context, balance_encrypted_state);
+    let balance_after_retry = read_encrypted_store(&context, balance_encrypted_store);
     assert_eq!(stored_after_retry.owner, stored.owner);
     assert_eq!(
-        state_handle(&balance_after_retry, token::balance_key()),
-        state_handle(&balance_state, token::balance_key())
+        store_handle(&balance_after_retry, token::balance_key()),
+        store_handle(&balance_store, token::balance_key())
     );
-    assert_eq!(balance_after_retry.peaks, balance_state.peaks);
+    assert_eq!(balance_after_retry.peaks, balance_store.peaks);
 }
 
 // ---------------------------------------------------------------------------
@@ -1326,8 +1326,8 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
         &fixture,
         fixture.alice_token,
         fixture.alice_token,
-        fixture.alice_balance_state,
-        fixture.alice_balance_state,
+        fixture.alice_balance_store,
+        fixture.alice_balance_store,
         sender_attestation(&fixture, 9),
     );
 
@@ -1336,19 +1336,19 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
     assert!(result.raw_result.is_ok());
     assert!(result.inner_instructions.is_empty());
     assert!(result.return_data.is_empty());
-    let balance_state = read_encrypted_state(&context, fixture.alice_balance_state);
+    let balance_store = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_eq!(
-        state_handle(&balance_state, token::balance_key()),
+        store_handle(&balance_store, token::balance_key()),
         fixture.alice_initial
     );
-    assert_eq!(balance_state.leaf_count, 0);
+    assert_eq!(balance_store.leaf_count, 0);
 }
 
 #[test]
 fn mollusk_confidential_transfer_self_transfer_rejects_result_grant() {
     let fixture = TokenFixture::new();
     let consumer_scope = [0x55; 32];
-    let (result_state, state) = new_encrypted_state(
+    let (result_store, state) = new_encrypted_store(
         host::AppScope {
             program: token::id(),
             scope: consumer_scope,
@@ -1357,18 +1357,18 @@ fn mollusk_confidential_transfer_self_transfer_rejects_result_grant() {
         [],
     );
     let mut accounts = fixture.base_accounts();
-    accounts.insert(result_state, encrypted_state_account(&state));
+    accounts.insert(result_store, encrypted_store_account(&state));
     let context = mollusk().with_context(accounts);
 
     check_token_instruction(
         &context,
-        &confidential_self_transfer_with_result_grant_ix(&fixture, result_state),
+        &confidential_self_transfer_with_result_grant_ix(&fixture, result_store),
         &[token_error(
             token::ConfidentialTokenError::ResultGrantMismatch,
         )],
     );
     assert_eq!(
-        read_state_handle(&context, fixture.alice_balance_state, token::balance_key(),),
+        read_store_handle(&context, fixture.alice_balance_store, token::balance_key(),),
         fixture.alice_initial
     );
 }
@@ -1386,8 +1386,8 @@ fn mollusk_confidential_transfer_rejects_frozen_sender_ata() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 9),
     );
 
@@ -1413,8 +1413,8 @@ fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 9),
     );
 
@@ -1440,8 +1440,8 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 21),
     );
 
@@ -1454,36 +1454,36 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     let transferred_handle: [u8; 32] = transferred_event_handle(&result);
     assert_eq!(cleartext.u64_for_handle(transferred_handle), 400);
 
-    // Token account addresses and their balance `EncryptedState` PDAs stay stable across the
+    // Token account addresses and their balance `EncryptedStore` PDAs stay stable across the
     // transfer: no new balance account is created, the existing values are replaced in place.
     let _alice_token = read_token_account(&context, fixture.alice_token);
     let _bob_token = read_token_account(&context, fixture.bob_token);
 
     // The sender State records the transient result grants followed by its balance write. The
     // recipient State records its balance write.
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
-    let bob_balance = read_encrypted_state(&context, fixture.bob_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
+    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
     assert_ne!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     assert_ne!(
-        state_handle(&bob_balance, token::balance_key()),
+        store_handle(&bob_balance, token::balance_key()),
         fixture.bob_initial
     );
     assert_eq!(alice_balance.leaf_count, 3);
     assert_eq!(bob_balance.leaf_count, 1);
     assert_eq!(alice_balance.peaks, {
         let mut leaves = allow_leaves(
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
             0,
             transferred_handle,
             &[fixture.owner, fixture.bob_owner],
         );
         leaves.extend(allow_leaves(
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
             2,
-            state_handle(&alice_balance, token::balance_key()),
+            store_handle(&alice_balance, token::balance_key()),
             &[fixture.owner],
         ));
         zama_solana_acl::mmr_peaks_from_leaves(&leaves)
@@ -1491,8 +1491,8 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(
         bob_balance.peaks,
         expected_allow_peaks(
-            fixture.bob_balance_state,
-            state_handle(&bob_balance, token::balance_key()),
+            fixture.bob_balance_store,
+            store_handle(&bob_balance, token::balance_key()),
             &[fixture.bob_owner],
         )
     );
@@ -1510,8 +1510,8 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(transfer_events[0].to_token_account, fixture.bob_token);
     assert_eq!(transfer_events[0].transferred_handle, transferred_handle);
     assert_eq!(
-        transfer_events[0].transferred_encrypted_state,
-        fixture.alice_balance_state
+        transfer_events[0].transferred_encrypted_store,
+        fixture.alice_balance_store
     );
 
     let balance_events: Vec<token::BalanceHandleUpdatedEvent> = result
@@ -1527,7 +1527,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(balance_events[0].old_handle, fixture.alice_initial);
     assert_eq!(
         balance_events[0].new_handle,
-        state_handle(&alice_balance, token::balance_key())
+        store_handle(&alice_balance, token::balance_key())
     );
     assert_eq!(
         balance_events[1].reason,
@@ -1536,12 +1536,12 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(balance_events[1].old_handle, fixture.bob_initial);
     assert_eq!(
         balance_events[1].new_handle,
-        state_handle(&bob_balance, token::balance_key())
+        store_handle(&bob_balance, token::balance_key())
     );
 }
 
-/// Seeds Charlie's token account + balance encrypted State into `accounts` and returns
-/// (charlie_owner, charlie_token, charlie_balance_state).
+/// Seeds Charlie's token account + balance encrypted store into `accounts` and returns
+/// (charlie_owner, charlie_token, charlie_balance_store).
 fn seed_third_account(
     fixture: &TokenFixture,
     accounts: &mut HashMap<Pubkey, Account>,
@@ -1549,21 +1549,21 @@ fn seed_third_account(
 ) -> (Pubkey, Pubkey, Pubkey) {
     let charlie_owner = Pubkey::new_unique();
     let charlie_token = token::token_account_address(fixture.mint, charlie_owner).0;
-    let charlie_balance_state = token::balance_slot(fixture.mint, charlie_token).0.address();
+    let charlie_balance_store = token::balance_slot(fixture.mint, charlie_token).0.address();
     accounts.insert(charlie_owner, system_account(5_000_000_000));
     accounts.insert(
         charlie_token,
-        fixture.confidential_token_account(charlie_owner, charlie_balance_state),
+        fixture.confidential_token_account(charlie_owner, charlie_balance_store),
     );
     fixture.register_token_owner(charlie_token, charlie_owner);
     accounts.insert(fixture.owner_ata(charlie_owner), system_account(0));
     let (_, charlie_value) =
         new_test_state(fixture.app(), charlie_token, token::balance_key(), initial);
     accounts.insert(
-        charlie_balance_state,
-        encrypted_state_account(&charlie_value),
+        charlie_balance_store,
+        encrypted_store_account(&charlie_value),
     );
-    (charlie_owner, charlie_token, charlie_balance_state)
+    (charlie_owner, charlie_token, charlie_balance_store)
 }
 
 #[test]
@@ -1573,20 +1573,20 @@ fn mollusk_confidential_transfer_to_successive_recipients_seals_each_receipt_aud
     // receipt keeps its own leaves, so each recipient can still prove what they received.
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
-    let (charlie_owner, charlie_token, charlie_balance_state) = seed_third_account(
+    let (charlie_owner, charlie_token, charlie_balance_store) = seed_third_account(
         &fixture,
         &mut accounts,
         handle_for_chain(3, BALANCE_FHE_TYPE),
     );
     let context = mollusk().with_context(accounts);
-    let receipt_address = fixture.transferred_amount_state_address(fixture.alice_token);
+    let receipt_address = fixture.transferred_amount_store_address(fixture.alice_token);
 
     let transfer = |to_token, to_balance, tag| {
         confidential_transfer_ix(
             &fixture,
             fixture.alice_token,
             to_token,
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
             to_balance,
             sender_attestation(&fixture, tag),
         )
@@ -1594,32 +1594,32 @@ fn mollusk_confidential_transfer_to_successive_recipients_seals_each_receipt_aud
 
     let bob_result = check_token_instruction(
         &context,
-        &transfer(fixture.bob_token, fixture.bob_balance_state, 21),
+        &transfer(fixture.bob_token, fixture.bob_balance_store, 21),
         &[Check::success()],
     );
-    let after_bob = read_encrypted_state(&context, receipt_address);
+    let after_bob = read_encrypted_store(&context, receipt_address);
     let bob_handle: [u8; 32] = transferred_event_handle(&bob_result);
-    let bob_balance = state_handle(&after_bob, token::balance_key());
+    let bob_balance = store_handle(&after_bob, token::balance_key());
     assert_eq!(after_bob.leaf_count, 3);
 
     let charlie_result = check_token_instruction(
         &context,
-        &transfer(charlie_token, charlie_balance_state, 22),
+        &transfer(charlie_token, charlie_balance_store, 22),
         &[Check::success()],
     );
-    let after_charlie = read_encrypted_state(&context, receipt_address);
+    let after_charlie = read_encrypted_store(&context, receipt_address);
     let charlie_handle: [u8; 32] = transferred_event_handle(&charlie_result);
-    let charlie_balance = state_handle(&after_charlie, token::balance_key());
+    let charlie_balance = store_handle(&after_charlie, token::balance_key());
     assert_eq!(after_charlie.leaf_count, 6);
 
     let bob_again_result = check_token_instruction(
         &context,
-        &transfer(fixture.bob_token, fixture.bob_balance_state, 23),
+        &transfer(fixture.bob_token, fixture.bob_balance_store, 23),
         &[Check::success()],
     );
-    let after_bob_again = read_encrypted_state(&context, receipt_address);
+    let after_bob_again = read_encrypted_store(&context, receipt_address);
     let bob_again_handle: [u8; 32] = transferred_event_handle(&bob_again_result);
-    let bob_again_balance = state_handle(&after_bob_again, token::balance_key());
+    let bob_again_balance = store_handle(&after_bob_again, token::balance_key());
     assert_eq!(after_bob_again.leaf_count, 9);
 
     let mut leaves = Vec::new();
@@ -1660,7 +1660,7 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
     // A no-op must preserve history and clear the previous transfer's returned handle.
     let fixture = TokenFixture::new();
     let context = mollusk().with_context(fixture.base_accounts());
-    let receipt_address = fixture.transferred_amount_state_address(fixture.alice_token);
+    let receipt_address = fixture.transferred_amount_store_address(fixture.alice_token);
 
     check_token_instruction(
         &context,
@@ -1668,13 +1668,13 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
             &fixture,
             fixture.alice_token,
             fixture.bob_token,
-            fixture.alice_balance_state,
-            fixture.bob_balance_state,
+            fixture.alice_balance_store,
+            fixture.bob_balance_store,
             sender_attestation(&fixture, 21),
         ),
         &[Check::success()],
     );
-    let receipt_before = read_encrypted_state(&context, receipt_address);
+    let receipt_before = read_encrypted_store(&context, receipt_address);
     assert_eq!(receipt_before.leaf_count, 3);
 
     let result = check_token_instruction(
@@ -1683,15 +1683,15 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
             &fixture,
             fixture.alice_token,
             fixture.alice_token,
-            fixture.alice_balance_state,
-            fixture.alice_balance_state,
+            fixture.alice_balance_store,
+            fixture.alice_balance_store,
             sender_attestation(&fixture, 22),
         ),
         &[],
     );
     assert!(result.raw_result.is_ok());
     assert!(result.return_data.is_empty());
-    let receipt_after = read_encrypted_state(&context, receipt_address);
+    let receipt_after = read_encrypted_store(&context, receipt_address);
     assert_eq!(receipt_after.leaf_count, receipt_before.leaf_count);
     assert_eq!(receipt_after.peaks, receipt_before.peaks);
 }
@@ -1706,7 +1706,7 @@ fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied
     let (accounts, deny_record) = deny_enabled_transfer_accounts(&fixture, false);
     let context = mollusk().with_context(accounts);
     let mut accounts_for_charlie = HashMap::new();
-    let (_, charlie_token, charlie_balance_state) = seed_third_account(
+    let (_, charlie_token, charlie_balance_store) = seed_third_account(
         &fixture,
         &mut accounts_for_charlie,
         handle_for_chain(3, BALANCE_FHE_TYPE),
@@ -1718,8 +1718,8 @@ fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied
 
     // Every execution of the mint carries the same witness, whoever the recipient is.
     for (to_token, to_balance, tag) in [
-        (fixture.bob_token, fixture.bob_balance_state, 21),
-        (charlie_token, charlie_balance_state, 22),
+        (fixture.bob_token, fixture.bob_balance_store, 21),
+        (charlie_token, charlie_balance_store, 22),
     ] {
         check_token_instruction(
             &context,
@@ -1727,7 +1727,7 @@ fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied
                 &fixture,
                 fixture.alice_token,
                 to_token,
-                fixture.alice_balance_state,
+                fixture.alice_balance_store,
                 to_balance,
                 sender_attestation(&fixture, tag),
                 vec![deny_record],
@@ -1736,15 +1736,15 @@ fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied
         );
     }
 
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_ne!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(
-        read_encrypted_state(
+        read_encrypted_store(
             &context,
-            fixture.transferred_amount_state_address(fixture.alice_token)
+            fixture.transferred_amount_store_address(fixture.alice_token)
         )
         .leaf_count,
         6
@@ -1760,8 +1760,8 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_mint_atomically()
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 24),
         vec![deny_record],
     );
@@ -1772,14 +1772,14 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_mint_atomically()
         &[host_error(host::errors::ZamaHostError::ScopeDenied)],
     );
 
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
-    let bob_balance = read_encrypted_state(&context, fixture.bob_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
+    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
     assert_eq!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(
-        state_handle(&bob_balance, token::balance_key()),
+        store_handle(&bob_balance, token::balance_key()),
         fixture.bob_initial
     );
 }
@@ -1802,8 +1802,8 @@ fn mollusk_confidential_transfer_with_deny_list_requires_the_mints_witness() {
                 &fixture,
                 fixture.alice_token,
                 fixture.bob_token,
-                fixture.alice_balance_state,
-                fixture.bob_balance_state,
+                fixture.alice_balance_store,
+                fixture.bob_balance_store,
                 sender_attestation(&fixture, 25),
                 remaining,
             ),
@@ -1813,7 +1813,7 @@ fn mollusk_confidential_transfer_with_deny_list_requires_the_mints_witness() {
         );
     }
     assert_eq!(
-        read_state_handle(&context, fixture.alice_balance_state, token::balance_key()),
+        read_store_handle(&context, fixture.alice_balance_store, token::balance_key()),
         fixture.alice_initial
     );
 }
@@ -1832,8 +1832,8 @@ fn mollusk_confidential_transfer_rejects_witness_while_deny_list_is_disabled() {
             &fixture,
             fixture.alice_token,
             fixture.bob_token,
-            fixture.alice_balance_state,
-            fixture.bob_balance_state,
+            fixture.alice_balance_store,
+            fixture.bob_balance_store,
             sender_attestation(&fixture, 26),
             vec![record],
         ),
@@ -1885,8 +1885,8 @@ fn run_multisig_transfer(
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         attestation,
     );
     check_token_instruction(&context, &transfer, checks)
@@ -1991,8 +1991,8 @@ fn confidential_transfer_with_threshold_four_attestation_fits_in_one_packet() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         attestation,
     );
 
@@ -2027,8 +2027,8 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         attestation,
     );
     // Sign as bob (matches the attestation) so only the owner-mismatch check can fail.
@@ -2044,9 +2044,9 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
 
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_eq!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
 }
@@ -2063,8 +2063,8 @@ fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         attestation,
     );
 
@@ -2076,14 +2076,14 @@ fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
         )],
     );
 
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
-    let bob_balance = read_encrypted_state(&context, fixture.bob_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
+    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
     assert_eq!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(
-        state_handle(&bob_balance, token::balance_key()),
+        store_handle(&bob_balance, token::balance_key()),
         fixture.bob_initial
     );
 }
@@ -2100,8 +2100,8 @@ fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         attestation,
     );
 
@@ -2113,20 +2113,20 @@ fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
         )],
     );
 
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
-    let bob_balance = read_encrypted_state(&context, fixture.bob_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
+    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
     assert_eq!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(
-        state_handle(&bob_balance, token::balance_key()),
+        store_handle(&bob_balance, token::balance_key()),
         fixture.bob_initial
     );
 }
 
 fn assert_transfer_rejects_misbound_balance(
-    rebind: impl FnOnce(&mut host::EncryptedState),
+    rebind: impl FnOnce(&mut host::EncryptedStore),
     amount_seed: u8,
     expected: Check<'static>,
 ) {
@@ -2140,25 +2140,25 @@ fn assert_transfer_rejects_misbound_balance(
     );
     rebind(&mut misbound);
     accounts.insert(
-        fixture.alice_balance_state,
-        encrypted_state_account(&misbound),
+        fixture.alice_balance_store,
+        encrypted_store_account(&misbound),
     );
     let context = mollusk().with_context(accounts);
     let ix = confidential_transfer_ix(
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, amount_seed),
     );
     check_token_instruction(&context, &ix, &[expected]);
     assert_eq!(
-        read_state_handle(&context, fixture.alice_balance_state, token::balance_key(),),
+        read_store_handle(&context, fixture.alice_balance_store, token::balance_key(),),
         fixture.alice_initial,
     );
     assert_eq!(
-        read_state_handle(&context, fixture.bob_balance_state, token::balance_key(),),
+        read_store_handle(&context, fixture.bob_balance_store, token::balance_key(),),
         fixture.bob_initial,
     );
 }
@@ -2169,7 +2169,7 @@ fn mollusk_confidential_transfer_rejects_balance_in_another_mints_scope() {
     assert_transfer_rejects_misbound_balance(
         |value| value.scope = wrong_mint.to_bytes(),
         34,
-        token_error(token::ConfidentialTokenError::CurrentEncryptedStateMismatch),
+        token_error(token::ConfidentialTokenError::CurrentEncryptedStoreMismatch),
     );
 }
 
@@ -2181,7 +2181,7 @@ fn mollusk_confidential_transfer_rejects_balance_under_another_token_account() {
     assert_transfer_rejects_misbound_balance(
         |value| value.authority = wrong_token_account,
         35,
-        token_error(token::ConfidentialTokenError::CurrentEncryptedStateMismatch),
+        token_error(token::ConfidentialTokenError::CurrentEncryptedStoreMismatch),
     );
 }
 
@@ -2196,7 +2196,7 @@ fn mollusk_confidential_transfer_rejects_balance_under_another_token_account() {
 //
 // Vector 2 (burn-stranding) fix, unchanged: every burn is created publicly decryptable at the burn
 // instant (ERC-7984 `unwrap` parity, DD-036), so a historical burned handle stays redeemable even
-// after a later burn updates the shared `burned_amount` encrypted State. A burn writes two
+// after a later burn updates the shared `burned_amount` encrypted store. A burn writes two
 // leaves: the owner's allow on the burned handle, then its public-decrypt leaf.
 // ---------------------------------------------------------------------------
 
@@ -2470,10 +2470,10 @@ struct BurnRedeemFixture {
     mint: Pubkey,
     host_config: Pubkey,
     token_account: Pubkey,
-    balance_state: Pubkey,
+    balance_store: Pubkey,
     total_supply_authority: Pubkey,
-    total_supply_state: Pubkey,
-    burned_amount_state: Pubkey,
+    total_supply_store: Pubkey,
+    burned_amount_store: Pubkey,
     underlying_mint: Pubkey,
     token_program: Pubkey,
     vault_authority: Pubkey,
@@ -2518,10 +2518,10 @@ impl BurnRedeemFixture {
     ) -> Self {
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
-        let balance_state = token::balance_slot(mint, token_account).0.address();
+        let balance_store = token::balance_slot(mint, token_account).0.address();
         let total_supply_authority = token::total_supply_authority_address(mint).0;
-        let total_supply_state = token::total_supply_slot(mint).0.address();
-        let burned_amount_state = token::encrypted_state_address(mint, token_account).0;
+        let total_supply_store = token::total_supply_slot(mint).0.address();
+        let burned_amount_store = token::encrypted_store_address(mint, token_account).0;
         let vault_authority = token::vault_authority_address(mint).0;
         let vault_usdc = token::vault_token_account_address(mint, underlying_mint, token_program);
         let destination_usdc = Pubkey::new_unique();
@@ -2532,10 +2532,10 @@ impl BurnRedeemFixture {
             mint,
             host_config,
             token_account,
-            balance_state,
+            balance_store,
             total_supply_authority,
-            total_supply_state,
-            burned_amount_state,
+            total_supply_store,
+            burned_amount_store,
             underlying_mint,
             token_program,
             vault_authority,
@@ -2567,13 +2567,13 @@ impl BurnRedeemFixture {
     }
 
     fn accounts(&self, vault_balance: u64) -> HashMap<Pubkey, Account> {
-        let (_, balance_state) = new_test_state(
+        let (_, balance_store) = new_test_state(
             self.app(),
             self.token_account,
             token::balance_key(),
             self.initial_balance,
         );
-        let (_, total_supply_state) = new_test_state(
+        let (_, total_supply_store) = new_test_state(
             self.app(),
             self.total_supply_authority,
             token::total_supply_key(),
@@ -2595,12 +2595,12 @@ impl BurnRedeemFixture {
             (self.kms_context, kms_context_account(self.kms_context_id)),
             (
                 self.token_account,
-                token_account_account(self.mint, self.owner, self.balance_state),
+                token_account_account(self.mint, self.owner, self.balance_store),
             ),
-            (self.balance_state, encrypted_state_account(&balance_state)),
+            (self.balance_store, encrypted_store_account(&balance_store)),
             (
-                self.total_supply_state,
-                encrypted_state_account(&total_supply_state),
+                self.total_supply_store,
+                encrypted_store_account(&total_supply_store),
             ),
             (
                 self.underlying_mint,
@@ -2662,7 +2662,7 @@ impl BurnRedeemFixture {
     }
 }
 
-fn token_account_account(mint: Pubkey, owner: Pubkey, _balance_state: Pubkey) -> Account {
+fn token_account_account(mint: Pubkey, owner: Pubkey, _balance_store: Pubkey) -> Account {
     Account {
         lamports: 1_000_000_000,
         data: serialized_account(token::ConfidentialTokenAccount {
@@ -2753,8 +2753,8 @@ fn confidential_burn_ix(
             owner_ata: fixture.owner_ata(),
             token_account: fixture.token_account,
             total_supply_authority: fixture.total_supply_authority,
-            balance_state: fixture.balance_state,
-            total_supply_state: fixture.total_supply_state,
+            balance_store: fixture.balance_store,
+            total_supply_store: fixture.total_supply_store,
             pending_burn,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -2770,7 +2770,7 @@ fn confidential_burn_ix(
 }
 
 /// Builds a `confidential_burn_from_value` instruction: the amount is taken from the existing
-/// on-chain `EncryptedState` at `amount_state` (a computed or received handle) rather than a fresh
+/// on-chain `EncryptedStore` at `amount_store` (a computed or received handle) rather than a fresh
 /// attestation. `owner` signs as the burn authority (it must own `token_account`, and the amount
 /// value must be under its own or the token account's authority) and `payer` pays rent; splitting
 /// them lets `owner` be a program PDA.
@@ -2778,7 +2778,7 @@ fn confidential_burn_from_value_ix(
     fixture: &BurnRedeemFixture,
     owner: Pubkey,
     payer: Pubkey,
-    amount_state: Pubkey,
+    amount_store: Pubkey,
     amount_key: [u8; 32],
     pending_burn: Pubkey,
 ) -> Instruction {
@@ -2794,10 +2794,10 @@ fn confidential_burn_from_value_ix(
             owner_ata: fixture.owner_ata(),
             token_account: fixture.token_account,
             total_supply_authority: fixture.total_supply_authority,
-            balance_state: fixture.balance_state,
-            total_supply_state: fixture.total_supply_state,
+            balance_store: fixture.balance_store,
+            total_supply_store: fixture.total_supply_store,
             pending_burn,
-            amount_state,
+            amount_store,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -2817,7 +2817,7 @@ fn confidential_burn_from_value_auto(
     fixture: &BurnRedeemFixture,
     owner: Pubkey,
     payer: Pubkey,
-    amount_state: Pubkey,
+    amount_store: Pubkey,
     amount_key: [u8; 32],
 ) -> Instruction {
     let pending_burn = prepare_empty_pending_burn(context, fixture);
@@ -2825,26 +2825,26 @@ fn confidential_burn_from_value_auto(
         fixture,
         owner,
         payer,
-        amount_state,
+        amount_store,
         amount_key,
         pending_burn,
     )
 }
 
-/// Seeds a spendable amount encrypted State (a stand-in for a computed/received `euint64`
+/// Seeds a spendable amount encrypted store (a stand-in for a computed/received `euint64`
 /// handle) of the fixture's application under `authority` at `label`, returning its address.
-fn seed_burn_amount_state(
+fn seed_burn_amount_store(
     fixture: &BurnRedeemFixture,
     accounts: &mut HashMap<Pubkey, Account>,
     authority: Pubkey,
-    encrypted_state_label: [u8; 32],
+    encrypted_store_label: [u8; 32],
     handle: [u8; 32],
 ) -> Pubkey {
-    insert_state_slot(
+    insert_store_slot(
         accounts,
         fixture.app(),
         authority,
-        encrypted_state_label,
+        encrypted_store_label,
         handle,
     )
 }
@@ -2856,7 +2856,7 @@ fn burn_leaves(
     first_index: u64,
     burned_handle: [u8; 32],
 ) -> Vec<[u8; 32]> {
-    let acct = fixture.burned_amount_state.to_bytes();
+    let acct = fixture.burned_amount_store.to_bytes();
     vec![
         zama_solana_acl::historical_access_leaf_commitment(
             acct,
@@ -2876,7 +2876,7 @@ fn burn_update_leaves(
 ) -> Vec<[u8; 32]> {
     let mut leaves = burn_leaves(fixture, first_index, burned_handle);
     leaves.extend(allow_leaves(
-        fixture.balance_state,
+        fixture.balance_store,
         first_index + 2,
         balance_handle,
         &[fixture.owner],
@@ -2884,7 +2884,7 @@ fn burn_update_leaves(
     leaves
 }
 
-/// Builds the public-decrypt inclusion proof for `fixture.burned_amount_state` after one burn: the
+/// Builds the public-decrypt inclusion proof for `fixture.burned_amount_store` after one burn: the
 /// public leaf sits at index 1, behind the owner's allow leaf.
 fn single_burn_public_decrypt_proof(
     fixture: &BurnRedeemFixture,
@@ -2912,7 +2912,7 @@ fn seed_single_burn_value_account(
     );
     value.leaf_count = 2;
     value.peaks = zama_solana_acl::mmr_peaks_from_leaves(&burn_leaves(fixture, 0, burned_handle));
-    accounts.insert(fixture.burned_amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.burned_amount_store, encrypted_store_account(&value));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2935,7 +2935,7 @@ fn redeem_burned_amount_ix(
             vault_usdc: fixture.vault_usdc,
             destination_usdc: fixture.destination_usdc,
             vault_authority: fixture.vault_authority,
-            burned_amount_state: fixture.burned_amount_state,
+            burned_amount_store: fixture.burned_amount_store,
             pending_burn,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
@@ -2968,8 +2968,8 @@ fn cancel_pending_burn_ix(
             mint: fixture.mint,
             token_account: fixture.token_account,
             total_supply_authority: fixture.total_supply_authority,
-            balance_state: fixture.balance_state,
-            total_supply_state: fixture.total_supply_state,
+            balance_store: fixture.balance_store,
+            total_supply_store: fixture.total_supply_store,
             pending_burn,
             host_config: fixture.host_config,
             zama_event_authority: event_authority(host::id()),
@@ -3000,9 +3000,9 @@ fn run_burn(
         pending_burn,
     );
     check_token_instruction(context, &ix, &[Check::success()]);
-    read_state_handle(
+    read_store_handle(
         context,
-        fixture.burned_amount_state,
+        fixture.burned_amount_store,
         token::burned_amount_key(),
     )
 }
@@ -3035,9 +3035,9 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
 
     // The first burn creates the burned-amount value and appends the owner's allow on the burned
     // handle followed by its public-decrypt leaf.
-    let value = read_encrypted_state(&context, fixture.burned_amount_state);
+    let value = read_encrypted_store(&context, fixture.burned_amount_store);
     assert_eq!(
-        state_handle(&value, token::burned_amount_key()),
+        store_handle(&value, token::burned_amount_key()),
         burned_handle
     );
     assert_eq!(value.leaf_count, 3);
@@ -3046,7 +3046,7 @@ fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
         zama_solana_acl::mmr_peaks_from_leaves(&burn_update_leaves(
             &fixture,
             0,
-            state_handle(&value, token::balance_key()),
+            store_handle(&value, token::balance_key()),
             burned_handle,
         ))
     );
@@ -3101,10 +3101,10 @@ fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
         let mut accounts = fixture.accounts(1_000);
         accounts.insert(pending_burn, occupied.clone());
         let context = burn_redeem_mollusk().with_context(accounts);
-        let old_balance = read_state_handle(&context, fixture.balance_state, token::balance_key());
-        let old_supply = read_state_handle(
+        let old_balance = read_store_handle(&context, fixture.balance_store, token::balance_key());
+        let old_supply = read_store_handle(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key(),
         );
 
@@ -3117,13 +3117,13 @@ fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
         );
 
         assert_eq!(
-            read_state_handle(&context, fixture.balance_state, token::balance_key()),
+            read_store_handle(&context, fixture.balance_store, token::balance_key()),
             old_balance
         );
         assert_eq!(
-            read_state_handle(
+            read_store_handle(
                 &context,
-                fixture.total_supply_state,
+                fixture.total_supply_store,
                 token::total_supply_key()
             ),
             old_supply
@@ -3489,8 +3489,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
 
     // Execute a real first burn, then redeem its public leaf.
     let first_handle = run_burn(&context, &fixture, 41);
-    let first_state = read_encrypted_state(&context, fixture.burned_amount_state);
-    let first_balance = state_handle(&first_state, token::balance_key());
+    let first_state = read_encrypted_store(&context, fixture.burned_amount_store);
+    let first_balance = store_handle(&first_state, token::balance_key());
     let proof_h1 = single_burn_public_decrypt_proof(&fixture, first_handle);
     let (sig_h1, extra_h1) = amount_public_decrypt_cert(first_handle, 300);
     check_token_instruction(
@@ -3510,12 +3510,12 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     // Only after H1 settles can a real second burn reopen the canonical pending account. Its
     // write appends H2's allow and public leaves behind H1's.
     let second_handle = run_burn(&context, &fixture, 42);
-    let second_state = read_encrypted_state(&context, fixture.burned_amount_state);
+    let second_state = read_encrypted_store(&context, fixture.burned_amount_store);
     let mut leaves = burn_update_leaves(&fixture, 0, first_balance, first_handle);
     leaves.extend(burn_update_leaves(
         &fixture,
         3,
-        state_handle(&second_state, token::balance_key()),
+        store_handle(&second_state, token::balance_key()),
         second_handle,
     ));
     let proof = zama_solana_acl::mmr_build_proof(&leaves, 4).expect("second public burn leaf");
@@ -3642,7 +3642,7 @@ fn mollusk_redeem_rejects_foreign_burn_state_and_preserves_accounts() {
         token::burned_amount_key(),
         handle,
     );
-    accounts.insert(foreign_address, encrypted_state_account(&foreign_state));
+    accounts.insert(foreign_address, encrypted_store_account(&foreign_state));
     let context = burn_redeem_mollusk().with_context(accounts);
     let pending = seed_pending_burn_in_context(&context, &fixture, handle);
     let (signatures, extra_data) = amount_public_decrypt_cert(handle, 500);
@@ -3657,7 +3657,7 @@ fn mollusk_redeem_rejects_foreign_burn_state_and_preserves_accounts() {
     );
     ix.accounts
         .iter_mut()
-        .find(|meta| meta.pubkey == fixture.burned_amount_state)
+        .find(|meta| meta.pubkey == fixture.burned_amount_store)
         .unwrap()
         .pubkey = foreign_address;
     let before = context.account_store.borrow().clone();
@@ -3718,7 +3718,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -3737,7 +3737,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
@@ -3746,7 +3746,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         4_750
@@ -3785,7 +3785,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         5_000
@@ -3797,9 +3797,9 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert!(check_token_instruction(&context, &cancel, &[])
         .raw_result
         .is_err());
-    let burned_handle = read_state_handle(
+    let burned_handle = read_store_handle(
         &context,
-        fixture.burned_amount_state,
+        fixture.burned_amount_store,
         token::burned_amount_key(),
     );
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 250);
@@ -3832,14 +3832,14 @@ fn mollusk_cancel_pending_burn_rejects_non_owner_atomically() {
     let old_balance = context
         .account_store
         .borrow()
-        .get(&fixture.balance_state)
+        .get(&fixture.balance_store)
         .expect("balance exists")
         .data
         .clone();
     let old_supply = context
         .account_store
         .borrow()
-        .get(&fixture.total_supply_state)
+        .get(&fixture.total_supply_store)
         .expect("total supply exists")
         .data
         .clone();
@@ -3872,7 +3872,7 @@ fn mollusk_cancel_pending_burn_rejects_non_owner_atomically() {
         context
             .account_store
             .borrow()
-            .get(&fixture.balance_state)
+            .get(&fixture.balance_store)
             .expect("balance remains")
             .data,
         old_balance
@@ -3881,7 +3881,7 @@ fn mollusk_cancel_pending_burn_rejects_non_owner_atomically() {
         context
             .account_store
             .borrow()
-            .get(&fixture.total_supply_state)
+            .get(&fixture.total_supply_store)
             .expect("total supply remains")
             .data,
         old_supply
@@ -3908,7 +3908,7 @@ fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
     let old_supply_data = context
         .account_store
         .borrow()
-        .get(&fixture.total_supply_state)
+        .get(&fixture.total_supply_store)
         .expect("total supply exists")
         .data
         .clone();
@@ -3920,24 +3920,24 @@ fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
         .clone();
     let old_vault_amount = read_spl_amount(&context, fixture.vault_usdc);
 
-    let mut burned = read_encrypted_state(&context, fixture.burned_amount_state);
+    let mut burned = read_encrypted_store(&context, fixture.burned_amount_store);
     burned
         .set(
             token::burned_amount_key(),
-            Some(state_handle(&burned, token::burned_amount_key())),
+            Some(store_handle(&burned, token::burned_amount_key())),
             handle_for_chain(42, BALANCE_FHE_TYPE),
         )
         .unwrap();
     context
         .account_store
         .borrow_mut()
-        .get_mut(&fixture.burned_amount_state)
+        .get_mut(&fixture.burned_amount_store)
         .expect("burned amount exists")
         .data = serialized_account(burned);
     let mutated_balance_data = context
         .account_store
         .borrow()
-        .get(&fixture.balance_state)
+        .get(&fixture.balance_store)
         .expect("balance remains")
         .data
         .clone();
@@ -3954,7 +3954,7 @@ fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
         context
             .account_store
             .borrow()
-            .get(&fixture.balance_state)
+            .get(&fixture.balance_store)
             .expect("balance remains")
             .data,
         mutated_balance_data
@@ -3963,7 +3963,7 @@ fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
         context
             .account_store
             .borrow()
-            .get(&fixture.total_supply_state)
+            .get(&fixture.total_supply_store)
             .expect("total supply remains")
             .data,
         old_supply_data
@@ -3988,7 +3988,7 @@ fn mollusk_confidential_burn_is_sequential_until_cancelled() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -4002,7 +4002,7 @@ fn mollusk_confidential_burn_is_sequential_until_cancelled() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
         pending_burn,
     );
@@ -4077,8 +4077,8 @@ impl<'a> WrapUsdcParams<'a> {
                 vault_usdc: self.vault_usdc,
                 vault_authority: fixture.vault_authority,
                 total_supply_authority: self.total_supply_authority,
-                balance_state: fixture.balance_state,
-                total_supply_state: fixture.total_supply_state,
+                balance_store: fixture.balance_store,
+                total_supply_store: fixture.total_supply_store,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
                 host_config: fixture.host_config,
@@ -4144,7 +4144,7 @@ fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         100
@@ -4152,18 +4152,18 @@ fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
     assert_eq!(read_spl_amount(&context, user_usdc), 900);
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 100);
     // The balance write allows the owner; the supply write allows nobody.
-    let balance = read_encrypted_state(&context, fixture.balance_state);
+    let balance = read_encrypted_store(&context, fixture.balance_store);
     assert_eq!(balance.leaf_count, 1);
     assert_eq!(
         balance.peaks,
         expected_allow_peaks(
-            fixture.balance_state,
-            state_handle(&balance, token::balance_key()),
+            fixture.balance_store,
+            store_handle(&balance, token::balance_key()),
             &[fixture.owner]
         )
     );
     assert_eq!(
-        read_encrypted_state(&context, fixture.total_supply_state).leaf_count,
+        read_encrypted_store(&context, fixture.total_supply_store).leaf_count,
         0
     );
 }
@@ -4189,7 +4189,7 @@ fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         100
@@ -4411,7 +4411,7 @@ fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
 // ---------------------------------------------------------------------------
 
 /// Self-contained fixture for the disclose consume vertical: one owner, one confidential mint, a
-/// balance encrypted State, and one token-scoped amount encrypted State. The
+/// balance encrypted store, and one token-scoped amount encrypted store. The
 /// fixture's v0 certs resolve to the host's current KMS context, so the fixture's
 /// `current_kms_context_id` and seeded `kms_context` share `kms_context_id`.
 struct DiscloseFixture {
@@ -4419,8 +4419,8 @@ struct DiscloseFixture {
     mint: Pubkey,
     host_config: Pubkey,
     token_account: Pubkey,
-    balance_state: Pubkey,
-    amount_state: Pubkey,
+    balance_store: Pubkey,
+    amount_store: Pubkey,
     kms_context_id: [u8; 32],
     kms_context: Pubkey,
 }
@@ -4431,10 +4431,10 @@ impl DiscloseFixture {
         let mint = Pubkey::new_unique();
         let host_config = host::host_config_address().0;
         let token_account = token::token_account_address(mint, owner).0;
-        let balance_state = token::balance_slot(mint, token_account).0.address();
-        // Any token-scoped amount encrypted State discloses the same way; use the
+        let balance_store = token::balance_slot(mint, token_account).0.address();
+        // Any token-scoped amount encrypted store discloses the same way; use the
         // burned_amount slot.
-        let amount_state = token::encrypted_state_address(mint, token_account).0;
+        let amount_store = token::encrypted_store_address(mint, token_account).0;
         let kms_context_id = canonical_test_context_id(9);
         let kms_context = host::kms_context_address(kms_context_id).0;
         Self {
@@ -4442,8 +4442,8 @@ impl DiscloseFixture {
             mint,
             host_config,
             token_account,
-            balance_state,
-            amount_state,
+            balance_store,
+            amount_store,
             kms_context_id,
             kms_context,
         }
@@ -4478,14 +4478,14 @@ impl DiscloseFixture {
             (self.kms_context, kms_context_account(self.kms_context_id)),
             (
                 self.token_account,
-                token_account_account(self.mint, self.owner, self.balance_state),
+                token_account_account(self.mint, self.owner, self.balance_store),
             ),
             (event_authority(token::id()), system_account(0)),
         ])
     }
 }
 
-/// Builds an encrypted State of `mint`'s application whose write of `pinned` allowed
+/// Builds an encrypted store of `mint`'s application whose write of `pinned` allowed
 /// `allows` and then sealed it public (leaves allow(pinned, a)@0.. then public(pinned)), and the
 /// inclusion proof for that public leaf. With `update_to = Some(h2)` the account is grown into a
 /// post-update state (the same allow + public layout for h2 appended, current handle h2),
@@ -4494,11 +4494,11 @@ fn public_leaf_value_account(
     expected_address: Pubkey,
     authority: Pubkey,
     mint: Pubkey,
-    encrypted_state_label: [u8; 32],
+    encrypted_store_label: [u8; 32],
     allows: &[Pubkey],
     pinned: [u8; 32],
     update_to: Option<[u8; 32]>,
-) -> (host::EncryptedState, host::instructions::MmrInclusionProof) {
+) -> (host::EncryptedStore, host::instructions::MmrInclusionProof) {
     let acct = expected_address.to_bytes();
     let mut leaves = allow_leaves(expected_address, 0, pinned, allows);
     let public_index = leaves.len() as u64;
@@ -4523,12 +4523,12 @@ fn public_leaf_value_account(
     let (address, mut value) = new_test_state(
         token::token_app(mint),
         authority,
-        encrypted_state_label,
+        encrypted_store_label,
         current,
     );
     assert_eq!(
         address, expected_address,
-        "encrypted State address mismatch"
+        "encrypted store address mismatch"
     );
     value.leaf_count = leaves.len() as u64;
     value.peaks = zama_solana_acl::mmr_peaks_from_leaves(&leaves);
@@ -4546,7 +4546,7 @@ fn public_leaf_value_account(
 #[allow(clippy::too_many_arguments)]
 fn disclose_secp_ix(
     fixture: &DiscloseFixture,
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     handle: [u8; 32],
     cleartext: [u8; 32],
     signatures: Vec<[u8; 65]>,
@@ -4558,7 +4558,7 @@ fn disclose_secp_ix(
         token::accounts::DiscloseSecp {
             mint: fixture.mint,
             token_account: Some(fixture.token_account),
-            encrypted_state,
+            encrypted_store,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
             zama_program: host::id(),
@@ -4578,7 +4578,7 @@ fn disclose_secp_ix(
 #[allow(clippy::too_many_arguments)]
 fn disclose_total_supply_ix(
     fixture: &DiscloseFixture,
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     handle: [u8; 32],
     cleartext: [u8; 32],
     signatures: Vec<[u8; 65]>,
@@ -4590,7 +4590,7 @@ fn disclose_total_supply_ix(
         token::accounts::DiscloseSecp {
             mint: fixture.mint,
             token_account: None,
-            encrypted_state,
+            encrypted_store,
             host_config: fixture.host_config,
             kms_context: fixture.kms_context,
             zama_program: host::id(),
@@ -4613,7 +4613,7 @@ fn disclose_total_supply_ix(
 struct ExpectedDisclosure {
     mint: Pubkey,
     handle: [u8; 32],
-    encrypted_state: Pubkey,
+    encrypted_store: Pubkey,
     cleartext_amount: u64,
     authority: Pubkey,
 }
@@ -4627,7 +4627,7 @@ fn assert_disclosed(result: &InstructionResult, expected: ExpectedDisclosure) {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].mint, expected.mint);
     assert_eq!(events[0].handle, expected.handle);
-    assert_eq!(events[0].encrypted_state, expected.encrypted_state);
+    assert_eq!(events[0].encrypted_store, expected.encrypted_store);
     assert_eq!(events[0].cleartext_amount, expected.cleartext_amount);
     assert_eq!(events[0].authority, expected.authority);
 }
@@ -4637,7 +4637,7 @@ fn mollusk_disclose_secp_amount_happy_path() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4645,10 +4645,10 @@ fn mollusk_disclose_secp_amount_happy_path() {
         pinned,
         None,
     );
-    assert_eq!(state_handle(&value, token::burned_amount_key()), pinned);
+    assert_eq!(store_handle(&value, token::burned_amount_key()), pinned);
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -4657,7 +4657,7 @@ fn mollusk_disclose_secp_amount_happy_path() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -4671,7 +4671,7 @@ fn mollusk_disclose_secp_amount_happy_path() {
         ExpectedDisclosure {
             mint: fixture.mint,
             handle: pinned,
-            encrypted_state: fixture.amount_state,
+            encrypted_store: fixture.amount_store,
             cleartext_amount,
             authority: fixture.token_account,
         },
@@ -4683,7 +4683,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(33, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.balance_state,
+        fixture.balance_store,
         fixture.token_account,
         fixture.mint,
         token::balance_key(),
@@ -4693,7 +4693,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.balance_state, encrypted_state_account(&value));
+    accounts.insert(fixture.balance_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 700;
@@ -4702,7 +4702,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.balance_state,
+            fixture.balance_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -4716,7 +4716,7 @@ fn mollusk_disclose_secp_balance_happy_path() {
         ExpectedDisclosure {
             mint: fixture.mint,
             handle: pinned,
-            encrypted_state: fixture.balance_state,
+            encrypted_store: fixture.balance_store,
             cleartext_amount,
             authority: fixture.token_account,
         },
@@ -4728,10 +4728,10 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(35, BALANCE_FHE_TYPE);
     let authority = token::total_supply_authority_address(fixture.mint).0;
-    let total_supply_state = token::total_supply_slot(fixture.mint).0.address();
+    let total_supply_store = token::total_supply_slot(fixture.mint).0.address();
     // The supply's writes allow nobody; sealing it public is its only leaf.
     let (value, proof) = public_leaf_value_account(
-        total_supply_state,
+        total_supply_store,
         authority,
         fixture.mint,
         token::total_supply_key(),
@@ -4740,7 +4740,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
         None,
     );
     let mut accounts = fixture.base();
-    accounts.insert(total_supply_state, encrypted_state_account(&value));
+    accounts.insert(total_supply_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
     let cleartext_amount = 10_000;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
@@ -4749,7 +4749,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
         &context,
         &disclose_total_supply_ix(
             &fixture,
-            total_supply_state,
+            total_supply_store,
             pinned,
             u256_be(cleartext_amount),
             signatures.clone(),
@@ -4763,7 +4763,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
         ExpectedDisclosure {
             mint: fixture.mint,
             handle: pinned,
-            encrypted_state: total_supply_state,
+            encrypted_store: total_supply_store,
             cleartext_amount,
             authority,
         },
@@ -4773,7 +4773,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            total_supply_state,
+            total_supply_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -4789,7 +4789,7 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
 #[test]
 fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
     // The griefing case preserved end-to-end: the handle is sealed public while current, then the
-    // encrypted State is replaced to H2 (e.g. an inbound transfer) before the consume
+    // encrypted store is replaced to H2 (e.g. an inbound transfer) before the consume
     // lands. The pinned handle must still disclose, authorized by its permanent public-decrypt
     // leaf, not the live handle. This is the host verifier's survives-update property observed one
     // layer up.
@@ -4797,7 +4797,7 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
     let replaced = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4805,10 +4805,10 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
         pinned,
         Some(replaced),
     );
-    assert_ne!(state_handle(&value, token::burned_amount_key()), pinned);
+    assert_ne!(store_handle(&value, token::burned_amount_key()), pinned);
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -4817,7 +4817,7 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -4831,7 +4831,7 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
         ExpectedDisclosure {
             mint: fixture.mint,
             handle: pinned,
-            encrypted_state: fixture.amount_state,
+            encrypted_store: fixture.amount_store,
             cleartext_amount,
             authority: fixture.token_account,
         },
@@ -4844,7 +4844,7 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
     let replaced = handle_for_chain(42, BALANCE_FHE_TYPE);
     let (_, stale_proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4854,7 +4854,7 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
     );
     // Another transaction appends enough leaves to merge the proof's mountain after fetch.
     let (updated, fresh_proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4864,14 +4864,14 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
     );
     assert_ne!(stale_proof.siblings, fresh_proof.siblings);
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&updated));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&updated));
     let context = mollusk().with_context(accounts);
     let before = context.account_store.borrow().clone();
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, 500);
     let instruction = |proof| {
         disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             u256_be(500),
             signatures.clone(),
@@ -4894,7 +4894,7 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
         ExpectedDisclosure {
             mint: fixture.mint,
             handle: pinned,
-            encrypted_state: fixture.amount_state,
+            encrypted_store: fixture.amount_store,
             cleartext_amount: 500,
             authority: fixture.token_account,
         },
@@ -4910,7 +4910,7 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(44, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4920,14 +4920,14 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
     let ix = disclose_secp_ix(
         &fixture,
-        fixture.amount_state,
+        fixture.amount_store,
         pinned,
         u256_be(cleartext_amount),
         signatures,
@@ -4949,7 +4949,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     let pinned = handle_for_chain(46, BALANCE_FHE_TYPE);
     let replaced = handle_for_chain(47, BALANCE_FHE_TYPE);
     let (value, mut proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -4961,7 +4961,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
     proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -4970,7 +4970,7 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -4985,16 +4985,16 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
 
 #[test]
 fn mollusk_disclose_secp_rejects_foreign_mint_scope() {
-    // The disclosed encrypted State must belong to this mint's application: the token
+    // The disclosed encrypted store must belong to this mint's application: the token
     // layer binds the value's (program, scope, authority, label) to the mint so the emitted event
     // is genuinely token-scoped. A value in another mint's scope is rejected before the verifier
     // CPI.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
     let foreign_mint = Pubkey::new_unique();
-    // A public encrypted State in a different mint's scope, at its own canonical address
-    // so the account still deserializes as a valid EncryptedState.
-    let foreign_value_addr = token::encrypted_state_address(foreign_mint, fixture.token_account).0;
+    // A public encrypted store in a different mint's scope, at its own canonical address
+    // so the account still deserializes as a valid EncryptedStore.
+    let foreign_value_addr = token::encrypted_store_address(foreign_mint, fixture.token_account).0;
     let (foreign_value, proof) = public_leaf_value_account(
         foreign_value_addr,
         fixture.token_account,
@@ -5006,7 +5006,7 @@ fn mollusk_disclose_secp_rejects_foreign_mint_scope() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(foreign_value_addr, encrypted_state_account(&foreign_value));
+    accounts.insert(foreign_value_addr, encrypted_store_account(&foreign_value));
     let context = mollusk().with_context(accounts);
 
     let cleartext_amount = 500;
@@ -5030,14 +5030,14 @@ fn mollusk_disclose_secp_rejects_foreign_mint_scope() {
 
 #[test]
 fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
-    // Token encrypted States are euint64, so the certified 32-byte uint256 cleartext must
+    // Token encrypted stores are euint64, so the certified 32-byte uint256 cleartext must
     // fit in 64 bits. The host verifier accepts any 32-byte cleartext its cert signs over; the
     // token layer then rejects a value with nonzero high bytes rather than silently truncating it
     // to the low 64 bits.
     let fixture = DiscloseFixture::new();
     let pinned = handle_for_chain(49, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -5047,7 +5047,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
     );
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     let context = mollusk().with_context(accounts);
 
     // A cleartext whose value exceeds u64::MAX: a nonzero byte in the high 24 (here index 8).
@@ -5065,7 +5065,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             wide,
             signatures,
@@ -5082,7 +5082,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 // HCU per-app block cap enforced through the confidential-token -> fhe_execute CPI.
 //
 // Ported from PR #2991 ("per-app HCU limit per block"), rewritten against the merged
-// EncryptedState persistent-output model: `confidential_transfer` reaches `fhe_execute` only by
+// EncryptedStore persistent-output model: `confidential_transfer` reaches `fhe_execute` only by
 // CPI, so these tests prove the block cap (ban / metering-band charge / application pinning)
 // survives that CPI boundary — not just direct `fhe_execute` calls (see `host_mollusk.rs`).
 // ===========================================================================
@@ -5140,8 +5140,8 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 200),
     );
 
@@ -5155,11 +5155,11 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
 
     // Atomic revert: both balances are unchanged.
     assert_eq!(
-        read_state_handle(&context, fixture.alice_balance_state, token::balance_key()),
+        read_store_handle(&context, fixture.alice_balance_store, token::balance_key()),
         fixture.alice_initial
     );
     assert_eq!(
-        read_state_handle(&context, fixture.bob_balance_state, token::balance_key()),
+        read_store_handle(&context, fixture.bob_balance_store, token::balance_key()),
         fixture.bob_initial
     );
 }
@@ -5188,8 +5188,8 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 21),
         Vec::new(),
         Some(meter_pda),
@@ -5199,9 +5199,9 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     check_token_instruction(&context, &ix, &[Check::success()]);
 
     // The transfer completed: the sender's balance moved off its initial handle.
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_ne!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
     // The meter was lazy-created through the CPI, keyed on the mint's application, and charged
@@ -5234,7 +5234,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
 // ---------------------------------------------------------------------------
 
 /// Done-when 1: a transfer spends a computed handle produced under the same mint, with no
-/// attestation attached. Here the amount is an existing encrypted State under the
+/// attestation attached. Here the amount is an existing encrypted store under the
 /// sender's token account; the balances move through the same `ge -> sub -> select` debit and
 /// `add` credit, and the amount value itself is read-only (never replaced, never consumed).
 #[test]
@@ -5242,7 +5242,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     let fixture = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_amount_state(
+    let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
         fixture.alice_token,
@@ -5261,9 +5261,9 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
-        amount_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        amount_store,
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
@@ -5282,9 +5282,9 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     assert_eq!(cleartext.u64_for_handle(event.transferred_handle), 250);
 
     // The amount value is read-only: current handle and history unchanged.
-    let amount_after = read_encrypted_state(&context, amount_state);
+    let amount_after = read_encrypted_store(&context, amount_store);
     assert_eq!(
-        state_handle(&amount_after, token::transfer_input_key()),
+        store_handle(&amount_after, token::transfer_input_key()),
         amount_handle
     );
 }
@@ -5308,9 +5308,9 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
             fixture.app()
         };
         let authority = if foreign { owner } else { fixture.alice_token };
-        let amount_state =
-            insert_state_slot(&mut accounts, app, authority, [0x77; 32], amount_handle);
-        fixture.register_state_key(amount_state, [0x77; 32]);
+        let amount_store =
+            insert_store_slot(&mut accounts, app, authority, [0x77; 32], amount_handle);
+        fixture.register_state_key(amount_store, [0x77; 32]);
         let mut records = vec![token_record];
         if foreign {
             let (record, account) = deny_scope_record_account(app, denied);
@@ -5323,9 +5323,9 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
             owner,
             fixture.alice_token,
             fixture.bob_token,
-            fixture.alice_balance_state,
-            fixture.bob_balance_state,
-            amount_state,
+            fixture.alice_balance_store,
+            fixture.bob_balance_store,
+            amount_store,
         );
         transfer.accounts.extend(
             records
@@ -5339,7 +5339,7 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
                 &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
             );
             assert_eq!(
-                read_state_handle(&context, fixture.alice_balance_state, token::balance_key()),
+                read_store_handle(&context, fixture.alice_balance_store, token::balance_key()),
                 fixture.alice_initial
             );
         } else {
@@ -5365,7 +5365,7 @@ fn mollusk_transfer_from_value_rejects_amount_under_foreign_authority() {
     let amount_handle = handle_for_chain(61, BALANCE_FHE_TYPE);
     // The amount is under Bob's wallet; Alice (the from-account owner and signer) neither is nor
     // controls that authority.
-    let amount_state = seed_amount_state(
+    let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
         fixture.bob_owner,
@@ -5379,9 +5379,9 @@ fn mollusk_transfer_from_value_rejects_amount_under_foreign_authority() {
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
-        amount_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        amount_store,
     );
     check_token_instruction(
         &context,
@@ -5392,9 +5392,9 @@ fn mollusk_transfer_from_value_rejects_amount_under_foreign_authority() {
     );
 
     // Balances untouched.
-    let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
     assert_eq!(
-        state_handle(&alice_balance, token::balance_key()),
+        store_handle(&alice_balance, token::balance_key()),
         fixture.alice_initial
     );
 }
@@ -5408,7 +5408,7 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
     let mut accounts = fixture.base_accounts();
     // FHE type 0 (ebool), not euint64.
     let amount_handle = handle_for_chain(62, 0);
-    let amount_state = seed_amount_state(
+    let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
         fixture.alice_token,
@@ -5422,9 +5422,9 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
-        amount_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        amount_store,
     );
     check_token_instruction(
         &context,
@@ -5435,12 +5435,12 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
     );
 }
 
-/// Spending the entire balance: the amount encrypted State is the sender's own balance
-/// value, so `amount_state` aliases the `from_balance` output account. The execution merges them
+/// Spending the entire balance: the amount encrypted store is the sender's own balance
+/// value, so `amount_store` aliases the `from_balance` output account. The execution merges them
 /// into one account slot, and the transfer debits the whole balance without tripping
 /// duplicate-account resolution.
 #[test]
-fn mollusk_transfer_from_value_spends_full_balance_with_balance_state_account_as_amount() {
+fn mollusk_transfer_from_value_spends_full_balance_with_balance_store_account_as_amount() {
     let fixture = TokenFixture::new();
     let accounts = fixture.base_accounts();
     let context = mollusk().with_context(accounts);
@@ -5454,10 +5454,10 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_state_account_as
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         // Amount aliased to the sender's own balance value: transfer the whole balance.
-        fixture.alice_balance_state,
+        fixture.alice_balance_store,
     );
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
@@ -5468,7 +5468,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_state_account_as
 }
 
 /// Re-sending a sent amount: the sender spends their own `transferred_amount` value, which is
-/// also this transfer's `transferred_amount` output account. `amount_state` aliases an output the
+/// also this transfer's `transferred_amount` output account. `amount_store` aliases an output the
 /// execution writes, and the merged account slot lets the transfer settle.
 #[test]
 fn transfer_from_value_instruction_is_smaller_than_attested_arm() {
@@ -5477,20 +5477,20 @@ fn transfer_from_value_instruction_is_smaller_than_attested_arm() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 70),
     );
-    let amount_state = Pubkey::new_unique();
-    fixture.register_state_key(amount_state, token::transfer_input_key());
+    let amount_store = Pubkey::new_unique();
+    fixture.register_state_key(amount_store, token::transfer_input_key());
     let from_value = confidential_transfer_from_value_ix(
         &fixture,
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
-        amount_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        amount_store,
     );
     eprintln!(
         "confidential_transfer ix data: {} bytes; confidential_transfer_from_value ix data: {} bytes",
@@ -5523,8 +5523,8 @@ fn cost_snapshot_confidential_transfer_direct() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 21),
     );
 
@@ -5538,8 +5538,8 @@ fn cost_snapshot_confidential_transfer_direct() {
     );
 
     // Steady state: the first transfer created the transferred-amount
-    // `EncryptedState` at its canonical per-(mint, source) PDA; later
-    // transfers update every touched encrypted State in place and create no
+    // `EncryptedStore` at its canonical per-(mint, source) PDA; later
+    // transfers update every touched encrypted store in place and create no
     // accounts. Snapshot the second transfer separately.
     //
     // Both profiles share this fixture/context on purpose, so a mismatch on
@@ -5549,8 +5549,8 @@ fn cost_snapshot_confidential_transfer_direct() {
         &fixture,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
         sender_attestation(&fixture, 22),
     );
 
@@ -5573,7 +5573,7 @@ fn cost_snapshot_confidential_transfer_from_value() {
     );
     let mut accounts = fixture.base_accounts();
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
-    let amount_state = seed_amount_state(
+    let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
         fixture.alice_token,
@@ -5586,9 +5586,9 @@ fn cost_snapshot_confidential_transfer_from_value() {
         fixture.owner,
         fixture.alice_token,
         fixture.bob_token,
-        fixture.alice_balance_state,
-        fixture.bob_balance_state,
-        amount_state,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        amount_store,
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
@@ -5610,11 +5610,11 @@ fn cost_snapshot_initialize_token_account() {
     );
     let owner = Pubkey::new_from_array([0x14; 32]);
     let (token_account, _bump) = token::token_account_address(fixture.mint, owner);
-    let balance_encrypted_state = token::balance_slot(fixture.mint, token_account).0.address();
+    let balance_encrypted_store = token::balance_slot(fixture.mint, token_account).0.address();
     let mut accounts = fixture.base_accounts();
     accounts.insert(owner, system_account(5_000_000_000));
     accounts.insert(token_account, system_account(0));
-    accounts.insert(balance_encrypted_state, system_account(0));
+    accounts.insert(balance_encrypted_store, system_account(0));
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
@@ -5633,7 +5633,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let pinned = handle_for_chain(85, BALANCE_FHE_TYPE);
     let replaced = handle_for_chain(86, BALANCE_FHE_TYPE);
     let (value, proof) = public_leaf_value_account(
-        fixture.amount_state,
+        fixture.amount_store,
         fixture.token_account,
         fixture.mint,
         token::burned_amount_key(),
@@ -5649,7 +5649,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let registered: Vec<[u8; 20]> = keys.iter().map(secp_evm_address).collect();
 
     let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_state, encrypted_state_account(&value));
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
     accounts.insert(
         fixture.kms_context,
         kms_context_account_with_signers(fixture.kms_context_id, &registered, 7),
@@ -5663,7 +5663,7 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         &context,
         &disclose_secp_ix(
             &fixture,
-            fixture.amount_state,
+            fixture.amount_store,
             pinned,
             u256_be(cleartext_amount),
             signatures,
@@ -5703,7 +5703,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -5722,7 +5722,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
@@ -5735,7 +5735,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         4_750
@@ -5744,11 +5744,11 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     // The burned delta is created publicly decryptable: the first burn creates the value and
     // appends the owner's allow leaf then the public-decrypt leaf for the just-bound burned handle
     // (DD-036 / Vector 2), identical to the attestation path.
-    let burned = read_encrypted_state(&context, fixture.burned_amount_state);
+    let burned = read_encrypted_store(&context, fixture.burned_amount_store);
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.burned_amount_state,
+            fixture.burned_amount_store,
             token::burned_amount_key()
         ),
         250
@@ -5759,22 +5759,22 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         zama_solana_acl::mmr_peaks_from_leaves(&burn_update_leaves(
             &fixture,
             0,
-            state_handle(&burned, token::balance_key()),
-            state_handle(&burned, token::burned_amount_key())
+            store_handle(&burned, token::balance_key()),
+            store_handle(&burned, token::burned_amount_key())
         ))
     );
 
     // The amount value is read-only: current handle and history unchanged.
-    let amount_after = read_encrypted_state(&context, amount_state);
+    let amount_after = read_encrypted_store(&context, amount_store);
     assert_eq!(
-        state_handle(&amount_after, token::transfer_input_key()),
+        store_handle(&amount_after, token::transfer_input_key()),
         amount_handle
     );
     assert_eq!(amount_after.leaf_count, 3);
 }
 
 /// Whole-balance alias regression (the #3238 aliasing class): burning the entire balance uses the
-/// account's own balance value AS the amount, so `amount_state` aliases the `balance` output. The
+/// account's own balance value AS the amount, so `amount_store` aliases the `balance` output. The
 /// execution merges them into one slot, and the dedup skips pushing the amount a second time, so
 /// the burn settles without tripping duplicate-account resolution.
 #[test]
@@ -5793,7 +5793,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        fixture.balance_state,
+        fixture.balance_store,
         token::balance_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
@@ -5804,7 +5804,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         4_000
@@ -5812,7 +5812,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.burned_amount_state,
+            fixture.burned_amount_store,
             token::burned_amount_key()
         ),
         1_000
@@ -5820,7 +5820,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
 }
 
 /// Re-burning the burned-amount value (the second alias branch): the second burn spends the
-/// `burned_amount` value itself as the amount, so `amount_state` aliases the `burned_amount`
+/// `burned_amount` value itself as the amount, so `amount_store` aliases the `burned_amount`
 /// output this execution writes. The execution merges the aliased slot (read at the old handle,
 /// replaced to the new delta), and the dedup skips pushing the amount a second time — the
 /// `amount == burned_amount value` branch. Mirrors
@@ -5830,7 +5830,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -5850,22 +5850,22 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     let first_result = check_token_instruction(&context, &first, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &first_result);
-    let first_burned = read_state_handle(
+    let first_burned = read_store_handle(
         &context,
-        fixture.burned_amount_state,
+        fixture.burned_amount_store,
         token::burned_amount_key(),
     );
-    let first_state = read_encrypted_state(&context, fixture.burned_amount_state);
-    let first_balance = state_handle(&first_state, token::balance_key());
+    let first_state = read_encrypted_store(&context, fixture.burned_amount_store);
+    let first_balance = store_handle(&first_state, token::balance_key());
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.burned_amount_state,
+            fixture.burned_amount_store,
             token::burned_amount_key()
         ),
         250
@@ -5877,8 +5877,8 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, None);
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &cancel_result);
-    let after_cancel = read_encrypted_state(&context, fixture.burned_amount_state);
-    let restored_balance = state_handle(&after_cancel, token::balance_key());
+    let after_cancel = read_encrypted_store(&context, fixture.burned_amount_store);
+    let restored_balance = store_handle(&after_cancel, token::balance_key());
 
     // The next burn spends the burned-amount value itself as the amount — which is also this
     // burn's burned_amount output account (the alias the dedup must merge, not double-push).
@@ -5887,7 +5887,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        fixture.burned_amount_state,
+        fixture.burned_amount_store,
         token::burned_amount_key(),
     );
     let again_result = check_token_instruction(&context, &again, &[Check::success()]);
@@ -5900,7 +5900,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.total_supply_state,
+            fixture.total_supply_store,
             token::total_supply_key()
         ),
         4_750
@@ -5908,7 +5908,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.burned_amount_state,
+            fixture.burned_amount_store,
             token::burned_amount_key()
         ),
         250
@@ -5917,11 +5917,11 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     // The burned_amount value stays a well-formed two-burn MMR: both burns' handles are present
     // as allow + public-decrypt leaf pairs, even though the first pending burn was cancelled and
     // the second burn read H1 as its amount operand. Only H2 remains pending and redeemable.
-    let value = read_encrypted_state(&context, fixture.burned_amount_state);
+    let value = read_encrypted_store(&context, fixture.burned_amount_store);
     assert_eq!(value.leaf_count, 7);
     let mut leaves = burn_update_leaves(&fixture, 0, first_balance, first_burned);
     leaves.extend(allow_leaves(
-        fixture.balance_state,
+        fixture.balance_store,
         3,
         restored_balance,
         &[fixture.owner],
@@ -5929,8 +5929,8 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     leaves.extend(burn_update_leaves(
         &fixture,
         4,
-        state_handle(&value, token::balance_key()),
-        state_handle(&value, token::burned_amount_key()),
+        store_handle(&value, token::balance_key()),
+        store_handle(&value, token::burned_amount_key()),
     ));
     assert_eq!(value.peaks, zama_solana_acl::mmr_peaks_from_leaves(&leaves));
 }
@@ -5955,7 +5955,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
     let payer = Pubkey::new_unique();
     accounts.insert(payer, system_account(5_000_000_000));
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -5974,7 +5974,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
         &fixture,
         pda_owner,
         payer,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
@@ -5984,20 +5984,20 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
     assert_eq!(
         cleartext.u64_in_state(
             &context,
-            fixture.burned_amount_state,
+            fixture.burned_amount_store,
             token::burned_amount_key()
         ),
         400
     );
     // The burned value's allow leaf names the PDA owner.
-    let burned = read_encrypted_state(&context, fixture.burned_amount_state);
+    let burned = read_encrypted_store(&context, fixture.burned_amount_store);
     assert_eq!(
         burned.peaks,
         zama_solana_acl::mmr_peaks_from_leaves(&burn_update_leaves(
             &fixture,
             0,
-            state_handle(&burned, token::balance_key()),
-            state_handle(&burned, token::burned_amount_key())
+            store_handle(&burned, token::balance_key()),
+            store_handle(&burned, token::burned_amount_key())
         ))
     );
 }
@@ -6011,7 +6011,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     let fixture = BurnRedeemFixture::new();
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -6031,14 +6031,14 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
-    let burned_handle = read_state_handle(
+    let burned_handle = read_store_handle(
         &context,
-        fixture.burned_amount_state,
+        fixture.burned_amount_store,
         token::burned_amount_key(),
     );
 
@@ -6102,8 +6102,8 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
         } else {
             fixture.token_account
         };
-        let amount_state =
-            insert_state_slot(&mut accounts, app, authority, [0x77; 32], amount_handle);
+        let amount_store =
+            insert_store_slot(&mut accounts, app, authority, [0x77; 32], amount_handle);
         let mut records = vec![token_record];
         if foreign {
             let (record, account) = deny_scope_record_account(app, denied);
@@ -6116,7 +6116,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
             &fixture,
             owner,
             payer,
-            amount_state,
+            amount_store,
             [0x77; 32],
         );
         burn.accounts.extend(
@@ -6131,7 +6131,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
                 &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
             );
             assert_eq!(
-                read_state_handle(&context, fixture.balance_state, token::balance_key()),
+                read_store_handle(&context, fixture.balance_store, token::balance_key()),
                 fixture.initial_balance
             );
         } else {
@@ -6145,7 +6145,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
             assert_eq!(
                 cleartext.u64_in_state(
                     &context,
-                    fixture.burned_amount_state,
+                    fixture.burned_amount_store,
                     token::burned_amount_key()
                 ),
                 300
@@ -6163,7 +6163,7 @@ fn mollusk_burn_from_value_rejects_amount_under_foreign_authority() {
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     let stranger = Pubkey::new_unique();
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         stranger,
@@ -6177,7 +6177,7 @@ fn mollusk_burn_from_value_rejects_amount_under_foreign_authority() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     check_token_instruction(
@@ -6190,7 +6190,7 @@ fn mollusk_burn_from_value_rejects_amount_under_foreign_authority() {
 
     // Balance untouched.
     assert_eq!(
-        read_state_handle(&context, fixture.balance_state, token::balance_key()),
+        read_store_handle(&context, fixture.balance_store, token::balance_key()),
         fixture.initial_balance
     );
 }
@@ -6204,7 +6204,7 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
     let mut accounts = fixture.accounts(1_000);
     // FHE type 0 (ebool), not euint64.
     let amount_handle = handle_for_chain(42, 0);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -6218,7 +6218,7 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     check_token_instruction(
@@ -6242,7 +6242,7 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
     let amount_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
     // The amount is under wrong_owner's wallet (spend gate passes) but wrong_owner does not own
     // the token account.
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         wrong_owner,
@@ -6256,7 +6256,7 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
         &fixture,
         wrong_owner,
         wrong_owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
     check_token_instruction(
@@ -6299,7 +6299,7 @@ fn cost_snapshot_confidential_burn_from_value() {
     );
     let mut accounts = fixture.accounts(1_000);
     let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
-    let amount_state = seed_burn_amount_state(
+    let amount_store = seed_burn_amount_store(
         &fixture,
         &mut accounts,
         fixture.token_account,
@@ -6312,7 +6312,7 @@ fn cost_snapshot_confidential_burn_from_value() {
         &fixture,
         fixture.owner,
         fixture.owner,
-        amount_state,
+        amount_store,
         token::transfer_input_key(),
     );
 
@@ -6336,17 +6336,17 @@ fn transfer_entry_points_return_the_transferred_handle_to_their_caller() {
                 fixture.owner,
                 fixture.alice_token,
                 fixture.bob_token,
-                fixture.alice_balance_state,
-                fixture.bob_balance_state,
-                fixture.alice_balance_state,
+                fixture.alice_balance_store,
+                fixture.bob_balance_store,
+                fixture.alice_balance_store,
             )
         } else {
             confidential_transfer_ix(
                 &fixture,
                 fixture.alice_token,
                 fixture.bob_token,
-                fixture.alice_balance_state,
-                fixture.bob_balance_state,
+                fixture.alice_balance_store,
+                fixture.bob_balance_store,
                 sender_attestation(&fixture, 21),
             )
         };

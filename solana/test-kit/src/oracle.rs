@@ -1,5 +1,5 @@
 //! The cleartext oracle: evaluates `fhe_execute` step programs without Solana or TFHE, and
-//! replays the `fhe_execute` CPIs an instruction issued so encrypted state can be asserted in
+//! replays the `fhe_execute` CPIs an instruction issued so encrypted store can be asserted in
 //! cleartext.
 //!
 //! This is the same move the EVM test suite's mock tier makes — real cryptography is covered by
@@ -36,7 +36,7 @@ fn resolve_handle_operand(
     produced: &[Handle],
 ) -> Option<Handle> {
     match operand {
-        FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StoreSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             dictionary.get(*handle_index as usize).copied()
         }
@@ -579,7 +579,7 @@ fn resolve_encrypted(
     produced: &[ClearValue],
 ) -> Result<ClearValue, String> {
     let (handle, value) = match operand {
-        FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StoreSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             let handle = resolve_pool_bytes(dictionary, *handle_index)?;
             (handle, inputs.get(&handle))
@@ -748,7 +748,7 @@ impl CleartextLedger {
 
     /// Replays every `fhe_execute` CPI the instruction issued — in order, so a later execution
     /// can consume an earlier execution's persisted outputs. Each instruction writes any
-    /// encrypted State at most once, so binding results to the end-of-instruction
+    /// encrypted store at most once, so binding results to the end-of-instruction
     /// persisted handles is exact.
     pub fn replay_fhe_cpis(&mut self, context: &Ctx, result: &InstructionResult) -> FheReplay {
         let message = result
@@ -761,7 +761,7 @@ impl CleartextLedger {
                 &'a [u8],
                 Vec<zama_host::FheExecuteRandomSeed>,
             ),
-            MakePublic(zama_host::instruction::MakeStateHandlePublic, &'a [u8]),
+            MakePublic(zama_host::instruction::MakeStoreHandlePublic, &'a [u8]),
         }
         let host_instructions = result
             .inner_instructions
@@ -805,8 +805,8 @@ impl CleartextLedger {
                 let payload = inner
                     .instruction
                     .data
-                    .strip_prefix(zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR)?;
-                zama_host::instruction::MakeStateHandlePublic::deserialize(&mut &*payload)
+                    .strip_prefix(zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR)?;
+                zama_host::instruction::MakeStoreHandlePublic::deserialize(&mut &*payload)
                     .ok()
                     .map(|args| HostReplay::MakePublic(args, accounts))
             })
@@ -826,7 +826,7 @@ impl CleartextLedger {
                 assert_eq!(
                     leaves.len() as u64,
                     args.previous_leaf_count,
-                    "oracle missed EncryptedState history before public sealing {address}"
+                    "oracle missed EncryptedStore history before public sealing {address}"
                 );
                 leaves.push(zama_solana_acl::public_decrypt_leaf_commitment(
                     address.to_bytes(),
@@ -861,14 +861,14 @@ impl CleartextLedger {
             for effect in &args.effects {
                 let handle = handles[usize::from(effect.result.step_index)];
                 let account_index = accounts
-                    [zama_host::FHE_EXECUTE_FIXED_ACCOUNTS + usize::from(effect.state_index)]
+                    [zama_host::FHE_EXECUTE_FIXED_ACCOUNTS + usize::from(effect.store_index)]
                     as usize;
                 let address = message.account_keys()[account_index];
                 let leaves = self.state_leaves.entry(address).or_default();
                 assert_eq!(
                     leaves.len() as u64,
                     effect.previous_leaf_count,
-                    "oracle missed EncryptedState history before {address}: {effect:?}"
+                    "oracle missed EncryptedStore history before {address}: {effect:?}"
                 );
                 for allow_index in &effect.allow_indexes {
                     let key = args
@@ -898,7 +898,7 @@ impl CleartextLedger {
     }
 
     pub fn u64_in_state(&self, context: &Ctx, address: Pubkey, key: [u8; 32]) -> u64 {
-        let state: zama_host::EncryptedState = crate::read_account(context, address);
+        let state: zama_host::EncryptedStore = crate::read_account(context, address);
         let value = self
             .values
             .get(&state.get(&key).expect("state slot"))
@@ -916,7 +916,7 @@ impl CleartextLedger {
         let leaves = self
             .state_leaves
             .get(&state)
-            .expect("oracle history for encrypted state");
+            .expect("oracle history for encrypted store");
         let leaf_index = leaves
             .iter()
             .enumerate()

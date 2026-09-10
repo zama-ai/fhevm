@@ -69,14 +69,14 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// The signer for an output does not match the encrypted State authority the
+    /// The signer for an output does not match the encrypted store authority the
     /// execution declared for it, or a persistent operand's authority did not sign.
-    #[msg("signer does not match the encrypted State authority")]
-    EncryptedStateAccountAuthorityMismatch,
+    #[msg("signer does not match the encrypted store authority")]
+    EncryptedStoreAccountAuthorityMismatch,
     /// A create's authority seeds do not derive the declared authority under the declared
     /// program: the authority is not that program's PDA.
     #[msg("encrypted value authority is not a PDA of the declared program")]
-    EncryptedStateAuthorityNotProgramPda,
+    EncryptedStoreAuthorityNotProgramPda,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]
     DenyRecordMissing,
@@ -140,26 +140,26 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
-    // ---- EncryptedState ACL model ----
-    /// An `EncryptedState` account is not the canonical PDA for its identity seeds.
-    #[msg("encrypted State does not match the canonical PDA")]
-    EncryptedStatePdaMismatch,
+    // ---- EncryptedStore ACL model ----
+    /// An `EncryptedStore` account is not the canonical PDA for its identity seeds.
+    #[msg("encrypted store does not match the canonical PDA")]
+    EncryptedStorePdaMismatch,
     /// The declared previous handle did not match the account's current handle: a create on an
     /// existing value, an update on a fresh one, or an update built on stale state.
     #[msg("encrypted value previous handle does not match the account")]
-    PreviousStateMismatch,
+    PreviousStoreMismatch,
     /// `make_handle_public` named a handle that is not the account's current handle.
     #[msg("encrypted value public handle does not match the account")]
-    EncryptedStatePublicHandleMismatch,
+    EncryptedStorePublicHandleMismatch,
     /// An allowed key is the zero key or repeats another key of the same output.
     #[msg("encrypted value allowed key is invalid")]
     InvalidAllowKey,
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
-    EncryptedStateMmrInconsistent,
+    EncryptedStoreMmrInconsistent,
     /// The MMR peak count reached the representational cap.
     #[msg("encrypted value MMR peak capacity exceeded")]
-    EncryptedStateMmrPeakCapacityExceeded,
+    EncryptedStoreMmrPeakCapacityExceeded,
     /// The per-app in-slot HCU would exceed the block cap; also the `cap == 0` ban and a meter
     /// accumulation overflow (all fail closed). Analog of EVM `HCUBlockLimitExceeded`.
     #[msg("per-app in-slot HCU exceeds the block cap")]
@@ -217,7 +217,7 @@ pub enum ZamaHostError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
-    /// encrypted State's current peaks.
+    /// encrypted store's current peaks.
     #[msg("public-decrypt inclusion proof is invalid")]
     PublicDecryptProofInvalid,
 
@@ -284,8 +284,8 @@ pub enum ZamaHostError {
     TransientCloseMissing,
     #[msg("transient workspace grant capacity exceeded")]
     TransientCapacityExceeded,
-    #[msg("encrypted state slot capacity exceeded")]
-    EncryptedStateCapacityExceeded,
+    #[msg("encrypted store slot capacity exceeded")]
+    EncryptedStoreCapacityExceeded,
     #[msg("invalid execution return selection")]
     InvalidReturnSelection,
 }

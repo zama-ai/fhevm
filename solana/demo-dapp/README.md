@@ -147,10 +147,10 @@ sequenceDiagram
     Batch->>Host: Add granted handle to joined amount
     Wallet->>Host: Final instruction closes transient store and refunds rent
     Host-->>Listener: Emit confirmed records
-    Listener-->>Compute: Rebuild confirmed encrypted state
+    Listener-->>Compute: Rebuild confirmed encrypted store
 ```
 
-The host owns an encrypted state dictionary for each token account and each user’s JoinRecord.
+The host owns an encrypted store dictionary for each token account and each user’s JoinRecord.
 Named slots retain balances and contributions; one MMR per state records decrypt permissions.
 A transaction-local transient store account passes the transferred handle between programs and closes
 at the end of the transaction. No transferred-amount or claim-amount account is stored.
@@ -289,7 +289,7 @@ Yield is different: the demo faucet mints test USDC and a demo-only vault instru
 This proves share-price accounting, not a connection to a real yield strategy.
 
 Expand **Developer evidence** in the app to copy transaction signatures, compute use,
-encrypted state accounts, and encrypted handles. The local explorer shows each transaction. An
+encrypted store accounts, and encrypted handles. The local explorer shows each transaction. An
 encrypted-value ID can be searched in Jaeger for decryption-job intake, checks, key-service
 requests, polling, and result forwarding. It does not trace the key service internals, request
 service, encrypted computation, or native chain listener. Prometheus shows decryption-job

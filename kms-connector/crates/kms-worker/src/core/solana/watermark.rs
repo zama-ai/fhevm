@@ -86,7 +86,7 @@ pub fn read_watermark(
         });
     }
 
-    // Exact length, unlike an encrypted state: this record is fixed-size and is never
+    // Exact length, unlike an encrypted store: this record is fixed-size and is never
     // realloc-grown, so a tail would mean the layout is not the one being read here rather than an
     // account that has held more than it holds now.
     let data = &account.data;

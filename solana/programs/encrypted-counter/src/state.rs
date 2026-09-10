@@ -4,7 +4,7 @@
 //! `counter_mollusk` fixtures.
 
 use anchor_lang::prelude::*;
-use zama_fhe::StateId;
+use zama_fhe::StoreId;
 
 /// Seed of the per-owner counter state PDA.
 pub const COUNTER_SEED: &[u8] = b"counter";
@@ -25,8 +25,8 @@ pub fn counter_authority_address(counter: Pubkey) -> (Pubkey, u8) {
 }
 
 /// The host dictionary controlled by the counter's authority PDA.
-pub fn counter_state_id(counter: Pubkey) -> StateId {
-    StateId::new(
+pub fn counter_state_id(counter: Pubkey) -> StoreId {
+    StoreId::new(
         crate::id(),
         counter_authority_address(counter).0,
         counter.to_bytes(),

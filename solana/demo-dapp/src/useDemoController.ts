@@ -42,7 +42,7 @@ export type ConnectionState =
   | { readonly kind: 'ready'; readonly session: DemoSession }
   | { readonly kind: 'error'; readonly message: string };
 
-export type JoinState<TStage extends string> =
+export type JoinStore<TStage extends string> =
   | { readonly kind: 'idle' }
   | { readonly kind: 'running'; readonly stage: TStage }
   | { readonly kind: 'joined'; readonly result: BatchPosition }
@@ -51,7 +51,7 @@ export type JoinState<TStage extends string> =
 export type DemoState = {
   readonly generation: number;
   readonly connection: ConnectionState;
-  readonly deposit: JoinState<DepositStage>;
+  readonly deposit: JoinStore<DepositStage>;
   readonly depositLifecycle: BatchLifecycle | null;
   readonly depositLifecycleError: string | null;
   readonly depositOperatorAction: OperatorAction | null;
@@ -68,7 +68,7 @@ export type DemoState = {
   readonly harvesting: boolean;
   readonly harvestError: string | null;
   readonly harvestFromPrice: number | null;
-  readonly redeem: JoinState<'decrypting' | RedeemStage>;
+  readonly redeem: JoinStore<'decrypting' | RedeemStage>;
   readonly redeemPercentage: number | null;
   readonly redeemLifecycle: BatchLifecycle | null;
   readonly completedRedeemLifecycle: Extract<BatchLifecycle, { readonly kind: 'settled' }> | null;

@@ -8,9 +8,9 @@
 //! `(confidential_token::ID, mint)` ([`crate::token_app`]), and every value is controlled by a
 //! PDA of this program — the token account for holder-scoped values, the `total-supply` PDA for
 //! the encrypted total supply. Reading a value into a computation is admitted by that PDA's
-//! signature. The token signs for its own States; reading another program's State requires
+//! signature. The token signs for its own Stores; reading another program's Store requires
 //! that program to supply its authority's signature. Decrypt permissions are declared on
-//! the producing output (`zama_fhe::StateOutput::allow`); holder balance writes allow the owner.
+//! the producing output (`zama_fhe::StoreOutput::allow`); holder balance writes allow the owner.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
 use zama_host::{program::ZamaHost, HostConfig};
@@ -26,28 +26,28 @@ pub(crate) use verify_public_decrypt::*;
 pub(crate) struct SlotOutput<'info> {
     state: AccountInfo<'info>,
     key: [u8; 32],
-    output: Box<zama_fhe::StateOutput>,
+    output: Box<zama_fhe::StoreOutput>,
 }
 
 impl<'info> SlotOutput<'info> {
     pub(crate) fn new(
         state: AccountInfo<'info>,
-        target: (zama_fhe::StateId, [u8; 32]),
-        authority: &StateAuthority<'info>,
+        target: (zama_fhe::StoreId, [u8; 32]),
+        authority: &StoreAuthority<'info>,
         allows: impl IntoIterator<Item = Pubkey>,
     ) -> Result<Self> {
         require_keys_eq!(
             state.key(),
             target.0.address(),
-            ConfidentialTokenError::CurrentEncryptedStateMismatch
+            ConfidentialTokenError::CurrentEncryptedStoreMismatch
         );
         require_keys_eq!(
             authority.key(),
             target.0.authority(),
-            ConfidentialTokenError::EncryptedStateAuthorityMismatch
+            ConfidentialTokenError::EncryptedStoreAuthorityMismatch
         );
         let account = read_state(&state)?;
-        let mut output = zama_fhe::State::new(&account).set(target.1);
+        let mut output = zama_fhe::Store::new(&account).set(target.1);
         for subject in allows {
             output = output.allow(subject);
         }
@@ -60,8 +60,8 @@ impl<'info> SlotOutput<'info> {
 
     pub(crate) fn new_public(
         state: AccountInfo<'info>,
-        target: (zama_fhe::StateId, [u8; 32]),
-        authority: &StateAuthority<'info>,
+        target: (zama_fhe::StoreId, [u8; 32]),
+        authority: &StoreAuthority<'info>,
         allows: impl IntoIterator<Item = Pubkey>,
     ) -> Result<Self> {
         let mut output = Self::new(state, target, authority, allows)?;
@@ -69,45 +69,45 @@ impl<'info> SlotOutput<'info> {
         Ok(output)
     }
 
-    pub(crate) fn output(&self) -> zama_fhe::StateOutput {
+    pub(crate) fn output(&self) -> zama_fhe::StoreOutput {
         (*self.output).clone()
     }
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
         read_state(&self.state)?
             .get(&self.key)
-            .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStateMismatch))
+            .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStoreMismatch))
     }
     pub(crate) fn account_info(&self) -> AccountInfo<'info> {
         self.state.clone()
     }
 }
 
-pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedState> {
+pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedStore> {
     require_keys_eq!(
         *info.owner,
         zama_host::ID,
-        ConfidentialTokenError::CurrentEncryptedStateMismatch
+        ConfidentialTokenError::CurrentEncryptedStoreMismatch
     );
-    let state = zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+    let state = zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
     require_keys_eq!(
         state.canonical_address().0,
         info.key(),
-        ConfidentialTokenError::CurrentEncryptedStateMismatch
+        ConfidentialTokenError::CurrentEncryptedStoreMismatch
     );
     Ok(state)
 }
 
-pub(crate) fn state_handle(state: &zama_host::EncryptedState, key: [u8; 32]) -> Result<[u8; 32]> {
+pub(crate) fn store_handle(state: &zama_host::EncryptedStore, key: [u8; 32]) -> Result<[u8; 32]> {
     state
         .get(&key)
-        .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStateMismatch))
+        .ok_or_else(|| error!(ConfidentialTokenError::CurrentEncryptedStoreMismatch))
 }
 
 pub(crate) fn uint64_operand(
-    state: &zama_host::EncryptedState,
+    state: &zama_host::EncryptedStore,
     key: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::State::new(state)
+    zama_fhe::Store::new(state)
         .get(key)
         .map_err(|_| error!(ConfidentialTokenError::InvalidFheExecution))
 }
@@ -165,7 +165,7 @@ pub(crate) fn deny_scope_record<'info>(
 
 /// Signer model for a value authority required by an execution.
 #[derive(Clone)]
-pub(crate) enum StateAuthoritySigner {
+pub(crate) enum StoreAuthoritySigner {
     TokenAccount {
         mint: Pubkey,
         owner: Pubkey,
@@ -179,7 +179,7 @@ pub(crate) enum StateAuthoritySigner {
     External,
 }
 
-impl StateAuthoritySigner {
+impl StoreAuthoritySigner {
     pub(crate) fn token_account(account: &Account<'_, ConfidentialTokenAccount>) -> Self {
         Self::TokenAccount {
             mint: account.mint,
@@ -194,9 +194,9 @@ impl StateAuthoritySigner {
 
     /// Signer seeds borrowed straight from the stored key material; assembling
     /// them allocates nothing on the never-freeing program heap.
-    fn seeds(&self) -> StateAuthoritySeeds<'_> {
+    fn seeds(&self) -> StoreAuthoritySeeds<'_> {
         match self {
-            Self::TokenAccount { mint, owner, bump } => StateAuthoritySeeds {
+            Self::TokenAccount { mint, owner, bump } => StoreAuthoritySeeds {
                 seeds: [
                     b"token-account",
                     mint.as_ref(),
@@ -205,7 +205,7 @@ impl StateAuthoritySigner {
                 ],
                 len: 4,
             },
-            Self::TotalSupply { mint, bump } => StateAuthoritySeeds {
+            Self::TotalSupply { mint, bump } => StoreAuthoritySeeds {
                 seeds: [
                     b"total-supply",
                     mint.as_ref(),
@@ -214,7 +214,7 @@ impl StateAuthoritySigner {
                 ],
                 len: 3,
             },
-            Self::External => StateAuthoritySeeds {
+            Self::External => StoreAuthoritySeeds {
                 seeds: [&[]; 4],
                 len: 0,
             },
@@ -229,12 +229,12 @@ impl StateAuthoritySigner {
 
 /// Seed slices for one value authority. The array is sized for the widest
 /// signer variant; `len` says how many slots the variant fills.
-struct StateAuthoritySeeds<'a> {
+struct StoreAuthoritySeeds<'a> {
     seeds: [&'a [u8]; 4],
     len: usize,
 }
 
-impl<'a> StateAuthoritySeeds<'a> {
+impl<'a> StoreAuthoritySeeds<'a> {
     fn as_slice(&self) -> &[&'a [u8]] {
         &self.seeds[..self.len]
     }
@@ -242,12 +242,12 @@ impl<'a> StateAuthoritySeeds<'a> {
 
 /// A value authority account plus the signer model that authorizes it.
 #[derive(Clone)]
-pub(crate) struct StateAuthority<'info> {
+pub(crate) struct StoreAuthority<'info> {
     account: AccountInfo<'info>,
-    signer: Box<StateAuthoritySigner>,
+    signer: Box<StoreAuthoritySigner>,
 }
 
-impl<'info> StateAuthority<'info> {
+impl<'info> StoreAuthority<'info> {
     pub(crate) fn create_state(
         &self,
         mint: Pubkey,
@@ -257,19 +257,19 @@ impl<'info> StateAuthority<'info> {
         system_program: AccountInfo<'info>,
     ) -> Result<()> {
         let seeds = self.signer.seeds();
-        zama_host::cpi::create_encrypted_state(
+        zama_host::cpi::create_encrypted_store(
             CpiContext::new_with_signer(
                 zama_host::ID,
-                zama_host::cpi::accounts::CreateEncryptedState {
+                zama_host::cpi::accounts::CreateEncryptedStore {
                     payer,
                     authority: self.account_info(),
-                    encrypted_state: state,
+                    encrypted_store: state,
                     host_config,
                     system_program,
                 },
                 &[seeds.as_slice()],
             ),
-            zama_host::instructions::CreateEncryptedStateArgs {
+            zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
                 scope: mint.to_bytes(),
                 authority_seeds: seeds.as_slice().iter().map(|s| s.to_vec()).collect(),
@@ -292,7 +292,7 @@ impl<'info> StateAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            signer: Box::new(StateAuthoritySigner::token_account(account)),
+            signer: Box::new(StoreAuthoritySigner::token_account(account)),
         })
     }
 
@@ -313,7 +313,7 @@ impl<'info> StateAuthority<'info> {
         );
         Ok(Self {
             account: account.to_account_info(),
-            signer: Box::new(StateAuthoritySigner::total_supply(mint, bump)),
+            signer: Box::new(StoreAuthoritySigner::total_supply(mint, bump)),
         })
     }
 
@@ -322,7 +322,7 @@ impl<'info> StateAuthority<'info> {
     pub(crate) fn external(account: AccountInfo<'info>) -> Self {
         Self {
             account,
-            signer: Box::new(StateAuthoritySigner::External),
+            signer: Box::new(StoreAuthoritySigner::External),
         }
     }
 
@@ -338,22 +338,22 @@ impl<'info> StateAuthority<'info> {
 /// Pubkey-indexed accounts and authorities available to satisfy an execution.
 pub(crate) struct ExecutionAccountSet<'info> {
     accounts: zama_fhe::ResolvedExecutionAccounts<'info>,
-    value_authorities: Vec<StateAuthority<'info>>,
+    value_authorities: Vec<StoreAuthority<'info>>,
 }
 
 impl<'info> ExecutionAccountSet<'info> {
     pub(crate) fn for_execution(
         execution: &zama_fhe::FheExecution,
         available_accounts: impl IntoIterator<Item = AccountInfo<'info>>,
-        value_authorities: impl IntoIterator<Item = StateAuthority<'info>>,
+        value_authorities: impl IntoIterator<Item = StoreAuthority<'info>>,
     ) -> Result<Self> {
         let value_authorities = value_authorities.into_iter().collect::<Vec<_>>();
-        let state_authority_accounts = value_authorities
+        let store_authority_accounts = value_authorities
             .iter()
-            .map(StateAuthority::account_info)
+            .map(StoreAuthority::account_info)
             .collect::<Vec<_>>();
         let accounts = execution
-            .resolve_accounts(available_accounts, state_authority_accounts)
+            .resolve_accounts(available_accounts, store_authority_accounts)
             .map_err(map_execution_account_resolution_error)?;
 
         Ok(Self {
@@ -365,7 +365,7 @@ impl<'info> ExecutionAccountSet<'info> {
     fn signing_authorities(
         &self,
         execution: &zama_fhe::FheExecution,
-    ) -> Result<Vec<&StateAuthority<'info>>> {
+    ) -> Result<Vec<&StoreAuthority<'info>>> {
         execution
             .value_authorities()
             .map(|key| {
@@ -399,13 +399,13 @@ fn map_execution_account_resolution_error(
         zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
             error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
         }
-        zama_fhe::ExecutionAccountResolutionError::DuplicateStateAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::DuplicateStoreAuthority { .. } => {
             error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
         }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedStateAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::UnexpectedStoreAuthority { .. } => {
             error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
         }
-        zama_fhe::ExecutionAccountResolutionError::MissingStateAuthority { .. } => {
+        zama_fhe::ExecutionAccountResolutionError::MissingStoreAuthority { .. } => {
             error!(ConfidentialTokenError::MissingFheOutputAuthority)
         }
     }
@@ -473,7 +473,7 @@ pub(crate) fn execute_returning<'info>(
 
 fn invoke_with_authorities<'info, R>(
     context: ExecuteContext<'_, 'info>,
-    authorities: &[&StateAuthority<'info>],
+    authorities: &[&StoreAuthority<'info>],
     invoke: impl FnOnce(zama_fhe::ExecutionCpiAccounts<'info>, &[&[&[u8]]]) -> Result<R>,
 ) -> Result<R> {
     let primary = authorities
@@ -486,7 +486,7 @@ fn invoke_with_authorities<'info, R>(
         .collect();
     let signer_seeds: Vec<_> = authority_seeds
         .iter()
-        .map(StateAuthoritySeeds::as_slice)
+        .map(StoreAuthoritySeeds::as_slice)
         .collect();
     invoke(
         zama_fhe::ExecutionCpiAccounts {
@@ -527,13 +527,13 @@ mod tests {
 
     // The signer model is irrelevant to these tests — they resolve authorities by address, and the
     // seeds are only used when actually signing a CPI, which a host unit test never does.
-    fn state_authority(pubkey: Pubkey) -> StateAuthority<'static> {
-        StateAuthority::external(account_info(pubkey, false))
+    fn store_authority(pubkey: Pubkey) -> StoreAuthority<'static> {
+        StoreAuthority::external(account_info(pubkey, false))
     }
 
     fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey) {
         let authority = Pubkey::new_unique();
-        let input_account = zama_host::EncryptedState {
+        let input_account = zama_host::EncryptedStore {
             program: crate::ID,
             authority,
             scope: [1; 32],
@@ -545,7 +545,7 @@ mod tests {
             peaks: vec![],
             bump: 0,
         };
-        let state = zama_fhe::State::new(&input_account);
+        let state = zama_fhe::Store::new(&input_account);
         let state_address = state.id().address();
         let input = state.get::<zama_fhe::Uint<64>>([1; 32]).unwrap();
         let execution = zama_fhe::FheExecution::build(state.id(), |builder| {
@@ -581,7 +581,7 @@ mod tests {
                 account_info(state_address, true),
                 account_info(state_address, true),
             ],
-            vec![state_authority(authority)],
+            vec![store_authority(authority)],
         )
         .err()
         .unwrap();
@@ -593,7 +593,7 @@ mod tests {
                 account_info(state_address, true),
                 account_info(Pubkey::new_unique(), false),
             ],
-            vec![state_authority(authority)],
+            vec![store_authority(authority)],
         )
         .err()
         .unwrap();
@@ -602,7 +602,7 @@ mod tests {
         let error = ExecutionAccountSet::for_execution(
             &execution,
             vec![],
-            vec![state_authority(authority)],
+            vec![store_authority(authority)],
         )
         .err()
         .unwrap();
@@ -611,7 +611,7 @@ mod tests {
         let error = ExecutionAccountSet::for_execution(
             &execution,
             vec![account_info(state_address, false)],
-            vec![state_authority(authority)],
+            vec![store_authority(authority)],
         )
         .err()
         .unwrap();
@@ -619,13 +619,13 @@ mod tests {
     }
 
     #[test]
-    fn batch_account_set_maps_state_authority_errors() {
+    fn batch_account_set_maps_store_authority_errors() {
         let (execution, state_address, authority) = sample_plan();
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
             vec![account_info(state_address, true)],
-            vec![state_authority(authority), state_authority(authority)],
+            vec![store_authority(authority), store_authority(authority)],
         )
         .err()
         .unwrap();
@@ -635,8 +635,8 @@ mod tests {
             &execution,
             vec![account_info(state_address, true)],
             vec![
-                state_authority(authority),
-                state_authority(Pubkey::new_unique()),
+                store_authority(authority),
+                store_authority(Pubkey::new_unique()),
             ],
         )
         .err()

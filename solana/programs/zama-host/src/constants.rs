@@ -29,7 +29,7 @@ pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records — the shared crate's constant, so the
 /// program and the off-chain readers of the record cannot drift on the seed.
 pub use zama_solana_acl::DELEGATION_SEED;
-/// Reserved sentinel standing in for any encrypted State authority, carried by a
+/// Reserved sentinel standing in for any encrypted store authority, carried by a
 /// wildcard user-decryption delegation row — the shared crate's constant, under the host's
 /// raw-bytes name.
 pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
@@ -38,7 +38,7 @@ pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
 ///
 /// The runtime boundary suite measures whole transactions, including transient store
 /// open/close, under the fixed 32 KiB heap and 1,232-byte packet limit. Dependent
-/// chains reach this cap; wide permissions and State histories can hit a lower
+/// chains reach this cap; wide permissions and Store histories can hit a lower
 /// limit. See `runtime-tests/cost-snapshots/fhe_execute_boundary.json` for each
 /// measured shape and its binding resource. Raising this cap requires new
 /// measurements, not extrapolation from the smallest execution.

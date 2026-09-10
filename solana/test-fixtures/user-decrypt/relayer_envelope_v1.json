@@ -17,12 +17,12 @@
   "accepted": [
     {
       "name": "direct-entry-one-handle",
-      "comment": "The ordinary request: one handle, the signer's own key as the allowed key, and the encrypted state whose history grants access. The entry carries no proof: the connector fetches the allow leaf from the coprocessors and verifies it against the state it reads itself.",
+      "comment": "The ordinary request: one handle, the signer's own key as the allowed key, and the encrypted store whose history grants access. The entry carries no proof: the connector fetches the allow leaf from the coprocessors and verifies it against the state it reads itself.",
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -33,12 +33,12 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -49,12 +49,12 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
           "handle": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b28b4cddfda76385ae0000",
           "allowedKey": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
-          "encryptedState": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"
+          "encryptedStore": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"
         }
       ]
     }
@@ -62,7 +62,7 @@
   "rejected": [
     {
       "name": "retired-encrypted-value-account-field",
-      "comment": "The per-value account field was replaced by encryptedState. Strict deserialization rejects the retired name rather than interpreting it as state identity.",
+      "comment": "The per-value account field was replaced by encryptedStore. Strict deserialization rejects the retired name rather than interpreting it as state identity.",
       "rejected_by": "json-shape",
       "handles": [
         {
@@ -83,7 +83,7 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -94,7 +94,7 @@
       "handles": [
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -106,7 +106,7 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
           "accessProof": "0x"
         }
       ]
@@ -125,7 +125,7 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae00",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     },
@@ -137,7 +137,7 @@
         {
           "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e100"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e100"
         }
       ]
     },
@@ -149,7 +149,7 @@
         {
           "handle": "0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c380000000000000010000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
-          "encryptedState": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+          "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
     }

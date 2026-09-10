@@ -6,12 +6,12 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 
 #[derive(Accounts)]
-pub struct MakeStateHandlePublic<'info> {
+pub struct MakeStoreHandlePublic<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub authority: Signer<'info>,
     #[account(mut)]
-    pub encrypted_state: Account<'info, EncryptedState>,
+    pub encrypted_store: Account<'info, EncryptedStore>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// CHECK: the canonical application deny witness is checked by the handler.
@@ -19,28 +19,28 @@ pub struct MakeStateHandlePublic<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn make_state_handle_public(
-    ctx: Context<MakeStateHandlePublic>,
+pub fn make_store_handle_public(
+    ctx: Context<MakeStoreHandlePublic>,
     key: [u8; 32],
     handle: [u8; 32],
     previous_leaf_count: u64,
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config)?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    let state = &mut ctx.accounts.encrypted_state;
+    let state = &mut ctx.accounts.encrypted_store;
     state.validate(state.key())?;
     require_keys_eq!(
         ctx.accounts.authority.key(),
         state.authority,
-        ZamaHostError::EncryptedStateAccountAuthorityMismatch
+        ZamaHostError::EncryptedStoreAccountAuthorityMismatch
     );
     require!(
         state.get(&key) == Some(handle),
-        ZamaHostError::EncryptedStatePublicHandleMismatch
+        ZamaHostError::EncryptedStorePublicHandleMismatch
     );
     require!(
         state.leaf_count == previous_leaf_count,
-        ZamaHostError::EncryptedStateMmrInconsistent
+        ZamaHostError::EncryptedStoreMmrInconsistent
     );
     check_scope_not_denied(
         &ctx.accounts.host_config,
@@ -55,14 +55,14 @@ pub fn make_state_handle_public(
         state.leaf_count,
         handle,
     );
-    let state_data: &mut EncryptedState = state;
+    let state_data: &mut EncryptedStore = state;
     zama_solana_acl::mmr_append(
         &mut state_data.peaks,
         &mut state_data.leaf_count,
         commitment,
     )
     .map_err(map_mmr_append_error)?;
-    let space = zama_solana_acl::EncryptedState::account_size(state.slots.len(), state.peaks.len());
+    let space = zama_solana_acl::EncryptedStore::account_size(state.slots.len(), state.peaks.len());
     grow_account_if_needed(
         &ctx.accounts.payer.to_account_info(),
         &state.to_account_info(),
@@ -75,9 +75,9 @@ pub fn make_state_handle_public(
 fn map_mmr_append_error(error: zama_solana_acl::AclError) -> anchor_lang::error::Error {
     match error {
         zama_solana_acl::AclError::MmrPeakCapacityExceeded => {
-            error!(ZamaHostError::EncryptedStateMmrPeakCapacityExceeded)
+            error!(ZamaHostError::EncryptedStoreMmrPeakCapacityExceeded)
         }
-        _ => error!(ZamaHostError::EncryptedStateMmrInconsistent),
+        _ => error!(ZamaHostError::EncryptedStoreMmrInconsistent),
     }
 }
 

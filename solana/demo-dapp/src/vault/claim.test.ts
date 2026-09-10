@@ -141,8 +141,8 @@ describe('buildClaimInstruction', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(CLAIM_DISCRIMINATOR));
   });
 
-  // Golden pins for the fixed fixture: the encrypted States are re-pinned from the RFC 035 seed
-  // derivation (`encrypted_state_seeds`, mirrored and pinned in the SDK's encryptedState
+  // Golden pins for the fixed fixture: the encrypted stores are re-pinned from the RFC 035 seed
+  // derivation (`encrypted_store_seeds`, mirrored and pinned in the SDK's encryptedStore
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
@@ -159,7 +159,7 @@ describe('buildClaimInstruction', () => {
     });
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceState
+    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceStore
     expect(addresses[17]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
     expect(addresses[20]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });

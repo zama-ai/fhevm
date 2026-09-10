@@ -1,15 +1,15 @@
 //! Validates and caches remaining accounts for one `fhe_execute` execution.
 //!
 //! Construction rejects duplicate keys. Preflight marks referenced accounts, and
-//! `assert_all_used` rejects unused accounts. Canonical State validation,
+//! `assert_all_used` rejects unused accounts. Canonical Store validation,
 //! authority-signer lookup, deny-record lookup and flushing dirty accounts live here.
-//! Preflight separately enforces one write per State slot.
+//! Preflight separately enforces one write per Store slot.
 
 use super::*;
 
 pub(super) struct ExecutionAccountTable<'a, 'info> {
     accounts: &'a [AccountInfo<'info>],
-    states: Vec<Option<Box<EncryptedState>>>,
+    states: Vec<Option<Box<EncryptedStore>>>,
     dirty_states: Vec<u16>,
     used: Vec<bool>,
 }
@@ -34,7 +34,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
         })
     }
 
-    pub(super) fn state(&mut self, index: u16) -> Result<&EncryptedState> {
+    pub(super) fn state(&mut self, index: u16) -> Result<&EncryptedStore> {
         let account = self.account(index)?;
         let cached = self
             .states
@@ -44,9 +44,9 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             require_keys_eq!(
                 *account.owner,
                 crate::ID,
-                ZamaHostError::EncryptedStatePdaMismatch
+                ZamaHostError::EncryptedStorePdaMismatch
             );
-            let state = EncryptedState::try_deserialize(&mut &account.try_borrow_data()?[..])?;
+            let state = EncryptedStore::try_deserialize(&mut &account.try_borrow_data()?[..])?;
             state.validate(account.key())?;
             *cached = Some(Box::new(state));
         }
@@ -55,7 +55,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             .ok_or_else(|| error!(ZamaHostError::InvalidFheExecuteAccount))
     }
 
-    pub(super) fn state_mut(&mut self, index: u16) -> Result<&mut EncryptedState> {
+    pub(super) fn state_mut(&mut self, index: u16) -> Result<&mut EncryptedStore> {
         self.state(index)?;
         require!(
             self.account(index)?.is_writable,
@@ -83,7 +83,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
                 payer,
                 info,
                 system,
-                zama_solana_acl::EncryptedState::account_size(state.slots.len(), state.peaks.len()),
+                zama_solana_acl::EncryptedStore::account_size(state.slots.len(), state.peaks.len()),
             )?;
             write_account(info, state)?;
         }
@@ -116,7 +116,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             .accounts
             .iter()
             .position(|account| account.key() == authority && account.is_signer)
-            .ok_or_else(|| error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch))?;
+            .ok_or_else(|| error!(ZamaHostError::EncryptedStoreAccountAuthorityMismatch))?;
         self.used[index] = true;
         Ok(())
     }
@@ -208,8 +208,8 @@ mod tests {
         table.assert_all_used().unwrap();
     }
 
-    fn canonical_state_account(tag: u8) -> (AccountInfo<'static>, EncryptedState) {
-        let mut state = EncryptedState {
+    fn canonical_state_account(tag: u8) -> (AccountInfo<'static>, EncryptedStore) {
+        let mut state = EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
             scope: [tag; 32],

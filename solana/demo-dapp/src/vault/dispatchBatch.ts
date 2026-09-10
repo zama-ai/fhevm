@@ -15,13 +15,13 @@ import {
 /**
  * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
  * validates (`dispatch.rs`) — the batch authority, the join mint's total-supply
- * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted States,
+ * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted stores,
  * and both event authorities — is derived internally from these, so callers never hand-build the
  * account map.
  */
 export type SolanaVaultDispatchParameters = {
   readonly fhe: SolanaFheTransactionAccounts;
-  /** Pays the rent for the burn's output encrypted State. Anyone — dispatch is permissionless. */
+  /** Pays the rent for the burn's output encrypted store. Anyone — dispatch is permissionless. */
   readonly payer: TransactionSigner;
   /** Batcher config account. */
   readonly batcher: Address;
@@ -62,8 +62,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     ),
     totalSupplyAuthority,
     batchJoinTokenAccount,
-    batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
-    totalSupplyState: await tokenStateAddress(joinConfidentialMint, totalSupplyAuthority),
+    batchBalanceStore: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
+    totalSupplyStore: await tokenStateAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: await pendingBurnAddress(joinConfidentialMint, batchJoinTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,

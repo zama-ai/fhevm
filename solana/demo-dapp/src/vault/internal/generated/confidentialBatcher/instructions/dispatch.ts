@@ -57,8 +57,8 @@ export type DispatchInstruction<
   TAccountBatchAuthorityAta extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchBalanceState extends string | AccountMeta<string> = string,
-  TAccountTotalSupplyState extends string | AccountMeta<string> = string,
+  TAccountBatchBalanceStore extends string | AccountMeta<string> = string,
+  TAccountTotalSupplyStore extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
@@ -92,8 +92,8 @@ export type DispatchInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountBatchBalanceState extends string ? WritableAccount<TAccountBatchBalanceState> : TAccountBatchBalanceState,
-      TAccountTotalSupplyState extends string ? WritableAccount<TAccountTotalSupplyState> : TAccountTotalSupplyState,
+      TAccountBatchBalanceStore extends string ? WritableAccount<TAccountBatchBalanceStore> : TAccountBatchBalanceStore,
+      TAccountTotalSupplyStore extends string ? WritableAccount<TAccountTotalSupplyStore> : TAccountTotalSupplyStore,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
@@ -145,8 +145,8 @@ export type DispatchAsyncInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchBalanceState extends string = string,
-  TAccountTotalSupplyState extends string = string,
+  TAccountBatchBalanceStore extends string = string,
+  TAccountTotalSupplyStore extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -172,8 +172,8 @@ export type DispatchAsyncInput<
   /** token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   /** replaced as the burn's balance output (the whole-balance alias). */
-  batchBalanceState: Address<TAccountBatchBalanceState>;
-  totalSupplyState: Address<TAccountTotalSupplyState>;
+  batchBalanceStore: Address<TAccountBatchBalanceStore>;
+  totalSupplyStore: Address<TAccountTotalSupplyStore>;
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -198,8 +198,8 @@ export async function getDispatchInstructionAsync<
   TAccountBatchAuthorityAta extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchBalanceState extends string,
-  TAccountTotalSupplyState extends string,
+  TAccountBatchBalanceStore extends string,
+  TAccountTotalSupplyStore extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -221,8 +221,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBatchBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -246,8 +246,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBatchBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -288,12 +288,12 @@ export async function getDispatchInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchBalanceState: {
-      value: input.batchBalanceState ?? null,
+    batchBalanceStore: {
+      value: input.batchBalanceStore ?? null,
       isWritable: true,
     },
-    totalSupplyState: {
-      value: input.totalSupplyState ?? null,
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
       isWritable: true,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -347,8 +347,8 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
-      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
+      getAccountMeta('batchBalanceStore', accounts.batchBalanceStore),
+      getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -372,8 +372,8 @@ export async function getDispatchInstructionAsync<
     TAccountBatchAuthorityAta,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBatchBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -396,8 +396,8 @@ export type DispatchInput<
   TAccountBatchAuthorityAta extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchBalanceState extends string = string,
-  TAccountTotalSupplyState extends string = string,
+  TAccountBatchBalanceStore extends string = string,
+  TAccountTotalSupplyStore extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
   TAccountTransientStore extends string = string,
@@ -423,8 +423,8 @@ export type DispatchInput<
   /** token CPI and pinned below. */
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
   /** replaced as the burn's balance output (the whole-balance alias). */
-  batchBalanceState: Address<TAccountBatchBalanceState>;
-  totalSupplyState: Address<TAccountTotalSupplyState>;
+  batchBalanceStore: Address<TAccountBatchBalanceStore>;
+  totalSupplyStore: Address<TAccountTotalSupplyStore>;
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
@@ -449,8 +449,8 @@ export function getDispatchInstruction<
   TAccountBatchAuthorityAta extends string,
   TAccountTotalSupplyAuthority extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchBalanceState extends string,
-  TAccountTotalSupplyState extends string,
+  TAccountBatchBalanceStore extends string,
+  TAccountTotalSupplyStore extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
   TAccountTransientStore extends string,
@@ -472,8 +472,8 @@ export function getDispatchInstruction<
     TAccountBatchAuthorityAta,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBatchBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -496,8 +496,8 @@ export function getDispatchInstruction<
   TAccountBatchAuthorityAta,
   TAccountTotalSupplyAuthority,
   TAccountBatchJoinTokenAccount,
-  TAccountBatchBalanceState,
-  TAccountTotalSupplyState,
+  TAccountBatchBalanceStore,
+  TAccountTotalSupplyStore,
   TAccountPendingBurn,
   TAccountZamaEventAuthority,
   TAccountTransientStore,
@@ -537,12 +537,12 @@ export function getDispatchInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchBalanceState: {
-      value: input.batchBalanceState ?? null,
+    batchBalanceStore: {
+      value: input.batchBalanceStore ?? null,
       isWritable: true,
     },
-    totalSupplyState: {
-      value: input.totalSupplyState ?? null,
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
       isWritable: true,
     },
     pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
@@ -591,8 +591,8 @@ export function getDispatchInstruction<
       getAccountMeta('batchAuthorityAta', accounts.batchAuthorityAta),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchBalanceState', accounts.batchBalanceState),
-      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
+      getAccountMeta('batchBalanceStore', accounts.batchBalanceStore),
+      getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
@@ -616,8 +616,8 @@ export function getDispatchInstruction<
     TAccountBatchAuthorityAta,
     TAccountTotalSupplyAuthority,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBatchBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
@@ -651,8 +651,8 @@ export type ParsedDispatchInstruction<
     /** token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[8];
     /** replaced as the burn's balance output (the whole-balance alias). */
-    batchBalanceState: TAccountMetas[9];
-    totalSupplyState: TAccountMetas[10];
+    batchBalanceStore: TAccountMetas[9];
+    totalSupplyStore: TAccountMetas[10];
     pendingBurn: TAccountMetas[11];
     zamaEventAuthority: TAccountMetas[12];
     transientStore: TAccountMetas[13];
@@ -696,8 +696,8 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       batchAuthorityAta: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      batchBalanceState: getNextAccount(),
-      totalSupplyState: getNextAccount(),
+      batchBalanceStore: getNextAccount(),
+      totalSupplyStore: getNextAccount(),
       pendingBurn: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),

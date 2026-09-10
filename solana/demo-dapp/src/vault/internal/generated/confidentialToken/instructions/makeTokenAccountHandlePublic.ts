@@ -61,7 +61,7 @@ export type MakeTokenAccountHandlePublicInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
-  TAccountEncryptedState extends string | AccountMeta<string> = string,
+  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
@@ -78,7 +78,7 @@ export type MakeTokenAccountHandlePublicInstruction<
         : TAccountOwner,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
       TAccountTokenAccount extends string ? ReadonlyAccount<TAccountTokenAccount> : TAccountTokenAccount,
-      TAccountEncryptedState extends string ? WritableAccount<TAccountEncryptedState> : TAccountEncryptedState,
+      TAccountEncryptedStore extends string ? WritableAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
@@ -134,7 +134,7 @@ export type MakeTokenAccountHandlePublicAsyncInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountSystemProgram extends string = string,
@@ -143,7 +143,7 @@ export type MakeTokenAccountHandlePublicAsyncInput<
   owner: TransactionSigner<TAccountOwner>;
   mint: Address<TAccountMint>;
   tokenAccount?: Address<TAccountTokenAccount>;
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaProgram?: Address<TAccountZamaProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -156,7 +156,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaProgram extends string,
   TAccountSystemProgram extends string,
@@ -167,7 +167,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaProgram,
     TAccountSystemProgram
@@ -180,7 +180,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaProgram,
     TAccountSystemProgram
@@ -195,7 +195,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -227,7 +227,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -242,7 +242,7 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaProgram,
     TAccountSystemProgram
@@ -254,7 +254,7 @@ export type MakeTokenAccountHandlePublicInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountSystemProgram extends string = string,
@@ -263,7 +263,7 @@ export type MakeTokenAccountHandlePublicInput<
   owner: TransactionSigner<TAccountOwner>;
   mint: Address<TAccountMint>;
   tokenAccount: Address<TAccountTokenAccount>;
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   hostConfig: Address<TAccountHostConfig>;
   zamaProgram?: Address<TAccountZamaProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
@@ -276,7 +276,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountZamaProgram extends string,
   TAccountSystemProgram extends string,
@@ -287,7 +287,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaProgram,
     TAccountSystemProgram
@@ -299,7 +299,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
   TAccountOwner,
   TAccountMint,
   TAccountTokenAccount,
-  TAccountEncryptedState,
+  TAccountEncryptedStore,
   TAccountHostConfig,
   TAccountZamaProgram,
   TAccountSystemProgram
@@ -313,7 +313,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: true },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -339,7 +339,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -354,7 +354,7 @@ export function getMakeTokenAccountHandlePublicInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountZamaProgram,
     TAccountSystemProgram
@@ -371,7 +371,7 @@ export type ParsedMakeTokenAccountHandlePublicInstruction<
     owner: TAccountMetas[1];
     mint: TAccountMetas[2];
     tokenAccount: TAccountMetas[3];
-    encryptedState: TAccountMetas[4];
+    encryptedStore: TAccountMetas[4];
     hostConfig: TAccountMetas[5];
     zamaProgram: TAccountMetas[6];
     systemProgram: TAccountMetas[7];
@@ -404,7 +404,7 @@ export function parseMakeTokenAccountHandlePublicInstruction<
       owner: getNextAccount(),
       mint: getNextAccount(),
       tokenAccount: getNextAccount(),
-      encryptedState: getNextAccount(),
+      encryptedStore: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaProgram: getNextAccount(),
       systemProgram: getNextAccount(),

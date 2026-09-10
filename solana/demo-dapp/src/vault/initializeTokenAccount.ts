@@ -29,7 +29,7 @@ export function needsConfidentialTokenAccountInitialization(accountOwner: Addres
 
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted State, and
+ * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted store, and
  * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
  * sends the returned instruction.
  */
@@ -43,7 +43,7 @@ export async function buildInitializeTokenAccountInstruction(
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount,
-    balanceEncryptedState: await tokenStateAddress(parameters.mint, tokenAccount),
+    balanceEncryptedStore: await tokenStateAddress(parameters.mint, tokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     eventAuthority: await tokenEventAuthorityAddress(),

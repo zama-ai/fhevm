@@ -97,7 +97,7 @@ export async function settleBatch(
     {
       handle: bytesToHex(burnedTotalHandle),
       contextId: options.contextId,
-      encryptedState: base58.decode(accounts.batchBurnedAmountState),
+      encryptedStore: base58.decode(accounts.batchBurnedAmountStore),
       options: options.certificateOptions,
     },
   );
@@ -106,7 +106,7 @@ export async function settleBatch(
   const inclusionProof = await publicProof(
     rpc,
     options.proofService,
-    accounts.batchBurnedAmountState,
+    accounts.batchBurnedAmountStore,
     burnedTotalHandle,
   );
 

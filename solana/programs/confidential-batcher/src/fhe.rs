@@ -10,13 +10,13 @@ pub(crate) fn invalid_execution(
     error!(BatcherError::InvalidFheExecution)
 }
 
-pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedState> {
+pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedStore> {
     require_keys_eq!(
         *info.owner,
         zama_host::ID,
-        BatcherError::EncryptedStateInvalid
+        BatcherError::EncryptedStoreInvalid
     );
-    let state = zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+    let state = zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
     require_keys_eq!(
         info.key(),
         state.canonical_address().0,

@@ -22,15 +22,15 @@ pub struct CancelPendingBurn<'info> {
     /// Token account whose balance is re-credited.
     #[account(mut)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
-    /// CHECK: Mint-scoped encrypted State authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted store authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// Stable balance encrypted State; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_state_address(mint.key(), token_account.key()).0)]
-    pub balance_state: Box<Account<'info, zama_host::EncryptedState>>,
-    /// Stable total-supply encrypted State; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
-    pub total_supply_state: Box<Account<'info, zama_host::EncryptedState>>,
+    /// Stable balance encrypted store; read for the current handle and replaced by this execution.
+    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
+    /// Stable total-supply encrypted store; read for the current handle and replaced by this execution.
+    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Pending-burn account; closed on successful cancellation.
     #[account(
         mut,
@@ -105,39 +105,39 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         ConfidentialTokenError::PendingBurnMismatch
     );
 
-    let burned_value = fhe::read_state(&ctx.accounts.balance_state.to_account_info())?;
+    let burned_value = fhe::read_state(&ctx.accounts.balance_store.to_account_info())?;
     require!(
-        pending.burned_handle == fhe::state_handle(&burned_value, burned_amount_key())?,
+        pending.burned_handle == fhe::store_handle(&burned_value, burned_amount_key())?,
         ConfidentialTokenError::PendingBurnHandleNotCurrent
     );
 
-    let old_balance_handle = fhe::state_handle(&ctx.accounts.balance_state, balance_key())?;
+    let old_balance_handle = fhe::store_handle(&ctx.accounts.balance_store, balance_key())?;
     let old_total_supply_handle =
-        fhe::state_handle(&ctx.accounts.total_supply_state, total_supply_key())?;
-    let token_authority = fhe::StateAuthority::token_account(&ctx.accounts.token_account)?;
-    let total_supply_authority = fhe::StateAuthority::total_supply(
+        fhe::store_handle(&ctx.accounts.total_supply_store, total_supply_key())?;
+    let token_authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
+    let total_supply_authority = fhe::StoreAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
         ctx.bumps.total_supply_authority,
     )?;
     let balance_output = fhe::SlotOutput::new(
-        ctx.accounts.balance_state.to_account_info(),
+        ctx.accounts.balance_store.to_account_info(),
         balance_slot(mint_key, token_account_key),
         &token_authority,
         [owner],
     )?;
     let total_supply_output = fhe::SlotOutput::new(
-        ctx.accounts.total_supply_state.to_account_info(),
+        ctx.accounts.total_supply_store.to_account_info(),
         total_supply_slot(mint_key),
         &total_supply_authority,
         [],
     )?;
-    let balance = fhe::uint64_operand(&ctx.accounts.balance_state, balance_key())?;
-    let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_state, total_supply_key())?;
+    let balance = fhe::uint64_operand(&ctx.accounts.balance_store, balance_key())?;
+    let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_store, total_supply_key())?;
     let burned_amount = fhe::uint64_operand(&burned_value, burned_amount_key())?;
 
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::State::new(&ctx.accounts.balance_state).id(),
+        zama_fhe::Store::new(&ctx.accounts.balance_store).id(),
         |builder| {
             let new_balance = builder.add(balance, burned_amount)?;
             builder.output(new_balance, balance_output.output())?;
@@ -193,18 +193,18 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         owner,
         token_account: token_account_key,
         old_handle: old_balance_handle,
-        old_encrypted_state: ctx.accounts.balance_state.key(),
+        old_encrypted_store: ctx.accounts.balance_store.key(),
         new_handle: new_balance_handle,
-        new_encrypted_state: ctx.accounts.balance_state.key(),
+        new_encrypted_store: ctx.accounts.balance_store.key(),
         reason: BalanceHandleUpdateReason::CancelBurn,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: old_total_supply_handle,
-        old_encrypted_state: ctx.accounts.total_supply_state.key(),
+        old_encrypted_store: ctx.accounts.total_supply_store.key(),
         new_handle: new_total_supply_handle,
-        new_encrypted_state: ctx.accounts.total_supply_state.key(),
+        new_encrypted_store: ctx.accounts.total_supply_store.key(),
         reason: TotalSupplyUpdateReason::CancelBurn,
     });
     emit_cpi!(PendingBurnCancelledEvent {
@@ -213,7 +213,7 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         owner,
         token_account: token_account_key,
         burned_handle: pending.burned_handle,
-        burned_encrypted_state: ctx.accounts.balance_state.key(),
+        burned_encrypted_store: ctx.accounts.balance_store.key(),
     });
     Ok(())
 }

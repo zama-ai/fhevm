@@ -57,10 +57,10 @@ export type OpenBatchInstruction<
   TAccountBatchAuthority extends string | AccountMeta<string> = string,
   TAccountJoinConfidentialMint extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchJoinBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchJoinBalanceStore extends string | AccountMeta<string> = string,
   TAccountPayoutConfidentialMint extends string | AccountMeta<string> = string,
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountPayoutUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountBatchJoinUnderlying extends string | AccountMeta<string> = string,
@@ -92,18 +92,18 @@ export type OpenBatchInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountBatchJoinBalanceState extends string
-        ? WritableAccount<TAccountBatchJoinBalanceState>
-        : TAccountBatchJoinBalanceState,
+      TAccountBatchJoinBalanceStore extends string
+        ? WritableAccount<TAccountBatchJoinBalanceStore>
+        : TAccountBatchJoinBalanceStore,
       TAccountPayoutConfidentialMint extends string
         ? ReadonlyAccount<TAccountPayoutConfidentialMint>
         : TAccountPayoutConfidentialMint,
       TAccountBatchPayoutTokenAccount extends string
         ? WritableAccount<TAccountBatchPayoutTokenAccount>
         : TAccountBatchPayoutTokenAccount,
-      TAccountBatchPayoutBalanceState extends string
-        ? WritableAccount<TAccountBatchPayoutBalanceState>
-        : TAccountBatchPayoutBalanceState,
+      TAccountBatchPayoutBalanceStore extends string
+        ? WritableAccount<TAccountBatchPayoutBalanceStore>
+        : TAccountBatchPayoutBalanceStore,
       TAccountJoinUnderlyingMint extends string
         ? ReadonlyAccount<TAccountJoinUnderlyingMint>
         : TAccountJoinUnderlyingMint,
@@ -176,10 +176,10 @@ export type OpenBatchAsyncInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchJoinBalanceState extends string = string,
+  TAccountBatchJoinBalanceStore extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
@@ -213,11 +213,11 @@ export type OpenBatchAsyncInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchJoinBalanceState: Address<TAccountBatchJoinBalanceState>;
+  batchJoinBalanceStore: Address<TAccountBatchJoinBalanceStore>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers).
@@ -256,10 +256,10 @@ export async function getOpenBatchInstructionAsync<
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchJoinBalanceState extends string,
+  TAccountBatchJoinBalanceStore extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountBatchPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
   TAccountJoinUnderlyingMint extends string,
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchJoinUnderlying extends string,
@@ -283,10 +283,10 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
@@ -312,10 +312,10 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
@@ -349,8 +349,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchJoinBalanceState: {
-      value: input.batchJoinBalanceState ?? null,
+    batchJoinBalanceStore: {
+      value: input.batchJoinBalanceStore ?? null,
       isWritable: true,
     },
     payoutConfidentialMint: {
@@ -361,8 +361,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
     joinUnderlyingMint: {
@@ -447,10 +447,10 @@ export async function getOpenBatchInstructionAsync<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchJoinBalanceState', accounts.batchJoinBalanceState),
+      getAccountMeta('batchJoinBalanceStore', accounts.batchJoinBalanceStore),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
@@ -476,10 +476,10 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
@@ -504,10 +504,10 @@ export type OpenBatchInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchJoinBalanceState extends string = string,
+  TAccountBatchJoinBalanceStore extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
@@ -541,11 +541,11 @@ export type OpenBatchInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchJoinBalanceState: Address<TAccountBatchJoinBalanceState>;
+  batchJoinBalanceStore: Address<TAccountBatchJoinBalanceStore>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers).
@@ -584,10 +584,10 @@ export function getOpenBatchInstruction<
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchJoinBalanceState extends string,
+  TAccountBatchJoinBalanceStore extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountBatchPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
   TAccountJoinUnderlyingMint extends string,
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchJoinUnderlying extends string,
@@ -611,10 +611,10 @@ export function getOpenBatchInstruction<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
@@ -639,10 +639,10 @@ export function getOpenBatchInstruction<
   TAccountBatchAuthority,
   TAccountJoinConfidentialMint,
   TAccountBatchJoinTokenAccount,
-  TAccountBatchJoinBalanceState,
+  TAccountBatchJoinBalanceStore,
   TAccountPayoutConfidentialMint,
   TAccountBatchPayoutTokenAccount,
-  TAccountBatchPayoutBalanceState,
+  TAccountBatchPayoutBalanceStore,
   TAccountJoinUnderlyingMint,
   TAccountPayoutUnderlyingMint,
   TAccountBatchJoinUnderlying,
@@ -675,8 +675,8 @@ export function getOpenBatchInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchJoinBalanceState: {
-      value: input.batchJoinBalanceState ?? null,
+    batchJoinBalanceStore: {
+      value: input.batchJoinBalanceStore ?? null,
       isWritable: true,
     },
     payoutConfidentialMint: {
@@ -687,8 +687,8 @@ export function getOpenBatchInstruction<
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
     joinUnderlyingMint: {
@@ -758,10 +758,10 @@ export function getOpenBatchInstruction<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchJoinBalanceState', accounts.batchJoinBalanceState),
+      getAccountMeta('batchJoinBalanceStore', accounts.batchJoinBalanceStore),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
@@ -787,10 +787,10 @@ export function getOpenBatchInstruction<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
@@ -832,11 +832,11 @@ export type ParsedOpenBatchInstruction<
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[5];
     batchJoinTokenAccount: TAccountMetas[6];
-    batchJoinBalanceState: TAccountMetas[7];
+    batchJoinBalanceStore: TAccountMetas[7];
     /** Confidential mint claims pay out in. */
     payoutConfidentialMint: TAccountMetas[8];
     batchPayoutTokenAccount: TAccountMetas[9];
-    batchPayoutBalanceState: TAccountMetas[10];
+    batchPayoutBalanceStore: TAccountMetas[10];
     /**
      * SPL mint the join confidential mint wraps (vault underlying for deposit
      * batchers, vault shares for redeem batchers).
@@ -897,10 +897,10 @@ export function parseOpenBatchInstruction<TProgram extends string, TAccountMetas
       batchAuthority: getNextAccount(),
       joinConfidentialMint: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      batchJoinBalanceState: getNextAccount(),
+      batchJoinBalanceStore: getNextAccount(),
       payoutConfidentialMint: getNextAccount(),
       batchPayoutTokenAccount: getNextAccount(),
-      batchPayoutBalanceState: getNextAccount(),
+      batchPayoutBalanceStore: getNextAccount(),
       joinUnderlyingMint: getNextAccount(),
       payoutUnderlyingMint: getNextAccount(),
       batchJoinUnderlying: getNextAccount(),

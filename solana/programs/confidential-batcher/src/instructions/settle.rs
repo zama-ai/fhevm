@@ -78,8 +78,8 @@ pub struct Settle<'info> {
     /// Batch's plain SPL account receiving the redeemed batch total.
     #[account(mut, seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// CHECK: batch's burned-amount encrypted State; validated by the token CPI.
-    pub batch_burned_amount_state: UncheckedAccount<'info>,
+    /// CHECK: batch's burned-amount encrypted store; validated by the token CPI.
+    pub batch_burned_amount_store: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token redeem CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
@@ -121,12 +121,12 @@ pub struct Settle<'info> {
     pub payout_mint_vault_authority: UncheckedAccount<'info>,
     /// CHECK: payout mint total-supply authority PDA; validated by the token CPI.
     pub payout_total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout balance encrypted State; replaced by the wrap.
+    /// CHECK: batch's confidential payout balance encrypted store; replaced by the wrap.
     #[account(mut)]
-    pub batch_payout_balance_state: UncheckedAccount<'info>,
-    /// CHECK: payout mint's total-supply encrypted State; replaced by the wrap.
+    pub batch_payout_balance_store: UncheckedAccount<'info>,
+    /// CHECK: payout mint's total-supply encrypted store; replaced by the wrap.
     #[account(mut)]
-    pub payout_total_supply_state: UncheckedAccount<'info>,
+    pub payout_total_supply_store: UncheckedAccount<'info>,
 
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -223,7 +223,7 @@ pub fn settle(
                 vault_usdc: ctx.accounts.join_mint_vault_underlying.to_account_info(),
                 destination_usdc: ctx.accounts.batch_join_underlying.to_account_info(),
                 vault_authority: ctx.accounts.join_mint_vault_authority.to_account_info(),
-                burned_amount_state: ctx.accounts.batch_burned_amount_state.to_account_info(),
+                burned_amount_store: ctx.accounts.batch_burned_amount_store.to_account_info(),
                 pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 kms_context: ctx.accounts.kms_context.to_account_info(),
@@ -247,7 +247,7 @@ pub fn settle(
     // Zero-total batch: nothing to move through the vault, no rate to record —
     // cancel. The certificate above still proved the total, so this branch is
     // trustless and public (it branches on the certified cleartext, never on
-    // encrypted state). The only branch the redeem direction shares verbatim.
+    // encrypted store). The only branch the redeem direction shares verbatim.
     if cleartext_total == 0 {
         ctx.accounts.batch.status = BatchStatus::Canceled;
         emit!(BatchCanceled {
@@ -329,8 +329,8 @@ pub fn settle(
                     .accounts
                     .payout_total_supply_authority
                     .to_account_info(),
-                balance_state: ctx.accounts.batch_payout_balance_state.to_account_info(),
-                total_supply_state: ctx.accounts.payout_total_supply_state.to_account_info(),
+                balance_store: ctx.accounts.batch_payout_balance_store.to_account_info(),
+                total_supply_store: ctx.accounts.payout_total_supply_store.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),

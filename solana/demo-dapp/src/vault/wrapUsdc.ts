@@ -34,7 +34,7 @@ export type SolanaVaultWrapUsdcParameters = {
  * owner's associated token account and rotates the owner's confidential balance by that amount. The
  * amount is public at the wrap boundary, so — unlike a confidential transfer — this needs NO input
  * proof. The owner's confidential token account, the program's underlying vault, both persistent
- * encrypted States, and the two Anchor event authorities are derived here from the mints and owner;
+ * encrypted stores, and the two Anchor event authorities are derived here from the mints and owner;
  * the seeder/scenario supplies only semantic roots and assembles/sends the returned instruction.
  */
 export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcParameters): Promise<Instruction> {
@@ -50,8 +50,8 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     underlyingMint,
     userUsdc: await associatedTokenAddress(owner.address, underlyingMint, parameters.tokenProgram),
     vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint, parameters.tokenProgram),
-    balanceState: await tokenStateAddress(mint, tokenAccount),
-    totalSupplyState: await tokenStateAddress(mint, totalSupplyAuthority),
+    balanceStore: await tokenStateAddress(mint, tokenAccount),
+    totalSupplyStore: await tokenStateAddress(mint, totalSupplyAuthority),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     tokenProgram: parameters.tokenProgram,

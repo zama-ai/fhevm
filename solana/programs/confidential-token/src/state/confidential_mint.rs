@@ -4,8 +4,8 @@ use anchor_lang::prelude::*;
 
 /// Confidential mint state for the token PoC.
 ///
-/// The total supply's current handle and access encrypted State live in the
-/// `EncryptedState` account at `total_supply_encrypted_state`.
+/// The total supply's current handle and access encrypted store live in the
+/// `EncryptedStore` account at `total_supply_encrypted_store`.
 #[account]
 #[derive(InitSpace)]
 pub struct ConfidentialMint {

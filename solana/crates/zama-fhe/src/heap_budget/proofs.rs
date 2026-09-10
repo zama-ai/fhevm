@@ -8,7 +8,7 @@ use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::builder::FheExecutionBuilder;
 
-use crate::{Encrypted, FheExecution, Scalar, State, Uint};
+use crate::{Encrypted, FheExecution, Scalar, Store, Uint};
 
 use super::frontier::frontier_shapes;
 #[cfg(feature = "cpi")]
@@ -17,9 +17,9 @@ use super::harness::{balance_handle, try_measure, ShapeBuilder, ADMITTED_FRONTIE
 use super::shapes::*;
 
 #[test]
-fn shared_audience_state_outputs_fit_the_builder_at_full_depth() {
+fn shared_audience_store_outputs_fit_the_builder_at_full_depth() {
     FheExecution::build(
-        crate::StateId::new(
+        crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
             [0xA5; 32],
@@ -55,11 +55,11 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     // The review's counterexample: 60-operand set memberships to the brink, then a 60-operand
     // sum whose operand table alone must be refused before it is allocated.
     let account = shape_state(balance_handle(3));
-    let input = State::new(&account)
+    let input = Store::new(&account)
         .get::<Uint<64>>([0; 32])
         .expect("input handle");
     let _ = FheExecution::build(
-        crate::StateId::new(
+        crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
             [0xA5; 32],
@@ -90,7 +90,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     // would, so the ratchet past the first rejection is probed too.
     let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_FHE_EXECUTION_STEPS, 8);
     let _ = FheExecution::build(
-        crate::StateId::new(
+        crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
             [0xA5; 32],
@@ -124,7 +124,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     // Maximum-size attestations: the embeds go through the explicit counter rather than a
     // table, so this drives `admit`'s admission into rejection.
     let _ = FheExecution::build(
-        crate::StateId::new(
+        crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
             [0xA5; 32],
@@ -201,7 +201,7 @@ fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
 fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
     let build = |shape: ShapeBuilder| {
         FheExecution::build(
-            crate::StateId::new(
+            crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
                 [0xA5; 32],
@@ -285,7 +285,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
     let mut checked = 0;
     for (name, build) in frontier_shapes() {
         let Ok(execution) = FheExecution::build(
-            crate::StateId::new(
+            crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
                 [0xA5; 32],

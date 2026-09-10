@@ -18,8 +18,8 @@ export type SolanaPublicDecryptCertificateParameters = {
   readonly handle: EncryptedValueLike;
   /** The 32-byte KMS context id the certificate commits to. */
   readonly contextId: Uint8Array;
-  /** The 32-byte EncryptedState address whose history authorizes public decryption. */
-  readonly encryptedState: Uint8Array;
+  /** The 32-byte EncryptedStore address whose history authorizes public decryption. */
+  readonly encryptedStore: Uint8Array;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -38,7 +38,7 @@ export type SolanaPublicDecryptCertificateClaim = {
 };
 
 /**
- * `extraData` version byte of a Solana public decrypt: `0x04 ‖ contextId(32) ‖ encryptedState(32)`,
+ * `extraData` version byte of a Solana public decrypt: `0x04 ‖ contextId(32) ‖ encryptedStore(32)`,
  * exactly 65 bytes. Mirrors `SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT` in the connector's
  * `solana_extra_data.rs`.
  */
@@ -54,12 +54,12 @@ export const SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION = 0x04;
  * pins them to each other.
  *
  * @param contextId - The 32-byte KMS context id.
- * @param encryptedState - The 32-byte address of the account the handle lives in.
+ * @param encryptedStore - The 32-byte address of the account the handle lives in.
  */
-export function buildSolanaPublicDecryptExtraData(contextId: Uint8Array, encryptedState: Uint8Array): Uint8Array {
+export function buildSolanaPublicDecryptExtraData(contextId: Uint8Array, encryptedStore: Uint8Array): Uint8Array {
   assertExtraDataFieldLen('contextId', contextId, 32);
-  assertExtraDataFieldLen('encryptedState', encryptedState, 32);
-  return concatBytes(new Uint8Array([SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION]), contextId, encryptedState);
+  assertExtraDataFieldLen('encryptedStore', encryptedStore, 32);
+  return concatBytes(new Uint8Array([SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION]), contextId, encryptedStore);
 }
 
 function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): void {
@@ -68,14 +68,14 @@ function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): 
   }
 }
 
-/** Requests a public-decrypt certificate for a handle made public in an encrypted state. */
+/** Requests a public-decrypt certificate for a handle made public in an encrypted store. */
 export async function publicDecryptCertificate(
   context: SolanaPublicDecryptCertificateContext,
   parameters: SolanaPublicDecryptCertificateParameters,
 ): Promise<SolanaPublicDecryptCertificateClaim> {
   const handle = toFhevmHandle(parameters.handle);
 
-  const requestExtraData = buildSolanaPublicDecryptExtraData(parameters.contextId, parameters.encryptedState);
+  const requestExtraData = buildSolanaPublicDecryptExtraData(parameters.contextId, parameters.encryptedStore);
   const requestExtraDataHex = bytesToHex(requestExtraData);
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',

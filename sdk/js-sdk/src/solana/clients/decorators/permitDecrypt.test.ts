@@ -223,7 +223,7 @@ describe('running a user decryption through the client', () => {
     const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
 
     let capturedBody:
-      | { attestedPayload: { handles: readonly { allowedKey: string; encryptedState: string }[] } }
+      | { attestedPayload: { handles: readonly { allowedKey: string; encryptedStore: string }[] } }
       | undefined;
     vi.stubGlobal(
       'fetch',
@@ -251,8 +251,8 @@ describe('running a user decryption through the client', () => {
       decryptClient.userDecrypt({
         session,
         entries: [
-          { handle: HANDLE, encryptedState: ENCRYPTED_VALUE_ACCOUNT, allowedKey: DELEGATOR },
-          { handle: HANDLE, encryptedState: ENCRYPTED_VALUE_ACCOUNT },
+          { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT, allowedKey: DELEGATOR },
+          { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT },
         ],
         attempts: 1,
       }),
@@ -262,7 +262,7 @@ describe('running a user decryption through the client', () => {
       hex(DELEGATOR),
       hex(USER_PUBKEY),
     ]);
-    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.encryptedState)).toEqual([
+    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.encryptedStore)).toEqual([
       hex(ENCRYPTED_VALUE_ACCOUNT),
       hex(ENCRYPTED_VALUE_ACCOUNT),
     ]);

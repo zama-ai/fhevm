@@ -2,7 +2,7 @@ import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import { findBatchAuthorityPda, joinStateAddress, tokenAccountAddress } from './internal/batcherPdas.js';
+import { findBatchAuthorityPda, joinStoreAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import {
   associatedTokenAddress,
   tokenStateAddress,
@@ -45,7 +45,7 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, batchAuthority);
   const userPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, user);
-  const joinState = await joinStateAddress(parameters.batch, user);
+  const joinStore = await joinStoreAddress(parameters.batch, user);
   const instruction = await getClaimInstructionAsync({
     ...parameters.fhe,
     payer: parameters.payer,
@@ -53,7 +53,7 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batcher: parameters.batcher,
     batch: parameters.batch,
     batchAuthority,
-    joinState,
+    joinStore,
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
     batchAuthorityPayoutAta: await associatedTokenAddress(
@@ -64,8 +64,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
-    batchPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
-    userPayoutBalanceState: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
+    batchPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
+    userPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),

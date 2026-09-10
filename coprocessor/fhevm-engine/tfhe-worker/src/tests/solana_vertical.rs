@@ -43,7 +43,7 @@ use solana_sdk::{
 };
 use tfhe::prelude::FheTryEncrypt;
 use time::{OffsetDateTime, PrimitiveDateTime};
-use zama_host::{EncryptedState, HostConfig};
+use zama_host::{EncryptedStore, HostConfig};
 
 use crate::tests::{
     event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
@@ -426,7 +426,7 @@ fn token_fixture() -> TokenFixture {
     let host_config = seed_host_config(&mut svm, host_program_id, alice.pubkey());
     create_spl_mint(&mut svm, &alice, &underlying_mint, 6);
     let total_supply_authority = token::total_supply_authority_address(mint.pubkey()).0;
-    let total_supply_encrypted_state = token::total_supply_slot(mint.pubkey()).0.address();
+    let total_supply_encrypted_store = token::total_supply_slot(mint.pubkey()).0.address();
 
     send_with_signers(
         &mut svm,
@@ -440,7 +440,7 @@ fn token_fixture() -> TokenFixture {
                 mint: mint.pubkey(),
                 underlying_mint: underlying_mint.pubkey(),
                 total_supply_authority,
-                total_supply_encrypted_state,
+                total_supply_encrypted_store,
                 zama_event_authority: event_authority(host_program_id),
                 zama_program: host_program_id,
                 host_config,
@@ -472,7 +472,7 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: alice_token,
-            balance_encrypted_state: alice_current_compute_acl,
+            balance_encrypted_store: alice_current_compute_acl,
         },
     );
     initialize_token_account(
@@ -485,7 +485,7 @@ fn token_fixture() -> TokenFixture {
             host_config,
             mint: mint.pubkey(),
             token_account: bob_token,
-            balance_encrypted_state: bob_current_compute_acl,
+            balance_encrypted_store: bob_current_compute_acl,
         },
     );
     let alice_initial = current_handle(&svm, alice_current_compute_acl);
@@ -529,7 +529,7 @@ struct TokenAccountInit {
     host_config: Pubkey,
     mint: Pubkey,
     token_account: Pubkey,
-    balance_encrypted_state: Pubkey,
+    balance_encrypted_store: Pubkey,
 }
 
 fn initialize_token_account(
@@ -550,7 +550,7 @@ fn initialize_token_account(
                 owner,
                 mint: init.mint,
                 token_account: init.token_account,
-                balance_encrypted_state: init.balance_encrypted_state,
+                balance_encrypted_store: init.balance_encrypted_store,
                 zama_event_authority: event_authority(init.host_program_id),
                 zama_program: init.host_program_id,
                 host_config: init.host_config,
@@ -596,13 +596,13 @@ fn transfer_ix(
             to_ata: fixture.bob_ata,
             from_account: fixture.alice_token,
             to_account: fixture.bob_token,
-            from_state: output.alice,
-            to_state: output.bob,
+            from_store: output.alice,
+            to_store: output.bob,
             zama_event_authority: event_authority(fixture.host_program_id),
             zama_program: fixture.host_program_id,
             host_config: fixture.host_config,
             system_program: system_program::ID,
-            result_state: None,
+            result_store: None,
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         }
@@ -771,8 +771,8 @@ async fn seed_real_ciphertexts(
 }
 fn current_handle(svm: &LiteSVM, address: Pubkey) -> [u8; 32] {
     let account = svm.get_account(&address).expect("expected token State");
-    let state = EncryptedState::try_deserialize(&mut account.data.as_slice())
-        .expect("valid EncryptedState");
+    let state = EncryptedStore::try_deserialize(&mut account.data.as_slice())
+        .expect("valid EncryptedStore");
     state.get(&token::balance_key()).expect("balance slot")
 }
 

@@ -22,7 +22,7 @@ pub struct Join<'info> {
     /// CHECK: canonical per-batch authority PDA, checked by seeds below.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
-    /// The user's join record for this batch; created on first join and controls its contribution State.
+    /// The user's join record for this batch; created on first join and controls its contribution Store.
     #[account(
         init_if_needed,
         payer = payer,
@@ -47,15 +47,15 @@ pub struct Join<'info> {
     /// validated by the token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance encrypted State; replaced by the token CPI.
+    /// CHECK: user's stable balance encrypted store; replaced by the token CPI.
     #[account(mut)]
-    pub user_balance_state: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted State; replaced by the token CPI.
+    pub user_balance_store: UncheckedAccount<'info>,
+    /// CHECK: batch's stable balance encrypted store; replaced by the token CPI.
     #[account(mut)]
-    pub batch_balance_state: UncheckedAccount<'info>,
+    pub batch_balance_store: UncheckedAccount<'info>,
     /// CHECK: canonical host state controlled by this JoinRecord.
     #[account(mut)]
-    pub join_state: UncheckedAccount<'info>,
+    pub join_store: UncheckedAccount<'info>,
     /// CHECK: host validates the shared transaction transient store.
     #[account(mut)]
     pub transient_store: UncheckedAccount<'info>,
@@ -100,28 +100,28 @@ pub fn join<'info>(
         BatcherError::DerivedAccountMismatch
     );
     let record_key = ctx.accounts.join_record.key();
-    let id = join_state_id(batch_key, record_key);
+    let id = join_store_id(batch_key, record_key);
     require_keys_eq!(
-        ctx.accounts.join_state.key(),
+        ctx.accounts.join_store.key(),
         id.address(),
         BatcherError::DerivedAccountMismatch
     );
     let bump = [ctx.bumps.join_record];
     let authority_seeds: &[&[u8]] = &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
-    if ctx.accounts.join_state.owner == &System::id() {
-        zama_host::cpi::create_encrypted_state(
+    if ctx.accounts.join_store.owner == &System::id() {
+        zama_host::cpi::create_encrypted_store(
             CpiContext::new_with_signer(
                 ctx.accounts.zama_program.key(),
-                zama_host::cpi::accounts::CreateEncryptedState {
+                zama_host::cpi::accounts::CreateEncryptedStore {
                     payer: ctx.accounts.payer.to_account_info(),
                     authority: ctx.accounts.join_record.to_account_info(),
-                    encrypted_state: ctx.accounts.join_state.to_account_info(),
+                    encrypted_store: ctx.accounts.join_store.to_account_info(),
                     host_config: ctx.accounts.host_config.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
                 },
                 &[authority_seeds],
             ),
-            zama_host::instructions::CreateEncryptedStateArgs {
+            zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
                 scope: batch_key.to_bytes(),
                 authority_seeds: authority_seeds.iter().map(|s| s.to_vec()).collect(),
@@ -129,8 +129,8 @@ pub fn join<'info>(
         )?;
     }
     let transferred = transfer_to_batch(&ctx, amount_attestation, authority_seeds)?;
-    let account = fhe::read_state(&ctx.accounts.join_state)?;
-    let state = zama_fhe::State::new(&account);
+    let account = fhe::read_state(&ctx.accounts.join_store)?;
+    let state = zama_fhe::Store::new(&account);
     let amount = state
         .granted::<zama_fhe::Uint<64>>(transferred)
         .map_err(fhe::invalid_execution)?;
@@ -163,7 +163,7 @@ pub fn join<'info>(
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: ctx.remaining_accounts,
     }
-    .invoke(execution, vec![ctx.accounts.join_state.to_account_info()])?;
+    .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 
     let record = &mut ctx.accounts.join_record;
     record.batch = batch_key;
@@ -177,7 +177,7 @@ pub fn join<'info>(
         version: APP_EVENT_VERSION,
         batch: batch_key,
         user,
-        joined_encrypted_state: ctx.accounts.join_state.key(),
+        joined_encrypted_store: ctx.accounts.join_store.key(),
         joined_handle,
     });
     Ok(())
@@ -202,8 +202,8 @@ fn transfer_to_batch<'info>(
                 to_ata: ctx.accounts.batch_authority_ata.to_account_info(),
                 from_account: ctx.accounts.user_token_account.to_account_info(),
                 to_account: ctx.accounts.batch_join_token_account.to_account_info(),
-                from_state: ctx.accounts.user_balance_state.to_account_info(),
-                to_state: ctx.accounts.batch_balance_state.to_account_info(),
+                from_store: ctx.accounts.user_balance_store.to_account_info(),
+                to_store: ctx.accounts.batch_balance_store.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
                 transient_store: ctx.accounts.transient_store.to_account_info(),
                 instructions: ctx.accounts.instructions.to_account_info(),
@@ -212,7 +212,7 @@ fn transfer_to_batch<'info>(
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,
                 hcu_trusted_app_record: None,
-                result_state: Some(ctx.accounts.join_state.to_account_info()),
+                result_store: Some(ctx.accounts.join_store.to_account_info()),
 
                 event_authority: ctx
                     .accounts

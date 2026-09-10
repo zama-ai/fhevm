@@ -144,9 +144,9 @@ impl<'b> StepTables<'b> {
         Ok(index)
     }
 
-    /// The signer slot for a State authority: none when it is the execution's fixed
+    /// The signer slot for a Store authority: none when it is the execution's fixed
     /// CPI signer, otherwise a readonly signing remaining account.
-    fn state_authority_index(
+    fn store_authority_index(
         &mut self,
         authority: anchor_lang::prelude::Pubkey,
         execution_authority: anchor_lang::prelude::Pubkey,
@@ -156,7 +156,7 @@ impl<'b> StepTables<'b> {
         }
         self.account_index(ExecutionAccountMeta::readonly_signer(
             authority,
-            ExecutionAccountPurpose::StateAuthority,
+            ExecutionAccountPurpose::StoreAuthority,
         ))
         .map(Some)
     }
@@ -170,27 +170,27 @@ pub(crate) fn lower_operand(
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
     match operand.0 {
-        OperandKind::StateSlot { state, key, handle } => {
-            let state_index = tables.account_index(ExecutionAccountMeta::readonly(
-                state.address,
-                ExecutionAccountPurpose::StateInput,
+        OperandKind::StoreSlot { store, key, handle } => {
+            let store_index = tables.account_index(ExecutionAccountMeta::readonly(
+                store.address,
+                ExecutionAccountPurpose::StoreInput,
             ))?;
             let key_index = tables.dictionary_index(key)?;
-            tables.state_authority_index(state.authority, execution_authority)?;
-            Ok(FheExecuteOperand::StateSlot {
-                state_index,
+            tables.store_authority_index(store.authority, execution_authority)?;
+            Ok(FheExecuteOperand::StoreSlot {
+                store_index,
                 key_index,
                 handle_index: tables.dictionary_index(handle)?,
             })
         }
         OperandKind::Granted { consumer, handle } => {
-            let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
+            let consumer_store_index = tables.account_index(ExecutionAccountMeta::readonly(
                 consumer.address,
-                ExecutionAccountPurpose::StateInput,
+                ExecutionAccountPurpose::StoreInput,
             ))?;
-            tables.state_authority_index(consumer.authority, execution_authority)?;
+            tables.store_authority_index(consumer.authority, execution_authority)?;
             Ok(FheExecuteOperand::TransientResult {
-                consumer_state_index,
+                consumer_store_index,
                 handle_index: tables.dictionary_index(handle)?,
             })
         }
@@ -229,26 +229,26 @@ pub(crate) fn lower_effect(
     tables: &mut StepTables<'_>,
     execution_authority: anchor_lang::prelude::Pubkey,
     result: zama_host::ExecutionResultRef,
-    output: crate::StateOutput,
+    output: crate::StoreOutput,
 ) -> Result<FheExecuteEffect> {
     crate::validate::validate_allow_keys(&output.allows)?;
     if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
         return Err(FheExecutionBuildError::TooManyResultGrants);
     }
-    let state_index = tables.account_index(
+    let store_index = tables.account_index(
         if output.slot.is_some() || !output.allows.is_empty() || output.make_public {
             ExecutionAccountMeta::writable(
-                output.state.address,
-                ExecutionAccountPurpose::StateOutput,
+                output.store.address,
+                ExecutionAccountPurpose::StoreOutput,
             )
         } else {
             ExecutionAccountMeta::readonly(
-                output.state.address,
-                ExecutionAccountPurpose::StateOutput,
+                output.store.address,
+                ExecutionAccountPurpose::StoreOutput,
             )
         },
     )?;
-    tables.state_authority_index(output.state.authority, execution_authority)?;
+    tables.store_authority_index(output.store.authority, execution_authority)?;
     let slot = output
         .slot
         .map(|(key, previous)| -> Result<_> {
@@ -265,20 +265,20 @@ pub(crate) fn lower_effect(
     }
     let mut grants = TalliedVec::try_with_capacity(tables.budget(), output.grants.len())?;
     for consumer in output.grants {
-        let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
+        let consumer_store_index = tables.account_index(ExecutionAccountMeta::readonly(
             consumer.address,
-            ExecutionAccountPurpose::StateInput,
+            ExecutionAccountPurpose::StoreInput,
         ))?;
         grants.try_push(
             tables.budget(),
             zama_host::ResultGrant {
-                consumer_state_index,
+                consumer_store_index,
             },
         )?;
     }
     Ok(FheExecuteEffect {
         result,
-        state_index,
+        store_index,
         previous_leaf_count: output.previous_leaf_count,
         slot,
         allow_indexes: allows.into_inner(),

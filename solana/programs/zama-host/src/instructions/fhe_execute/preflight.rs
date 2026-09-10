@@ -1,14 +1,14 @@
 //! Whole-execution checks before the walk: every remaining account and every dictionary entry is
-//! referenced, every State operand's authority signed, every State the default authority controls
+//! referenced, every Store operand's authority signed, every Store the default authority controls
 //! belongs to one application, and each application requiring a deny check has its deny record
 //! when the deny list is on. Returns the metered application and the applications to deny-check.
 //!
-//! A State admitted by an additional signing authority belongs to that authority's own
+//! A Store admitted by an additional signing authority belongs to that authority's own
 //! application and does not fold: the signature is that program's consent, given through
-//! `invoke_signed`, for this execution to read or write that State. The meter stays on the
+//! `invoke_signed`, for this execution to read or write that Store. The meter stays on the
 //! default authority's application.
-//! States read, written or used to initiate a grant are deny-checked independently of that meter;
-//! a grant's consumer State is deny-checked when the grant is consumed.
+//! Stores read, written or used to initiate a grant are deny-checked independently of that meter;
+//! a grant's consumer Store is deny-checked when the grant is consumed.
 
 use super::account_table::ExecutionAccountTable;
 use super::*;
@@ -18,7 +18,7 @@ pub(super) fn preflight_execution<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
 ) -> Result<PreflightOutcome> {
-    let producer = table.state(args.execution_state_index.into())?;
+    let producer = table.state(args.execution_store_index.into())?;
     let app = AppScope {
         program: producer.program,
         scope: producer.scope,
@@ -32,14 +32,14 @@ pub(super) fn preflight_execution<'info>(
         touched_apps: Vec::new(),
         slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_EFFECTS),
     };
-    preflight.admit_state(args.execution_state_index)?;
+    preflight.admit_state(args.execution_store_index)?;
     require_keys_eq!(
         preflight
             .table
-            .state(args.execution_state_index.into())?
+            .state(args.execution_store_index.into())?
             .authority,
         ctx.accounts.authority.key(),
-        ZamaHostError::EncryptedStateAccountAuthorityMismatch
+        ZamaHostError::EncryptedStoreAccountAuthorityMismatch
     );
     for (index, step) in args.steps.iter().enumerate() {
         preflight_step(step, index, &mut preflight)?;
@@ -67,10 +67,10 @@ pub(super) fn preflight_execution<'info>(
 
 #[derive(Debug)]
 pub(super) struct PreflightOutcome {
-    /// The application the default authority's States belong to: what the execution
+    /// The application the default authority's Stores belong to: what the execution
     /// is metered and rand-seeded as.
     pub(super) app: AppScope,
-    /// Applications whose States the execution reads, writes or uses to initiate or consume a
+    /// Applications whose Stores the execution reads, writes or uses to initiate or consume a
     /// grant. Each is deny-checked, regardless of which authority signs.
     pub(super) touched_apps: Vec<AppScope>,
 }
@@ -83,7 +83,7 @@ struct Preflight<'t, 'a, 'info> {
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
     authority: Pubkey,
-    /// The `(program, scope)` of every State the default authority controls; a second
+    /// The `(program, scope)` of every Store the default authority controls; a second
     /// one is an error.
     app: AppScope,
     /// Every distinct application touched, the default authority's included, in first-seen order.
@@ -117,9 +117,9 @@ impl Preflight<'_, '_, '_> {
         self.fold_app(authority, app)
     }
 
-    /// Records one State's application for the deny check and folds it into the
+    /// Records one Store's application for the deny check and folds it into the
     /// execution's when the default authority controls it: the first one is adopted, every later
-    /// one must match (one execution, one meter). A State under an additional signing authority
+    /// one must match (one execution, one meter). A Store under an additional signing authority
     /// is that program's own.
     fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
         if !self.touched_apps.contains(&app) {
@@ -200,21 +200,21 @@ fn preflight_encrypted_operand(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match operand {
-        FheExecuteOperand::StateSlot {
+        FheExecuteOperand::StoreSlot {
             handle_index,
-            state_index,
+            store_index,
             key_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
             preflight.mark_dictionary(*key_index)?;
-            preflight.admit_state(*state_index)?;
+            preflight.admit_state(*store_index)?;
         }
         FheExecuteOperand::TransientResult {
             handle_index,
-            consumer_state_index,
+            consumer_store_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
-            preflight.admit_state(*consumer_state_index)?;
+            preflight.admit_state(*consumer_store_index)?;
         }
 
         FheExecuteOperand::EarlierStep { producer_index } => {
@@ -238,20 +238,20 @@ fn preflight_effect(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     let FheExecuteEffect {
-        state_index,
+        store_index,
         slot,
         allow_indexes,
         grants,
         ..
     } = effect;
-    preflight.admit_state(*state_index)?;
+    preflight.admit_state(*store_index)?;
     if let Some(slot) = slot {
         let key = preflight.mark_dictionary(slot.key_index)?;
         require!(
-            !preflight.slots_written.contains(&(*state_index, key)),
+            !preflight.slots_written.contains(&(*store_index, key)),
             ZamaHostError::InvalidFheExecuteAccount
         );
-        preflight.slots_written.push((*state_index, key));
+        preflight.slots_written.push((*store_index, key));
         if let Some(previous) = slot.previous_handle_index {
             preflight.mark_dictionary(previous)?;
         }
@@ -264,8 +264,8 @@ fn preflight_effect(
         ZamaHostError::TransientCapacityExceeded
     );
     for grant in grants {
-        preflight.table.mark(grant.consumer_state_index.into())?;
-        preflight.table.state(grant.consumer_state_index.into())?;
+        preflight.table.mark(grant.consumer_store_index.into())?;
+        preflight.table.state(grant.consumer_store_index.into())?;
     }
     Ok(())
 }
@@ -287,8 +287,8 @@ mod tests {
         AccountInfo::new(key, is_signer, false, lamports, data, owner, false)
     }
 
-    fn encrypted_state(app: AppScope, authority: Pubkey, key: [u8; 32]) -> AccountInfo<'static> {
-        let mut state = EncryptedState {
+    fn encrypted_store(app: AppScope, authority: Pubkey, key: [u8; 32]) -> AccountInfo<'static> {
+        let mut state = EncryptedStore {
             program: app.program,
             authority,
             scope: app.scope,
@@ -322,12 +322,12 @@ mod tests {
         }
     }
 
-    fn read_step(state_index: u8, key_index: u8) -> FheExecuteStep {
+    fn read_step(store_index: u8, key_index: u8) -> FheExecuteStep {
         FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StateSlot {
+            lhs: FheExecuteOperand::StoreSlot {
                 handle_index: 0,
-                state_index,
+                store_index,
                 key_index,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
@@ -337,7 +337,7 @@ mod tests {
 
     fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
-            execution_state_index: 0,
+            execution_store_index: 0,
             effects: vec![],
             returned_results: Vec::new(),
             account_count: 0,
@@ -378,18 +378,18 @@ mod tests {
 
     #[test]
     fn unused_remaining_account_fails_preflight() {
-        // One State-slot operand, two passed accounts: the dangling second account
+        // One Store-slot operand, two passed accounts: the dangling second account
         // must fail the whole-execution all-used check.
         let authority = Pubkey::new_unique();
         let accounts = vec![
-            encrypted_state(app(1), authority, [9; 32]),
+            encrypted_store(app(1), authority, [9; 32]),
             test_account(Pubkey::new_unique()),
         ];
         assert!(run(&accounts, &execution(vec![read_step(0, 2)]), authority).is_err());
     }
 
     #[test]
-    fn state_slot_read_uses_snapshot_before_ordered_effects() {
+    fn store_slot_read_uses_snapshot_before_ordered_effects() {
         let authority = Pubkey::new_unique();
         let mut args = execution(vec![
             FheExecuteStep::TrivialEncrypt {
@@ -398,26 +398,26 @@ mod tests {
             },
             read_step(0, 2),
         ]);
-        args.effects.push(state_output(0, 2));
-        let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
+        args.effects.push(store_output(0, 2));
+        let accounts = vec![encrypted_store(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_ok());
     }
 
     #[test]
-    fn state_slot_may_be_read_and_updated_in_the_same_step() {
+    fn store_slot_may_be_read_and_updated_in_the_same_step() {
         let authority = Pubkey::new_unique();
         let mut args = execution(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::StateSlot {
+            lhs: FheExecuteOperand::StoreSlot {
                 handle_index: 0,
-                state_index: 0,
+                store_index: 0,
                 key_index: 2,
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
         }]);
-        args.effects.push(state_output(0, 2));
-        let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
+        args.effects.push(store_output(0, 2));
+        let accounts = vec![encrypted_store(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_ok());
     }
 
@@ -427,14 +427,14 @@ mod tests {
     fn state_operand_is_admitted_by_its_authority_signature_only() {
         let authority = Pubkey::new_unique();
         for lhs in [
-            FheExecuteOperand::StateSlot {
+            FheExecuteOperand::StoreSlot {
                 handle_index: 0,
-                state_index: 0,
+                store_index: 0,
                 key_index: 2,
             },
             FheExecuteOperand::TransientResult {
                 handle_index: 0,
-                consumer_state_index: 0,
+                consumer_store_index: 0,
             },
         ] {
             let args = execution(vec![FheExecuteStep::Binary {
@@ -444,20 +444,20 @@ mod tests {
                 output_fhe_type: 5,
             }]);
 
-            let by_default_signer = vec![encrypted_state(app(1), authority, [9; 32])];
+            let by_default_signer = vec![encrypted_store(app(1), authority, [9; 32])];
             assert_eq!(
                 run(&by_default_signer, &args, authority).unwrap().app,
                 app(1)
             );
 
             let by_remaining_signer = vec![
-                encrypted_state(app(1), authority, [9; 32]),
+                encrypted_store(app(1), authority, [9; 32]),
                 signer_account(authority, true),
             ];
             assert!(run(&by_remaining_signer, &args, Pubkey::new_unique()).is_ok());
 
             let authority_present_but_not_signing = vec![
-                encrypted_state(app(1), authority, [9; 32]),
+                encrypted_store(app(1), authority, [9; 32]),
                 signer_account(authority, false),
             ];
             assert_eq!(
@@ -467,22 +467,22 @@ mod tests {
                     Pubkey::new_unique()
                 )
                 .unwrap_err(),
-                error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
+                error!(ZamaHostError::EncryptedStoreAccountAuthorityMismatch)
             );
 
-            let nobody = vec![encrypted_state(app(1), authority, [9; 32])];
+            let nobody = vec![encrypted_store(app(1), authority, [9; 32])];
             assert_eq!(
                 run(&nobody, &args, Pubkey::new_unique()).unwrap_err(),
-                error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
+                error!(ZamaHostError::EncryptedStoreAccountAuthorityMismatch)
             );
         }
     }
 
-    /// One execution under its default authority cannot mix States from two applications.
+    /// One execution under its default authority cannot mix Stores from two applications.
     #[test]
     fn values_of_two_scopes_cannot_share_an_execution() {
         let authority = Pubkey::new_unique();
-        let same_scope = vec![encrypted_state(app(1), authority, [9; 32])];
+        let same_scope = vec![encrypted_store(app(1), authority, [9; 32])];
         assert_eq!(
             run(
                 &same_scope,
@@ -495,8 +495,8 @@ mod tests {
         );
 
         let mixed = vec![
-            encrypted_state(app(1), authority, [9; 32]),
-            encrypted_state(app(2), authority, [9; 32]),
+            encrypted_store(app(1), authority, [9; 32]),
+            encrypted_store(app(2), authority, [9; 32]),
         ];
         assert_eq!(
             run(
@@ -518,8 +518,8 @@ mod tests {
         let foreign_authority = Pubkey::new_unique();
         let two_reads = execution(vec![read_step(0, 2), read_step(1, 2)]);
         let accounts = vec![
-            encrypted_state(app(1), authority, [9; 32]),
-            encrypted_state(app(2), foreign_authority, [9; 32]),
+            encrypted_store(app(1), authority, [9; 32]),
+            encrypted_store(app(2), foreign_authority, [9; 32]),
             signer_account(foreign_authority, true),
         ];
         let outcome = run(&accounts, &two_reads, authority).unwrap();
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn transient_only_execution_has_a_producing_state_application() {
         let authority = Pubkey::new_unique();
-        let accounts = [encrypted_state(app(1), authority, [9; 32])];
+        let accounts = [encrypted_store(app(1), authority, [9; 32])];
         let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         let mut preflight = Preflight {
             table: &mut table,
@@ -559,18 +559,18 @@ mod tests {
     fn effects_cannot_write_the_same_slot_twice() {
         let authority = Pubkey::new_unique();
         let mut args = execution(vec![read_step(0, 2)]);
-        args.effects = vec![state_output(0, 2), state_output(0, 2)];
-        let accounts = [encrypted_state(app(1), authority, [9; 32])];
+        args.effects = vec![store_output(0, 2), store_output(0, 2)];
+        let accounts = [encrypted_store(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_err());
     }
 
-    fn state_output(state_index: u8, key_index: u8) -> FheExecuteEffect {
+    fn store_output(store_index: u8, key_index: u8) -> FheExecuteEffect {
         FheExecuteEffect {
             result: ExecutionResultRef {
                 step_index: 0,
                 output_index: 0,
             },
-            state_index,
+            store_index,
             previous_leaf_count: 0,
             slot: Some(SlotWrite {
                 key_index,
