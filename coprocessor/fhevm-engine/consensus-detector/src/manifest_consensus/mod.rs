@@ -1,8 +1,8 @@
-//! Generation-scoped manifest publication.
+//! Generation-scoped manifest publication and peer verification.
 //!
 //! This module is deliberately isolated from the upgrade state-hash detector.
 //! Database access that crosses the active GCS schema boundary belongs under
-//! [`storage`].
+//! the private `storage` module.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -27,6 +27,7 @@ pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
 pub(crate) mod publication;
 pub(crate) mod storage;
+pub(crate) mod verification;
 
 pub use publication::block_discovery::{
     parse_publication_cadence_override, publication_cadence_overrides,
@@ -46,6 +47,12 @@ pub(crate) enum ExecutionError {
 
     #[error("S3 transient error: {0}")]
     S3TransientError(String),
+
+    #[error("S3 object not found: {0}")]
+    S3ObjectNotFound(String),
+
+    #[error("peer manifest exceeds the size limit: {0}")]
+    PeerManifestTooLarge(String),
 
     #[error("internal error: {0}")]
     InternalError(String),
@@ -83,7 +90,7 @@ impl From<ExecutionError> for fhevm_engine_common::pg_pool::ServiceError {
     }
 }
 
-/// Publication policy owned by consensus-detector.
+/// Publication and verification policy owned by consensus-detector.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     /// Publisher tick: discover host blocks, then seal and publish already
@@ -91,6 +98,9 @@ pub struct Config {
     pub discovery_interval: Duration,
     pub publication_retry_delay: Duration,
     pub publication_retry_count: u32,
+    pub verification_delay: Duration,
+    pub verification_retry_delay: Duration,
+    pub verification_retry_count: u32,
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as `is_uncomputed`.
     pub incomplete_block_timeout: Duration,
@@ -109,6 +119,9 @@ impl Default for Config {
             discovery_interval: Duration::from_secs(10),
             publication_retry_delay: Duration::from_secs(60),
             publication_retry_count: 30,
+            verification_delay: Duration::from_secs(5 * 60),
+            verification_retry_delay: Duration::from_secs(60),
+            verification_retry_count: 5,
             incomplete_block_timeout: Duration::from_secs(5 * 60),
             incomplete_manifest_max_lag: 3,
             publication_cadence_overrides: BTreeMap::new(),
@@ -135,7 +148,7 @@ impl Config {
     }
 }
 
-/// Runtime gate for manifest publication.
+/// Runtime gate shared by publication and verification.
 ///
 /// Blue works immediately. Green stays parked until `DryRunStarted`, parks
 /// again after rollback, and continues as the live stack after cutover. The
@@ -193,13 +206,14 @@ pub(crate) async fn start(
 ) -> Result<(), ExecutionError> {
     if config.my_bucket.is_none() {
         tracing::warn!("Manifest publication disabled by --my-bucket=none");
+        tracing::warn!("Manifest verification disabled by --my-bucket=none");
         return Ok(());
     }
 
     let work_gate = ManifestWorkGate::new(config.gcs_mode, None);
     // `resolve_gcs_mode` classifies both the current Blue stack and an old,
     // restarted Blue binary as non-GCS. Reconcile against the durable live
-    // stack version before the manifest worker starts so the latter is
+    // stack version before either manifest worker starts so the latter is
     // parked even though it could not have received the cutover notification.
     reconcile_stack_mode(&pool, &work_gate.mode)
         .await
@@ -248,12 +262,13 @@ pub(crate) async fn start(
                 }
             }
         });
-        info!("Green manifest publication parked until DryRunStarted");
+        info!("Green manifest publication and verification parked until DryRunStarted");
     }
 
     if let Some(interval_secs) = config.gauge_update_interval_secs {
         let period = Duration::from_secs(interval_secs.into());
         publication::metrics::spawn_publication_gauge_updates(period, pool.clone());
+        verification::metrics::spawn_verification_gauge_updates(period, pool.clone());
     }
 
     let signer = config.manifest_signer.clone().ok_or_else(|| {
@@ -268,6 +283,14 @@ pub(crate) async fn start(
         Arc::clone(&work_gate),
     );
     supervise("manifest publisher", handle, cancel.clone());
+
+    let handle = verification::peer_downloader::spawn_peer_manifest_downloader(
+        pool,
+        cancel.child_token(),
+        client,
+        work_gate,
+    );
+    supervise("peer manifest verifier", handle, cancel);
 
     Ok(())
 }

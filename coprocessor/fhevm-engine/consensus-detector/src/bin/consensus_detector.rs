@@ -115,6 +115,18 @@ struct Args {
     #[arg(long, default_value_t = 30)]
     manifest_publication_retry_count: u32,
 
+    /// Delay after publication before the first peer verification attempt.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    manifest_verification_delay: Duration,
+
+    /// Delay between peer verification retries.
+    #[arg(long, default_value = "1m", value_parser = parse_duration)]
+    manifest_verification_retry_delay: Duration,
+
+    /// Additional peer verification attempts after the initial attempt.
+    #[arg(long, default_value_t = 5)]
+    manifest_verification_retry_count: u32,
+
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as uncomputed. A computed handle resets it.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
@@ -228,6 +240,9 @@ async fn main() -> anyhow::Result<()> {
             discovery_interval: args.manifest_discovery_interval,
             publication_retry_delay: args.manifest_publication_retry_delay,
             publication_retry_count: args.manifest_publication_retry_count,
+            verification_delay: args.manifest_verification_delay,
+            verification_retry_delay: args.manifest_verification_retry_delay,
+            verification_retry_count: args.manifest_verification_retry_count,
             incomplete_block_timeout: args.incomplete_block_timeout,
             incomplete_manifest_max_lag: args.incomplete_manifest_max_lag,
             publication_cadence_overrides:

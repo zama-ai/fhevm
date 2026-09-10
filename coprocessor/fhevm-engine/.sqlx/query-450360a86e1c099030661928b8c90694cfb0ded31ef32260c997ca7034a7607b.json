@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO block_manifest_verification_task (\n            generation,\n            local_manifest_id,\n            eligible_at,\n            next_attempt_at,\n            retry_delay_micros,\n            max_attempts\n        )\n        SELECT manifest.generation,\n            manifest.id,\n            NOW() + $2::BIGINT * INTERVAL '1 microsecond',\n            NOW() + $2::BIGINT * INTERVAL '1 microsecond',\n            $3, $4\n          FROM block_manifest manifest\n         WHERE manifest.id = $1\n        ON CONFLICT (local_manifest_id, generation) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "450360a86e1c099030661928b8c90694cfb0ded31ef32260c997ca7034a7607b"
+}

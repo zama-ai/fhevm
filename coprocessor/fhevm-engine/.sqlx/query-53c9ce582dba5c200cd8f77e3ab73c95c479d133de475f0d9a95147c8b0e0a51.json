@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO drifted_handle (\n            generation, version, coprocessor_context_id, host_chain_id,\n            block_number, block_hash, handle, status,\n            local_present, observed_present, local_keyset_id, observed_keyset_id,\n            local_gateway_key_id, local_ct64_digest, observed_ct64_digest,\n            local_ct128_digest, observed_ct128_digest, local_ct128_format,\n            observed_ct128_format, observed_commitment_digest, target_ct64_digest,\n            last_observed_task_id, reason\n        ) VALUES (\n            $1, $2, $3, $4, $5, $6, $7, 'unresolved',\n            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,\n            $22\n        )\n        ON CONFLICT (generation, version, coprocessor_context_id, host_chain_id,\n                     block_hash, handle, observed_commitment_digest)\n        DO UPDATE SET\n            status = 'unresolved',\n            reason = EXCLUDED.reason,\n            local_present = EXCLUDED.local_present,\n            observed_present = EXCLUDED.observed_present,\n            local_keyset_id = EXCLUDED.local_keyset_id,\n            observed_keyset_id = EXCLUDED.observed_keyset_id,\n            local_gateway_key_id = EXCLUDED.local_gateway_key_id,\n            local_ct64_digest = EXCLUDED.local_ct64_digest,\n            observed_ct64_digest = EXCLUDED.observed_ct64_digest,\n            local_ct128_digest = EXCLUDED.local_ct128_digest,\n            observed_ct128_digest = EXCLUDED.observed_ct128_digest,\n            local_ct128_format = EXCLUDED.local_ct128_format,\n            observed_ct128_format = EXCLUDED.observed_ct128_format,\n            target_ct64_digest = COALESCE(drifted_handle.target_ct64_digest, EXCLUDED.target_ct64_digest),\n            last_observed_task_id = EXCLUDED.last_observed_task_id,\n            resolved_task_id = NULL\n        WHERE drifted_handle.last_observed_task_id <= EXCLUDED.last_observed_task_id\n          AND drifted_handle.detection_kind <> 'inferred'\n          AND NOT drifted_handle.can_be_healed\n          AND drifted_handle.healed_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bool",
+        "Bool",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53c9ce582dba5c200cd8f77e3ab73c95c479d133de475f0d9a95147c8b0e0a51"
+}

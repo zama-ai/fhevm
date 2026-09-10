@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT generation,\n               COUNT(*)::BIGINT AS \"unresolved_drift!\"\n          FROM drifted_handle\n         WHERE status = 'unresolved' AND healed_at IS NULL\n         GROUP BY generation\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "generation",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "unresolved_drift!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "316a6b08432673a1673cd0b75d603e814d1408fcc6440311adb3af65943215c3"
+}
