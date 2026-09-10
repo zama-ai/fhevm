@@ -6,9 +6,12 @@
 
 use std::collections::HashSet;
 
-use alloy_primitives::{Address, FixedBytes, Log};
+use crate::database::computation::{Computation, Operand};
+use alloy_primitives::FixedBytes;
+use fhevm_engine_common::types::SupportedFheOperations as O;
 use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
+use Operand::{Clear as P, Encrypted as H};
 
 use zama_host::records::{
     FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
@@ -17,13 +20,10 @@ use zama_host::records::{
 use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
-use crate::contracts::TfheContract;
-use crate::contracts::TfheContract::TfheContractEvents;
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::ingest::populate_operand_boundary_masks;
 use crate::database::tfhe_event_propagate::{
-    uniform_allowed_outputs, ClearConst, Database, Handle, LogTfhe,
-    Transaction, TransactionHash,
+    Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,12 +42,6 @@ pub enum SolanaHostRecord {
     FheSum(FheSum),
     FheIsIn(FheIsIn),
     FheMulDiv(FheMulDiv),
-    MaterialRequest(SolanaMaterialRequest),
-}
-
-#[derive(Clone, Debug)]
-pub enum SolanaMappedRecord {
-    Tfhe(Log<TfheContractEvents>),
     MaterialRequest(SolanaMaterialRequest),
 }
 
@@ -88,41 +82,6 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
     requests.retain(|request| seen.insert(request.handle));
 }
 
-pub fn map_solana_record(record: SolanaHostRecord) -> SolanaMappedRecord {
-    match record {
-        SolanaHostRecord::FheBinaryOp(record) => {
-            SolanaMappedRecord::Tfhe(to_tfhe_event(record))
-        }
-        SolanaHostRecord::FheTernaryOp(record) => {
-            SolanaMappedRecord::Tfhe(to_tfhe_ternary_event(record))
-        }
-        SolanaHostRecord::TrivialEncrypt(record) => {
-            SolanaMappedRecord::Tfhe(to_trivial_encrypt_event(record))
-        }
-        SolanaHostRecord::FheRand(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_rand_event(record))
-        }
-        SolanaHostRecord::FheRandBounded(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_rand_bounded_event(record))
-        }
-        SolanaHostRecord::FheUnaryOp(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_unary_event(record))
-        }
-        SolanaHostRecord::FheSum(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_sum_event(record))
-        }
-        SolanaHostRecord::FheIsIn(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_is_in_event(record))
-        }
-        SolanaHostRecord::FheMulDiv(record) => {
-            SolanaMappedRecord::Tfhe(to_fhe_mul_div_event(record))
-        }
-        SolanaHostRecord::MaterialRequest(request) => {
-            SolanaMappedRecord::MaterialRequest(request)
-        }
-    }
-}
-
 // Solana computations and ciphertext-material preparation are scheduled as
 // soon as their instruction confirms. The KMS independently validates the live
 // EncryptedState PDA and any MMR proof before releasing plaintext, so this eager
@@ -132,28 +91,59 @@ pub fn normalize_solana_records_for_db(
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
 ) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
-    let records = records.into_iter().collect::<Vec<_>>();
-
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
-
     for (index, record) in records.into_iter().enumerate() {
-        match map_solana_record(record) {
-            SolanaMappedRecord::Tfhe(event) => {
-                // Eager: schedulable the moment the compute itself confirms,
-                // independent of any allow/ACL signal. See module note above.
-                tfhe_logs.push(to_log_tfhe(
-                    event,
-                    transaction_id,
-                    block,
-                    true,
-                    index as u64,
-                ));
+        let computation = match record {
+            SolanaHostRecord::FheBinaryOp(record) => binary_computation(record),
+            SolanaHostRecord::FheTernaryOp(record) => {
+                ternary_computation(record)
             }
-            SolanaMappedRecord::MaterialRequest(request) => {
+            SolanaHostRecord::TrivialEncrypt(record) => {
+                trivial_computation(record)
+            }
+            SolanaHostRecord::FheRand(record) => random_computation(record),
+            SolanaHostRecord::FheRandBounded(record) => {
+                bounded_random_computation(record)
+            }
+            SolanaHostRecord::FheUnaryOp(record) => unary_computation(record),
+            SolanaHostRecord::FheSum(record) => Computation::single(
+                O::FheSum,
+                record
+                    .operands
+                    .into_iter()
+                    .map(Operand::encrypted)
+                    .collect(),
+                record.result.into(),
+            ),
+            SolanaHostRecord::FheIsIn(record) => Computation::single(
+                O::FheIsIn,
+                std::iter::once(record.value)
+                    .chain(record.set)
+                    .map(Operand::encrypted)
+                    .collect(),
+                record.result.into(),
+            ),
+            SolanaHostRecord::FheMulDiv(record) => Computation::single(
+                O::FheMulDiv,
+                vec![
+                    H(record.factor1.into()),
+                    Operand::binary_rhs(record.factor2.into(), record.scalar),
+                    P(record.divisor.to_vec()),
+                ],
+                record.result.into(),
+            ),
+            SolanaHostRecord::MaterialRequest(request) => {
                 material_requests.push(request);
+                continue;
             }
-        }
+        };
+        tfhe_logs.push(to_log_tfhe(
+            computation,
+            transaction_id,
+            block,
+            index as u64,
+        ));
     }
 
     dedup_material_requests(&mut material_requests);
@@ -184,10 +174,9 @@ pub async fn insert_solana_records(
 
     let mut inserted_compute = false;
     for log in &tfhe_logs {
-        if db.insert_tfhe_event(tx, log).await? {
-            inserted_rows += 1;
-            inserted_compute = true;
-        }
+        let inserted = db.insert_tfhe_event(tx, log).await?;
+        inserted_rows += inserted;
+        inserted_compute |= inserted > 0;
     }
     for request in &material_requests {
         let handles = vec![request.handle.to_vec()];
@@ -236,15 +225,14 @@ fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
 }
 
 pub fn to_log_tfhe(
-    event: Log<TfheContractEvents>,
+    computation: Computation,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
-    is_allowed: bool,
     log_index: u64,
 ) -> LogTfhe {
     LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
-        event,
+        allowed_outputs: computation.outputs.iter().copied().collect(),
+        computation,
         transaction_hash: Some(transaction_id),
         block_number: block.block_number,
         block_hash: FixedBytes::<32>::from(block.block_hash),
@@ -263,348 +251,94 @@ pub fn to_log_tfhe(
     }
 }
 
-/// Converts decoded Solana host op records into the existing TFHE event model.
-///
-/// The current coprocessor worker consumes the database rows produced from
-/// `TfheContractEvents`. Keeping this adapter at the typed-event boundary lets
-/// the Solana listener use native Solana decoding while reusing the existing
-/// computation scheduler and worker unchanged.
-pub fn to_tfhe_event(event: FheBinaryOp) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    let scalar_byte = FixedBytes::<1>::from([u8::from(event.scalar)]);
-    let data = match event.op {
-        FheBinaryOpCode::Add => {
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Sub => {
-            TfheContractEvents::FheSub(TfheContract::FheSub {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Mul => {
-            TfheContractEvents::FheMul(TfheContract::FheMul {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Div => {
-            TfheContractEvents::FheDiv(TfheContract::FheDiv {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Rem => {
-            TfheContractEvents::FheRem(TfheContract::FheRem {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::And => {
-            TfheContractEvents::FheBitAnd(TfheContract::FheBitAnd {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Or => {
-            TfheContractEvents::FheBitOr(TfheContract::FheBitOr {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Xor => {
-            TfheContractEvents::FheBitXor(TfheContract::FheBitXor {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Shl => {
-            TfheContractEvents::FheShl(TfheContract::FheShl {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Shr => {
-            TfheContractEvents::FheShr(TfheContract::FheShr {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Rotl => {
-            TfheContractEvents::FheRotl(TfheContract::FheRotl {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Rotr => {
-            TfheContractEvents::FheRotr(TfheContract::FheRotr {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Eq => TfheContractEvents::FheEq(TfheContract::FheEq {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Ne => TfheContractEvents::FheNe(TfheContract::FheNe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Ge => TfheContractEvents::FheGe(TfheContract::FheGe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Gt => TfheContractEvents::FheGt(TfheContract::FheGt {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Le => TfheContractEvents::FheLe(TfheContract::FheLe {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Lt => TfheContractEvents::FheLt(TfheContract::FheLt {
-            caller,
-            lhs: Handle::from(event.lhs),
-            rhs: Handle::from(event.rhs),
-            scalarByte: scalar_byte,
-            result: Handle::from(event.result),
-        }),
-        FheBinaryOpCode::Min => {
-            TfheContractEvents::FheMin(TfheContract::FheMin {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
-        }
-        FheBinaryOpCode::Max => {
-            TfheContractEvents::FheMax(TfheContract::FheMax {
-                caller,
-                lhs: Handle::from(event.lhs),
-                rhs: Handle::from(event.rhs),
-                scalarByte: scalar_byte,
-                result: Handle::from(event.result),
-            })
+fn binary_computation(event: FheBinaryOp) -> Computation {
+    let operation = match event.op {
+        FheBinaryOpCode::Add => O::FheAdd,
+        FheBinaryOpCode::Sub => O::FheSub,
+        FheBinaryOpCode::Mul => O::FheMul,
+        FheBinaryOpCode::Div => O::FheDiv,
+        FheBinaryOpCode::Rem => O::FheRem,
+        FheBinaryOpCode::And => O::FheBitAnd,
+        FheBinaryOpCode::Or => O::FheBitOr,
+        FheBinaryOpCode::Xor => O::FheBitXor,
+        FheBinaryOpCode::Shl => O::FheShl,
+        FheBinaryOpCode::Shr => O::FheShr,
+        FheBinaryOpCode::Rotl => O::FheRotl,
+        FheBinaryOpCode::Rotr => O::FheRotr,
+        FheBinaryOpCode::Eq => O::FheEq,
+        FheBinaryOpCode::Ne => O::FheNe,
+        FheBinaryOpCode::Ge => O::FheGe,
+        FheBinaryOpCode::Gt => O::FheGt,
+        FheBinaryOpCode::Le => O::FheLe,
+        FheBinaryOpCode::Lt => O::FheLt,
+        FheBinaryOpCode::Min => O::FheMin,
+        FheBinaryOpCode::Max => O::FheMax,
+    };
+    Computation::single(
+        operation,
+        vec![
+            H(event.lhs.into()),
+            Operand::binary_rhs(event.rhs.into(), event.scalar),
+        ],
+        event.result.into(),
+    )
+}
+
+fn ternary_computation(event: FheTernaryOp) -> Computation {
+    let operation = match event.op {
+        FheTernaryOpCode::IfThenElse => O::FheIfThenElse,
+    };
+    Computation::single(
+        operation,
+        vec![
+            H(event.control.into()),
+            H(event.if_true.into()),
+            H(event.if_false.into()),
+        ],
+        event.result.into(),
+    )
+}
+
+fn trivial_computation(event: TrivialEncrypt) -> Computation {
+    Computation::trivial(event.plaintext, event.fhe_type, event.result.into())
+}
+
+fn random_computation(event: FheRand) -> Computation {
+    Computation::single(
+        O::FheRand,
+        vec![P(event.seed.to_vec()), P(vec![event.fhe_type])],
+        event.result.into(),
+    )
+}
+
+fn bounded_random_computation(event: FheRandBounded) -> Computation {
+    Computation::single(
+        O::FheRandBounded,
+        vec![
+            P(event.seed.to_vec()),
+            P(event.upper_bound.to_vec()),
+            P(vec![event.fhe_type]),
+        ],
+        event.result.into(),
+    )
+}
+
+fn unary_computation(event: FheUnaryOp) -> Computation {
+    let mut operands = vec![H(event.operand.into())];
+    let operation = match event.op {
+        FheUnaryOpCode::Neg => O::FheNeg,
+        FheUnaryOpCode::Not => O::FheNot,
+        FheUnaryOpCode::Cast => {
+            operands.push(P(vec![event.result[30]]));
+            O::FheCast
         }
     };
-
-    Log {
-        address: caller,
-        data,
-    }
-}
-
-pub fn to_tfhe_ternary_event(event: FheTernaryOp) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    let data = match event.op {
-        FheTernaryOpCode::IfThenElse => {
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
-                caller,
-                control: Handle::from(event.control),
-                ifTrue: Handle::from(event.if_true),
-                ifFalse: Handle::from(event.if_false),
-                result: Handle::from(event.result),
-            })
-        }
-    };
-
-    Log {
-        address: caller,
-        data,
-    }
-}
-
-pub fn to_trivial_encrypt_event(
-    event: TrivialEncrypt,
-) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
-                caller,
-                pt: ClearConst::from_be_slice(&event.plaintext),
-                toType: event.fhe_type,
-                result: Handle::from(event.result),
-            },
-        ),
-    }
-}
-
-pub fn to_fhe_rand_event(event: FheRand) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::FheRand(TfheContract::FheRand {
-            caller,
-            randType: event.fhe_type,
-            seed: FixedBytes::<16>::from(event.seed),
-            result: Handle::from(event.result),
-        }),
-    }
-}
-
-pub fn to_fhe_rand_bounded_event(
-    event: FheRandBounded,
-) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::FheRandBounded(
-            TfheContract::FheRandBounded {
-                caller,
-                upperBound: ClearConst::from_be_slice(&event.upper_bound),
-                randType: event.fhe_type,
-                seed: FixedBytes::<16>::from(event.seed),
-                result: Handle::from(event.result),
-            },
-        ),
-    }
-}
-
-pub fn to_fhe_unary_event(event: FheUnaryOp) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    let ct = Handle::from(event.operand);
-    let result = Handle::from(event.result);
-    let data = match event.op {
-        FheUnaryOpCode::Neg => {
-            TfheContractEvents::FheNeg(TfheContract::FheNeg {
-                caller,
-                ct,
-                result,
-            })
-        }
-        FheUnaryOpCode::Not => {
-            TfheContractEvents::FheNot(TfheContract::FheNot {
-                caller,
-                ct,
-                result,
-            })
-        }
-        FheUnaryOpCode::Cast => TfheContractEvents::Cast(TfheContract::Cast {
-            caller,
-            ct,
-            toType: event.result[30],
-            result,
-        }),
-    };
-    Log {
-        address: caller,
-        data,
-    }
-}
-
-pub fn to_fhe_sum_event(event: FheSum) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::FheSum(TfheContract::FheSum {
-            caller,
-            values: event.operands.into_iter().map(Handle::from).collect(),
-            result: Handle::from(event.result),
-        }),
-    }
-}
-
-pub fn to_fhe_is_in_event(event: FheIsIn) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::FheIsIn(TfheContract::FheIsIn {
-            caller,
-            value: Handle::from(event.value),
-            values: event.set.into_iter().map(Handle::from).collect(),
-            result: Handle::from(event.result),
-        }),
-    }
-}
-
-pub fn to_fhe_mul_div_event(event: FheMulDiv) -> Log<TfheContractEvents> {
-    // Not persisted: the DB layer discards `caller` on every chain (INVARIANTS #49).
-    let caller = Address::ZERO;
-    Log {
-        address: caller,
-        data: TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
-            caller,
-            factor1: Handle::from(event.factor1),
-            factor2: Handle::from(event.factor2),
-            divisor: FixedBytes::<32>::from(event.divisor),
-            // fheMulDiv scalarByte bitmask (EVM parity): bit0 divisor (always) | bit1 factor2-scalar → 0x01 enc, 0x03 scalar.
-            scalarByte: FixedBytes::<1>::from([
-                0x01 | (u8::from(event.scalar) << 1)
-            ]),
-            result: Handle::from(event.result),
-        }),
-    }
+    Computation::single(operation, operands, event.result.into())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::tfhe_event_propagate::tfhe_inputs_handle;
     use time::{Date, Month, PrimitiveDateTime, Time};
     use zama_host::EVENT_VERSION;
 
@@ -613,8 +347,8 @@ mod tests {
     }
 
     #[test]
-    fn maps_binary_add_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOp {
+    fn maps_binary_add_to_computation() {
+        let mapped = binary_computation(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Add,
             lhs: [1; 32],
@@ -623,24 +357,19 @@ mod tests {
             result: [3; 32],
         });
 
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::FheAdd(TfheContract::FheAdd {
-                lhs,
-                rhs,
-                scalarByte,
-                result,
-                ..
-            }) if lhs == handle(1)
-                && rhs == handle(2)
-                && scalarByte == FixedBytes::<1>::from([0])
-                && result == handle(3)
-        ));
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheAdd,
+                vec![H(handle(1)), H(handle(2))],
+                handle(3)
+            )
+        );
     }
 
     #[test]
-    fn maps_binary_ge_to_existing_tfhe_event() {
-        let mapped = to_tfhe_event(FheBinaryOp {
+    fn maps_binary_ge_to_computation() {
+        let mapped = binary_computation(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Ge,
             lhs: [1; 32],
@@ -649,24 +378,19 @@ mod tests {
             result: [3; 32],
         });
 
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::FheGe(TfheContract::FheGe {
-                lhs,
-                rhs,
-                scalarByte,
-                result,
-                ..
-            }) if lhs == handle(1)
-                && rhs == handle(2)
-                && scalarByte == FixedBytes::<1>::from([0])
-                && result == handle(3)
-        ));
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheGe,
+                vec![H(handle(1)), H(handle(2))],
+                handle(3)
+            )
+        );
     }
 
     #[test]
-    fn maps_ternary_if_then_else_to_existing_tfhe_event() {
-        let mapped = to_tfhe_ternary_event(FheTernaryOp {
+    fn maps_ternary_if_then_else_to_computation() {
+        let mapped = ternary_computation(FheTernaryOp {
             version: EVENT_VERSION,
             op: FheTernaryOpCode::IfThenElse,
             control: [1; 32],
@@ -675,66 +399,256 @@ mod tests {
             result: [4; 32],
         });
 
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
-                control,
-                ifTrue,
-                ifFalse,
-                result,
-                ..
-            }) if control == handle(1)
-                && ifTrue == handle(2)
-                && ifFalse == handle(3)
-                && result == handle(4)
-        ));
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheIfThenElse,
+                vec![H(handle(1)), H(handle(2)), H(handle(3))],
+                handle(4)
+            )
+        );
     }
 
     #[test]
-    fn maps_trivial_encrypt_to_existing_tfhe_event() {
+    fn maps_trivial_encrypt_to_computation() {
         let mut plaintext = [0_u8; 32];
         plaintext[31] = 7;
 
-        let mapped = to_trivial_encrypt_event(TrivialEncrypt {
+        let mapped = trivial_computation(TrivialEncrypt {
             version: EVENT_VERSION,
             plaintext,
             fhe_type: 5,
             result: [8; 32],
         });
 
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
-                pt,
-                toType,
-                result,
-                ..
-            }) if pt == ClearConst::from(7_u64)
-                && toType == 5
-                && result == handle(8)
-        ));
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheTrivialEncrypt,
+                vec![P(plaintext.to_vec()), P(vec![5])],
+                handle(8)
+            )
+        );
     }
 
     #[test]
-    fn maps_random_to_existing_tfhe_event() {
-        let mapped = to_fhe_rand_event(FheRand {
+    fn maps_random_to_computation() {
+        let mapped = random_computation(FheRand {
             version: EVENT_VERSION,
             seed: [7; 16],
             fhe_type: 5,
             result: [8; 32],
         });
 
-        assert!(matches!(
-            mapped.data,
-            TfheContractEvents::FheRand(TfheContract::FheRand {
-                randType,
-                seed,
-                result,
-                ..
-            }) if randType == 5
-                && seed == FixedBytes::<16>::from([7; 16])
-                && result == handle(8)
-        ));
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheRand,
+                vec![P(vec![7; 16]), P(vec![5])],
+                handle(8)
+            )
+        );
+    }
+
+    #[test]
+    fn binary_decoders_agree_on_operation_operand_order_and_scalar_encoding() {
+        use crate::contracts::{
+            TfheContract as C, TfheContract::TfheContractEvents as E,
+        };
+        let caller = alloy_primitives::Address::ZERO;
+        let lhs = handle(1);
+        let rhs = handle(2);
+        let result = handle(3);
+        for scalar in [false, true] {
+            let scalar_byte = FixedBytes::from([u8::from(scalar)]);
+            macro_rules! case {
+                ($op:ident, $event:ident) => {
+                    (
+                        FheBinaryOpCode::$op,
+                        O::$event,
+                        E::$event(C::$event {
+                            caller,
+                            lhs,
+                            rhs,
+                            scalarByte: scalar_byte,
+                            result,
+                        }),
+                    )
+                };
+            }
+            let cases = [
+                case!(Add, FheAdd),
+                case!(Sub, FheSub),
+                case!(Mul, FheMul),
+                case!(Div, FheDiv),
+                case!(Rem, FheRem),
+                case!(And, FheBitAnd),
+                case!(Or, FheBitOr),
+                case!(Xor, FheBitXor),
+                case!(Shl, FheShl),
+                case!(Shr, FheShr),
+                case!(Rotl, FheRotl),
+                case!(Rotr, FheRotr),
+                case!(Eq, FheEq),
+                case!(Ne, FheNe),
+                case!(Ge, FheGe),
+                case!(Gt, FheGt),
+                case!(Le, FheLe),
+                case!(Lt, FheLt),
+                case!(Min, FheMin),
+                case!(Max, FheMax),
+            ];
+            for (op, operation, evm) in cases {
+                let solana = binary_computation(FheBinaryOp {
+                    version: EVENT_VERSION,
+                    op,
+                    lhs: lhs.0,
+                    rhs: rhs.0,
+                    scalar,
+                    result: result.0,
+                });
+                assert_eq!(solana, Computation::from_evm(&evm).unwrap());
+                assert_eq!(solana.operation, operation);
+                assert_eq!(
+                    solana
+                        .operands
+                        .iter()
+                        .map(Operand::bytes)
+                        .collect::<Vec<_>>(),
+                    vec![lhs.to_vec(), rhs.to_vec()]
+                );
+                assert_eq!(solana.is_scalar(), scalar);
+                assert_eq!(
+                    solana.inputs(),
+                    if scalar { vec![lhs] } else { vec![lhs, rhs] }
+                );
+                assert_eq!(
+                    solana.boundary_mask(|_| false).unwrap()[31],
+                    if scalar { 1 } else { 3 }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_special_operations_preserve_worker_operands() {
+        let result = [8; 32];
+        let version = EVENT_VERSION;
+        let cases = [
+            (
+                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
+                    version,
+                    op: FheUnaryOpCode::Neg,
+                    operand: [1; 32],
+                    result,
+                }),
+                O::FheNeg,
+                vec![H(handle(1))],
+                false,
+            ),
+            (
+                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
+                    version,
+                    op: FheUnaryOpCode::Not,
+                    operand: [1; 32],
+                    result,
+                }),
+                O::FheNot,
+                vec![H(handle(1))],
+                false,
+            ),
+            (
+                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
+                    version,
+                    op: FheUnaryOpCode::Cast,
+                    operand: [1; 32],
+                    result,
+                }),
+                O::FheCast,
+                vec![H(handle(1)), P(vec![8])],
+                true,
+            ),
+            (
+                SolanaHostRecord::FheRandBounded(FheRandBounded {
+                    version,
+                    seed: [1; 16],
+                    upper_bound: [2; 32],
+                    fhe_type: 5,
+                    result,
+                }),
+                O::FheRandBounded,
+                vec![P(vec![1; 16]), P(vec![2; 32]), P(vec![5])],
+                true,
+            ),
+            (
+                SolanaHostRecord::FheSum(FheSum {
+                    version,
+                    fhe_type: 5,
+                    operands: vec![[1; 32], [2; 32]],
+                    result,
+                }),
+                O::FheSum,
+                vec![H(handle(1)), H(handle(2))],
+                false,
+            ),
+            (
+                SolanaHostRecord::FheIsIn(FheIsIn {
+                    version,
+                    fhe_type: 5,
+                    value: [1; 32],
+                    set: vec![[2; 32], [3; 32]],
+                    result,
+                }),
+                O::FheIsIn,
+                vec![H(handle(1)), H(handle(2)), H(handle(3))],
+                false,
+            ),
+            (
+                SolanaHostRecord::FheMulDiv(FheMulDiv {
+                    version,
+                    factor1: [1; 32],
+                    factor2: [2; 32],
+                    divisor: [3; 32],
+                    scalar: false,
+                    result,
+                }),
+                O::FheMulDiv,
+                vec![H(handle(1)), H(handle(2)), P(vec![3; 32])],
+                false,
+            ),
+            (
+                SolanaHostRecord::FheMulDiv(FheMulDiv {
+                    version,
+                    factor1: [1; 32],
+                    factor2: [2; 32],
+                    divisor: [3; 32],
+                    scalar: true,
+                    result,
+                }),
+                O::FheMulDiv,
+                vec![H(handle(1)), P(vec![2; 32]), P(vec![3; 32])],
+                true,
+            ),
+        ];
+        for (record, operation, operands, scalar) in cases {
+            let (logs, requests) = normalize_solana_records_for_db(
+                [record],
+                Handle::ZERO,
+                SolanaBlockMeta {
+                    block_number: 1,
+                    block_timestamp: PrimitiveDateTime::MIN,
+                    block_hash: [1; 32],
+                    parent_hash: [0; 32],
+                },
+            );
+            assert!(requests.is_empty());
+            assert_eq!(logs.len(), 1);
+            assert_eq!(
+                logs[0].computation,
+                Computation::single(operation, operands, result.into())
+            );
+            assert_eq!(logs[0].computation.is_scalar(), scalar);
+        }
     }
 
     #[test]
@@ -777,7 +691,7 @@ mod tests {
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
-        let event = to_tfhe_event(FheBinaryOp {
+        let event = binary_computation(FheBinaryOp {
             version: EVENT_VERSION,
             op: FheBinaryOpCode::Sub,
             lhs: [1; 32],
@@ -795,7 +709,6 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-            true,
             7,
         );
 
@@ -980,22 +893,13 @@ mod tests {
             !tfhe_logs[2].allowed_outputs.is_empty(),
             "eager compute: always schedulable"
         );
-        assert!(matches!(
-            tfhe_logs[0].event.data,
-            TfheContractEvents::TrivialEncrypt(_)
-        ));
-        assert!(matches!(
-            tfhe_logs[1].event.data,
-            TfheContractEvents::FheRand(_)
-        ));
-        assert!(matches!(
-            tfhe_logs[2].event.data,
-            TfheContractEvents::FheIfThenElse(_)
-        ));
-        assert!(tfhe_inputs_handle(&tfhe_logs[0].event.data).is_empty());
-        assert!(tfhe_inputs_handle(&tfhe_logs[1].event.data).is_empty());
+        assert_eq!(tfhe_logs[0].computation.operation, O::FheTrivialEncrypt);
+        assert_eq!(tfhe_logs[1].computation.operation, O::FheRand);
+        assert_eq!(tfhe_logs[2].computation.operation, O::FheIfThenElse);
+        assert!(tfhe_logs[0].computation.inputs().is_empty());
+        assert!(tfhe_logs[1].computation.inputs().is_empty());
         assert_eq!(
-            tfhe_inputs_handle(&tfhe_logs[2].event.data),
+            tfhe_logs[2].computation.inputs(),
             vec![handle(1), handle(2), handle(1)]
         );
     }

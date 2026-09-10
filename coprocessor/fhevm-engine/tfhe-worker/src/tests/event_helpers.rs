@@ -3,9 +3,9 @@ use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::AllowEvents;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::computation::Computation;
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
-    Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 
@@ -132,14 +132,17 @@ pub async fn insert_event(
     .await?
     .into_iter()
     .collect::<std::collections::HashSet<_>>();
-    let operand_boundary_mask = operand_boundary_mask_from_minted(&log.inner.data, |handle| {
-        previously_minted.contains(handle.as_slice())
-    })
-    .map_err(sqlx::Error::Protocol)?;
-    let inner = log.inner;
+    let computation = Computation::from_evm(&log.inner.data).expect("computation fixture");
+    let operand_boundary_mask = computation
+        .boundary_mask(|handle| previously_minted.contains(handle.as_slice()))
+        .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&inner, is_allowed),
-        event: inner,
+        allowed_outputs: if is_allowed {
+            computation.outputs.iter().copied().collect()
+        } else {
+            Default::default()
+        },
+        computation,
         transaction_hash: Some(tx_id),
         block_number: 0,
         block_hash: Handle::ZERO,

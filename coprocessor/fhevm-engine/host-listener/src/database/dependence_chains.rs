@@ -4,9 +4,7 @@ use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, info, warn};
 use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 
-use crate::database::tfhe_event_propagate::{
-    tfhe_inputs_handle, tfhe_result_handles, ChainHash,
-};
+use crate::database::tfhe_event_propagate::ChainHash;
 use crate::database::tfhe_event_propagate::{
     Chain, ChainCache, ConsumedBoundaryGuard, Handle, LogTfhe, OrderedChains,
     SealedChainGuard, TransactionHash,
@@ -80,10 +78,10 @@ fn scan_transactions(
             }
             Entry::Occupied(e) => e.into_mut(),
         };
-        let outputs = tfhe_result_handles(&log.event);
-        // Count computation rows (multi-output op -> N rows); .max(1) for non-FHE events.
-        tx.size += outputs.len().max(1) as u64;
-        let log_inputs = tfhe_inputs_handle(&log.event);
+        let outputs = log.computation.outputs.clone();
+        // Count each output row, including grouped multi-output computations.
+        tx.size += outputs.len() as u64;
+        let log_inputs = log.computation.inputs();
         for input in log_inputs {
             if tx.output_handle.contains(&input) {
                 // self dependency, ignore, assuming logs are ordered in tx
@@ -549,28 +547,20 @@ pub async fn dependence_chains(
 
 #[cfg(test)]
 mod tests {
+    use crate::database::computation::Computation;
     use alloy::primitives::FixedBytes;
     use alloy_primitives::Address;
 
     use crate::contracts::TfheContract as C;
     use crate::contracts::TfheContract::TfheContractEvents as E;
     use crate::database::dependence_chains::dependence_chains;
-    use crate::database::tfhe_event_propagate::{
-        uniform_allowed_outputs, Chain, ChainCache, LogTfhe,
-    };
+    use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
     use crate::database::tfhe_event_propagate::{
         ClearConst, Handle, TransactionHash,
     };
 
     fn caller() -> Address {
         Address::from_slice(&[0x11u8; 20])
-    }
-
-    fn tfhe_event(data: E) -> alloy::primitives::Log<E> {
-        let address = "0x0000000000000000000000000000000000000000"
-            .parse()
-            .unwrap();
-        alloy::primitives::Log::<E> { address, data }
     }
 
     fn push_event(
@@ -581,10 +571,15 @@ mod tests {
     ) {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
-        let event = tfhe_event(e);
+        let computation =
+            Computation::from_evm(&e).expect("computation fixture");
         logs.push(LogTfhe {
-            allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
-            event,
+            allowed_outputs: if is_allowed {
+                computation.outputs.iter().copied().collect()
+            } else {
+                Default::default()
+            },
+            computation,
             block_number: 0,
             block_hash: TransactionHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
@@ -597,6 +592,35 @@ mod tests {
             operand_boundary_mask: None,
             is_executor_minted: true,
         })
+    }
+
+    #[test]
+    fn computation_groups_count_each_output_and_keep_only_allowed_members() {
+        let mut logs = Vec::new();
+        let first = Handle::repeat_byte(1);
+        let second = Handle::repeat_byte(2);
+        let input = Handle::repeat_byte(3);
+        let transaction = Handle::repeat_byte(4);
+        push_event(
+            E::FheNeg(C::FheNeg {
+                caller: caller(),
+                ct: input,
+                result: first,
+            }),
+            &mut logs,
+            false,
+            transaction,
+        );
+        logs[0].computation.outputs.push(second);
+        logs[0].allowed_outputs.insert(second);
+        let (order, txs) = super::scan_transactions(&logs);
+        assert_eq!(order, vec![transaction]);
+        let tx = &txs[&transaction];
+        assert_eq!(tx.size, 2);
+        assert_eq!(tx.input_handle, vec![input]);
+        assert_eq!(tx.output_handle, vec![first, second]);
+        assert_eq!(tx.allowed_handle, vec![second]);
+        assert_eq!(tx.output_group, vec![(second, first)]);
     }
 
     fn new_handle() -> Handle {
@@ -808,7 +832,7 @@ mod tests {
     /// concern, so the duplication lives here rather than on the type.
     fn copy_log(log: &LogTfhe) -> LogTfhe {
         LogTfhe {
-            event: log.event.clone(),
+            computation: log.computation.clone(),
             transaction_hash: log.transaction_hash,
             allowed_outputs: log.allowed_outputs.clone(),
             block_number: log.block_number,

@@ -5,9 +5,9 @@ use fhevm_engine_common::crs::CrsCache;
 use fhevm_engine_common::db_keys::DbKeyCache;
 use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION};
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use host_listener::database::computation::{Computation, OperandBoundaryMask};
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
-    Database as ListenerDatabase, Handle, LogTfhe, OperandBoundaryMask, TransactionHash,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -27,7 +27,7 @@ pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
 async fn fixture_operand_boundary_mask(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     transaction_hash: TransactionHash,
-    event: &TfheContractEvents,
+    computation: &Computation,
 ) -> Result<OperandBoundaryMask, sqlx::Error> {
     let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
         "SELECT output_handle FROM computations WHERE transaction_id = $1",
@@ -37,10 +37,9 @@ async fn fixture_operand_boundary_mask(
     .await?
     .into_iter()
     .collect::<std::collections::HashSet<_>>();
-    operand_boundary_mask_from_minted(event, |handle| {
-        previously_minted.contains(handle.as_slice())
-    })
-    .map_err(sqlx::Error::Protocol)
+    computation
+        .boundary_mask(|handle| previously_minted.contains(handle.as_slice()))
+        .map_err(sqlx::Error::Protocol)
 }
 
 pub const DEF_TYPE: FheType = FheType::FheUint64;
@@ -277,11 +276,16 @@ pub async fn generate_trivial_encrypt(
             result: handle,
         },
     ));
+    let computation = Computation::from_evm(&trivial_event.data).expect("computation fixture");
     let operand_boundary_mask =
-        fixture_operand_boundary_mask(tx, transaction_hash, &trivial_event.data).await?;
+        fixture_operand_boundary_mask(tx, transaction_hash, &computation).await?;
     let log = LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&trivial_event, is_allowed),
-        event: trivial_event,
+        allowed_outputs: if is_allowed {
+            computation.outputs.iter().copied().collect()
+        } else {
+            Default::default()
+        },
+        computation,
         transaction_hash: Some(transaction_hash),
         block_number: 1,
         block_hash: Handle::ZERO,
@@ -448,11 +452,16 @@ pub async fn insert_tfhe_event(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
 
+    let computation = Computation::from_evm(&event.data).expect("computation fixture");
     let operand_boundary_mask =
-        fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
+        fixture_operand_boundary_mask(tx, transaction_hash, &computation).await?;
     let log = LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&event, is_allowed),
-        event,
+        allowed_outputs: if is_allowed {
+            computation.outputs.iter().copied().collect()
+        } else {
+            Default::default()
+        },
+        computation,
         transaction_hash: Some(transaction_hash),
         block_number: 1,
         block_hash: Handle::ZERO,

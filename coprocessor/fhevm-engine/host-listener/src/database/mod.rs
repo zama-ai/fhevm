@@ -1,3 +1,4 @@
+pub mod computation;
 pub mod dependence_chains;
 pub mod ingest;
 #[cfg(feature = "solana-reconstruct")]
