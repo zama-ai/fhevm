@@ -2,7 +2,7 @@ import { Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import { getRequiredAddressEnvVar, getRequiredEnvVar, loadGatewayAddresses } from '../utils';
+import { getRequiredAddressEnvVar, getRequiredCountEnvVar, getRequiredEnvVar, loadGatewayAddresses } from '../utils';
 import { setPaymentBridgingContractAddresses } from './paymentBridging/setAddresses';
 import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from './utils';
 
@@ -77,7 +77,7 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
   const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
   // Parse the KMS nodes
-  const numKmsNodes = parseInt(getRequiredEnvVar('NUM_KMS_NODES'));
+  const numKmsNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
   const kmsNodes = [];
   for (let idx = 0; idx < numKmsNodes; idx++) {
     kmsNodes.push({
@@ -89,7 +89,7 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
   }
 
   // Parse the coprocessors
-  const numCoprocessors = parseInt(getRequiredEnvVar('NUM_COPROCESSORS'));
+  const numCoprocessors = getRequiredCountEnvVar('NUM_COPROCESSORS');
   const coprocessors = [];
   for (let idx = 0; idx < numCoprocessors; idx++) {
     coprocessors.push({
@@ -100,7 +100,7 @@ task('task:deployGatewayConfig').setAction(async function (_, hre) {
   }
 
   // Parse the custodians
-  const numCustodians = parseInt(getRequiredEnvVar('NUM_CUSTODIANS'));
+  const numCustodians = getRequiredCountEnvVar('NUM_CUSTODIANS');
   const custodians = [];
   for (let idx = 0; idx < numCustodians; idx++) {
     custodians.push({

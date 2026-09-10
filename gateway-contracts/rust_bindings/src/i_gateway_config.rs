@@ -73,7 +73,7 @@ interface IGatewayConfig {
     error NotPauser(address account);
     error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
 
-    event AddHostChain(HostChain hostChain);
+    event AddHostChain(uint256 indexed chainId, HostChain hostChain);
     event DestroyKmsContext(uint256 indexed kmsContextId);
     event DisableHostChain(uint256 indexed chainId);
     event EnableHostChain(uint256 indexed chainId);
@@ -1192,6 +1192,12 @@ interface IGatewayConfig {
     "type": "event",
     "name": "AddHostChain",
     "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
       {
         "name": "hostChain",
         "type": "tuple",
@@ -6479,9 +6485,9 @@ error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, 
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `AddHostChain((uint256,address,address,string,string))` and selector `0x66769341effd268fc4e9a9c8f27bfc968507b519b0ddb9b4ad3ded5f03016837`.
+    /**Event with signature `AddHostChain(uint256,(uint256,address,address,string,string))` and selector `0x92a4935ec5f9c66d988ba576302190a8c4f74ea979c1d5130c1bfccdfb716269`.
 ```solidity
-event AddHostChain(HostChain hostChain);
+event AddHostChain(uint256 indexed chainId, HostChain hostChain);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6491,6 +6497,8 @@ event AddHostChain(HostChain hostChain);
     )]
     #[derive(Clone)]
     pub struct AddHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub hostChain: <HostChain as alloy::sol_types::SolType>::RustType,
     }
@@ -6508,12 +6516,15 @@ event AddHostChain(HostChain hostChain);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "AddHostChain((uint256,address,address,string,string))";
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "AddHostChain(uint256,(uint256,address,address,string,string))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
-                169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
-                221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
+                146u8, 164u8, 147u8, 94u8, 197u8, 249u8, 198u8, 109u8, 152u8, 139u8,
+                165u8, 118u8, 48u8, 33u8, 144u8, 168u8, 196u8, 247u8, 78u8, 169u8, 121u8,
+                193u8, 213u8, 19u8, 12u8, 27u8, 252u8, 205u8, 251u8, 113u8, 98u8, 105u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -6522,7 +6533,10 @@ event AddHostChain(HostChain hostChain);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { hostChain: data.0 }
+                Self {
+                    chainId: topics.1,
+                    hostChain: data.0,
+                }
             }
             #[inline]
             fn check_signature(
@@ -6545,7 +6559,7 @@ event AddHostChain(HostChain hostChain);
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
+                (Self::SIGNATURE_HASH.into(), self.chainId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -6558,6 +6572,9 @@ event AddHostChain(HostChain hostChain);
                 out[0usize] = alloy_sol_types::abi::token::WordToken(
                     Self::SIGNATURE_HASH,
                 );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.chainId);
                 Ok(())
             }
         }
@@ -19791,11 +19808,6 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 40u8, 51u8, 202u8, 196u8, 18u8, 74u8, 221u8, 115u8, 241u8, 76u8,
             ],
             [
-                102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
-                169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
-                221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
-            ],
-            [
                 108u8, 220u8, 26u8, 167u8, 110u8, 30u8, 186u8, 205u8, 103u8, 200u8, 27u8,
                 224u8, 220u8, 249u8, 96u8, 59u8, 93u8, 251u8, 235u8, 77u8, 216u8, 1u8,
                 171u8, 33u8, 65u8, 20u8, 172u8, 181u8, 54u8, 241u8, 16u8, 104u8,
@@ -19804,6 +19816,11 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
                 122u8, 46u8, 247u8, 220u8, 137u8, 64u8, 10u8, 138u8, 217u8, 43u8, 180u8,
                 204u8, 244u8, 77u8, 72u8, 38u8, 36u8, 180u8, 15u8, 231u8, 107u8, 102u8,
                 151u8, 126u8, 133u8, 237u8, 106u8, 97u8, 142u8, 46u8, 47u8, 199u8,
+            ],
+            [
+                146u8, 164u8, 147u8, 94u8, 197u8, 249u8, 198u8, 109u8, 152u8, 139u8,
+                165u8, 118u8, 48u8, 33u8, 144u8, 168u8, 196u8, 247u8, 78u8, 169u8, 121u8,
+                193u8, 213u8, 19u8, 12u8, 27u8, 252u8, 205u8, 251u8, 113u8, 98u8, 105u8,
             ],
             [
                 147u8, 42u8, 4u8, 89u8, 61u8, 143u8, 182u8, 14u8, 49u8, 171u8, 90u8,
@@ -19849,9 +19866,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             ::core::stringify!(DisableHostChain),
             ::core::stringify!(UpdateUserDecryptionThresholdForContext),
             ::core::stringify!(UpdateKmsGenThresholdForContext),
-            ::core::stringify!(AddHostChain),
             ::core::stringify!(UpdateCustodians),
             ::core::stringify!(UpdateCoprocessorThreshold),
+            ::core::stringify!(AddHostChain),
             ::core::stringify!(UpdatePublicDecryptionThresholdForContext),
             ::core::stringify!(RemoveHostChain),
             ::core::stringify!(UnpauseAllGatewayContracts),
@@ -19868,9 +19885,9 @@ function updateUserDecryptionThresholdForContext(uint256 contextId, uint256 newU
             <DisableHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdateUserDecryptionThresholdForContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdateKmsGenThresholdForContext as alloy_sol_types::SolEvent>::SIGNATURE,
-            <AddHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdateCustodians as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdateCoprocessorThreshold as alloy_sol_types::SolEvent>::SIGNATURE,
+            <AddHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UpdatePublicDecryptionThresholdForContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <RemoveHostChain as alloy_sol_types::SolEvent>::SIGNATURE,
             <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE,
