@@ -1,5 +1,9 @@
 # Operations on encrypted types
 
+{% hint style="info" %}
+This page lists what is available. For the exact behaviour of each operator (overflow, division by zero, shift amounts, casts, size limits, errors), see [Operator semantics](semantics.md).
+{% endhint %}
+
 This document outlines the operations supported on encrypted types in the `FHE` library, enabling arithmetic, bitwise, comparison, and more on Fully Homomorphic Encryption (FHE) ciphertexts.
 
 ## Arithmetic operations
@@ -16,6 +20,10 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Negation                     | `FHE.neg`     | `-`    | Unary  |
 | Min                          | `FHE.min`     |        | Binary |
 | Max                          | `FHE.max`     |        | Binary |
+| Multiply then divide (plaintext divisor) | `FHE.mulDiv` |  | Ternary |
+| Sum of an array              | `FHE.sum`     |        | N-ary  |
+
+`FHE.mulDiv(a, b, d)` computes `(a * b) / d` on a doubled intermediate width, so the product cannot overflow before the division. `FHE.sum(values)` adds up to 100 encrypted values of the same type (60 for `euint64` and `euint128`) in a single operation. Both are specified in [Operator semantics](semantics.md).
 
 {% hint style="info" %}
 Division (FHE.div) and remainder (FHE.rem) operations are currently supported only with plaintext divisors.
@@ -36,6 +44,10 @@ The FHE library also supports bitwise operations, including shifts and rotations
 | Rotate Right | `FHE.rotr`    |        | Binary |
 | Rotate Left  | `FHE.rotl`    |        | Binary |
 
+{% hint style="warning" %}
+The shift amount is an 8-bit value. Up to protocol v0.14 an amount greater than or equal to the operand width is reduced modulo the width; **from v0.15 the result is `0`**, as in Solidity. Rotations always reduce the amount modulo the width. See [Operator semantics](semantics.md#shift-and-rotate-amounts) and [Migrating to v0.15](../migrating-to-0.15.md).
+{% endhint %}
+
 The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
 
 ## Comparison operations
@@ -50,6 +62,9 @@ Encrypted integers can be compared using the following functions:
 | Greater than          | `FHE.gt`      |        | Binary |
 | Less than or equal    | `FHE.le`      |        | Binary |
 | Less than             | `FHE.lt`      |        | Binary |
+| Membership in a set   | `FHE.isIn`    |        | N-ary  |
+
+`FHE.isIn(value, set)` returns an `ebool` that is `true` when `value` equals one element of `set` (up to 100 elements, 60 for 64-bit and wider types), without revealing which one. It is available on every `euintX` type and on `eaddress`.
 
 ## Ternary operation
 
