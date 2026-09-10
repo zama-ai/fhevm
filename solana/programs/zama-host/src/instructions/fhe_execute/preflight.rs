@@ -1,14 +1,12 @@
-//! Whole-execution checks that run before any state mutates: every remaining account and every
-//! dictionary entry is referenced, every persistent operand's authority signed, every persistent
-//! value the default authority controls belongs to one application, and the deny record of every
-//! application the execution touches is present when the deny list is on. Returns the application
-//! identity the rest of the execution keys on and the applications to deny-check.
+//! Whole-execution checks before the walk: every remaining account and every dictionary entry is
+//! referenced, every State operand's authority signed, every State the default authority controls
+//! belongs to one application, and each application requiring a deny check has its deny record
+//! when the deny list is on. Returns the metered application and the applications to deny-check.
 //!
-//! A value admitted by an additional signing authority belongs to that authority's own
+//! A State admitted by an additional signing authority belongs to that authority's own
 //! application and does not fold: the signature is that program's consent, given through
-//! `invoke_signed`, for this execution to read the value or write it. That is how programs
-//! compose on Solana: the token can spend an amount in a JoinRecord's contribution State when
-//! the batcher signs as that JoinRecord. The meter stays on the default authority's application.
+//! `invoke_signed`, for this execution to read or write that State. The meter stays on the
+//! default authority's application.
 //! States read, written or used to initiate a grant are deny-checked independently of that meter;
 //! a grant's consumer State is deny-checked when the grant is consumed.
 
@@ -52,23 +50,23 @@ pub(super) fn preflight_execution<'info>(
 
 #[derive(Debug)]
 pub(super) struct PreflightOutcome {
-    /// The application the default authority's persistent values belong to: what the execution
+    /// The application the default authority's States belong to: what the execution
     /// is metered and rand-seeded as. `None` when it controls none.
     pub(super) app: Option<AppScope>,
-    /// Every distinct application whose persistent value the execution reads or writes, under
-    /// any signing authority. Each is deny-checked.
+    /// Applications whose States the execution reads, writes or uses to initiate or consume a
+    /// grant. Each is deny-checked, regardless of which authority signs.
     pub(super) touched_apps: Vec<AppScope>,
 }
 
 /// Marks every account the execution references into the shared table so
 /// [`ExecutionAccountTable::assert_all_used`] can reject dangling accounts before
-/// any pass mutates state, and folds the application identity.
+/// the walk, and folds the application identity.
 struct Preflight<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     dictionary: &'t [[u8; 32]],
     dictionary_used: Vec<bool>,
     authority: Pubkey,
-    /// The `(program, scope)` of every persistent value the default authority controls; a second
+    /// The `(program, scope)` of every State the default authority controls; a second
     /// one is an error.
     app: Option<AppScope>,
     /// Every distinct application touched, the default authority's included, in first-seen order.
@@ -104,9 +102,9 @@ impl Preflight<'_, '_, '_> {
         self.fold_app(authority, app)
     }
 
-    /// Records one persistent value's application for the deny check and folds it into the
+    /// Records one State's application for the deny check and folds it into the
     /// execution's when the default authority controls it: the first one is adopted, every later
-    /// one must match (one execution, one meter). A value under an additional signing authority
+    /// one must match (one execution, one meter). A State under an additional signing authority
     /// is that program's own.
     fn fold_app(&mut self, authority: Pubkey, app: AppScope) -> Result<()> {
         if !self.touched_apps.contains(&app) {

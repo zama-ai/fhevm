@@ -400,6 +400,105 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
     );
 }
 
+#[test]
+fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
+    let mut fixture = created_public_batch(3, &[0, 1, 2]);
+    let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
+    let svm = mollusk();
+    let baseline = svm.process_and_validate_instruction(
+        &fixture.instruction,
+        &fixture.accounts,
+        &[Check::success(), Check::return_data(&[])],
+    );
+    let state = read_encrypted_state_from_result(&baseline, fixture.outputs[0].1);
+    let handles: Vec<_> = (0..3)
+        .map(|step| {
+            state
+                .get(&label(&format!("created-public-{step}")))
+                .unwrap()
+        })
+        .collect();
+    assert_ne!(handles[0], handles[2]);
+
+    for selection in [vec![2, 0, 2], (0..32).map(|index| index % 3).collect()] {
+        args.returned_results = selection
+            .iter()
+            .map(|&step_index| host::ExecutionResultRef {
+                step_index,
+                output_index: 0,
+            })
+            .collect();
+        fixture.instruction.data = host::instruction::FheExecute { args: args.clone() }.data();
+        let expected: Vec<u8> = selection
+            .iter()
+            .flat_map(|&step| handles[usize::from(step)])
+            .collect();
+        let result = svm.process_and_validate_instruction(
+            &fixture.instruction,
+            &fixture.accounts,
+            &[Check::success(), Check::return_data(&expected)],
+        );
+        // Selecting handles changes neither slots nor decrypt history.
+        assert_eq!(result.resulting_accounts, baseline.resulting_accounts);
+    }
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
+    let mut fixture = created_public_batch(2, &[0, 1]);
+    let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
+    let first = host::ExecutionResultRef {
+        step_index: 0,
+        output_index: 0,
+    };
+    let svm = mollusk();
+    for selection in [
+        vec![first; 33],
+        vec![host::ExecutionResultRef {
+            step_index: 2,
+            ..first
+        }],
+        vec![host::ExecutionResultRef {
+            output_index: 1,
+            ..first
+        }],
+    ] {
+        args.returned_results = selection;
+        fixture.instruction.data = host::instruction::FheExecute { args: args.clone() }.data();
+        let result = svm.process_and_validate_instruction(
+            &fixture.instruction,
+            &fixture.accounts,
+            &[custom_error(
+                host::errors::ZamaHostError::InvalidReturnSelection,
+            )],
+        );
+        for (key, account) in &fixture.accounts {
+            assert_eq!(result.get_account(key), Some(account));
+        }
+    }
+
+    // A missing rand nonce would fail before the walk. The bad selection must fail first.
+    let output = match args.steps.remove(0) {
+        FheExecuteStep::TrivialEncrypt { output, .. } => output,
+        _ => unreachable!(),
+    };
+    args.steps.insert(
+        0,
+        FheExecuteStep::Rand {
+            fhe_type: 5,
+            output,
+        },
+    );
+    fixture.instruction.data = host::instruction::FheExecute { args }.data();
+    svm.process_and_validate_instruction(
+        &fixture.instruction,
+        &fixture.accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::InvalidReturnSelection,
+        )],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Persistent writes: allows are sealed on the write
 // ---------------------------------------------------------------------------
