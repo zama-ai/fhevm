@@ -25,8 +25,8 @@ stable across both parts and never reused, so an entry that moves between them k
 
 Scope note: this register covers the Solana feature branch: `zama-host`, the `zama-fhe` SDK, the host-listener
 reconstruction path and its leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
-confidential-batcher applications. Vocabulary follows GLOSSARY.md (execution, dictionary, persistent, update, allow,
-application…).
+confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, State, slot, allow, result
+grant, scratch, application.
 
 ---
 
@@ -47,11 +47,13 @@ leaf record republishes it.
 
 ## B. Handles & access state
 
-**5. [HOLDS]** Handles enter or replace persistent state **only** as `fhe_execute` outputs; no instruction accepts a
-caller-chosen handle into persistent state.
+**5. [HOLDS]** A State slot changes only through an `fhe_execute` output. No instruction accepts a caller-chosen handle
+into a slot; `make_state_handle_public` seals a leaf for the handle a slot already holds.
 
-**6. [HOLDS]** Updating a persistent value requires echoing its exact current handle; a stale echo fails the whole
-execution (no lost-update). The new handle's allows are declared afresh on the write; the old handle's stay sealed.
+**6. [HOLDS]** A slot write states what the slot holds now: the exact current handle, or nothing for a first write. A
+State output also states the State's leaf count as the builder saw it. If either is stale the whole execution fails
+(`PreviousStateMismatch`), so two writers cannot lose an update. The new handle's allows are declared on the write; the
+old handle's leaves stay sealed.
 
 **7. [HOLDS]** Every encrypted State lives at `["encrypted-state", program, authority, scope]` and stores those identity
 fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and
@@ -64,14 +66,15 @@ updates.
 the write and never removed. A handle with no allows and no public leaf is undecryptable by everyone, which is its
 author's choice, not a stranding — the next write declares the next handle's allows.
 
-**10. [HOLDS]** Every allow the host seals passes the deny list when it is enabled: a State output (with or without a
-slot write, every allowed key and the public leaf alike) and `make_state_handle_public` require the value's application
-record `["deny-scope", program, scope]` to be present, at its canonical address, and not denied (`DenyRecordMissing` /
-`ScopeDenied`); with the list disabled no record may be passed. An `fhe_execute` checks every application whose State it
-reads or writes and every grant's initiating State. Naming a consumer State in a new grant validates its identity; the
-consumer's application is deny-checked when that grant is consumed. A denied application cannot use a grant or receive a
-State write from another program's execution. The deny list names applications, not keys (DD-048): a denied key can
-still be allowed by a clean application, and user-decryption delegation is a separate access path with no deny check.
+**10. [HOLDS]** Every allow the host seals passes the deny list when it is enabled. A State output, with or without a
+slot write, and `make_state_handle_public` both require the application's record `["deny-scope", program, scope]` to be
+present at its canonical address and not denied (`DenyRecordMissing`, `ScopeDenied`). With the list disabled no record
+may be passed. An `fhe_execute` checks every application whose State it reads or writes, and the application of every
+grant's initiating State. Naming a consumer State in a new grant only validates that State's identity; the consumer's
+application is checked by the execution that consumes the grant. A denied application can therefore neither use a grant
+nor receive a State write from another program's execution. The list names applications, not keys (DD-048): a denied key
+can still be allowed by a clean application, and user-decryption delegation is a separate access path with no deny
+check.
 
 **11. [HOLDS]** Only the State authority writes its slots or appends permissions: it signs State creation, State outputs
 and `make_state_handle_public`, and it is a PDA of the State's `program` (#7). A viewer is not a co-admin — an allow
@@ -101,12 +104,22 @@ RFC 035.) Related token/Host lifecycle guardrails are:
   requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
   gov surface in this PoC (out of scope; zama-ai/fhevm-internal#1634).
 
-**62. [HOLDS]** A State-slot input requires its State authority’s signature and the exact current handle. A result
-shared between invocations requires an exact handle/consumer-State grant in canonical scratch, plus the consumer
-authority’s signature. Grants can authorize derived outputs, including decryptable outputs; scratch expiry does not
-confine information flow. Decrypt permission still requires an MMR leaf and is not implied by compute authority.
-Ordinary computation requires no MMR proof. Each JoinRecord is the authority of its contribution State, scoped to its
-batch.
+**62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its State authority's
+signature and the exact current handle. Using a result produced by another execution in the same transaction requires a
+grant for that exact handle and consumer State in the canonical scratch account, plus the consumer authority's
+signature. Scratch is opened by the initiating State's authority, its grants are created only as outputs of the
+execution that produced the handle, and it is closed by the matching final top-level instruction, which refunds the
+payer recorded at opening; a failed close rolls back the transaction. Decrypt permission is separate: it needs an MMR
+leaf and is never implied by compute authority. In the batcher, each JoinRecord is the authority of its participant's
+contribution State, scoped to the batch. Pinned by `transient_mollusk.rs`
+(`transient_result_accepts_the_exact_granted_handle_and_consumer_state`, `transient_result_rejects_an_ungranted_handle`,
+`transient_result_rejects_the_wrong_consumer_state`, `transient_result_requires_the_consumer_state_authority_signature`,
+`scratch_cannot_close_before_the_final_instruction`, `nested_scratch_close_rolls_back_the_whole_transaction`).
+
+**64. [ANTI]** A grant limits who may compute with a handle inside one transaction. It does not limit what that
+computation may reveal: the consumer's output can be written to a slot, allowed to any key or made public, and those
+leaves outlive the scratch account. A producer that grants a result trusts the consumer's program with the information
+in it.
 
 **53. [ANTI]** `make_state_handle_public` is not idempotent. Sealing a handle that is already sealed appends a second
 leaf committing to the same `(account, handle)` fact: it authorizes nothing the first leaf did not, and its cost is
@@ -114,13 +127,22 @@ bounded — peaks are one per set bit of `leaf_count`, capped at `MAX_MMR_PEAKS`
 payer. Guarding it on-chain would need the account to remember which handle is sealed, which is new `EncryptedState`
 state in four consumers; a state-free guard could only read back the last leaf when `leaf_count` is odd, so the same
 call would be accepted or rejected by parity. Pinned by
-`mollusk_make_state_handle_public_twice_appends_an_equivalent_leaf`.
+`mollusk_make_handle_public_twice_appends_an_equivalent_leaf`.
 
 ## C. Execution
 
-**12. [HOLDS]** An execution is atomic. Admission, account and return-selection checks precede the execution walk; step
-semantics are validated during the walk. Any later failure rolls back the entire transaction, including earlier writes
-and nonce changes.
+**12. [HOLDS]** An execution is atomic. Step count, account count, return selection, account table, preflight and deny
+checks run before the walk; step semantics are validated during the walk. A failure at any point rolls back the entire
+transaction, including earlier slot writes, sealed leaves and the rand nonce.
+
+**65. [HOLDS]** Return data carries handles, never permission. An execution names the results to return as an ordered
+list of `(step_index, output_index)` pairs, at most 32 (the 1,024-byte return-data limit), and the host copies exactly
+those handles in that order, repeats included. An empty list still sets empty return data after the event CPIs, so an
+event CPI's return data cannot reach the caller. An out-of-range step or a nonzero output index is rejected before the
+walk (`InvalidReturnSelection`); current operators have one output. The consumer reads a returned handle by position and
+still needs a grant or its own authority to compute with it (#62). The SDK side is pinned by
+`selected_result_stays_paired_with_its_execution_and_checks_return_data`; the host's rejection of a bad selection has no
+runtime test yet.
 
 **13. [HOLDS]** Every dictionary index is bounds-checked by all three consumers (program, SDK, listener); an
 unreferenced dictionary entry rejects the execution.
@@ -144,16 +166,14 @@ every builder in a program shared one scope number). Persistent operands are del
 belongs to no builder. Pinned by the `compile_fail` doctest on `FheExecution::build`. One runtime check remains, the
 producer-index bounds check, which protects the wire against hand-built args (fhevm-internal#1859 §4).
 
-**61. [ANTI]** `FheExecution::build` does **not** guarantee that the host's CPI fits its heap or compute budget. Its
-typed resource limits cover the builder and invoke path in the app's heap (#54). The host has its own 32 KiB heap; its
-allocations depend on live State size, MMR peaks, and the number of permissions sealed per output. Interning a shared
-audience once in the builder does not remove the host's per-output leaves and public event data.
-`shared_audience_state_outputs_fit_the_builder_at_full_depth` admits 32 slot outputs with the same eight viewers and
-public permission. The runtime sweep `fhe_execute_boundary/allow_heavy_public_creates` succeeds at 24 outputs and
-exhausts the host heap at 25. These are measured shape limits, not a universal output cap. No host heap admission model
-is implemented. The allocator decision is recorded in closed fhevm-internal#1872; apps must validate their execution
-shapes against the runtime sweeps and budget the whole transaction. A heap failure in a supported application needs a
-fix, not a waiver from this entry.
+**61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
+builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
+depends on the live State size, the number of MMR peaks and the permissions sealed per output, none of which the builder
+can see. The gap is measurable: `shared_audience_state_outputs_fit_the_builder_at_full_depth` admits 32 slot outputs
+with the same eight viewers and a public leaf, while the runtime sweep `fhe_execute_boundary/allow_heavy_public_creates`
+succeeds at 24 such outputs and exhausts the host heap at 25. These are shape measurements, not an output cap. No
+host-side admission model exists; an app validates its shapes against the sweeps and budgets the whole transaction. Why
+no allocator was shipped is DD-046 (fhevm-internal#1872).
 
 ## D. Entry & exit trust
 
@@ -226,8 +246,8 @@ fork; it can never release plaintext.
 **35. [HOLDS]** Only the configured admin can change HostConfig; every change stamps `updated_slot` and emits a config
 event. The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
 RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin change without replaying
-instruction data to find one (DD-044). Seeing it is all this buys: authorization still comes from account state, never
-from event bytes.
+instruction data to find one (DD-044). The event only makes the change visible: authorization still comes from account
+state, never from event bytes.
 
 **36. [HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path: the production-shaped host instructions
 (`fhe_execute`, `make_state_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
@@ -236,9 +256,9 @@ makes and refuses while paused (transiently: the same request authorizes once th
 host, and no gateway-side pause is involved. The connector decodes the singleton through `zama-solana-acl`'s shared
 decoder, the same crate the program's own `shared_crate_decoder_reads_what_the_program_serializes` test pins against its
 serializer, so the switch cannot be disarmed by layout drift. User abort levers stay open while paused, deliberately:
-`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. The
-asymmetry is the point — a pause stops the connector from serving delegated decryptions, so a delegator frozen out of
-revoking would be left with grants they can neither use nor withdraw, and a lever the operator can switch off is not the
+`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. This
+asymmetry is deliberate. A pause stops the connector from serving delegated decryptions, so a delegator who could not
+revoke would be left with grants they can neither use nor withdraw, and a lever the operator can switch off is not the
 user's lever. Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal nothing new) and the admin
 setters, pause included.
 
@@ -265,7 +285,8 @@ that can sign for the value's authority — but that confines the multiplier to 
 bound it. Only the `program` half of `(program, scope)` is ever proved (#40); `scope` is 32 bytes the program declares,
 never validated, and the meter is lazy-created, so a program willing to rotate scopes has as many per-slot budgets as it
 cares to pay rent for. The per-slot meter is therefore **fairness between the instances of a cooperating program**, not
-a limit on a program that does not wish to be limited: no scope-keyed lever can bind the party that chooses the scope.
+a limit on a program that does not wish to be limited, because a limit keyed on scope cannot bind the program that
+chooses the scope.
 It is inert in the shipped configuration (#37, `hcu_block_cap_per_app = u64::MAX`), and a lever that binds a program
 regardless of scope would have to key on the program id alone. The meter charged is the default authority's application;
 a value written under an additional signing authority is metered there (#62), so a program that lets another program
@@ -323,10 +344,11 @@ derives authorization, quotas, or identity from `caller` on Solana rows — auth
 
 ## H. Reference confidential applications
 
-**55. [HOLDS]** Generic token disclosure binds the mint scope, canonical State and its authority, exact handle and
-certified cleartext. `HandleDisclosedEvent` does not authenticate a token-kind label. Consumers identify transfer/burn
-provenance from the original token events; they must not infer it from a caller-provided kind. Historical public leaves
-remain usable after slot replacement.
+**55. [HOLDS]** `disclose_secp` binds a certificate to this token program, the mint as scope, the canonical State of one
+token account or of the total supply, the exact handle and the certified cleartext, then emits `HandleDisclosedEvent`
+with those fields. The event carries no slot key and no token kind; which operation produced the handle is known from
+that operation's own event. A public leaf stays usable after the slot moves on, so an old handle can be disclosed at any
+time. Pinned by `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
 
 **56. [HOLDS]** An underlying mint's owner pins one token program. Wrap and redeem require that program to own the
 underlying mint and both token accounts. Classic Token and extension-free Token-2022 are supported. Token-2022 mint
@@ -364,7 +386,7 @@ cancellation cannot consume the same pending burn twice.
 Nothing here is a safety promise. These entries record sizes, limits, and how the system is operated. They change when
 we resize something or swap tooling, not when the threat model changes.
 
-## H. Sizes, limits, and operations
+## I. Sizes, limits, and operations
 
 **14. [HOLDS]** Executions are capped at 32 steps. Packet size and CU cost depend on the shape; the cap does not imply a
 fit in a 1,232-byte transaction or 200k CU. The runtime snapshots pin, for example, a 32-step dependent chain at 461
@@ -421,26 +443,7 @@ The host heap remains a separate limit (#61). Runtime sweeps cover wide audience
 committed snapshots, updates across States with 8, 32 and 64 MMR peaks reach 15, 7 and 4 steps, respectively; 60-operand
 reductions reach 4. These shape measurements do not guarantee that an arbitrary composition fits.
 
-## I. Roadmap
+## J. Roadmap
 
 **39. [RETIRED]** App-layer invariants were folded into this register rather than split into a second source of truth
 (#55–#60).
-
-## RFC35 State and result-sharing checks
-
-- **[HOLDS]** State outputs may write a slot, append decrypt permissions for a fresh result, and grant transient use.
-  Slotless output is not a stored-register compatibility path.
-- **[HOLDS]** Slot writes compare the previous handle; State outputs compare the previous shared leaf count. A stale
-  write reverts the whole transaction.
-- **[HOLDS]** Scratch opening requires its initiating State authority; grants bind exact produced handles and consumer
-  States. Close must be the matching final top-level host instruction and refunds only the recorded payer. Closure
-  removes grants; failure rolls back the transaction.
-- **[HOLDS]** Return selections are checked before nonce/state mutation: at most 32, valid producing step, output index
-  zero for current operators. Return order follows the selection list, including duplicates. Empty selection clears
-  return data after event CPIs. Returning a handle grants no permission.
-- **[ANTI]** Current publication verifies a named slot. Adding a new recipient or public permission for a handle
-  existing only in history is deferred to fhevm-internal#2007. Existing historical private decrypt remains supported; do
-  not claim full EVM re-sharing parity.
-- **[HOLDS]** Generic disclosure verifies State, exact handle and certificate cleartext. It does not authenticate a
-  token-specific kind. Transfer/burn events identify their handles; PendingBurn separately enforces
-  redemption/cancellation and replay protection.

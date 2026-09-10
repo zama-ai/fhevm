@@ -1,11 +1,10 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
-//! Two signers cover two authorities, and they are only sometimes the same key: `payer` funds rent
-//! for State growth and lazy meter creation; `authority` is the default authority
-//! that signs for persistent values read and written. Every persistent value an execution touches
-//! is admitted by its own authority's signature — found among the default signer and the signing
-//! remaining accounts — and nothing else: an application program signs for its PDAs by CPI and
-//! forwards a user wallet as `payer`.
+//! Two signers cover two roles, and they are only sometimes the same key: `payer` funds rent for
+//! State growth and lazy meter creation; `authority` is the default signer for the States the
+//! execution reads and writes. Every State an execution touches is admitted by its own authority's
+//! signature, found among the default signer and the signing remaining accounts, and by nothing
+//! else. An application program signs for its PDAs by CPI and forwards a user wallet as `payer`.
 
 use anchor_lang::prelude::*;
 
@@ -96,8 +95,8 @@ pub fn fhe_execute<'info>(
     // preflight), canonical State validation, and cached State/scratch writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
-    // every persistent value the default authority controls belongs to. Metering and rand seeds
-    // key on it; the deny list gates every application the execution touches.
+    // every State the default authority controls belongs to. Metering and rand seeds key on it;
+    // the deny list gates every application the execution touches.
     let preflight = preflight_execution(&mut account_table, &ctx, &args)?;
     let app = preflight.app;
     let host_config = &ctx.accounts.host_config;

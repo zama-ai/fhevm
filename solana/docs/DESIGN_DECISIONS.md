@@ -3,9 +3,9 @@
 Last synced: 2026-09-10.
 
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
-Older entries preserve the rationale at the time of their adoption. DD-049 supersedes the account, permission, disclosure, and composition interfaces of
-DD-032/033/036/039/045/047/048; consult it for the current model. DD-046 retains the allocator
-decision with current resource limits. For the EVM mapping see
+Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
+and composition model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-046 keeps the
+allocator decision, restated against the current resource limits. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
