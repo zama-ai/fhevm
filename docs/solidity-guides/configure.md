@@ -11,37 +11,19 @@ This library and its associated contracts provide a standardized way to configur
 ## Key components configured automatically
 
 1. **FHE library**: Sets up encryption parameters and cryptographic keys.
-2. **Network-specific settings**: Adapts to local testing, testnets (Sepolia, Polygon Amoy) or mainnet deployments (Ethereum, Polygon).
+2. **Network-specific settings**: Adapts to local testing, testnets (Sepolia for example), or mainnet deployment.
 
 By inheriting these configuration contracts, you ensure seamless initialization and functionality across environments.
 
 ## ZamaConfig.sol
 
-The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for every network where the Zama protocol is deployed:
+The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for supported networks: Ethereum mainnet (chain id `1`), Sepolia testnet (`11155111`) and the local Hardhat/Anvil network (`31337`). `getCoprocessorConfig()` picks the right entry from `block.chainid` and reverts with `ZamaProtocolUnsupported` on any other chain.
 
-| Network          | Chain id   | Environment | Selector                        |
-| ---------------- | ---------- | ----------- | ------------------------------- |
-| Ethereum mainnet | `1`        | mainnet     | `getEthereumCoprocessorConfig`  |
-| Polygon          | `137`      | mainnet     | `getPolygonCoprocessorConfig`   |
-| Sepolia          | `11155111` | testnet     | `getEthereumCoprocessorConfig`  |
-| Polygon Amoy     | `80002`    | testnet     | `getPolygonCoprocessorConfig`   |
-| Hardhat / Anvil  | `31337`    | local       | any selector                    |
+Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`CoprocessorConfig`). It also exposes `getConfidentialProtocolId()`: `1` on mainnet, `10001` on testnet, `type(uint256).max` locally.
 
-`getCoprocessorConfig()` picks the right entry from `block.chainid` for all of them and reverts with `ZamaProtocolUnsupported` on any other chain. Under the hood, the library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`CoprocessorConfig`).
+## ZamaEthereumConfig
 
-The library also exposes `getConfidentialProtocolId()`: `1` on mainnet chains (Ethereum, Polygon), `10001` on testnet chains (Sepolia, Amoy), `type(uint256).max` locally. Ethereum and Polygon are different host chains talking to the **same** gateway and KMS, so a mainnet contract deployed on both chains shares one protocol environment.
-
-## Configuration contracts
-
-Three abstract contracts wrap the library so that a user contract only has to inherit from one of them. Their constructor calls `FHE.setCoprocessor` with the addresses for the chain the contract is being deployed on, which removes manual address management and the risk of misconfiguration. Each also exposes `confidentialProtocolId()`.
-
-| Contract                | Chains accepted at deployment                    | Use it when                                          |
-| ----------------------- | ------------------------------------------------ | ---------------------------------------------------- |
-| `ZamaEthereumConfig`    | Ethereum mainnet, Sepolia, local                 | The contract only ever lives on Ethereum.            |
-| `ZamaPolygonConfig`     | Polygon, Polygon Amoy, local                     | The contract only ever lives on Polygon.             |
-| `ZamaMultiChainConfig`  | all of the above                                 | One bytecode deployed on several host chains.        |
-
-Deploying on a chain the selected contract does not accept reverts in the constructor with `ZamaProtocolUnsupported`.
+The `ZamaEthereumConfig` contract is designed to be inherited by a user contract. Its constructor calls `FHE.setCoprocessor` with the addresses for the chain the contract is being deployed on, which removes manual address management and the risk of misconfiguration. It also exposes `confidentialProtocolId()`. Deploying on an unsupported chain reverts in the constructor with `ZamaProtocolUnsupported`.
 
 **Example**
 
@@ -57,20 +39,6 @@ contract MyERC20 is ZamaEthereumConfig {
   }
 }
 ```
-
-The same contract, deployable on Ethereum and Polygon from a single artifact:
-
-```solidity
-import { ZamaMultiChainConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
-
-contract MyERC20 is ZamaMultiChainConfig {
-  constructor() {}
-}
-```
-
-{% hint style="info" %}
-Handles are chain-specific. A contract deployed on both chains holds independent encrypted state on each; to move a value across chains, use the [confidential bridge](bridge.md).
-{% endhint %}
 
 ## Using `isInitialized`
 
@@ -95,4 +63,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging a prebuilt configuration contract like `ZamaEthereumConfig`, `ZamaPolygonConfig` or `ZamaMultiChainConfig` from `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging a prebuilt configuration contract like `ZamaEthereumConfig` from `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.

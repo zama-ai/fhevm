@@ -41,18 +41,12 @@ These functions ship in `@fhevm/solidity` 0.14 and later and are now documented:
 | `FHE.toExternal(value)`                                      | Re-wrap a handle as an input type for contract-to-contract calls        | [Encrypted inputs](inputs.md#re-exporting-a-handle-with-fhetoexternal) |
 | `FHE.sendLZConfidentialBridge`, `quoteLZConfidentialBridge`, `getLZConfidentialBridgeAddress` | Bridge handles to another host chain | [Confidential bridge](bridge.md)                      |
 | `ConfidentialOApp` base contracts                            | Peer registry, typed senders and a secured receiver for cross-chain apps | [Confidential bridge](bridge.md)                      |
-| `ZamaPolygonConfig`, `ZamaMultiChainConfig`                  | Configuration contracts for Polygon and multi-chain deployments          | [Configuration](configure.md)                          |
 
 `FHE.sum` and `FHE.isIn` predate v0.14 but were undocumented; they are now specified in [Operator semantics](operations/semantics.md).
-
-## Networks
-
-Polygon mainnet (chain id 137) and Polygon Amoy (80002) are supported host chains. Addresses are listed in [Contract addresses](contract_addresses.md). A contract compiled against `ZamaEthereumConfig` reverts at deployment on Polygon; switch to `ZamaPolygonConfig` or `ZamaMultiChainConfig`.
 
 ## Checklist
 
 - [ ] No `FHE.shl` / `FHE.shr` depends on an amount that can reach the operand width, or the amount is reduced explicitly.
 - [ ] No code compares handle bytes to infer anything about the underlying computation.
 - [ ] Public decryption callbacks verify proofs with `FHE.checkSignatures` and carry their own replay guard ([Verifying public decryptions](decryption/verification.md)).
-- [ ] Contracts meant for several host chains inherit `ZamaMultiChainConfig`.
 - [ ] Tests that assert exact HCU consumption are re-run: costs for `mulDiv`, `sum` and `isIn` are listed in [HCU](hcu.md).

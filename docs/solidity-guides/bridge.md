@@ -6,7 +6,7 @@ Bridging a handle does **not** move or re-encrypt the ciphertext. The coprocesso
 
 ## When to use it
 
-- A confidential token that lives on Ethereum and Polygon and lets holders move balances between the two.
+- A confidential token deployed on two host chains that lets holders move balances between the two.
 - A contract that computes an encrypted result on one chain and needs another chain to consume it (a shared randomness, an encrypted price, a vote outcome).
 - Any cross-chain flow where the values must stay encrypted end to end.
 
@@ -142,14 +142,7 @@ It is invoked by the local `ConfidentialBridge` in a dedicated `lzCompose` trans
 
 ## Endpoint ids
 
-| Host chain       | Chain id | LayerZero eid |
-| ---------------- | -------- | ------------- |
-| Ethereum mainnet | 1        | 30101         |
-| Polygon          | 137      | 30109         |
-| Sepolia          | 11155111 | 40161         |
-| Polygon Amoy     | 80002    | 40267         |
-
-The bridge is only wired between chains that belong to the same protocol environment (mainnet with mainnet, testnet with testnet).
+Destinations are identified by their LayerZero endpoint id (`eid`), not by chain id. The bridge is only wired between host chains that belong to the same protocol environment (mainnet with mainnet, testnet with testnet); `setPeer` reverts with `UnsupportedEid` for any other destination. Refer to the LayerZero deployments list for the `eid` of each host chain.
 
 ## Security notes
 
