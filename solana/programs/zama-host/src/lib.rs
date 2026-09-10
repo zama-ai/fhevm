@@ -58,7 +58,7 @@ declare_id!("6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu");
 pub mod zama_host {
     use super::*;
 
-    pub fn open_scratch(ctx: Context<OpenScratch>) -> Result<()> {
+    pub fn open_scratch<'info>(ctx: Context<'info, OpenScratch<'info>>) -> Result<()> {
         instructions::open_scratch(ctx)
     }
 

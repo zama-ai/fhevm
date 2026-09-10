@@ -5,10 +5,7 @@ use anchor_lang::prelude::Pubkey;
 use zama_host::{CoprocessorInputAttestation, MAX_FHE_EXECUTION_STEPS};
 
 use crate::builder::FheExecutionBuilder;
-use crate::{
-    AppScope, Encrypted, ExecutionAuthority, FheExecution, Output, Scalar, State, StateOutput,
-    Uint, Uint64Handle,
-};
+use crate::{AppScope, Encrypted, FheExecution, Scalar, State, StateOutput, Uint, Uint64Handle};
 
 use super::harness::balance_handle;
 
@@ -103,11 +100,10 @@ pub(crate) fn chain_with_outputs(
         let mut value = Encrypted::from(input);
         let mut outputs = outputs.into_iter();
         for _ in 0..steps {
-            let output = match outputs.next() {
-                Some(persistent) => Output::state(persistent),
-                None => Output::transient(),
-            };
-            value = builder.add(value, Scalar::<Uint<64>>::u64(1), output)?;
+            value = builder.add(value, Scalar::<Uint<64>>::u64(1))?;
+            if let Some(output) = outputs.next() {
+                builder.output(value, output)?;
+            }
         }
         Ok(())
     }
@@ -151,7 +147,7 @@ pub(crate) fn attestation_shape(
     move |builder| {
         for attestation in attestations {
             let input = builder.verified_input::<Uint<64>>(attestation)?;
-            builder.add(input, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+            builder.add(input, Scalar::<Uint<64>>::u64(1))?;
         }
         Ok(())
     }
@@ -163,7 +159,11 @@ pub(crate) fn max_buildable_attestation_count() -> usize {
     (1..=MAX_FHE_EXECUTION_STEPS)
         .take_while(|count| {
             FheExecution::build(
-                ExecutionAuthority::new(Pubkey::new_unique()),
+                crate::StateId::new(
+                    anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+                    Pubkey::new_unique(),
+                    [0xA5; 32],
+                ),
                 attestation_shape(*count),
             )
             .is_ok()
@@ -226,10 +226,10 @@ pub(crate) fn reduction_shape(
         for _ in 0..steps {
             match kind {
                 ReductionKind::Sum => {
-                    value = builder.sum((0..operands).map(|_| value), Output::transient())?;
+                    value = builder.sum((0..operands).map(|_| value))?;
                 }
                 ReductionKind::IsIn => {
-                    builder.is_in(value, (0..operands).map(|_| value), Output::transient())?;
+                    builder.is_in(value, (0..operands).map(|_| value))?;
                 }
             }
         }
@@ -246,14 +246,19 @@ pub(crate) fn mixed_ops_shape(
         let mut value = Encrypted::from(input);
         for step in 0..(MAX_FHE_EXECUTION_STEPS - 2) {
             value = if step % 4 == 3 {
-                builder.sum((0..8).map(|_| value), Output::transient())?
+                builder.sum((0..8).map(|_| value))?
             } else {
-                builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?
+                builder.add(value, Scalar::<Uint<64>>::u64(1))?
             };
         }
-        builder.is_in(value, (0..8).map(|_| value), Output::transient())?;
+        builder.is_in(value, (0..8).map(|_| value))?;
         let output = outputs.into_iter().next().expect("one create");
-        builder.add(value, Scalar::<Uint<64>>::u64(1), Output::state(output))?;
+        builder
+            .add(value, Scalar::<Uint<64>>::u64(1))
+            .and_then(|result| {
+                builder.output(result, output)?;
+                Ok(result)
+            })?;
         Ok(())
     }
 }
@@ -266,7 +271,7 @@ pub(crate) fn reused_attestation_shape(
     move |builder| {
         let mut value = builder.verified_input::<Uint<64>>(attestation)?;
         for _ in 0..(MAX_FHE_EXECUTION_STEPS - 1) {
-            value = builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+            value = builder.add(value, Scalar::<Uint<64>>::u64(1))?;
         }
         Ok(())
     }

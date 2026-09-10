@@ -43,10 +43,51 @@ pub mod delegator_vault {
                 ctx.accounts.zama_host.key(),
                 zama_host::cpi::accounts::CloseScratch {
                     instructions: ctx.accounts.instructions.to_account_info(),
+                    scratch: ctx.accounts.scratch.to_account_info(),
+                    refund: ctx.accounts.refund.to_account_info(),
                 },
             )
             .with_remaining_accounts(ctx.remaining_accounts.to_vec()),
         )
+    }
+
+    /// Checks return data immediately after CPI, before the transaction's final
+    /// scratch close overwrites the runtime return channel.
+    pub fn check_cpi_return<'info>(
+        ctx: Context<'info, CheckCpiReturn<'info>>,
+        instruction_data: Vec<u8>,
+        expected: Vec<u8>,
+    ) -> Result<()> {
+        let instruction = Instruction {
+            program_id: ctx.accounts.callee.key(),
+            accounts: ctx
+                .remaining_accounts
+                .iter()
+                .map(|info| {
+                    if info.is_writable {
+                        AccountMeta::new(info.key(), info.is_signer)
+                    } else {
+                        AccountMeta::new_readonly(info.key(), info.is_signer)
+                    }
+                })
+                .collect(),
+            data: instruction_data,
+        };
+        anchor_lang::solana_program::program::invoke(&instruction, ctx.remaining_accounts)?;
+        match anchor_lang::solana_program::program::get_return_data() {
+            Some((program, returned)) => {
+                require_keys_eq!(program, ctx.accounts.callee.key());
+                require!(
+                    returned == expected,
+                    anchor_lang::error::ErrorCode::RequireEqViolated
+                );
+            }
+            None => require!(
+                expected.is_empty(),
+                anchor_lang::error::ErrorCode::RequireEqViolated
+            ),
+        }
+        Ok(())
     }
 
     /// Grants a user-decryption delegation with the executor's vault PDA as the delegator.
@@ -129,7 +170,21 @@ pub struct VaultDelegation<'info> {
 /// Accounts forwarded to the host in the nested-close negative test.
 #[derive(Accounts)]
 pub struct CloseScratchViaCpi<'info> {
+    /// CHECK: test forwards the scratch to ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: ZamaHost checks the recorded refund destination.
+    #[account(mut)]
+    pub refund: UncheckedAccount<'info>,
     /// CHECK: validated by the host; this proxy deliberately adds no authorization.
     pub instructions: UncheckedAccount<'info>,
     pub zama_host: Program<'info, ZamaHost>,
+}
+
+/// The remaining accounts are the exact callee account list.
+#[derive(Accounts)]
+pub struct CheckCpiReturn<'info> {
+    /// CHECK: test probe intentionally invokes the supplied executable.
+    #[account(executable)]
+    pub callee: UncheckedAccount<'info>,
 }

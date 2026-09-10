@@ -52,6 +52,7 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
         [2; 32],
         true,
         3,
+        [0; 32],
         &HandleDerivationContext {
             chain_id,
             previous_bank_hash: [9; 32],

@@ -45,6 +45,11 @@ pub struct WrapUsdc<'info> {
     pub total_supply_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -141,23 +146,23 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
     let balance = fhe::uint64_operand(&ctx.accounts.balance_state, balance_key())?;
     let total_supply = fhe::uint64_operand(&ctx.accounts.total_supply_state, total_supply_key())?;
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(token_account.key()),
+        zama_fhe::State::new(&ctx.accounts.balance_state).id(),
         |builder| {
-            let encrypted_amount =
-                builder.trivial_encrypt_u64(amount, zama_fhe::Output::transient())?;
+            let encrypted_amount = builder.trivial_encrypt_u64(amount)?;
             // EVM `tryIncrease` parity: encrypted add wraps mod 2^64, so clamp the credit to zero
             // when either balance or total supply cannot take `amount`. Unreachable on a 1:1 SPL
             // `u64` vault; required before any rate, fee, or extra mint.
-            let max = builder.trivial_encrypt_u64(u64::MAX, zama_fhe::Output::transient())?;
-            let room = builder.sub(max, encrypted_amount, zama_fhe::Output::transient())?;
-            let balance_ok = builder.ge(room, balance, zama_fhe::Output::transient())?;
-            let supply_ok = builder.ge(room, total_supply, zama_fhe::Output::transient())?;
-            let ok = builder.and(balance_ok, supply_ok, zama_fhe::Output::transient())?;
-            let zero = builder.trivial_encrypt_u64(0, zama_fhe::Output::transient())?;
-            let added =
-                builder.if_then_else(ok, encrypted_amount, zero, zama_fhe::Output::transient())?;
-            builder.add(balance, added, balance_output.output())?;
-            builder.add(total_supply, added, total_supply_output.output())?;
+            let max = builder.trivial_encrypt_u64(u64::MAX)?;
+            let room = builder.sub(max, encrypted_amount)?;
+            let balance_ok = builder.ge(room, balance)?;
+            let supply_ok = builder.ge(room, total_supply)?;
+            let ok = builder.and(balance_ok, supply_ok)?;
+            let zero = builder.trivial_encrypt_u64(0)?;
+            let added = builder.if_then_else(ok, encrypted_amount, zero)?;
+            let new_balance = builder.add(balance, added)?;
+            builder.output(new_balance, balance_output.output())?;
+            let new_total_supply = builder.add(total_supply, added)?;
+            builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
         },
     )
@@ -174,6 +179,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.owner,
             event_authority: &ctx.accounts.zama_event_authority,
+            scratch: &ctx.accounts.scratch,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

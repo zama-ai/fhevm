@@ -1,8 +1,9 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { buildClaimInstructions } from './claim.js';
+import { buildClaimInstruction } from './claim.js';
 import {
   CLAIM_DISCRIMINATOR,
   getClaimInstructionDataDecoder,
@@ -42,7 +43,7 @@ const batcherValuePda = (batch: Address, batchAuthority: Address): Promise<Addre
     base58.decode(batchAuthority),
     base58.decode(batch),
   ]);
-describe('buildClaimInstructions', () => {
+describe('buildClaimInstruction', () => {
   // Fixture aligned with derive.test.ts's consensus-critical golden: batcher = addr(2),
   // batch = the golden batch PDA for index 0, payout mint = addr(13) — so the batch-side payout
   // token-account / balance expectations can be pinned to the same golden base58 strings.
@@ -59,7 +60,9 @@ describe('buildClaimInstructions', () => {
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
-    const instructions = await buildClaimInstructions({
+    const fhe = await createSolanaFheTransaction({ payer });
+    const instruction = await buildClaimInstruction({
+      fhe: fhe.accounts,
       payer,
       user,
       batcher,
@@ -69,8 +72,9 @@ describe('buildClaimInstructions', () => {
       tokenProgram: SPL_TOKEN,
       hostConfig,
     });
-    expect(instructions).toHaveLength(2);
-    const [instruction, close] = instructions;
+    const instructions = fhe.wrap([instruction]);
+    expect(instructions).toHaveLength(3);
+    const close = instructions[2]!;
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
 
@@ -92,7 +96,7 @@ describe('buildClaimInstructions', () => {
       base58.decode(user),
     ]);
     const state = await batcherValuePda(batch, record);
-    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(state)]);
+    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
     const expected: Address[] = [
       payer.address,
       user,
@@ -142,7 +146,8 @@ describe('buildClaimInstructions', () => {
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
-    const [instruction] = await buildClaimInstructions({
+    const instruction = await buildClaimInstruction({
+      fhe: (await createSolanaFheTransaction({ payer })).accounts,
       payer,
       user,
       batcher,

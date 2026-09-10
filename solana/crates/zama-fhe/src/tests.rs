@@ -14,8 +14,8 @@ use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
 use anchor_lang::{prelude::AccountInfo, Key};
 use zama_host::{
-    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep, FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep,
+    FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
 };
 
 fn handle(tag: u8) -> [u8; 32] {
@@ -32,8 +32,8 @@ fn balance_handle(tag: u8) -> [u8; 32] {
     typed_handle(tag, 5)
 }
 
-fn execution_authority(pubkey: Pubkey) -> ExecutionAuthority {
-    ExecutionAuthority::new(pubkey)
+fn execution_authority(pubkey: Pubkey) -> StateId {
+    StateId::new(app().program, pubkey, app().scope)
 }
 
 #[cfg(feature = "cpi")]
@@ -147,17 +147,18 @@ fn batch_build_runs_closure_and_finishes_batch() {
     let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
 
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
-        let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())?;
-        builder.add(
-            incremented,
-            Scalar::<Uint<64>>::u64(2),
-            Output::state(state_output(output_key).allow(primary_authority)),
-        )?;
+        let incremented = builder.add(balance, Scalar::<Uint<64>>::u64(1))?;
+        builder
+            .add(incremented, Scalar::<Uint<64>>::u64(2))
+            .and_then(|result| {
+                builder.output(result, state_output(output_key).allow(primary_authority))?;
+                Ok(result)
+            })?;
         Ok(())
     })
     .unwrap();
 
-    assert_eq!(execution.authority().pubkey(), primary_authority);
+    assert_eq!(execution.authority(), primary_authority);
     assert_eq!(input_acl, output_acl);
     assert_eq!(execution.remaining_accounts.len(), 1);
     assert_eq!(execution.remaining_accounts[0].pubkey, input_acl);
@@ -171,38 +172,38 @@ fn batch_build_runs_closure_and_finishes_batch() {
     );
     assert_eq!(execution.args.steps.len(), 2);
     match &execution.args.steps[1] {
-        FheExecuteStep::Binary { lhs, output, .. } => {
+        FheExecuteStep::Binary { lhs, .. } => {
             assert_eq!(*lhs, FheExecuteOperand::EarlierStep { producer_index: 0 });
-            match output {
-                FheExecuteOutput::State { state_index, .. } => {
-                    assert_eq!(*state_index, 0);
-                }
-                other => panic!("unexpected output: {other:?}"),
-            }
+            assert_eq!(execution.args.effects[0].state_index, 0);
         }
         other => panic!("unexpected step: {other:?}"),
     }
 }
 
 #[test]
-fn builder_rejects_reading_a_state_slot_after_writing_that_slot() {
+fn state_slot_reads_remain_snapshot_reads_after_declaring_an_effect() {
     let authority = Pubkey::new_unique();
     let key = test_state_slot(authority, 7);
     let mut builder = FheExecutionBuilder::new(execution_authority(authority));
     builder
-        .trivial_encrypt_u64(7, Output::state(state_output(key.clone()).allow(authority)))
+        .trivial_encrypt_u64(7)
+        .and_then(|result| {
+            builder.output(result, state_output(key.clone()).allow(authority))?;
+            Ok(result)
+        })
         .unwrap();
 
     let reconstructed = typed_state_slot::<Uint<64>>(balance_handle(99), key).unwrap();
-    let error = builder
-        .add(
-            reconstructed,
-            Scalar::<Uint<64>>::u64(1),
-            Output::transient(),
-        )
-        .unwrap_err();
-
-    assert_eq!(error, FheExecutionBuildError::StateSlotWrittenEarlier);
+    builder
+        .add(reconstructed, Scalar::<Uint<64>>::u64(1))
+        .unwrap();
+    assert!(matches!(
+        builder.steps[1],
+        FheExecuteStep::Binary {
+            lhs: FheExecuteOperand::StateSlot { .. },
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -215,11 +216,12 @@ fn batch_build_lowers_verified_input_operand() {
 
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
         let amount = builder.verified_input::<Uint<64>>(attestation.clone())?;
-        builder.add(
-            amount,
-            Scalar::<Uint<64>>::u64(1),
-            Output::state(state_output(output_key).allow(primary_authority)),
-        )?;
+        builder
+            .add(amount, Scalar::<Uint<64>>::u64(1))
+            .and_then(|result| {
+                builder.output(result, state_output(output_key).allow(primary_authority))?;
+                Ok(result)
+            })?;
         Ok(())
     })
     .unwrap();
@@ -242,12 +244,16 @@ fn batch_build_lowers_verified_input_operand() {
         other => panic!("unexpected step: {other:?}"),
     }
     // A verified input carries no remaining account: the attestation is inline in the operand.
+    assert_eq!(execution.remaining_accounts.len(), 1);
+    let meta = &execution.remaining_accounts[0];
+    assert_eq!(meta.pubkey, output_acl);
+    assert!(meta.is_writable);
     assert_eq!(
-        execution.remaining_accounts,
-        vec![ExecutionAccountMeta::writable(
-            output_acl,
+        meta.purposes.as_slice(),
+        &[
+            ExecutionAccountPurpose::StateInput,
             ExecutionAccountPurpose::StateOutput
-        )]
+        ]
     );
 }
 
@@ -272,7 +278,6 @@ fn batch_build_propagates_closure_and_finish_errors() {
             foreign_operand(balance_handle(1)),
             scalar_operand_u64(2),
             FheType::UINT64,
-            Output::transient(),
         )?;
         Ok(())
     }) {
@@ -299,12 +304,11 @@ fn finish_preflights_lowered_remaining_account_indices() {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::StateSlot {
             handle_index: 0,
-            state_index: 0,
+            state_index: 1,
             key_index: 0,
         },
         rhs: FheExecuteOperand::Scalar { value_index: 1 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::Transient,
     });
     builder.produced_types.push(FheType::UINT64.byte());
 
@@ -321,7 +325,6 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
     builder.steps.push(FheExecuteStep::TrivialEncrypt {
         plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
         fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::Transient,
     });
     builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
     builder.steps.push(FheExecuteStep::Binary {
@@ -329,7 +332,6 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
         lhs: FheExecuteOperand::EarlierStep { producer_index: 1 },
         rhs: FheExecuteOperand::Scalar { value_index: 0 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::Transient,
     });
     builder.produced_types.push(FheType::UINT64.byte());
     builder.produced_types.push(FheType::UINT64.byte());
@@ -343,9 +345,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
     let input_acl = input_key.address();
     let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder
-        .add(balance, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
+    builder.add(balance, Scalar::<Uint<64>>::u64(1)).unwrap();
     builder
         .remaining_accounts
         .push(ExecutionAccountMeta::readonly(
@@ -363,9 +363,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
 fn finish_rejects_dictionary_entry_no_step_references() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder
-        .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
+    builder.trivial_encrypt(Scalar::<Uint<64>>::u64(1)).unwrap();
     builder.dictionary.push([0xAA; 32]);
 
     assert_eq!(
@@ -378,15 +376,12 @@ fn finish_rejects_dictionary_entry_no_step_references() {
 fn finish_rejects_dictionary_index_past_dictionary_end() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder
-        .trivial_encrypt(Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
+    builder.trivial_encrypt(Scalar::<Uint<64>>::u64(1)).unwrap();
     builder.steps.push(FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
         rhs: FheExecuteOperand::Scalar { value_index: 3 },
         output_fhe_type: FheType::UINT64.byte(),
-        output: FheExecuteOutput::Transient,
     });
     builder.produced_types.push(FheType::UINT64.byte());
 
@@ -406,11 +401,11 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
     let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
-        .add(
-            balance,
-            Scalar::<Uint<64>>::u64(1),
-            Output::state(state_output(output_key).allow(primary_authority)),
-        )
+        .add(balance, Scalar::<Uint<64>>::u64(1))
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            Ok(result)
+        })
         .unwrap();
     let execution = builder.finish().unwrap();
 
@@ -451,19 +446,18 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     let balance = typed_state_slot::<Uint<64>>(balance_handle(1), balance_key).unwrap();
     let amount = typed_state_slot::<Uint<64>>(balance_handle(2), amount_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let success = builder.ge(balance, amount, Output::transient()).unwrap();
-    let debit_candidate = builder.sub(balance, amount, Output::transient()).unwrap();
+    let success = builder.ge(balance, amount).unwrap();
+    let debit_candidate = builder.sub(balance, amount).unwrap();
     builder
-        .if_then_else(
-            success,
-            debit_candidate,
-            balance,
-            Output::state(state_output(output_key).allow(primary_authority)),
-        )
+        .if_then_else(success, debit_candidate, balance)
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            Ok(result)
+        })
         .unwrap();
 
     let execution = builder.finish().unwrap();
-    assert_eq!(execution.authority().pubkey(), primary_authority);
+    assert_eq!(execution.authority(), primary_authority);
 
     assert_eq!(balance_acl, amount_acl);
     assert_eq!(amount_acl, output_acl);
@@ -479,9 +473,13 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
     );
     assert_eq!(execution.args.steps.len(), 3);
     match &execution.args.steps[0] {
-        FheExecuteStep::Binary { op, output, .. } => {
+        FheExecuteStep::Binary { op, .. } => {
             assert_eq!(*op, FheBinaryOpCode::Ge);
-            assert_eq!(*output, FheExecuteOutput::Transient);
+            assert!(execution
+                .args
+                .effects
+                .iter()
+                .all(|effect| effect.result.step_index != 0));
         }
         other => panic!("unexpected step: {other:?}"),
     }
@@ -490,7 +488,6 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
             control,
             if_true,
             if_false,
-            output,
             ..
         } => {
             assert_eq!(
@@ -507,12 +504,7 @@ fn lowers_mixed_batch_to_stable_remaining_account_indices() {
                 }
                 other => panic!("unexpected if_false: {other:?}"),
             }
-            match output {
-                FheExecuteOutput::State { state_index, .. } => {
-                    assert_eq!(*state_index, 0)
-                }
-                other => panic!("unexpected output: {other:?}"),
-            }
+            assert_eq!(execution.args.effects[0].state_index, 0);
         }
         other => panic!("unexpected step: {other:?}"),
     }
@@ -529,11 +521,12 @@ fn dynamic_account_requirements_expose_order_roles_and_purposes() {
     let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
 
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
-        builder.add(
-            input,
-            Scalar::<Uint<64>>::u64(2),
-            Output::state(state_output(output_key).allow(extra_authority)),
-        )?;
+        builder
+            .add(input, Scalar::<Uint<64>>::u64(2))
+            .and_then(|result| {
+                builder.output(result, state_output(output_key).allow(extra_authority))?;
+                Ok(result)
+            })?;
         Ok(())
     })
     .unwrap();
@@ -575,15 +568,15 @@ fn lowers_explicit_output_authority_witness() {
     let balance = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
-        .add(
-            balance,
-            Scalar::<Uint<64>>::u64(2),
-            Output::state(state_output(output_key).allow(authority)),
-        )
+        .add(balance, Scalar::<Uint<64>>::u64(2))
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(authority))?;
+            Ok(result)
+        })
         .unwrap();
 
     let execution = builder.finish().unwrap();
-    assert_eq!(execution.authority().pubkey(), primary_authority);
+    assert_eq!(execution.authority(), primary_authority);
     assert_eq!(
         execution.remaining_accounts,
         vec![
@@ -609,15 +602,7 @@ fn lowers_explicit_output_authority_witness() {
             ExecutionAuthorityRequirement { pubkey: authority },
         ]
     );
-    match &execution.args.steps[0] {
-        FheExecuteStep::Binary { output, .. } => match output {
-            FheExecuteOutput::State { state_index, .. } => {
-                assert_eq!(*state_index, 1);
-            }
-            other => panic!("unexpected output: {other:?}"),
-        },
-        other => panic!("unexpected step: {other:?}"),
-    }
+    assert_eq!(execution.args.effects[0].state_index, 1);
 }
 
 #[cfg(feature = "cpi")]
@@ -632,11 +617,11 @@ fn resolve_accounts_orders_and_validates_batch_requirements() {
     let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
-        .add(
-            input,
-            Scalar::<Uint<64>>::u64(2),
-            Output::state(state_output(output_key).allow(extra_authority)),
-        )
+        .add(input, Scalar::<Uint<64>>::u64(2))
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(extra_authority))?;
+            Ok(result)
+        })
         .unwrap();
     let execution = builder.finish().unwrap();
 
@@ -794,11 +779,11 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
     let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
-        .add(
-            input,
-            Scalar::<Uint<64>>::u64(2),
-            Output::state(state_output(output_key).allow(extra_authority)),
-        )
+        .add(input, Scalar::<Uint<64>>::u64(2))
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(extra_authority))?;
+            Ok(result)
+        })
         .unwrap();
     let execution = builder.finish().unwrap();
 
@@ -865,23 +850,27 @@ fn lowers_create_steps() {
     let output_key = test_state_slot(primary_authority, 7);
     let output_acl = output_key.address();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let trivial = builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
+    let trivial = builder.trivial_encrypt_u64(1).unwrap();
     builder
-        .rand_u64(Output::state(
-            state_output(output_key).allow(primary_authority),
-        ))
+        .rand_u64()
+        .and_then(|result| {
+            builder.output(result, state_output(output_key).allow(primary_authority))?;
+            Ok(result)
+        })
         .unwrap();
-    builder
-        .add(trivial, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
+    builder.add(trivial, Scalar::<Uint<64>>::u64(1)).unwrap();
 
     let execution = builder.finish().unwrap();
+    assert_eq!(execution.remaining_accounts.len(), 1);
+    let meta = &execution.remaining_accounts[0];
+    assert_eq!(meta.pubkey, output_acl);
+    assert!(meta.is_writable);
     assert_eq!(
-        execution.remaining_accounts,
-        vec![ExecutionAccountMeta::writable(
-            output_acl,
+        meta.purposes.as_slice(),
+        &[
+            ExecutionAccountPurpose::StateInput,
             ExecutionAccountPurpose::StateOutput
-        )]
+        ]
     );
     assert!(matches!(
         execution.args.steps[0],
@@ -903,7 +892,6 @@ fn rejects_invalid_references_and_types() {
             Operand::transient(0),
             scalar_operand_u64(1),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::InvalidTransientReference);
@@ -915,7 +903,6 @@ fn rejects_invalid_references_and_types() {
             foreign_operand(balance_handle(1)),
             scalar_operand_u64(2),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
@@ -923,14 +910,13 @@ fn rejects_invalid_references_and_types() {
     let input_key = test_state_slot(primary_authority, 1);
     let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
+    builder.trivial_encrypt_u64(1).unwrap();
     let current_index = builder
         .binary_op(
             FheBinaryOpCode::Add,
             Operand::transient(1),
             scalar_operand_u64(1),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(
@@ -944,7 +930,6 @@ fn rejects_invalid_references_and_types() {
             Operand::transient(9),
             scalar_operand_u64(1),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(
@@ -958,7 +943,6 @@ fn rejects_invalid_references_and_types() {
             Encrypted::from(input).operand(),
             Operand::transient(1),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(
@@ -970,7 +954,7 @@ fn rejects_invalid_references_and_types() {
 #[test]
 fn validates_execution_authority_pubkey() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::default()));
-    builder.trivial_encrypt_u64(1, Output::transient()).unwrap();
+    builder.trivial_encrypt_u64(1).unwrap();
     let error = match builder.finish() {
         Ok(_) => panic!("invalid encrypted State authority unexpectedly built"),
         Err(error) => error,
@@ -989,7 +973,6 @@ fn binary_validation_rejects_host_type_mismatches() {
             bool_lhs,
             scalar_operand_u64(1),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     // Add gates its output to uint types, and the operand must equal that output type, so a
@@ -1003,7 +986,6 @@ fn binary_validation_rejects_host_type_mismatches() {
             foreign_operand(balance_handle(1)),
             foreign_operand(typed_handle(2, FheType::UINT32.byte())),
             FheType::UINT64,
-            Output::transient(),
         )
         .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::BinaryOperandTypeMismatch);
@@ -1018,8 +1000,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         .unary_op(
             FheUnaryOpCode::Cast,
             foreign_operand(balance_handle(1)),
-            FheType::UINT32,
-            Output::transient(),
+            FheType::UINT32
         )
         .is_ok());
     // A same-type cast is rejected (EVM InvalidType parity).
@@ -1028,8 +1009,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 foreign_operand(balance_handle(1)),
-                FheType::UINT64,
-                Output::transient(),
+                FheType::UINT64
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1039,8 +1019,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
         .unary_op(
             FheUnaryOpCode::Cast,
             foreign_operand(typed_handle(2, FheType::BOOL.byte())),
-            FheType::UINT32,
-            Output::transient(),
+            FheType::UINT32
         )
         .is_ok());
     // ...but casting TO ebool, TO type 7, FROM type 7, or FROM/TO type 8 is rejected.
@@ -1049,8 +1028,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 foreign_operand(balance_handle(1)),
-                FheType::BOOL,
-                Output::transient(),
+                FheType::BOOL
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1071,8 +1049,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 foreign_operand(typed_handle(3, 7u8)),
-                FheType::UINT64,
-                Output::transient(),
+                FheType::UINT64
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1082,8 +1059,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Cast,
                 foreign_operand(typed_handle(4, 8u8)),
-                FheType::UINT64,
-                Output::transient(),
+                FheType::UINT64
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1105,8 +1081,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             .unary_op(
                 FheUnaryOpCode::Neg,
                 foreign_operand(typed_handle(1, FheType::BOOL.byte())),
-                FheType::BOOL,
-                Output::transient(),
+                FheType::BOOL
             )
             .unwrap_err(),
         FheExecutionBuildError::UnsupportedFheType
@@ -1125,8 +1100,7 @@ fn mul_div_rejects_zero_divisor() {
             .mul_div(
                 balance,
                 Scalar::<Uint<64>>::u64(3),
-                Scalar::<Uint<64>>::u64(0),
-                Output::transient(),
+                Scalar::<Uint<64>>::u64(0)
             )
             .unwrap_err(),
         FheExecutionBuildError::MulDivDivisorZero
@@ -1142,24 +1116,18 @@ fn div_rem_require_nonzero_scalar_divisor() {
     let enc_divisor =
         typed_state_slot::<Uint<64>>(balance_handle(2), test_state_slot(auth, 2)).unwrap();
     assert_eq!(
-        builder
-            .div(lhs, enc_divisor, Output::transient())
-            .unwrap_err(),
+        builder.div(lhs, enc_divisor).unwrap_err(),
         FheExecutionBuildError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
     let lhs2 = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(auth, 1)).unwrap();
     assert_eq!(
-        builder
-            .rem(lhs2, Scalar::<Uint<64>>::u64(0), Output::transient())
-            .unwrap_err(),
+        builder.rem(lhs2, Scalar::<Uint<64>>::u64(0)).unwrap_err(),
         FheExecutionBuildError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
     let lhs3 = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(auth, 1)).unwrap();
-    assert!(builder
-        .div(lhs3, Scalar::<Uint<64>>::u64(3), Output::transient())
-        .is_ok());
+    assert!(builder.div(lhs3, Scalar::<Uint<64>>::u64(3)).is_ok());
 }
 
 #[test]
@@ -1179,7 +1147,7 @@ fn builder_exposes_the_host_operator_type_surface() {
         test_state_slot(auth, 2),
     )
     .unwrap();
-    assert!(builder.and(bool_a, bool_b, Output::transient()).is_ok());
+    assert!(builder.and(bool_a, bool_b).is_ok());
 
     let bool_c = typed_state_slot::<Bool>(
         typed_handle(6, FheType::BOOL.byte()),
@@ -1191,7 +1159,7 @@ fn builder_exposes_the_host_operator_type_surface() {
         test_state_slot(auth, 7),
     )
     .unwrap();
-    assert!(builder.eq(bool_c, bool_d, Output::transient()).is_ok());
+    assert!(builder.eq(bool_c, bool_d).is_ok());
 
     let u256 = foreign_operand(typed_handle(3, 8u8));
     assert_eq!(
@@ -1221,13 +1189,17 @@ fn state_slot_with_its_own_authority_requires_that_signer() {
     let input_key = test_state_slot(other_authority, 1);
     let input = typed_state_slot::<Uint<64>>(balance_handle(1), input_key.clone()).unwrap();
     let execution = FheExecution::build(execution_authority(primary_authority), |builder| {
-        builder.add(input, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+        builder.add(input, Scalar::<Uint<64>>::u64(1))?;
         Ok(())
     })
     .unwrap();
     assert_eq!(
         execution.remaining_accounts,
         vec![
+            ExecutionAccountMeta::readonly(
+                execution.state().address(),
+                ExecutionAccountPurpose::StateInput
+            ),
             ExecutionAccountMeta::readonly(
                 input_key.address(),
                 ExecutionAccountPurpose::StateInput
@@ -1261,39 +1233,33 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
     )
     .unwrap();
     let mut builder = FheExecutionBuilder::new(execution_authority(authority));
-    builder
-        .add(same, Scalar::<Uint<64>>::u64(1), Output::transient())
-        .unwrap();
+    let value = builder.add(same, Scalar::<Uint<64>>::u64(1)).unwrap();
     let steps_before = builder.steps.len();
     assert_eq!(
-        builder
-            .add(other, Scalar::<Uint<64>>::u64(1), Output::transient())
-            .unwrap_err(),
+        builder.add(other, Scalar::<Uint<64>>::u64(1)).unwrap_err(),
         FheExecutionBuildError::MixedScopes
     );
     assert_eq!(
         builder
-            .trivial_encrypt_u64(
-                1,
-                Output::state(state_output(TestStateSlot::new(
-                    other_app, authority, [3; 32],
-                ))),
+            .output(
+                value,
+                state_output(TestStateSlot::new(other_app, authority, [3; 32]))
             )
             .unwrap_err(),
         FheExecutionBuildError::MixedScopes
     );
     assert_eq!(builder.steps.len(), steps_before);
-    assert_eq!(builder.finish().unwrap().app(), Some(app()));
+    assert_eq!(builder.finish().unwrap().app(), app());
 }
 
 #[test]
-fn transient_only_execution_has_no_application() {
+fn transient_only_execution_uses_its_producing_state_application() {
     let execution = FheExecution::build(execution_authority(Pubkey::new_unique()), |builder| {
-        builder.trivial_encrypt_u64(1, Output::transient())?;
+        builder.trivial_encrypt_u64(1)?;
         Ok(())
     })
     .unwrap();
-    assert_eq!(execution.app(), None);
+    assert_eq!(execution.app(), app());
     assert!(!execution.has_rand_step());
 }
 
@@ -1323,9 +1289,9 @@ fn state_slot_rejects_unsupported_handle_type_bytes() {
 #[test]
 fn rand_rejects_unsupported_type_like_host() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::new_unique()));
-    let error = builder.rand_raw(7u8, Output::transient()).unwrap_err();
+    let error = builder.rand_raw(7u8).unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
-    let error = builder.rand_raw(8u8, Output::transient()).unwrap_err();
+    let error = builder.rand_raw(8u8).unwrap_err();
     assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
 }
 
@@ -1339,10 +1305,7 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     builder
-        .rand_bounded_u64(
-            BoundedU64UpperBound::power_of_two(1 << 20).unwrap(),
-            Output::transient(),
-        )
+        .rand_bounded_u64(BoundedU64UpperBound::power_of_two(1 << 20).unwrap())
         .unwrap();
     let execution = builder.finish().unwrap();
     // A rand step needs the host's nonce account on the invoke; the execution says so.
@@ -1381,15 +1344,11 @@ fn rejects_more_than_max_ops() {
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     for index in 0..MAX_FHE_EXECUTION_STEPS {
         builder
-            .add(
-                balance,
-                Scalar::<Uint<64>>::u64(index as u64),
-                Output::transient(),
-            )
+            .add(balance, Scalar::<Uint<64>>::u64(index as u64))
             .unwrap();
     }
     let error = builder
-        .add(balance, Scalar::<Uint<64>>::u64(99), Output::transient())
+        .add(balance, Scalar::<Uint<64>>::u64(99))
         .unwrap_err();
     assert_eq!(error, FheExecutionBuildError::TooManySteps);
 }
@@ -1407,20 +1366,10 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
         .unwrap();
     let mut dictionary = crate::heap_tally::TalliedVec::new();
     dictionary.try_push(&mut budget, handle(1)).unwrap();
-    let mut persistent_producers = crate::heap_tally::TalliedVec::new();
-    persistent_producers
-        .try_push(&mut budget, (0, None))
-        .unwrap();
     let accounts_before = remaining_accounts.clone();
     let dictionary_before = dictionary.clone();
-    let producers_before = persistent_producers.clone();
 
-    let mut tables = StepTables::open(
-        &mut remaining_accounts,
-        &mut dictionary,
-        &mut persistent_producers,
-        &mut budget,
-    );
+    let mut tables = StepTables::open(&mut remaining_accounts, &mut dictionary, &mut budget);
     // Promote the same entry twice — first writable, then signer — so undoing in the wrong order
     // would leave the entry with the flags the first promotion set.
     assert_eq!(
@@ -1457,38 +1406,33 @@ fn step_tables_rollback_undoes_promotions_and_appends() {
 
     assert_eq!(remaining_accounts, accounts_before);
     assert_eq!(dictionary, dictionary_before);
-    assert_eq!(persistent_producers, producers_before);
 }
 
 #[test]
 fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     let authority = Pubkey::new_unique();
-    let written_key = test_state_slot(authority, 7);
     let mut builder = FheExecutionBuilder::new(execution_authority(authority));
-    builder
-        .trivial_encrypt_u64(
-            7,
-            Output::state(state_output(written_key.clone()).allow(authority)),
-        )
-        .unwrap();
+    builder.trivial_encrypt_u64(7).unwrap();
     let accounts_before = builder.remaining_accounts.clone();
     let dictionary_before = builder.dictionary.clone();
-    let producers_before = builder.persistent_producers.clone();
-
-    // The left operand interns a fresh handle and a fresh input-ACL account; the right operand then
-    // fails because the step above already wrote its account.
-    let fresh = typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(authority, 1))
-        .expect("fresh operand");
-    let written =
-        typed_state_slot::<Uint<64>>(balance_handle(2), written_key).expect("written operand");
-    let error = builder
-        .add(fresh, written, Output::transient())
-        .unwrap_err();
-
-    assert_eq!(error, FheExecutionBuildError::StateSlotWrittenEarlier);
+    // Lhs interns its State and handle; rhs belongs to another scope under this signer.
+    let fresh =
+        typed_state_slot::<Uint<64>>(balance_handle(1), test_state_slot(authority, 1)).unwrap();
+    let foreign = TestStateSlot::new(
+        AppScope {
+            program: app().program,
+            scope: [9; 32],
+        },
+        authority,
+        [2; 32],
+    );
+    let other = typed_state_slot::<Uint<64>>(balance_handle(2), foreign).unwrap();
+    assert_eq!(
+        builder.add(fresh, other).unwrap_err(),
+        FheExecutionBuildError::MixedScopes
+    );
     assert_eq!(builder.remaining_accounts, accounts_before);
     assert_eq!(builder.dictionary, dictionary_before);
-    assert_eq!(builder.persistent_producers, producers_before);
     assert_eq!(builder.steps.len(), 1);
     assert_eq!(builder.produced_types.len(), 1);
 }

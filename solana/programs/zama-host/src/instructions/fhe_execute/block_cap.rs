@@ -1,22 +1,14 @@
 //! Stateful per-application, per-slot HCU block cap for [`super::fhe_execute`].
 //!
-//! Unlike the pure per-execution meter in [`super::hcu`], the block cap touches accounts (the
-//! per-application `HcuBlockMeter`) and a sysvar-derived slot, so it lives here rather than inside
-//! the pure walk.
+//! The walk charges transaction HCU and dependency depth in the shared scratch. [`charge`]
+//! then adds only this call's HCU to its application's block meter, before account effects
+//! are flushed. A rejected cap rolls back the whole transaction, including the scratch.
 //!
-//! [`charge`] is one resolve→assert→(create/reset)→write sequence with a single meter read. It
-//! runs after the pure per-execution meter and before the walk: `execution_total` is pure over the
-//! execution, so an over-budget execution is rejected before any step burns CU or creates any ACL
-//! record, and a failure mid-walk reverts the meter write along with everything else.
-//!
-//! Cap sentinels: `u64::MAX` = unrestricted (short-circuit, touch nothing), `0` = ban untrusted
+//! Cap sentinels: `u64::MAX` = unrestricted (touch nothing), `0` = ban untrusted
 //! applications (trusted still bypass), otherwise the metering band.
 //!
-//! The metered identity is the `(program, scope)` of the persistent values the execution reads
-//! and writes — proven by the program when it created them, never a free signer — so no caller
-//! can rotate a fresh key to mint a fresh per-slot meter. An execution that touches no persistent
-//! value has no identity to meter and is rejected under a finite cap; it is also value-less, since
-//! its transient outputs create no leaf and are undecryptable.
+//! The application is the explicit execution State's `(program, scope)`, authenticated by
+//! its authority signer. Calls without persistent outputs have the same metered identity.
 
 use anchor_lang::prelude::*;
 
@@ -32,7 +24,7 @@ use crate::state::{
 /// arithmetic (overflow fails closed), lazy-create/reset, write once.
 pub(super) fn charge<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
-    app: Option<AppScope>,
+    app: AppScope,
     execution_total: u64,
     slot: u64,
 ) -> Result<()> {
@@ -41,7 +33,6 @@ pub(super) fn charge<'info>(
     if cap == u64::MAX {
         return Ok(());
     }
-    let app = app.ok_or(ZamaHostError::FheExecuteUnanchoredUnderBlockCap)?;
     // A well-formed trusted witness bypasses the cap entirely — even under a ban.
     if resolve_trusted(ctx, app)? {
         return Ok(());

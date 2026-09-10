@@ -27,6 +27,7 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
+  type WritableAccount,
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -40,12 +41,16 @@ export function getCloseScratchDiscriminatorBytes(): ReadonlyUint8Array {
 export type CloseScratchInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountInstructions extends string | AccountMeta<string> = 'Sysvar1nstructions1111111111111111111111111',
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountRefund extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountRefund extends string ? WritableAccount<TAccountRefund> : TAccountRefund,
       ...TRemainingAccounts,
     ]
   >;
@@ -72,23 +77,33 @@ export function getCloseScratchInstructionDataCodec(): FixedSizeCodec<
   return combineCodec(getCloseScratchInstructionDataEncoder(), getCloseScratchInstructionDataDecoder());
 }
 
-export type CloseScratchInput<TAccountInstructions extends string = string> = {
+export type CloseScratchInput<
+  TAccountInstructions extends string = string,
+  TAccountScratch extends string = string,
+  TAccountRefund extends string = string,
+> = {
   instructions?: Address<TAccountInstructions>;
+  scratch: Address<TAccountScratch>;
+  refund: Address<TAccountRefund>;
 };
 
 export function getCloseScratchInstruction<
   TAccountInstructions extends string,
+  TAccountScratch extends string,
+  TAccountRefund extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: CloseScratchInput<TAccountInstructions>,
+  input: CloseScratchInput<TAccountInstructions, TAccountScratch, TAccountRefund>,
   config?: { programAddress?: TProgramAddress },
-): CloseScratchInstruction<TProgramAddress, TAccountInstructions> {
+): CloseScratchInstruction<TProgramAddress, TAccountInstructions, TAccountScratch, TAccountRefund> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     instructions: { value: input.instructions ?? null, isWritable: false },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    refund: { value: input.refund ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -100,10 +115,14 @@ export function getCloseScratchInstruction<
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
-    accounts: [getAccountMeta('instructions', accounts.instructions)],
+    accounts: [
+      getAccountMeta('instructions', accounts.instructions),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('refund', accounts.refund),
+    ],
     data: getCloseScratchInstructionDataEncoder().encode({}),
     programAddress,
-  } as CloseScratchInstruction<TProgramAddress, TAccountInstructions>);
+  } as CloseScratchInstruction<TProgramAddress, TAccountInstructions, TAccountScratch, TAccountRefund>);
 }
 
 export type ParsedCloseScratchInstruction<
@@ -113,6 +132,8 @@ export type ParsedCloseScratchInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     instructions: TAccountMetas[0];
+    scratch: TAccountMetas[1];
+    refund: TAccountMetas[2];
   };
   data: CloseScratchInstructionData;
 };
@@ -120,10 +141,10 @@ export type ParsedCloseScratchInstruction<
 export function parseCloseScratchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCloseScratchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 1) {
+  if (instruction.accounts.length < 3) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 1,
+      expectedAccountMetas: 3,
     });
   }
   let accountIndex = 0;
@@ -134,7 +155,11 @@ export function parseCloseScratchInstruction<TProgram extends string, TAccountMe
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { instructions: getNextAccount() },
+    accounts: {
+      instructions: getNextAccount(),
+      scratch: getNextAccount(),
+      refund: getNextAccount(),
+    },
     data: getCloseScratchInstructionDataDecoder().decode(instruction.data),
   };
 }

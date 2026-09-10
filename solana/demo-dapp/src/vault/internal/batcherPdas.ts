@@ -68,9 +68,6 @@ export async function joinStateAddress(batch: Address, user: Address): Promise<A
   });
 }
 
-export async function scratchAddress(state: Address): Promise<Address> {
-  return pda(ZAMA_HOST_PROGRAM_ADDRESS, [encoder.encode('transient'), addressBytes(state)]);
-}
 
 export {
   findBatchAuthorityPda,

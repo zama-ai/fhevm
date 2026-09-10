@@ -113,9 +113,6 @@ pub enum ZamaHostError {
     /// An fhe_execute instruction referenced a step output that no earlier step produced.
     #[msg("fhe_execute transient operand is missing")]
     FheExecuteEarlierStepMissing,
-    /// An fhe_execute instruction produced the same handle twice, transient or persistent.
-    #[msg("fhe_execute output handle is duplicated")]
-    FheExecuteDuplicateHandle,
     /// An fhe_execute persistent output account already exists.
     #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
@@ -202,11 +199,6 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, an execution that reads or writes no persistent
-    /// value has no application identity to meter. Such an execution is also value-less — its
-    /// transient outputs create no ACL leaf and are undecryptable — so it is rejected outright.
-    #[msg("FHE execution touches no persistent value under a finite HCU block cap")]
-    FheExecuteUnanchoredUnderBlockCap,
     /// The persistent values one execution's default authority reads and writes belong to
     /// different applications; one execution is metered against exactly one `(program, scope)`.
     /// Values admitted by an additional signing authority are that program's own and do not count.
@@ -278,10 +270,6 @@ pub enum ZamaHostError {
     /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("fhe_execute declared account count mismatch")]
     FheExecuteAccountCountMismatch,
-    /// A `FheHandle` operand referenced an account written by an earlier step.
-    /// In-execution dependencies must use `EarlierStep`.
-    #[msg("fhe_execute persistent operand was written earlier in the execution")]
-    FheExecutePersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; an execution must not
     /// carry dead bytes.
     #[msg("fhe_execute dictionary entry is not referenced by any step")]

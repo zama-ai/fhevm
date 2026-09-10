@@ -8,7 +8,7 @@ use zama_host::MAX_FHE_EXECUTION_STEPS;
 
 use crate::builder::FheExecutionBuilder;
 
-use crate::{Encrypted, ExecutionAuthority, FheExecution, Output, Scalar, State, Uint};
+use crate::{Encrypted, FheExecution, Scalar, State, Uint};
 
 use super::frontier::frontier_shapes;
 #[cfg(feature = "cpi")]
@@ -19,7 +19,11 @@ use super::shapes::*;
 #[test]
 fn shared_audience_state_outputs_fit_the_builder_at_full_depth() {
     FheExecution::build(
-        ExecutionAuthority::new(Pubkey::new_unique()),
+        crate::StateId::new(
+            anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+            Pubkey::new_unique(),
+            [0xA5; 32],
+        ),
         shared_audience_public_creates_shape(MAX_FHE_EXECUTION_STEPS),
     )
     .expect("32 slots with one shared audience fit the builder");
@@ -54,76 +58,98 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
     let input = State::new(&account)
         .get::<Uint<64>>([0; 32])
         .expect("input handle");
-    let _ = FheExecution::build(ExecutionAuthority::new(Pubkey::new_unique()), |builder| {
-        let value = Encrypted::from(input);
-        for _ in 0..MAX_FHE_EXECUTION_STEPS {
-            let result = builder.is_in(value, (0..60).map(|_| value), Output::transient());
-            probe(builder, &probes);
-            if let Err(error) = result {
-                assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
-                rejections.set(rejections.get() + 1);
-                break;
+    let _ = FheExecution::build(
+        crate::StateId::new(
+            anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+            Pubkey::new_unique(),
+            [0xA5; 32],
+        ),
+        |builder| {
+            let value = Encrypted::from(input);
+            for _ in 0..MAX_FHE_EXECUTION_STEPS {
+                let result = builder.is_in(value, (0..60).map(|_| value));
+                probe(builder, &probes);
+                if let Err(error) = result {
+                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    rejections.set(rejections.get() + 1);
+                    break;
+                }
             }
-        }
-        let oversized = builder.sum((0..60).map(|_| value), Output::transient());
-        probe(builder, &probes);
-        assert_eq!(
-            oversized.unwrap_err(),
-            crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
-        );
-        Ok(())
-    });
+            let oversized = builder.sum((0..60).map(|_| value));
+            probe(builder, &probes);
+            assert_eq!(
+                oversized.unwrap_err(),
+                crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
+            );
+            Ok(())
+        },
+    );
 
     // Allow-heavy creates: every output interns eight fresh keys, driving the dictionary and
     // account tables through their doublings — and the rejections are ignored, as a buggy app
     // would, so the ratchet past the first rejection is probed too.
     let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_FHE_EXECUTION_STEPS, 8);
-    let _ = FheExecution::build(ExecutionAuthority::new(Pubkey::new_unique()), |builder| {
-        let mut value = Encrypted::from(input);
-        for output in outputs {
-            let result = builder.add(value, Scalar::<Uint<64>>::u64(1), Output::state(output));
-            probe(builder, &probes);
-            match result {
-                Ok(next) => value = next,
-                Err(error) => {
-                    assert!(matches!(
-                        error,
-                        crate::FheExecutionBuildError::ExceedsBuildHeapBudget
-                            | crate::FheExecutionBuildError::TooManyDictionaryEntries
-                    ));
-                    rejections.set(rejections.get() + 1);
+    let _ = FheExecution::build(
+        crate::StateId::new(
+            anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+            Pubkey::new_unique(),
+            [0xA5; 32],
+        ),
+        |builder| {
+            let mut value = Encrypted::from(input);
+            for output in outputs {
+                let result = builder
+                    .add(value, Scalar::<Uint<64>>::u64(1))
+                    .and_then(|result| {
+                        builder.output(result, output)?;
+                        Ok(result)
+                    });
+                probe(builder, &probes);
+                match result {
+                    Ok(next) => value = next,
+                    Err(error) => {
+                        assert!(matches!(
+                            error,
+                            crate::FheExecutionBuildError::ExceedsBuildHeapBudget
+                                | crate::FheExecutionBuildError::TooManyDictionaryEntries
+                        ));
+                        rejections.set(rejections.get() + 1);
+                    }
                 }
             }
-        }
-        Ok(())
-    });
+            Ok(())
+        },
+    );
 
     // Maximum-size attestations: the embeds go through the explicit counter rather than a
     // table, so this drives `admit`'s admission into rejection.
-    let _ = FheExecution::build(ExecutionAuthority::new(Pubkey::new_unique()), |builder| {
-        for tag in 0..MAX_FHE_EXECUTION_STEPS {
-            let attested =
-                builder.verified_input::<Uint<64>>(max_size_attestation(0x20 + tag as u8));
-            probe(builder, &probes);
-            let result = match attested {
-                Ok(attested_input) => builder
-                    .add(
-                        attested_input,
-                        Scalar::<Uint<64>>::u64(1),
-                        Output::transient(),
-                    )
-                    .map(|_| ()),
-                Err(error) => Err(error),
-            };
-            probe(builder, &probes);
-            if let Err(error) = result {
-                assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
-                rejections.set(rejections.get() + 1);
-                break;
+    let _ = FheExecution::build(
+        crate::StateId::new(
+            anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+            Pubkey::new_unique(),
+            [0xA5; 32],
+        ),
+        |builder| {
+            for tag in 0..MAX_FHE_EXECUTION_STEPS {
+                let attested =
+                    builder.verified_input::<Uint<64>>(max_size_attestation(0x20 + tag as u8));
+                probe(builder, &probes);
+                let result = match attested {
+                    Ok(attested_input) => builder
+                        .add(attested_input, Scalar::<Uint<64>>::u64(1))
+                        .map(|_| ()),
+                    Err(error) => Err(error),
+                };
+                probe(builder, &probes);
+                if let Err(error) = result {
+                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    rejections.set(rejections.get() + 1);
+                    break;
+                }
             }
-        }
-        Ok(())
-    });
+            Ok(())
+        },
+    );
 
     // The reduction and allow-heavy shapes must still reach a typed admission ceiling. Max-size
     // attestations may fit after purpose lists moved off the heap; they still run so
@@ -174,7 +200,15 @@ fn the_heap_tally_matches_a_counting_allocator_for_every_admitted_shape() {
 #[test]
 fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
     let build = |shape: ShapeBuilder| {
-        FheExecution::build(ExecutionAuthority::new(Pubkey::new_unique()), shape).unwrap_err()
+        FheExecution::build(
+            crate::StateId::new(
+                anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+                Pubkey::new_unique(),
+                [0xA5; 32],
+            ),
+            shape,
+        )
+        .unwrap_err()
     };
     // Distinct eight-key audiences exhaust the dictionary before the build heap.
     assert_eq!(
@@ -250,9 +284,14 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
     let owner = Pubkey::new_unique();
     let mut checked = 0;
     for (name, build) in frontier_shapes() {
-        let Ok(execution) =
-            FheExecution::build(ExecutionAuthority::new(Pubkey::new_unique()), build)
-        else {
+        let Ok(execution) = FheExecution::build(
+            crate::StateId::new(
+                anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+                Pubkey::new_unique(),
+                [0xA5; 32],
+            ),
+            build,
+        ) else {
             continue;
         };
         checked += 1;
@@ -302,8 +341,10 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
             hcu_block_meter: Some(fixed_infos[4].clone()),
             hcu_trusted_app_record: Some(fixed_infos[5].clone()),
             rand_nonce: Some(fixed_infos[6].clone()),
-            event_authority: fixed_infos[7].clone(),
-            program: fixed_infos[8].clone(),
+            scratch: fixed_infos[7].clone(),
+            instructions: fixed_infos[8].clone(),
+            event_authority: fixed_infos[9].clone(),
+            program: fixed_infos[10].clone(),
         };
 
         let before = counted_bytes();

@@ -3,6 +3,7 @@
 //! CPIs, and cleartext-ledger assertions on the encrypted state.
 
 use encrypted_counter as counter;
+use kit::transaction::process_fhe_instruction;
 use mollusk_svm::result::Check;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::collections::HashMap;
@@ -38,6 +39,8 @@ fn counter_initializes_to_zero_and_adds_increments() {
             counter::id(),
             counter::accounts::Initialize {
                 owner,
+                scratch: host::transient_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,
                 encrypted_state,
@@ -54,6 +57,8 @@ fn counter_initializes_to_zero_and_adds_increments() {
             counter::id(),
             counter::accounts::Increment {
                 owner,
+                scratch: host::transient_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,
                 encrypted_state,
@@ -68,7 +73,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
     // Runs one counter instruction, replays its single `fhe_execute` CPI in cleartext, and
     // asserts the count behind the persisted handle.
     let assert_count = |ledger: &mut CleartextLedger, ix: &Instruction, expected: u64| {
-        let result = context.process_and_validate_instruction(ix, &[Check::success()]);
+        let result = process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
@@ -81,7 +86,9 @@ fn counter_initializes_to_zero_and_adds_increments() {
     // A wrongly derived encrypted State is rejected before any CPI runs.
     let bogus_encrypted_state = Pubkey::new_unique();
     ensure_system_accounts(&context, &[bogus_encrypted_state]);
-    context.process_and_validate_instruction(
+    process_fhe_instruction(
+        &context,
+        owner,
         &initialize(bogus_encrypted_state),
         &[anchor_error_check(
             counter::CounterError::CountValueInvalid as u32,

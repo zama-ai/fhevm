@@ -1,5 +1,4 @@
-import { closeScratchInstruction, INSTRUCTIONS_SYSVAR } from './internal/scratch.js';
-import { scratchAddress } from './internal/batcherPdas.js';
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
@@ -12,12 +11,13 @@ import {
 } from './internal/tokenAccounts.js';
 
 /**
- * Roots for a permissionless claim. The builder derives the JoinRecord state, temporary scratch,
- * and payout token states. The user need not sign: the recipient is fixed by the JoinRecord.
+ * Roots for a permissionless claim. The builder derives the JoinRecord and payout States,
+ * and forwards the supplied transaction context. The user need not sign: the recipient is fixed by the JoinRecord.
  * The user's payout token account must already exist.
  */
 export type SolanaVaultClaimParameters = {
-  /** Pays state growth and temporary scratch rent; scratch rent is refunded at transaction end. */
+  readonly fhe: SolanaFheTransactionAccounts;
+  /** Pays State growth. The supplied FHE transaction may have a different scratch sponsor. */
   readonly payer: TransactionSigner;
   /** The user being claimed for (pins the join record). Not a signer. */
   readonly user: Address;
@@ -40,22 +40,20 @@ export type SolanaVaultClaimParameters = {
  * (`encrypted(joined) * payout_received / total_joined`, one MulDiv batch) and transfers it to the
  * user.
  */
-export async function buildClaimInstructions(parameters: SolanaVaultClaimParameters): Promise<readonly Instruction[]> {
+export async function buildClaimInstruction(parameters: SolanaVaultClaimParameters): Promise<Instruction> {
   const { user, payoutConfidentialMint } = parameters;
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, batchAuthority);
   const userPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, user);
   const joinState = await joinStateAddress(parameters.batch, user);
-  const scratch = await scratchAddress(joinState);
   const instruction = await getClaimInstructionAsync({
+    ...parameters.fhe,
     payer: parameters.payer,
     user,
     batcher: parameters.batcher,
     batch: parameters.batch,
     batchAuthority,
     joinState,
-    scratch,
-    instructions: INSTRUCTIONS_SYSVAR,
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
     batchAuthorityPayoutAta: await associatedTokenAddress(
@@ -72,5 +70,5 @@ export async function buildClaimInstructions(parameters: SolanaVaultClaimParamet
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
   });
-  return [instruction, closeScratchInstruction(scratch, parameters.payer.address)];
+  return instruction;
 }

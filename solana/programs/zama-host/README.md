@@ -54,60 +54,47 @@ materiality is now the gateway's `CiphertextCommits`, where the coprocessor alre
 handles (`docs/DESIGN_DECISIONS.md` DD-031). `EncryptedValue` only answers "who may use or decrypt
 this handle" — an MMR-proven allow or public-decrypt leaf.
 
-## Instruction-Local Transients
+## Composed FHE execution
 
-`fhe_execute` composes mixed FHE steps in one host instruction: **Binary / Ternary / Unary /
-TrivialEncrypt / Rand / RandBounded / Sum / IsIn / MulDiv** (no `Input` step — DD-007/DD-023). Binary scratch results can feed ternary
-`if_then_else`, and trivial-encrypt / random creations can participate in the same execution. Outputs
-produced earlier in the execution can be referenced as transient operands by later operations.
-A stored operand is admitted by its value authority's signature. Transient outputs create no
-`EncryptedValue` state at all. Only outputs marked persistent create (first bind) or update
-(subsequent binds) an `EncryptedValue`, carrying `previous_handle` on update and the keys allowed on
-the new handle, so every transaction stays independently interpretable
-(`docs/DESIGN_DECISIONS.md` DD-032/DD-033/DD-048).
+A client opens one payer-derived scratch account, submits application instructions, then closes scratch as the
+final top-level instruction. Applications forward the same scratch and Instructions sysvar through every host CPI.
+Scratch records all produced handles, their producing State, cumulative HCU depth, and explicit cross-State grants.
+Its payer funds rent and receives the refund; the payer acquires no handle permission.
 
-This is the supported replacement for the older `execute_frame` prototype, not a port of that ABI.
-Keeping persistent output authority on a signer witness (the `encrypted_value_account_authority` signer, or an
-explicit per-output authority account in `remaining_accounts`), and proving that signer is a PDA of
-the declared `program`, is what makes the application identity unforgeable (DD-047). The
-prototype's unsigned list of authorized encrypted value account authorities is deliberately not
-revived.
+`fhe_execute` takes an explicit canonical producing `EncryptedState` and that State authority's signature. It runs
+1–32 ordered operations: Binary, Ternary, Unary, TrivialEncrypt, Rand, RandBounded, Sum, IsIn and MulDiv. The Rust SDK
+builds typed expressions and attaches separate output effects:
 
-Ordinary compute facts, MMR leaves, and persistent-output binds are reconstructed from instruction data;
-the host emits no per-operation replay stream. An execution with created-public persistent outputs emits exactly
-one versioned Anchor CPI lifecycle event containing their ordered step index, host-owned
-`EncryptedValue` account, and host-derived output handle. An execution without created-public outputs emits
-no lifecycle event. The 32-step maximum (`MAX_FHE_EXECUTION_STEPS`) fits one CPI; other `EncryptedValue`
-lifecycle paths remain event-free (`docs/DESIGN_DECISIONS.md` DD-033/DD-038). Since RFC 035 the event has
-no consumer in this repository — the host listener recomputes public leaves from instruction data — and
-its retirement is tracked by fhevm-internal#1665 (DD-037).
+```rust
+let execution = FheExecution::build(state.id(), |fhe| {
+    let next = fhe.add(balance, amount)?;
+    fhe.output(next, state.set(balance_key).allow(owner))?;
+    Ok(())
+})?;
+```
 
-Admission invariants for `fhe_execute`:
+A current-call `EarlierStep` names one produced occurrence. A later call by the same State can use the handle from
+scratch without another grant. A different State must receive an explicit `StateOutput::allow_transient` grant and
+its authority must sign consumption. A slot operand requires its authority's signature and the expected current
+handle. Other participating signatures do not implicitly share every intermediate result.
 
-- The execution must contain 1 to 32 steps (`MAX_FHE_EXECUTION_STEPS`), and an execution with a rand
-  step must pass the `RandNonce` account (the rand seed is anchored to the host's counter, which
-  the execution advances).
-- Every persistent output's authority must be a PDA of the output's declared `program`, proven by
-  the declared seeds (`EncryptedValueAuthorityNotProgramPda`); every stored operand and output the
-  default authority controls must carry the same `(program, scope)` (`FheExecuteMixedScopes`), and
-  every application the execution touches must pass the deny list.
-- Every dynamic account passed through `remaining_accounts` must be unique and referenced by an
-  operand or output, and every referenced account index must be present.
-- The optional instructions sysvar account must be present only for steps that need instruction
-  witness checks, and when present its key must be the canonical instructions sysvar id.
-- Transient operands may only reference outputs produced by earlier steps in the same execution.
-- Only the RHS of a binary operation may be scalar; encrypted operands must match the operator's FHE
-  type rules.
-- External encrypted inputs enter compute through the `FheExecuteOperand::VerifiedInput` operand: the
-  coprocessor attestation is re-verified in-execution and the input is transient-allowed for that execution only
-  (the EVM `fromExternal` / `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is
-  checked at input consumption (`attestation.contract_address == program`, the execution's verified
-  application program); derived outputs are unconstrained. The redundant standalone
-  `verify_coprocessor_input` instruction was removed (DD-007).
-- Persistent outputs declare the keys allowed on the handle they install; the host seals one leaf
-  per key. Public decrypt is never a live flag; it is granted by `make_handle_public`, or at
-  persistent-output creation when `make_public=true`, which appends an exact-handle
-  `PublicDecryptLeaf` to the encrypted value account MMR after the allows.
+All arithmetic reads the execution's initial State snapshots. Up to 32 ordered effects then optionally write slots,
+append private/public MMR leaves and grant consumers. A slot may be written once per execution; its previous handle
+and the ordered shared leaf count are checked. Effects can authorize a fresh result without storing it in a slot.
+Historical re-sharing remains outside this interface.
+
+`returned_results` selects up to 32 `(step_index, output_index)` entries; output index is currently zero. Requested
+order and duplicates are preserved, and empty selection returns no handles. Callers read return data immediately
+after CPI; a subsequent CPI or the final close can overwrite the return channel. Return bytes grant no permission.
+
+Every operand-bearing handle preimage includes a mask derived from earlier production in the transaction. Slot,
+grant and earlier-step witnesses all use the same origin rule. The listener reconstructs operations and effects in
+order from instruction data; random operations also use their execution's `FheExecuteRandomSeedsEvent`.
+
+The host checks pause, canonical accounts, signers, all touched application deny records, operand types and current
+slot handles. Transaction HCU total and depth span calls and applications; block meters charge each execution to
+its producing State's `(program, scope)`. Random steps require the host nonce. All failures roll back atomically.
+Resource bounds and their SBF measurements are documented in `docs/INVARIANTS.md` and runtime cost snapshots.
 
 ## External Inputs
 

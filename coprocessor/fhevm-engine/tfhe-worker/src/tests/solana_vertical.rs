@@ -8,13 +8,14 @@
 //! What it deliberately does not cross: the geyser/gRPC transport. Records are decoded straight
 //! out of LiteSVM's transaction metadata instead of arriving over Yellowstone, and the block
 //! metadata is supplied by the fixture because LiteSVM computes no bank hash. Everything from
-//! `reconstruct_fhe_execute_records` inward is the production path; the wire above it is not.
+//! `reconstruct_fhe_execute` inward is the production path; the wire above it is not.
 
 use std::path::PathBuf;
 
 use anchor_lang::{
     prelude::{system_instruction, system_program},
-    AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas,
+    AccountDeserialize, AccountSerialize, AnchorDeserialize, Discriminator, InstructionData,
+    ToAccountMetas,
 };
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
@@ -22,11 +23,9 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use host_listener::{
     database::tfhe_event_propagate::Handle,
     solana_adapter::{
-        insert_solana_records, solana_transaction_id, SolanaBlockMeta, SolanaHostRecord,
+        insert_solana_block_records, solana_transaction_id, SolanaBlockMeta, SolanaHostRecord,
     },
-    solana_reconstruct::{
-        decode_fhe_execute_args, reconstruct_fhe_execute_records, ReconstructContext,
-    },
+    solana_reconstruct::{decode_fhe_execute_args, reconstruct_fhe_execute, ReconstructContext},
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
@@ -47,7 +46,7 @@ use time::{OffsetDateTime, PrimitiveDateTime};
 use zama_host::{EncryptedState, HostConfig};
 
 use crate::tests::{
-    event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed, EventHarness},
+    event_helpers::{decrypt_handles, setup_event_harness, wait_until_computed},
     utils::latest_db_key,
 };
 
@@ -125,22 +124,20 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     .await?;
 
     let outputs = transfer_output_accounts(&fixture);
-    let diverged = run_transfer(&harness, &mut fixture, outputs, diverge_handle).await?;
+    let diverged = run_transfer(&mut fixture, outputs, diverge_handle);
     assert_ne!(
         diverged.alice_handle, diverged.bob_handle,
         "the diverging transfer must leave the balances on different handles"
     );
 
-    let transfer = run_transfer(&harness, &mut fixture, outputs, amount_handle).await?;
-    // The transfer batch: ge -> debit sub -> select -> transferred sub -> sender re-encrypt
-    // (add 0, so the sender's handle rotates whether or not the debit succeeded) -> recipient
-    // add. The re-encrypt step landed in the fhe_eval cleanup (fhevm-internal#1853); the select
-    // result became transient then, so the persistent results are the last three.
+    let transfer = run_transfer(&mut fixture, outputs, amount_handle);
+    // ge -> debit sub -> select remaining -> transferred sub -> recipient add.
+    // The selected remaining balance is stored directly; there is no add-zero copy.
     let events = &transfer.events;
     assert_eq!(
         events.len(),
-        6,
-        "token transfer must remain a six-step batch"
+        5,
+        "token transfer has five arithmetic operations"
     );
     // The debit reads the SENDER's balance. Both operands are real, distinct handles by this
     // point, so this is the assertion the shared-handle opening state made impossible.
@@ -149,8 +146,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         SolanaHostRecord::FheBinaryOp(event)
             if event.lhs == diverged.alice_handle && event.rhs == amount_handle
     ));
-    // The select result is transient (no on-chain account carries it), so pin it by dataflow:
-    // both the transferred-amount sub and the sender re-encrypt must consume it.
+    // The sender stores the selected balance; the transferred amount consumes that same result.
     let select_result = match &events[2] {
         SolanaHostRecord::FheTernaryOp(event) => event.result,
         other => panic!("step 2 must be the transfer's select, got {other:?}"),
@@ -160,16 +156,34 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         SolanaHostRecord::FheBinaryOp(event)
             if event.result == transfer.transferred_handle && event.rhs == select_result
     ));
+    assert_eq!(select_result, transfer.alice_handle);
     assert!(matches!(
         &events[4],
         SolanaHostRecord::FheBinaryOp(event)
-            if event.result == transfer.alice_handle && event.lhs == select_result
-    ));
-    assert!(matches!(
-        &events[5],
-        SolanaHostRecord::FheBinaryOp(event)
             if event.result == transfer.bob_handle && event.lhs == diverged.bob_handle
     ));
+
+    let mut db_tx = harness
+        .listener_db
+        .new_transaction()
+        .await?
+        .expect("live database");
+    let stats = insert_solana_block_records(
+        &harness.listener_db,
+        &mut db_tx,
+        [&diverged, &transfer].map(|outcome| {
+            (
+                solana_transaction_id(outcome.signature.as_ref()),
+                outcome.events.clone(),
+            )
+        }),
+        block_meta(&fixture.svm)?,
+        0,
+    )
+    .await?;
+    db_tx.commit().await?;
+    assert_eq!(stats.tfhe_events, 10);
+    wait_until_computed(&harness.app).await?;
 
     let decrypted = decrypt_handles(
         &harness.pool,
@@ -194,48 +208,39 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     Ok(())
 }
 
-/// One confidential transfer end to end: sent through LiteSVM, reconstructed off-chain, landed in
-/// the listener database, and computed by the worker before returning.
-async fn run_transfer(
-    harness: &EventHarness,
+/// Runs one on-chain transfer and reconstructs its ordered host records.
+fn run_transfer(
     fixture: &mut TokenFixture,
     outputs: TransferOutputAccounts,
     amount_handle: [u8; 32],
-) -> Result<TransferOutcome, Box<dyn std::error::Error>> {
+) -> TransferOutcome {
     let transfer = transfer_ix(fixture, outputs, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
-    assert_eq!(meta.return_data.program_id, fixture.token_program_id);
-    let outcome = TransferOutcome {
+    // The final scratch close clears transaction return data. Read the app event here;
+    // runtime-tests separately checks the token's immediate CPI return channel.
+    let transferred_handle = meta
+        .inner_instructions
+        .iter()
+        .flatten()
+        .filter(|inner| *inner.instruction.program_id(&account_keys) == fixture.token_program_id)
+        .find_map(|inner| {
+            let data = inner
+                .instruction
+                .data
+                .strip_prefix(anchor_lang::event::EVENT_IX_TAG_LE)?;
+            let payload = data.strip_prefix(token::ConfidentialTransferEvent::DISCRIMINATOR)?;
+            token::ConfidentialTransferEvent::deserialize(&mut &*payload).ok()
+        })
+        .expect("transfer event")
+        .transferred_handle;
+    TransferOutcome {
+        signature,
         alice_handle: current_handle(&fixture.svm, outputs.alice),
         bob_handle: current_handle(&fixture.svm, outputs.bob),
-        transferred_handle: meta
-            .return_data
-            .data
-            .as_slice()
-            .try_into()
-            .expect("32-byte transferred handle"),
+        transferred_handle,
         events: reconstruct_transfer_events(fixture, &meta, &account_keys),
-    };
-
-    let mut db_tx = harness
-        .listener_db
-        .new_transaction()
-        .await?
-        .expect("new_transaction() returns Some on a live stack");
-    let stats = insert_solana_records(
-        &harness.listener_db,
-        &mut db_tx,
-        outcome.events.clone(),
-        solana_transaction_id(signature.as_ref()),
-        block_meta(&fixture.svm)?,
-    )
-    .await?;
-    db_tx.commit().await?;
-    assert_eq!(stats.tfhe_events, 6);
-
-    wait_until_computed(&harness.app).await?;
-    Ok(outcome)
+    }
 }
 
 /// Block metadata for the fixture's transfers, read back off the SVM clock so it cannot contradict
@@ -254,6 +259,7 @@ fn block_meta(svm: &LiteSVM) -> Result<SolanaBlockMeta, Box<dyn std::error::Erro
 }
 
 struct TransferOutcome {
+    signature: Signature,
     events: Vec<SolanaHostRecord>,
     alice_handle: [u8; 32],
     bob_handle: [u8; 32],
@@ -273,7 +279,7 @@ fn reconstruct_transfer_events(
         .find_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
         .expect("confidential transfer must CPI into zama-host fhe_execute");
     let clock = fixture.svm.get_sysvar::<Clock>();
-    reconstruct_fhe_execute_records(
+    reconstruct_fhe_execute(
         &batch,
         &[],
         &ReconstructContext {
@@ -281,8 +287,10 @@ fn reconstruct_transfer_events(
             previous_bank_hash: PREVIOUS_BANK_HASH,
             unix_timestamp: clock.unix_timestamp,
         },
+        &mut std::collections::HashSet::new(),
     )
     .expect("the token's accepted transfer batch must reconstruct")
+    .records
 }
 
 struct TokenFixture {
@@ -395,6 +403,8 @@ fn token_fixture() -> TokenFixture {
         Instruction {
             program_id: token_program_id,
             accounts: token::accounts::InitializeMint {
+                scratch: host::transient_address(alice.pubkey()).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 authority: alice.pubkey(),
                 mint: mint.pubkey(),
                 underlying_mint: underlying_mint.pubkey(),
@@ -503,6 +513,8 @@ fn initialize_token_account(
         Instruction {
             program_id: init.token_program_id,
             accounts: token::accounts::InitializeTokenAccount {
+                scratch: host::transient_address(payer.pubkey()).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 payer: payer.pubkey(),
                 owner,
                 mint: init.mint,
@@ -539,6 +551,8 @@ fn transfer_ix(
     Instruction {
         program_id: fixture.token_program_id,
         accounts: token::accounts::ConfidentialTransfer {
+            scratch: host::transient_address(fixture.alice.pubkey()).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             // Block-cap optional accounts threaded through the transfer CPI; the default
             // unrestricted cap means None/None here.
             hcu_block_meter: None,
@@ -558,8 +572,6 @@ fn transfer_ix(
             host_config: fixture.host_config,
             system_program: system_program::ID,
             result_state: None,
-            result_scratch: None,
-            result_authority: None,
             event_authority: event_authority(fixture.token_program_id),
             program: fixture.token_program_id,
         }
@@ -793,6 +805,34 @@ fn set_compute_unit_limit_ix(units: u32) -> Instruction {
     }
 }
 
+fn fhe_instructions(payer: Pubkey, ix: Instruction) -> [Instruction; 3] {
+    let scratch = host::transient_address(payer).0;
+    [
+        Instruction {
+            program_id: host::ID,
+            accounts: host::accounts::OpenScratch {
+                payer,
+                scratch,
+                instructions: solana_sdk::sysvar::instructions::ID,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: host::instruction::OpenScratch {}.data(),
+        },
+        ix,
+        Instruction {
+            program_id: host::ID,
+            accounts: host::accounts::CloseScratch {
+                scratch,
+                refund: payer,
+                instructions: solana_sdk::sysvar::instructions::ID,
+            }
+            .to_account_metas(None),
+            data: host::instruction::CloseScratch {}.data(),
+        },
+    ]
+}
+
 fn send_with_meta(
     svm: &mut LiteSVM,
     payer: &Keypair,
@@ -800,7 +840,9 @@ fn send_with_meta(
 ) -> (TransactionMetadata, Vec<Pubkey>, Signature) {
     // Confidential transfer's real euint64 FHE ops exceed the default 200k CU limit
     // (mollusk measures ~258k); raise it like a real client would.
-    let ixs = [set_compute_unit_limit_ix(400_000), ix];
+    let ixs: Vec<_> = std::iter::once(set_compute_unit_limit_ix(400_000))
+        .chain(fhe_instructions(payer.pubkey(), ix))
+        .collect();
     let message = Message::new_with_blockhash(&ixs, Some(&payer.pubkey()), &svm.latest_blockhash());
     let account_keys = message.account_keys.clone();
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), &[payer]).unwrap();
@@ -814,7 +856,11 @@ fn send_with_signers(
     ix: Instruction,
     signers: &[&Keypair],
 ) -> TransactionMetadata {
-    let message = Message::new_with_blockhash(&[ix], Some(payer), &svm.latest_blockhash());
+    let message = Message::new_with_blockhash(
+        &fhe_instructions(*payer, ix),
+        Some(payer),
+        &svm.latest_blockhash(),
+    );
     let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(message), signers).unwrap();
     svm.send_transaction(tx).unwrap()
 }

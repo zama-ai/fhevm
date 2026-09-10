@@ -1,5 +1,4 @@
-import { closeScratchInstruction, INSTRUCTIONS_SYSVAR } from './internal/scratch.js';
-import { scratchAddress } from './internal/batcherPdas.js';
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -145,7 +144,7 @@ export async function joinBatch(
   const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
   const joinState = await joinStateAddress(parameters.batch, user.address);
-  const scratch = await scratchAddress(joinState);
+  const fhe = await createSolanaFheTransaction({ payer: parameters.payer });
   const instruction = await getJoinInstructionAsync({
     user,
     payer: parameters.payer,
@@ -164,8 +163,7 @@ export async function joinBatch(
     userBalanceState: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
     batchBalanceState: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
     joinState,
-    scratch,
-    instructions: INSTRUCTIONS_SYSVAR,
+    ...fhe.accounts,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -187,7 +185,7 @@ export async function joinBatch(
     (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
     (m) =>
       appendTransactionMessageInstructions(
-        [instruction, closeScratchInstruction(scratch, parameters.payer.address)],
+        fhe.wrap([instruction]),
         m,
       ),
   );

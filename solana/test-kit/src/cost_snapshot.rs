@@ -235,7 +235,9 @@ pub fn assert_ceilings_snapshot(snapshot: &str, ceilings: &BTreeMap<String, Ceil
     assert_snapshot_matches(&path, "ceilings block", failures);
 }
 
-/// Measured cost of one instruction profile.
+/// Measured cost of one instruction profile. FHE fixtures run in a real scratch
+/// transaction: compute units include open/body/close, while data bytes and CPIs
+/// describe the body instruction. Packet-fit tests separately serialize the full envelope.
 ///
 /// `unique_accounts` is a static property of the instruction shape (unique
 /// account-meta pubkeys plus the program id), not a count of accounts loaded

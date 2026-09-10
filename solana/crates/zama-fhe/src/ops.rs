@@ -16,7 +16,7 @@ use zama_host::{
     FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
-use crate::acl::{BoundedU64UpperBound, Output};
+use crate::acl::BoundedU64UpperBound;
 use crate::builder::FheExecutionBuilder;
 use crate::operand::{Operand, OperandKind};
 use crate::types::{
@@ -60,14 +60,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Add,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -76,14 +74,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Sub,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -92,14 +88,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ge,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -110,7 +104,6 @@ impl<'id> FheExecutionBuilder<'id> {
         lhs: Operand,
         rhs: Operand,
         output_fhe_type: FheType,
-        output: Output,
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
         // The host requires the left operand to be an encrypted handle; only the
@@ -124,13 +117,12 @@ impl<'id> FheExecutionBuilder<'id> {
         let op_index = self.commit_step(output_fhe_type, |lowering| {
             let lhs = lowering.operand(lhs)?;
             let rhs = lowering.operand(rhs)?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::Binary {
                 op,
                 lhs,
                 rhs,
                 output_fhe_type,
-                output,
             })
         })?;
         Ok(Operand::transient(op_index))
@@ -141,7 +133,6 @@ impl<'id> FheExecutionBuilder<'id> {
         control: impl Into<Encrypted<'id, Bool>>,
         if_true: impl Into<Encrypted<'id, T>>,
         if_false: impl Into<Encrypted<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         let control = control.into().operand();
         let if_true = if_true.into().operand();
@@ -161,14 +152,13 @@ impl<'id> FheExecutionBuilder<'id> {
             let control = lowering.operand(control)?;
             let if_true = lowering.operand(if_true)?;
             let if_false = lowering.operand(if_false)?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
                 control,
                 if_true,
                 if_false,
                 output_fhe_type,
-                output,
             })
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
@@ -177,68 +167,51 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn trivial_encrypt<T: FheTyped>(
         &mut self,
         plaintext: Scalar<T>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
-        self.trivial_encrypt_raw(plaintext.bytes(), T::FHE_TYPE.byte(), output)
+        self.trivial_encrypt_raw(plaintext.bytes(), T::FHE_TYPE.byte())
             .map(Encrypted::from_operand)
     }
 
-    fn trivial_encrypt_raw(
-        &mut self,
-        plaintext: [u8; 32],
-        fhe_type: u8,
-        output: Output,
-    ) -> Result<Operand> {
+    fn trivial_encrypt_raw(&mut self, plaintext: [u8; 32], fhe_type: u8) -> Result<Operand> {
         validate_supported_fhe_type(fhe_type)?;
-        let step_index = self.commit_step(fhe_type, |lowering| {
-            let output = lowering.output(output)?;
+        let step_index = self.commit_step(fhe_type, |_lowering| {
             Ok(FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
-                output,
             })
         })?;
         Ok(Operand::transient(step_index))
     }
 
-    pub fn trivial_encrypt_u64(
-        &mut self,
-        plaintext: u64,
-        output: Output,
-    ) -> Result<Encrypted<'id, Uint<64>>> {
-        self.trivial_encrypt(Scalar::<Uint<64>>::u64(plaintext), output)
+    pub fn trivial_encrypt_u64(&mut self, plaintext: u64) -> Result<Encrypted<'id, Uint<64>>> {
+        self.trivial_encrypt(Scalar::<Uint<64>>::u64(plaintext))
     }
 
-    pub fn rand<T: FheTyped>(&mut self, output: Output) -> Result<Encrypted<'id, T>> {
-        self.rand_raw(T::FHE_TYPE.byte(), output)
+    pub fn rand<T: FheTyped>(&mut self) -> Result<Encrypted<'id, T>> {
+        self.rand_raw(T::FHE_TYPE.byte())
             .map(Encrypted::from_operand)
     }
 
-    pub(crate) fn rand_raw(&mut self, fhe_type: u8, output: Output) -> Result<Operand> {
+    pub(crate) fn rand_raw(&mut self, fhe_type: u8) -> Result<Operand> {
         validate_supported_fhe_type(fhe_type)?;
-        let step_index = self.commit_step(fhe_type, |lowering| {
-            let output = lowering.output(output)?;
-            Ok(FheExecuteStep::Rand { fhe_type, output })
-        })?;
+        let step_index =
+            self.commit_step(fhe_type, |_lowering| Ok(FheExecuteStep::Rand { fhe_type }))?;
         Ok(Operand::transient(step_index))
     }
 
-    pub fn rand_u64(&mut self, output: Output) -> Result<Encrypted<'id, Uint<64>>> {
-        self.rand::<Uint<64>>(output)
+    pub fn rand_u64(&mut self) -> Result<Encrypted<'id, Uint<64>>> {
+        self.rand::<Uint<64>>()
     }
 
     pub fn rand_bounded_u64(
         &mut self,
         upper_bound: BoundedU64UpperBound,
-        output: Output,
     ) -> Result<Encrypted<'id, Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
-        let step_index = self.commit_step(fhe_type, |lowering| {
-            let output = lowering.output(output)?;
+        let step_index = self.commit_step(fhe_type, |_lowering| {
             Ok(FheExecuteStep::RandBounded {
                 upper_bound: upper_bound.bytes(),
                 fhe_type,
-                output,
             })
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
@@ -250,14 +223,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Mul,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -266,14 +237,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Div,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -282,14 +251,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rem,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -298,14 +265,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::And,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -314,14 +279,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Or,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -330,14 +293,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Xor,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -346,14 +307,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shl,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -362,14 +321,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shr,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -378,14 +335,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotl,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -394,14 +349,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotr,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -410,14 +363,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Eq,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -426,14 +377,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Ne,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -442,14 +391,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Gt,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -458,14 +405,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Le,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -474,14 +419,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         self.binary_op(
             FheBinaryOpCode::Lt,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             FheType::BOOL,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -490,14 +433,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Min,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -506,14 +447,12 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
         rhs: impl Into<BinaryRhs<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Max,
             lhs.into().operand(),
             binary_rhs_operand(rhs),
             T::FHE_TYPE,
-            output,
         )
         .map(Encrypted::from_operand)
     }
@@ -523,49 +462,30 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn neg<T: FheUint>(
         &mut self,
         operand: impl Into<Encrypted<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
-        self.unary_op(
-            FheUnaryOpCode::Neg,
-            operand.into().operand(),
-            T::FHE_TYPE,
-            output,
-        )
-        .map(Encrypted::from_operand)
+        self.unary_op(FheUnaryOpCode::Neg, operand.into().operand(), T::FHE_TYPE)
+            .map(Encrypted::from_operand)
     }
 
     pub fn not<T: FheTyped>(
         &mut self,
         operand: impl Into<Encrypted<'id, T>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
-        self.unary_op(
-            FheUnaryOpCode::Not,
-            operand.into().operand(),
-            T::FHE_TYPE,
-            output,
-        )
-        .map(Encrypted::from_operand)
+        self.unary_op(FheUnaryOpCode::Not, operand.into().operand(), T::FHE_TYPE)
+            .map(Encrypted::from_operand)
     }
 
     pub fn cast<FROM: FheTyped, TO: FheUint>(
         &mut self,
         operand: impl Into<Encrypted<'id, FROM>>,
-        output: Output,
     ) -> Result<Encrypted<'id, TO>> {
-        self.unary_op(
-            FheUnaryOpCode::Cast,
-            operand.into().operand(),
-            TO::FHE_TYPE,
-            output,
-        )
-        .map(Encrypted::from_operand)
+        self.unary_op(FheUnaryOpCode::Cast, operand.into().operand(), TO::FHE_TYPE)
+            .map(Encrypted::from_operand)
     }
 
     pub fn sum<T: FheUint>(
         &mut self,
         operands: impl IntoIterator<Item = impl Into<Encrypted<'id, T>>>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
         let fhe_type = T::FHE_TYPE.byte();
@@ -577,11 +497,10 @@ impl<'id> FheExecutionBuilder<'id> {
                 operands.map(|operand| operand.into().operand()),
                 max_operands,
             )?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::Sum {
                 operands: lowered.into_inner(),
                 fhe_type,
-                output,
             })
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
@@ -591,7 +510,6 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         value: impl Into<Encrypted<'id, T>>,
         set: impl IntoIterator<Item = impl Into<Encrypted<'id, T>>>,
-        output: Output,
     ) -> Result<Encrypted<'id, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
         let fhe_type = T::FHE_TYPE.byte();
@@ -607,12 +525,11 @@ impl<'id> FheExecutionBuilder<'id> {
             let value = lowering.operand(value_op)?;
             let set = lowering
                 .reduction_operands(set.map(|operand| operand.into().operand()), max_operands)?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::IsIn {
                 value,
                 set: set.into_inner(),
                 fhe_type,
-                output,
             })
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
@@ -623,7 +540,6 @@ impl<'id> FheExecutionBuilder<'id> {
         factor1: impl Into<Encrypted<'id, T>>,
         factor2: impl Into<BinaryRhs<'id, T>>,
         divisor: Scalar<T>,
-        output: Output,
     ) -> Result<Encrypted<'id, T>> {
         let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
@@ -644,13 +560,12 @@ impl<'id> FheExecutionBuilder<'id> {
         let step_index = self.commit_step(fhe_type, |lowering| {
             let factor1 = lowering.operand(lhs)?;
             let factor2 = lowering.operand(rhs)?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 divisor: divisor_bytes,
                 output_fhe_type: fhe_type,
-                output,
             })
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
@@ -661,7 +576,6 @@ impl<'id> FheExecutionBuilder<'id> {
         op: FheUnaryOpCode,
         operand: Operand,
         output_fhe_type: FheType,
-        output: Output,
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
@@ -672,12 +586,11 @@ impl<'id> FheExecutionBuilder<'id> {
         })?;
         let step_index = self.commit_step(output_fhe_type, |lowering| {
             let operand = lowering.operand(operand)?;
-            let output = lowering.output(output)?;
+
             Ok(FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
-                output,
             })
         })?;
         Ok(Operand::transient(step_index))

@@ -172,22 +172,47 @@ describe('settleBatch', () => {
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).not.toContain(accounts.pendingBurn);
     expect(provisioned).toContain(accounts.pendingBurn);
-    // The static set is closed at 13: the fee payer, the program ids settle passes as accounts
-    // (system, SPL token, the CPI targets) and the event-CPI authorities. Pinning the count makes
+    // The static set is closed at 10: the fee payer, scratch, instructions sysvar,
+    // compute-budget program and fixed program IDs. Pinning the count makes
     // growth a deliberate edit with a fresh look at the 1232-byte budget.
-    expect(staticAccounts).toHaveLength(13);
+    expect(staticAccounts).toHaveLength(10);
     // And nothing is paid for twice: an address provisioned into the table must not also sit in
     // the static set.
     expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
 
     // The certified 32-byte cleartext was decoded to the u64 settle argument, and the locally built
     // proof of the second leaf rode along. instructions[0] is the prepended SetComputeUnitLimit; the
-    // settle instruction is instructions[1].
+    // open is instructions[1] and settle is instructions[2].
     const compiledInstructions = (compiled as unknown as { instructions: { data?: Uint8Array }[] }).instructions;
-    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[1]!.data!);
+    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
     expect(data.cleartextTotal).toBe(800n);
     expect(data.leafIndex).toBe(3n);
     expect(data.siblings).toHaveLength(2);
+  });
+
+  it.each([{ threshold: 1, depth: 2 }, { threshold: 7, depth: 0 }, { threshold: 7, depth: 2 }, { threshold: 7, depth: 5 }])('fits $threshold signatures and $depth proof siblings with the provisioned table', async ({ threshold, depth }) => {
+    const { chain, keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: threshold }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: depth }, () => new Uint8Array(32)) });
+    await settleBatch(chain, keeper, opts);
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
+    expect(bytes.length).toBeLessThanOrEqual(1232);
+  });
+
+  it('rejects an oversized certificate/proof before simulation or send', async () => {
+    const { chain, keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: 6 }, () => new Uint8Array(32)) });
+    await expect(settleBatch(chain, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
+    expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
+    expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {

@@ -9,15 +9,14 @@
 
 use anchor_lang::prelude::Pubkey;
 
-use zama_host::{AppScope, FheExecuteArgs, FheExecuteOutput, FheExecuteStep};
+use zama_host::{AppScope, FheExecuteArgs};
 
 #[cfg(feature = "cpi")]
 use crate::accounts::{
     resolve_execution_accounts, ExecutionAccountResolutionError, ResolvedExecutionAccounts,
 };
 use crate::accounts::{
-    ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionAuthority,
-    ExecutionAuthorityRequirement,
+    ExecutionAccountMeta, ExecutionAccountRequirement, ExecutionAuthorityRequirement,
 };
 use crate::builder::FheExecutionBuilder;
 #[cfg(feature = "cpi")]
@@ -33,9 +32,7 @@ use anchor_lang::prelude::AccountInfo;
 /// args or dynamic account roles.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
-    pub(crate) authority: ExecutionAuthority,
-    /// Application of referenced States controlled by the default authority, or `None`.
-    pub(crate) app: Option<AppScope>,
+    pub(crate) state: crate::StateId,
     /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
     pub(crate) has_rand_step: bool,
     pub(crate) args: FheExecuteArgs,
@@ -59,12 +56,12 @@ impl FheExecution {
     ///
     /// ```
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, Scalar, StateId, Uint};
     ///
-    /// let authority = ExecutionAuthority::new(Pubkey::new_unique());
-    /// let execution = FheExecution::build(authority, |builder| {
-    ///     let value = builder.trivial_encrypt_u64(7, Output::transient())?;
-    ///     builder.add(value, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+    /// let state = StateId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// let execution = FheExecution::build(state, |builder| {
+    ///     let value = builder.trivial_encrypt_u64(7)?;
+    ///     builder.add(value, Scalar::<Uint<64>>::u64(1))?;
     ///     Ok(())
     /// });
     /// assert!(execution.is_ok());
@@ -74,13 +71,13 @@ impl FheExecution {
     ///
     /// ```compile_fail
     /// use anchor_lang::prelude::Pubkey;
-    /// use zama_fhe::{FheExecution, ExecutionAuthority, Output, Scalar, Uint};
+    /// use zama_fhe::{FheExecution, Scalar, StateId, Uint};
     ///
-    /// let authority = ExecutionAuthority::new(Pubkey::new_unique());
-    /// FheExecution::build(authority, |outer| {
-    ///     let borrowed = outer.trivial_encrypt_u64(7, Output::transient())?;
-    ///     FheExecution::build(authority, |inner| {
-    ///         inner.add(borrowed, Scalar::<Uint<64>>::u64(1), Output::transient())?;
+    /// let state = StateId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// FheExecution::build(state, |outer| {
+    ///     let borrowed = outer.trivial_encrypt_u64(7)?;
+    ///     FheExecution::build(state, |inner| {
+    ///         inner.add(borrowed, Scalar::<Uint<64>>::u64(1))?;
     ///         Ok(())
     ///     })
     ///     .unwrap();
@@ -88,11 +85,11 @@ impl FheExecution {
     /// })
     /// .unwrap();
     /// ```
-    pub fn build<F>(authority: ExecutionAuthority, build: F) -> Result<Self>
+    pub fn build<F>(state: crate::StateId, build: F) -> Result<Self>
     where
         F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<()>,
     {
-        let mut builder = FheExecutionBuilder::new(authority);
+        let mut builder = FheExecutionBuilder::new(state);
         build(&mut builder)?;
         builder.finish()
     }
@@ -100,13 +97,13 @@ impl FheExecution {
     /// Returns only the produced value selected by the closure, preserving its FHE type.
     /// Return bytes convey a handle, not permission: cross-program use still requires a grant.
     pub fn build_returning<T: crate::FheTyped, F>(
-        authority: ExecutionAuthority,
+        state: crate::StateId,
         build: F,
     ) -> Result<ReturningFheExecution<T>>
     where
         F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> Result<crate::Encrypted<'id, T>>,
     {
-        let mut builder = FheExecutionBuilder::new(authority);
+        let mut builder = FheExecutionBuilder::new(state);
         let selected = build(&mut builder)?;
         let crate::operand::OperandKind::Transient { producer_index } = selected.operand().0 else {
             return Err(crate::FheExecutionBuildError::ResultNotProduced);
@@ -122,16 +119,19 @@ impl FheExecution {
         })
     }
 
-    pub fn authority(&self) -> ExecutionAuthority {
-        self.authority
+    pub fn state(&self) -> crate::StateId {
+        self.state
     }
 
-    /// The `(program, scope)` of referenced States controlled by the default authority, or `None`
-    /// when it controls none. The host keys its HCU meter and trust record on this application.
+    pub fn authority(&self) -> Pubkey {
+        self.state.authority()
+    }
+
+    /// The producing State's application. The host keys its HCU meter and trust record on it.
     /// States under additional signing authorities may belong to other applications; each
     /// application's deny record is checked independently.
-    pub fn app(&self) -> Option<AppScope> {
-        self.app
+    pub fn app(&self) -> AppScope {
+        self.state.app()
     }
 
     /// Whether the invoke must carry the host's rand nonce account (any rand step).
@@ -178,7 +178,7 @@ impl FheExecution {
         &self,
     ) -> impl Iterator<Item = ExecutionAuthorityRequirement> + '_ {
         std::iter::once(ExecutionAuthorityRequirement {
-            pubkey: self.authority.pubkey(),
+            pubkey: self.state.authority(),
         })
         .chain(
             self.additional_value_authorities()
@@ -218,21 +218,6 @@ impl FheExecution {
             resolved_accounts,
             signer_seeds,
         )
-    }
-}
-
-/// The output policy of an execution step, independent of step kind.
-pub(crate) fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
-    match step {
-        FheExecuteStep::Binary { output, .. }
-        | FheExecuteStep::Ternary { output, .. }
-        | FheExecuteStep::TrivialEncrypt { output, .. }
-        | FheExecuteStep::Rand { output, .. }
-        | FheExecuteStep::Unary { output, .. }
-        | FheExecuteStep::RandBounded { output, .. }
-        | FheExecuteStep::Sum { output, .. }
-        | FheExecuteStep::IsIn { output, .. }
-        | FheExecuteStep::MulDiv { output, .. } => output,
     }
 }
 
@@ -283,12 +268,15 @@ pub(crate) fn fhe_execute_instruction_data(args: &FheExecuteArgs) -> Vec<u8> {
 mod tests {
     use super::*;
     use anchor_lang::InstructionData as _;
+    use zama_host::FheExecuteStep;
 
     /// Pins [`fhe_execute_instruction_data`] to the derived encoder: byte-for-byte what
     /// `zama_host::instruction::FheExecute { args }.data()` produces, without the copy.
     #[test]
     fn hand_assembled_packet_matches_the_generated_wrapper() {
         let args = FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![],
             returned_results: vec![zama_host::ExecutionResultRef {
                 step_index: 1,
                 output_index: 0,
@@ -299,14 +287,12 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [1u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Binary {
                     op: zama_host::FheBinaryOpCode::Add,
                     lhs: zama_host::FheExecuteOperand::EarlierStep { producer_index: 0 },
                     rhs: zama_host::FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
             ],
         };
@@ -362,18 +348,23 @@ fn select_returned_handle(
 #[cfg(test)]
 mod returning_tests {
     use super::*;
-    use crate::Output;
 
     #[test]
     fn selected_result_stays_paired_with_its_execution_and_checks_return_data() {
-        let execution =
-            FheExecution::build_returning(ExecutionAuthority::new(Pubkey::new_unique()), |fhe| {
-                fhe.trivial_encrypt_u64(1, Output::transient())?;
-                let selected = fhe.trivial_encrypt_u64(2, Output::transient())?;
-                fhe.trivial_encrypt_u64(3, Output::transient())?;
+        let execution = FheExecution::build_returning(
+            crate::StateId::new(
+                anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+                Pubkey::new_unique(),
+                [0xA5; 32],
+            ),
+            |fhe| {
+                fhe.trivial_encrypt_u64(1)?;
+                let selected = fhe.trivial_encrypt_u64(2)?;
+                fhe.trivial_encrypt_u64(3)?;
                 Ok(selected)
-            })
-            .unwrap();
+            },
+        )
+        .unwrap();
         assert_eq!(
             execution.execution.args.returned_results,
             vec![zama_host::ExecutionResultRef {

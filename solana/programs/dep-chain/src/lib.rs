@@ -33,9 +33,7 @@ pub use errors::*;
 pub use state::*;
 
 use anchor_lang::prelude::*;
-use zama_fhe::{
-    ExecutionAuthority, ExecutionCpiAccounts, FheExecution, Output, Scalar, State, Uint,
-};
+use zama_fhe::{ExecutionCpiAccounts, FheExecution, Scalar, State, Uint};
 use zama_host::program::ZamaHost;
 
 declare_id!("HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4");
@@ -89,13 +87,11 @@ pub mod dep_chain {
         let output = state
             .set(encrypted_tail_label())
             .allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build(
-            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
-            |builder| {
-                builder.trivial_encrypt_u64(0, Output::state(output))?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(state.id(), |builder| {
+            let result = builder.trivial_encrypt_u64(0)?;
+            builder.output(result, output)?;
+            Ok(())
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .resolve_accounts(
@@ -114,6 +110,8 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -138,34 +136,14 @@ pub mod dep_chain {
         let output = state
             .set(encrypted_tail_label())
             .allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build(
-            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
-            |builder| {
-                if links == 1 {
-                    builder.add(
-                        operand,
-                        Scalar::<Uint<64>>::u64(amount),
-                        Output::state(output),
-                    )?;
-                    return Ok(());
-                }
-                let mut value = builder.add(
-                    operand,
-                    Scalar::<Uint<64>>::u64(amount),
-                    Output::transient(),
-                )?;
-                for _ in 2..links {
-                    value =
-                        builder.add(value, Scalar::<Uint<64>>::u64(amount), Output::transient())?;
-                }
-                builder.add(
-                    value,
-                    Scalar::<Uint<64>>::u64(amount),
-                    Output::state(output),
-                )?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(state.id(), |builder| {
+            let mut value = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
+            for _ in 1..links {
+                value = builder.add(value, Scalar::<Uint<64>>::u64(amount))?;
+            }
+            builder.output(value, output)?;
+            Ok(())
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .resolve_accounts(
@@ -186,6 +164,8 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -228,6 +208,11 @@ pub struct Initialize<'info> {
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }
@@ -249,6 +234,11 @@ pub struct Extend<'info> {
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }

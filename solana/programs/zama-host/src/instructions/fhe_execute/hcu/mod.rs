@@ -1,12 +1,5 @@
-//! In-execution HCU (Homomorphic Compute Unit) cost model for [`super::fhe_execute`].
-//!
-//! Pure, account-independent metering over an `fhe_execute` execution. Everything needed is in
-//! [`FheExecuteStep`] plus the interned dictionary (so comparisons can price on operand width).
-//! A step's cost is a function of its op, FHE type, and scalar flag; its critical-path *depth*
-//! is a function of the operand *kinds* (an `EarlierStep` reads the depth of the producer it
-//! points at; persistent / verified / scalar operands are zero-depth leaves). No sysvars, no
-//! accounts — so it runs once in [`super::fhe_execute`], before execution mutates any account,
-//! and its total feeds the block-cap charge unchanged.
+//! Canonical HCU costs, shared by all executions. Transaction totals and input
+//! depths live in the scratch journal and are charged by the production walk.
 //!
 //! **Fail-closed:** every op variant is enumerated explicitly (no `_ =>` arm over the op enums), so a
 //! newly added op fails to compile until a cost decision is made; any `(op, fhe_type, scalar)`
@@ -19,10 +12,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ZamaHostError;
-use crate::state::{
-    handle_fhe_type, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode,
-    FheUnaryOpCode,
-};
+use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 #[cfg(test)]
 mod tests;
@@ -185,7 +175,7 @@ const IS_IN: ReductionCosts = ReductionCosts {
     rest: [0, 0, 374_000, 605_000, 827_000, 879_000, 921_000],
 };
 
-fn is_comparison(op: FheBinaryOpCode) -> bool {
+pub(super) fn is_comparison(op: FheBinaryOpCode) -> bool {
     matches!(
         op,
         FheBinaryOpCode::Eq
@@ -280,177 +270,4 @@ pub(super) fn step_depth(step_hcu: u64, max_input_depth: u64) -> Result<u64> {
     step_hcu
         .checked_add(max_input_depth)
         .ok_or_else(|| error!(ZamaHostError::HcuTransactionDepthLimitExceeded))
-}
-
-#[derive(Debug)]
-#[cfg_attr(not(test), allow(dead_code))]
-pub(super) struct ExecutionMeter {
-    pub total: u64,
-    pub step_depths: Vec<u64>,
-}
-
-fn operand_depth(operand: &FheExecuteOperand, step_depths: &[u64]) -> u64 {
-    match operand {
-        FheExecuteOperand::EarlierStep { producer_index } => step_depths
-            .get(*producer_index as usize)
-            .copied()
-            .unwrap_or(0),
-        FheExecuteOperand::StateSlot { .. } | FheExecuteOperand::TransientResult { .. } => 0,
-        FheExecuteOperand::VerifiedInput { .. } => 0,
-        FheExecuteOperand::Scalar { .. } => 0,
-    }
-}
-
-fn operand_pricing_type(
-    operand: &FheExecuteOperand,
-    dictionary: &[[u8; 32]],
-    produced_types: &[u8],
-) -> Result<u8> {
-    match operand {
-        FheExecuteOperand::EarlierStep { producer_index } => produced_types
-            .get(*producer_index as usize)
-            .copied()
-            .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
-        FheExecuteOperand::StateSlot { handle_index, .. }
-        | FheExecuteOperand::TransientResult { handle_index, .. } => {
-            let handle = dictionary
-                .get(*handle_index as usize)
-                .ok_or_else(|| error!(ZamaHostError::FheExecuteDictionaryIndexOutOfBounds))?;
-            Ok(handle_fhe_type(*handle))
-        }
-        FheExecuteOperand::VerifiedInput { attestation } => {
-            Ok(handle_fhe_type(attestation.input_handle))
-        }
-        FheExecuteOperand::Scalar { .. } => Err(error!(ZamaHostError::HcuUnknownCost)),
-    }
-}
-
-/// Meters an execution: sums per-step costs into an execution total and computes each step's
-/// critical-path depth, enforcing both caps after every step (`u64::MAX = unlimited`). Comparisons
-/// price on operand width, resolved from the dictionary / attestation handle / earlier produced
-/// types.
-pub(super) fn meter_execution(
-    steps: &[FheExecuteStep],
-    dictionary: &[[u8; 32]],
-    max_hcu_per_tx: u64,
-    max_hcu_depth_per_tx: u64,
-) -> Result<ExecutionMeter> {
-    let mut total: u64 = 0;
-    let mut step_depths: Vec<u64> = Vec::with_capacity(steps.len());
-    let mut produced_types: Vec<u8> = Vec::with_capacity(steps.len());
-
-    for step in steps {
-        let (op_hcu, max_input_depth, produced_type) = match step {
-            FheExecuteStep::Binary {
-                op,
-                lhs,
-                rhs,
-                output_fhe_type,
-                ..
-            } => {
-                let pricing_type = if is_comparison(*op) {
-                    operand_pricing_type(lhs, dictionary, &produced_types)?
-                } else {
-                    *output_fhe_type
-                };
-                let cost = binary_op_hcu(
-                    *op,
-                    pricing_type,
-                    matches!(rhs, FheExecuteOperand::Scalar { .. }),
-                )?;
-                let depth = operand_depth(lhs, &step_depths).max(operand_depth(rhs, &step_depths));
-                (cost, depth, *output_fhe_type)
-            }
-            FheExecuteStep::Ternary {
-                op,
-                control,
-                if_true,
-                if_false,
-                output_fhe_type,
-                ..
-            } => {
-                let cost = ternary_op_hcu(*op, *output_fhe_type)?;
-                let depth = operand_depth(control, &step_depths)
-                    .max(operand_depth(if_true, &step_depths))
-                    .max(operand_depth(if_false, &step_depths));
-                (cost, depth, *output_fhe_type)
-            }
-            FheExecuteStep::TrivialEncrypt { fhe_type, .. } => {
-                (trivial_encrypt_hcu(*fhe_type)?, 0, *fhe_type)
-            }
-            FheExecuteStep::Rand { fhe_type, .. } => (rand_hcu(*fhe_type)?, 0, *fhe_type),
-            FheExecuteStep::Unary {
-                op,
-                operand,
-                output_fhe_type,
-                ..
-            } => {
-                let cost = unary_op_hcu(*op, *output_fhe_type)?;
-                let depth = operand_depth(operand, &step_depths);
-                (cost, depth, *output_fhe_type)
-            }
-            FheExecuteStep::RandBounded { fhe_type, .. } => {
-                (rand_bounded_hcu(*fhe_type)?, 0, *fhe_type)
-            }
-            FheExecuteStep::Sum {
-                operands, fhe_type, ..
-            } => {
-                let cost = sum_hcu(*fhe_type, operands.len())?;
-                let depth = operands
-                    .iter()
-                    .map(|operand| operand_depth(operand, &step_depths))
-                    .max()
-                    .unwrap_or(0);
-                (cost, depth, *fhe_type)
-            }
-            FheExecuteStep::IsIn {
-                value,
-                set,
-                fhe_type,
-                ..
-            } => {
-                let cost = is_in_hcu(*fhe_type, set.len())?;
-                let depth = operand_depth(value, &step_depths).max(
-                    set.iter()
-                        .map(|operand| operand_depth(operand, &step_depths))
-                        .max()
-                        .unwrap_or(0),
-                );
-                (cost, depth, 0)
-            }
-            FheExecuteStep::MulDiv {
-                factor1,
-                factor2,
-                output_fhe_type,
-                ..
-            } => {
-                let cost = mul_div_hcu(
-                    *output_fhe_type,
-                    matches!(factor2, FheExecuteOperand::Scalar { .. }),
-                )?;
-                let depth =
-                    operand_depth(factor1, &step_depths).max(operand_depth(factor2, &step_depths));
-                (cost, depth, *output_fhe_type)
-            }
-        };
-
-        total = accumulate_total(total, op_hcu)?;
-        enforce_le(
-            total,
-            max_hcu_per_tx,
-            ZamaHostError::HcuTransactionLimitExceeded,
-        )?;
-
-        let depth = step_depth(op_hcu, max_input_depth)?;
-        enforce_le(
-            depth,
-            max_hcu_depth_per_tx,
-            ZamaHostError::HcuTransactionDepthLimitExceeded,
-        )?;
-
-        step_depths.push(depth);
-        produced_types.push(produced_type);
-    }
-
-    Ok(ExecutionMeter { total, step_depths })
 }

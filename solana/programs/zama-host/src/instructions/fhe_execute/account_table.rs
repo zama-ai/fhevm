@@ -1,7 +1,7 @@
 //! Validates and caches remaining accounts for one `fhe_execute` execution.
 //!
 //! Construction rejects duplicate keys. Preflight marks referenced accounts, and
-//! `assert_all_used` rejects unused accounts. Canonical State/scratch validation,
+//! `assert_all_used` rejects unused accounts. Canonical State validation,
 //! authority-signer lookup, deny-record lookup and flushing dirty accounts live here.
 //! Preflight separately enforces one write per State slot.
 
@@ -11,8 +11,6 @@ pub(super) struct ExecutionAccountTable<'a, 'info> {
     accounts: &'a [AccountInfo<'info>],
     states: Vec<Option<Box<EncryptedState>>>,
     dirty_states: Vec<u16>,
-    scratches: Vec<Option<Box<TransientState>>>,
-    dirty_scratches: Vec<u16>,
     used: Vec<bool>,
 }
 
@@ -32,8 +30,6 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             accounts,
             states: (0..accounts.len()).map(|_| None).collect(),
             dirty_states: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
-            scratches: (0..accounts.len()).map(|_| None).collect(),
-            dirty_scratches: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
             used: vec![false; accounts.len()],
         })
     }
@@ -91,62 +87,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
             )?;
             write_account(info, state)?;
         }
-        for &index in &self.dirty_scratches {
-            write_account(
-                self.account(index)?,
-                self.scratches[index as usize]
-                    .as_deref()
-                    .ok_or(ZamaHostError::TransientAccountInvalid)?,
-            )?;
-        }
         Ok(())
-    }
-
-    pub(super) fn scratch(&mut self, index: u16) -> Result<&TransientState> {
-        if self
-            .scratches
-            .get(index as usize)
-            .ok_or(ZamaHostError::TransientAccountInvalid)?
-            .is_some()
-        {
-            return Ok(self.scratches[index as usize].as_deref().unwrap());
-        }
-        let info = self.account(index)?;
-        require_keys_eq!(
-            *info.owner,
-            crate::ID,
-            ZamaHostError::TransientAccountInvalid
-        );
-        require!(
-            info.data_len() == TransientState::SPACE,
-            ZamaHostError::TransientAccountInvalid
-        );
-        let mut scratch = TransientState::try_deserialize(&mut &info.try_borrow_data()?[..])
-            .map_err(|_| error!(ZamaHostError::TransientAccountInvalid))?;
-        let (address, bump) = transient_address(scratch.initiating_state);
-        require_keys_eq!(info.key(), address, ZamaHostError::TransientAccountInvalid);
-        require!(scratch.bump == bump, ZamaHostError::TransientAccountInvalid);
-        require!(
-            scratch.grants.len() <= MAX_TRANSIENT_GRANTS,
-            ZamaHostError::TransientAccountInvalid
-        );
-        scratch
-            .grants
-            .reserve_exact(MAX_TRANSIENT_GRANTS - scratch.grants.len());
-        self.scratches[index as usize] = Some(Box::new(scratch));
-        Ok(self.scratches[index as usize].as_deref().unwrap())
-    }
-
-    pub(super) fn scratch_mut(&mut self, index: u16) -> Result<&mut TransientState> {
-        self.scratch(index)?;
-        require!(
-            self.account(index)?.is_writable,
-            ZamaHostError::TransientAccountInvalid
-        );
-        if !self.dirty_scratches.contains(&index) {
-            self.dirty_scratches.push(index);
-        }
-        Ok(self.scratches[index as usize].as_deref_mut().unwrap())
     }
 
     pub(super) fn account(&self, index: u16) -> Result<&'a AccountInfo<'info>> {

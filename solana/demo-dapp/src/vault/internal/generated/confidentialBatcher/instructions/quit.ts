@@ -65,6 +65,8 @@ export type QuitInstruction<
   TAccountUserBalanceState extends string | AccountMeta<string> = string,
   TAccountJoinState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
@@ -103,6 +105,8 @@ export type QuitInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountConfidentialTokenEventAuthority extends string
@@ -152,6 +156,8 @@ export type QuitAsyncInput<
   TAccountUserBalanceState extends string = string,
   TAccountJoinState extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -184,6 +190,8 @@ export type QuitAsyncInput<
   /** amount, then reset to an encrypted zero by the batcher execution. */
   joinState: Address<TAccountJoinState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -211,6 +219,8 @@ export async function getQuitInstructionAsync<
   TAccountUserBalanceState extends string,
   TAccountJoinState extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -235,6 +245,8 @@ export async function getQuitInstructionAsync<
     TAccountUserBalanceState,
     TAccountJoinState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -261,6 +273,8 @@ export async function getQuitInstructionAsync<
     TAccountUserBalanceState,
     TAccountJoinState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -313,6 +327,8 @@ export async function getQuitInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -370,6 +386,8 @@ export async function getQuitInstructionAsync<
       getAccountMeta('userBalanceState', accounts.userBalanceState),
       getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -396,6 +414,8 @@ export async function getQuitInstructionAsync<
     TAccountUserBalanceState,
     TAccountJoinState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -421,6 +441,8 @@ export type QuitInput<
   TAccountUserBalanceState extends string = string,
   TAccountJoinState extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -453,6 +475,8 @@ export type QuitInput<
   /** amount, then reset to an encrypted zero by the batcher execution. */
   joinState: Address<TAccountJoinState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -480,6 +504,8 @@ export function getQuitInstruction<
   TAccountUserBalanceState extends string,
   TAccountJoinState extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -504,6 +530,8 @@ export function getQuitInstruction<
     TAccountUserBalanceState,
     TAccountJoinState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -529,6 +557,8 @@ export function getQuitInstruction<
   TAccountUserBalanceState,
   TAccountJoinState,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountConfidentialTokenEventAuthority,
@@ -580,6 +610,8 @@ export function getQuitInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -626,6 +658,8 @@ export function getQuitInstruction<
       getAccountMeta('userBalanceState', accounts.userBalanceState),
       getAccountMeta('joinState', accounts.joinState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -652,6 +686,8 @@ export function getQuitInstruction<
     TAccountUserBalanceState,
     TAccountJoinState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -692,14 +728,16 @@ export type ParsedQuitInstruction<
     /** amount, then reset to an encrypted zero by the batcher execution. */
     joinState: TAccountMetas[14];
     zamaEventAuthority: TAccountMetas[15];
+    scratch: TAccountMetas[16];
+    instructions: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[16];
-    hostConfig: TAccountMetas[17];
-    confidentialTokenEventAuthority: TAccountMetas[18];
+    zamaProgram: TAccountMetas[18];
+    hostConfig: TAccountMetas[19];
+    confidentialTokenEventAuthority: TAccountMetas[20];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[19];
+    confidentialTokenProgram: TAccountMetas[21];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[20];
+    systemProgram: TAccountMetas[22];
   };
   data: QuitInstructionData;
 };
@@ -707,10 +745,10 @@ export type ParsedQuitInstruction<
 export function parseQuitInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedQuitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 21) {
+  if (instruction.accounts.length < 23) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 21,
+      expectedAccountMetas: 23,
     });
   }
   let accountIndex = 0;
@@ -738,6 +776,8 @@ export function parseQuitInstruction<TProgram extends string, TAccountMetas exte
       userBalanceState: getNextAccount(),
       joinState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),

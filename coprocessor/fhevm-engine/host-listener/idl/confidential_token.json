@@ -98,6 +98,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
@@ -216,6 +223,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -384,6 +398,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program used for FHE operations."
@@ -519,6 +540,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -697,6 +725,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program used for FHE operations."
@@ -829,6 +864,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program used for FHE operations."
@@ -866,16 +908,6 @@
         },
         {
           "name": "result_state",
-          "optional": true
-        },
-        {
-          "name": "result_scratch",
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "result_authority",
-          "signer": true,
           "optional": true
         },
         {
@@ -980,11 +1012,14 @@
           "optional": true
         },
         {
-          "name": "amount_scratch",
-          "optional": true
+          "name": "zama_event_authority"
         },
         {
-          "name": "zama_event_authority"
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1230,6 +1265,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program used to create the initial total-supply handle."
@@ -1352,6 +1394,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1935,6 +1984,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",

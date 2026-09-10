@@ -47,6 +47,11 @@ pub struct CancelPendingBurn<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// System program used for ACL account creation on the balance/supply update path.
@@ -132,10 +137,12 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
     let burned_amount = fhe::uint64_operand(&burned_value, burned_amount_key())?;
 
     let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(token_account_key),
+        zama_fhe::State::new(&ctx.accounts.balance_state).id(),
         |builder| {
-            builder.add(balance, burned_amount, balance_output.output())?;
-            builder.add(total_supply, burned_amount, total_supply_output.output())?;
+            let new_balance = builder.add(balance, burned_amount)?;
+            builder.output(new_balance, balance_output.output())?;
+            let new_total_supply = builder.add(total_supply, burned_amount)?;
+            builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
         },
     )
@@ -152,6 +159,8 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.owner,
             event_authority: &ctx.accounts.zama_event_authority,
+            scratch: &ctx.accounts.scratch,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

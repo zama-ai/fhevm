@@ -15,10 +15,7 @@ use anchor_lang::prelude::system_program;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use std::collections::BTreeMap;
 use zama_host::encode::ExecutionDictionary;
-use zama_host::{
-    self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep,
-};
+use zama_host::{self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep};
 use zama_solana_test_kit::{
     cost_snapshot, empty_system_account, encrypted_state_account, event_authority,
     funded_system_account, handle_for_chain, host_svm as mollusk, label,
@@ -97,7 +94,12 @@ fn sweep_step_boundary(min_steps: usize, build: impl Fn(usize) -> ProbeCase) -> 
     let mut first_failure: Option<(usize, String)> = None;
     for steps in min_steps..=host::MAX_FHE_EXECUTION_STEPS {
         let case = build(steps);
-        let result = mollusk().process_instruction(&case.instruction, &case.accounts);
+        let result = host_fixtures::check_host_instruction(
+            &mollusk(),
+            &case.instruction,
+            &case.accounts,
+            &[],
+        );
         let axis = failure_axis(&result);
         assert!(
             !axis.starts_with("other:"),
@@ -182,14 +184,8 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
         },
         rhs: FheExecuteOperand::Scalar { value_index: one },
         output_fhe_type: 5,
-        output: FheExecuteOutput::Transient,
     });
     for index in 1..steps {
-        let output = if index == steps - 1 {
-            authority.state_output(&mut dictionary, 0, output_label, &[payer], None, 0, false)
-        } else {
-            FheExecuteOutput::Transient
-        };
         chain.push(FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::EarlierStep {
@@ -197,7 +193,6 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
             },
             rhs: FheExecuteOperand::Scalar { value_index: one },
             output_fhe_type: 5,
-            output,
         });
     }
     let instruction = fhe_execute_ix(
@@ -205,6 +200,20 @@ fn dependent_chain_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect = authority.state_output(
+                    &mut dictionary,
+                    0,
+                    output_label,
+                    &[payer],
+                    None,
+                    0,
+                    false,
+                );
+                effect.result.step_index = (steps - 1) as u8;
+                effect
+            }],
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -248,6 +257,7 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
         .collect();
 
     let mut dictionary = ExecutionDictionary::default();
+    let mut effects = Vec::with_capacity(steps);
     let mut update_steps = Vec::with_capacity(steps);
     let mut metas = Vec::with_capacity(steps);
     let mut accounts = vec![
@@ -260,8 +270,11 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
     for step_index in 0..steps {
         let value_label = label(&format!("boundary-mature-{step_index}"));
         let handle = handle_for_chain(0x80 + step_index as u8, 5);
-        let state_authority =
-            state_authority(program, Pubkey::new_from_array([step_index as u8 + 1; 32]));
+        let state_authority = if step_index == 0 {
+            authority
+        } else {
+            state_authority(program, Pubkey::new_from_array([step_index as u8 + 1; 32]))
+        };
         let (address, mut value) = new_state_with_slot(
             state_authority.app(scope),
             state_authority.key,
@@ -283,22 +296,26 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
         update_steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext: [step_index as u8 + 1; 32],
             fhe_type: 5,
-            output: authority.state_output(
-                &mut dictionary,
-                state_index,
-                value_label,
-                &allows,
-                Some(handle),
-                leaf_count,
-                false,
-            ),
         });
+        let mut effect = authority.state_output(
+            &mut dictionary,
+            state_index,
+            value_label,
+            &allows,
+            Some(handle),
+            leaf_count,
+            false,
+        );
+        effect.result.step_index = step_index as u8;
+        effects.push(effect);
     }
     let instruction = fhe_execute_ix(
         payer,
         authority.key,
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects,
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -375,7 +392,6 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
                 },
                 rhs,
                 output_fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             }
         })
         .collect();
@@ -384,6 +400,8 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![],
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -492,11 +510,15 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
     let payer = program;
     let authority = sole_state_authority(program);
     let (host_config, host_config_account) = host_config_account(payer);
+    let (state, state_account) = zama_solana_test_kit::new_encrypted_state(
+        authority.app(fixture_scope()),
+        authority.key,
+        [],
+    );
     let mut steps_vec = Vec::with_capacity(steps);
     steps_vec.push(FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: FheExecuteOutput::Transient,
     });
     for step_index in 1..steps {
         steps_vec.push(FheExecuteStep::Sum {
@@ -507,7 +529,6 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
                 60
             ],
             fhe_type: 5,
-            output: FheExecuteOutput::Transient,
         });
     }
     let instruction = fhe_execute_ix(
@@ -515,16 +536,19 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
         authority.key,
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![],
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: ExecutionDictionary::default().into_entries(),
             steps: steps_vec,
         },
-        Vec::new(),
+        vec![readonly(state)],
     );
     ProbeCase {
         instruction,
         accounts: vec![
+            (state, encrypted_state_account(&state_account)),
             (system_program::ID, system_program_account()),
             (payer, funded_system_account()),
             (authority.key, empty_system_account()),
@@ -723,7 +747,12 @@ fn print_boundary_matrix() {
             .expect("profile names end in the shape name");
         for steps in shape.min_steps..=host::MAX_FHE_EXECUTION_STEPS {
             let case = (shape.build)(steps);
-            let result = mollusk().process_instruction(&case.instruction, &case.accounts);
+            let result = host_fixtures::check_host_instruction(
+                &mollusk(),
+                &case.instruction,
+                &case.accounts,
+                &[],
+            );
             println!(
                 "{name:28} steps={steps:2} cu={:7} ix_bytes={:5} cpis={:2} axis={}",
                 result.compute_units_consumed,

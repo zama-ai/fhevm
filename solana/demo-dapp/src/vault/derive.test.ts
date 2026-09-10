@@ -101,7 +101,8 @@ describe('settle lookup-table addresses', () => {
     //   hostConfig, kmsContext, vault, vaultAuthority, vaultTokenAccount, payoutConfidentialMint,
     //   payoutUnderlyingMint, batchPayoutTokenAccount, payoutMintVaultUnderlying,
     //   payoutMintVaultAuthority, payoutTotalSupplyAuthority,
-    //   batchPayoutBalanceState, payoutTotalSupplyState
+    //   batchPayoutBalanceState, payoutTotalSupplyState, batchAuthority,
+    //   batchJoinUnderlying, batchPayoutUnderlying, zamaEventAuthority, confidentialTokenEventAuthority
     const GOLDEN_LOOKUP_TABLE_ADDRESSES = [
       '8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR',
       'Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX',
@@ -125,6 +126,11 @@ describe('settle lookup-table addresses', () => {
       'W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK',
       'Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B',
       'DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD',
+      'HVSpNqexGkvHFHmgir3t3Ws8CWpHU5VvhxrEd4cDVpFG',
+      'EYedNuDRWj7r2uTjNS2hFEvmGcv87bZ5RG4qTZBkyJw2',
+      '3kMiJNxeTvc3fRwgzpUCRu7Cc5PviMnB1rodpMXowHq5',
+      '7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog',
+      '2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U',
     ];
     expect(settleAccountsToLookupTableAddresses(accounts)).toEqual(GOLDEN_LOOKUP_TABLE_ADDRESSES);
 

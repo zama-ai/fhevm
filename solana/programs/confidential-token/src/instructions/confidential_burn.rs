@@ -34,6 +34,11 @@ pub struct ConfidentialBurn<'info> {
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -66,6 +71,8 @@ impl<'info> ConfidentialBurn<'info> {
             total_supply_state: self.total_supply_state.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
+            scratch: &self.scratch,
+            instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
             remaining_accounts,
@@ -174,6 +181,11 @@ pub struct ConfidentialBurnFromValue<'info> {
     pub amount_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -206,6 +218,8 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             total_supply_state: self.total_supply_state.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
+            scratch: &self.scratch,
+            instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
             remaining_accounts,
@@ -315,6 +329,8 @@ struct BurnAccounts<'a, 'info> {
     /// Single pending-burn PDA opened after the burned handle is known.
     pending_burn: AccountInfo<'info>,
     zama_event_authority: &'a UncheckedAccount<'info>,
+    scratch: &'a UncheckedAccount<'info>,
+    instructions: &'a UncheckedAccount<'info>,
     zama_program: &'a Program<'info, ZamaHost>,
     host_config: &'a Account<'info, zama_host::HostConfig>,
     remaining_accounts: &'a [AccountInfo<'info>],
@@ -433,9 +449,8 @@ fn execute_burn<'info>(
             fhe::uint64_operand(state, *key)
         })
         .transpose()?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(token_account_key),
-        |builder| {
+    let execution =
+        zama_fhe::FheExecution::build(balance_slot(mint_key, token_account_key).0, |builder| {
             let amount = match (&amount_source, stored_operand) {
                 // fromExternal: the amount is a coprocessor-attested external input, verified
                 // in-execution and transient-allowed for this execution (no persistent amount
@@ -448,25 +463,17 @@ fn execute_burn<'info>(
                     unreachable!("an existing-value burn always reads its stored amount above")
                 }
             };
-            let burn_success = builder.ge(balance, amount, zama_fhe::Output::transient())?;
-            let debit_candidate = builder.sub(balance, amount, zama_fhe::Output::transient())?;
-            let new_balance = builder.if_then_else(
-                burn_success,
-                debit_candidate,
-                balance,
-                zama_fhe::Output::transient(),
-            )?;
-            let burned = builder.sub(balance, new_balance, burned_output.output())?;
-            builder.add(
-                new_balance,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                balance_output.output(),
-            )?;
-            builder.sub(total_supply, burned, total_supply_output.output())?;
+            let burn_success = builder.ge(balance, amount)?;
+            let debit_candidate = builder.sub(balance, amount)?;
+            let new_balance = builder.if_then_else(burn_success, debit_candidate, balance)?;
+            let burned = builder.sub(balance, new_balance)?;
+            builder.output(burned, burned_output.output())?;
+            builder.output(new_balance, balance_output.output())?;
+            let new_total_supply = builder.sub(total_supply, burned)?;
+            builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
-        },
-    )
-    .map_err(invalid_execution)?;
+        })
+        .map_err(invalid_execution)?;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the
     // amount encrypted State as a read-only persistent input operand the execution now
     // requires, and its authority's signature when the signing owner controls it directly.
@@ -501,6 +508,8 @@ fn execute_burn<'info>(
         context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
+            scratch: accounts.scratch,
+            instructions: accounts.instructions,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

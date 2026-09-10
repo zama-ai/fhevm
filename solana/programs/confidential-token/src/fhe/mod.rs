@@ -69,8 +69,8 @@ impl<'info> SlotOutput<'info> {
         Ok(output)
     }
 
-    pub(crate) fn output(&self) -> zama_fhe::Output {
-        zama_fhe::Output::state((*self.output).clone())
+    pub(crate) fn output(&self) -> zama_fhe::StateOutput {
+        (*self.output).clone()
     }
     pub(crate) fn handle(&self) -> Result<[u8; 32]> {
         read_state(&self.state)?
@@ -417,6 +417,8 @@ pub(crate) struct ExecuteContext<'a, 'info> {
     pub payer: &'a Signer<'info>,
     /// Anchor event CPI authority for ZamaHost.
     pub event_authority: &'a UncheckedAccount<'info>,
+    pub scratch: &'a UncheckedAccount<'info>,
+    pub instructions: &'a UncheckedAccount<'info>,
     /// ZamaHost program account.
     pub zama_program: &'a Program<'info, ZamaHost>,
     /// Host config used for chain-id-aware handle derivation.
@@ -497,6 +499,8 @@ fn invoke_with_authorities<'info, R>(
             hcu_trusted_app_record: context.hcu_trusted_app_record,
             rand_nonce: None,
             event_authority: context.event_authority.to_account_info(),
+            scratch: context.scratch.to_account_info(),
+            instructions: context.instructions.to_account_info(),
             program: context.zama_program.to_account_info(),
         },
         &signer_seeds,
@@ -544,17 +548,11 @@ mod tests {
         let state = zama_fhe::State::new(&input_account);
         let state_address = state.id().address();
         let input = state.get::<zama_fhe::Uint<64>>([1; 32]).unwrap();
-        let execution = zama_fhe::FheExecution::build(
-            zama_fhe::ExecutionAuthority::new(authority),
-            |builder| {
-                builder.add(
-                    input,
-                    zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1),
-                    zama_fhe::Output::state(state.set([2; 32]).allow(authority)),
-                )?;
-                Ok(())
-            },
-        )
+        let execution = zama_fhe::FheExecution::build(state.id(), |builder| {
+            let result = builder.add(input, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1))?;
+            builder.output(result, state.set([2; 32]).allow(authority))?;
+            Ok(())
+        })
         .unwrap();
         (execution, state_address, authority)
     }

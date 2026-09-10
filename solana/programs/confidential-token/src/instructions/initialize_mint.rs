@@ -24,6 +24,11 @@ pub struct InitializeMint<'info> {
     pub total_supply_encrypted_state: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial total-supply handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -46,7 +51,6 @@ pub struct InitializeMint<'info> {
 pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     let mint_key = ctx.accounts.mint.key();
-    let total_supply_authority = ctx.accounts.total_supply_authority.key();
     let authority = fhe::StateAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
@@ -66,13 +70,11 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         &authority,
         [],
     )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(total_supply_authority),
-        |builder| {
-            builder.trivial_encrypt_u64(0, total_supply_output.output())?;
-            Ok(())
-        },
-    )
+    let execution = zama_fhe::FheExecution::build(total_supply_slot(mint_key).0, |builder| {
+        let new_total_supply = builder.trivial_encrypt_u64(0)?;
+        builder.output(new_total_supply, total_supply_output.output())?;
+        Ok(())
+    })
     .map_err(invalid_execution)?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
@@ -83,6 +85,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
+            scratch: &ctx.accounts.scratch,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

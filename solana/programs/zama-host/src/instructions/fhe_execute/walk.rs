@@ -33,8 +33,17 @@ impl ExecutionHandleContext {
         rhs: [u8; 32],
         scalar: bool,
         output_fhe_type: u8,
+        mask: [u8; 32],
     ) -> [u8; 32] {
-        computed_eval_handle(op, lhs, rhs, scalar, output_fhe_type, &self.derivation)
+        computed_eval_handle(
+            op,
+            lhs,
+            rhs,
+            scalar,
+            output_fhe_type,
+            mask,
+            &self.derivation,
+        )
     }
 
     fn ternary_result(
@@ -44,6 +53,7 @@ impl ExecutionHandleContext {
         if_true: [u8; 32],
         if_false: [u8; 32],
         output_fhe_type: u8,
+        mask: [u8; 32],
     ) -> [u8; 32] {
         computed_eval_ternary_handle(
             op,
@@ -51,6 +61,7 @@ impl ExecutionHandleContext {
             if_true,
             if_false,
             output_fhe_type,
+            mask,
             &self.derivation,
         )
     }
@@ -74,21 +85,14 @@ impl ExecutionHandleContext {
         ))
     }
 
-    fn unary_result(&self, op: FheUnaryOpCode, operand: [u8; 32], output_fhe_type: u8) -> [u8; 32] {
-        computed_eval_unary_handle(op, operand, output_fhe_type, &self.derivation)
-    }
-
-    fn sum_result(&self, operand_handles: &[[u8; 32]], fhe_type: u8) -> [u8; 32] {
-        computed_eval_sum_handle(operand_handles, fhe_type, &self.derivation)
-    }
-
-    fn is_in_result(
+    fn unary_result(
         &self,
-        value_handle: [u8; 32],
-        set_handles: &[[u8; 32]],
-        fhe_type: u8,
+        op: FheUnaryOpCode,
+        operand: [u8; 32],
+        output_fhe_type: u8,
+        mask: [u8; 32],
     ) -> [u8; 32] {
-        computed_eval_is_in_handle(value_handle, set_handles, fhe_type, &self.derivation)
+        computed_eval_unary_handle(op, operand, output_fhe_type, mask, &self.derivation)
     }
 
     fn mul_div_result(
@@ -98,6 +102,7 @@ impl ExecutionHandleContext {
         scalar: bool,
         divisor: [u8; 32],
         output_fhe_type: u8,
+        mask: [u8; 32],
     ) -> [u8; 32] {
         computed_eval_mul_div_handle(
             factor1,
@@ -105,6 +110,7 @@ impl ExecutionHandleContext {
             divisor,
             scalar,
             output_fhe_type,
+            mask,
             &self.derivation,
         )
     }
@@ -132,40 +138,41 @@ impl ExecutionState<'_, '_, '_> {
                     self.table.state((*state_index).into())?.get(&key) == Some(handle),
                     ZamaHostError::PreviousStateMismatch
                 );
-                Ok(ResolvedOperand::encrypted(handle))
+                Ok(self.encrypted_operand(handle))
             }
             FheExecuteOperand::TransientResult {
                 handle_index,
-                scratch_index,
                 consumer_state_index,
             } => {
                 let handle = self.dictionary_bytes(*handle_index)?;
                 assert_handle_for_chain(handle, self.chain_id)?;
                 let consumer = self.table.account((*consumer_state_index).into())?.key();
-                require!(
-                    self.table
-                        .scratch((*scratch_index).into())?
-                        .allows(handle, consumer),
-                    ZamaHostError::TransientAccountInvalid
-                );
-                Ok(ResolvedOperand::encrypted(handle))
+                let depth = self
+                    .scratch
+                    .authorized_depth(handle, consumer)
+                    .ok_or(ZamaHostError::TransientAccountInvalid)?;
+                Ok(ResolvedOperand {
+                    handle,
+                    scalar: false,
+                    boundary: false,
+                    depth,
+                })
             }
 
-            FheExecuteOperand::EarlierStep { producer_index } => self
-                .produced
-                .get(*producer_index as usize)
-                .map(ResolvedOperand::from_produced)
-                .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
+            FheExecuteOperand::EarlierStep { producer_index } => {
+                let result = self
+                    .scratch
+                    .result(self.call_start + usize::from(*producer_index))
+                    .ok_or(ZamaHostError::FheExecuteEarlierStepMissing)?;
+                Ok(self.encrypted_operand(result.handle))
+            }
             FheExecuteOperand::VerifiedInput { attestation } => {
                 // EVM `fromExternal` parity: only the attested contract may consume the input.
                 // Enforced here (the `msg.sender` analog) — not by constraining derived outputs.
                 // The contract is the execution's application program, proven through the
                 // persistent values it reads or writes; a copied attestation is useless to
                 // anyone who cannot sign for that program's values.
-                let program = self
-                    .app
-                    .map(|app| app.program)
-                    .ok_or(ZamaHostError::InputBindContractMismatch)?;
+                let program = self.app.program;
                 require_keys_eq!(
                     Pubkey::new_from_array(attestation.contract_address),
                     program,
@@ -205,7 +212,6 @@ pub(super) fn walk_steps<'info>(
                 lhs,
                 rhs,
                 output_fhe_type,
-                output,
             } => {
                 let lhs = execution.resolve_encrypted_operand(lhs)?;
                 let rhs = execution.resolve_rhs_operand(rhs)?;
@@ -216,14 +222,25 @@ pub(super) fn walk_steps<'info>(
                     rhs.scalar,
                     *output_fhe_type,
                 )?;
+                let operands = [lhs, rhs];
                 let result = handle_context.binary_result(
                     *op,
                     lhs.handle,
                     rhs.handle,
                     rhs.scalar,
                     *output_fhe_type,
+                    boundary_mask(&operands)?,
                 );
-                execution.accept_output(op_index, result, output)?;
+                let pricing_type = if hcu::is_comparison(*op) {
+                    handle_fhe_type(lhs.handle)
+                } else {
+                    *output_fhe_type
+                };
+                execution.accept_output(
+                    result,
+                    hcu::binary_op_hcu(*op, pricing_type, rhs.scalar)?,
+                    &operands,
+                )?;
             }
             FheExecuteStep::Ternary {
                 op,
@@ -231,7 +248,6 @@ pub(super) fn walk_steps<'info>(
                 if_true,
                 if_false,
                 output_fhe_type,
-                output,
             } => {
                 let control = execution.resolve_encrypted_operand(control)?;
                 let if_true = execution.resolve_encrypted_operand(if_true)?;
@@ -242,46 +258,59 @@ pub(super) fn walk_steps<'info>(
                     if_false.handle,
                     *output_fhe_type,
                 )?;
+                let operands = [control, if_true, if_false];
                 let result = handle_context.ternary_result(
                     *op,
                     control.handle,
                     if_true.handle,
                     if_false.handle,
                     *output_fhe_type,
+                    boundary_mask(&operands)?,
                 );
-                execution.accept_output(op_index, result, output)?;
+                execution.accept_output(
+                    result,
+                    hcu::ternary_op_hcu(*op, *output_fhe_type)?,
+                    &operands,
+                )?;
             }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
-                output,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let result = handle_context.trivial_result(*plaintext, *fhe_type);
-                execution.accept_output(op_index, result, output)?;
+                execution.accept_output(result, hcu::trivial_encrypt_hcu(*fhe_type)?, &[])?;
             }
-            FheExecuteStep::Rand { fhe_type, output } => {
+            FheExecuteStep::Rand { fhe_type } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index)?;
                 let result =
                     computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
-                execution.accept_output(op_index, result, output)?;
+                execution.accept_output(result, hcu::rand_hcu(*fhe_type)?, &[])?;
             }
             FheExecuteStep::Unary {
                 op,
                 operand,
                 output_fhe_type,
-                output,
             } => {
                 let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
-                let result = handle_context.unary_result(*op, operand.handle, *output_fhe_type);
-                execution.accept_output(op_index, result, output)?;
+                let operands = [operand];
+                let result = handle_context.unary_result(
+                    *op,
+                    operand.handle,
+                    *output_fhe_type,
+                    boundary_mask(&operands)?,
+                );
+                execution.accept_output(
+                    result,
+                    hcu::unary_op_hcu(*op, *output_fhe_type)?,
+                    &operands,
+                )?;
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type,
-                output,
             } => {
                 assert_valid_bounded_rand_upper_bound(*upper_bound, *fhe_type)?;
                 let seed = handle_context.rand_seed(op_index)?;
@@ -291,47 +320,60 @@ pub(super) fn walk_steps<'info>(
                     *fhe_type,
                     handle_context.derivation.chain_id,
                 );
-                execution.accept_output(op_index, result, output)?;
+                execution.accept_output(result, hcu::rand_bounded_hcu(*fhe_type)?, &[])?;
             }
-            FheExecuteStep::Sum {
-                operands,
-                fhe_type,
-                output,
-            } => {
+            FheExecuteStep::Sum { operands, fhe_type } => {
                 assert_reduction_count(operands.len(), *fhe_type)?;
                 let mut resolved: Vec<ResolvedOperand> = Vec::with_capacity(operands.len());
                 for operand in operands {
                     resolved.push(execution.resolve_encrypted_operand(operand)?);
                 }
-                let operand_handles: Vec<[u8; 32]> = resolved.iter().map(|r| r.handle).collect();
-                assert_sum_operand_types(&operand_handles, *fhe_type)?;
-                let result = handle_context.sum_result(&operand_handles, *fhe_type);
-                execution.accept_output(op_index, result, output)?;
+                let operand_handles = resolved.iter().map(|r| &r.handle);
+                assert_sum_operand_types(operand_handles.clone(), *fhe_type)?;
+                let result = computed_eval_sum_handle(
+                    operand_handles,
+                    *fhe_type,
+                    boundary_mask(&resolved)?,
+                    &handle_context.derivation,
+                );
+                execution.accept_output(
+                    result,
+                    hcu::sum_hcu(*fhe_type, operands.len())?,
+                    &resolved,
+                )?;
             }
             FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
-                output,
             } => {
                 assert_reduction_count(set.len(), *fhe_type)?;
                 let value_resolved = execution.resolve_encrypted_operand(value)?;
-                let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(set.len());
+                let mut set_resolved: Vec<ResolvedOperand> = Vec::with_capacity(1 + set.len());
+                set_resolved.push(value_resolved);
                 for operand in set {
                     set_resolved.push(execution.resolve_encrypted_operand(operand)?);
                 }
-                let set_handles: Vec<[u8; 32]> = set_resolved.iter().map(|r| r.handle).collect();
-                assert_is_in_operand_types(value_resolved.handle, &set_handles, *fhe_type)?;
-                let result =
-                    handle_context.is_in_result(value_resolved.handle, &set_handles, *fhe_type);
-                execution.accept_output(op_index, result, output)?;
+                let set_handles = set_resolved[1..].iter().map(|r| &r.handle);
+                assert_is_in_operand_types(value_resolved.handle, set_handles.clone(), *fhe_type)?;
+                let result = computed_eval_is_in_handle(
+                    value_resolved.handle,
+                    set_handles,
+                    *fhe_type,
+                    boundary_mask(&set_resolved)?,
+                    &handle_context.derivation,
+                );
+                execution.accept_output(
+                    result,
+                    hcu::is_in_hcu(*fhe_type, set.len())?,
+                    &set_resolved,
+                )?;
             }
             FheExecuteStep::MulDiv {
                 factor1,
                 factor2,
                 divisor,
                 output_fhe_type,
-                output,
             } => {
                 let factor1 = execution.resolve_encrypted_operand(factor1)?;
                 let factor2 = execution.resolve_rhs_operand(factor2)?;
@@ -342,14 +384,20 @@ pub(super) fn walk_steps<'info>(
                     *divisor,
                     *output_fhe_type,
                 )?;
+                let operands = [factor1, factor2];
                 let result = handle_context.mul_div_result(
                     factor1.handle,
                     factor2.handle,
                     factor2.scalar,
                     *divisor,
                     *output_fhe_type,
+                    boundary_mask(&operands)?,
                 );
-                execution.accept_output(op_index, result, output)?;
+                execution.accept_output(
+                    result,
+                    hcu::mul_div_hcu(*output_fhe_type, factor2.scalar)?,
+                    &operands,
+                )?;
             }
         }
     }

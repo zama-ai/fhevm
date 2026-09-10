@@ -18,17 +18,34 @@ pub(super) fn preflight_execution<'info>(
     ctx: &Context<'info, FheExecute<'info>>,
     args: &FheExecuteArgs,
 ) -> Result<PreflightOutcome> {
+    let producer = table.state(args.execution_state_index.into())?;
+    let app = AppScope {
+        program: producer.program,
+        scope: producer.scope,
+    };
     let mut preflight = Preflight {
         table,
         dictionary: &args.dictionary,
         dictionary_used: vec![false; args.dictionary.len()],
         authority: ctx.accounts.authority.key(),
-        app: None,
+        app,
         touched_apps: Vec::new(),
         slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
     };
+    preflight.admit_state(args.execution_state_index)?;
+    require_keys_eq!(
+        preflight
+            .table
+            .state(args.execution_state_index.into())?
+            .authority,
+        ctx.accounts.authority.key(),
+        ZamaHostError::EncryptedStateAccountAuthorityMismatch
+    );
     for (index, step) in args.steps.iter().enumerate() {
         preflight_step(step, index, &mut preflight)?;
+    }
+    for effect in &args.effects {
+        preflight_effect(effect, &mut preflight)?;
     }
     // Whole-execution hygiene, mirroring the account table: every interned dictionary
     // entry must be referenced by some step, so an execution cannot carry dead bytes.
@@ -51,8 +68,8 @@ pub(super) fn preflight_execution<'info>(
 #[derive(Debug)]
 pub(super) struct PreflightOutcome {
     /// The application the default authority's States belong to: what the execution
-    /// is metered and rand-seeded as. `None` when it controls none.
-    pub(super) app: Option<AppScope>,
+    /// is metered and rand-seeded as.
+    pub(super) app: AppScope,
     /// Applications whose States the execution reads, writes or uses to initiate or consume a
     /// grant. Each is deny-checked, regardless of which authority signs.
     pub(super) touched_apps: Vec<AppScope>,
@@ -68,12 +85,10 @@ struct Preflight<'t, 'a, 'info> {
     authority: Pubkey,
     /// The `(program, scope)` of every State the default authority controls; a second
     /// one is an error.
-    app: Option<AppScope>,
+    app: AppScope,
     /// Every distinct application touched, the default authority's included, in first-seen order.
     touched_apps: Vec<AppScope>,
-    /// State slots written by completed earlier steps. Operands are checked
-    /// before the current step's output is recorded, so read-then-update in one
-    /// step remains valid.
+    /// Slot writes already declared by effects; duplicate writes are rejected.
     slots_written: Vec<(u8, [u8; 32])>,
 }
 
@@ -113,10 +128,7 @@ impl Preflight<'_, '_, '_> {
         if authority != self.authority {
             return Ok(());
         }
-        match self.app {
-            None => self.app = Some(app),
-            Some(current) => require!(current == app, ZamaHostError::FheExecuteMixedScopes),
-        }
+        require!(self.app == app, ZamaHostError::FheExecuteMixedScopes);
         Ok(())
     }
 }
@@ -127,62 +139,42 @@ fn preflight_step(
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
     match step {
-        FheExecuteStep::Binary {
-            lhs, rhs, output, ..
-        } => {
+        FheExecuteStep::Binary { lhs, rhs, .. } => {
             preflight_encrypted_operand(lhs, step_index, preflight)?;
             preflight_rhs_operand(rhs, step_index, preflight)?;
-            preflight_output(output, preflight)?;
         }
         FheExecuteStep::Ternary {
             control,
             if_true,
             if_false,
-            output,
             ..
         } => {
             preflight_encrypted_operand(control, step_index, preflight)?;
             preflight_encrypted_operand(if_true, step_index, preflight)?;
             preflight_encrypted_operand(if_false, step_index, preflight)?;
-            preflight_output(output, preflight)?;
         }
-        FheExecuteStep::TrivialEncrypt { output, .. }
-        | FheExecuteStep::Rand { output, .. }
-        | FheExecuteStep::RandBounded { output, .. } => {
-            preflight_output(output, preflight)?;
-        }
-        FheExecuteStep::Unary {
-            operand, output, ..
-        } => {
+        FheExecuteStep::TrivialEncrypt { .. }
+        | FheExecuteStep::Rand { .. }
+        | FheExecuteStep::RandBounded { .. } => {}
+        FheExecuteStep::Unary { operand, .. } => {
             preflight_encrypted_operand(operand, step_index, preflight)?;
-            preflight_output(output, preflight)?;
         }
-        FheExecuteStep::Sum {
-            operands, output, ..
-        } => {
+        FheExecuteStep::Sum { operands, .. } => {
             for operand in operands {
                 preflight_encrypted_operand(operand, step_index, preflight)?;
             }
-            preflight_output(output, preflight)?;
         }
-        FheExecuteStep::IsIn {
-            value, set, output, ..
-        } => {
+        FheExecuteStep::IsIn { value, set, .. } => {
             preflight_encrypted_operand(value, step_index, preflight)?;
             for operand in set {
                 preflight_encrypted_operand(operand, step_index, preflight)?;
             }
-            preflight_output(output, preflight)?;
         }
         FheExecuteStep::MulDiv {
-            factor1,
-            factor2,
-            output,
-            ..
+            factor1, factor2, ..
         } => {
             preflight_encrypted_operand(factor1, step_index, preflight)?;
             preflight_rhs_operand(factor2, step_index, preflight)?;
-            preflight_output(output, preflight)?;
         }
     }
     Ok(())
@@ -214,20 +206,14 @@ fn preflight_encrypted_operand(
             key_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
-            let key = preflight.mark_dictionary(*key_index)?;
-            require!(
-                !preflight.slots_written.contains(&(*state_index, key)),
-                ZamaHostError::FheExecutePersistentOperandWrittenEarlier
-            );
+            preflight.mark_dictionary(*key_index)?;
             preflight.admit_state(*state_index)?;
         }
         FheExecuteOperand::TransientResult {
             handle_index,
-            scratch_index,
             consumer_state_index,
         } => {
             preflight.mark_dictionary(*handle_index)?;
-            preflight.table.mark((*scratch_index).into())?;
             preflight.admit_state(*consumer_state_index)?;
         }
 
@@ -247,45 +233,39 @@ fn preflight_encrypted_operand(
     Ok(())
 }
 
-fn preflight_output(
-    output: &FheExecuteOutput,
+fn preflight_effect(
+    effect: &FheExecuteEffect,
     preflight: &mut Preflight<'_, '_, '_>,
 ) -> Result<()> {
-    match output {
-        FheExecuteOutput::State {
-            state_index,
-            slot,
-            allow_indexes,
-            grants,
-            ..
-        } => {
-            preflight.admit_state(*state_index)?;
-            if let Some(slot) = slot {
-                let key = preflight.mark_dictionary(slot.key_index)?;
-                require!(
-                    !preflight.slots_written.contains(&(*state_index, key)),
-                    ZamaHostError::InvalidFheExecuteAccount
-                );
-                preflight.slots_written.push((*state_index, key));
-                if let Some(previous) = slot.previous_handle_index {
-                    preflight.mark_dictionary(previous)?;
-                }
-            }
-            for index in allow_indexes {
-                preflight.mark_dictionary(*index)?;
-            }
-            require!(
-                grants.len() <= MAX_TRANSIENT_GRANTS,
-                ZamaHostError::TransientCapacityExceeded
-            );
-            for grant in grants {
-                preflight.table.mark(grant.scratch_index.into())?;
-                preflight.admit_state(grant.initiating_state_index)?;
-                preflight.table.mark(grant.consumer_state_index.into())?;
-                preflight.table.state(grant.consumer_state_index.into())?;
-            }
+    let FheExecuteEffect {
+        state_index,
+        slot,
+        allow_indexes,
+        grants,
+        ..
+    } = effect;
+    preflight.admit_state(*state_index)?;
+    if let Some(slot) = slot {
+        let key = preflight.mark_dictionary(slot.key_index)?;
+        require!(
+            !preflight.slots_written.contains(&(*state_index, key)),
+            ZamaHostError::InvalidFheExecuteAccount
+        );
+        preflight.slots_written.push((*state_index, key));
+        if let Some(previous) = slot.previous_handle_index {
+            preflight.mark_dictionary(previous)?;
         }
-        FheExecuteOutput::Transient => {}
+    }
+    for index in allow_indexes {
+        preflight.mark_dictionary(*index)?;
+    }
+    require!(
+        grants.len() <= MAX_TRANSIENT_GRANTS,
+        ZamaHostError::TransientCapacityExceeded
+    );
+    for grant in grants {
+        preflight.table.mark(grant.consumer_state_index.into())?;
+        preflight.table.state(grant.consumer_state_index.into())?;
     }
     Ok(())
 }
@@ -352,12 +332,13 @@ mod tests {
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: FheExecuteOutput::Transient,
         }
     }
 
     fn execution(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![],
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[1; 32], [2; 32], [9; 32]],
@@ -377,13 +358,16 @@ mod tests {
             dictionary: &args.dictionary,
             dictionary_used: vec![false; args.dictionary.len()],
             authority: default_authority,
-            app: None,
+            app: app(1),
             touched_apps: Vec::new(),
 
             slots_written: Vec::new(),
         };
         for (index, step) in args.steps.iter().enumerate() {
             preflight_step(step, index, &mut preflight)?;
+        }
+        for effect in &args.effects {
+            preflight_effect(effect, &mut preflight)?;
         }
         preflight.table.assert_all_used()?;
         Ok(PreflightOutcome {
@@ -405,24 +389,24 @@ mod tests {
     }
 
     #[test]
-    fn state_slot_cannot_be_read_after_an_earlier_step_writes_it() {
+    fn state_slot_read_uses_snapshot_before_ordered_effects() {
         let authority = Pubkey::new_unique();
-        let args = execution(vec![
+        let mut args = execution(vec![
             FheExecuteStep::TrivialEncrypt {
                 plaintext: [0; 32],
                 fhe_type: 5,
-                output: state_output(0, 2),
             },
             read_step(0, 2),
         ]);
+        args.effects.push(state_output(0, 2));
         let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
-        assert!(run(&accounts, &args, authority).is_err());
+        assert!(run(&accounts, &args, authority).is_ok());
     }
 
     #[test]
     fn state_slot_may_be_read_and_updated_in_the_same_step() {
         let authority = Pubkey::new_unique();
-        let args = execution(vec![FheExecuteStep::Binary {
+        let mut args = execution(vec![FheExecuteStep::Binary {
             op: FheBinaryOpCode::Add,
             lhs: FheExecuteOperand::StateSlot {
                 handle_index: 0,
@@ -431,8 +415,8 @@ mod tests {
             },
             rhs: FheExecuteOperand::Scalar { value_index: 1 },
             output_fhe_type: 5,
-            output: state_output(0, 2),
         }]);
+        args.effects.push(state_output(0, 2));
         let accounts = vec![encrypted_state(app(1), authority, [9; 32])];
         assert!(run(&accounts, &args, authority).is_ok());
     }
@@ -447,7 +431,7 @@ mod tests {
         let by_default_signer = vec![encrypted_state(app(1), authority, [9; 32])];
         assert_eq!(
             run(&by_default_signer, &args, authority).unwrap().app,
-            Some(app(1))
+            app(1)
         );
 
         let by_remaining_signer = vec![
@@ -490,7 +474,7 @@ mod tests {
             )
             .unwrap()
             .app,
-            Some(app(1))
+            app(1)
         );
 
         let mixed = vec![
@@ -522,53 +506,53 @@ mod tests {
             signer_account(foreign_authority, true),
         ];
         let outcome = run(&accounts, &two_reads, authority).unwrap();
-        assert_eq!(outcome.app, Some(app(1)));
+        assert_eq!(outcome.app, app(1));
         assert_eq!(outcome.touched_apps, vec![app(1), app(2)]);
     }
 
     #[test]
-    fn transient_only_execution_has_no_application() {
-        let args = execution(vec![FheExecuteStep::Binary {
-            op: FheBinaryOpCode::Add,
-            lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
-            rhs: FheExecuteOperand::Scalar { value_index: 1 },
-            output_fhe_type: 5,
-            output: FheExecuteOutput::Transient,
-        }]);
-        // Step 0 referencing itself as an earlier step is rejected; use a trivial first.
-        let args = FheExecuteArgs {
-            returned_results: Vec::new(),
-            steps: vec![
-                FheExecuteStep::TrivialEncrypt {
-                    plaintext: [0; 32],
-                    fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
-                },
-                args.steps[0].clone(),
-            ],
-            dictionary: vec![[1; 32], [2; 32]],
-            account_count: 0,
-        };
-        // Dictionary entry 0 is unreferenced here; only the account half is under test.
-        let mut table = ExecutionAccountTable::new(&[]).unwrap();
+    fn transient_only_execution_has_a_producing_state_application() {
+        let authority = Pubkey::new_unique();
+        let accounts = [encrypted_state(app(1), authority, [9; 32])];
+        let mut table = ExecutionAccountTable::new(&accounts).unwrap();
         let mut preflight = Preflight {
             table: &mut table,
-            dictionary: &args.dictionary,
-            dictionary_used: vec![false; 2],
-            authority: Pubkey::new_unique(),
-            app: None,
-            touched_apps: Vec::new(),
-
-            slots_written: Vec::new(),
+            dictionary: &[],
+            dictionary_used: vec![],
+            authority,
+            app: app(1),
+            touched_apps: vec![],
+            slots_written: vec![],
         };
-        for (index, step) in args.steps.iter().enumerate() {
-            preflight_step(step, index, &mut preflight).unwrap();
-        }
-        assert_eq!(preflight.app, None);
+        preflight.admit_state(0).unwrap();
+        preflight_step(
+            &FheExecuteStep::TrivialEncrypt {
+                plaintext: [0; 32],
+                fhe_type: 5,
+            },
+            0,
+            &mut preflight,
+        )
+        .unwrap();
+        assert_eq!(preflight.app, app(1));
+        preflight.table.assert_all_used().unwrap();
     }
 
-    fn state_output(state_index: u8, key_index: u8) -> FheExecuteOutput {
-        FheExecuteOutput::State {
+    #[test]
+    fn effects_cannot_write_the_same_slot_twice() {
+        let authority = Pubkey::new_unique();
+        let mut args = execution(vec![read_step(0, 2)]);
+        args.effects = vec![state_output(0, 2), state_output(0, 2)];
+        let accounts = [encrypted_state(app(1), authority, [9; 32])];
+        assert!(run(&accounts, &args, authority).is_err());
+    }
+
+    fn state_output(state_index: u8, key_index: u8) -> FheExecuteEffect {
+        FheExecuteEffect {
+            result: ExecutionResultRef {
+                step_index: 0,
+                output_index: 0,
+            },
             state_index,
             previous_leaf_count: 0,
             slot: Some(SlotWrite {

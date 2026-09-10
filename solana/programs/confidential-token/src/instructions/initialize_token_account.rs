@@ -28,6 +28,11 @@ pub struct InitializeTokenAccount<'info> {
     pub balance_encrypted_state: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -74,14 +79,13 @@ pub fn initialize_token_account<'info>(
         &authority,
         [owner],
     )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(token_account_key),
-        |builder| {
-            builder.trivial_encrypt_u64(0, balance_output.output())?;
+    let execution =
+        zama_fhe::FheExecution::build(balance_slot(mint_key, token_account_key).0, |builder| {
+            let new_balance = builder.trivial_encrypt_u64(0)?;
+            builder.output(new_balance, balance_output.output())?;
             Ok(())
-        },
-    )
-    .map_err(invalid_execution)?;
+        })
+        .map_err(invalid_execution)?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [balance_output.account_info()],
@@ -91,6 +95,8 @@ pub fn initialize_token_account<'info>(
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
+            scratch: &ctx.accounts.scratch,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

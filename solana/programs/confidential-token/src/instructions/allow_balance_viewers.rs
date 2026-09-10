@@ -33,6 +33,11 @@ pub struct AllowBalanceViewers<'info> {
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
@@ -83,6 +88,8 @@ pub fn allow_balance_viewers<'info>(
         fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
+            scratch: &ctx.accounts.scratch,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(

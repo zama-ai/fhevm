@@ -52,7 +52,7 @@ pub struct Claim<'info> {
     /// CHECK: canonical state controlled by JoinRecord.
     #[account(mut)]
     pub join_state: UncheckedAccount<'info>,
-    /// CHECK: host validates scratch derived from join_state.
+    /// CHECK: host validates the shared transaction scratch.
     #[account(mut)]
     pub scratch: UncheckedAccount<'info>,
     /// CHECK: host validates final scratch close using the Instructions sysvar.
@@ -131,44 +131,25 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    let id = join_state_id(batch_key, ctx.accounts.join_record.key());
-    let bump = [ctx.accounts.join_record.bump];
-    let record_seeds: &[&[u8]] = &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
-    zama_host::cpi::open_scratch(CpiContext::new_with_signer(
-        ctx.accounts.zama_program.key(),
-        zama_host::cpi::accounts::OpenScratch {
-            payer: ctx.accounts.payer.to_account_info(),
-            authority: ctx.accounts.join_record.to_account_info(),
-            encrypted_state: ctx.accounts.join_state.to_account_info(),
-            scratch: ctx.accounts.scratch.to_account_info(),
-            instructions: ctx.accounts.instructions.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-        },
-        &[record_seeds],
-    ))?;
     let account = fhe::read_state(&ctx.accounts.join_state)?;
     let state = zama_fhe::State::new(&account);
     let joined = state
         .get::<zama_fhe::Uint<64>>(joined_amount_key())
         .map_err(fhe::invalid_execution)?;
     let payout_state = fhe::read_state(&ctx.accounts.batch_payout_balance_state)?;
-    let output = zama_fhe::Output::state(
-        state
-            .result()
-            .allow(user)
-            .allow_transient(id, zama_fhe::State::new(&payout_state).id()),
-    );
-    let execution = zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(ctx.accounts.join_record.key()),
-        |builder| {
-            builder.mul_div(
-                joined,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(ctx.accounts.batch.payout_received),
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(ctx.accounts.batch.total_joined),
-                output,
-            )
-        },
-    )
+    let output = state
+        .result()
+        .allow(user)
+        .allow_transient(zama_fhe::State::new(&payout_state).id());
+    let execution = zama_fhe::FheExecution::build_returning(state.id(), |builder| {
+        let payout = builder.mul_div(
+            joined,
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(ctx.accounts.batch.payout_received),
+            zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(ctx.accounts.batch.total_joined),
+        )?;
+        builder.output(payout, output)?;
+        Ok(payout)
+    })
     .map_err(fhe::invalid_execution)?;
     let claim_handle = fhe::JoinExecute {
         batch: batch_key,
@@ -178,6 +159,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+        scratch: ctx.accounts.scratch.to_account_info(),
+        instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: ctx.remaining_accounts,
@@ -186,7 +169,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         execution,
         vec![
             ctx.accounts.join_state.to_account_info(),
-            ctx.accounts.scratch.to_account_info(),
             ctx.accounts.batch_payout_balance_state.to_account_info(),
         ],
     )?;
@@ -208,8 +190,10 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
                 to_state: ctx.accounts.user_payout_balance_state.to_account_info(),
                 amount_state: None,
                 amount_authority: None,
-                amount_scratch: Some(ctx.accounts.scratch.to_account_info()),
+
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),

@@ -47,6 +47,8 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
+                scratch: host::transient_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 zama_program: host::id(),
                 system_program: anchor_lang::system_program::ID,
             },
@@ -63,6 +65,8 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 encrypted_state,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
+                scratch: host::transient_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 zama_program: host::id(),
                 system_program: anchor_lang::system_program::ID,
             },
@@ -72,7 +76,8 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     // Runs one chain instruction, replays its single `fhe_execute` CPI in cleartext — every
     // transient link included — and asserts the tail behind the one persisted handle.
     let assert_tail = |ledger: &mut CleartextLedger, ix: &Instruction, expected: u64| {
-        let result = context.process_and_validate_instruction(ix, &[Check::success()]);
+        let result =
+            kit::transaction::process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
@@ -95,13 +100,17 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     assert_tail(&mut ledger, &extend(1, 2), 42);
 
     // Chain-length bounds fail closed before any CPI runs.
-    context.process_and_validate_instruction(
+    kit::transaction::process_fhe_instruction(
+        &context,
+        owner,
         &extend(0, 1),
         &[anchor_error_check(
             chain_program::DepChainError::InvalidChainLength as u32,
         )],
     );
-    context.process_and_validate_instruction(
+    kit::transaction::process_fhe_instruction(
+        &context,
+        owner,
         &extend(chain_program::MAX_CHAIN_LINKS + 1, 1),
         &[anchor_error_check(
             chain_program::DepChainError::InvalidChainLength as u32,

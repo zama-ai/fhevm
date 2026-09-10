@@ -117,6 +117,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program."
@@ -455,6 +462,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1016,6 +1030,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
@@ -1217,6 +1238,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1511,6 +1539,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",

@@ -63,14 +63,14 @@ export type ConfidentialTransferInstruction<
   TAccountFromState extends string | AccountMeta<string> = string,
   TAccountToState extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountResultState extends string | AccountMeta<string> = string,
-  TAccountResultScratch extends string | AccountMeta<string> = string,
-  TAccountResultAuthority extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -95,6 +95,8 @@ export type ConfidentialTransferInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
@@ -103,10 +105,6 @@ export type ConfidentialTransferInstruction<
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
         : TAccountHcuTrustedAppRecord,
       TAccountResultState extends string ? ReadonlyAccount<TAccountResultState> : TAccountResultState,
-      TAccountResultScratch extends string ? WritableAccount<TAccountResultScratch> : TAccountResultScratch,
-      TAccountResultAuthority extends string
-        ? ReadonlySignerAccount<TAccountResultAuthority> & AccountSignerMeta<TAccountResultAuthority>
-        : TAccountResultAuthority,
       TAccountEventAuthority extends string ? ReadonlyAccount<TAccountEventAuthority> : TAccountEventAuthority,
       TAccountProgram extends string ? ReadonlyAccount<TAccountProgram> : TAccountProgram,
       ...TRemainingAccounts,
@@ -161,14 +159,14 @@ export type ConfidentialTransferInput<
   TAccountFromState extends string = string,
   TAccountToState extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountHcuBlockMeter extends string = string,
   TAccountHcuTrustedAppRecord extends string = string,
   TAccountResultState extends string = string,
-  TAccountResultScratch extends string = string,
-  TAccountResultAuthority extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
@@ -189,6 +187,8 @@ export type ConfidentialTransferInput<
   /** Recipient state: the host reads and updates its balance slot. */
   toState: Address<TAccountToState>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -203,8 +203,6 @@ export type ConfidentialTransferInput<
   /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   resultState?: Address<TAccountResultState>;
-  resultScratch?: Address<TAccountResultScratch>;
-  resultAuthority?: TransactionSigner<TAccountResultAuthority>;
   eventAuthority: Address<TAccountEventAuthority>;
   program: Address<TAccountProgram>;
   amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
@@ -222,14 +220,14 @@ export function getConfidentialTransferInstruction<
   TAccountFromState extends string,
   TAccountToState extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
   TAccountHcuBlockMeter extends string,
   TAccountHcuTrustedAppRecord extends string,
   TAccountResultState extends string,
-  TAccountResultScratch extends string,
-  TAccountResultAuthority extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -246,14 +244,14 @@ export function getConfidentialTransferInstruction<
     TAccountFromState,
     TAccountToState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountResultState,
-    TAccountResultScratch,
-    TAccountResultAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -271,14 +269,14 @@ export function getConfidentialTransferInstruction<
   TAccountFromState,
   TAccountToState,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountSystemProgram,
   TAccountHcuBlockMeter,
   TAccountHcuTrustedAppRecord,
   TAccountResultState,
-  TAccountResultScratch,
-  TAccountResultAuthority,
   TAccountEventAuthority,
   TAccountProgram
 > {
@@ -301,6 +299,8 @@ export function getConfidentialTransferInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -310,11 +310,6 @@ export function getConfidentialTransferInstruction<
       isWritable: false,
     },
     resultState: { value: input.resultState ?? null, isWritable: false },
-    resultScratch: { value: input.resultScratch ?? null, isWritable: true },
-    resultAuthority: {
-      value: input.resultAuthority ?? null,
-      isWritable: false,
-    },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
     program: { value: input.program ?? null, isWritable: false },
   };
@@ -346,14 +341,14 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('fromState', accounts.fromState),
       getAccountMeta('toState', accounts.toState),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('resultState', accounts.resultState),
-      getAccountMeta('resultScratch', accounts.resultScratch),
-      getAccountMeta('resultAuthority', accounts.resultAuthority),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
     ],
@@ -372,14 +367,14 @@ export function getConfidentialTransferInstruction<
     TAccountFromState,
     TAccountToState,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountResultState,
-    TAccountResultScratch,
-    TAccountResultAuthority,
     TAccountEventAuthority,
     TAccountProgram
   >);
@@ -408,22 +403,22 @@ export type ParsedConfidentialTransferInstruction<
     /** Recipient state: the host reads and updates its balance slot. */
     toState: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];
+    scratch: TAccountMetas[11];
+    instructions: TAccountMetas[12];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[11];
+    zamaProgram: TAccountMetas[13];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[12];
+    hostConfig: TAccountMetas[14];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[13];
+    systemProgram: TAccountMetas[15];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
      * by an untrusted mint under a metering-band cap, omitted otherwise.
      */
-    hcuBlockMeter?: TAccountMetas[14] | undefined;
+    hcuBlockMeter?: TAccountMetas[16] | undefined;
     /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
-    hcuTrustedAppRecord?: TAccountMetas[15] | undefined;
-    resultState?: TAccountMetas[16] | undefined;
-    resultScratch?: TAccountMetas[17] | undefined;
-    resultAuthority?: TAccountMetas[18] | undefined;
+    hcuTrustedAppRecord?: TAccountMetas[17] | undefined;
+    resultState?: TAccountMetas[18] | undefined;
     eventAuthority: TAccountMetas[19];
     program: TAccountMetas[20];
   };
@@ -466,14 +461,14 @@ export function parseConfidentialTransferInstruction<
       fromState: getNextAccount(),
       toState: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       systemProgram: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
       resultState: getNextOptionalAccount(),
-      resultScratch: getNextOptionalAccount(),
-      resultAuthority: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

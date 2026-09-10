@@ -41,6 +41,8 @@ pub struct ExecutionCpiAccounts<'info> {
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
     /// The host's rand nonce (mut), required exactly when the execution has a rand step.
     pub rand_nonce: Option<AccountInfo<'info>>,
+    pub scratch: AccountInfo<'info>,
+    pub instructions: AccountInfo<'info>,
     pub event_authority: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
 }
@@ -79,7 +81,7 @@ fn invoke_execution_signed_with_resolver<'info, R>(
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
-    if accounts.authority.key() != execution.authority.pubkey() {
+    if accounts.authority.key() != execution.authority() {
         return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
     }
     let deny_scope_records = accounts.deny_scope_records;
@@ -91,6 +93,8 @@ where
         hcu_block_meter: accounts.hcu_block_meter,
         hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         rand_nonce: accounts.rand_nonce,
+        scratch: accounts.scratch,
+        instructions: accounts.instructions,
         event_authority: accounts.event_authority,
         program: accounts.program,
     };

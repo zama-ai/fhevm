@@ -26,6 +26,14 @@
         {
           "name": "instructions",
           "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "refund",
+          "writable": true
         }
       ],
       "args": []
@@ -520,6 +528,17 @@
           }
         },
         {
+          "name": "scratch",
+          "docs": [
+            "Shared by every execution until the transaction's final CloseScratch."
+          ],
+          "writable": true
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -755,13 +774,6 @@
           "name": "payer",
           "writable": true,
           "signer": true
-        },
-        {
-          "name": "authority",
-          "signer": true
-        },
-        {
-          "name": "encrypted_state"
         },
         {
           "name": "scratch",
@@ -1766,6 +1778,19 @@
       ]
     },
     {
+      "name": "TransientState",
+      "discriminator": [
+        50,
+        231,
+        101,
+        112,
+        209,
+        120,
+        5,
+        8
+      ]
+    },
+    {
       "name": "UserDecryptionDelegation",
       "discriminator": [
         37,
@@ -2045,246 +2070,231 @@
     },
     {
       "code": 6034,
-      "name": "FheExecuteDuplicateHandle",
-      "msg": "fhe_execute output handle is duplicated"
-    },
-    {
-      "code": 6035,
       "name": "FheExecuteOutputAlreadyInitialized",
       "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "FheExecuteRandNonceMissing",
       "msg": "fhe_execute rand step requires the rand nonce account"
     },
     {
-      "code": 6037,
+      "code": 6036,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6038,
+      "code": 6037,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the execution's program"
     },
     {
-      "code": 6039,
+      "code": 6038,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6040,
+      "code": 6039,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6041,
+      "code": 6040,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6042,
+      "code": 6041,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6043,
+      "code": 6042,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6044,
+      "code": 6043,
       "name": "EncryptedStatePdaMismatch",
       "msg": "encrypted State does not match the canonical PDA"
     },
     {
-      "code": 6045,
+      "code": 6044,
       "name": "PreviousStateMismatch",
       "msg": "encrypted value previous handle does not match the account"
     },
     {
-      "code": 6046,
+      "code": 6045,
       "name": "EncryptedStatePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6047,
+      "code": 6046,
       "name": "InvalidAllowKey",
       "msg": "encrypted value allowed key is invalid"
     },
     {
-      "code": 6048,
+      "code": 6047,
       "name": "EncryptedStateMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6049,
+      "code": 6048,
       "name": "EncryptedStateMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6050,
+      "code": 6049,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6051,
+      "code": 6050,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6052,
+      "code": 6051,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6053,
+      "code": 6052,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6054,
+      "code": 6053,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6055,
+      "code": 6054,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6056,
+      "code": 6055,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6057,
+      "code": 6056,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6058,
+      "code": 6057,
       "name": "InvalidChainTypeBit",
       "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
     },
     {
-      "code": 6059,
-      "name": "FheExecuteUnanchoredUnderBlockCap",
-      "msg": "FHE execution touches no persistent value under a finite HCU block cap"
-    },
-    {
-      "code": 6060,
+      "code": 6058,
       "name": "FheExecuteMixedScopes",
       "msg": "FHE execution mixes values of different application scopes"
     },
     {
-      "code": 6061,
+      "code": 6059,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
-      "code": 6062,
+      "code": 6060,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6063,
+      "code": 6061,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt inclusion proof is invalid"
     },
     {
-      "code": 6064,
+      "code": 6062,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6065,
+      "code": 6063,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6066,
+      "code": 6064,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6067,
+      "code": 6065,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6068,
+      "code": 6066,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6069,
+      "code": 6067,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6070,
+      "code": 6068,
       "name": "PermitInvalidationPdaMismatch",
       "msg": "permit invalidation account is not the canonical account for the signer"
     },
     {
-      "code": 6071,
+      "code": 6069,
       "name": "PermitInvalidationAccountInvalid",
       "msg": "permit invalidation account is not a valid watermark record"
     },
     {
-      "code": 6072,
+      "code": 6070,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6073,
+      "code": 6071,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6074,
+      "code": 6072,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6075,
-      "name": "FheExecutePersistentOperandWrittenEarlier",
-      "msg": "fhe_execute persistent operand was written earlier in the execution"
-    },
-    {
-      "code": 6076,
+      "code": 6073,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6077,
+      "code": 6074,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     },
     {
-      "code": 6078,
+      "code": 6075,
       "name": "TransientAccountInvalid",
       "msg": "invalid transient workspace account"
     },
     {
-      "code": 6079,
+      "code": 6076,
       "name": "TransientCloseMissing",
       "msg": "matching final top-level scratch close is required"
     },
     {
-      "code": 6080,
+      "code": 6077,
       "name": "TransientCapacityExceeded",
       "msg": "transient workspace grant capacity exceeded"
     },
     {
-      "code": 6081,
+      "code": 6078,
       "name": "EncryptedStateCapacityExceeded",
       "msg": "encrypted state slot capacity exceeded"
     },
     {
-      "code": 6082,
+      "code": 6079,
       "name": "InvalidReturnSelection",
       "msg": "invalid execution return selection"
     }
@@ -2650,12 +2660,16 @@
     },
     {
       "name": "FheExecuteArgs",
-      "docs": [
-        "Arguments for one composed, instruction-local fhe_execute."
-      ],
       "type": {
         "kind": "struct",
         "fields": [
+          {
+            "name": "execution_state_index",
+            "docs": [
+              "Canonical State whose authority signs and produces this execution."
+            ],
+            "type": "u8"
+          },
           {
             "name": "account_count",
             "docs": [
@@ -2706,6 +2720,19 @@
             }
           },
           {
+            "name": "effects",
+            "docs": [
+              "Applied in order after all arithmetic has read the initial State snapshots."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "FheExecuteEffect"
+                }
+              }
+            }
+          },
+          {
             "name": "returned_results",
             "docs": [
               "Results copied to return data in this order, including repeated selections.",
@@ -2716,6 +2743,64 @@
               "vec": {
                 "defined": {
                   "name": "ExecutionResultRef"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheExecuteEffect",
+      "docs": [
+        "An ordered State write, decrypt permission or cross-State grant on a produced result."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "result",
+            "type": {
+              "defined": {
+                "name": "ExecutionResultRef"
+              }
+            }
+          },
+          {
+            "name": "state_index",
+            "type": "u8"
+          },
+          {
+            "name": "previous_leaf_count",
+            "docs": [
+              "History position before this effect, so indexers can detect missing writes."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "SlotWrite"
+                }
+              }
+            }
+          },
+          {
+            "name": "allow_indexes",
+            "type": "bytes"
+          },
+          {
+            "name": "make_public",
+            "type": "bool"
+          },
+          {
+            "name": "grants",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ResultGrant"
                 }
               }
             }
@@ -2796,70 +2881,8 @@
                 "type": "u8"
               },
               {
-                "name": "scratch_index",
-                "type": "u8"
-              },
-              {
                 "name": "consumer_state_index",
                 "type": "u8"
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheExecuteOutput",
-      "docs": [
-        "Output policy for a composed fhe_execute operation."
-      ],
-      "type": {
-        "kind": "enum",
-        "variants": [
-          {
-            "name": "Transient"
-          },
-          {
-            "name": "State",
-            "fields": [
-              {
-                "name": "state_index",
-                "type": "u8"
-              },
-              {
-                "name": "previous_leaf_count",
-                "docs": [
-                  "History position before this output, so indexers can detect missing writes."
-                ],
-                "type": "u64"
-              },
-              {
-                "name": "slot",
-                "type": {
-                  "option": {
-                    "defined": {
-                      "name": "SlotWrite"
-                    }
-                  }
-                }
-              },
-              {
-                "name": "allow_indexes",
-                "type": "bytes"
-              },
-              {
-                "name": "make_public",
-                "type": "bool"
-              },
-              {
-                "name": "grants",
-                "type": {
-                  "vec": {
-                    "defined": {
-                      "name": "ResultGrant"
-                    }
-                  }
-                }
               }
             ]
           }
@@ -2977,17 +3000,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3044,17 +3056,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3079,17 +3080,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3102,17 +3092,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3147,17 +3126,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3182,17 +3150,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3218,17 +3175,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3265,17 +3211,6 @@
                   "FHE type byte of the value and set elements."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           },
@@ -3322,17 +3257,6 @@
                   "FHE type byte embedded in the output handle."
                 ],
                 "type": "u8"
-              },
-              {
-                "name": "output",
-                "docs": [
-                  "Whether this output remains instruction-local or is bound into persistent ACL state."
-                ],
-                "type": {
-                  "defined": {
-                    "name": "FheExecuteOutput"
-                  }
-                }
               }
             ]
           }
@@ -4078,14 +4002,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "scratch_index",
-            "type": "u8"
-          },
-          {
-            "name": "initiating_state_index",
-            "type": "u8"
-          },
-          {
             "name": "consumer_state_index",
             "type": "u8"
           }
@@ -4105,6 +4021,131 @@
             "name": "previous_handle_index",
             "type": {
               "option": "u8"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransientGrant",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "consumer_state",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransientResult",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "handle",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "producer_state",
+            "type": "pubkey"
+          },
+          {
+            "name": "depth",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TransientState",
+      "docs": [
+        "Host-owned transaction context. Borrowed in place so nested executions do",
+        "not deserialize the growing result history onto Solana's bump heap."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_hcu",
+            "type": "u64"
+          },
+          {
+            "name": "result_count",
+            "type": "u16"
+          },
+          {
+            "name": "grant_count",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          },
+          {
+            "name": "results",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "TransientResult"
+                  }
+                },
+                112
+              ]
+            }
+          },
+          {
+            "name": "grants",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "TransientGrant"
+                  }
+                },
+                32
+              ]
             }
           }
         ]

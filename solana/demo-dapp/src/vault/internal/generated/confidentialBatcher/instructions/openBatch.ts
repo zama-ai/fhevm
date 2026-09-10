@@ -66,6 +66,8 @@ export type OpenBatchInstruction<
   TAccountBatchJoinUnderlying extends string | AccountMeta<string> = string,
   TAccountBatchPayoutUnderlying extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
@@ -117,6 +119,8 @@ export type OpenBatchInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountConfidentialTokenEventAuthority extends string
@@ -181,6 +185,8 @@ export type OpenBatchAsyncInput<
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchPayoutUnderlying extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -227,6 +233,8 @@ export type OpenBatchAsyncInput<
   /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying?: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -257,6 +265,8 @@ export async function getOpenBatchInstructionAsync<
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchPayoutUnderlying extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -282,6 +292,8 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -309,6 +321,8 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -371,6 +385,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -440,6 +456,8 @@ export async function getOpenBatchInstructionAsync<
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchPayoutUnderlying', accounts.batchPayoutUnderlying),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -467,6 +485,8 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -493,6 +513,8 @@ export type OpenBatchInput<
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchPayoutUnderlying extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -539,6 +561,8 @@ export type OpenBatchInput<
   /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -569,6 +593,8 @@ export function getOpenBatchInstruction<
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchPayoutUnderlying extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -594,6 +620,8 @@ export function getOpenBatchInstruction<
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -620,6 +648,8 @@ export function getOpenBatchInstruction<
   TAccountBatchJoinUnderlying,
   TAccountBatchPayoutUnderlying,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountConfidentialTokenEventAuthority,
@@ -681,6 +711,8 @@ export function getOpenBatchInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -735,6 +767,8 @@ export function getOpenBatchInstruction<
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchPayoutUnderlying', accounts.batchPayoutUnderlying),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -762,6 +796,8 @@ export function getOpenBatchInstruction<
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -816,16 +852,18 @@ export type ParsedOpenBatchInstruction<
     /** Batch's plain SPL account receiving the vault phase's output at settle. */
     batchPayoutUnderlying: TAccountMetas[14];
     zamaEventAuthority: TAccountMetas[15];
+    scratch: TAccountMetas[16];
+    instructions: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[16];
-    hostConfig: TAccountMetas[17];
-    confidentialTokenEventAuthority: TAccountMetas[18];
+    zamaProgram: TAccountMetas[18];
+    hostConfig: TAccountMetas[19];
+    confidentialTokenEventAuthority: TAccountMetas[20];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[19];
+    confidentialTokenProgram: TAccountMetas[21];
     /** SPL token program. */
-    tokenProgram: TAccountMetas[20];
+    tokenProgram: TAccountMetas[22];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[21];
+    systemProgram: TAccountMetas[23];
   };
   data: OpenBatchInstructionData;
 };
@@ -833,10 +871,10 @@ export type ParsedOpenBatchInstruction<
 export function parseOpenBatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedOpenBatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 22) {
+  if (instruction.accounts.length < 24) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 22,
+      expectedAccountMetas: 24,
     });
   }
   let accountIndex = 0;
@@ -868,6 +906,8 @@ export function parseOpenBatchInstruction<TProgram extends string, TAccountMetas
       batchJoinUnderlying: getNextAccount(),
       batchPayoutUnderlying: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),

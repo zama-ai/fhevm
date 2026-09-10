@@ -8,7 +8,7 @@
 //! evaluation calls `zama-host`'s own validators, so the oracle cannot drift from the program's
 //! admission rules.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anchor_lang::{AnchorDeserialize, Discriminator};
 use mollusk_svm::result::InstructionResult;
@@ -25,7 +25,7 @@ use zama_host::{
     HandleDerivationContext,
 };
 
-use crate::{decode_fhe_execute_args, execution_step_output, Ctx, BALANCE_FHE_TYPE};
+use crate::{decode_fhe_execute_args, Ctx, BALANCE_FHE_TYPE};
 
 pub type Handle = [u8; 32];
 pub type ClearInputs = HashMap<Handle, TypedClearValue>;
@@ -62,12 +62,22 @@ fn resolve_handle_rhs(
     }
 }
 
-fn reconstruct_deterministic_handles(
+fn reconstruct_handles(
     args: &FheExecuteArgs,
     context: &HandleDerivationContext,
+    random_seeds: &[zama_host::FheExecuteRandomSeed],
+    produced_in_tx: &mut HashSet<Handle>,
 ) -> Option<Vec<Handle>> {
     let mut produced = Vec::with_capacity(args.steps.len());
-    for step in &args.steps {
+    for (step_index, step) in args.steps.iter().enumerate() {
+        let mask = |handles: &[Option<Handle>]| {
+            zama_host::operand_boundary_mask(
+                handles
+                    .iter()
+                    .map(|handle| handle.is_some_and(|h| !produced_in_tx.contains(&h))),
+            )
+            .ok()
+        };
         let handle = match step {
             FheExecuteStep::Binary {
                 op,
@@ -78,7 +88,15 @@ fn reconstruct_deterministic_handles(
             } => {
                 let lhs = resolve_handle_operand(lhs, &args.dictionary, &produced)?;
                 let (rhs, scalar) = resolve_handle_rhs(rhs, &args.dictionary, &produced)?;
-                computed_eval_handle(*op, lhs, rhs, scalar, *output_fhe_type, context)
+                computed_eval_handle(
+                    *op,
+                    lhs,
+                    rhs,
+                    scalar,
+                    *output_fhe_type,
+                    mask(&[Some(lhs), (!scalar).then_some(rhs)])?,
+                    context,
+                )
             }
             FheExecuteStep::Ternary {
                 op,
@@ -87,14 +105,20 @@ fn reconstruct_deterministic_handles(
                 if_false,
                 output_fhe_type,
                 ..
-            } => computed_eval_ternary_handle(
-                *op,
-                resolve_handle_operand(control, &args.dictionary, &produced)?,
-                resolve_handle_operand(if_true, &args.dictionary, &produced)?,
-                resolve_handle_operand(if_false, &args.dictionary, &produced)?,
-                *output_fhe_type,
-                context,
-            ),
+            } => {
+                let control = resolve_handle_operand(control, &args.dictionary, &produced)?;
+                let if_true = resolve_handle_operand(if_true, &args.dictionary, &produced)?;
+                let if_false = resolve_handle_operand(if_false, &args.dictionary, &produced)?;
+                computed_eval_ternary_handle(
+                    *op,
+                    control,
+                    if_true,
+                    if_false,
+                    *output_fhe_type,
+                    mask(&[Some(control), Some(if_true), Some(if_false)])?,
+                    context,
+                )
+            }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
@@ -105,12 +129,16 @@ fn reconstruct_deterministic_handles(
                 operand,
                 output_fhe_type,
                 ..
-            } => computed_eval_unary_handle(
-                *op,
-                resolve_handle_operand(operand, &args.dictionary, &produced)?,
-                *output_fhe_type,
-                context,
-            ),
+            } => {
+                let operand = resolve_handle_operand(operand, &args.dictionary, &produced)?;
+                computed_eval_unary_handle(
+                    *op,
+                    operand,
+                    *output_fhe_type,
+                    mask(&[Some(operand)])?,
+                    context,
+                )
+            }
             FheExecuteStep::Sum {
                 operands, fhe_type, ..
             } => {
@@ -118,7 +146,17 @@ fn reconstruct_deterministic_handles(
                     .iter()
                     .map(|operand| resolve_handle_operand(operand, &args.dictionary, &produced))
                     .collect::<Option<Vec<_>>>()?;
-                computed_eval_sum_handle(&operands, *fhe_type, context)
+                computed_eval_sum_handle(
+                    &operands,
+                    *fhe_type,
+                    zama_host::operand_boundary_mask(
+                        operands
+                            .iter()
+                            .map(|handle| !produced_in_tx.contains(handle)),
+                    )
+                    .ok()?,
+                    context,
+                )
             }
             FheExecuteStep::IsIn {
                 value,
@@ -130,10 +168,17 @@ fn reconstruct_deterministic_handles(
                     .iter()
                     .map(|operand| resolve_handle_operand(operand, &args.dictionary, &produced))
                     .collect::<Option<Vec<_>>>()?;
+                let value = resolve_handle_operand(value, &args.dictionary, &produced)?;
                 computed_eval_is_in_handle(
-                    resolve_handle_operand(value, &args.dictionary, &produced)?,
+                    value,
                     &set,
                     *fhe_type,
+                    zama_host::operand_boundary_mask(
+                        std::iter::once(&value)
+                            .chain(&set)
+                            .map(|handle| !produced_in_tx.contains(handle)),
+                    )
+                    .ok()?,
                     context,
                 )
             }
@@ -152,12 +197,35 @@ fn reconstruct_deterministic_handles(
                     *divisor,
                     scalar,
                     *output_fhe_type,
+                    mask(&[Some(factor1), (!scalar).then_some(factor2)])?,
                     context,
                 )
             }
-            FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. } => return None,
+            FheExecuteStep::Rand { fhe_type } => {
+                let seed = random_seeds
+                    .iter()
+                    .find(|seed| usize::from(seed.step_index) == step_index)?
+                    .seed;
+                zama_host::computed_rand_handle(seed, *fhe_type, context.chain_id)
+            }
+            FheExecuteStep::RandBounded {
+                upper_bound,
+                fhe_type,
+            } => {
+                let seed = random_seeds
+                    .iter()
+                    .find(|seed| usize::from(seed.step_index) == step_index)?
+                    .seed;
+                zama_host::computed_rand_bounded_handle(
+                    *upper_bound,
+                    seed,
+                    *fhe_type,
+                    context.chain_id,
+                )
+            }
         };
         produced.push(handle);
+        produced_in_tx.insert(handle);
     }
     Some(produced)
 }
@@ -688,23 +756,51 @@ impl CleartextLedger {
             .as_ref()
             .expect("Mollusk result must include its compiled message");
         enum HostReplay<'a> {
-            Execute(FheExecuteArgs, &'a [u8]),
+            Execute(
+                FheExecuteArgs,
+                &'a [u8],
+                Vec<zama_host::FheExecuteRandomSeed>,
+            ),
             MakePublic(zama_host::instruction::MakeStateHandlePublic, &'a [u8]),
         }
         let host_instructions = result
             .inner_instructions
             .iter()
-            .filter(|inner| {
+            .enumerate()
+            .filter(|(_, inner)| {
                 message
                     .account_keys()
                     .get(inner.instruction.program_id_index as usize)
                     .copied()
                     == Some(zama_host::id())
             })
-            .filter_map(|inner| {
+            .filter_map(|(index, inner)| {
                 let accounts = inner.instruction.accounts.as_slice();
                 if let Some(args) = decode_fhe_execute_args(&inner.instruction.data) {
-                    return Some(HostReplay::Execute(args, accounts));
+                    let mut events = result.inner_instructions[index + 1..]
+                        .iter()
+                        .take_while(|child| child.stack_height > inner.stack_height)
+                        .filter(|child| {
+                            message.account_keys()[child.instruction.program_id_index as usize]
+                                == zama_host::ID
+                        })
+                        .filter_map(|child| {
+                            crate::decode_anchor_event::<zama_host::FheExecuteRandomSeedsEvent>(
+                                &child.instruction.data,
+                            )
+                        });
+                    let seeds = events
+                        .next()
+                        .map(|event| {
+                            assert_eq!(event.version, zama_host::EVENT_VERSION);
+                            event.seeds
+                        })
+                        .unwrap_or_default();
+                    assert!(
+                        events.next().is_none(),
+                        "one random-seeds event per execution"
+                    );
+                    return Some(HostReplay::Execute(args, accounts, seeds));
                 }
                 let payload = inner
                     .instruction
@@ -716,10 +812,11 @@ impl CleartextLedger {
             })
             .collect::<Vec<_>>();
 
+        let mut produced_in_tx = HashSet::new();
         let mut executions = 0;
         let mut persistent_outputs = 0;
         for instruction in host_instructions {
-            let HostReplay::Execute(args, accounts) = instruction else {
+            let HostReplay::Execute(args, accounts, random_seeds) = instruction else {
                 let HostReplay::MakePublic(args, accounts) = instruction else {
                     unreachable!()
                 };
@@ -755,73 +852,43 @@ impl CleartextLedger {
                 previous_bank_hash,
                 unix_timestamp: context.mollusk.sysvars.clock.unix_timestamp,
             };
-            if let Some(handles) = reconstruct_deterministic_handles(&args, &handle_context) {
-                for (step_index, ((step, value), handle)) in
-                    args.steps.iter().zip(outputs).zip(handles).enumerate()
-                {
-                    self.values.insert(handle, value);
-                    if let zama_host::FheExecuteOutput::State {
-                        state_index,
-                        previous_leaf_count,
-                        allow_indexes,
-                        make_public,
-                        ..
-                    } = execution_step_output(step)
-                    {
-                        // Anchor's fixed FheExecute context precedes remaining accounts.
-                        let account_index = accounts[9 + *state_index as usize] as usize;
-                        let address = message.account_keys()[account_index];
-                        let leaves = self.state_leaves.entry(address).or_default();
-                        assert_eq!(
-                            leaves.len() as u64,
-                            *previous_leaf_count,
-                            "oracle missed EncryptedState history before replaying {address} at step {step_index}: {step:?}"
-                        );
-                        for allow_index in allow_indexes {
-                            let key = args
-                                .dictionary_bytes(*allow_index)
-                                .expect("valid allow dictionary index");
-                            leaves.push(zama_solana_acl::historical_access_leaf_commitment(
-                                address.to_bytes(),
-                                leaves.len() as u64,
-                                handle,
-                                key,
-                            ));
-                        }
-                        if *make_public {
-                            leaves.push(zama_solana_acl::public_decrypt_leaf_commitment(
-                                address.to_bytes(),
-                                leaves.len() as u64,
-                                handle,
-                            ));
-                        }
-                    }
-                    if matches!(
-                        execution_step_output(step),
-                        zama_host::FheExecuteOutput::State { slot: Some(_), .. }
-                    ) {
-                        persistent_outputs += 1;
-                    }
-                }
-                continue;
+            let handles =
+                reconstruct_handles(&args, &handle_context, &random_seeds, &mut produced_in_tx)
+                    .expect("host CPI and its random-seeds event must reconstruct every result");
+            for (&handle, value) in handles.iter().zip(outputs) {
+                self.values.insert(handle, value);
             }
-            for (step, value) in args.steps.iter().zip(outputs) {
-                if let zama_host::FheExecuteOutput::State {
-                    state_index,
-                    slot: Some(slot),
-                    ..
-                } = execution_step_output(step)
-                {
-                    // Anchor's fixed FheExecute context precedes remaining accounts.
-                    let account_index = accounts[9 + *state_index as usize] as usize;
-                    let address = message.account_keys()[account_index];
-                    let state: zama_host::EncryptedState = crate::read_account(context, address);
-                    let key = args.dictionary_bytes(slot.key_index).expect("slot key");
-                    let handle = state.get(&key).expect("written slot");
-                    self.values.insert(handle, value);
-                    persistent_outputs += 1;
-                    continue;
+            for effect in &args.effects {
+                let handle = handles[usize::from(effect.result.step_index)];
+                let account_index = accounts
+                    [zama_host::FHE_EXECUTE_FIXED_ACCOUNTS + usize::from(effect.state_index)]
+                    as usize;
+                let address = message.account_keys()[account_index];
+                let leaves = self.state_leaves.entry(address).or_default();
+                assert_eq!(
+                    leaves.len() as u64,
+                    effect.previous_leaf_count,
+                    "oracle missed EncryptedState history before {address}: {effect:?}"
+                );
+                for allow_index in &effect.allow_indexes {
+                    let key = args
+                        .dictionary_bytes(*allow_index)
+                        .expect("valid allow dictionary index");
+                    leaves.push(zama_solana_acl::historical_access_leaf_commitment(
+                        address.to_bytes(),
+                        leaves.len() as u64,
+                        handle,
+                        key,
+                    ));
                 }
+                if effect.make_public {
+                    leaves.push(zama_solana_acl::public_decrypt_leaf_commitment(
+                        address.to_bytes(),
+                        leaves.len() as u64,
+                        handle,
+                    ));
+                }
+                persistent_outputs += usize::from(effect.slot.is_some());
             }
         }
         FheReplay {

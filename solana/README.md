@@ -67,7 +67,8 @@ trusted for authorization.
   is deferred to fhevm-internal#2007.
 - **Return data is transport.** `returned_results` selects at most 32 handles, in
   order; empty selection returns none. It grants no permission. Scratch carries
-  exact handle/consumer-State grants and must close at the transaction's end.
+  all result occurrences, implicit producer-State permission and explicit consumer grants.
+  One signed top-level open and exact final close delimit the shared transaction context.
 - **The 1,232-byte packet is a design input.** Execution wire data interns
   repeated 32-byte values in a dictionary; the KMS settle transaction requires
   a v0 transaction plus one address lookup table. Both bounds are pinned by
@@ -194,9 +195,30 @@ An app program drives compute by CPI into `zama-host`, using
 - To receive confidential funds, expose your own instruction that CPIs
   `confidential_transfer` with the user signer and the app’s PDA signatures. In `confidential-batcher::join`,
   the token returns the transferred handle and grants the JoinRecord State access
-  through scratch; the batcher adds it to the contribution slot. A final instruction
-  closes scratch and refunds its rent. There is no
+  through the transaction's shared scratch; the batcher adds it to the contribution slot.
+  The client opens scratch before application calls and closes it last, refunding its rent. There is no
   receiver-callback path — that EVM workaround is unnecessary on Solana.
+
+The transaction owner creates the context once, forwards its accounts to all app
+builders, and wraps the complete body before signing:
+
+```ts
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+
+const fhe = await createSolanaFheTransaction({ payer });
+const initialize = await buildInitialize({ ...inputs, fhe: fhe.accounts });
+const join = await buildJoin({ ...inputs, fhe: fhe.accounts });
+const instructions = fhe.wrap([initialize, join]);
+// Sign and send through the application's existing transaction transport.
+```
+
+`buildInitialize` and `buildJoin` stand for the app's instruction builders. Every
+CPI forwards the same scratch and instructions sysvar; each State authority still
+signs independently. The scratch payer conveys no compute or decrypt permission.
+For a stored multisig proposal, declare that scratch payer up front and supply
+its signature on the outer execution transaction. Scratch rent is refunded to
+that payer by the final close. Its fixed capacity is 112 result occurrences and
+32 explicit grants; packet and compute limits may bind earlier.
 
 ## Documentation
 

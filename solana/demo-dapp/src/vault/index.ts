@@ -16,7 +16,7 @@ export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js'
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
 export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameters } from './cancelDispatch.js';
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
-export { buildClaimInstructions, type SolanaVaultClaimParameters } from './claim.js';
+export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export {
   buildHarvestInstruction,
   getVaultMetrics,

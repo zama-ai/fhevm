@@ -28,9 +28,6 @@ impl StateId {
     pub fn app(self) -> AppScope {
         self.app
     }
-    pub fn scratch_address(self) -> Pubkey {
-        zama_host::transient_address(self.address).0
-    }
 }
 
 /// A borrowed snapshot of a host-owned encrypted dictionary.
@@ -85,24 +82,11 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn granted<T: FheTyped>(
-        &self,
-        handle: [u8; 32],
-        initiating: StateId,
-    ) -> Result<FheHandle<T>> {
-        self.granted_from_scratch(handle, initiating.scratch_address())
-    }
-
-    pub fn granted_from_scratch<T: FheTyped>(
-        &self,
-        handle: [u8; 32],
-        scratch: Pubkey,
-    ) -> Result<FheHandle<T>> {
+    pub fn granted<T: FheTyped>(&self, handle: [u8; 32]) -> Result<FheHandle<T>> {
         FheHandle::from_handle_operand(
             handle,
             Operand(OperandKind::Granted {
                 consumer: self.id,
-                scratch,
                 handle,
             }),
         )
@@ -116,7 +100,7 @@ pub struct StateOutput {
     pub(crate) slot: Option<([u8; 32], Option<[u8; 32]>)>,
     pub(crate) allows: Vec<Pubkey>,
     pub(crate) make_public: bool,
-    pub(crate) grants: Vec<(StateId, StateId)>,
+    pub(crate) grants: Vec<StateId>,
 }
 
 impl StateOutput {
@@ -128,8 +112,8 @@ impl StateOutput {
         self.make_public = true;
         self
     }
-    pub fn allow_transient(mut self, initiating: StateId, consumer: StateId) -> Self {
-        self.grants.push((initiating, consumer));
+    pub fn allow_transient(mut self, consumer: StateId) -> Self {
+        self.grants.push(consumer);
         self
     }
 }
@@ -137,7 +121,7 @@ impl StateOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExecutionAuthority, FheExecution, Output, Scalar, Uint};
+    use crate::{FheExecution, Scalar, Uint};
 
     #[test]
     fn slots_share_history_and_a_failed_rewrite_does_not_poison_the_builder() {
@@ -151,37 +135,23 @@ mod tests {
             bump: 0,
         };
         let state = State::new(&account);
-        let execution = FheExecution::build(ExecutionAuthority::new(account.authority), |fhe| {
-            let first = fhe.trivial_encrypt_u64(
-                1,
-                Output::state(state.set([1; 32]).allow(account.authority)),
-            )?;
+        let execution = FheExecution::build(state.id(), |fhe| {
+            let first = fhe.trivial_encrypt_u64(1)?;
+            fhe.output(first, state.set([1; 32]).allow(account.authority))?;
             assert_eq!(
-                fhe.trivial_encrypt_u64(2, Output::state(state.set([1; 32])))
-                    .unwrap_err(),
-                FheExecutionBuildError::StateSlotWrittenEarlier
+                fhe.output(first, state.set([1; 32])).unwrap_err(),
+                FheExecutionBuildError::DuplicateSlotWrite
             );
-            fhe.add(
-                first,
-                Scalar::<Uint<64>>::u64(1),
-                Output::state(state.set([2; 32]).make_public()),
-            )?;
+            let second = fhe.add(first, Scalar::<Uint<64>>::u64(1))?;
+            fhe.output(second, state.set([2; 32]).make_public())?;
             Ok(())
         })
         .unwrap();
         let counts: Vec<_> = execution
             .args
-            .steps
+            .effects
             .iter()
-            .map(
-                |step| match crate::execution::fhe_execute_step_output(step) {
-                    zama_host::FheExecuteOutput::State {
-                        previous_leaf_count,
-                        ..
-                    } => *previous_leaf_count,
-                    _ => panic!("state output"),
-                },
-            )
+            .map(|effect| effect.previous_leaf_count)
             .collect();
         assert_eq!(counts, [0, 1]);
     }

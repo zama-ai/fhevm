@@ -23,7 +23,7 @@
 
 use anchor_lang::{
     prelude::{system_program, Instructions},
-    AccountDeserialize, InstructionData,
+    AccountDeserialize, Discriminator,
 };
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
@@ -31,17 +31,11 @@ use confidential_batcher as batcher;
 use confidential_token as token;
 use demo_vault as vault;
 use mollusk_svm::{
-    result::{
-        types::{ProgramResult, TransactionResult},
-        Check, InstructionResult,
-    },
+    result::{Check, InstructionResult},
     Mollusk,
 };
 use solana_sdk::{
-    account::Account,
-    instruction::{AccountMeta, Instruction},
-    program_error::ProgramError,
-    pubkey::Pubkey,
+    account::Account, instruction::Instruction, program_error::ProgramError, pubkey::Pubkey,
     sysvar::SysvarId,
 };
 use std::collections::HashMap;
@@ -88,30 +82,34 @@ fn batcher_error(error: batcher::BatcherError) -> Check<'static> {
     anchor_error_check(error as u32)
 }
 
-fn close_scratch_ix(payer: Pubkey, scratch: Pubkey) -> Instruction {
-    Instruction {
-        program_id: host::id(),
-        data: host::instruction::CloseScratch {}.data(),
-        accounts: vec![
-            AccountMeta::new_readonly(Instructions::id(), false),
-            AccountMeta::new(scratch, false),
-            AccountMeta::new(payer, false),
-        ],
+/// Wraps the batcher's FHE entry points in the same envelope clients submit.
+fn check_batcher_instruction(
+    context: &Ctx,
+    ix: &Instruction,
+    checks: &[Check],
+) -> InstructionResult {
+    if ix.program_id == batcher::ID {
+        let payer_index = [
+            (batcher::instruction::Join::DISCRIMINATOR, 1),
+            (batcher::instruction::Quit::DISCRIMINATOR, 1),
+            (batcher::instruction::OpenBatch::DISCRIMINATOR, 0),
+            (batcher::instruction::Dispatch::DISCRIMINATOR, 0),
+            (batcher::instruction::CancelDispatch::DISCRIMINATOR, 0),
+            (batcher::instruction::Settle::DISCRIMINATOR, 0),
+            (batcher::instruction::Claim::DISCRIMINATOR, 0),
+        ]
+        .into_iter()
+        .find_map(|(tag, index)| ix.data.starts_with(tag).then_some(index));
+        if let Some(index) = payer_index {
+            return zama_solana_test_kit::transaction::process_fhe_instruction(
+                context,
+                ix.accounts[index].pubkey,
+                ix,
+                checks,
+            );
+        }
     }
-}
-
-fn successful_transaction_as_instruction_result(result: TransactionResult) -> InstructionResult {
-    assert!(result.raw_result.is_ok(), "{:?}", result.raw_result);
-    InstructionResult {
-        compute_units_consumed: result.compute_units_consumed,
-        execution_time: result.execution_time,
-        program_result: ProgramResult::Success,
-        raw_result: Ok(()),
-        return_data: result.return_data,
-        resulting_accounts: result.resulting_accounts,
-        inner_instructions: result.inner_instructions.into_iter().flatten().collect(),
-        message: result.message,
-    }
+    context.process_and_validate_instruction(ix, checks)
 }
 
 /// The batcher suite's replay entry point: a batcher instruction issues several `fhe_execute`
@@ -293,10 +291,6 @@ impl BatchKeys {
 
     fn claim_amount_state(&self, user: Pubkey) -> Pubkey {
         self.pending_join_value(user)
-    }
-
-    fn scratch(&self, user: Pubkey) -> Pubkey {
-        batcher::join_state_id(self.batch, self.join_record(user)).scratch_address()
     }
 
     fn join_record(&self, user: Pubkey) -> Pubkey {
@@ -665,6 +659,8 @@ fn open_batch_ix(
     anchor_ix(
         batcher::id(),
         batcher::accounts::OpenBatch {
+            scratch: host::transient_address(fixture.payer).0,
+            instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
             previous_batch,
@@ -726,7 +722,7 @@ fn join_ix(
             user_balance_state: user_join.balance_state,
             batch_balance_state: keys.join_balance_state,
             join_state: keys.pending_join_value(user.user),
-            scratch: keys.scratch(user.user),
+            scratch: host::transient_address(user.user).0,
             instructions: Instructions::id(),
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
@@ -744,6 +740,8 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
     anchor_ix(
         batcher::id(),
         batcher::accounts::Quit {
+            scratch: host::transient_address(user.user).0,
+            instructions: Instructions::id(),
             user: user.user,
             payer: user.user,
             batcher: fixture.batcher,
@@ -777,6 +775,8 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
     anchor_ix(
         batcher::id(),
         batcher::accounts::Dispatch {
+            scratch: host::transient_address(fixture.payer).0,
+            instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
             batch: keys.batch,
@@ -807,6 +807,8 @@ fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction
     anchor_ix(
         batcher::id(),
         batcher::accounts::CancelDispatch {
+            scratch: host::transient_address(fixture.payer).0,
+            instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
             batch: keys.batch,
@@ -842,6 +844,8 @@ fn settle_ix(
     anchor_ix(
         batcher::id(),
         batcher::accounts::Settle {
+            scratch: host::transient_address(fixture.payer).0,
+            instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
             batch: keys.batch,
@@ -898,7 +902,7 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             batch_authority: keys.batch_authority,
             join_record: keys.join_record(user.user),
             join_state: keys.pending_join_value(user.user),
-            scratch: keys.scratch(user.user),
+            scratch: host::transient_address(fixture.payer).0,
             instructions: Instructions::id(),
             payout_confidential_mint: fixture.payout_mint().mint,
             payout_underlying_mint: fixture.payout_mint().underlying_mint,
@@ -932,13 +936,15 @@ fn initialize_and_open_first_batch(
     fixture: &BatcherFixture,
     min_batch_age_slots: u64,
 ) -> BatchKeys {
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &initialize_batcher_ix(fixture, min_batch_age_slots),
         &[Check::success()],
     );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &open_batch_ix(fixture, &keys, None),
         &[Check::success()],
     );
@@ -992,17 +998,13 @@ fn run_join(
         &[
             keys.join_record(user.user),
             keys.pending_join_value(user.user),
-            keys.scratch(user.user),
             owner_ata(user.user, fixture.join_mint().underlying_mint),
             owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
     let attestation = amount_attestation_for(amount_handle, user.user, token::id());
     let ix = join_ix(fixture, keys, user, attestation);
-    let close = close_scratch_ix(user.user, keys.scratch(user.user));
-    let result = successful_transaction_as_instruction_result(
-        context.process_transaction_instructions(&[ix, close]),
-    );
+    let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
 }
 
@@ -1030,7 +1032,7 @@ fn run_dispatch(
         ],
     );
     let ix = dispatch_ix(fixture, keys);
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &ix, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     read_batch(context, keys.batch).burned_total_handle
 }
@@ -1066,7 +1068,7 @@ fn run_settle(
         proof,
         pending_burn,
     );
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
@@ -1085,16 +1087,12 @@ fn run_claim(
     ensure_system_accounts(
         context,
         &[
-            keys.scratch(user.user),
             owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
             owner_ata(user.user, fixture.payout_mint().underlying_mint),
         ],
     );
     let ix = claim_ix(fixture, keys, user);
-    let close = close_scratch_ix(fixture.payer, keys.scratch(user.user));
-    let result = successful_transaction_as_instruction_result(
-        context.process_transaction_instructions(&[ix, close]),
-    );
+    let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     // The claim issues the batcher's MulDiv execution plus the transfer's execution.
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 2);
 }
@@ -1427,7 +1425,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
 
     // Quit refunds exactly 350 (all-or-nothing) and resets the encrypted State to zero.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
-    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
     assert_eq!(
         ledger.u64_in_state(&context, pending, batcher::joined_amount_key()),
@@ -1529,7 +1527,14 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
     unauthorized_cancel.accounts.push(readonly(deny_record));
     unauthorized_cancel.accounts[0].pubkey = stranger;
-    context.process_and_validate_instruction(
+    let scratch = unauthorized_cancel
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == host::transient_address(fixture.payer).0)
+        .unwrap();
+    scratch.pubkey = host::transient_address(stranger).0;
+    check_batcher_instruction(
+        &context,
         &unauthorized_cancel,
         &[batcher_error(
             batcher::BatcherError::CancelAuthorityMismatch,
@@ -1554,7 +1559,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 
     let mut cancel = cancel_dispatch_ix(&fixture, &keys);
     cancel.accounts.push(readonly(deny_record));
-    let result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &cancel, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Refunding);
@@ -1577,11 +1582,13 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     }
 
     // Refunding is terminal for aggregation and settlement, but remains live for withdrawals.
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &cancel,
         &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
     );
@@ -1600,7 +1607,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     }
 
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
-    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
     assert_eq!(
         ledger.u64_in_state(
@@ -1660,7 +1667,8 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
     // The next batch opens against the canceled one.
     let next = BatchKeys::new(&fixture, 1);
     ensure_open_batch_accounts(&context, &fixture, &next);
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &open_batch_ix(&fixture, &next, Some(keys.batch)),
         &[Check::success()],
     );
@@ -1927,7 +1935,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
 
     // Quit refunds exactly 350 shares (all-or-nothing) and resets the encrypted State.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
-    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
     assert_eq!(
         ledger.u64_in_state(&context, pending, batcher::joined_amount_key()),
@@ -1997,7 +2005,8 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
             meta.pubkey = keys.join_token_account;
         }
     }
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &quit,
         &[batcher_error(batcher::BatcherError::DerivedAccountMismatch)],
     );
@@ -2048,7 +2057,7 @@ fn mollusk_claim_after_quit_pays_zero() {
 
     // Alice quits; the batch dispatches and settles on bob's 500 alone.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
-    let result = context.process_and_validate_instruction(&quit, &[Check::success()]);
+    let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
     assert_eq!(
@@ -2235,7 +2244,7 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
         PRELOAD,
     )
     .unwrap();
-    context.process_and_validate_instruction(&preload_transfer, &[Check::success()]);
+    check_batcher_instruction(&context, &preload_transfer, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
 
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
@@ -2492,7 +2501,8 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
             keys.pending_burn(fixture.join_mint().mint),
         ],
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchTooYoung)],
     );
@@ -2532,7 +2542,8 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
             owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
         ],
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &claim_ix(&fixture, &keys, &fixture.alice),
         &[batcher_error(batcher::BatcherError::BatchNotSettled)],
     );
@@ -2545,18 +2556,21 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         fixture.alice.user,
         token::id(),
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
     // Quit after dispatch rejects — the exit is the claim, pro rata. There is
     // no exit between dispatch and settle (fhevm-internal#1773).
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[batcher_error(batcher::BatcherError::BatchNotRefundable)],
     );
     // Second dispatch rejects.
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
@@ -2586,7 +2600,8 @@ fn mollusk_double_claim_rejects() {
     run_settle(&context, &fixture, &keys, &mut ledger, burned_handle, 300);
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
 
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &claim_ix(&fixture, &keys, &fixture.alice),
         &[batcher_error(batcher::BatcherError::AlreadyClaimed)],
     );
@@ -2611,13 +2626,15 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
 
     let next = BatchKeys::new(&fixture, 1);
     ensure_open_batch_accounts(&context, &fixture, &next);
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &open_batch_ix(&fixture, &next, Some(keys.batch)),
         &[batcher_error(
             batcher::BatcherError::PreviousBatchStillPending,
         )],
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &open_batch_ix(&fixture, &next, None),
         &[batcher_error(batcher::BatcherError::PreviousBatchMismatch)],
     );
@@ -2646,7 +2663,8 @@ fn mollusk_initialize_batcher_rejects_swapped_direction_wiring() {
             direction: batcher::BatchDirection::Redeem,
         },
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &swapped,
         &[batcher_error(batcher::BatcherError::JoinMintVaultMismatch)],
     );
@@ -2677,12 +2695,15 @@ fn snapshot_lifecycle(
     ledger: &mut CleartextLedger,
     prefix: &str,
 ) {
-    context
-        .process_and_validate_instruction(&initialize_batcher_ix(fixture, 0), &[Check::success()]);
+    check_batcher_instruction(
+        &context,
+        &initialize_batcher_ix(fixture, 0),
+        &[Check::success()],
+    );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
     let open = open_batch_ix(fixture, &keys, None);
-    let open_result = context.process_and_validate_instruction(&open, &[Check::success()]);
+    let open_result = check_batcher_instruction(&context, &open, &[Check::success()]);
     assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
     seed_open_batch_balances(context, &keys, ledger);
 
@@ -2694,7 +2715,6 @@ fn snapshot_lifecycle(
             keys.join_record(fixture.alice.user),
             fixture.user_join(&fixture.alice).transferred_value,
             keys.pending_join_value(fixture.alice.user),
-            keys.scratch(fixture.alice.user),
             owner_ata(fixture.alice.user, fixture.join_mint().underlying_mint),
             owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
@@ -2705,10 +2725,7 @@ fn snapshot_lifecycle(
         &fixture.alice,
         amount_attestation_for(amount_handle, fixture.alice.user, token::id()),
     );
-    let join_close = close_scratch_ix(fixture.alice.user, keys.scratch(fixture.alice.user));
-    let join_result = successful_transaction_as_instruction_result(
-        context.process_transaction_instructions(&[join.clone(), join_close]),
-    );
+    let join_result = check_batcher_instruction(context, &join.clone(), &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
@@ -2721,7 +2738,7 @@ fn snapshot_lifecycle(
         ],
     );
     let dispatch = dispatch_ix(fixture, &keys);
-    let dispatch_result = context.process_and_validate_instruction(&dispatch, &[Check::success()]);
+    let dispatch_result = check_batcher_instruction(&context, &dispatch, &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &dispatch_result);
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
@@ -2747,16 +2764,12 @@ fn snapshot_lifecycle(
         &[
             keys.claim_amount_state(fixture.alice.user),
             keys.payout_transferred_value,
-            keys.scratch(fixture.alice.user),
             owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
             owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
         ],
     );
     let claim = claim_ix(fixture, &keys, &fixture.alice);
-    let claim_close = close_scratch_ix(fixture.payer, keys.scratch(fixture.alice.user));
-    let claim_result = successful_transaction_as_instruction_result(
-        context.process_transaction_instructions(&[claim.clone(), claim_close]),
-    );
+    let claim_result = check_batcher_instruction(context, &claim.clone(), &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &claim_result);
     assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
 }
@@ -2825,7 +2838,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         proof,
         pending_burn,
     );
-    context.process_and_validate_instruction(
+    check_batcher_instruction(
+        &context,
         &ix,
         &[Check::err(ProgramError::Custom(
             anchor_lang::error::ERROR_CODE_OFFSET + vault::DemoVaultError::ZeroShares as u32,
@@ -2842,7 +2856,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         read_spl_amount(&context, fixture.vault_token_account),
         2_000_000
     );
-    let result = context.process_and_validate_instruction(
+    let result = check_batcher_instruction(
+        &context,
         &cancel_dispatch_ix(&fixture, &keys),
         &[Check::success()],
     );
@@ -2851,7 +2866,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Refunding
     );
-    let result = context.process_and_validate_instruction(
+    let result = check_batcher_instruction(
+        &context,
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[Check::success()],
     );
@@ -2902,8 +2918,10 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
     };
 
     let legacy_size = |ix: &Instruction| -> usize {
-        let message =
-            solana_sdk::message::Message::new(std::slice::from_ref(ix), Some(&fixture.payer));
+        let message = solana_sdk::message::Message::new(
+            &zama_solana_test_kit::transaction::fhe_transaction(fixture.payer, [ix.clone()]),
+            Some(&fixture.payer),
+        );
         bincode::serialize(&solana_sdk::transaction::Transaction::new_unsigned(message))
             .unwrap()
             .len()
@@ -2924,7 +2942,7 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
         };
         let message = solana_sdk::message::v0::Message::try_compile(
             &fixture.payer,
-            std::slice::from_ref(ix),
+            &zama_solana_test_kit::transaction::fhe_transaction(fixture.payer, [ix.clone()]),
             &[table],
             solana_sdk::hash::Hash::default(),
         )
@@ -2937,9 +2955,8 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
     };
 
     // (threshold, proof depth): the Mollusk fixture shape, the realistic
-    // production cert (7-of-13 majority) at the batcher's real proof depth
-    // (always 0 — one leaf per batch encrypted State), and the out-of-domain deep
-    // proof bound.
+    // production cert (7-of-13 majority), and a deeper shared-State proof.
+    // JavaScript tests separately measure the table actually provisioned by the demo.
     let mut sizes = Vec::new();
     for (threshold, depth) in [(1usize, 0usize), (7, 0), (7, 20)] {
         let ix = settle_with(threshold, depth);
@@ -2961,9 +2978,8 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
             "legacy settle t={threshold} depth={depth} unexpectedly fits: {legacy}B"
         );
         if depth == 0 {
-            // Every reachable batcher settle (proof depth is always 0) fits
-            // in one packet as v0 + one lookup table, up to the production
-            // KMS threshold.
+            // The minimum proof fits up to the production KMS threshold.
+            // Shared-State history can make later proofs larger.
             assert!(
                 v0 <= solana_packet::PACKET_DATA_SIZE,
                 "v0+ALT settle t={threshold} depth={depth} overflows: {v0}B"
@@ -3061,7 +3077,7 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
         },
         vault::instruction::Deposit { amount: PRELOAD },
     );
-    context.process_and_validate_instruction(&attacker_deposit, &[Check::success()]);
+    check_batcher_instruction(&context, &attacker_deposit, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, attacker_shares), PRELOAD);
 
     // ... and pushes the whole share balance into the batch's payout account.
@@ -3074,7 +3090,7 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
         PRELOAD,
     )
     .unwrap();
-    context.process_and_validate_instruction(&preload_transfer, &[Check::success()]);
+    check_batcher_instruction(&context, &preload_transfer, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
 
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);

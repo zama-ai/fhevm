@@ -1,3 +1,4 @@
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { TransactionSigner } from '@solana/kit';
 
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
@@ -6,6 +7,7 @@ import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddres
 import { batchAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
+  readonly fhe: SolanaFheTransactionAccounts;
   /** The batcher's immutable topology (from the demo-config projection). */
   readonly roots: VaultDemoRoots;
   /** Zero-based index of the batch to open. The first `open_batch` on a fresh batcher opens index 0. */
@@ -35,6 +37,7 @@ export async function openBatchForBatcher(
   const previousBatch = batchIndex === 0n ? undefined : await batchAddress(roots.batcher, batchIndex - 1n);
   return openBatch({
     openBatch: {
+      ...parameters.fhe,
       payer,
       batcher: roots.batcher,
       ...(previousBatch === undefined ? {} : { previousBatch }),

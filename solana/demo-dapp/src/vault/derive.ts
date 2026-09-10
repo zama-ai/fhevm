@@ -13,7 +13,7 @@ import {
   findJoinRecordPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { batchAddress, tokenStateAddress, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -95,8 +95,8 @@ export async function deriveJoinRecordAddress(batch: Address, user: Address): Pr
 
 /**
  * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
- * exactly the settle instruction's non-signer, non-fixed accounts — the fee payer and the two
- * event-CPI authorities are the only accounts `settleBatch` still resolves itself. `pendingBurn`
+ * the settle instruction's non-fixed, batch-scoped accounts and event authorities.
+ * The payer and transaction scratch are resolved when the transaction is assembled. `pendingBurn`
  * is derived from the join mint and batch join token account, so it is known at `open_batch`.
  */
 export interface SolanaVaultSettleAccounts {
@@ -123,11 +123,16 @@ export interface SolanaVaultSettleAccounts {
   readonly payoutTotalSupplyAuthority: Address;
   readonly batchPayoutBalanceState: Address;
   readonly payoutTotalSupplyState: Address;
+  readonly batchAuthority: Address;
+  readonly batchJoinUnderlying: Address;
+  readonly batchPayoutUnderlying: Address;
+  readonly zamaEventAuthority: Address;
+  readonly confidentialTokenEventAuthority: Address;
 }
 
 /**
  * The ordered address set the settle Address Lookup Table holds — every settle account derivable at
- * `open_batch`, i.e. the full settle set except the fee payer (always static). The demo seeder creates
+ * `open_batch`. The payer, scratch, sysvar and fixed program IDs stay static. The demo seeder creates
  * the on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so
  * the two agree by construction — the v0 message's table indices line up with the on-chain entries.
  */
@@ -170,6 +175,11 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'payoutTotalSupplyAuthority',
   'batchPayoutBalanceState',
   'payoutTotalSupplyState',
+  'batchAuthority',
+  'batchJoinUnderlying',
+  'batchPayoutUnderlying',
+  'zamaEventAuthority',
+  'confidentialTokenEventAuthority',
 ] as const satisfies ReadonlyArray<keyof SolanaVaultSettleAccounts>;
 
 /** Flattens a settle account set into its ALT ordering. */
@@ -187,6 +197,11 @@ export async function deriveSettleAccounts(
   const [vaultAuthority] = await findDemoVaultAuthorityPda({ vault: roots.vault });
   const [vaultTokenAccount] = await findVaultTokenAccountPda({ vault: roots.vault });
   return {
+    batchAuthority: batch.batchAuthority,
+    batchJoinUnderlying: batch.batchJoinUnderlying,
+    batchPayoutUnderlying: batch.batchPayoutUnderlying,
+    zamaEventAuthority: await zamaEventAuthorityAddress(),
+    confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
     batcher: roots.batcher,
     batch: batch.batch,
     joinConfidentialMint: roots.joinConfidentialMint,

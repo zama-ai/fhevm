@@ -62,6 +62,8 @@ export type CancelDispatchInstruction<
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenProgram extends string | AccountMeta<string> = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg',
@@ -93,6 +95,8 @@ export type CancelDispatchInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountConfidentialTokenEventAuthority extends string
         ? ReadonlyAccount<TAccountConfidentialTokenEventAuthority>
@@ -151,6 +155,8 @@ export type CancelDispatchAsyncInput<
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
   TAccountConfidentialTokenProgram extends string = string,
@@ -173,6 +179,8 @@ export type CancelDispatchAsyncInput<
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program. */
   zamaProgram?: Address<TAccountZamaProgram>;
   confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
@@ -196,6 +204,8 @@ export async function getCancelDispatchInstructionAsync<
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
   TAccountConfidentialTokenProgram extends string,
@@ -215,6 +225,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
@@ -236,6 +248,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
@@ -277,6 +291,8 @@ export async function getCancelDispatchInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
@@ -326,6 +342,8 @@ export async function getCancelDispatchInstructionAsync<
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
@@ -347,6 +365,8 @@ export async function getCancelDispatchInstructionAsync<
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
@@ -367,6 +387,8 @@ export type CancelDispatchInput<
   TAccountPendingBurn extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
   TAccountConfidentialTokenProgram extends string = string,
@@ -389,6 +411,8 @@ export type CancelDispatchInput<
   pendingBurn: Address<TAccountPendingBurn>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program. */
   zamaProgram?: Address<TAccountZamaProgram>;
   confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
@@ -412,6 +436,8 @@ export function getCancelDispatchInstruction<
   TAccountPendingBurn extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountConfidentialTokenEventAuthority extends string,
   TAccountConfidentialTokenProgram extends string,
@@ -431,6 +457,8 @@ export function getCancelDispatchInstruction<
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
@@ -451,6 +479,8 @@ export function getCancelDispatchInstruction<
   TAccountPendingBurn,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountConfidentialTokenEventAuthority,
   TAccountConfidentialTokenProgram,
@@ -491,6 +521,8 @@ export function getCancelDispatchInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
@@ -535,6 +567,8 @@ export function getCancelDispatchInstruction<
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
@@ -556,6 +590,8 @@ export function getCancelDispatchInstruction<
     TAccountPendingBurn,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
@@ -586,13 +622,15 @@ export type ParsedCancelDispatchInstruction<
     pendingBurn: TAccountMetas[9];
     hostConfig: TAccountMetas[10];
     zamaEventAuthority: TAccountMetas[11];
+    scratch: TAccountMetas[12];
+    instructions: TAccountMetas[13];
     /** ZamaHost program. */
-    zamaProgram: TAccountMetas[12];
-    confidentialTokenEventAuthority: TAccountMetas[13];
+    zamaProgram: TAccountMetas[14];
+    confidentialTokenEventAuthority: TAccountMetas[15];
     /** Confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[14];
+    confidentialTokenProgram: TAccountMetas[16];
     /** System program used by the token execution and optional authority funding. */
-    systemProgram: TAccountMetas[15];
+    systemProgram: TAccountMetas[17];
   };
   data: CancelDispatchInstructionData;
 };
@@ -600,10 +638,10 @@ export type ParsedCancelDispatchInstruction<
 export function parseCancelDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCancelDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 16) {
+  if (instruction.accounts.length < 18) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 16,
+      expectedAccountMetas: 18,
     });
   }
   let accountIndex = 0;
@@ -627,6 +665,8 @@ export function parseCancelDispatchInstruction<TProgram extends string, TAccount
       pendingBurn: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),
       confidentialTokenProgram: getNextAccount(),

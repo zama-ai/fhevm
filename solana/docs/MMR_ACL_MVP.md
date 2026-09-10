@@ -16,7 +16,7 @@ Historical private decryption remains valid after a slot changes. Current-slot p
 
 ## Composition and returns
 
-The initiating State authority opens canonical scratch at `["transient", initiating_state]`. A producer grants its exact output to a consumer State; the consumer’s authority signs when using it. Grants expire through the exact final top-level close, refunding the recorded payer. Missing or invalid finalization rolls back the transaction. Grants authorize compute, not KMS decrypt, although authorized compute can produce persistently decryptable results.
+The transaction sponsor opens canonical scratch at `["transient", payer]` before any FHE call. Every call shares it. Results are implicitly usable by their producing State; a producer can explicitly grant a result to another State, whose authority signs when consuming it. The journal also tracks transaction operand origin and HCU depth. Grants expire through the exact final top-level close, refunding the recorded payer. Missing or invalid finalization rolls back the transaction. Grants authorize compute, not KMS decrypt, although authorized compute can produce persistently decryptable results.
 
 The token returns the transferred result; the batcher adds it to its own contribution. There is no TransferReceipt or permanent transferred-result register. Burn retains a result slot and PendingBurn because redeem/cancel spans transactions.
 

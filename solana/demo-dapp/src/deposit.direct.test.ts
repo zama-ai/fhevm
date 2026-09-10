@@ -1,25 +1,32 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
+import { OPEN_SCRATCH_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/openScratch.js';
+import { CLOSE_SCRATCH_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
 
 const mocks = vi.hoisted(() => ({
   buildInputProof: vi.fn(),
   buildWrap: vi.fn(),
+  buildInitialize: vi.fn(),
+  send: vi.fn(),
   joinBatch: vi.fn(),
   readHandle: vi.fn(),
   submitInputProof: vi.fn(),
 }));
 
 const rpc = {
+  getLatestBlockhash: vi.fn(() => ({ send: async () => ({ value: { blockhash: "11111111111111111111111111111111" as Blockhash, lastValidBlockHeight: 1_000n } }) })),
   getAccountInfo: vi.fn(() => ({ send: vi.fn().mockResolvedValue({ value: null }) })),
 };
 
-vi.mock('@solana/kit', () => ({
+vi.mock('@solana/kit', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@solana/kit')>(),
   createSolanaRpc: () => rpc,
   createSolanaRpcSubscriptions: () => ({}),
-  getAddressEncoder: () => ({ encode: () => new Uint8Array(32) }),
-  sendAndConfirmTransactionFactory: vi.fn(),
+  sendAndConfirmTransactionFactory: () => mocks.send,
 }));
 
-vi.mock('@fhevm/sdk/solana', () => ({
+vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@fhevm/sdk/solana')>(),
   createFhevmEncryptClient: () => ({
     buildInputProof: mocks.buildInputProof,
     submitInputProof: mocks.submitInputProof,
@@ -40,7 +47,7 @@ vi.mock('./vault/index.js', () => ({
     addresses: { batch: '11111111111111111111111111111111' },
     state: { status: 0 },
   }),
-  getOrCreateConfidentialTokenAccountInstruction: vi.fn(),
+  getOrCreateConfidentialTokenAccountInstruction: mocks.buildInitialize,
   getJoinRecord: vi.fn(),
   joinBatch: mocks.joinBatch,
   tokenAccountAddress: vi.fn(),
@@ -129,6 +136,32 @@ describe('direct cUSDC deposit', () => {
 
     expect(mocks.readHandle).toHaveBeenCalledTimes(2);
     expect(mocks.buildWrap).not.toHaveBeenCalled();
+    expect(mocks.joinBatch).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('public USDC deposit', () => {
+  test.each([true, false])('shares one transaction context through shielding (initialize=%s)', async (initialize) => {
+    const signer = await generateKeyPairSigner();
+    const init = { programAddress: address('11111111111111111111111111111111'), data: new Uint8Array([1]) };
+    const wrap = { ...init, data: new Uint8Array([2]) };
+    mocks.buildInitialize.mockResolvedValue(initialize ? init : null);
+    mocks.buildWrap.mockResolvedValue(wrap);
+    await depositToVault({ ...session, signer }, 5, vi.fn());
+    expect(mocks.send).toHaveBeenCalledOnce();
+    const sent = mocks.send.mock.calls[0]![0];
+    const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(sent.messageBytes));
+    // The first instruction sets the CU budget. All FHE work shares one exact lifecycle.
+    const body = message.instructions.slice(1);
+    expect([...body[0]!.data!]).toEqual([...OPEN_SCRATCH_DISCRIMINATOR]);
+    expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual(initialize ? [[1], [2]] : [[2]]);
+    expect([...body.at(-1)!.data!]).toEqual([...CLOSE_SCRATCH_DISCRIMINATOR]);
+    const initContext = mocks.buildInitialize.mock.calls[0]![1].fhe;
+    const wrapContext = mocks.buildWrap.mock.calls[0]![0].fhe;
+    expect(initContext).toEqual(wrapContext);
+    expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.scratch);
+    expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.scratch);
     expect(mocks.joinBatch).toHaveBeenCalledOnce();
   });
 });

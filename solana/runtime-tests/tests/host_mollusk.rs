@@ -23,8 +23,8 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
-    self as host, AppScope, EncryptedState, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, HostConfig,
+    self as host, AppScope, EncryptedState, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect,
+    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, HostConfig,
 };
 use zama_solana_acl::StateHistoryEvent;
 use zama_solana_test_kit::{
@@ -39,9 +39,10 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    created_public_batch, fhe_execute_ix, fhe_execute_ix_with_extras, fixture_scope,
-    host_config_account, host_config_account_with_flags, mollusk_execute_context, read_host_config,
-    sole_state_authority, state_authority, FheExecuteExtras, StateAuthority,
+    check_host_context, check_host_instruction, created_public_batch, fhe_execute_ix,
+    fhe_execute_ix_with_extras, fixture_scope, host_config_account, host_config_account_with_flags,
+    mollusk_execute_context, read_host_config, sole_state_authority, state_authority,
+    FheExecuteExtras, StateAuthority,
 };
 
 // ---------------------------------------------------------------------------
@@ -119,7 +120,7 @@ impl App {
         allows: &[Pubkey],
         previous_handle: Option<[u8; 32]>,
         make_public: bool,
-    ) -> FheExecuteOutput {
+    ) -> FheExecuteEffect {
         self.authority.state_output(
             dictionary,
             output_encrypted_state_index,
@@ -207,17 +208,23 @@ fn run_update(
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [plaintext_tag; 32],
         fhe_type: 5,
-        output: app.authority.state_output(
-            &mut dictionary,
-            0,
-            value.slots[0].key,
-            allows,
-            previous_handle,
-            value.leaf_count,
-            false,
-        ),
     }];
     let args = FheExecuteArgs {
+        execution_state_index: 0,
+        effects: vec![{
+            let mut effect = app.authority.state_output(
+                &mut dictionary,
+                0,
+                value.slots[0].key,
+                allows,
+                previous_handle,
+                value.leaf_count,
+                false,
+            );
+            effect.result.step_index = 0;
+            effect
+        }],
+
         returned_results: Vec::new(),
         account_count: 0,
         dictionary: dictionary.into_entries(),
@@ -226,7 +233,7 @@ fn run_update(
     let ix = fhe_execute_ix(payer, app.key(), host_config, args, vec![writable(address)]);
     let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
     accounts.push((address, encrypted_state_account(value)));
-    mollusk().process_and_validate_instruction(&ix, &accounts, &[expected])
+    check_host_instruction(&mollusk(), &ix, &accounts, &[expected])
 }
 
 fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
@@ -356,13 +363,19 @@ fn create_case(
     let steps = vec![FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-        output: app.stored_output(&mut dictionary, 0, name, allows, None, false),
     }];
     let ix = fhe_execute_ix_with_extras(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect = app.stored_output(&mut dictionary, 0, name, allows, None, false);
+                effect.result.step_index = 0;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -391,7 +404,8 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
         &[payer],
         FheExecuteExtras::default(),
     );
-    mollusk_without_previous_bank_hash().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk_without_previous_bank_hash(),
         &ix,
         &accounts,
         &[custom_error(
@@ -404,8 +418,10 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
 fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
     let mut fixture = created_public_batch(3, &[0, 1, 2]);
     let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
-    let svm = mollusk();
-    let baseline = svm.process_and_validate_instruction(
+    let mut svm = mollusk();
+    svm.add_program(&delegator_vault::ID, "delegator_vault");
+    let baseline = check_host_instruction(
+        &svm,
         &fixture.instruction,
         &fixture.accounts,
         &[Check::success(), Check::return_data(&[])],
@@ -433,10 +449,21 @@ fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
             .iter()
             .flat_map(|&step| handles[usize::from(step)])
             .collect();
-        let result = svm.process_and_validate_instruction(
-            &fixture.instruction,
+        let mut probe = anchor_ix(
+            delegator_vault::ID,
+            delegator_vault::accounts::CheckCpiReturn { callee: host::ID },
+            delegator_vault::instruction::CheckCpiReturn {
+                instruction_data: fixture.instruction.data.clone(),
+                expected,
+            },
+        );
+        probe.accounts.extend(fixture.instruction.accounts.clone());
+        let result = zama_solana_test_kit::transaction::check_fhe_instruction(
+            &svm,
+            fixture.instruction.accounts[0].pubkey,
+            &probe,
             &fixture.accounts,
-            &[Check::success(), Check::return_data(&expected)],
+            &[Check::success()],
         );
         // Selecting handles changes neither slots nor decrypt history.
         assert_eq!(result.resulting_accounts, baseline.resulting_accounts);
@@ -465,7 +492,8 @@ fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
     ] {
         args.returned_results = selection;
         fixture.instruction.data = host::instruction::FheExecute { args: args.clone() }.data();
-        let result = svm.process_and_validate_instruction(
+        let result = check_host_instruction(
+            &svm,
             &fixture.instruction,
             &fixture.accounts,
             &[custom_error(
@@ -478,19 +506,10 @@ fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
     }
 
     // A missing rand nonce would fail before the walk. The bad selection must fail first.
-    let output = match args.steps.remove(0) {
-        FheExecuteStep::TrivialEncrypt { output, .. } => output,
-        _ => unreachable!(),
-    };
-    args.steps.insert(
-        0,
-        FheExecuteStep::Rand {
-            fhe_type: 5,
-            output,
-        },
-    );
+    args.steps[0] = FheExecuteStep::Rand { fhe_type: 5 };
     fixture.instruction.data = host::instruction::FheExecute { args }.data();
-    svm.process_and_validate_instruction(
+    check_host_instruction(
+        &svm,
         &fixture.instruction,
         &fixture.accounts,
         &[custom_error(
@@ -647,7 +666,8 @@ fn mollusk_create_encrypted_state_rejects_wallet_authority() {
         (host_config, host_config_account),
         (output, empty_system_account()),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -689,7 +709,8 @@ fn mollusk_create_encrypted_state_rejects_seeds_from_another_program() {
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
     accounts.retain(|(key, _)| *key != event_authority(host::id()));
     accounts.push((output, empty_system_account()));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -723,7 +744,6 @@ fn read_foreign_value_case(
             value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
-        output: app.stored_output(&mut dictionary, 1, "mine", &[payer], None, false),
     }];
     let mut remaining = vec![writable(foreign_address), writable(output)];
     if foreign_signs {
@@ -734,6 +754,14 @@ fn read_foreign_value_case(
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 1,
+            effects: vec![{
+                let mut effect =
+                    app.stored_output(&mut dictionary, 1, "mine", &[payer], None, false);
+                effect.result.step_index = 0;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -746,7 +774,7 @@ fn read_foreign_value_case(
     accounts.push((foreign_address, encrypted_state_account(&foreign_value)));
     let (_, output_state) = new_encrypted_state(app.app(), app.key(), []);
     accounts.push((output, encrypted_state_account(&output_state)));
-    mollusk().process_and_validate_instruction(&ix, &accounts, &[expected])
+    check_host_instruction(&mollusk(), &ix, &accounts, &[expected])
 }
 
 #[test]
@@ -801,13 +829,20 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
             value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
-        output: other_scope.stored_output(&mut dictionary, 1, "out", &[payer], None, false),
     }];
     let ix = fhe_execute_ix(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect =
+                    other_scope.stored_output(&mut dictionary, 1, "out", &[payer], None, false);
+                effect.result.step_index = 0;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -819,7 +854,8 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
     accounts.push((input_address, encrypted_state_account(&input_value)));
     let (_, output_state) = new_encrypted_state(other_scope.app(), other_scope.key(), []);
     accounts.push((output, encrypted_state_account(&output_state)));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -857,7 +893,7 @@ fn mollusk_make_handle_public_appends_public_decrypt_leaf() {
         host_config,
         host_config_account,
     );
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     let updated = read_encrypted_state_from_result(&result, address);
     assert_eq!(updated.leaf_count, 1);
     let expected = zama_solana_acl::public_decrypt_leaf_commitment(address.to_bytes(), 0, handle);
@@ -895,7 +931,7 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
         )
     };
     let sealed = read_encrypted_state_from_result(
-        &mollusk().process_and_validate_instruction(&ix, &accounts(&value), &[Check::success()]),
+        &check_host_instruction(&mollusk(), &ix, &accounts(&value), &[Check::success()]),
         address,
     );
     // Sealing an already-sealed handle is accepted rather than guarded — INVARIANTS #53.
@@ -910,7 +946,8 @@ fn mollusk_make_handle_public_twice_appends_an_equivalent_leaf() {
         None,
     );
     let resealed = read_encrypted_state_from_result(
-        &mollusk().process_and_validate_instruction(
+        &check_host_instruction(
+            &mollusk(),
             &reseal_ix,
             &accounts(&sealed),
             &[Check::success()],
@@ -977,7 +1014,8 @@ fn mollusk_make_handle_public_rejects_wrong_expected_handle() {
         host_config,
         host_config_account,
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -1011,7 +1049,8 @@ fn mollusk_make_state_handle_public_rejects_stale_leaf_count() {
         host_config,
         host_config_account,
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -1046,7 +1085,8 @@ fn mollusk_make_handle_public_rejects_signer_that_is_not_the_state_authority() {
         host_config,
         host_config_account,
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -1081,7 +1121,8 @@ fn mollusk_make_state_handle_public_rejects_wrong_stored_bump() {
         host_config,
         host_config_account,
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -1119,7 +1160,8 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
         },
     );
     accounts.push((denied_record, denied_record_account.clone()));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &denied_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::ScopeDenied)],
@@ -1145,7 +1187,8 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
         host_config_account.clone(),
     );
     accounts.push((denied_record, denied_record_account));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &seal_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::ScopeDenied)],
@@ -1164,8 +1207,7 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
         },
     );
     accounts.push((sibling_record, empty_system_account()));
-    let result =
-        mollusk().process_and_validate_instruction(&sibling_ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &sibling_ix, &accounts, &[Check::success()]);
     let created = read_encrypted_state_from_result(&result, sibling_output);
     let seal_ix = make_handle_public_ix(
         payer,
@@ -1186,7 +1228,7 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
         host_config_account,
     );
     accounts.push((sibling_record, empty_system_account()));
-    mollusk().process_and_validate_instruction(&seal_ix, &accounts, &[Check::success()]);
+    check_host_instruction(&mollusk(), &seal_ix, &accounts, &[Check::success()]);
 }
 
 #[test]
@@ -1206,7 +1248,8 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         &[payer],
         FheExecuteExtras::default(),
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::DenyRecordMissing)],
@@ -1227,7 +1270,8 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         },
     );
     accounts.push((other_record, other_record_account.clone()));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::DenyRecordMissing)],
@@ -1254,7 +1298,8 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         deny_host_config_account,
     );
     accounts.push((other_record, other_record_account));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &seal_ix,
         &accounts,
         &[custom_error(
@@ -1284,7 +1329,8 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
         host_config_account,
     );
     accounts.push((record, record_account));
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &seal_ix,
         &accounts,
         &[custom_error(
@@ -1293,14 +1339,12 @@ fn mollusk_deny_list_requires_exactly_the_applications_record() {
     );
 }
 
-/// A create of `receiver`'s value written under its own signing authority from `app`'s execution
-/// (the transfer receipt shape), with `app` also creating a value of its own when `anchored`. The
-/// deny list is enabled; `receiver_record` is `receiver`'s deny record as passed.
+/// Writes a foreign State under its signing authority, optionally persisting an own-State result.
 fn additional_authority_write_case(
     payer: Pubkey,
     app: &App,
     receiver: &App,
-    anchored: bool,
+    write_own_state: bool,
     receiver_record: (Pubkey, Account),
 ) -> (Pubkey, Instruction, Vec<(Pubkey, Account)>) {
     let (host_config, host_config_account) = deny_enabled_host_config_account(payer);
@@ -1308,48 +1352,44 @@ fn additional_authority_write_case(
     let mine = app.address("mine");
     let theirs = receiver.address("theirs");
     let mut dictionary = ExecutionDictionary::default();
-    let mut remaining = Vec::new();
+    let remaining = vec![
+        writable(mine),
+        writable(theirs),
+        readonly_signer(receiver.key()),
+        readonly(receiver_record.0),
+    ];
     let mut accounts = execution_accounts(payer, app, host_config, host_config_account);
+    let (_, app_state) = new_encrypted_state(app.app(), app.key(), []);
+    accounts.push((mine, encrypted_state_account(&app_state)));
+    accounts.push((app_record, empty_system_account()));
     let mut steps = Vec::new();
-    if anchored {
+    let mut effects = Vec::new();
+    if write_own_state {
         steps.push(FheExecuteStep::TrivialEncrypt {
             plaintext: [3; 32],
             fhe_type: 5,
-            output: app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false),
         });
-        remaining.push(writable(mine));
-        let (_, app_state) = new_encrypted_state(app.app(), app.key(), []);
-        accounts.push((mine, encrypted_state_account(&app_state)));
+        effects.push(app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false));
     }
-    let theirs_index = remaining.len() as u8;
-    let receipt = receiver.stored_output(
-        &mut dictionary,
-        theirs_index,
-        "theirs",
-        &[payer],
-        None,
-        false,
-    );
+    let mut foreign_output =
+        receiver.stored_output(&mut dictionary, 1, "theirs", &[payer], None, false);
+    foreign_output.result.step_index = steps.len() as u8;
+    effects.push(foreign_output);
     steps.push(FheExecuteStep::TrivialEncrypt {
         plaintext: [4; 32],
         fhe_type: 5,
-        output: receipt,
     });
-    remaining.push(writable(theirs));
-    remaining.push(readonly_signer(receiver.key()));
-    remaining.push(readonly(receiver_record.0));
     let (_, receiver_state) = new_encrypted_state(receiver.app(), receiver.key(), []);
     accounts.push((theirs, encrypted_state_account(&receiver_state)));
     accounts.push((receiver.key(), empty_system_account()));
     accounts.push(receiver_record);
-    if anchored {
-        accounts.push((app_record, empty_system_account()));
-    }
     let ix = fhe_execute_ix_with_extras(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects,
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -1357,7 +1397,7 @@ fn additional_authority_write_case(
         },
         remaining,
         FheExecuteExtras {
-            deny_scope_record: anchored.then_some(app_record),
+            deny_scope_record: Some(app_record),
             rand_nonce: None,
         },
     );
@@ -1382,7 +1422,7 @@ fn mollusk_fhe_execute_output_of_an_additional_authority_keeps_its_own_applicati
         true,
         (receiver_record, empty_system_account()),
     );
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     let created = read_encrypted_state_from_result(&result, theirs);
     assert_eq!(created.program, receiver.program());
     assert_eq!(created.authority, receiver.key());
@@ -1405,7 +1445,8 @@ fn mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denie
             anchored,
             deny_scope_record_account(denied.app(), true),
         );
-        mollusk().process_and_validate_instruction(
+        check_host_instruction(
+            &mollusk(),
             &ix,
             &accounts,
             &[custom_error(host::errors::ZamaHostError::ScopeDenied)],
@@ -1438,7 +1479,8 @@ fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
         host_config,
         host_config_account.clone(),
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &seal_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
@@ -1453,7 +1495,8 @@ fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
         &[payer],
         FheExecuteExtras::default(),
     );
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &execute_ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
@@ -1603,11 +1646,8 @@ fn mollusk_public_decrypt_proof_has_no_roll_forward() {
         host_config,
         host_config_account.clone(),
     );
-    let result0 = mollusk().process_and_validate_instruction(
-        &make_public_ix,
-        &accounts0,
-        &[Check::success()],
-    );
+    let result0 =
+        check_host_instruction(&mollusk(), &make_public_ix, &accounts0, &[Check::success()]);
     let value_public = read_encrypted_state_from_result(&result0, address);
 
     let final_value = update_with_fhe_execute(
@@ -1681,13 +1721,20 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
             key_index: dictionary.intern(label("rhs")),
         },
         output_fhe_type: 5,
-        output: app.stored_output(&mut dictionary, 0, "sum", &[payer], None, false),
     }];
     let ix = fhe_execute_ix(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect =
+                    app.stored_output(&mut dictionary, 0, "sum", &[payer], None, false);
+                effect.result.step_index = 0;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -1697,7 +1744,7 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
     accounts.push((lhs_address, encrypted_state_account(&lhs_value)));
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     let output = read_encrypted_state_from_result(&result, output_address);
     assert_eq!(output.program, app.program());
     assert_eq!(output.authority, app.key());
@@ -1742,20 +1789,26 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
             value_index: dictionary.intern([0; 32]),
         },
         output_fhe_type: 5,
-        output: app.stored_output(
-            &mut dictionary,
-            0,
-            "out",
-            &[payer],
-            Some(output_handle),
-            false,
-        ),
     }];
     let ix = fhe_execute_ix(
         payer,
         app.key(),
         host_config,
         FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect = app.stored_output(
+                    &mut dictionary,
+                    0,
+                    "out",
+                    &[payer],
+                    Some(output_handle),
+                    false,
+                );
+                effect.result.step_index = 0;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -1765,7 +1818,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
     accounts.push((output_address, encrypted_state_account(&output_value)));
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     let updated_output = read_encrypted_state_from_result(&result, output_address);
     assert_ne!(
         updated_output
@@ -1868,7 +1921,8 @@ fn assert_created_public_batch(
 #[test]
 fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() {
     let execution = created_public_batch(1, &[]);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
@@ -1879,7 +1933,8 @@ fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() 
 #[test]
 fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
     let execution = created_public_batch(1, &[0]);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
@@ -1890,7 +1945,8 @@ fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
 #[test]
 fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
     let execution = created_public_batch(3, &[0, 2]);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
@@ -1911,7 +1967,8 @@ fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
         created_public_steps,
         &(0..created_public_steps).collect::<Vec<_>>(),
     );
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
@@ -1934,7 +1991,8 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
         .accounts
         .push((wrong_event_authority, Account::default()));
 
-    let result = mollusk().process_instruction(&execution.instruction, &execution.accounts);
+    let result =
+        check_host_instruction(&mollusk(), &execution.instruction, &execution.accounts, &[]);
     assert!(result.program_result.is_err());
     assert!(created_public_events(&result).is_empty());
     let output = result.get_account(&execution.outputs[0].1).unwrap();
@@ -1952,12 +2010,28 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
 
 #[test]
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
-    let execution = created_public_batch(1, &[0]);
+    let mut execution = created_public_batch(1, &[0]);
+    let payer = execution.instruction.accounts[0].pubkey;
+    execution
+        .accounts
+        .push((host::transient_address(payer).0, empty_system_account()));
     let transaction = mollusk().process_transaction_instructions(
-        &[execution.instruction.clone(), execution.instruction.clone()],
+        &zama_solana_test_kit::transaction::fhe_transaction(
+            payer,
+            [execution.instruction.clone(), execution.instruction.clone()],
+        ),
         &execution.accounts,
     );
-    assert!(transaction.program_result.is_err());
+    assert_eq!(
+        transaction.raw_result,
+        Err(solana_sdk::transaction::TransactionError::InstructionError(
+            2,
+            solana_sdk::instruction::InstructionError::Custom(
+                host::errors::ZamaHostError::PreviousStateMismatch as u32
+                    + anchor_lang::error::ERROR_CODE_OFFSET
+            )
+        ))
+    );
     let output = transaction.get_account(&execution.outputs[0].1).unwrap();
     let before = &execution
         .accounts
@@ -2280,7 +2354,8 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
     let (host_config, account) = host_config_account_with_block_cap(admin, 500_000);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_per_tx_ix(admin, host_config, 600_000),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockCapBelowMaxPerTx,
@@ -2291,7 +2366,8 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
     assert_eq!(config.hcu_block_cap_per_app, 500_000);
 
     // At the boundary (== cap) the guard is silent: a total equal to the band cap is accepted.
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_per_tx_ix(admin, host_config, 500_000),
         &[Check::success()],
     );
@@ -2311,7 +2387,8 @@ fn mollusk_set_max_hcu_per_tx_unrestricted_block_cap_accepts_any_total() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_per_tx_ix(admin, host_config, 20_000_000),
         &[Check::success()],
     );
@@ -2332,13 +2409,15 @@ fn mollusk_set_max_hcu_setters_reject_zero() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_per_tx_ix(admin, host_config, 0),
         &[custom_error(
             host::errors::ZamaHostError::HcuLimitZeroReserved,
         )],
     );
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_depth_per_tx_ix(admin, host_config, 0),
         &[custom_error(
             host::errors::ZamaHostError::HcuLimitZeroReserved,
@@ -2355,7 +2434,8 @@ fn mollusk_set_max_hcu_depth_per_tx_persists_nonzero() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_max_hcu_depth_per_tx_ix(admin, host_config, 20_000_000),
         &[Check::success()],
     );
@@ -2378,7 +2458,8 @@ fn mollusk_set_deny_scope_creates_record_and_emits_event() {
         vec![(host_config, account), (deny_record, system_account(0))],
     );
 
-    let result = context.process_and_validate_instruction(
+    let result = check_host_context(
+        &context,
         &set_deny_scope_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
@@ -2393,7 +2474,8 @@ fn mollusk_set_deny_scope_creates_record_and_emits_event() {
     assert!(event.denied);
 
     // Re-admitting keeps the record and flips the flag.
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_deny_scope_ix(admin, admin, host_config, app, false),
         &[Check::success()],
     );
@@ -2417,7 +2499,8 @@ fn mollusk_destroy_kms_context_rejects_current() {
         ],
     );
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &destroy_kms_context_ix(admin, host_config, KMS_CONTEXT_ID),
         &[custom_error(
             host::errors::ZamaHostError::CurrentKmsContextCannotBeDestroyed,
@@ -2440,7 +2523,8 @@ fn mollusk_destroy_kms_context_rejects_already_destroyed() {
         ],
     );
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &destroy_kms_context_ix(admin, host_config, other),
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
     );
@@ -2456,7 +2540,8 @@ fn mollusk_set_hcu_block_cap_metering_band_persists_and_advances_slot() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 500_000),
         &[Check::success()],
     );
@@ -2473,7 +2558,8 @@ fn mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted() {
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 20_000_000),
         &[Check::success()],
     );
@@ -2493,7 +2579,8 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 19_000_000),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockCapBelowMaxPerTx,
@@ -2515,7 +2602,8 @@ fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() 
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 1),
         &[Check::success()],
     );
@@ -2535,7 +2623,8 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
     let (host_config, account) = host_config_account_with_hcu_limits(admin, 20_000_000, u64::MAX);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 0),
         &[Check::success()],
     );
@@ -2546,7 +2635,8 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
         0
     );
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, u64::MAX),
         &[Check::success()],
     );
@@ -2566,7 +2656,8 @@ fn mollusk_set_hcu_block_cap_is_idempotent() {
     let (host_config, account) = host_config_account_with_block_cap(admin, 750_000);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 750_000),
         &[Check::success()],
     );
@@ -2589,7 +2680,8 @@ fn mollusk_set_hcu_block_cap_rejects_wrong_admin() {
         ],
     );
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_block_cap_per_app_ix(wrong_admin, host_config, 500_000),
         &[custom_error(
             host::errors::ZamaHostError::HostConfigAdminMismatch,
@@ -2613,7 +2705,8 @@ fn mollusk_set_hcu_block_cap_rejects_remaining_accounts() {
     let mut ix = set_hcu_block_cap_per_app_ix(admin, host_config, 500_000);
     ix.accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &ix,
         &[custom_error(
             host::errors::ZamaHostError::UnexpectedRemainingAccounts,
@@ -2637,7 +2730,8 @@ fn mollusk_set_hcu_app_trusted_creates_trusted_record() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    let result = context.process_and_validate_instruction(
+    let result = check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
@@ -2661,11 +2755,13 @@ fn mollusk_set_hcu_app_trusted_writes_untrusted_false_record() {
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     // Register trusted, then clear it back to false.
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, false),
         &[Check::success()],
     );
@@ -2682,11 +2778,13 @@ fn mollusk_set_hcu_app_trusted_is_idempotent() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
@@ -2707,7 +2805,8 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
 
     // A record derived for a *different* application is the wrong PDA for `app`.
     let wrong_record = host::hcu_trusted_app_address(unique_app()).0;
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix_with_record(admin, admin, host_config, wrong_record, app, true),
         &[custom_error(
             host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
@@ -2731,7 +2830,8 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_admin() {
         ],
     );
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_hcu_app_trusted_ix(wrong_admin, wrong_admin, host_config, app, true),
         &[custom_error(
             host::errors::ZamaHostError::HostConfigAdminMismatch,
@@ -2751,7 +2851,8 @@ fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
     let mut ix = set_hcu_app_trusted_ix(admin, admin, host_config, app, true);
     ix.accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &ix,
         &[custom_error(
             host::errors::ZamaHostError::UnexpectedRemainingAccounts,
@@ -2770,7 +2871,8 @@ fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let signers = vec![[0xAAu8; 20], [0xBBu8; 20], [0xCCu8; 20]];
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_coprocessor_signers_ix(admin, host_config, signers.clone(), 2),
         &[Check::success()],
     );
@@ -2787,7 +2889,8 @@ fn mollusk_set_coprocessor_signers_rejects_non_admin() {
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
     let context = mollusk_execute_context(intruder, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_coprocessor_signers_ix(intruder, host_config, vec![[0xAAu8; 20]], 1),
         &[custom_error(
             host::errors::ZamaHostError::HostConfigAdminMismatch,
@@ -2802,7 +2905,8 @@ fn mollusk_set_coprocessor_signers_rejects_invalid_set() {
     let (host_config, account) = host_config_account_with_flags(admin, false, false);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &set_coprocessor_signers_ix(admin, host_config, vec![[0xAAu8; 20], [0xAAu8; 20]], 1),
         &[custom_error(
             host::errors::ZamaHostError::DuplicateCoprocessorSigner,
@@ -2830,7 +2934,8 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
         kms_gen: 1,
         mpc: 1,
     };
-    let result = context.process_and_validate_instruction(
+    let result = check_host_context(
+        &context,
         &define_kms_context_ix(admin, host_config, context_id, signers.clone(), thresholds),
         &[Check::success()],
     );
@@ -2868,7 +2973,8 @@ fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'sta
         admin,
         vec![(host_config, account), (kms_context, system_account(0))],
     );
-    context.process_and_validate_instruction(
+    check_host_context(
+        &context,
         &define_kms_context_ix(
             admin,
             host_config,
@@ -3018,14 +3124,12 @@ impl FheExecutionFixture {
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 0,
-                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Binary {
                 op: FheBinaryOpCode::Sub,
                 lhs: self.balance_operand(&mut dictionary),
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             },
             FheExecuteStep::Ternary {
                 op: FheTernaryOpCode::IfThenElse,
@@ -3033,17 +3137,23 @@ impl FheExecutionFixture {
                 if_true: FheExecuteOperand::EarlierStep { producer_index: 1 },
                 if_false: self.balance_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: self.app.stored_output(
+            },
+        ];
+        FheExecuteArgs {
+            execution_state_index: 0,
+            effects: vec![{
+                let mut effect = self.app.stored_output(
                     &mut dictionary,
                     0,
                     FIXTURE_OUTPUT,
                     &[self.payer],
                     None,
                     false,
-                ),
-            },
-        ];
-        FheExecuteArgs {
+                );
+                effect.result.step_index = 2;
+                effect
+            }],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: dictionary.into_entries(),
@@ -3070,6 +3180,8 @@ impl FheExecutionFixture {
             host::id(),
             host::accounts::FheExecute {
                 payer: self.payer,
+                scratch: host::transient_address(self.payer).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 authority: self.app.key(),
                 host_config: self.host_config,
                 system_program: system_program::ID,
@@ -3107,7 +3219,6 @@ impl FheExecutionFixture {
             lhs: self.balance_operand(&mut dictionary),
             rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
-            output: FheExecuteOutput::Transient,
         }];
         let last_transient_index = u8::try_from(host::MAX_FHE_EXECUTION_STEPS - 2)
             .expect("MAX_FHE_EXECUTION_STEPS must fit producer indices");
@@ -3132,7 +3243,6 @@ impl FheExecutionFixture {
                 lhs,
                 rhs: self.amount_operand(&mut dictionary),
                 output_fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             });
         }
         steps.push(FheExecuteStep::Ternary {
@@ -3143,17 +3253,23 @@ impl FheExecutionFixture {
             },
             if_false: self.balance_operand(&mut dictionary),
             output_fhe_type: 5,
-            output: self.app.stored_output(
-                &mut dictionary,
-                0,
-                FIXTURE_OUTPUT,
-                &[self.payer],
-                None,
-                false,
-            ),
         });
         self.instruction(
             FheExecuteArgs {
+                execution_state_index: 0,
+                effects: vec![{
+                    let mut effect = self.app.stored_output(
+                        &mut dictionary,
+                        0,
+                        FIXTURE_OUTPUT,
+                        &[self.payer],
+                        None,
+                        false,
+                    );
+                    effect.result.step_index = 2;
+                    effect
+                }],
+
                 returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: dictionary.into_entries(),
@@ -3179,10 +3295,12 @@ impl FheExecutionFixture {
             lhs: self.balance_operand(&mut dictionary),
             rhs: self.amount_operand(&mut dictionary),
             output_fhe_type: 0,
-            output: FheExecuteOutput::Transient,
         }];
         self.instruction(
             FheExecuteArgs {
+                execution_state_index: 0,
+                effects: vec![],
+
                 returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: dictionary.into_entries(),
@@ -3198,7 +3316,7 @@ impl FheExecutionFixture {
     /// A persist-nothing execution: `steps` over no stored value at all — no persistent input,
     /// no verified input, no persistent output. Names no application, so under a finite cap
     /// there is nothing to meter (fhevm-internal#1744).
-    fn unanchored_instruction(
+    fn input_free_instruction(
         &self,
         steps: Vec<FheExecuteStep>,
         meter: Option<Pubkey>,
@@ -3207,12 +3325,15 @@ impl FheExecutionFixture {
     ) -> Instruction {
         self.instruction(
             FheExecuteArgs {
+                execution_state_index: 0,
+                effects: vec![],
+
                 returned_results: Vec::new(),
                 account_count: 0,
                 dictionary: Vec::new(),
                 steps,
             },
-            Vec::new(),
+            vec![readonly(self.balance_state)],
             meter,
             trust,
             rand_nonce,
@@ -3224,11 +3345,10 @@ impl FheExecutionFixture {
         meter: Option<Pubkey>,
         trust: Option<Pubkey>,
     ) -> Instruction {
-        self.unanchored_instruction(
+        self.input_free_instruction(
             vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             }],
             meter,
             trust,
@@ -3238,11 +3358,8 @@ impl FheExecutionFixture {
 
     /// A single transient `Rand` step, with or without the host rand nonce account.
     fn rand_instruction(&self, rand_nonce: Option<Pubkey>) -> Instruction {
-        self.unanchored_instruction(
-            vec![FheExecuteStep::Rand {
-                fhe_type: 5,
-                output: FheExecuteOutput::Transient,
-            }],
+        self.input_free_instruction(
+            vec![FheExecuteStep::Rand { fhe_type: 5 }],
             None,
             None,
             rand_nonce,
@@ -3273,12 +3390,13 @@ impl FheExecutionFixture {
         let steps = vec![FheExecuteStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,
-            output: authority.stored_output(&mut dictionary, 0, name, &[payer], None, false),
         }];
         let mut ix = anchor_ix(
             host::id(),
             host::accounts::FheExecute {
                 payer,
+                scratch: host::transient_address(payer).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 authority: authority.key(),
                 host_config: self.host_config,
                 system_program: system_program::ID,
@@ -3290,6 +3408,20 @@ impl FheExecutionFixture {
             },
             host::instruction::FheExecute {
                 args: FheExecuteArgs {
+                    execution_state_index: 0,
+                    effects: vec![{
+                        let mut effect = authority.stored_output(
+                            &mut dictionary,
+                            0,
+                            name,
+                            &[payer],
+                            None,
+                            false,
+                        );
+                        effect.result.step_index = 0;
+                        effect
+                    }],
+
                     returned_results: Vec::new(),
                     account_count: 1,
                     dictionary: dictionary.into_entries(),
@@ -3319,7 +3451,8 @@ fn mollusk_fhe_execute_unrestricted_cap_none_none_succeeds() {
     // The default (u64::MAX) short-circuits: with neither optional account supplied, the
     // execution binds its persistent output and no meter is ever created or touched.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, None),
         &[Check::success()],
     );
@@ -3341,7 +3474,8 @@ fn mollusk_fhe_execute_unsigned_state_authority_is_rejected() {
             meta.is_signer = false;
         }
     }
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &ix,
         &[anchor_error(
             anchor_lang::error::ErrorCode::AccountNotSigner,
@@ -3361,7 +3495,8 @@ fn mollusk_fhe_execute_unrestricted_cap_ignores_supplied_accounts() {
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), Some(trust_pda)),
         &[Check::success()],
     );
@@ -3378,7 +3513,8 @@ fn mollusk_fhe_execute_ban_cap_zero_untrusted_no_meter_is_rejected() {
     // cap == 0 bans untrusted apps outright — rejected even with no meter supplied, and no
     // persistent output is created.
     let fixture = FheExecutionFixture::with_block_cap(0);
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -3395,7 +3531,8 @@ fn mollusk_fhe_execute_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged()
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
     fixture.seed_account(meter_pda, meter_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -3418,7 +3555,8 @@ fn mollusk_fhe_execute_ban_cap_zero_trusted_witness_bypasses() {
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
@@ -3431,7 +3569,8 @@ fn mollusk_fhe_execute_untrusted_missing_meter_fails_closed() {
     // witness is rejected — never silently un-metered. (This is also the CPI rollout hazard:
     // a caller that forwards neither account breaks, rather than bypassing the cap.)
     let fixture = FheExecutionFixture::with_block_cap(500_000);
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockMeterMissing,
@@ -3448,7 +3587,8 @@ fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[Check::success()],
     );
@@ -3464,7 +3604,8 @@ fn mollusk_fhe_execute_untrusted_false_witness_requires_meter() {
     let (trust_pda, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), false);
     fixture.seed_account(trust_pda, trust_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockMeterMissing,
@@ -3480,7 +3621,8 @@ fn mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected() {
     let (other_trust_pda, other_trust_account) = hcu_trusted_app_record_account(unique_app(), true);
     fixture.seed_account(other_trust_pda, other_trust_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, Some(other_trust_pda)),
         &[custom_error(
             host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
@@ -3506,7 +3648,8 @@ fn mollusk_fhe_execute_malformed_trust_witness_is_rejected() {
         },
     );
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(None, Some(trust_pda)),
         &[custom_error(
             host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
@@ -3524,7 +3667,8 @@ fn mollusk_fhe_execute_wrong_app_meter_is_rejected() {
     let (other_meter_pda, other_meter_account) = hcu_block_meter_account(unique_app(), slot, 0);
     fixture.seed_account(other_meter_pda, other_meter_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(other_meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockMeterMismatch,
@@ -3552,7 +3696,8 @@ fn mollusk_fhe_execute_squatted_meter_with_data_is_rejected() {
         },
     );
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::PdaCreationMismatch,
@@ -3572,7 +3717,8 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
     let meter_pda = fixture.meter_pda();
     fixture.seed_account(meter_pda, system_account(1));
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3606,7 +3752,8 @@ fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
     let donated = 5_000_000_000u64;
     fixture.seed_account(meter_pda, system_account(donated));
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3657,7 +3804,7 @@ fn mollusk_create_encrypted_state_accepts_prefunded_empty_pda() {
             },
         },
     );
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_host_context(&context, &ix, &[Check::success()]);
     let state = read_encrypted_state(&context, address);
     assert!(state.slots.is_empty());
 }
@@ -3671,7 +3818,8 @@ fn mollusk_fhe_execute_trust_pda_supplied_as_meter_is_rejected() {
     let (_, trust_account) = hcu_trusted_app_record_account(fixture.block_cap_app(), true);
     fixture.seed_account(trust_pda, trust_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(trust_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockMeterMismatch,
@@ -3689,7 +3837,8 @@ fn mollusk_fhe_execute_over_cap_trips_in_admission_without_output_or_mutation() 
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 0);
     fixture.seed_account(meter_pda, meter_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -3713,7 +3862,8 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
     let (meter_pda, meter_account) = hcu_block_meter_account(fixture.block_cap_app(), slot, 50_000);
     fixture.seed_account(meter_pda, meter_account);
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3732,7 +3882,8 @@ fn mollusk_fhe_execute_over_cap_with_prior_usage_is_rejected_unchanged() {
         hcu_block_meter_account(fixture.block_cap_app(), slot, 100_000);
     fixture.seed_account(meter_pda, meter_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -3759,7 +3910,8 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
         hcu_block_meter_account(fixture.block_cap_app(), slot.wrapping_add(1), 490_000);
     fixture.seed_account(meter_pda, meter_account);
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3775,7 +3927,8 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
     let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
 
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3803,7 +3956,8 @@ fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
 
     // The fixture app's own execution still succeeds against its own fresh meter.
     let meter_pda = fixture.meter_pda();
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3841,9 +3995,8 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
             meta.pubkey = payer1;
         }
     }
-    fixture
-        .context
-        .process_and_validate_instruction(&ix1, &[Check::success()]);
+    ix1.accounts[7].pubkey = host::transient_address(payer1).0;
+    check_host_context(&fixture.context, &ix1, &[Check::success()]);
     assert_eq!(
         read_hcu_block_meter(&fixture.context, meter_pda)
             .expect("meter created")
@@ -3863,7 +4016,8 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
         "execution-2-out",
         Some(meter_pda),
     );
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &ix2,
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -3892,7 +4046,8 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
     let mut ix = fixture.block_cap_instruction(None, None);
     ix.accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &ix,
         &[custom_error(
             host::errors::ZamaHostError::FheExecuteAccountCountMismatch,
@@ -3906,7 +4061,8 @@ fn mollusk_fhe_execute_transient_only_batch_is_metered_via_the_values_it_reads()
     // stored values it reads name the application, so the execution is still charged in full.
     let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.transient_only_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
@@ -3920,20 +4076,20 @@ fn mollusk_fhe_execute_transient_only_batch_is_metered_via_the_values_it_reads()
 }
 
 #[test]
-fn mollusk_fhe_execute_finite_cap_rejects_persist_nothing_batch() {
-    // fhevm-internal#1744: under a finite cap, an execution that touches no stored value and no
-    // verified input names no application — there would be nothing to meter, and a caller could
-    // compute for free. Rejected in preflight, before compute, so no meter is created even
-    // though one is supplied.
+fn mollusk_fhe_execute_finite_cap_charges_input_free_arithmetic_to_the_producing_state() {
     let fixture = FheExecutionFixture::with_block_cap(500_000);
     let meter_pda = fixture.meter_pda();
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.persist_nothing_instruction(Some(meter_pda), None),
-        &[custom_error(
-            host::errors::ZamaHostError::FheExecuteUnanchoredUnderBlockCap,
-        )],
+        &[Check::success()],
     );
-    assert!(read_hcu_block_meter(&fixture.context, meter_pda).is_none());
+    assert_eq!(
+        read_hcu_block_meter(&fixture.context, meter_pda)
+            .unwrap()
+            .used_hcu,
+        32
+    );
 }
 
 #[test]
@@ -3948,9 +4104,7 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
         "input-free-bootstrap",
         Some(meter_pda),
     );
-    fixture
-        .context
-        .process_and_validate_instruction(&ix, &[Check::success()]);
+    check_host_context(&fixture.context, &ix, &[Check::success()]);
     read_encrypted_state(&fixture.context, output_value);
     // The execution WAS metered onto the application (a single euint64 TrivialEncrypt, 32 HCU
     // in HCULimit.sol `checkHCUForTrivialEncrypt`).
@@ -3965,7 +4119,8 @@ fn mollusk_fhe_execute_deactivated_cap_allows_persist_nothing_batch() {
     // Under the ship default (u64::MAX) the persist-nothing rejection short-circuits, so behavior
     // is unchanged wherever a finite cap is not deployed.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.persist_nothing_instruction(None, None),
         &[Check::success()],
     );
@@ -3982,7 +4137,8 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
         hcu_block_meter_account(fixture.block_cap_app(), slot, u64::MAX - 1_000);
     fixture.seed_account(meter_pda, meter_account);
 
-    let result = fixture.context.process_and_validate_instruction(
+    let result = check_host_context(
+        &fixture.context,
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[custom_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -4004,7 +4160,8 @@ fn mollusk_fhe_execute_rand_without_nonce_account_is_rejected() {
     // Rand seeds derive from the host nonce; an execution with a Rand step that does not carry
     // the nonce account has no seed source and is rejected before compute.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &fixture.rand_instruction(None),
         &[custom_error(
             host::errors::ZamaHostError::FheExecuteRandNonceMissing,
@@ -4029,7 +4186,8 @@ fn mollusk_fhe_execute_nonce_account_without_rand_is_rejected() {
             Some(nonce),
         )
         .accounts;
-    fixture.context.process_and_validate_instruction(
+    check_host_context(
+        &fixture.context,
         &ix,
         &[custom_error(
             host::errors::ZamaHostError::InvalidFheExecuteAccount,
@@ -4046,12 +4204,8 @@ fn mollusk_fhe_execute_rand_consumes_the_nonce_and_never_repeats_a_seed() {
     fixture.seed_account(nonce, nonce_account);
     let ix = fixture.rand_instruction(Some(nonce));
 
-    let first = fixture
-        .context
-        .process_and_validate_instruction(&ix, &[Check::success()]);
-    let second = fixture
-        .context
-        .process_and_validate_instruction(&ix, &[Check::success()]);
+    let first = check_host_context(&fixture.context, &ix, &[Check::success()]);
+    let second = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
     let first_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&first);
     let second_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&second);
@@ -4073,9 +4227,11 @@ fn mollusk_fhe_execute_rand_rejects_non_canonical_nonce_account() {
     let (_, nonce_account) = rand_nonce_account(0);
     let impostor = Pubkey::new_unique();
     fixture.seed_account(impostor, nonce_account);
-    let result = fixture
-        .context
-        .process_instruction(&fixture.rand_instruction(Some(impostor)));
+    let result = check_host_context(
+        &fixture.context,
+        &fixture.rand_instruction(Some(impostor)),
+        &[],
+    );
     assert!(result.program_result.is_err());
 }
 
@@ -4229,7 +4385,7 @@ fn seal_public_leaf(
         host_config_account.clone(),
     );
     let sealed = read_encrypted_state_from_result(
-        &mollusk().process_and_validate_instruction(&seal_ix, &seal_accounts, &[Check::success()]),
+        &check_host_instruction(&mollusk(), &seal_ix, &seal_accounts, &[Check::success()]),
         address,
     );
     let events = [StateHistoryEvent::MarkedPublic { handle }];
@@ -4296,7 +4452,8 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     ];
     // v0 extra_data resolves to the current context, so return_data carries the current id.
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[Check::success(), Check::return_data(&expected)],
@@ -4334,7 +4491,8 @@ fn rotate_to_next_context(
         (next_kms_context, empty_system_account()),
         (event_authority(host::id()), Account::default()),
     ];
-    let define_result = mollusk().process_and_validate_instruction(
+    let define_result = check_host_instruction(
+        &mollusk(),
         &define_ix,
         &define_accounts,
         &[Check::success()],
@@ -4384,7 +4542,8 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
         (address, encrypted_state_account(&sealed)),
     ];
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[Check::success(), Check::return_data(&expected)],
@@ -4415,7 +4574,8 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
         (kms_context, kms_context_acct),
         (event_authority(host::id()), Account::default()),
     ];
-    let destroy_result = mollusk().process_and_validate_instruction(
+    let destroy_result = check_host_instruction(
+        &mollusk(),
         &destroy_kms_context_ix(admin, host_config, KMS_CONTEXT_ID),
         &destroy_accounts,
         &[Check::success()],
@@ -4442,7 +4602,8 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
         (kms_context, destroyed_kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
@@ -4479,7 +4640,8 @@ fn mollusk_verify_public_decrypt_rejects_destroyed_context() {
         (kms_context, kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
@@ -4520,7 +4682,8 @@ fn mollusk_verify_public_decrypt_rejects_context_account_mismatch() {
         (next_kms_context, next_kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
@@ -4559,7 +4722,8 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
         (nonexistent_kms_context, funded_system_account()),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[anchor_error(
@@ -4604,7 +4768,8 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
         (kms_context, kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -4648,7 +4813,8 @@ fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
         (kms_context, kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -4686,7 +4852,8 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
         (wrong_kms_context, kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
@@ -4752,7 +4919,8 @@ fn mollusk_verify_public_decrypt_survives_update_after_seal() {
         (address, encrypted_state_account(&final_value)),
     ];
     let expected = expected_return_data(handle0, cleartext, KMS_CONTEXT_ID);
-    let result = mollusk().process_and_validate_instruction(
+    let result = check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[Check::success(), Check::return_data(&expected)],
@@ -4829,7 +4997,8 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
         (kms_context, kms_context_acct),
         (address, encrypted_state_account(&final_value)),
     ];
-    mollusk().process_and_validate_instruction(
+    check_host_instruction(
+        &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
@@ -4873,7 +5042,7 @@ fn cost_snapshot_verify_public_decrypt() {
         (kms_context, kms_context_acct),
         (address, encrypted_state_account(&sealed)),
     ];
-    let result = mollusk().process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
+    let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     cost_snapshot::assert_cost_snapshot(
         "host_mollusk",
         "verify_public_decrypt/happy",
@@ -4898,9 +5067,7 @@ fn cost_snapshot_fhe_execute_three_steps() {
     let fixture = snapshot_fixture();
     let ix = fixture.block_cap_instruction(None, None);
 
-    let result = fixture
-        .context
-        .process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_steps", &ix, &result);
 }
@@ -4914,9 +5081,7 @@ fn cost_snapshot_fhe_execute_max_steps() {
     let fixture = snapshot_fixture();
     let ix = fixture.max_ops_instruction();
 
-    let result = fixture
-        .context
-        .process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_steps", &ix, &result);
 }
@@ -4925,21 +5090,23 @@ fn cost_snapshot_fhe_execute_max_steps() {
 fn mollusk_fhe_execute_max_op_transaction_fits_packet() {
     // MAX_FHE_EXECUTION_STEPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
     // byte-budget half: the whole signed transaction for the max-op execution — envelope included —
-    // must fit one 1,232-byte packet, with headroom for realistic envelopes (more persistent
-    // accounts, more dictionary entries) so the cap is not set at the packet edge.
+    // must fit one 1,232-byte packet including the scratch lifecycle. Richer account/operand
+    // shapes have separate capacity probes.
     let fixture = snapshot_fixture();
     // The Solana transaction packet limit (solana-packet's PACKET_DATA_SIZE: 1280-byte
     // IPv6 minimum MTU minus 48 bytes of headers).
     const PACKET_DATA_SIZE: usize = 1_232;
     let ix = fixture.max_ops_instruction();
-    let message =
-        solana_sdk::message::Message::new(std::slice::from_ref(&ix), Some(&fixture.payer));
+    let message = solana_sdk::message::Message::new(
+        &zama_solana_test_kit::transaction::fhe_transaction(fixture.payer, [ix]),
+        Some(&fixture.payer),
+    );
     let signature_bytes = 1 + 64 * usize::from(message.header.num_required_signatures);
     let transaction_bytes = signature_bytes + message.serialize().len();
 
     assert!(
-        transaction_bytes + 150 <= PACKET_DATA_SIZE,
+        transaction_bytes <= PACKET_DATA_SIZE,
         "max-op fhe_execute transaction is {transaction_bytes} bytes; it must fit a \
-         {PACKET_DATA_SIZE}-byte packet with >=150 bytes of envelope headroom"
+         {PACKET_DATA_SIZE}-byte packet including open and close"
     );
 }

@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 // Scenario: delegated user-decrypt — the #1690 evidence pack, live.
 //
 // Two arcs over the same protocol surface:
@@ -46,6 +47,7 @@ import {
   executeVaultTransaction,
   proposeThroughSquad,
   web3KeypairFromBytes,
+  toWeb3Instruction,
 } from "../harness/solana/squads";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
@@ -251,15 +253,19 @@ describe("solana delegated user-decrypt", () => {
       const delegate = await generateSolanaKeypair();
       const delegateSecretKey = hex(delegate.bytes.subarray(0, 32));
 
+      // These proposals name member[0] as scratch sponsor, so its signature is required at execution.
+      // The vault still authenticates its own State by CPI.
+      const fhe = await createSolanaFheTransaction({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address) });
+      const [open, close] = fhe.wrap([]).map(toWeb3Instruction);
       // The DAO's value: the vault's own counter at 42, written through two approved proposals.
       for (const instruction of [
-        await buildInitializeCounterInstruction(vaultSigner),
-        await buildIncrementCounterInstruction(vaultSigner, 42n),
+        await buildInitializeCounterInstruction(vaultSigner, fhe.accounts),
+        await buildIncrementCounterInstruction(vaultSigner, 42n, fhe.accounts),
       ]) {
         const index = await proposeThroughSquad(connection, squad, members[0]!, instruction);
         await approveProposal(connection, squad, members[0]!, index);
         await approveProposal(connection, squad, members[1]!, index);
-        await executeVaultTransaction(connection, squad, members[0]!, index);
+        await executeVaultTransaction(connection, squad, members[0]!, index, (ix) => [open!, ix, close!]);
       }
       const value = await counterValue(vaultAddress);
       const handle = await currentHandle(context, value.encryptedState, value.key);

@@ -43,6 +43,11 @@ pub struct CancelDispatch<'info> {
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program.
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: confidential-token event-CPI authority; validated by the token program.
@@ -109,6 +114,8 @@ pub fn cancel_dispatch<'info>(
                 pending_burn: ctx.accounts.pending_burn.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
                 hcu_block_meter: None,

@@ -62,6 +62,11 @@ pub struct Quit<'info> {
     pub join_state: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
@@ -134,8 +139,10 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
                 to_state: ctx.accounts.user_balance_state.to_account_info(),
                 amount_state: Some(ctx.accounts.join_state.to_account_info()),
                 amount_authority: Some(ctx.accounts.join_record.to_account_info()),
-                amount_scratch: None,
+
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -155,16 +162,16 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     )?;
 
     let account = fhe::read_state(&ctx.accounts.join_state)?;
-    let output = zama_fhe::Output::state(
-        zama_fhe::State::new(&account)
-            .set(joined_amount_key())
-            .allow(user),
-    );
-    let execution = zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(ctx.accounts.join_record.key()),
-        |builder| builder.trivial_encrypt_u64(0, output),
-    )
-    .map_err(fhe::invalid_execution)?;
+    let output = zama_fhe::State::new(&account)
+        .set(joined_amount_key())
+        .allow(user);
+    let execution =
+        zama_fhe::FheExecution::build_returning(zama_fhe::State::new(&account).id(), |builder| {
+            let zero = builder.trivial_encrypt_u64(0)?;
+            builder.output(zero, output)?;
+            Ok(zero)
+        })
+        .map_err(fhe::invalid_execution)?;
     fhe::JoinExecute {
         batch: batch_key,
         user,
@@ -173,6 +180,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+        scratch: ctx.accounts.scratch.to_account_info(),
+        instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: ctx.remaining_accounts,

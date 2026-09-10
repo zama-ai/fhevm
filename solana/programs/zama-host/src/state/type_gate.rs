@@ -190,7 +190,11 @@ pub fn assert_unary_operand_type(
 /// Requires every operand's resolved handle type to equal the declared uint type (2..=6). Like EVM
 /// `fheSum` and the coprocessor, only the maximum operand count is bounded — a zero/single-operand
 /// sum is valid (EVM enforces no minimum).
-pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> Result<()> {
+pub fn assert_sum_operand_types<'a>(
+    operand_handles: impl IntoIterator<Item = &'a [u8; 32], IntoIter: ExactSizeIterator>,
+    fhe_type: u8,
+) -> Result<()> {
+    let operand_handles = operand_handles.into_iter();
     require!(
         is_supported_uint_fhe_type(fhe_type),
         ZamaHostError::UnsupportedFheType
@@ -209,11 +213,12 @@ pub fn assert_sum_operand_types(operand_handles: &[[u8; 32]], fhe_type: u8) -> R
 /// Requires the value and every set member to share the declared uint type (Uint8..Uint128, 2..=6) —
 /// Solana host max is euint128; `ebool` is excluded. Like EVM, only the maximum set size is
 /// bounded — an empty set is valid (membership is trivially false).
-pub fn assert_is_in_operand_types(
+pub fn assert_is_in_operand_types<'a>(
     value_handle: [u8; 32],
-    set_handles: &[[u8; 32]],
+    set_handles: impl IntoIterator<Item = &'a [u8; 32], IntoIter: ExactSizeIterator>,
     fhe_type: u8,
 ) -> Result<()> {
+    let set_handles = set_handles.into_iter();
     require!(
         is_supported_uint_fhe_type(fhe_type),
         ZamaHostError::UnsupportedFheType

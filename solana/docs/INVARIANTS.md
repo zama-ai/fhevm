@@ -74,8 +74,7 @@ a stranding — the next write declares the next handle's allows.
 **10. [HOLDS]** Every allow the host seals passes the deny list when it is enabled. A State output, with or without a
 slot write, and `make_state_handle_public` both require the application's record `["deny-scope", program, scope]` to be
 present at its canonical address and not denied (`DenyRecordMissing`, `ScopeDenied`). With the list disabled no record
-may be passed. An `fhe_execute` checks every application whose State it reads or writes, and the application of every
-grant's initiating State. Naming a consumer State in a new grant only validates that State's identity; the consumer's
+may be passed. An `fhe_execute` checks every application whose State it reads or writes, and its explicit producing State's application. Naming a consumer State in a new grant only validates that State's identity; the consumer's
 application is checked by the execution that consumes the grant. A denied application can therefore neither use a grant
 nor receive a State write from another program's execution. The list names applications, not keys (DD-048): a denied key
 can still be allowed by a clean application, and user-decryption delegation is a separate access path with no deny
@@ -110,16 +109,18 @@ RFC 035.) Related token/Host lifecycle guardrails are:
   gov surface in this PoC (out of scope; zama-ai/fhevm-internal#1634).
 
 **62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its State authority's
-signature and the exact current handle. Using a result produced by another execution in the same transaction requires a
-grant for that exact handle and consumer State in the canonical scratch account, plus the consumer authority's
-signature. Scratch is opened by the initiating State's authority, its grants are created only as outputs of the
-execution that produced the handle, and it is closed by the matching final top-level instruction, which refunds the
-payer recorded at opening; a failed close rolls back the transaction. Decrypt permission is separate: it needs an MMR
-leaf and is never implied by compute authority. In the batcher, each JoinRecord is the authority of its participant's
-contribution State, scoped to the batch. Pinned by `transient_mollusk.rs`
-(`transient_result_accepts_the_exact_granted_handle_and_consumer_state`, `transient_result_rejects_an_ungranted_handle`,
-`transient_result_rejects_the_wrong_consumer_state`, `transient_result_requires_the_consumer_state_authority_signature`,
-`scratch_cannot_close_before_the_final_instruction`, `nested_scratch_close_rolls_back_the_whole_transaction`).
+signature and the exact current handle. Each execution names a canonical producing State; its authority must sign.
+Every produced result, including unstored intermediates, is usable by that State for the rest of the transaction.
+Another State needs an explicit exact-handle grant and its authority's signature at consumption. Merely returning
+bytes, sharing the payer or appearing as an additional signer grants no permission.
+
+Every FHE call requires the same host-owned scratch PDA `["transient", payer]`. A signed top-level open creates it;
+the exact final top-level close refunds its recorded payer. Open and every FHE call validate that final close;
+a second context, reopening or early/nested closure fails. The payer is a rent role, independent of State authority.
+A failed transaction rolls back all writes. Decrypt permission remains a separate exact-handle MMR leaf.
+In the batcher, each JoinRecord controls its participant's contribution State, scoped to the batch.
+Pinned by `transient_mollusk.rs`, including producer reuse across calls, foreign grant/signature negatives,
+second-context rejection, capacity rollback and final-close tests.
 
 **64. [ANTI]** A grant limits who may compute with a handle inside one transaction. It does not limit what that
 computation may reveal: the consumer's output can be written to a slot, allowed to any key or made public, and those
@@ -282,6 +283,9 @@ setters, pause included.
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
 compared limits are finite and the block cap is nonzero, setters enforce `block cap ≥ max per tx ≥ max depth`.
+Total and critical-path depth accumulate across all calls in the shared transaction scratch, including calls from
+different applications. Each application block meter is charged only the cost of its own execution. Repeated handle
+occurrences retain the maximum depth for that handle; changing its operand witness cannot reset its depth.
 
 **38. [ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
 there is no multisig and no timelock. The initial admin must be the BPF
@@ -299,9 +303,8 @@ a caller can neither point at another application's record (address
 check) nor forge one (program-owned PDA, admin-gated write). The
 application is `(program, scope)` with `program` verified from the output
 authority (#7, DD-039/DD-047), so a caller cannot claim a trusted program
-it does not control. The block cap is enforced by the program in
-`fhe_execute` before the execution walk; the meter account is only a
-counter.
+it does not control. `fhe_execute` validates the trust witness and charges the application meter after its execution walk; exceeding
+the cap rolls back the transaction. The meter account is only a counter.
 
 **41. [ANTI]** HCU block budgets do not impose a program-wide limit. Each `(program, scope)` has its own per-slot
 budget, and a program chooses its scopes freely. The host proves the State authority belongs to `program` (#40), but
@@ -492,3 +495,15 @@ reductions reach 4. These shape measurements do not guarantee that an arbitrary 
 
 **39. [RETIRED]** App-layer invariants were folded into this register rather
 than split into a second source of truth (#55–#60).
+
+**65. [HOLDS]** Operand origin is derived by the host, never declared by the caller. Before an operand-bearing result
+is derived, each encrypted operand gets boundary bit 1 only if its handle was not produced earlier in this transaction.
+Scalars get bit 0. The big-endian 256-bit mask enters the handle preimage; input position 0 uses the least-significant
+bit. The listener reconstructs the same ordered transaction membership. An earlier transaction in the same block is
+still a boundary; `EarlierStep`, slot reload and scratch grant witnesses cannot choose a different origin.
+
+**66. [HOLDS]** Scratch has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
+discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
+32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
+atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte
+transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.

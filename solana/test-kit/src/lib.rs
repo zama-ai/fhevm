@@ -13,6 +13,7 @@
 pub mod cost_snapshot;
 pub mod oracle;
 pub mod signing;
+pub mod transaction;
 
 pub mod contracts;
 
@@ -576,19 +577,4 @@ pub fn encrypted_state_account(state: &host::EncryptedState) -> Account {
 pub(crate) fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
     let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
     host::FheExecuteArgs::deserialize(&mut &*payload).ok()
-}
-
-/// The output descriptor of any execution step variant.
-pub(crate) fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
-    match step {
-        host::FheExecuteStep::Binary { output, .. }
-        | host::FheExecuteStep::Ternary { output, .. }
-        | host::FheExecuteStep::TrivialEncrypt { output, .. }
-        | host::FheExecuteStep::Rand { output, .. }
-        | host::FheExecuteStep::Unary { output, .. }
-        | host::FheExecuteStep::RandBounded { output, .. }
-        | host::FheExecuteStep::Sum { output, .. }
-        | host::FheExecuteStep::IsIn { output, .. }
-        | host::FheExecuteStep::MulDiv { output, .. } => output,
-    }
 }

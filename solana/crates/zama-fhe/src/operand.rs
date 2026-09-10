@@ -1,6 +1,5 @@
 //! Internal operand representation shared by the builder, validators, and lowering.
 
-use anchor_lang::prelude::Pubkey;
 use std::marker::PhantomData;
 
 /// Makes a builder's `'id` lifetime invariant, so no two builders' identities are subtypes of one
@@ -24,7 +23,6 @@ pub(crate) enum OperandKind {
     },
     Granted {
         consumer: crate::StateId,
-        scratch: Pubkey,
         handle: [u8; 32],
     },
     Transient {

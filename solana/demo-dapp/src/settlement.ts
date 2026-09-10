@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import type { ProofService } from './vault/internal/publicProof.js';
 import {
   createSolanaRpc,
@@ -114,11 +115,13 @@ export const dispatchVaultBatch = async (
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
+  const fhe = await createSolanaFheTransaction({ payer: session.keeper });
   return sendTransaction(
     session.config,
     session.keeper,
-    [
+    fhe.wrap([
       await buildDispatchBatchInstruction({
+        fhe: fhe.accounts,
         payer: session.keeper,
         batcher: roots.batcher,
         batch: position.batch,
@@ -127,7 +130,7 @@ export const dispatchVaultBatch = async (
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
         hostConfig: session.config.hostConfig,
       }),
-    ],
+    ]),
     DISPATCH_COMPUTE_UNIT_LIMIT,
   );
 };

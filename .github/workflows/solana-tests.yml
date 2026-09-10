@@ -225,6 +225,10 @@ jobs:
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
         run: npm ci --prefix sdk/js-sdk
 
+      - name: Build public SDK exports used by the test suite
+        working-directory: sdk/js-sdk
+        run: npm run build:esm && npm run build:types
+
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp
         run: bun install --frozen-lockfile

@@ -26,6 +26,8 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     /// Recipient state: read and update its balance slot.
     pub(crate) to_state: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
+    pub(crate) scratch: &'a UncheckedAccount<'info>,
+    pub(crate) instructions: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
     /// Deny records for the token, input state, and result consumer applications,
@@ -49,41 +51,20 @@ pub(crate) struct TransferAccounts<'a, 'info> {
 
 pub(crate) struct ResultGrantAccounts<'info> {
     pub state: AccountInfo<'info>,
-    pub scratch: AccountInfo<'info>,
-    pub authority: AccountInfo<'info>,
     pub id: zama_fhe::StateId,
 }
 
 impl<'info> ResultGrantAccounts<'info> {
-    pub(crate) fn bind(
-        state: Option<&UncheckedAccount<'info>>,
-        scratch: Option<&UncheckedAccount<'info>>,
-        authority: Option<&Signer<'info>>,
-    ) -> Result<Option<Self>> {
-        match (state, scratch, authority) {
-            (None, None, None) => Ok(None),
-            (Some(state), Some(scratch), Some(authority)) => {
+    pub(crate) fn bind(state: Option<&UncheckedAccount<'info>>) -> Result<Option<Self>> {
+        state
+            .map(|state| {
                 let account = fhe::read_state(&state.to_account_info())?;
-                require_keys_eq!(
-                    account.authority,
-                    authority.key(),
-                    ConfidentialTokenError::ResultGrantMismatch
-                );
-                let id = zama_fhe::State::new(&account).id();
-                require_keys_eq!(
-                    scratch.key(),
-                    id.scratch_address(),
-                    ConfidentialTokenError::ResultGrantMismatch
-                );
-                Ok(Some(Self {
+                Ok(Self {
                     state: state.to_account_info(),
-                    scratch: scratch.to_account_info(),
-                    authority: authority.to_account_info(),
-                    id,
-                }))
-            }
-            _ => err!(ConfidentialTokenError::ResultGrantMismatch),
-        }
+                    id: zama_fhe::State::new(&account).id(),
+                })
+            })
+            .transpose()
     }
 }
 
@@ -95,7 +76,6 @@ pub(crate) enum TransferAmountSource<'info> {
         key: [u8; 32],
     },
     Grant {
-        scratch: AccountInfo<'info>,
         handle: [u8; 32],
     },
 }
@@ -227,11 +207,11 @@ fn build_transfer_execution(
         (TransferAmountSource::StateSlot { key, .. }, Some(state)) => {
             Some(fhe::uint64_operand(state, *key)?)
         }
-        (TransferAmountSource::Grant { scratch, handle }, _) => {
-            // The host validates the scratch's initiating state and the exact consumer grant.
+        (TransferAmountSource::Grant { handle }, _) => {
+            // The host checks the handle grant to the sender State in the shared scratch.
             Some(
                 zama_fhe::State::new(from_account)
-                    .granted_from_scratch(*handle, scratch.key())
+                    .granted(*handle)
                     .map_err(invalid_execution)?,
             )
         }
@@ -242,46 +222,34 @@ fn build_transfer_execution(
         result_output = result_output.allow(accounts.to_account.owner);
     }
     if let Some(grant) = &accounts.result_grant {
-        result_output = result_output.allow_transient(grant.id, grant.id);
+        result_output = result_output.allow_transient(grant.id);
     }
     let result_output = Box::new(result_output);
-    zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(accounts.from_account.key()),
-        |fhe| {
-            let amount = match amount_source {
-                TransferAmountSource::Attested(attestation) => {
-                    fhe.verified_input(attestation.clone())?
-                }
-                _ => existing_operand.expect("state or grant operand").into(),
-            };
-            let success = fhe.ge(from_balance, amount, zama_fhe::Output::transient())?;
-            let debit = fhe.sub(from_balance, amount, zama_fhe::Output::transient())?;
-            let remaining =
-                fhe.if_then_else(success, debit, from_balance, zama_fhe::Output::transient())?;
-            let transferred = fhe.sub(
-                from_balance,
-                remaining,
-                zama_fhe::Output::state(*result_output),
-            )?;
-            fhe.add(
-                remaining,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                zama_fhe::Output::state(
-                    from_state
-                        .set(balance_key())
-                        .allow(accounts.from_account.owner),
-                ),
-            )?;
-            fhe.add(
-                to_balance,
-                transferred,
-                zama_fhe::Output::state(
-                    to_state.set(balance_key()).allow(accounts.to_account.owner),
-                ),
-            )?;
-            Ok(transferred)
-        },
-    )
+    zama_fhe::FheExecution::build_returning(from_state.id(), |fhe| {
+        let amount = match amount_source {
+            TransferAmountSource::Attested(attestation) => {
+                fhe.verified_input(attestation.clone())?
+            }
+            _ => existing_operand.expect("state or grant operand").into(),
+        };
+        let success = fhe.ge(from_balance, amount)?;
+        let debit = fhe.sub(from_balance, amount)?;
+        let remaining = fhe.if_then_else(success, debit, from_balance)?;
+        let transferred = fhe.sub(from_balance, remaining)?;
+        let credited = fhe.add(to_balance, transferred)?;
+        fhe.output(transferred, *result_output)?;
+        fhe.output(
+            remaining,
+            from_state
+                .set(balance_key())
+                .allow(accounts.from_account.owner),
+        )?;
+        fhe.output(
+            credited,
+            to_state.set(balance_key()).allow(accounts.to_account.owner),
+        )?;
+        Ok(transferred)
+    })
     .map_err(invalid_execution)
 }
 
@@ -336,15 +304,10 @@ fn compute_transfer_handles<'info>(
                 ));
             }
         }
-        TransferAmountSource::Grant { scratch, .. } => add_account(scratch.clone()),
-        TransferAmountSource::Attested(_) => {}
+        TransferAmountSource::Grant { .. } | TransferAmountSource::Attested(_) => {}
     }
     if let Some(grant) = &accounts.result_grant {
         add_account(grant.state.clone());
-        add_account(grant.scratch.clone());
-        if !authorities.iter().any(|a| a.key() == grant.authority.key()) {
-            authorities.push(fhe::StateAuthority::external(grant.authority.clone()));
-        }
     }
     let resolved =
         fhe::ExecutionAccountSet::for_execution(execution.execution(), dynamic, authorities)?;
@@ -352,17 +315,19 @@ fn compute_transfer_handles<'info>(
         context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
+            scratch: accounts.scratch,
+            instructions: accounts.instructions,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(
                 accounts.host_config,
                 accounts.remaining_accounts,
-                std::iter::once(token_app(mint_key))
-                    .chain(stored_amount.as_ref().map(|s| zama_fhe::AppScope {
+                std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|s| {
+                    zama_fhe::AppScope {
                         program: s.program,
                         scope: s.scope,
-                    }))
-                    .chain(accounts.result_grant.as_ref().map(|g| g.id.app())),
+                    }
+                })),
             )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),
@@ -390,17 +355,11 @@ pub(crate) fn rewrite_allowing<'info>(
 ) -> Result<[u8; 32]> {
     let operand = fhe::uint64_operand(value, id.1)?;
     let output = fhe::SlotOutput::new(value.to_account_info(), id, &authority, allows)?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(value.authority),
-        |builder| {
-            builder.add(
-                operand,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                output.output(),
-            )?;
-            Ok(())
-        },
-    )
+    let execution = zama_fhe::FheExecution::build(id.0, |builder| {
+        let result = builder.add(operand, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0))?;
+        builder.output(result, output.output())?;
+        Ok(())
+    })
     .map_err(invalid_execution)?;
     let accounts =
         fhe::ExecutionAccountSet::for_execution(&execution, [output.account_info()], [authority])?;

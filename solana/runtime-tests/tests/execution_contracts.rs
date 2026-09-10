@@ -12,8 +12,6 @@ const HOST_CONFIG: &str = include_str!("../../programs/zama-host/src/state/host_
 const TOKEN_LIB: &str = include_str!("../../programs/confidential-token/src/lib.rs");
 const TOKEN_COMMON: &str =
     include_str!("../../programs/confidential-token/src/instructions/common.rs");
-const TOKEN_WRAP_USDC: &str =
-    include_str!("../../programs/confidential-token/src/instructions/wrap_usdc.rs");
 const TOKEN_REDEEM: &str =
     include_str!("../../programs/confidential-token/src/instructions/redeem_burned_amount.rs");
 const IDL_CHECK_SCRIPT: &str = include_str!("../../scripts/check-zama-host-idl.sh");
@@ -239,12 +237,6 @@ fn transient_wrap_does_not_leave_persistent_acl_contracts() {
             .iter()
             .any(|account| account == "amount_compute_acl"),
         "wrap_usdc must not require a persistent amount_compute_acl for public deposit amount"
-    );
-    assert!(
-        TOKEN_WRAP_USDC.contains("Output::transient()")
-            || TOKEN_WRAP_USDC.contains("transient_output")
-            || TOKEN_WRAP_USDC.contains("TrivialAmount::transient"),
-        "wrap_usdc should trivial-encrypt the public amount as an instruction-local transient value"
     );
 }
 

@@ -64,6 +64,8 @@ export type ConfidentialBurnInstruction<
   TAccountTotalSupplyState extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
@@ -92,6 +94,8 @@ export type ConfidentialBurnInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
@@ -149,6 +153,8 @@ export type ConfidentialBurnAsyncInput<
   TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
@@ -173,6 +179,8 @@ export type ConfidentialBurnAsyncInput<
   /** A burn is rejected before execution while this account is already initialized. */
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -205,6 +213,8 @@ export async function getConfidentialBurnInstructionAsync<
   TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
@@ -225,6 +235,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -247,6 +259,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -280,6 +294,8 @@ export async function getConfidentialBurnInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -323,6 +339,8 @@ export async function getConfidentialBurnInstructionAsync<
       getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -345,6 +363,8 @@ export async function getConfidentialBurnInstructionAsync<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -366,6 +386,8 @@ export type ConfidentialBurnInput<
   TAccountTotalSupplyState extends string = string,
   TAccountPendingBurn extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
@@ -390,6 +412,8 @@ export type ConfidentialBurnInput<
   /** A burn is rejected before execution while this account is already initialized. */
   pendingBurn: Address<TAccountPendingBurn>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -422,6 +446,8 @@ export function getConfidentialBurnInstruction<
   TAccountTotalSupplyState extends string,
   TAccountPendingBurn extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
@@ -442,6 +468,8 @@ export function getConfidentialBurnInstruction<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -463,6 +491,8 @@ export function getConfidentialBurnInstruction<
   TAccountTotalSupplyState,
   TAccountPendingBurn,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountSystemProgram,
@@ -495,6 +525,8 @@ export function getConfidentialBurnInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -533,6 +565,8 @@ export function getConfidentialBurnInstruction<
       getAccountMeta('totalSupplyState', accounts.totalSupplyState),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -555,6 +589,8 @@ export function getConfidentialBurnInstruction<
     TAccountTotalSupplyState,
     TAccountPendingBurn,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -587,24 +623,26 @@ export type ParsedConfidentialBurnInstruction<
     /** A burn is rejected before execution while this account is already initialized. */
     pendingBurn: TAccountMetas[8];
     zamaEventAuthority: TAccountMetas[9];
+    scratch: TAccountMetas[10];
+    instructions: TAccountMetas[11];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[10];
+    zamaProgram: TAccountMetas[12];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[11];
+    hostConfig: TAccountMetas[13];
     /** System program used for ACL account creation and the pending-burn PDA. */
-    systemProgram: TAccountMetas[12];
+    systemProgram: TAccountMetas[14];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[13] | undefined;
+    hcuBlockMeter?: TAccountMetas[15] | undefined;
     /**
      * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[14] | undefined;
-    eventAuthority: TAccountMetas[15];
-    program: TAccountMetas[16];
+    hcuTrustedAppRecord?: TAccountMetas[16] | undefined;
+    eventAuthority: TAccountMetas[17];
+    program: TAccountMetas[18];
   };
   data: ConfidentialBurnInstructionData;
 };
@@ -612,10 +650,10 @@ export type ParsedConfidentialBurnInstruction<
 export function parseConfidentialBurnInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedConfidentialBurnInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 19) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 17,
+      expectedAccountMetas: 19,
     });
   }
   let accountIndex = 0;
@@ -641,6 +679,8 @@ export function parseConfidentialBurnInstruction<TProgram extends string, TAccou
       totalSupplyState: getNextAccount(),
       pendingBurn: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       systemProgram: getNextAccount(),

@@ -58,6 +58,8 @@ export type ExtendInstruction<
   TAccountEncryptedState extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountScratch extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -75,6 +77,8 @@ export type ExtendInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountScratch extends string ? WritableAccount<TAccountScratch> : TAccountScratch,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       ...TRemainingAccounts,
@@ -122,6 +126,8 @@ export type ExtendAsyncInput<
   TAccountEncryptedState extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
@@ -135,6 +141,8 @@ export type ExtendAsyncInput<
   encryptedState: Address<TAccountEncryptedState>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   zamaProgram?: Address<TAccountZamaProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   links: ExtendInstructionDataArgs['links'];
@@ -148,6 +156,8 @@ export async function getExtendInstructionAsync<
   TAccountEncryptedState extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof DEP_CHAIN_PROGRAM_ADDRESS,
@@ -159,6 +169,8 @@ export async function getExtendInstructionAsync<
     TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountSystemProgram
   >,
@@ -172,6 +184,8 @@ export async function getExtendInstructionAsync<
     TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountSystemProgram
   >
@@ -190,6 +204,8 @@ export async function getExtendInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -226,6 +242,8 @@ export async function getExtendInstructionAsync<
       getAccountMeta('encryptedState', accounts.encryptedState),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -239,6 +257,8 @@ export async function getExtendInstructionAsync<
     TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountSystemProgram
   >);
@@ -251,6 +271,8 @@ export type ExtendInput<
   TAccountEncryptedState extends string = string,
   TAccountHostConfig extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountScratch extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
@@ -264,6 +286,8 @@ export type ExtendInput<
   encryptedState: Address<TAccountEncryptedState>;
   hostConfig: Address<TAccountHostConfig>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  scratch: Address<TAccountScratch>;
+  instructions: Address<TAccountInstructions>;
   zamaProgram?: Address<TAccountZamaProgram>;
   systemProgram?: Address<TAccountSystemProgram>;
   links: ExtendInstructionDataArgs['links'];
@@ -277,6 +301,8 @@ export function getExtendInstruction<
   TAccountEncryptedState extends string,
   TAccountHostConfig extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountScratch extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof DEP_CHAIN_PROGRAM_ADDRESS,
@@ -288,6 +314,8 @@ export function getExtendInstruction<
     TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountSystemProgram
   >,
@@ -300,6 +328,8 @@ export function getExtendInstruction<
   TAccountEncryptedState,
   TAccountHostConfig,
   TAccountZamaEventAuthority,
+  TAccountScratch,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountSystemProgram
 > {
@@ -317,6 +347,8 @@ export function getExtendInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    scratch: { value: input.scratch ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
   };
@@ -343,6 +375,8 @@ export function getExtendInstruction<
       getAccountMeta('encryptedState', accounts.encryptedState),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('scratch', accounts.scratch),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -356,6 +390,8 @@ export function getExtendInstruction<
     TAccountEncryptedState,
     TAccountHostConfig,
     TAccountZamaEventAuthority,
+    TAccountScratch,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountSystemProgram
   >);
@@ -377,8 +413,10 @@ export type ParsedExtendInstruction<
     encryptedState: TAccountMetas[3];
     hostConfig: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
-    zamaProgram: TAccountMetas[6];
-    systemProgram: TAccountMetas[7];
+    scratch: TAccountMetas[6];
+    instructions: TAccountMetas[7];
+    zamaProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[9];
   };
   data: ExtendInstructionData;
 };
@@ -386,10 +424,10 @@ export type ParsedExtendInstruction<
 export function parseExtendInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedExtendInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
+  if (instruction.accounts.length < 10) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 8,
+      expectedAccountMetas: 10,
     });
   }
   let accountIndex = 0;
@@ -407,6 +445,8 @@ export function parseExtendInstruction<TProgram extends string, TAccountMetas ex
       encryptedState: getNextAccount(),
       hostConfig: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      scratch: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       systemProgram: getNextAccount(),
     },

@@ -1,22 +1,22 @@
 {
   "toolchain": {
     "anchor": "anchor-cli 1.1.2",
-    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 77864,
-      "unique_accounts": 7,
-      "instruction_data_bytes": 561,
+      "compute_units": 108270,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 536,
       "cpi_instructions": 0,
       "total_cpi_instruction_data_bytes": 0,
       "max_cpi_instruction_data_bytes": 0
     },
     "fhe_execute/three_steps": {
-      "compute_units": 23989,
-      "unique_accounts": 7,
-      "instruction_data_bytes": 271,
+      "compute_units": 48791,
+      "unique_accounts": 9,
+      "instruction_data_bytes": 275,
       "cpi_instructions": 0,
       "total_cpi_instruction_data_bytes": 0,
       "max_cpi_instruction_data_bytes": 0

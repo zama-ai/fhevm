@@ -56,7 +56,7 @@ pub struct Join<'info> {
     /// CHECK: canonical host state controlled by this JoinRecord.
     #[account(mut)]
     pub join_state: UncheckedAccount<'info>,
-    /// CHECK: host validates the scratch derived from join_state.
+    /// CHECK: host validates the shared transaction scratch.
     #[account(mut)]
     pub scratch: UncheckedAccount<'info>,
     /// CHECK: host validates the real Instructions sysvar and final close.
@@ -128,79 +128,26 @@ pub fn join<'info>(
             },
         )?;
     }
-    zama_host::cpi::open_scratch(CpiContext::new_with_signer(
-        ctx.accounts.zama_program.key(),
-        zama_host::cpi::accounts::OpenScratch {
-            payer: ctx.accounts.payer.to_account_info(),
-            authority: ctx.accounts.join_record.to_account_info(),
-            encrypted_state: ctx.accounts.join_state.to_account_info(),
-            scratch: ctx.accounts.scratch.to_account_info(),
-            instructions: ctx.accounts.instructions.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-        },
-        &[authority_seeds],
-    ))?;
-    ct::cpi::confidential_transfer(
-        CpiContext::new_with_signer(
-            ctx.accounts.confidential_token_program.key(),
-            ct::cpi::accounts::ConfidentialTransfer {
-                owner: ctx.accounts.user.to_account_info(),
-                payer: ctx.accounts.payer.to_account_info(),
-                mint: ctx.accounts.join_confidential_mint.to_account_info(),
-                underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
-                from_ata: ctx.accounts.user_ata.to_account_info(),
-                to_ata: ctx.accounts.batch_authority_ata.to_account_info(),
-                from_account: ctx.accounts.user_token_account.to_account_info(),
-                to_account: ctx.accounts.batch_join_token_account.to_account_info(),
-                from_state: ctx.accounts.user_balance_state.to_account_info(),
-                to_state: ctx.accounts.batch_balance_state.to_account_info(),
-                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                zama_program: ctx.accounts.zama_program.to_account_info(),
-                host_config: ctx.accounts.host_config.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
-                result_state: Some(ctx.accounts.join_state.to_account_info()),
-                result_scratch: Some(ctx.accounts.scratch.to_account_info()),
-                result_authority: Some(ctx.accounts.join_record.to_account_info()),
-                event_authority: ctx
-                    .accounts
-                    .confidential_token_event_authority
-                    .to_account_info(),
-                program: ctx.accounts.confidential_token_program.to_account_info(),
-            },
-            &[authority_seeds],
-        ),
-        amount_attestation,
-    )?;
-    let (producer, returned) = anchor_lang::solana_program::program::get_return_data()
-        .ok_or(BatcherError::InvalidFheExecution)?;
-    require_keys_eq!(producer, ct::ID, BatcherError::InvalidFheExecution);
-    let transferred: [u8; 32] = returned
-        .try_into()
-        .map_err(|_| error!(BatcherError::InvalidFheExecution))?;
+    let transferred = transfer_to_batch(&ctx, amount_attestation, authority_seeds)?;
     let account = fhe::read_state(&ctx.accounts.join_state)?;
     let state = zama_fhe::State::new(&account);
     let amount = state
-        .granted::<zama_fhe::Uint<64>>(transferred, id)
+        .granted::<zama_fhe::Uint<64>>(transferred)
         .map_err(fhe::invalid_execution)?;
     let previous = account
         .get(&joined_amount_key())
         .map(|_| state.get::<zama_fhe::Uint<64>>(joined_amount_key()))
         .transpose()
         .map_err(fhe::invalid_execution)?;
-    let output = zama_fhe::Output::state(state.set(joined_amount_key()).allow(user));
-    let execution = zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(record_key),
-        |builder| match previous {
-            Some(previous) => builder.add(previous, amount, output),
-            None => builder.add(
-                amount,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                output,
-            ),
-        },
-    )
+    let output = state.set(joined_amount_key()).allow(user);
+    let execution = zama_fhe::FheExecution::build_returning(state.id(), |builder| {
+        let joined = match previous {
+            Some(previous) => builder.add(previous, amount)?,
+            None => builder.add(amount, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0))?,
+        };
+        builder.output(joined, output)?;
+        Ok(joined)
+    })
     .map_err(fhe::invalid_execution)?;
     let joined_handle = fhe::JoinExecute {
         batch: batch_key,
@@ -210,17 +157,13 @@ pub fn join<'info>(
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+        scratch: ctx.accounts.scratch.to_account_info(),
+        instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: ctx.remaining_accounts,
     }
-    .invoke(
-        execution,
-        vec![
-            ctx.accounts.join_state.to_account_info(),
-            ctx.accounts.scratch.to_account_info(),
-        ],
-    )?;
+    .invoke(execution, vec![ctx.accounts.join_state.to_account_info()])?;
 
     let record = &mut ctx.accounts.join_record;
     record.batch = batch_key;
@@ -238,4 +181,54 @@ pub fn join<'info>(
         joined_handle,
     });
     Ok(())
+}
+
+// Keep CPI account assembly in a separate SBF function; Join also builds the contribution execution.
+#[inline(never)]
+fn transfer_to_batch<'info>(
+    ctx: &Context<Join<'info>>,
+    amount_attestation: zama_host::CoprocessorInputAttestation,
+    authority_seeds: &[&[u8]],
+) -> Result<[u8; 32]> {
+    ct::cpi::confidential_transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.confidential_token_program.key(),
+            ct::cpi::accounts::ConfidentialTransfer {
+                owner: ctx.accounts.user.to_account_info(),
+                payer: ctx.accounts.payer.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
+                underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
+                from_ata: ctx.accounts.user_ata.to_account_info(),
+                to_ata: ctx.accounts.batch_authority_ata.to_account_info(),
+                from_account: ctx.accounts.user_token_account.to_account_info(),
+                to_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                from_state: ctx.accounts.user_balance_state.to_account_info(),
+                to_state: ctx.accounts.batch_balance_state.to_account_info(),
+                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
+                zama_program: ctx.accounts.zama_program.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                hcu_block_meter: None,
+                hcu_trusted_app_record: None,
+                result_state: Some(ctx.accounts.join_state.to_account_info()),
+
+                event_authority: ctx
+                    .accounts
+                    .confidential_token_event_authority
+                    .to_account_info(),
+                program: ctx.accounts.confidential_token_program.to_account_info(),
+            },
+            &[authority_seeds],
+        ),
+        amount_attestation,
+    )?;
+    let (producer, returned) = anchor_lang::solana_program::program::get_return_data()
+        .ok_or(BatcherError::InvalidFheExecution)?;
+    require_keys_eq!(producer, ct::ID, BatcherError::InvalidFheExecution);
+    let transferred: [u8; 32] = returned
+        .try_into()
+        .map_err(|_| error!(BatcherError::InvalidFheExecution))?;
+    Ok(transferred)
 }

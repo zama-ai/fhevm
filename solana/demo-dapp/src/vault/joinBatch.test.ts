@@ -26,7 +26,6 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
-import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
@@ -153,21 +152,10 @@ describe('joinBatch (attested arm)', () => {
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
     const message = decompileTransactionMessage(compiled);
     // The host validates this transaction shape from the instructions sysvar: close_scratch must
-    // be final and must name the exact scratch opened by join plus its recorded payer refund.
-    expect(message.instructions).toHaveLength(3);
-    const close = message.instructions[2]!;
-    const joinRecord = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
-      utf8('join-record'),
-      base58.decode(params.batch),
-      base58.decode(params.user.address),
-    ]);
-    const joinState = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [
-      utf8('encrypted-state'),
-      base58.decode(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
-      base58.decode(joinRecord),
-      base58.decode(params.batch),
-    ]);
-    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(joinState)]);
+    // be final and must name the exact scratch opened before join plus its recorded payer refund.
+    expect(message.instructions).toHaveLength(4);
+    const close = message.instructions[3]!;
+    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(params.payer.address)]);
     expect(close.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(Array.from(close.accounts ?? [], (account) => account.address)).toEqual([
       address('Sysvar1nstructions1111111111111111111111111'),
@@ -178,8 +166,8 @@ describe('joinBatch (attested arm)', () => {
       Array.from(CLOSE_SCRATCH_DISCRIMINATOR),
     );
 
-    // [0] = SetComputeUnitLimit, [1] = join, [2] = close_scratch.
-    const data = getJoinInstructionDataDecoder().decode(message.instructions[1]!.data!);
+    // [0] = compute limit, [1] = open_scratch, [2] = join, [3] = close_scratch.
+    const data = getJoinInstructionDataDecoder().decode(message.instructions[2]!.data!);
     expect(data.handleIndex).toBe(0);
     expect(data.contractChainId).toBe(CHAIN_ID);
     expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.getInputHandles()[0]!.bytes32));

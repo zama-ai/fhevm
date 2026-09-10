@@ -81,6 +81,11 @@ pub struct OpenBatch<'info> {
     pub batch_payout_underlying: Box<Account<'info, TokenAccount>>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
@@ -166,6 +171,8 @@ pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> R
                 token_account: token_account.to_account_info(),
                 balance_encrypted_state: balance_state.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                scratch: ctx.accounts.scratch.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),

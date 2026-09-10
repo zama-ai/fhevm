@@ -4,7 +4,7 @@
 //! Design rationale lives in `solana/docs/DESIGN_DECISIONS.md` (event transport:
 //! DD-003; eager ciphertext-material preparation: DD-024).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::database::computation::{Computation, Operand};
 use alloy_primitives::FixedBytes;
@@ -21,7 +21,9 @@ use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::dependence_chains::dependence_chains;
-use crate::database::ingest::populate_operand_boundary_masks;
+use crate::database::ingest::{
+    classify_slow_chains, populate_operand_boundary_masks,
+};
 use crate::database::tfhe_event_propagate::{
     Database, Handle, LogTfhe, Transaction, TransactionHash,
 };
@@ -150,18 +152,31 @@ pub fn normalize_solana_records_for_db(
     (tfhe_logs, material_requests)
 }
 
-pub async fn insert_solana_records(
+/// Ingests ordered transaction groups from one sealed block. Dependency grouping sees the whole
+/// block; operand origins and material requests retain their transaction identity.
+pub async fn insert_solana_block_records(
     db: &Database,
     tx: &mut Transaction<'_>,
-    records: impl IntoIterator<Item = SolanaHostRecord>,
-    transaction_id: TransactionHash,
+    transactions: impl IntoIterator<Item = (TransactionHash, Vec<SolanaHostRecord>)>,
     block: SolanaBlockMeta,
+    dependent_ops_max_per_chain: u32,
 ) -> Result<SolanaIngestStats, SqlxError> {
-    let (mut tfhe_logs, material_requests) =
-        normalize_solana_records_for_db(records, transaction_id, block);
+    let mut tfhe_logs = Vec::new();
+    let mut material_requests = Vec::new();
+    for (transaction_id, records) in transactions {
+        let (logs, requests) =
+            normalize_solana_records_for_db(records, transaction_id, block);
+        tfhe_logs.extend(logs);
+        material_requests.extend(
+            requests
+                .into_iter()
+                .map(|request| (transaction_id, request)),
+        );
+    }
+    for (index, log) in tfhe_logs.iter_mut().enumerate() {
+        log.log_index = Some(index as u64);
+    }
     populate_operand_boundary_masks(&mut tfhe_logs)?;
-    let mut inserted_rows = 0;
-
     let chains = dependence_chains(
         &mut tfhe_logs,
         &db.dependence_chain,
@@ -172,18 +187,24 @@ pub async fn insert_solana_records(
     )
     .await;
 
-    let mut inserted_compute = false;
+    let mut inserted_compute = 0;
+    let mut dependent_ops_by_chain = HashMap::new();
     for log in &tfhe_logs {
         let inserted = db.insert_tfhe_event(tx, log).await?;
-        inserted_rows += inserted;
-        inserted_compute |= inserted > 0;
+        inserted_compute += inserted;
+        if dependent_ops_max_per_chain > 0 && inserted > 0 {
+            let count = dependent_ops_by_chain
+                .entry(log.dependence_chain)
+                .or_insert(0_u64);
+            *count = count.saturating_add(inserted as u64);
+        }
     }
-    for request in &material_requests {
-        let handles = vec![request.handle.to_vec()];
+    let mut inserted_rows = inserted_compute;
+    for (transaction_id, request) in &material_requests {
         if db
             .insert_pbs_computations(
                 tx,
-                &handles,
+                &[request.handle.to_vec()],
                 Some(transaction_id.to_vec()),
                 block.block_number,
             )
@@ -192,22 +213,25 @@ pub async fn insert_solana_records(
             inserted_rows += 1;
         }
     }
-
-    // Populate the dependence_chain scheduling table the tfhe-worker locks against; without
-    // it the inserted computations are never scheduled (the EVM ingest path likewise calls
-    // update_dependence_chain after inserting tfhe events).
-    if inserted_compute {
-        let block_summary = solana_block_summary(block);
+    // A complete replay must not rearm a processed chain.
+    if inserted_compute > 0 {
+        let slow_chains = classify_slow_chains(
+            db,
+            tx,
+            &chains,
+            &dependent_ops_by_chain,
+            dependent_ops_max_per_chain,
+        )
+        .await?;
         db.update_dependence_chain(
             tx,
             chains,
             block.block_timestamp,
-            &block_summary,
-            &HashSet::new(),
+            &solana_block_summary(block),
+            &slow_chains,
         )
         .await?;
     }
-
     Ok(SolanaIngestStats {
         tfhe_events: tfhe_logs.len(),
         material_requests: material_requests.len(),
@@ -238,7 +262,7 @@ pub fn to_log_tfhe(
         block_hash: FixedBytes::<32>::from(block.block_hash),
         block_timestamp: block.block_timestamp,
         // Placeholders: overwritten by the shared `dependence_chains()` union-find in
-        // `insert_solana_records` before insertion, exactly like the EVM ingest path's
+        // `insert_solana_block_records` before insertion, exactly like the EVM ingest path's
         // `Default::default()` placeholders.
         tx_depth_size: 0,
         dependence_chain: transaction_id,

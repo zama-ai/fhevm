@@ -1,3 +1,4 @@
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getInitializeMintInstructionAsync } from './internal/generated/confidentialToken/instructions/initializeMint.js';
@@ -6,6 +7,7 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confide
 import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 export type SolanaVaultInitializeMintParameters = {
+  readonly fhe: SolanaFheTransactionAccounts;
   /** Mint authority and rent payer. */
   readonly authority: TransactionSigner;
   /** The confidential mint account created here (a fresh keypair signs its own creation). */
@@ -27,6 +29,7 @@ export async function buildInitializeMintInstruction(
 ): Promise<Instruction> {
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: parameters.mint.address });
   return getInitializeMintInstructionAsync({
+    ...parameters.fhe,
     authority: parameters.authority,
     mint: parameters.mint,
     underlyingMint: parameters.underlyingMint,

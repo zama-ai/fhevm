@@ -231,28 +231,28 @@ describe('confidentialTransfer attestation binding', () => {
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
     const message = decompileTransactionMessage(compiled);
-    expect(message.instructions).toHaveLength(2);
+    expect(message.instructions).toHaveLength(4);
     // SetComputeUnitLimit(800_000): discriminator 2 + u32 LE — the action's limit since #3377.
     expect([...message.instructions[0]!.data!]).toEqual([2, 0, 53, 12, 0]);
     if (mode === 'distinct') {
-      expect(message.instructions[1]!.accounts?.slice(-2)).toEqual([
+      expect(message.instructions[2]!.accounts?.slice(-2)).toEqual([
         { address: key(10), role: AccountRole.READONLY },
         { address: key(11), role: AccountRole.READONLY },
       ]);
     }
     const fromAta = await associatedTokenAddress(params.owner.address, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
     const toAta = await associatedTokenAddress(params.toOwner, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
-    expect(message.instructions[1]!.accounts?.[3]).toEqual({
+    expect(message.instructions[2]!.accounts?.[3]).toEqual({
       address: params.underlyingMint,
       role: AccountRole.READONLY,
     });
-    expect(message.instructions[1]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
-    expect(message.instructions[1]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
+    expect(message.instructions[2]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
+    expect(message.instructions[2]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
     // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
     // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
     // program, host config, system program — then the meter and the trust witness.
-    expect(message.instructions[1]!.accounts?.[14]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[15]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    expect(message.instructions[2]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[2]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {

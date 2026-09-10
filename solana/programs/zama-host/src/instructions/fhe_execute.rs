@@ -72,9 +72,15 @@ pub struct FheExecute<'info> {
     /// Required exactly then, and refused otherwise so no execution write-locks it for nothing.
     #[account(mut, seeds = [RAND_NONCE_SEED], bump = rand_nonce.bump)]
     pub rand_nonce: Option<Account<'info, RandNonce>>,
+    /// Shared by every execution until the transaction's final CloseScratch.
+    #[account(mut)]
+    pub scratch: AccountLoader<'info, TransientState>,
+    /// CHECK: authentic runtime transaction instructions, used to require final closure.
+    #[account(address = solana_instructions_sysvar::ID)]
+    pub instructions: UncheckedAccount<'info>,
 }
 
-/// Runs one ordered FHE execution, with instruction-local transient outputs.
+/// Runs one ordered FHE execution, recording results in transaction scratch.
 pub fn fhe_execute<'info>(
     mut ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
@@ -88,8 +94,24 @@ pub fn fhe_execute<'info>(
         usize::from(args.account_count) == ctx.remaining_accounts.len(),
         ZamaHostError::FheExecuteAccountCountMismatch
     );
-    validate_returned_results(&args)?;
+    validate_result_refs(&args)?;
+    require!(
+        args.effects.len() <= MAX_FHE_EXECUTION_EFFECTS,
+        ZamaHostError::InvalidFheExecuteOperationCount
+    );
     let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
+    require!(
+        ctx.accounts.scratch.to_account_info().data_len() == TransientState::SPACE,
+        ZamaHostError::TransientAccountInvalid
+    );
+    let mut scratch = ctx.accounts.scratch.load_mut()?;
+    scratch.validate(ctx.accounts.scratch.key())?;
+    super::transient::assert_final_close(
+        ctx.accounts.scratch.key(),
+        scratch.payer,
+        &ctx.accounts.instructions,
+    )?;
+    let call_start = scratch.len();
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
     // preflight), canonical State validation, and cached State/scratch writes.
@@ -106,16 +128,7 @@ pub fn fhe_execute<'info>(
         check_scope_not_denied_info(host_config, touched, deny_record)?;
     }
 
-    // HCU metering: one pure pass over the execution, enforcing the per-execution total + in-execution depth
-    // caps against the canonical host_config limits (u64::MAX = unlimited). The same total then feeds the
-    // block-cap charge — reused, never independently recomputed — so both caps trip before
-    // execution burns CU or creates any ACL record.
-    let execution = hcu::meter_execution(
-        &args.steps,
-        &args.dictionary,
-        host_config.max_hcu_per_tx,
-        host_config.max_hcu_depth_per_tx,
-    )?;
+    let starting_hcu = scratch.total_hcu;
 
     let clock = Clock::get()?;
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
@@ -125,40 +138,50 @@ pub fn fhe_execute<'info>(
             previous_bank_hash,
             unix_timestamp: clock.unix_timestamp,
         },
-        rand: rand_nonce.map(|nonce| RandContext {
-            nonce,
-            app: app.unwrap_or_default(),
-        }),
+        rand: rand_nonce.map(|nonce| RandContext { nonce, app }),
     };
     let random_seeds = collect_execution_random_seeds(&args, &handle_context)?;
-    block_cap::charge(&ctx, app, execution.total, clock.slot)?;
     // Execution is the single walk: it validates each step as it mutates. A failure mid-execution
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
-    let (created_public_outputs, produced) = execute_steps(
+    let created_public_outputs = execute_steps(
         &mut account_table,
+        &mut scratch,
+        call_start,
         &args,
         app,
         &handle_context,
         &ctx.accounts.host_config,
     )?;
+    let execution_hcu = scratch.total_hcu - starting_hcu;
+    drop(scratch);
+    block_cap::charge(&ctx, app, execution_hcu, clock.slot)?;
     account_table.flush_states(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
-    return_execution_handles(&produced, &args.returned_results);
+    // Event CPIs may replace return data; restore the selected handles afterwards.
+    return_execution_handles(
+        &*ctx.accounts.scratch.load()?,
+        call_start,
+        &args.returned_results,
+    );
     Ok(())
 }
 
-fn validate_returned_results(args: &FheExecuteArgs) -> Result<()> {
+fn validate_result_refs(args: &FheExecuteArgs) -> Result<()> {
     require!(
         args.returned_results.len() <= crate::MAX_RETURNED_HANDLES,
         ZamaHostError::InvalidReturnSelection
     );
-    for result in &args.returned_results {
+    for result in args
+        .returned_results
+        .iter()
+        .chain(args.effects.iter().map(|effect| &effect.result))
+    {
         require!(
             usize::from(result.step_index) < args.steps.len() && result.output_index == 0,
             ZamaHostError::InvalidReturnSelection
@@ -168,10 +191,19 @@ fn validate_returned_results(args: &FheExecuteArgs) -> Result<()> {
 }
 
 #[inline(never)]
-fn return_execution_handles(produced: &[ProducedValue], selected: &[crate::ExecutionResultRef]) {
+fn return_execution_handles(
+    scratch: &TransientState,
+    call_start: usize,
+    selected: &[crate::ExecutionResultRef],
+) {
     let mut bytes = [0u8; crate::MAX_RETURNED_HANDLES * 32];
     for (chunk, result) in bytes.chunks_exact_mut(32).zip(selected) {
-        chunk.copy_from_slice(&produced[usize::from(result.step_index)].handle);
+        chunk.copy_from_slice(
+            &scratch
+                .result(call_start + usize::from(result.step_index))
+                .expect("validated execution result")
+                .handle,
+        );
     }
     // Set even an empty result after event CPIs, so their return data cannot leak to callers.
     anchor_lang::solana_program::program::set_return_data(&bytes[..selected.len() * 32]);
@@ -229,22 +261,53 @@ fn collect_execution_random_seeds(
 #[inline(never)]
 fn execute_steps<'a, 'info>(
     table: &mut ExecutionAccountTable<'a, 'info>,
+    scratch: &mut TransientState,
+    call_start: usize,
     args: &FheExecuteArgs,
-    app: Option<AppScope>,
+    app: AppScope,
     handle_context: &ExecutionHandleContext,
     host_config: &HostConfig,
-) -> Result<(Vec<ProducedPublicOutput>, Vec<ProducedValue>)> {
+) -> Result<Vec<ProducedPublicOutput>> {
+    let producer_state = table.account(args.execution_state_index.into())?.key();
     let mut execution = ExecutionState {
         table,
+        scratch,
+        call_start,
+        producer_state,
         dictionary: &args.dictionary,
-        produced: Vec::with_capacity(args.steps.len()),
-        created_public_outputs: Vec::new(),
         app,
         chain_id: handle_context.derivation.chain_id,
         host_config,
     };
     walk_steps(&mut execution, args, handle_context)?;
-    Ok((execution.created_public_outputs, execution.produced))
+    let mut public_outputs = Vec::new();
+    for effect in &args.effects {
+        let handle = execution
+            .scratch
+            .result(call_start + usize::from(effect.result.step_index))
+            .ok_or(ZamaHostError::InvalidReturnSelection)?
+            .handle;
+        let state = state_output::accept_state_output(
+            execution.table,
+            &args.dictionary,
+            execution.scratch,
+            effect.state_index,
+            effect.previous_leaf_count,
+            &effect.slot,
+            &effect.allow_indexes,
+            effect.make_public,
+            &effect.grants,
+            handle,
+        )?;
+        if effect.make_public {
+            public_outputs.push(ProducedPublicOutput {
+                step_index: u16::from(effect.result.step_index),
+                encrypted_state: state,
+                output_handle: handle,
+            });
+        }
+    }
+    Ok(public_outputs)
 }
 
 /// The single walk's state: resolves operands through the shared account table
@@ -256,11 +319,12 @@ struct ExecutionState<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,
     /// The execution's interned constant dictionary ([`FheExecuteArgs::dictionary`]).
     dictionary: &'t [[u8; 32]],
-    produced: Vec<ProducedValue>,
-    created_public_outputs: Vec<ProducedPublicOutput>,
+    scratch: &'t mut TransientState,
+    call_start: usize,
+    producer_state: Pubkey,
     /// The application every persistent value of the execution belongs to; `None` when the
     /// execution touches none.
-    app: Option<AppScope>,
+    app: AppScope,
     chain_id: u64,
     host_config: &'t HostConfig,
 }
@@ -280,76 +344,37 @@ impl<'info> ExecutionState<'_, '_, 'info> {
         // `allowTransient(input, msg.sender)` analog). The caller-is-contract gate is enforced in
         // `resolve_encrypted_operand`; derived outputs are then unconstrained, exactly like EVM.
         verify_input_attestation(self.host_config, attestation)?;
-        Ok(ResolvedOperand::encrypted(attestation.input_handle))
+        Ok(self.encrypted_operand(attestation.input_handle))
     }
 
     #[inline(never)]
     fn accept_output(
         &mut self,
-        op_index: u16,
         result: [u8; 32],
-        output: &FheExecuteOutput,
+        cost: u64,
+        operands: &[ResolvedOperand],
     ) -> Result<()> {
-        let created_public_output = accept_execution_output(
-            self.table,
-            self.dictionary,
-            &mut self.produced,
-            result,
-            output,
-            op_index,
+        let total = hcu::accumulate_total(self.scratch.total_hcu, cost)?;
+        hcu::enforce_le(
+            total,
+            self.host_config.max_hcu_per_tx,
+            ZamaHostError::HcuTransactionLimitExceeded,
         )?;
-        if let Some(record) = created_public_output {
-            self.created_public_outputs.push(record);
-        }
+        let input_depth = operands
+            .iter()
+            .map(|operand| operand.depth)
+            .max()
+            .unwrap_or(0);
+        let depth = hcu::step_depth(cost, input_depth)?;
+        hcu::enforce_le(
+            depth,
+            self.host_config.max_hcu_depth_per_tx,
+            ZamaHostError::HcuTransactionDepthLimitExceeded,
+        )?;
+        self.scratch.record(result, self.producer_state, depth)?;
+        self.scratch.total_hcu = total;
         Ok(())
     }
-}
-
-#[inline(never)]
-fn accept_execution_output<'info>(
-    table: &mut ExecutionAccountTable<'_, 'info>,
-    dictionary: &[[u8; 32]],
-    produced: &mut Vec<ProducedValue>,
-    result: [u8; 32],
-    output: &FheExecuteOutput,
-    op_index: u16,
-) -> Result<Option<ProducedPublicOutput>> {
-    require!(
-        !produced.iter().any(|value| value.handle == result),
-        ZamaHostError::FheExecuteDuplicateHandle
-    );
-
-    let created_public_output = match output {
-        FheExecuteOutput::State {
-            state_index,
-            previous_leaf_count,
-            slot,
-            allow_indexes,
-            make_public,
-            grants,
-        } => {
-            let state = state_output::accept_state_output(
-                table,
-                dictionary,
-                *state_index,
-                *previous_leaf_count,
-                slot,
-                allow_indexes,
-                *make_public,
-                grants,
-                result,
-            )?;
-            make_public.then_some(ProducedPublicOutput {
-                step_index: op_index,
-                encrypted_state: state,
-                output_handle: result,
-            })
-        }
-        FheExecuteOutput::Transient => None,
-    };
-
-    produced.push(ProducedValue { handle: result });
-    Ok(created_public_output)
 }
 
 fn resolve_dictionary_keys(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Vec<Pubkey>> {
@@ -359,38 +384,39 @@ fn resolve_dictionary_keys(dictionary: &[[u8; 32]], indexes: &[u8]) -> Result<Ve
         .collect()
 }
 
-#[derive(Clone)]
-pub(super) struct ProducedValue {
-    handle: [u8; 32],
-}
-
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(super) struct ResolvedOperand {
     pub(super) handle: [u8; 32],
     pub(super) scalar: bool,
+    boundary: bool,
+    depth: u64,
 }
 
 impl ResolvedOperand {
-    fn encrypted(handle: [u8; 32]) -> Self {
-        Self {
-            handle,
-            scalar: false,
-        }
-    }
-
     fn scalar(handle: [u8; 32]) -> Self {
         Self {
             handle,
             scalar: true,
+            boundary: false,
+            depth: 0,
         }
     }
+}
 
-    fn from_produced(value: &ProducedValue) -> Self {
-        Self {
-            handle: value.handle,
+impl ExecutionState<'_, '_, '_> {
+    fn encrypted_operand(&self, handle: [u8; 32]) -> ResolvedOperand {
+        let depth = self.scratch.origin_depth(handle);
+        ResolvedOperand {
+            handle,
             scalar: false,
+            boundary: depth.is_none(),
+            depth: depth.unwrap_or(0),
         }
     }
+}
+
+fn boundary_mask(operands: &[ResolvedOperand]) -> Result<[u8; 32]> {
+    operand_boundary_mask(operands.iter().map(|operand| operand.boundary))
 }
 
 #[cfg(test)]

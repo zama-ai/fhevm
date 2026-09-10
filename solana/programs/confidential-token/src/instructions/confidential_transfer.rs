@@ -35,6 +35,11 @@ pub struct ConfidentialTransfer<'info> {
     pub to_state: Box<Account<'info, zama_host::EncryptedState>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -49,12 +54,8 @@ pub struct ConfidentialTransfer<'info> {
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
     /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
-    /// CHECK: canonical consumer state, authenticated by its authority and the host.
+    /// CHECK: canonical recipient of the result grant, validated by the host.
     pub result_state: Option<UncheckedAccount<'info>>,
-    /// CHECK: host-owned scratch belonging to result_state.
-    #[account(mut)]
-    pub result_scratch: Option<UncheckedAccount<'info>>,
-    pub result_authority: Option<Signer<'info>>,
 }
 
 impl<'info> ConfidentialTransfer<'info> {
@@ -71,6 +72,8 @@ impl<'info> ConfidentialTransfer<'info> {
             from_state: self.from_state.to_account_info(),
             to_state: self.to_state.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
+            scratch: &self.scratch,
+            instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
             remaining_accounts,
@@ -103,11 +106,7 @@ pub fn confidential_transfer<'info>(
         ConfidentialTokenError::OwnerMismatch
     );
     let mut accounts = ctx.accounts.as_transfer_accounts(ctx.remaining_accounts);
-    accounts.result_grant = ResultGrantAccounts::bind(
-        ctx.accounts.result_state.as_ref(),
-        ctx.accounts.result_scratch.as_ref(),
-        ctx.accounts.result_authority.as_ref(),
-    )?;
+    accounts.result_grant = ResultGrantAccounts::bind(ctx.accounts.result_state.as_ref())?;
     let outcome = execute_transfer(accounts, TransferAmountSource::Attested(amount_attestation))?;
     if let Some(outcome) = outcome {
         emit_transfer_events(&ctx, &outcome)?;
@@ -194,10 +193,13 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// CHECK: state containing a stored amount, when amount_source is Slot.
     pub amount_state: Option<UncheckedAccount<'info>>,
     pub amount_authority: Option<Signer<'info>>,
-    /// CHECK: host validates an exact handle grant to the sender token state.
-    pub amount_scratch: Option<UncheckedAccount<'info>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction scratch, validated by ZamaHost.
+    #[account(mut)]
+    pub scratch: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -228,6 +230,8 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             from_state: self.from_state.to_account_info(),
             to_state: self.to_state.to_account_info(),
             zama_event_authority: &self.zama_event_authority,
+            scratch: &self.scratch,
+            instructions: &self.instructions,
             zama_program: &self.zama_program,
             host_config: &self.host_config,
             remaining_accounts,
@@ -260,10 +264,6 @@ pub fn confidential_transfer_from_value<'info>(
     );
     let source = match amount_source {
         TransferInput::Slot { key } => {
-            require!(
-                ctx.accounts.amount_scratch.is_none(),
-                ConfidentialTokenError::AmountAclMismatch
-            );
             let info = ctx
                 .accounts
                 .amount_state
@@ -292,13 +292,7 @@ pub fn confidential_transfer_from_value<'info>(
                 ctx.accounts.amount_state.is_none() && ctx.accounts.amount_authority.is_none(),
                 ConfidentialTokenError::AmountAclMismatch
             );
-            let scratch = ctx
-                .accounts
-                .amount_scratch
-                .as_ref()
-                .ok_or_else(|| error!(ConfidentialTokenError::AmountAclMismatch))?
-                .to_account_info();
-            TransferAmountSource::Grant { scratch, handle }
+            TransferAmountSource::Grant { handle }
         }
     };
     let outcome = execute_transfer(

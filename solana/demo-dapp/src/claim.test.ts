@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { address } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -21,7 +22,7 @@ vi.mock('@solana/kit', async (importOriginal) => {
 });
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-  buildClaimInstructions: mocks.buildClaim,
+  buildClaimInstruction: mocks.buildClaim,
   buildInitializeTokenAccountInstruction: mocks.buildInitialize,
   deriveJoinRecordAddress: vi.fn(async () => address('SysvarC1ock11111111111111111111111111111111')),
   getBatchByIndex: mocks.getBatch,
@@ -56,15 +57,17 @@ const config = {
 const position = { batchIndex: 1n, batch, amountBaseUnits: 100_000_000n };
 const initializeInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([1]) };
 const claimInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([2]) };
-const closeInstruction = { programAddress: config.hostConfig, accounts: [], data: new Uint8Array([3]) };
+let openInstruction: unknown;
+let closeInstruction: unknown;
 
 describe('sponsored payout claim', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    [openInstruction, closeInstruction] = (await createSolanaFheTransaction({ payer: keeper as never })).wrap([]);
     vi.clearAllMocks();
     mocks.getBatch.mockResolvedValue({ index: 1n, addresses: { batch }, state: { status: 2 } });
     mocks.getJoinRecord.mockResolvedValue({ batch, user, claimed: false });
     mocks.buildInitialize.mockResolvedValue(initializeInstruction);
-    mocks.buildClaim.mockResolvedValue([claimInstruction, closeInstruction]);
+    mocks.buildClaim.mockResolvedValue(claimInstruction);
     mocks.send.mockResolvedValue(undefined);
   });
 
@@ -80,6 +83,7 @@ describe('sponsored payout claim', () => {
       expect.objectContaining({ payer: keeper, user, batch }),
     );
     expect(mocks.send.mock.calls[0]?.[2]).toEqual([
+      openInstruction,
       initializeInstruction,
       claimInstruction,
       closeInstruction,
@@ -92,7 +96,7 @@ describe('sponsored payout claim', () => {
     await claimBatchPayout({ config, keeper } as never, position, 'redeem', user);
 
     expect(mocks.buildInitialize).not.toHaveBeenCalled();
-    expect(mocks.send.mock.calls[0]?.[2]).toEqual([claimInstruction, closeInstruction]);
+    expect(mocks.send.mock.calls[0]?.[2]).toEqual([openInstruction, claimInstruction, closeInstruction]);
   });
 
   test('initializes and claims a pre-funded System-owned payout account', async () => {
@@ -102,6 +106,7 @@ describe('sponsored payout claim', () => {
 
     expect(mocks.buildInitialize).toHaveBeenCalledOnce();
     expect(mocks.send.mock.calls[0]?.[2]).toEqual([
+      openInstruction,
       initializeInstruction,
       claimInstruction,
       closeInstruction,
@@ -119,11 +124,12 @@ describe('sponsored payout claim', () => {
     expect(mocks.getJoinRecord).toHaveBeenCalledTimes(2);
     expect(mocks.send).toHaveBeenCalledTimes(2);
     expect(mocks.send.mock.calls[0]?.[2]).toEqual([
+      openInstruction,
       initializeInstruction,
       claimInstruction,
       closeInstruction,
     ]);
-    expect(mocks.send.mock.calls[1]?.[2]).toEqual([claimInstruction, closeInstruction]);
+    expect(mocks.send.mock.calls[1]?.[2]).toEqual([openInstruction, claimInstruction, closeInstruction]);
   });
 
   test('does not retry a permanent failure', async () => {

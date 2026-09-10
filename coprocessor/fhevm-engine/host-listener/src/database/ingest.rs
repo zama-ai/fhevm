@@ -25,7 +25,7 @@ use crate::database::synthetic_ops::{
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash,
+    LogTfhe, Transaction, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -156,6 +156,49 @@ pub(crate) fn populate_operand_boundary_masks(
         }
     }
     Ok(())
+}
+
+/// Applies the shared chain-size cap and inherits Slow priority from split dependencies.
+pub(crate) async fn classify_slow_chains(
+    db: &Database,
+    tx: &mut Transaction<'_>,
+    chains: &[Chain],
+    dependent_ops_by_chain: &HashMap<ChainHash, u64>,
+    max_per_chain: u32,
+) -> Result<HashSet<ChainHash>, sqlx::Error> {
+    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
+    if max_per_chain > 0 {
+        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            chains,
+            dependent_ops_by_chain,
+            u64::from(max_per_chain),
+        );
+
+        let parent_dep_chain_ids = chains
+            .iter()
+            .flat_map(|chain| {
+                chain
+                    .split_dependencies
+                    .iter()
+                    .map(|dependency| dependency.to_vec())
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let existing_slow_parents = db
+            .find_slow_dep_chain_ids(tx, &parent_dep_chain_ids)
+            .await?;
+        slow_dep_chain_ids.extend(existing_slow_parents);
+        propagate_slow_lane_to_dependents(chains, &mut slow_dep_chain_ids);
+
+        let slow_marked_chains = chains
+            .iter()
+            .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
+            .count() as u64;
+        db.record_slow_lane_marked_chains(slow_marked_chains);
+    }
+
+    Ok(slow_dep_chain_ids)
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -684,38 +727,14 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
-    if slow_lane_enabled {
-        let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
-        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
-            &chains,
-            &dependent_ops_by_chain,
-            max_per_chain,
-        );
-
-        let parent_dep_chain_ids = chains
-            .iter()
-            .flat_map(|chain| {
-                chain
-                    .split_dependencies
-                    .iter()
-                    .map(|dependency| dependency.to_vec())
-            })
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let existing_slow_parents = db
-            .find_slow_dep_chain_ids(&mut tx, &parent_dep_chain_ids)
-            .await?;
-        slow_dep_chain_ids.extend(existing_slow_parents);
-        propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
-
-        let slow_marked_chains = chains
-            .iter()
-            .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
-            .count() as u64;
-        db.record_slow_lane_marked_chains(slow_marked_chains);
-    }
+    let slow_dep_chain_ids = classify_slow_chains(
+        db,
+        &mut tx,
+        &chains,
+        &dependent_ops_by_chain,
+        options.dependent_ops_max_per_chain,
+    )
+    .await?;
 
     if catchup_insertion > 0 {
         if catchup_insertion == block_logs.logs.len() {

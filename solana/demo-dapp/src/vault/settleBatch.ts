@@ -1,7 +1,7 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { publicProof, type ProofService } from './internal/publicProof.js';
 import {
   getBase64EncodedWireTransaction,
-  getProgramDerivedAddress,
   getSignatureFromTransaction,
   sendAndConfirmTransactionFactory,
   type Address,
@@ -19,13 +19,8 @@ import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '@sdk-src/core/types/coreFhevmRuntime.js';
 import type { RelayerPublicDecryptOptions } from '@sdk-src/core/types/relayer.js';
 import { publicDecryptCertificate } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from './internal/generated/confidentialToken/programAddress.js';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
-import { EVENT_AUTHORITY_SEED } from './internal/batcherPdas.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
 import {
@@ -121,9 +116,8 @@ export async function settleBatch(
     return bytes;
   });
 
-  // The ALT holds every settle account except the fee payer (and program/event authorities the
-  // builder resolves separately). `pendingBurn` seeds on the join mint and the batch's join token
-  // account, both known at open_batch, so it is provisioned with the rest of the table.
+  // Provisioning and settlement use the same ordered account list, including the event
+  // authorities and batch PDAs that the generated instruction can also derive.
   const lookupTableAddresses = settleAccountsToLookupTableAddresses(accounts);
   if (!lookupTableAddresses.includes(accounts.pendingBurn)) {
     throw new Error(
@@ -131,41 +125,11 @@ export async function settleBatch(
     );
   }
 
-  const [zamaEventAuthority] = await getProgramDerivedAddress({
-    programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [EVENT_AUTHORITY_SEED],
-  });
-  const [confidentialTokenEventAuthority] = await getProgramDerivedAddress({
-    programAddress: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    seeds: [EVENT_AUTHORITY_SEED],
-  });
-
+  const fhe = await createSolanaFheTransaction({ payer: keeper });
   const settleInstruction = await getSettleInstructionAsync({
+    ...fhe.accounts,
     payer: keeper,
-    batcher: accounts.batcher,
-    batch: accounts.batch,
-    joinConfidentialMint: accounts.joinConfidentialMint,
-    batchJoinTokenAccount: accounts.batchJoinTokenAccount,
-    joinUnderlyingMint: accounts.joinUnderlyingMint,
-    joinMintVaultUnderlying: accounts.joinMintVaultUnderlying,
-    joinMintVaultAuthority: accounts.joinMintVaultAuthority,
-    batchBurnedAmountState: accounts.batchBurnedAmountState,
-    pendingBurn: accounts.pendingBurn,
-    hostConfig: accounts.hostConfig,
-    kmsContext: accounts.kmsContext,
-    vault: accounts.vault,
-    vaultAuthority: accounts.vaultAuthority,
-    vaultTokenAccount: accounts.vaultTokenAccount,
-    payoutConfidentialMint: accounts.payoutConfidentialMint,
-    payoutUnderlyingMint: accounts.payoutUnderlyingMint,
-    batchPayoutTokenAccount: accounts.batchPayoutTokenAccount,
-    payoutMintVaultUnderlying: accounts.payoutMintVaultUnderlying,
-    payoutMintVaultAuthority: accounts.payoutMintVaultAuthority,
-    payoutTotalSupplyAuthority: accounts.payoutTotalSupplyAuthority,
-    batchPayoutBalanceState: accounts.batchPayoutBalanceState,
-    payoutTotalSupplyState: accounts.payoutTotalSupplyState,
-    zamaEventAuthority,
-    confidentialTokenEventAuthority,
+    ...accounts,
     cleartextTotal,
     signatures,
     extraData: hexToBytes(claim.extraData),
@@ -176,7 +140,7 @@ export async function settleBatch(
 
   const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
   const transaction = await buildAndSignSettleTransaction({
-    settleInstruction,
+    instructions: fhe.wrap([settleInstruction]),
     feePayer: keeper,
     latestBlockhash,
     computeUnitLimit: options.computeUnitLimit ?? 1_000_000,

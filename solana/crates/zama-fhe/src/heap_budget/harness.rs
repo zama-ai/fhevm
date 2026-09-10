@@ -6,7 +6,7 @@ use std::cell::Cell;
 use anchor_lang::prelude::Pubkey;
 
 use crate::builder::FheExecutionBuilder;
-use crate::{ExecutionAuthority, FheExecution};
+use crate::FheExecution;
 
 thread_local! {
     /// Bytes this thread has requested so far. Thread-local so other tests in this binary — and the
@@ -92,8 +92,9 @@ where
     F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()>,
 {
     let authority = Pubkey::new_unique();
+    let state = crate::StateId::new(Pubkey::new_from_array([0xA9; 32]), authority, [0xA5; 32]);
     let before_build = counted_bytes();
-    let mut execution = FheExecution::build(ExecutionAuthority::new(authority), build)?;
+    let mut execution = FheExecution::build(state, build)?;
     let build_bytes = counted_bytes() - before_build;
     let cost = execution.cost();
 

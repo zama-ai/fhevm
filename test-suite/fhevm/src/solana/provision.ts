@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import { encryptedStateHandle } from '@sdk-src/solana/encryptedState.js';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
@@ -242,14 +243,16 @@ export const createConfidentialMint = async (
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
-  await context.sendTransaction(params.authority, [
+  const fhe = await createSolanaFheTransaction({ payer: params.authority });
+  await context.sendTransaction(params.authority, fhe.wrap([
     await vault.buildInitializeMintInstruction({
+      fhe: fhe.accounts,
       authority: params.authority,
       mint,
       underlyingMint: params.underlyingMint,
       hostConfig,
     }),
-  ]);
+  ]));
   const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: params.authority,
     tokenProgram: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -266,13 +269,15 @@ export const initializeConfidentialTokenAccount = async (
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
 ): Promise<void> => {
   const vault = await vaultModule();
+  const fhe = await createSolanaFheTransaction({ payer: params.payer });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
+    fhe: fhe.accounts,
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
     hostConfig: await hostConfigAddress(),
   });
-  if (instruction) await context.sendTransaction(params.payer, [instruction]);
+  if (instruction) await context.sendTransaction(params.payer, fhe.wrap([instruction]));
 };
 
 /** Escrows a public `amount` of the underlying and rotates it into `owner`'s confidential balance. */
@@ -286,8 +291,10 @@ export const wrapUnderlying = async (
   },
 ): Promise<void> => {
   const vault = await vaultModule();
-  await context.sendTransaction(params.owner, [
+  const fhe = await createSolanaFheTransaction({ payer: params.owner });
+  await context.sendTransaction(params.owner, fhe.wrap([
     await vault.buildWrapUsdcInstruction({
+      fhe: fhe.accounts,
       owner: params.owner,
       mint: params.mint,
       underlyingMint: params.underlyingMint,
@@ -295,7 +302,7 @@ export const wrapUnderlying = async (
       hostConfig: await hostConfigAddress(),
       amount: params.amount,
     }),
-  ]);
+  ]));
 };
 
 /**

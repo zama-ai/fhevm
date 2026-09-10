@@ -102,6 +102,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
         },
@@ -208,6 +215,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "scratch",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",

@@ -189,22 +189,6 @@ impl From<&ExecutionAccountMeta> for ExecutionAccountRequirement {
     }
 }
 
-/// The encrypted State authority that signs the fixed ZamaHost `fhe_execute` CPI account —
-/// the execution-wide one, as opposed to the per-State authority an
-/// [`ExecutionAuthorityRequirement`] names.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExecutionAuthority(Pubkey);
-
-impl ExecutionAuthority {
-    pub fn new(pubkey: Pubkey) -> Self {
-        Self(pubkey)
-    }
-
-    pub fn pubkey(self) -> Pubkey {
-        self.0
-    }
-}
-
 /// A persistent value authority required to sign an execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExecutionAuthorityRequirement {

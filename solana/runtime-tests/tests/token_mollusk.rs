@@ -21,7 +21,7 @@
 //! `FheExecuteArgs` captured from the real token -> host CPI and bind those clear values to the
 //! handles emitted by the host.
 
-use anchor_lang::{prelude::system_program, AccountDeserialize};
+use anchor_lang::{prelude::system_program, AccountDeserialize, Discriminator};
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use confidential_token as token;
 use mollusk_svm::{
@@ -66,6 +66,58 @@ fn mollusk() -> Mollusk {
     // the 200k default; real transactions request a higher limit the same way.
     mollusk.compute_budget.compute_unit_limit = 1_400_000;
     mollusk
+}
+
+/// Runs FHE entry points in the client transaction envelope. Public-only token
+/// instructions keep their native fixtures. Payer positions follow the typed ABI above.
+fn check_token_instruction(context: &Ctx, ix: &Instruction, checks: &[Check]) -> InstructionResult {
+    let payer_index = if [
+        token::instruction::ConfidentialTransfer::DISCRIMINATOR,
+        token::instruction::ConfidentialTransferFromValue::DISCRIMINATOR,
+        token::instruction::ConfidentialBurnFromValue::DISCRIMINATOR,
+    ]
+    .iter()
+    .any(|tag| ix.data.starts_with(tag))
+    {
+        Some(1)
+    } else if [
+        token::instruction::InitializeMint::DISCRIMINATOR,
+        token::instruction::InitializeTokenAccount::DISCRIMINATOR,
+        token::instruction::AllowBalanceViewers::DISCRIMINATOR,
+        token::instruction::AllowTotalSupplyViewers::DISCRIMINATOR,
+        token::instruction::ConfidentialBurn::DISCRIMINATOR,
+        token::instruction::CancelPendingBurn::DISCRIMINATOR,
+        token::instruction::WrapUsdc::DISCRIMINATOR,
+    ]
+    .iter()
+    .any(|tag| ix.data.starts_with(tag))
+    {
+        Some(0)
+    } else {
+        None
+    };
+    if ix.program_id == token::ID {
+        if let Some(index) = payer_index {
+            return zama_solana_test_kit::transaction::process_fhe_instruction(
+                context,
+                ix.accounts[index].pubkey,
+                ix,
+                checks,
+            );
+        }
+    }
+    context.process_and_validate_instruction(ix, checks)
+}
+
+fn transferred_event_handle(result: &InstructionResult) -> [u8; 32] {
+    result
+        .inner_instructions
+        .iter()
+        .find_map(|inner| {
+            decode_anchor_event::<token::ConfidentialTransferEvent>(&inner.instruction.data)
+        })
+        .expect("transfer event")
+        .transferred_handle
 }
 
 /// Token-suite views over the kit's [`CleartextLedger`]: the single-CPI replay every token
@@ -426,6 +478,8 @@ fn initialize_mint_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeMint {
+            scratch: host::transient_address(authority).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             authority,
             mint,
             underlying_mint,
@@ -459,6 +513,8 @@ fn initialize_token_account_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeTokenAccount {
+            scratch: host::transient_address(payer).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             payer,
             owner,
             mint,
@@ -499,11 +555,12 @@ fn confidential_transfer_ix(
 fn confidential_self_transfer_with_result_grant_ix(
     fixture: &TokenFixture,
     result_state: Pubkey,
-    result_scratch: Pubkey,
 ) -> Instruction {
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            scratch: host::transient_address(fixture.owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -521,8 +578,7 @@ fn confidential_self_transfer_with_result_grant_ix(
             hcu_block_meter: None,
             hcu_trusted_app_record: None,
             result_state: Some(result_state),
-            result_scratch: Some(result_scratch),
-            result_authority: Some(fixture.owner),
+
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -573,6 +629,8 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
+            scratch: host::transient_address(fixture.owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -590,8 +648,7 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             hcu_block_meter,
             hcu_trusted_app_record,
             result_state: None,
-            result_scratch: None,
-            result_authority: None,
+
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -622,6 +679,8 @@ fn confidential_transfer_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransferFromValue {
+            scratch: host::transient_address(signer_owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner: signer_owner,
             payer: signer_owner,
             mint: fixture.mint,
@@ -634,7 +693,7 @@ fn confidential_transfer_from_value_ix(
             to_state,
             amount_state: Some(amount_state),
             amount_authority: None,
-            amount_scratch: None,
+
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             host_config: fixture.host_config,
@@ -686,6 +745,8 @@ fn allow_balance_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowBalanceViewers {
+            scratch: host::transient_address(owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             payer: owner,
             owner,
             mint,
@@ -712,6 +773,8 @@ fn allow_total_supply_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowTotalSupplyViewers {
+            scratch: host::transient_address(authority).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             payer: authority,
             authority,
             mint: fixture.mint,
@@ -785,7 +848,8 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
     let mut cleartext = CleartextLedger::default();
     cleartext.seed_amount(fixture.initial_total_supply, 5_000);
 
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &allow_total_supply_viewers_ix(&fixture, fixture.owner, vec![auditor]),
         &[Check::success()],
     );
@@ -840,7 +904,8 @@ fn mollusk_owner_allows_balance_viewers() {
     let mut cleartext = CleartextLedger::default();
     cleartext.seed_amount(fixture.alice_initial, 1_000);
 
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &allow_balance_viewers_ix(
             fixture.owner,
             fixture.mint,
@@ -898,12 +963,8 @@ fn mollusk_owner_allows_balance_viewers() {
             token::id(),
         ),
     );
-    let transfer_result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
-    let transferred_handle: [u8; 32] = transfer_result
-        .return_data
-        .as_slice()
-        .try_into()
-        .expect("transfer returns one handle");
+    let transfer_result = check_token_instruction(&context, &transfer, &[Check::success()]);
+    let transferred_handle: [u8; 32] = transferred_event_handle(&transfer_result);
     let after = read_encrypted_state(&context, fixture.alice_balance_state);
     assert_eq!(after.leaf_count, 5);
     let mut leaves = allow_leaves(
@@ -935,7 +996,8 @@ fn mollusk_non_owner_cannot_allow_balance_viewers() {
     accounts.insert(stranger, system_account(1_000_000_000));
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &allow_balance_viewers_ix(
             stranger,
             fixture.mint,
@@ -956,13 +1018,15 @@ fn mollusk_non_mint_authority_cannot_allow_total_supply_viewers() {
     accounts.insert(stranger, system_account(1_000_000_000));
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &allow_total_supply_viewers_ix(&fixture, stranger, vec![Pubkey::new_unique()]),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
         )],
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &make_total_supply_handle_public_ix(&fixture, stranger, fixture.initial_total_supply),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
@@ -986,7 +1050,8 @@ fn mollusk_total_supply_allow_rejects_wrong_value_shape() {
     );
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &allow_total_supply_viewers_ix(&fixture, fixture.owner, vec![Pubkey::new_unique()]),
         &[token_error(
             token::ConfidentialTokenError::TokenEncryptedStateMismatch,
@@ -1000,7 +1065,8 @@ fn mollusk_owner_seals_exact_token_account_state_field() {
     let accounts = fixture.accounts(0);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &make_token_account_handle_public_ix(
             &fixture,
             token::DisclosedValueKind::Balance,
@@ -1020,7 +1086,8 @@ fn mollusk_owner_seals_exact_token_account_state_field() {
         ),])
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &make_token_account_handle_public_ix(
             &fixture,
             token::DisclosedValueKind::BurnedAmount,
@@ -1038,7 +1105,8 @@ fn mollusk_mint_authority_seals_total_supply() {
     let fixture = BurnRedeemFixture::new();
     let context = burn_redeem_mollusk().with_context(fixture.accounts(0));
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &make_total_supply_handle_public_ix(&fixture, fixture.owner, fixture.initial_total_supply),
         &[Check::success()],
     );
@@ -1114,7 +1182,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_state() {
     ]));
     let ix = initialize_mint_ix(authority, mint, underlying_mint, host_config_key);
 
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
 
     let stored = read_confidential_mint(&context, mint);
     assert_eq!(stored.authority, authority);
@@ -1141,7 +1209,7 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_state() {
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
 
     let stored = read_token_account(&context, token_account);
     assert_eq!(stored.owner, owner);
@@ -1205,7 +1273,7 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(payer, owner, fixture.mint, fixture.host_config);
 
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
 
     let stored = read_token_account(&context, token_account);
     assert_eq!(stored.owner, owner);
@@ -1221,7 +1289,7 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
         )
     );
 
-    let retry = context.process_instruction(&ix);
+    let retry = check_token_instruction(&context, &ix, &[]);
     assert!(retry.raw_result.is_err());
     let stored_after_retry = read_token_account(&context, token_account);
     let balance_after_retry = read_encrypted_state(&context, balance_encrypted_state);
@@ -1263,7 +1331,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
         sender_attestation(&fixture, 9),
     );
 
-    let result = context.process_instruction(&transfer);
+    let result = check_token_instruction(&context, &transfer, &[]);
 
     assert!(result.raw_result.is_ok());
     assert!(result.inner_instructions.is_empty());
@@ -1288,15 +1356,13 @@ fn mollusk_confidential_transfer_self_transfer_rejects_result_grant() {
         fixture.owner,
         [],
     );
-    let result_scratch =
-        zama_fhe::StateId::new(token::id(), fixture.owner, consumer_scope).scratch_address();
     let mut accounts = fixture.base_accounts();
     accounts.insert(result_state, encrypted_state_account(&state));
-    accounts.insert(result_scratch, system_account(0));
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
-        &confidential_self_transfer_with_result_grant_ix(&fixture, result_state, result_scratch),
+    check_token_instruction(
+        &context,
+        &confidential_self_transfer_with_result_grant_ix(&fixture, result_state),
         &[token_error(
             token::ConfidentialTokenError::ResultGrantMismatch,
         )],
@@ -1325,7 +1391,8 @@ fn mollusk_confidential_transfer_rejects_frozen_sender_ata() {
         sender_attestation(&fixture, 9),
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &transfer,
         &[token_error(
             token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
@@ -1351,7 +1418,8 @@ fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
         sender_attestation(&fixture, 9),
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &transfer,
         &[token_error(
             token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
@@ -1377,17 +1445,13 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
         sender_attestation(&fixture, 21),
     );
 
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
     assert_eq!(cleartext.balance(&context, fixture.alice_token), 600);
     assert_eq!(cleartext.balance(&context, fixture.bob_token), 500);
-    let transferred_handle: [u8; 32] = result
-        .return_data
-        .as_slice()
-        .try_into()
-        .expect("transfer returns one handle");
+    let transferred_handle: [u8; 32] = transferred_event_handle(&result);
     assert_eq!(cleartext.u64_for_handle(transferred_handle), 400);
 
     // Token account addresses and their balance `EncryptedState` PDAs stay stable across the
@@ -1528,30 +1592,33 @@ fn mollusk_confidential_transfer_to_successive_recipients_seals_each_receipt_aud
         )
     };
 
-    let bob_result = context.process_and_validate_instruction(
+    let bob_result = check_token_instruction(
+        &context,
         &transfer(fixture.bob_token, fixture.bob_balance_state, 21),
         &[Check::success()],
     );
     let after_bob = read_encrypted_state(&context, receipt_address);
-    let bob_handle: [u8; 32] = bob_result.return_data.as_slice().try_into().unwrap();
+    let bob_handle: [u8; 32] = transferred_event_handle(&bob_result);
     let bob_balance = state_handle(&after_bob, token::balance_key());
     assert_eq!(after_bob.leaf_count, 3);
 
-    let charlie_result = context.process_and_validate_instruction(
+    let charlie_result = check_token_instruction(
+        &context,
         &transfer(charlie_token, charlie_balance_state, 22),
         &[Check::success()],
     );
     let after_charlie = read_encrypted_state(&context, receipt_address);
-    let charlie_handle: [u8; 32] = charlie_result.return_data.as_slice().try_into().unwrap();
+    let charlie_handle: [u8; 32] = transferred_event_handle(&charlie_result);
     let charlie_balance = state_handle(&after_charlie, token::balance_key());
     assert_eq!(after_charlie.leaf_count, 6);
 
-    let bob_again_result = context.process_and_validate_instruction(
+    let bob_again_result = check_token_instruction(
+        &context,
         &transfer(fixture.bob_token, fixture.bob_balance_state, 23),
         &[Check::success()],
     );
     let after_bob_again = read_encrypted_state(&context, receipt_address);
-    let bob_again_handle: [u8; 32] = bob_again_result.return_data.as_slice().try_into().unwrap();
+    let bob_again_handle: [u8; 32] = transferred_event_handle(&bob_again_result);
     let bob_again_balance = state_handle(&after_bob_again, token::balance_key());
     assert_eq!(after_bob_again.leaf_count, 9);
 
@@ -1595,7 +1662,8 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
     let context = mollusk().with_context(fixture.base_accounts());
     let receipt_address = fixture.transferred_amount_state_address(fixture.alice_token);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &confidential_transfer_ix(
             &fixture,
             fixture.alice_token,
@@ -1609,14 +1677,18 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
     let receipt_before = read_encrypted_state(&context, receipt_address);
     assert_eq!(receipt_before.leaf_count, 3);
 
-    let result = context.process_instruction(&confidential_transfer_ix(
-        &fixture,
-        fixture.alice_token,
-        fixture.alice_token,
-        fixture.alice_balance_state,
-        fixture.alice_balance_state,
-        sender_attestation(&fixture, 22),
-    ));
+    let result = check_token_instruction(
+        &context,
+        &confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            fixture.alice_token,
+            fixture.alice_balance_state,
+            fixture.alice_balance_state,
+            sender_attestation(&fixture, 22),
+        ),
+        &[],
+    );
     assert!(result.raw_result.is_ok());
     assert!(result.return_data.is_empty());
     let receipt_after = read_encrypted_state(&context, receipt_address);
@@ -1649,7 +1721,8 @@ fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied
         (fixture.bob_token, fixture.bob_balance_state, 21),
         (charlie_token, charlie_balance_state, 22),
     ] {
-        context.process_and_validate_instruction(
+        check_token_instruction(
+            &context,
             &confidential_transfer_ix_with_remaining(
                 &fixture,
                 fixture.alice_token,
@@ -1693,7 +1766,8 @@ fn mollusk_confidential_transfer_with_deny_list_rejects_denied_mint_atomically()
         vec![deny_record],
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[host_error(host::errors::ZamaHostError::ScopeDenied)],
     );
@@ -1722,7 +1796,8 @@ fn mollusk_confidential_transfer_with_deny_list_requires_the_mints_witness() {
     let context = mollusk().with_context(accounts);
 
     for remaining in [Vec::new(), vec![foreign_record]] {
-        context.process_and_validate_instruction(
+        check_token_instruction(
+            &context,
             &confidential_transfer_ix_with_remaining(
                 &fixture,
                 fixture.alice_token,
@@ -1751,7 +1826,8 @@ fn mollusk_confidential_transfer_rejects_witness_while_deny_list_is_disabled() {
     accounts.insert(record, account);
     let context = mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &confidential_transfer_ix_with_remaining(
             &fixture,
             fixture.alice_token,
@@ -1813,7 +1889,7 @@ fn run_multisig_transfer(
         fixture.bob_balance_state,
         attestation,
     );
-    context.process_and_validate_instruction(&transfer, checks)
+    check_token_instruction(&context, &transfer, checks)
 }
 
 #[test]
@@ -1962,7 +2038,8 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
         }
     }
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
@@ -1991,7 +2068,8 @@ fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
         attestation,
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[token_error(
             token::ConfidentialTokenError::AttestationUserMismatch,
@@ -2027,7 +2105,8 @@ fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
         attestation,
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[token_error(
             token::ConfidentialTokenError::AttestationContractMismatch,
@@ -2073,7 +2152,7 @@ fn assert_transfer_rejects_misbound_balance(
         fixture.bob_balance_state,
         sender_attestation(&fixture, amount_seed),
     );
-    context.process_and_validate_instruction(&ix, &[expected]);
+    check_token_instruction(&context, &ix, &[expected]);
     assert_eq!(
         read_state_handle(&context, fixture.alice_balance_state, token::balance_key(),),
         fixture.alice_initial,
@@ -2666,6 +2745,8 @@ fn confidential_burn_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurn {
+            scratch: host::transient_address(fixture.owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
@@ -2704,6 +2785,8 @@ fn confidential_burn_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurnFromValue {
+            scratch: host::transient_address(payer).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner,
             payer,
             mint: fixture.mint,
@@ -2879,6 +2962,8 @@ fn cancel_pending_burn_ix(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::CancelPendingBurn {
+            scratch: host::transient_address(fixture.owner).0,
+            instructions: solana_sdk::sysvar::instructions::ID,
             owner: fixture.owner,
             mint: fixture.mint,
             token_account: fixture.token_account,
@@ -2914,7 +2999,7 @@ fn run_burn(
         fixture.owner_attestation(amount_seed),
         pending_burn,
     );
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
     read_state_handle(
         context,
         fixture.burned_amount_state,
@@ -2932,7 +3017,8 @@ fn mollusk_confidential_burn_rejects_frozen_owner_ata() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
     let pending_burn = prepare_empty_pending_burn(&context, &fixture);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
         &[token_error(
             token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
@@ -2975,7 +3061,8 @@ fn mollusk_confidential_burn_accepts_prefunded_pending_pda() {
         accounts.insert(pending_burn, system_account(lamports));
         let context = burn_redeem_mollusk().with_context(accounts);
 
-        context.process_and_validate_instruction(
+        check_token_instruction(
+            &context,
             &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
             &[Check::success()],
         );
@@ -3021,7 +3108,8 @@ fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
             token::total_supply_key(),
         );
 
-        context.process_and_validate_instruction(
+        check_token_instruction(
+            &context,
             &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
             &[token_error(
                 token::ConfidentialTokenError::PendingBurnAlreadyInitialized,
@@ -3068,7 +3156,8 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             burned_handle,
@@ -3101,17 +3190,22 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
         proof,
         pending_burn,
     );
-    assert!(context.process_instruction(&dup).raw_result.is_err());
+    assert!(check_token_instruction(&context, &dup, &[])
+        .raw_result
+        .is_err());
     assert_eq!(
         read_spl_amount(&context, fixture.destination_usdc),
         cleartext_amount
     );
 
     // The alternate settlement path is excluded by the same closed account.
-    assert!(context
-        .process_instruction(&cancel_pending_burn_ix(&fixture, pending_burn, None))
-        .raw_result
-        .is_err());
+    assert!(check_token_instruction(
+        &context,
+        &cancel_pending_burn_ix(&fixture, pending_burn, None),
+        &[]
+    )
+    .raw_result
+    .is_err());
 }
 
 #[test]
@@ -3125,7 +3219,8 @@ fn mollusk_redeem_current_burn_with_token_2022() {
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 500);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             burned_handle,
@@ -3159,7 +3254,8 @@ fn mollusk_redeem_rejects_frozen_token_2022_destination() {
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 500);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             burned_handle,
@@ -3193,7 +3289,8 @@ fn mollusk_redeem_rejects_out_of_range_public_decrypt_leaf() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3239,7 +3336,8 @@ fn mollusk_redeem_accepts_live_rotated_out_kms_context() {
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3283,7 +3381,8 @@ fn mollusk_redeem_rejects_destroyed_kms_context() {
     let (signatures, extra_data) =
         kms_public_decrypt_cert_for_context(first_handle, cleartext_amount, fixture.kms_context_id);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3318,7 +3417,8 @@ fn mollusk_redeem_pays_destination_not_owned_by_signer() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3363,7 +3463,8 @@ fn mollusk_redeem_is_not_blocked_by_grant_deny_list() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3392,7 +3493,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     let first_balance = state_handle(&first_state, token::balance_key());
     let proof_h1 = single_burn_public_decrypt_proof(&fixture, first_handle);
     let (sig_h1, extra_h1) = amount_public_decrypt_cert(first_handle, 300);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3436,7 +3538,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
         proof_h1.clone(),
         pending_burn,
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &stale,
         &[token_error(
             token::ConfidentialTokenError::PendingBurnMismatch,
@@ -3446,7 +3549,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
 
     // Redeem H2 from leaf 4, reusing the canonical pending account after H1 closed.
     let (sig_h2, extra_h2) = amount_public_decrypt_cert(second_handle, 200);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             second_handle,
@@ -3472,7 +3576,9 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
         proof_h1,
         pending_burn,
     );
-    assert!(context.process_instruction(&dup).raw_result.is_err());
+    assert!(check_token_instruction(&context, &dup, &[])
+        .raw_result
+        .is_err());
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
@@ -3505,7 +3611,8 @@ fn mollusk_redeem_rejected_when_host_paused() {
 
     let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, 500);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             first_handle,
@@ -3554,7 +3661,8 @@ fn mollusk_redeem_rejects_foreign_burn_state_and_preserves_accounts() {
         .unwrap()
         .pubkey = foreign_address;
     let before = context.account_store.borrow().clone();
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[token_error(
             token::ConfidentialTokenError::AmountAclMismatch,
@@ -3594,7 +3702,8 @@ fn mollusk_redeem_rejects_mismatched_pending_identity_without_payout() {
             pending,
         );
         let before = context.account_store.borrow().clone();
-        context.process_and_validate_instruction(
+        check_token_instruction(
+            &context,
             &ix,
             &[token_error(
                 token::ConfidentialTokenError::PendingBurnMismatch,
@@ -3631,7 +3740,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
         amount_state,
         token::transfer_input_key(),
     );
-    let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
     assert_eq!(cleartext.balance(&context, fixture.token_account), 750);
     assert_eq!(
@@ -3669,7 +3778,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
         .insert(deny_record, deny_account);
 
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, Some(deny_record));
-    let cancel_result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &cancel_result);
 
     assert_eq!(cleartext.balance(&context, fixture.token_account), 1_000);
@@ -3685,15 +3794,18 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
 
     // Closing is act-once: neither a second cancel nor the alternate redeem path can settle the
     // same burn after the pending account is gone.
-    assert!(context.process_instruction(&cancel).raw_result.is_err());
+    assert!(check_token_instruction(&context, &cancel, &[])
+        .raw_result
+        .is_err());
     let burned_handle = read_state_handle(
         &context,
         fixture.burned_amount_state,
         token::burned_amount_key(),
     );
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 250);
-    assert!(context
-        .process_instruction(&redeem_burned_amount_ix(
+    assert!(check_token_instruction(
+        &context,
+        &redeem_burned_amount_ix(
             &fixture,
             burned_handle,
             250,
@@ -3701,9 +3813,11 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
             extra_data,
             single_burn_public_decrypt_proof(&fixture, burned_handle),
             pending_burn,
-        ))
-        .raw_result
-        .is_err());
+        ),
+        &[]
+    )
+    .raw_result
+    .is_err());
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
 }
 
@@ -3749,7 +3863,8 @@ fn mollusk_cancel_pending_burn_rejects_non_owner_atomically() {
         .expect("owner signer meta");
     owner_meta.pubkey = stranger;
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &cancel,
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
@@ -3827,7 +3942,8 @@ fn mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically() {
         .data
         .clone();
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &cancel_pending_burn_ix(&fixture, pending_burn, None),
         &[token_error(
             token::ConfidentialTokenError::PendingBurnHandleNotCurrent,
@@ -3890,21 +4006,23 @@ fn mollusk_confidential_burn_is_sequential_until_cancelled() {
         token::transfer_input_key(),
         pending_burn,
     );
-    context.process_and_validate_instruction(&burn, &[Check::success()]);
+    check_token_instruction(&context, &burn, &[Check::success()]);
 
     // The same canonical pending account is occupied, so another burn is rejected before FHE.
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &burn,
         &[token_error(
             token::ConfidentialTokenError::PendingBurnAlreadyInitialized,
         )],
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &cancel_pending_burn_ix(&fixture, pending_burn, None),
         &[Check::success()],
     );
-    context.process_and_validate_instruction(&burn, &[Check::success()]);
+    check_token_instruction(&context, &burn, &[Check::success()]);
 }
 
 // ---------------------------------------------------------------------------
@@ -3949,6 +4067,8 @@ impl<'a> WrapUsdcParams<'a> {
         anchor_ix(
             token::id(),
             token::accounts::WrapUsdc {
+                scratch: host::transient_address(self.owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 owner: self.owner,
                 mint: fixture.mint,
                 token_account: fixture.token_account,
@@ -4017,7 +4137,7 @@ fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
     cleartext.seed_amount(fixture.initial_total_supply, 0);
 
     let ix = wrap_usdc_ix(&fixture, user_usdc, 100);
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
 
     assert_eq!(cleartext.balance(&context, fixture.token_account), 100);
@@ -4059,7 +4179,8 @@ fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
     cleartext.seed_amount(fixture.initial_balance, 0);
     cleartext.seed_amount(fixture.initial_total_supply, 0);
 
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &wrap_usdc_ix(&fixture, user_tokens, 100),
         &[Check::success()],
     );
@@ -4086,7 +4207,8 @@ fn mollusk_wrap_rejects_classic_program_for_token_2022_accounts() {
     let mut params = WrapUsdcParams::new(&fixture, user_tokens, 100);
     params.token_program = spl_token::id();
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &params.build(),
         &[token_error(
             token::ConfidentialTokenError::UnderlyingTokenProgramMismatch,
@@ -4111,7 +4233,8 @@ fn mollusk_wrap_rejects_frozen_token_2022_source() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &wrap_usdc_ix(&fixture, fixture.destination_usdc, 100),
         &[token_error(
             token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
@@ -4131,7 +4254,8 @@ fn mollusk_wrap_rejects_token_2022_mint_extensions() {
     let user_tokens = fund_wrap_source(&mut accounts, &fixture, 1_000);
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &wrap_usdc_ix(&fixture, user_tokens, 100),
         &[token_error(
             token::ConfidentialTokenError::UnsupportedToken2022Extension,
@@ -4150,7 +4274,8 @@ fn mollusk_wrap_rejects_token_2022_account_extensions() {
     );
     let context = burn_redeem_mollusk().with_context(accounts);
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &wrap_usdc_ix(&fixture, fixture.destination_usdc, 100),
         &[token_error(
             token::ConfidentialTokenError::UnsupportedToken2022Extension,
@@ -4178,7 +4303,8 @@ fn mollusk_wrap_usdc_rejects_wrong_owner() {
 
     let mut params = WrapUsdcParams::new(&fixture, stranger_usdc, 100);
     params.owner = stranger;
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &params.build(),
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
@@ -4208,7 +4334,8 @@ fn mollusk_wrap_usdc_rejects_wrong_underlying_mint() {
     let mut params = WrapUsdcParams::new(&fixture, other_user_usdc, 100);
     params.underlying_mint = other_mint;
     params.vault_usdc = other_vault_usdc;
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &params.build(),
         &[token_error(
             token::ConfidentialTokenError::UnderlyingMintMismatch,
@@ -4233,7 +4360,8 @@ fn mollusk_wrap_usdc_rejects_noncanonical_vault() {
 
     let mut params = WrapUsdcParams::new(&fixture, user_usdc, 100);
     params.vault_usdc = bogus_vault;
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &params.build(),
         &[token_error(
             token::ConfidentialTokenError::VaultAccountMismatch,
@@ -4256,7 +4384,8 @@ fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
 
     let mut params = WrapUsdcParams::new(&fixture, user_usdc, 100);
     params.total_supply_authority = token::total_supply_authority_address(Pubkey::new_unique()).0;
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &params.build(),
         &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
     );
@@ -4524,7 +4653,8 @@ fn mollusk_disclose_secp_amount_happy_path() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.amount_state,
@@ -4568,7 +4698,8 @@ fn mollusk_disclose_secp_balance_happy_path() {
 
     let cleartext_amount = 700;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.balance_state,
@@ -4614,7 +4745,8 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
     let cleartext_amount = 10_000;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
 
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &disclose_total_supply_ix(
             &fixture,
             total_supply_state,
@@ -4637,7 +4769,8 @@ fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
         },
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             total_supply_state,
@@ -4680,7 +4813,8 @@ fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.amount_state,
@@ -4745,7 +4879,8 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
             proof,
         )
     };
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &instruction(stale_proof),
         &[host_error(
             host::errors::ZamaHostError::PublicDecryptProofInvalid,
@@ -4753,8 +4888,7 @@ fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
     );
     assert_eq!(*context.account_store.borrow(), before);
     // Refresh only the inclusion proof: the certificate still authenticates the same handle.
-    let result =
-        context.process_and_validate_instruction(&instruction(fresh_proof), &[Check::success()]);
+    let result = check_token_instruction(&context, &instruction(fresh_proof), &[Check::success()]);
     assert_disclosed(
         &result,
         ExpectedDisclosure {
@@ -4800,9 +4934,9 @@ fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
         extra_data,
         proof,
     );
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
     // Same cert, same accounts, run again: still succeeds (idempotent, no consume-once).
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
 }
 
 #[test]
@@ -4832,7 +4966,8 @@ fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.amount_state,
@@ -4876,7 +5011,8 @@ fn mollusk_disclose_secp_rejects_foreign_mint_scope() {
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             foreign_value_addr,
@@ -4925,7 +5061,8 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
         &DECRYPTION_CONTRACT,
         &extra_data,
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.amount_state,
@@ -4955,7 +5092,7 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 /// (55_000) + transferred `Sub` at euint64 (162_000) + balance-binding scalar `Add` at euint64
 /// (133_000) + credit `Add` at euint64 (162_000). The `VerifiedInput` amount is an operand, not
 /// a step, so it adds no HCU. See `zama-host` `HCULimit` tables.
-const TRANSFER_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000 + 162_000 + 133_000 + 162_000; // 826_000
+const TRANSFER_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000 + 162_000 + 162_000; // 693_000; no add-zero copy
 
 /// The fixture's host config with the per-app block cap overridden to `cap`.
 fn host_config_account_with_block_cap(
@@ -5008,7 +5145,8 @@ fn mollusk_confidential_transfer_block_cap_ban_is_enforced_through_cpi() {
         sender_attestation(&fixture, 200),
     );
 
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &ix,
         &[host_error(
             host::errors::ZamaHostError::HcuBlockLimitExceeded,
@@ -5058,7 +5196,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         None,
     );
 
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
+    check_token_instruction(&context, &ix, &[Check::success()]);
 
     // The transfer completed: the sender's balance moved off its initial handle.
     let alice_balance = read_encrypted_state(&context, fixture.alice_balance_state);
@@ -5128,7 +5266,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
         amount_state,
     );
 
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     // Only the two balances and the sender's transferred_amount are updated — the amount is not
@@ -5141,7 +5279,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
         .iter()
         .find_map(|inner| decode_anchor_event(&inner.instruction.data))
         .expect("transfer event");
-    assert_eq!(result.return_data, event.transferred_handle);
+    assert_eq!(cleartext.u64_for_handle(event.transferred_handle), 250);
 
     // The amount value is read-only: current handle and history unchanged.
     let amount_after = read_encrypted_state(&context, amount_state);
@@ -5195,7 +5333,8 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
                 .map(|key| AccountMeta::new_readonly(key, false)),
         );
         if denied {
-            context.process_and_validate_instruction(
+            check_token_instruction(
+                &context,
                 &transfer,
                 &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
             );
@@ -5208,7 +5347,7 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
             cleartext.seed_amount(fixture.alice_initial, 1_000);
             cleartext.seed_amount(fixture.bob_initial, 100);
             cleartext.seed_amount(amount_handle, 200);
-            let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+            let result = check_token_instruction(&context, &transfer, &[Check::success()]);
             cleartext.evaluate_fhe_cpi(&context, &result);
             assert_eq!(cleartext.balance(&context, fixture.alice_token), 800);
             assert_eq!(cleartext.balance(&context, fixture.bob_token), 300);
@@ -5244,7 +5383,8 @@ fn mollusk_transfer_from_value_rejects_amount_under_foreign_authority() {
         fixture.bob_balance_state,
         amount_state,
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &transfer,
         &[token_error(
             token::ConfidentialTokenError::AmountSpendAuthorityMismatch,
@@ -5286,7 +5426,8 @@ fn mollusk_transfer_from_value_rejects_non_euint64_amount() {
         fixture.bob_balance_state,
         amount_state,
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &transfer,
         &[token_error(
             token::ConfidentialTokenError::AmountHandleTypeMismatch,
@@ -5318,7 +5459,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_state_account_as
         // Amount aliased to the sender's own balance value: transfer the whole balance.
         fixture.alice_balance_state,
     );
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
@@ -5387,7 +5528,7 @@ fn cost_snapshot_confidential_transfer_direct() {
         sender_attestation(&fixture, 21),
     );
 
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot(
         "token_mollusk",
@@ -5413,8 +5554,7 @@ fn cost_snapshot_confidential_transfer_direct() {
         sender_attestation(&fixture, 22),
     );
 
-    let second_result =
-        context.process_and_validate_instruction(&second_transfer, &[Check::success()]);
+    let second_result = check_token_instruction(&context, &second_transfer, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot(
         "token_mollusk",
@@ -5451,7 +5591,7 @@ fn cost_snapshot_confidential_transfer_from_value() {
         amount_state,
     );
 
-    let result = context.process_and_validate_instruction(&transfer, &[Check::success()]);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot(
         "token_mollusk",
@@ -5478,7 +5618,7 @@ fn cost_snapshot_initialize_token_account() {
     let context = mollusk().with_context(accounts);
     let ix = initialize_token_account_ix(owner, owner, fixture.mint, fixture.host_config);
 
-    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot("token_mollusk", "initialize_token_account", &ix, &result);
 }
@@ -5519,7 +5659,8 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
     let cleartext_amount = 500;
     let (signatures, extra_data) =
         amount_public_decrypt_cert_signed_by(pinned, cleartext_amount, &keys[..7]);
-    let result = context.process_and_validate_instruction(
+    let result = check_token_instruction(
+        &context,
         &disclose_secp_ix(
             &fixture,
             fixture.amount_state,
@@ -5584,7 +5725,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         amount_state,
         token::transfer_input_key(),
     );
-    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let result = check_token_instruction(&context, &burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     // Three persistent outputs are updated — balance, burned_amount, total_supply — and the
@@ -5655,7 +5796,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
         fixture.balance_state,
         token::balance_key(),
     );
-    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let result = check_token_instruction(&context, &burn, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 3);
@@ -5712,7 +5853,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         amount_state,
         token::transfer_input_key(),
     );
-    let first_result = context.process_and_validate_instruction(&first, &[Check::success()]);
+    let first_result = check_token_instruction(&context, &first, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &first_result);
     let first_burned = read_state_handle(
         &context,
@@ -5734,7 +5875,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     // and supply while retaining the burned-amount value and its leaves.
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, None);
-    let cancel_result = context.process_and_validate_instruction(&cancel, &[Check::success()]);
+    let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &cancel_result);
     let after_cancel = read_encrypted_state(&context, fixture.burned_amount_state);
     let restored_balance = state_handle(&after_cancel, token::balance_key());
@@ -5749,7 +5890,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         fixture.burned_amount_state,
         token::burned_amount_key(),
     );
-    let again_result = context.process_and_validate_instruction(&again, &[Check::success()]);
+    let again_result = check_token_instruction(&context, &again, &[Check::success()]);
     let persistent_outputs = cleartext.evaluate_fhe_cpi(&context, &again_result);
 
     // Conservation after cancellation: the next burn's amount equals the previous burned delta
@@ -5836,7 +5977,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
         amount_state,
         token::transfer_input_key(),
     );
-    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let result = check_token_instruction(&context, &burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &result);
 
     assert_eq!(cleartext.balance(&context, fixture.token_account), 600);
@@ -5893,7 +6034,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
         amount_state,
         token::transfer_input_key(),
     );
-    let burn_result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
     cleartext.evaluate_fhe_cpi(&context, &burn_result);
     let burned_handle = read_state_handle(
         &context,
@@ -5906,7 +6047,8 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let proof = single_burn_public_decrypt_proof(&fixture, burned_handle);
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &redeem_burned_amount_ix(
             &fixture,
             burned_handle,
@@ -5983,7 +6125,8 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
                 .map(|key| AccountMeta::new_readonly(key, false)),
         );
         if denied {
-            context.process_and_validate_instruction(
+            check_token_instruction(
+                &context,
                 &burn,
                 &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
             );
@@ -5996,7 +6139,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
             cleartext.seed_amount(fixture.initial_balance, 1_000);
             cleartext.seed_amount(fixture.initial_total_supply, 5_000);
             cleartext.seed_amount(amount_handle, 300);
-            let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+            let result = check_token_instruction(&context, &burn, &[Check::success()]);
             cleartext.evaluate_fhe_cpi(&context, &result);
             assert_eq!(cleartext.balance(&context, fixture.token_account), 700);
             assert_eq!(
@@ -6037,7 +6180,8 @@ fn mollusk_burn_from_value_rejects_amount_under_foreign_authority() {
         amount_state,
         token::transfer_input_key(),
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &burn,
         &[token_error(
             token::ConfidentialTokenError::AmountSpendAuthorityMismatch,
@@ -6077,7 +6221,8 @@ fn mollusk_burn_from_value_rejects_non_euint64_amount() {
         amount_state,
         token::transfer_input_key(),
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &burn,
         &[token_error(
             token::ConfidentialTokenError::AmountHandleTypeMismatch,
@@ -6114,7 +6259,8 @@ fn mollusk_burn_from_value_rejects_owner_not_token_account_owner() {
         amount_state,
         token::transfer_input_key(),
     );
-    context.process_and_validate_instruction(
+    check_token_instruction(
+        &context,
         &burn,
         &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
     );
@@ -6170,7 +6316,7 @@ fn cost_snapshot_confidential_burn_from_value() {
         token::transfer_input_key(),
     );
 
-    let result = context.process_and_validate_instruction(&burn, &[Check::success()]);
+    let result = check_token_instruction(&context, &burn, &[Check::success()]);
 
     cost_snapshot::assert_cost_snapshot(
         "token_mollusk",
@@ -6178,4 +6324,62 @@ fn cost_snapshot_confidential_burn_from_value() {
         &burn,
         &result,
     );
+}
+
+#[test]
+fn transfer_entry_points_return_the_transferred_handle_to_their_caller() {
+    let fixture = TokenFixture::new();
+    for from_slot in [false, true] {
+        let ix = if from_slot {
+            confidential_transfer_from_value_ix(
+                &fixture,
+                fixture.owner,
+                fixture.alice_token,
+                fixture.bob_token,
+                fixture.alice_balance_state,
+                fixture.bob_balance_state,
+                fixture.alice_balance_state,
+            )
+        } else {
+            confidential_transfer_ix(
+                &fixture,
+                fixture.alice_token,
+                fixture.bob_token,
+                fixture.alice_balance_state,
+                fixture.bob_balance_state,
+                sender_attestation(&fixture, 21),
+            )
+        };
+        let baseline = mollusk().with_context(fixture.base_accounts());
+        let result = check_token_instruction(&baseline, &ix, &[Check::success()]);
+        let expected = transferred_event_handle(&result).to_vec();
+        let mut svm = mollusk();
+        svm.sysvars.clock = baseline.mollusk.sysvars.clock.clone();
+        svm.sysvars.slot_hashes =
+            solana_sdk::slot_hashes::SlotHashes::new(&baseline.mollusk.sysvars.slot_hashes);
+        svm.add_program(&delegator_vault::ID, "delegator_vault");
+        let context = svm.with_context(fixture.base_accounts());
+        let mut probe = anchor_ix(
+            delegator_vault::ID,
+            delegator_vault::accounts::CheckCpiReturn { callee: token::ID },
+            delegator_vault::instruction::CheckCpiReturn {
+                instruction_data: ix.data,
+                expected,
+            },
+        );
+        probe.accounts.extend(ix.accounts);
+        zama_solana_test_kit::transaction::process_fhe_instruction(
+            &context,
+            fixture.owner,
+            &probe,
+            &[Check::success()],
+        );
+        for address in fixture.base_accounts().keys() {
+            assert_eq!(
+                context.account_store.borrow().get(address),
+                baseline.account_store.borrow().get(address),
+                "{address}"
+            );
+        }
+    }
 }

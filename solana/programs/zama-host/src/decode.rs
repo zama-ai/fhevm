@@ -170,6 +170,8 @@ mod tests {
             {
                 let args = crate::instruction::FheExecute {
                     args: crate::state::FheExecuteArgs {
+                        execution_state_index: 0,
+                        effects: vec![],
                         returned_results: vec![crate::ExecutionResultRef {
                             step_index: 0,
                             output_index: 0,
@@ -179,7 +181,6 @@ mod tests {
                         steps: vec![crate::state::FheExecuteStep::TrivialEncrypt {
                             plaintext: [0; 32],
                             fhe_type: 5,
-                            output: crate::state::FheExecuteOutput::Transient,
                         }],
                     },
                 };

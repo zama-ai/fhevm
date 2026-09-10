@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -79,6 +80,7 @@ describe('vault provisioning builders', () => {
 
   it('initialize_mint: right program + discriminator (encrypted State/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
+      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       authority: signer(addr(1)),
       mint: signer(addr(2)),
       underlyingMint: addr(3),
@@ -93,6 +95,7 @@ describe('vault provisioning builders', () => {
     const payer = signer(addr(1));
     const owner = addr(2);
     const instruction = await buildInitializeTokenAccountInstruction({
+      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       payer,
       owner,
       mint: addr(3),
@@ -107,6 +110,7 @@ describe('vault provisioning builders', () => {
 
   it('get-or-create returns create only for absent or System-owned canonical accounts', async () => {
     const parameters = {
+      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       payer: signer(addr(1)),
       owner: addr(2),
       mint: addr(3),
@@ -133,6 +137,7 @@ describe('vault provisioning builders', () => {
 
   it('wrap_usdc: public amount, no proof; encodes the u64 amount', async () => {
     const instruction = await buildWrapUsdcInstruction({
+      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       owner: signer(addr(1)),
       mint: addr(2),
       underlyingMint: addr(3),
@@ -162,19 +167,20 @@ describe('vault provisioning builders', () => {
       kmsContext: addr(21),
     };
     const result = await openBatchForBatcher({
+      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)) })).accounts,
       roots,
       batchIndex: 0n,
       payer: signer(addr(1)),
       recentSlot: 100n,
       authorityFundingLamports: 100_000_000n,
     });
-    // open_batch + create_lookup_table + the wire-limit-chunked extends (22 addresses -> 20 + 2),
+    // open_batch + create_lookup_table + the wire-limit-chunked extends (27 addresses -> 20 + 7),
     // in submission order.
     expect(result.instructions).toHaveLength(4);
     // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
     expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     // Pin the current table size so account-set growth requires an intentional test update. The
     // address contents and pending-burn membership are covered in derive.test.ts.
-    expect(result.lookupTableAddresses.length).toBe(22);
+    expect(result.lookupTableAddresses.length).toBe(27);
   });
 });

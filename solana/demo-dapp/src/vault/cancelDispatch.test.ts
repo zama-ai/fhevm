@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -35,6 +36,7 @@ describe('buildCancelDispatchInstruction', () => {
     const mint = addr(4);
     const hostConfig = addr(5);
     const instruction = await buildCancelDispatchInstruction({
+      fhe: (await createSolanaFheTransaction({ payer })).accounts,
       payer,
       batcher,
       batch,
@@ -73,6 +75,8 @@ describe('buildCancelDispatchInstruction', () => {
       ]),
       hostConfig,
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
+      await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]),
+      address('Sysvar1nstructions1111111111111111111111111'),
       ZAMA_HOST_PROGRAM_ADDRESS,
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -82,7 +86,7 @@ describe('buildCancelDispatchInstruction', () => {
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     expect(instruction.accounts!.map((account) => account.address)).toEqual(expected);
     expect(instruction.accounts!.map((account) => account.role)).toEqual([
-      3, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+      3, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0,
     ]);
 
     const decoded = getCancelDispatchInstructionDataDecoder().decode(instruction.data!);

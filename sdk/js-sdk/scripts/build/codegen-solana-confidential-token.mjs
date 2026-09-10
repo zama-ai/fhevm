@@ -52,8 +52,8 @@ function snapshot(path) {
   );
 }
 
-// One Codama render per target program. Only the zama-host client (the stateless public-decrypt
-// verifier, verifyPublicDecrypt) stays in the SDK; the confidential-token, confidential-batcher,
+// One Codama render per target program. The zama-host lifecycle and public-decrypt verifier
+// stay in the SDK; the confidential-token, confidential-batcher,
 // and demo-vault clients are dapp code and render into the demo dapp
 // (solana/demo-dapp/src/vault — fhevm-internal#1859 §6d). The codegen stays here because the
 // committed IDLs, the codama toolchain, and the --check build gate all live with the SDK.
@@ -63,17 +63,12 @@ const targets = [
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialToken`,
     keep: {
-      // The two app-facing instructions plus the four the confidential-vault demo builds directly:
-      // confidentialTransferFromValue and wrapUsdc (the on-chain from-value/wrap surface, deferred
-      // in #1680 and now absorbed), initializeTokenAccount (the vault `claim` flow needs the user
-      // payout token account to pre-exist), and initializeMint (the demo seeder mints cUSDC/cShares
-      // — fhevm-internal#1760, no hand-rolled instruction bytes). redeemBurnedAmount stays pruned —
-      // it is a batcher-internal CPI inside settle, never built by the SDK.
+      // Keep only the demo's direct token calls. From-value transfer and burn redemption
+      // are on-chain CPIs; their clients do not belong in the JavaScript surface.
       instructions: new Set([
         'confidentialTransfer',
         'discloseSecp',
         'makeTokenAccountHandlePublic',
-        'confidentialTransferFromValue',
         'wrapUsdc',
         'initializeTokenAccount',
         'initializeMint',
@@ -81,12 +76,10 @@ const targets = [
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
-      // transferInput selects a State slot or a transient grant for confidentialTransferFromValue.
       definedTypes: new Set([
         'coprocessorInputAttestation',
         'disclosedValueKind',
         'mmrInclusionProof',
-        'transferInput',
       ]),
       // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
       // initializeTokenAccount → tokenAccount).
@@ -111,11 +104,12 @@ const targets = [
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/src/solana/internal/generated/zamaHost`,
     keep: {
-      // Beside the stateless verifier: the delegation pair and the permit-watermark revocation —
+      // Keep the transaction lifecycle pair, stateless verifier, and delegation/revocation —
       // the three self-custody instructions a wallet (or a multisig proposal) builds through the
       // SDK's hand-written wrappers in src/solana/actions.
       instructions: new Set([
         'verifyPublicDecrypt',
+        'openScratch',
         'closeScratch',
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
