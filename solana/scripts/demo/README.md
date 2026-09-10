@@ -47,8 +47,12 @@ signed transaction before submission. Confirm that Phantom shows `127.0.0.1:5173
 the rehearsal against a different site or network.
 
 The **Developer evidence** panel exposes the exact local signatures, compute consumption,
-ciphertext handles, and encrypted-value account. Its links open the matching transaction,
+ciphertext handles, and encrypted State. Its links open the matching transaction,
 handle-filtered Jaeger trace, or a prepared Prometheus query.
+
+The local validator retains up to 1,000,000 shreds so transaction evidence survives a longer
+demo session. Retention remains bounded by ledger volume, not elapsed time; older transactions
+can still be pruned. `down` removes the owned ledger.
 
 Add `--observability` to `doctor`, `up`, or `serve` to reserve and start boot-owned Prometheus and
 Jaeger services:
