@@ -340,8 +340,8 @@ every delegation the signer holds. Scoping (at most seven `(program,
 account's own pair, never against a request field.
 
 **63. [ANTI]** Revoking permits does not invalidate a permit signed earlier with a future start time. `revoke_permits`
-stores the later of the user's previous `PermitInvalidation` watermark and the current clock. The connector rejects a permit only when its
-signed `start_timestamp` is below that watermark; an absent watermark reads as zero. A future-start permit remains
+stores the later of the user's previous `PermitInvalidation` watermark and the current clock. The connector's revocation
+check rejects permits whose signed `start_timestamp` is below that watermark; an absent watermark reads as zero. A future-start permit remains
 unusable until its window opens, but can then authorize decryption despite the earlier revocation. Permits have no
 individual on-chain record to revoke. EVM's `ACL.invalidateDecryptionSignaturesBefore` also rejects future watermarks
 with `InvalidationTimestampInTheFuture`. Pinned by the connector authorization vector
