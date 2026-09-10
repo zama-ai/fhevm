@@ -92,7 +92,7 @@ pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
-) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
+) -> Result<(Vec<LogTfhe>, Vec<SolanaMaterialRequest>), String> {
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
     for record in records {
@@ -139,12 +139,12 @@ pub fn normalize_solana_records_for_db(
                 material_requests.push(request);
                 continue;
             }
-        };
+        }?;
         tfhe_logs.push(to_log_tfhe(computation, transaction_id, block));
     }
 
     dedup_material_requests(&mut material_requests);
-    (tfhe_logs, material_requests)
+    Ok((tfhe_logs, material_requests))
 }
 
 /// Ingests ordered transaction groups from one sealed block. Dependency grouping sees the whole
@@ -160,7 +160,8 @@ pub async fn insert_solana_block_records(
     let mut material_requests = Vec::new();
     for (transaction_id, records) in transactions {
         let (logs, requests) =
-            normalize_solana_records_for_db(records, transaction_id, block);
+            normalize_solana_records_for_db(records, transaction_id, block)
+                .map_err(SqlxError::Protocol)?;
         tfhe_logs.extend(logs);
         material_requests.extend(
             requests
@@ -249,7 +250,7 @@ fn to_log_tfhe(
     block: SolanaBlockMeta,
 ) -> LogTfhe {
     LogTfhe {
-        allowed_outputs: computation.outputs.iter().copied().collect(),
+        allowed_outputs: computation.outputs().iter().copied().collect(),
         computation,
         transaction_hash: Some(transaction_id),
         block_number: block.block_number,
@@ -270,7 +271,7 @@ fn to_log_tfhe(
     }
 }
 
-fn binary_computation(event: FheBinaryOp) -> Computation {
+fn binary_computation(event: FheBinaryOp) -> Result<Computation, String> {
     let operation = match event.op {
         FheBinaryOpCode::Add => O::FheAdd,
         FheBinaryOpCode::Sub => O::FheSub,
@@ -303,7 +304,7 @@ fn binary_computation(event: FheBinaryOp) -> Computation {
     )
 }
 
-fn ternary_computation(event: FheTernaryOp) -> Computation {
+fn ternary_computation(event: FheTernaryOp) -> Result<Computation, String> {
     let operation = match event.op {
         FheTernaryOpCode::IfThenElse => O::FheIfThenElse,
     };
@@ -318,11 +319,15 @@ fn ternary_computation(event: FheTernaryOp) -> Computation {
     )
 }
 
-fn trivial_computation(event: TrivialEncrypt) -> Computation {
-    Computation::trivial(event.plaintext, event.fhe_type, event.result.into())
+fn trivial_computation(event: TrivialEncrypt) -> Result<Computation, String> {
+    Ok(Computation::trivial(
+        event.plaintext,
+        event.fhe_type,
+        event.result.into(),
+    ))
 }
 
-fn random_computation(event: FheRand) -> Computation {
+fn random_computation(event: FheRand) -> Result<Computation, String> {
     Computation::single(
         O::FheRand,
         vec![P(event.seed.to_vec()), P(vec![event.fhe_type])],
@@ -330,7 +335,9 @@ fn random_computation(event: FheRand) -> Computation {
     )
 }
 
-fn bounded_random_computation(event: FheRandBounded) -> Computation {
+fn bounded_random_computation(
+    event: FheRandBounded,
+) -> Result<Computation, String> {
     Computation::single(
         O::FheRandBounded,
         vec![
@@ -342,7 +349,7 @@ fn bounded_random_computation(event: FheRandBounded) -> Computation {
     )
 }
 
-fn unary_computation(event: FheUnaryOp) -> Computation {
+fn unary_computation(event: FheUnaryOp) -> Result<Computation, String> {
     let mut operands = vec![H(event.operand.into())];
     let operation = match event.op {
         FheUnaryOpCode::Neg => O::FheNeg,
@@ -361,6 +368,26 @@ mod tests {
     use time::{Date, Month, PrimitiveDateTime, Time};
     use zama_host::EVENT_VERSION;
 
+    #[test]
+    fn malformed_collection_fails_normalization() {
+        let result = normalize_solana_records_for_db(
+            [SolanaHostRecord::FheSum(FheSum {
+                version: EVENT_VERSION,
+                fhe_type: 5,
+                operands: vec![[1; 32]; 257],
+                result: [2; 32],
+            })],
+            Handle::ZERO,
+            SolanaBlockMeta {
+                block_number: 1,
+                block_timestamp: PrimitiveDateTime::MIN,
+                block_hash: [1; 32],
+                parent_hash: [0; 32],
+            },
+        );
+        assert!(result.is_err());
+    }
+
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
     }
@@ -374,7 +401,8 @@ mod tests {
             rhs: [2; 32],
             scalar: false,
             result: [3; 32],
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             mapped,
@@ -383,6 +411,7 @@ mod tests {
                 vec![H(handle(1)), H(handle(2))],
                 handle(3)
             )
+            .unwrap()
         );
     }
 
@@ -395,7 +424,8 @@ mod tests {
             rhs: [2; 32],
             scalar: false,
             result: [3; 32],
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             mapped,
@@ -404,6 +434,7 @@ mod tests {
                 vec![H(handle(1)), H(handle(2))],
                 handle(3)
             )
+            .unwrap()
         );
     }
 
@@ -416,7 +447,8 @@ mod tests {
             if_true: [2; 32],
             if_false: [3; 32],
             result: [4; 32],
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             mapped,
@@ -425,6 +457,7 @@ mod tests {
                 vec![H(handle(1)), H(handle(2)), H(handle(3))],
                 handle(4)
             )
+            .unwrap()
         );
     }
 
@@ -438,7 +471,8 @@ mod tests {
             plaintext,
             fhe_type: 5,
             result: [8; 32],
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             mapped,
@@ -447,6 +481,7 @@ mod tests {
                 vec![P(plaintext.to_vec()), P(vec![5])],
                 handle(8)
             )
+            .unwrap()
         );
     }
 
@@ -457,7 +492,8 @@ mod tests {
             seed: [7; 16],
             fhe_type: 5,
             result: [8; 32],
-        });
+        })
+        .unwrap();
 
         assert_eq!(
             mapped,
@@ -466,6 +502,7 @@ mod tests {
                 vec![P(vec![7; 16]), P(vec![5])],
                 handle(8)
             )
+            .unwrap()
         );
     }
 
@@ -525,12 +562,16 @@ mod tests {
                     rhs: rhs.0,
                     scalar,
                     result: result.0,
-                });
-                assert_eq!(solana, Computation::from_evm(&evm).unwrap());
-                assert_eq!(solana.operation, operation);
+                })
+                .unwrap();
+                assert_eq!(
+                    solana,
+                    Computation::from_evm(&evm).unwrap().unwrap()
+                );
+                assert_eq!(solana.operation(), operation);
                 assert_eq!(
                     solana
-                        .operands
+                        .operands()
                         .iter()
                         .map(Operand::bytes)
                         .collect::<Vec<_>>(),
@@ -659,12 +700,14 @@ mod tests {
                     block_hash: [1; 32],
                     parent_hash: [0; 32],
                 },
-            );
+            )
+            .unwrap();
             assert!(requests.is_empty());
             assert_eq!(logs.len(), 1);
             assert_eq!(
                 logs[0].computation,
                 Computation::single(operation, operands, result.into())
+                    .unwrap()
             );
             assert_eq!(logs[0].computation.is_scalar(), scalar);
         }
@@ -717,7 +760,8 @@ mod tests {
             rhs: [2; 32],
             scalar: true,
             result: [3; 32],
-        });
+        })
+        .unwrap();
 
         let log = to_log_tfhe(
             event,
@@ -768,7 +812,8 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(tfhe_logs.len(), 1);
         assert!(
@@ -799,7 +844,8 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(material_requests.len(), 2);
         assert!(material_requests
@@ -837,7 +883,8 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        );
+        )
+        .unwrap();
 
         assert_eq!(tfhe_logs.len(), 1);
         assert!(
@@ -888,7 +935,8 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        );
+        )
+        .unwrap();
 
         assert!(material_requests.is_empty());
         assert_eq!(tfhe_logs.len(), 3);
@@ -912,9 +960,9 @@ mod tests {
             !tfhe_logs[2].allowed_outputs.is_empty(),
             "eager compute: always schedulable"
         );
-        assert_eq!(tfhe_logs[0].computation.operation, O::FheTrivialEncrypt);
-        assert_eq!(tfhe_logs[1].computation.operation, O::FheRand);
-        assert_eq!(tfhe_logs[2].computation.operation, O::FheIfThenElse);
+        assert_eq!(tfhe_logs[0].computation.operation(), O::FheTrivialEncrypt);
+        assert_eq!(tfhe_logs[1].computation.operation(), O::FheRand);
+        assert_eq!(tfhe_logs[2].computation.operation(), O::FheIfThenElse);
         assert!(tfhe_logs[0].computation.inputs().is_empty());
         assert!(tfhe_logs[1].computation.inputs().is_empty());
         assert_eq!(

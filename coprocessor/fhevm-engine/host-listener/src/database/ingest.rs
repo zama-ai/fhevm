@@ -151,7 +151,7 @@ pub(crate) fn populate_operand_boundary_masks(
         // This happens strictly after the mask above, exactly as the executor
         // computes the preimage before calling `_markMinted`.
         if log.is_executor_minted {
-            minted.extend(log.computation.outputs.iter().copied());
+            minted.extend(log.computation.outputs().iter().copied());
         }
     }
     Ok(())
@@ -459,7 +459,9 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
                 fhe_event_count = fhe_event_count.saturating_add(1);
-                let Some(computation) = Computation::from_evm(&event) else {
+                let Some(computation) = Computation::from_evm(&event)
+                    .map_err(sqlx::Error::Protocol)?
+                else {
                     continue;
                 };
                 let log = LogTfhe {
@@ -649,7 +651,7 @@ pub async fn ingest_block_logs(
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.allowed_outputs = tfhe_log
             .computation
-            .outputs
+            .outputs()
             .iter()
             .copied()
             .filter(|h| is_allowed.contains(&h.to_vec()))
@@ -1318,7 +1320,7 @@ pub async fn synthesize_finalized_fallback_grants(
         logs.push(LogTfhe {
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
-            allowed_outputs: computation.outputs.iter().copied().collect(),
+            allowed_outputs: computation.outputs().iter().copied().collect(),
             computation,
             transaction_hash,
             block_number: block_number as u64,
@@ -1628,10 +1630,11 @@ mod tests {
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
-        let computation =
-            Computation::from_evm(&event).expect("computation fixture");
+        let computation = Computation::from_evm(&event)
+            .unwrap()
+            .expect("computation fixture");
         LogTfhe {
-            allowed_outputs: computation.outputs.iter().copied().collect(),
+            allowed_outputs: computation.outputs().iter().copied().collect(),
             computation,
             transaction_hash: Some(tx),
             block_number: 1,

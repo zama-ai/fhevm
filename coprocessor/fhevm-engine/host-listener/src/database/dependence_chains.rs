@@ -78,7 +78,7 @@ fn scan_transactions(
             }
             Entry::Occupied(e) => e.into_mut(),
         };
-        let outputs = log.computation.outputs.clone();
+        let outputs = log.computation.outputs().to_vec();
         // Count each output row, including grouped multi-output computations.
         tx.size += outputs.len() as u64;
         let log_inputs = log.computation.inputs();
@@ -571,11 +571,12 @@ mod tests {
     ) {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
-        let computation =
-            Computation::from_evm(&e).expect("computation fixture");
+        let computation = Computation::from_evm(&e)
+            .unwrap()
+            .expect("computation fixture");
         logs.push(LogTfhe {
             allowed_outputs: if is_allowed {
-                computation.outputs.iter().copied().collect()
+                computation.outputs().iter().copied().collect()
             } else {
                 Default::default()
             },
@@ -611,7 +612,12 @@ mod tests {
             false,
             transaction,
         );
-        logs[0].computation.outputs.push(second);
+        logs[0].computation = Computation::new(
+            logs[0].computation.operation(),
+            logs[0].computation.operands().to_vec(),
+            vec![first, second],
+        )
+        .unwrap();
         logs[0].allowed_outputs.insert(second);
         let (order, txs) = super::scan_transactions(&logs);
         assert_eq!(order, vec![transaction]);

@@ -11,10 +11,7 @@ use fhevm_engine_common::database::{
     connect_pool_with_options_and_connect_options, PoolRefreshHandle,
 };
 use fhevm_engine_common::telemetry;
-use fhevm_engine_common::types::{
-    is_valid_multi_output_arity, AllowEvents, SchedulePriority,
-    MAX_MULTI_OUTPUT_ARITY,
-};
+use fhevm_engine_common::types::{AllowEvents, SchedulePriority};
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use prometheus::{register_int_counter_vec, IntCounterVec};
@@ -849,17 +846,7 @@ impl Database {
         log: &LogTfhe,
     ) -> Result<usize, SqlxError> {
         let computation = &log.computation;
-        let outputs = &computation.outputs;
-        if outputs.is_empty()
-            || (outputs.len() > 1
-                && !is_valid_multi_output_arity(outputs.len()))
-        {
-            return Err(SqlxError::Protocol(format!(
-                "unsupported computation output arity {} (maximum {})",
-                outputs.len(),
-                MAX_MULTI_OUTPUT_ARITY
-            )));
-        }
+        let outputs = computation.outputs();
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
@@ -871,7 +858,7 @@ impl Database {
         )
         .await;
         let dependencies = computation
-            .operands
+            .operands()
             .iter()
             .map(Operand::bytes)
             .collect::<Vec<_>>();
@@ -883,7 +870,7 @@ impl Database {
                     tx,
                     output.as_slice(),
                     &dependencies,
-                    computation.operation as i32,
+                    computation.operation() as i32,
                     computation.is_scalar(),
                     group,
                     index as i16,

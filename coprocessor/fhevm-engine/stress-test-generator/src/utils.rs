@@ -276,12 +276,14 @@ pub async fn generate_trivial_encrypt(
             result: handle,
         },
     ));
-    let computation = Computation::from_evm(&trivial_event.data).expect("computation fixture");
+    let computation = Computation::from_evm(&trivial_event.data)
+        .expect("valid computation encoding")
+        .expect("computation fixture");
     let operand_boundary_mask =
         fixture_operand_boundary_mask(tx, transaction_hash, &computation).await?;
     let log = LogTfhe {
         allowed_outputs: if is_allowed {
-            computation.outputs.iter().copied().collect()
+            computation.outputs().iter().copied().collect()
         } else {
             Default::default()
         },
@@ -452,12 +454,14 @@ pub async fn insert_tfhe_event(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
 
-    let computation = Computation::from_evm(&event.data).expect("computation fixture");
+    let computation = Computation::from_evm(&event.data)
+        .expect("valid computation encoding")
+        .expect("computation fixture");
     let operand_boundary_mask =
         fixture_operand_boundary_mask(tx, transaction_hash, &computation).await?;
     let log = LogTfhe {
         allowed_outputs: if is_allowed {
-            computation.outputs.iter().copied().collect()
+            computation.outputs().iter().copied().collect()
         } else {
             Default::default()
         },

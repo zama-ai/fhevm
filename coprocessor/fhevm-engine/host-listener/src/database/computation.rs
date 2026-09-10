@@ -5,7 +5,10 @@ use alloy_primitives::B256 as Handle;
 use crate::contracts::{
     TfheContract as C, TfheContract::TfheContractEvents as E,
 };
-use fhevm_engine_common::types::SupportedFheOperations;
+use fhevm_engine_common::types::{
+    is_valid_multi_output_arity, FheOperationType, SupportedFheOperations,
+    MAX_MULTI_OUTPUT_ARITY,
+};
 
 /// Big-endian executor boundaryBits; operand i is bit i, including clear positions.
 pub type OperandBoundaryMask = [u8; 32];
@@ -40,13 +43,83 @@ impl Operand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Computation {
-    pub operation: SupportedFheOperations,
-    pub operands: Vec<Operand>,
+    operation: SupportedFheOperations,
+    operands: Vec<Operand>,
     /// Ordered outputs; their first handle identifies a multi-output group.
-    pub outputs: Vec<Handle>,
+    outputs: Vec<Handle>,
 }
 
 impl Computation {
+    /// Validates the listener's wire representation. Ciphertext types and
+    /// operation semantics remain the executor/worker's responsibility.
+    pub fn new(
+        operation: SupportedFheOperations,
+        operands: Vec<Operand>,
+        outputs: Vec<Handle>,
+    ) -> Result<Self, String> {
+        use Operand::{Clear as P, Encrypted as H};
+        use SupportedFheOperations as O;
+        let word = |operand: &Operand| match operand {
+            H(_) => true,
+            P(bytes) => bytes.len() == 32,
+        };
+        let valid = match (operation.op_type(), operands.as_slice()) {
+            (FheOperationType::Binary, [H(_), rhs]) => word(rhs),
+            (FheOperationType::Unary, [H(_)]) => true,
+            (FheOperationType::Other, inputs) => match (operation, inputs) {
+                (O::FheCast, [H(_), P(kind)]) => kind.len() == 1,
+                (O::FheTrivialEncrypt, [P(value), P(kind)]) => {
+                    value.len() == 32 && kind.len() == 1
+                }
+                (O::FheIfThenElse, [H(_), H(_), H(_)]) => true,
+                (O::FheRand, [P(seed), P(kind)]) => {
+                    seed.len() == 16 && kind.len() == 1
+                }
+                (O::FheRandBounded, [P(seed), P(bound), P(kind)]) => {
+                    seed.len() == 16 && bound.len() == 32 && kind.len() == 1
+                }
+                (O::FheSum | O::FheIsIn, inputs) => {
+                    (operation == O::FheSum || !inputs.is_empty())
+                        && inputs.len() <= OPERAND_BOUNDARY_MASK_BYTES * 8
+                        && inputs.iter().all(|operand| matches!(operand, H(_)))
+                }
+                (O::FheMulDiv, [H(_), rhs, P(divisor)]) => {
+                    word(rhs) && divisor.len() == 32
+                }
+                _ => false,
+            },
+            _ => false,
+        };
+        if !valid {
+            return Err(format!(
+                "invalid operand shape or byte widths for {operation:?}"
+            ));
+        }
+        if !is_valid_multi_output_arity(outputs.len()) {
+            return Err(format!(
+                "unsupported computation output arity {} (maximum {MAX_MULTI_OUTPUT_ARITY})",
+                outputs.len(),
+            ));
+        }
+        Ok(Self {
+            operation,
+            operands,
+            outputs,
+        })
+    }
+
+    pub fn operation(&self) -> SupportedFheOperations {
+        self.operation
+    }
+
+    pub fn operands(&self) -> &[Operand] {
+        &self.operands
+    }
+
+    pub fn outputs(&self) -> &[Handle] {
+        &self.outputs
+    }
+
     pub fn trivial(plaintext: [u8; 32], fhe_type: u8, result: Handle) -> Self {
         Self::single(
             SupportedFheOperations::FheTrivialEncrypt,
@@ -56,18 +129,15 @@ impl Computation {
             ],
             result,
         )
+        .expect("fixed-width trivial-encryption operands")
     }
 
     pub fn single(
         operation: SupportedFheOperations,
         operands: Vec<Operand>,
         result: Handle,
-    ) -> Self {
-        Self {
-            operation,
-            operands,
-            outputs: vec![result],
-        }
+    ) -> Result<Self, String> {
+        Self::new(operation, operands, vec![result])
     }
 
     pub fn encrypted_operands(
@@ -120,7 +190,7 @@ impl Computation {
     /// Decode computation semantics at the EVM boundary. The caller retains
     /// chain/transaction/log provenance; administrative events and input
     /// verification do not enqueue computations.
-    pub fn from_evm(event: &E) -> Option<Self> {
+    pub fn from_evm(event: &E) -> Result<Option<Self>, String> {
         use Operand::{Clear as P, Encrypted as H};
         use SupportedFheOperations as O;
         let (operation, operands, result) = match event {
@@ -392,7 +462,11 @@ impl Computation {
             E::TrivialEncrypt(C::TrivialEncrypt {
                 pt, toType, result, ..
             }) => {
-                return Some(Self::trivial(pt.to_be_bytes(), *toType, *result))
+                return Ok(Some(Self::trivial(
+                    pt.to_be_bytes(),
+                    *toType,
+                    *result,
+                )))
             }
             E::FheSum(C::FheSum { values, result, .. }) => {
                 (O::FheSum, values.iter().copied().map(H).collect(), *result)
@@ -427,10 +501,10 @@ impl Computation {
                 *result,
             ),
             E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => {
-                return None
+                return Ok(None)
             }
         };
-        Some(Self::single(operation, operands, result))
+        Self::single(operation, operands, result).map(Some)
     }
 }
 
@@ -438,6 +512,70 @@ impl Computation {
 mod tests {
     use super::*;
     use alloy_primitives::{Address, FixedBytes, U256};
+
+    #[test]
+    fn construction_rejects_invalid_operand_shapes_and_widths() {
+        use Operand::{Clear as P, Encrypted as H};
+        use SupportedFheOperations as O;
+        let handle = Handle::repeat_byte(1);
+        for (operation, operands) in [
+            (O::FheAdd, vec![]),
+            (O::FheAdd, vec![H(handle)]),
+            (O::FheAdd, vec![P(vec![0; 32]), H(handle)]),
+            (O::FheAdd, vec![H(handle), P(vec![0; 31])]),
+            (O::FheNeg, vec![H(handle), H(handle)]),
+            (O::FheCast, vec![H(handle), P(vec![5; 32])]),
+            (O::FheCast, vec![H(handle), H(handle)]),
+            (O::FheTrivialEncrypt, vec![P(vec![0; 31]), P(vec![5])]),
+            (O::FheIfThenElse, vec![H(handle), H(handle), P(vec![0; 32])]),
+            (O::FheRand, vec![P(vec![0; 32]), P(vec![5])]),
+            (
+                O::FheRandBounded,
+                vec![P(vec![0; 16]), P(vec![0; 31]), P(vec![5])],
+            ),
+            (O::FheMulDiv, vec![H(handle), H(handle), H(handle)]),
+            (O::FheSum, vec![P(vec![0; 32])]),
+            (O::FheSum, vec![H(handle); 257]),
+            (O::FheIsIn, vec![]),
+            (O::FheGetInputCiphertext, vec![H(handle)]),
+        ] {
+            assert!(
+                Computation::single(operation, operands, handle).is_err(),
+                "{operation:?}"
+            );
+        }
+        // Empty Sum and an empty IsIn set retain their native event encoding.
+        assert!(Computation::single(O::FheSum, vec![], handle).is_ok());
+        assert!(
+            Computation::single(O::FheIsIn, vec![H(handle)], handle).is_ok()
+        );
+    }
+
+    #[test]
+    fn construction_enforces_output_group_bounds() {
+        for count in [0, 1, MAX_MULTI_OUTPUT_ARITY, MAX_MULTI_OUTPUT_ARITY + 1]
+        {
+            let result = Computation::new(
+                SupportedFheOperations::FheNeg,
+                vec![Operand::Encrypted(Handle::ZERO)],
+                vec![Handle::ZERO; count],
+            );
+            assert_eq!(
+                result.is_ok(),
+                (1..=MAX_MULTI_OUTPUT_ARITY).contains(&count)
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_evm_collection_is_an_error_instead_of_a_skipped_event() {
+        assert!(Computation::from_evm(&E::FheSum(C::FheSum {
+            caller: Address::ZERO,
+            values: vec![Handle::ZERO; 257],
+            result: Handle::ZERO,
+        }))
+        .is_err());
+    }
 
     #[test]
     fn administrative_and_input_verification_events_do_not_create_computations()
@@ -456,7 +594,7 @@ mod tests {
                 result: Handle::repeat_byte(2),
             }),
         ] {
-            assert_eq!(Computation::from_evm(&event), None);
+            assert_eq!(Computation::from_evm(&event).unwrap(), None);
         }
     }
 
@@ -469,7 +607,8 @@ mod tests {
                 .map(|index| Operand::Encrypted(Handle::repeat_byte(index)))
                 .collect(),
             Handle::ZERO,
-        );
+        )
+        .unwrap();
         for boundary in 0..256 {
             assert_eq!(
                 computation
@@ -489,7 +628,8 @@ mod tests {
                 Operand::Clear(vec![3; 32]),
             ],
             Handle::ZERO,
-        );
+        )
+        .unwrap();
         assert_eq!(
             mixed.boundary_mask(|_| false).unwrap(),
             zama_host::operand_boundary_mask([true, false, false]).unwrap(),
@@ -541,7 +681,7 @@ mod tests {
             ),
         ];
         for (event, bytes) in cases {
-            let computation = Computation::from_evm(&event).unwrap();
+            let computation = Computation::from_evm(&event).unwrap().unwrap();
             assert_eq!(
                 computation
                     .operands
@@ -568,7 +708,7 @@ mod tests {
                 scalarByte: FixedBytes::from([1 | (u8::from(scalar) << 1)]),
                 result: Handle::repeat_byte(4),
             });
-            let computation = Computation::from_evm(&event).unwrap();
+            let computation = Computation::from_evm(&event).unwrap().unwrap();
             assert_eq!(computation.is_scalar(), scalar);
             assert_eq!(
                 computation

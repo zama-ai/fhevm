@@ -19,14 +19,15 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
             .await?;
     let pool = db.pool.read().await.clone();
     let outputs = vec![Handle::repeat_byte(10), Handle::repeat_byte(11)];
-    let computation = Computation {
-        operation: O::FheAdd,
-        operands: vec![
+    let computation = Computation::new(
+        O::FheAdd,
+        vec![
             Operand::Encrypted(Handle::repeat_byte(1)),
             Operand::Clear(vec![2; 32]),
         ],
-        outputs: outputs.clone(),
-    };
+        outputs.clone(),
+    )
+    .map_err(anyhow::Error::msg)?;
     let log = LogTfhe {
         operand_boundary_mask: Some(
             computation

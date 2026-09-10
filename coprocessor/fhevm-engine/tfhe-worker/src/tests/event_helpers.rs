@@ -132,13 +132,15 @@ pub async fn insert_event(
     .await?
     .into_iter()
     .collect::<std::collections::HashSet<_>>();
-    let computation = Computation::from_evm(&log.inner.data).expect("computation fixture");
+    let computation = Computation::from_evm(&log.inner.data)
+        .expect("valid computation encoding")
+        .expect("computation fixture");
     let operand_boundary_mask = computation
         .boundary_mask(|handle| previously_minted.contains(handle.as_slice()))
         .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
         allowed_outputs: if is_allowed {
-            computation.outputs.iter().copied().collect()
+            computation.outputs().iter().copied().collect()
         } else {
             Default::default()
         },
