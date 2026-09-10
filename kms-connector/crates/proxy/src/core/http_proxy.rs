@@ -4,11 +4,11 @@ use crate::core::{Proxy, Route, match_route};
 use async_trait::async_trait;
 use bytes::Bytes;
 use http::{
-    StatusCode,
+    Method, StatusCode,
     header::{
-        AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HOST, HeaderName,
-        PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, TRANSFER_ENCODING, UPGRADE, VIA,
-        WWW_AUTHENTICATE,
+        ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HOST,
+        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, TRANSFER_ENCODING,
+        UPGRADE, VIA, WWW_AUTHENTICATE,
     },
 };
 use kms_connector_api::{ErrorCode, ErrorResponse};
@@ -47,11 +47,13 @@ impl Proxy {
         extra_headers: &[(HeaderName, String)],
     ) -> pingora::Result<()> {
         let body = serde_json::to_vec(&error).unwrap_or_default();
-        let headers_len = 2 + extra_headers.len(); // type + length + extra_headers
-        let mut header = ResponseHeader::build(status, Some(headers_len))?;
-        header.insert_header(CONTENT_TYPE, "application/json")?;
-        header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
-        for (name, value) in extra_headers {
+        let fixed_headers = [
+            (CONTENT_TYPE, "application/json".to_string()),
+            (CONTENT_LENGTH, body.len().to_string()),
+        ];
+        let mut header =
+            ResponseHeader::build(status, Some(fixed_headers.len() + extra_headers.len()))?;
+        for (name, value) in fixed_headers.iter().chain(extra_headers) {
             header.insert_header(name.clone(), value.as_str())?;
         }
         session
@@ -67,9 +69,14 @@ impl Proxy {
         &self,
         session: &mut Session,
         status: StatusCode,
+        allow: Option<&Method>,
     ) -> pingora::Result<()> {
-        let mut header = ResponseHeader::build(status, Some(1))?;
+        let headers_len = if allow.is_some() { 2 } else { 1 };
+        let mut header = ResponseHeader::build(status, Some(headers_len))?;
         header.insert_header(CONTENT_LENGTH, "0")?;
+        if let Some(method) = allow {
+            header.insert_header(ALLOW, method.as_str())?;
+        }
         session.write_response_header(Box::new(header), true).await
     }
 }
@@ -115,7 +122,8 @@ impl ProxyHttp for Proxy {
         let route = match match_route(&req.method, req.uri.path()) {
             Ok(route) => route,
             Err(e) => {
-                self.respond_empty(session, e.http_status()).await?;
+                self.respond_empty(session, e.http_status(), e.allow_header())
+                    .await?;
                 return Ok(true);
             }
         };
@@ -238,6 +246,24 @@ impl ProxyHttp for Proxy {
                 }
                 status.as_u16()
             }
+            // An upstream failure (unreachable endpoint, timeout...) gets an `ErrorResponse` body.
+            // The detailed Pingora error (which includes the endpoint's address) is only logged
+            // server-side by `logging()`; the client, e.g. the relayer, gets a fixed message.
+            None if *e.esource() == ErrorSource::Upstream => {
+                let (code, message) = match e.etype() {
+                    ErrorType::ConnectTimedout | ErrorType::ReadTimedout => {
+                        (ErrorCode::Timeout, "endpoint timed out")
+                    }
+                    _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
+                };
+                let error = ErrorResponse::new(code, message.to_string(), None);
+                let status = StatusCode::from_u16(error.code.http_status())
+                    .unwrap_or(StatusCode::BAD_GATEWAY);
+                if let Err(e) = self.respond_with_error(session, status, error, &[]).await {
+                    error!("Failed to send error response to downstream: {e}");
+                }
+                status.as_u16()
+            }
             None => {
                 let code = default_error_code(e);
                 if code > 0
@@ -305,19 +331,24 @@ fn default_error_code(e: &Error) -> u16 {
 /// Removes the headers that must never reach the endpoint: the proxy credentials, client-supplied
 /// forwarding information and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
 pub fn sanitize_headers(req: &mut RequestHeader) {
-    // Headers listed in `Connection` are hop-by-hop too. Collected before `Connection` itself is
-    // removed, and never allowed to strip the framing headers of the request.
-    let connection_listed: Vec<HeaderName> = req
+    // Headers listed in `Connection` are hop-by-hop too.
+    let connection_headers = req
         .headers
         .get_all(CONNECTION)
         .iter()
         .filter_map(|v| v.to_str().ok())
         .flat_map(|v| v.split(','))
         .filter_map(|name| HeaderName::from_bytes(name.trim().as_bytes()).ok())
-        .filter(|name| ![HOST, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name))
-        .collect();
+        .filter(|name| ![HOST, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name));
 
-    for name in [
+    // These headers must be set by the proxy itself, not the client.
+    let forwarded_headers = req
+        .headers
+        .keys()
+        .filter(|name| name.as_str().starts_with("x-forwarded-"))
+        .cloned();
+
+    let to_remove: Vec<HeaderName> = [
         AUTHORIZATION,
         FORWARDED,
         VIA,
@@ -331,19 +362,11 @@ pub fn sanitize_headers(req: &mut RequestHeader) {
         UPGRADE,
     ]
     .into_iter()
-    .chain(connection_listed)
-    {
-        req.remove_header(&name);
-    }
+    .chain(connection_headers)
+    .chain(forwarded_headers)
+    .collect();
 
-    // These headers must be set by the proxy itself, not the client
-    let forwarded: Vec<HeaderName> = req
-        .headers
-        .keys()
-        .filter(|name| name.as_str().starts_with("x-forwarded-"))
-        .cloned()
-        .collect();
-    for name in forwarded {
+    for name in to_remove {
         req.remove_header(&name);
     }
 }

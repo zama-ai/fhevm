@@ -12,19 +12,27 @@ pub enum Route {
     Version,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RouteError {
     /// Unknown path: `404`.
     NotFound,
-    /// Known path, wrong method: `405`.
-    MethodNotAllowed,
+    /// Known path, wrong method: `405`, with the method the route actually expects.
+    MethodNotAllowed(Method),
 }
 
 impl RouteError {
-    pub fn http_status(self) -> StatusCode {
+    pub fn http_status(&self) -> StatusCode {
         match self {
             Self::NotFound => StatusCode::NOT_FOUND,
-            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            Self::MethodNotAllowed(_) => StatusCode::METHOD_NOT_ALLOWED,
+        }
+    }
+
+    /// The value of the `Allow` header RFC 9110 §15.5.6 requires on a `405` response.
+    pub fn allow_header(&self) -> Option<&Method> {
+        match self {
+            Self::NotFound => None,
+            Self::MethodNotAllowed(expected) => Some(expected),
         }
     }
 }
@@ -40,7 +48,7 @@ pub fn match_route(method: &Method, path: &str) -> Result<Route, RouteError> {
     if *method == expected {
         Ok(route)
     } else {
-        Err(RouteError::MethodNotAllowed)
+        Err(RouteError::MethodNotAllowed(expected))
     }
 }
 
@@ -74,11 +82,11 @@ mod tests {
         );
         assert_eq!(
             match_route(&Method::GET, PUBLIC_DECRYPTION_ROUTE),
-            Err(RouteError::MethodNotAllowed)
+            Err(RouteError::MethodNotAllowed(Method::POST))
         );
         assert_eq!(
             match_route(&Method::POST, VERSION_ROUTE),
-            Err(RouteError::MethodNotAllowed)
+            Err(RouteError::MethodNotAllowed(Method::GET))
         );
     }
 }
