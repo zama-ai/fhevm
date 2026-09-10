@@ -1,6 +1,9 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import YAML from "yaml";
+import { loadMergedComposeDoc } from "../generate/compose";
+import { withConsumerOnlyRecovery } from "./consumer-only-recovery";
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
@@ -25,6 +28,7 @@ import {
   defaultHostChainKey,
   envPath,
   HEAVY_TEST_PROFILES,
+  hostChainRuntimes,
   LIGHT_TEST_PROFILES,
   POSTGRES_HOST,
   ROLLOUT_STANDARD_TEST_PROFILES,
@@ -70,6 +74,7 @@ const TEST_PROFILE_NAMES = [
   "blue-green",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
+  "ciphertext-drift-consumer-recovery",
   "coprocessor-db-state-revert",
   "heavy",
   "kms-context-switch",
@@ -132,6 +137,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
+  "ciphertext-drift-consumer-recovery":
+    "Run real drift recovery with legacy host listeners and pollers stopped on every instance and chain.",
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
@@ -1715,6 +1722,20 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         }
       });
     }
+    if (name === "ciphertext-drift-consumer-recovery") {
+      const precondition = ciphertextDriftAutoRecoveryRequirement();
+      if (precondition) throw new PreflightError(precondition);
+      return runLogged(name, Date.now(), async () => {
+        const extraChains = await Promise.all(hostChainRuntimes(state.scenario.hostChains)
+          .filter((chain) => !chain.isDefault)
+          .map(async (chain) => YAML.parse(await Bun.file(composePath(chain.copro)).text())));
+        await withConsumerOnlyRecovery(await loadMergedComposeDoc("coprocessor"), {
+          running: async (container) => (await dockerInspect(container))[0]?.State.Status === "running",
+          stop: async (containers) => { await run(["docker", "stop", ...containers]); },
+          start: async (containers) => { await run(["docker", "start", ...containers]); },
+        }, async () => { await runProfile("ciphertext-drift-auto-recovery"); }, extraChains);
+      });
+    }
     if (name === "ciphertext-drift-auto-recovery") {
       console.log("[test] ciphertext-drift-auto-recovery");
       const started = Date.now();
@@ -1958,10 +1979,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
             continue;
           }
         }
-        if (profile === "ciphertext-drift-auto-recovery") {
+        if (profile === "ciphertext-drift-auto-recovery" || profile === "ciphertext-drift-consumer-recovery") {
           const skipReason = ciphertextDriftAutoRecoverySkipReason();
           if (skipReason) {
-            console.log(`[test] skipping ciphertext-drift-auto-recovery: ${skipReason}`);
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }

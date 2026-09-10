@@ -1,10 +1,16 @@
-//! Shared live/replay ingestion. Flow coordination stays in the consumer runner.
+//! Shared live/replay ingestion and per-block guards. The runner owns restarts.
+use super::{catchup::LiveReference, drift_recovery};
 use alloy::{primitives::Address, rpc::types::Log};
 use consumer::{AckDecision, BlockPayload, HandlerError};
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::{
+    drift_revert::DriftRevertSignal, utils::HeartBeat, versioning::StackMode,
+};
 use primitives::event::BlockFlow;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use super::metrics::{inc_blocks_processed, inc_db_errors};
@@ -18,15 +24,81 @@ use crate::database::tfhe_event_propagate::Database;
 
 const MAX_DB_RETRIES: u64 = 10;
 
+/// Shared state and processing for live and replay deliveries in one subscription.
 pub(super) struct BlockIngestor {
     pub db: Database,
     pub chain_id: ChainId,
     pub config: ConsumerConfig,
     pub options: IngestOptions,
+    pub live_reference: LiveReference,
+    pub checkpoint: Option<DriftRevertSignal>,
+    pub drift_tx: mpsc::UnboundedSender<DriftRevertSignal>,
+    pub mode: Arc<StackMode>,
+    pub tick: HeartBeat,
+    pub cancel: CancellationToken,
+    // For graceful shutdown, each payload handler holds a read
+    // lock until its processing future exits. Any held read lock means work
+    // has not finished yet. After cancellation, acquiring the write lock in
+    // stop() confirms that all such work has exited before replay restarts.
+    // Later calls observe the cancelled token and skip processing. This does
+    // not wait for broker acknowledgement tasks, only our processing futures.
+    pub in_flight_handlers: RwLock<()>,
 }
 
 impl BlockIngestor {
     pub async fn ingest(
+        &self,
+        payload: BlockPayload,
+    ) -> Result<AckDecision, HandlerError> {
+        let _active = self.in_flight_handlers.read().await;
+        tokio::select! {
+            biased;
+            _ = self.cancel.cancelled() => Ok(AckDecision::Ack),
+            result = self.handle_block(payload) => result,
+        }
+    }
+
+    pub(super) async fn stop(&self) {
+        self.cancel.cancel();
+        let _drained = self.in_flight_handlers.write().await;
+    }
+
+    async fn handle_block(
+        &self,
+        payload: BlockPayload,
+    ) -> Result<AckDecision, HandlerError> {
+        if self.mode.is_paused() {
+            return Ok(AckDecision::Ack);
+        }
+        if payload.chain_id != self.chain_id.as_u64() {
+            error!(
+                chain_id = payload.chain_id,
+                "Dropping block for wrong chain"
+            );
+            return Ok(AckDecision::Ack);
+        }
+        let signal = drift_recovery::read_signal(&self.db)
+            .await
+            .map_err(|error| HandlerError::Transient(error.into()))?;
+        if !drift_recovery::same_checkpoint(
+            signal.as_ref(),
+            self.checkpoint.as_ref(),
+        ) {
+            if let Some(signal) = signal {
+                let _ = self.drift_tx.send(signal);
+            }
+            return Err(HandlerError::Transient(
+                "Drift changed; subscription must restart".into(),
+            ));
+        }
+        if payload.flow == BlockFlow::Live {
+            self.tick.update();
+        }
+        self.live_reference.observe(&payload).await;
+        self.ingest_block(payload).await
+    }
+
+    async fn ingest_block(
         &self,
         payload: BlockPayload,
     ) -> Result<AckDecision, HandlerError> {

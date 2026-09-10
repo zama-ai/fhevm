@@ -4385,6 +4385,7 @@ dependencies = [
  "tracing-test",
  "union-find",
  "url",
+ "uuid",
 ]
 
 [[package]]

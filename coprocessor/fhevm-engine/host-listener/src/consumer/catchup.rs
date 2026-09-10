@@ -52,33 +52,11 @@ impl ManualCatchupArgs {
     }
 }
 
-/// Temporary guard: retain the earliest drift boundary even after cleanup.
-/// A later commit adds replay restart; manual replay must not drive live recovery.
-#[derive(Clone, Default)]
-pub(super) struct DriftBoundary {
-    earliest: std::sync::Arc<tokio::sync::Mutex<Option<u64>>>,
-}
-
-impl DriftBoundary {
-    pub async fn should_skip(
-        &self,
-        block: u64,
-        offending_block: Option<i64>,
-    ) -> bool {
-        let mut earliest = self.earliest.lock().await;
-        if let Some(offending_block) = offending_block {
-            let boundary = offending_block.max(0) as u64;
-            *earliest =
-                Some(earliest.map_or(boundary, |old| old.min(boundary)));
-        }
-        earliest.is_some_and(|boundary| block >= boundary)
-    }
-}
-
 /// One reference per process startup, shared by concurrent handler invocations.
 #[derive(Clone)]
 pub(super) struct LiveReference {
     chain_id: u64,
+    observed: std::sync::Arc<tokio::sync::Mutex<Option<u64>>>,
     sender: std::sync::Arc<
         tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<u64>>>,
     >,
@@ -90,6 +68,7 @@ impl LiveReference {
         (
             Self {
                 chain_id,
+                observed: Default::default(),
                 sender: std::sync::Arc::new(tokio::sync::Mutex::new(Some(
                     sender,
                 ))),
@@ -98,11 +77,16 @@ impl LiveReference {
         )
     }
 
+    pub async fn observed(&self) -> Option<u64> {
+        *self.observed.lock().await
+    }
+
     pub async fn observe(&self, payload: &consumer::BlockPayload) {
         if payload.chain_id == self.chain_id
             && payload.flow == primitives::event::BlockFlow::Live
         {
             if let Some(sender) = self.sender.lock().await.take() {
+                *self.observed.lock().await = Some(payload.block_number);
                 let _ = sender.send(payload.block_number);
             }
         }
@@ -112,21 +96,6 @@ impl LiveReference {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn drift_boundary_skips_inclusive_tail_and_never_moves_forward() {
-        let guard = DriftBoundary::default();
-        assert!(!guard.should_skip(1000, None).await);
-        assert!(!guard.should_skip(99, Some(100)).await);
-        assert!(guard.should_skip(100, Some(100)).await);
-        assert!(guard.should_skip(101, Some(100)).await);
-        // Cleanup or a later signal must not reopen this replay's invalid tail.
-        assert!(guard.should_skip(100, None).await);
-        assert!(guard.should_skip(100, Some(200)).await);
-        assert!(guard.clone().should_skip(50, Some(50)).await);
-        assert!(guard.should_skip(75, None).await);
-        assert!(!guard.should_skip(49, None).await);
-    }
 
     fn args(from: i64, to: Option<i64>) -> ManualCatchupArgs {
         ManualCatchupArgs {

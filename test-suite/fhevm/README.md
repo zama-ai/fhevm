@@ -81,6 +81,38 @@ bun test
 ./fhevm-cli clean
 ```
 
+## Drift recovery with host-consumer
+
+Build the branch and run both recovery paths:
+
+```sh
+./fhevm-cli up --target latest-main --scenario two-of-three --build
+./fhevm-cli test ciphertext-drift-auto-recovery
+./fhevm-cli test ciphertext-drift-consumer-recovery
+```
+
+The second profile repeats real drift detection, database cleanup, historical
+replay and compute/decrypt checks with legacy host-listener and host-listener-poller
+stopped on every operator and host chain. It verifies that the default-chain
+consumers are running before stopping legacy ingestion. Previously running legacy
+services are restored in a `finally` block, including on failure. Extra host
+chains are stopped too; the drift workload targets the default chain.
+
+Both profiles run, in that order, in `standard` and `standard-shard-stateful`.
+They require an honest majority (for example, `two-of-three`); unsupported
+topologies are skipped by the standard suite and rejected by direct invocation.
+The recovery assertion checks restored computation counts and a successful
+follow-up compute/decrypt, rather than exact historical row equality.
+
+On GitHub, add the `e2e` label to the PR to enable the direct
+`test-suite-e2e-tests` workflow. Alternatively, dispatch that workflow on the
+branch with `scenario=two-of-three`, `test-profile=ciphertext-drift-consumer-recovery`
+and `build=true`. Use `test-profile=standard-shard-stateful` to run both paths.
+The reusable job is `fhevm-e2e-test` (step `Selected e2e suite`); the orchestrator
+calls it from `run-e2e-tests-shard-stateful` with `two-of-three-multi-chain`.
+The images must include host-consumer autonomous recovery and listener-core
+atomic registration; an older consumer image cannot pass this test.
+
 ## Mental Model
 
 - `up` resolves a target bundle, runs preflight, generates `.fhevm`, and boots the stack
