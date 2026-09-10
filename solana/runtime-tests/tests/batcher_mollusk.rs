@@ -937,14 +937,14 @@ fn initialize_and_open_first_batch(
     min_batch_age_slots: u64,
 ) -> BatchKeys {
     check_batcher_instruction(
-        &context,
+        context,
         &initialize_batcher_ix(fixture, min_batch_age_slots),
         &[Check::success()],
     );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
     check_batcher_instruction(
-        &context,
+        context,
         &open_batch_ix(fixture, &keys, None),
         &[Check::success()],
     );
@@ -1032,7 +1032,7 @@ fn run_dispatch(
         ],
     );
     let ix = dispatch_ix(fixture, keys);
-    let result = check_batcher_instruction(&context, &ix, &[Check::success()]);
+    let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
     read_batch(context, keys.batch).burned_total_handle
 }
@@ -1068,7 +1068,7 @@ fn run_settle(
         proof,
         pending_burn,
     );
-    let result = check_batcher_instruction(&context, &ix, &[Check::success()]);
+    let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
         assert_eq!(ledger.evaluate_fhe_cpis(context, &result), 1);
@@ -2696,14 +2696,14 @@ fn snapshot_lifecycle(
     prefix: &str,
 ) {
     check_batcher_instruction(
-        &context,
+        context,
         &initialize_batcher_ix(fixture, 0),
         &[Check::success()],
     );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
     let open = open_batch_ix(fixture, &keys, None);
-    let open_result = check_batcher_instruction(&context, &open, &[Check::success()]);
+    let open_result = check_batcher_instruction(context, &open, &[Check::success()]);
     assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
     seed_open_batch_balances(context, &keys, ledger);
 
@@ -2738,7 +2738,7 @@ fn snapshot_lifecycle(
         ],
     );
     let dispatch = dispatch_ix(fixture, &keys);
-    let dispatch_result = check_batcher_instruction(&context, &dispatch, &[Check::success()]);
+    let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &dispatch_result);
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 

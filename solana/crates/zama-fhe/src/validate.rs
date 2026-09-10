@@ -225,9 +225,7 @@ fn validate_lowered_effect(
         mark_lowered_dictionary_entry(used_dictionary, *index)?;
     }
     for grant in grants {
-        for index in [grant.consumer_state_index] {
-            mark_lowered_account(used_accounts, index)?;
-        }
+        mark_lowered_account(used_accounts, grant.consumer_state_index)?;
     }
     Ok(())
 }

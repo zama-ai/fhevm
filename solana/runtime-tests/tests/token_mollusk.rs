@@ -2999,7 +2999,7 @@ fn run_burn(
         fixture.owner_attestation(amount_seed),
         pending_burn,
     );
-    check_token_instruction(&context, &ix, &[Check::success()]);
+    check_token_instruction(context, &ix, &[Check::success()]);
     read_state_handle(
         context,
         fixture.burned_amount_state,
