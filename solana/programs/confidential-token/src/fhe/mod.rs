@@ -8,9 +8,9 @@
 //! `(confidential_token::ID, mint)` ([`crate::token_app`]), and every value is controlled by a
 //! PDA of this program — the token account for holder-scoped values, the `total-supply` PDA for
 //! the encrypted total supply. Reading a value into a computation is admitted by that PDA's
-//! signature, so the token program signs for every value an execution touches and no "compute
-//! signer" identity exists. Who may decrypt a handle is said on the write that produces it
-//! (`PersistentOutput::allow`); the owner is allowed on every holder-scoped write.
+//! signature. The token signs for its own States; reading another program's State requires
+//! that program to supply its authority's signature. Decrypt permissions are declared on
+//! the producing output (`zama_fhe::StateOutput::allow`); holder balance writes allow the owner.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
 use zama_host::{program::ZamaHost, HostConfig};

@@ -166,7 +166,7 @@ export type QuitAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** execution's value authority. */
+  /** Owns the token account funding the refund. */
   batchAuthority?: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord?: Address<TAccountJoinRecord>;
@@ -435,7 +435,7 @@ export type QuitInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being quit. */
   batch: Address<TAccountBatch>;
-  /** execution's value authority. */
+  /** Owns the token account funding the refund. */
   batchAuthority: Address<TAccountBatchAuthority>;
   /** The user's join record for this batch. */
   joinRecord: Address<TAccountJoinRecord>;
@@ -674,7 +674,7 @@ export type ParsedQuitInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being quit. */
     batch: TAccountMetas[3];
-    /** execution's value authority. */
+    /** Owns the token account funding the refund. */
     batchAuthority: TAccountMetas[4];
     /** The user's join record for this batch. */
     joinRecord: TAccountMetas[5];

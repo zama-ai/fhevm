@@ -1,7 +1,7 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
 //! Two signers cover two authorities, and they are only sometimes the same key: `payer` funds rent
-//! for persistent output accounts; `authority` is the default authority
+//! for State growth and lazy meter creation; `authority` is the default authority
 //! that signs for persistent values read and written. Every persistent value an execution touches
 //! is admitted by its own authority's signature — found among the default signer and the signing
 //! remaining accounts — and nothing else: an application program signs for its PDAs by CPI and
@@ -41,25 +41,23 @@ use walk::{walk_steps, ExecutionHandleContext, RandContext};
 #[derive(Accounts)]
 #[event_cpi]
 pub struct FheExecute<'info> {
-    /// Pays rent for any persistent output accounts.
+    /// Pays rent for State growth and lazy meter creation.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Default authority signer: admits every persistent value read or written that does not name
-    /// an authority of its own. An output that sets `authority_index` points at a remaining account
-    /// instead, and that account must sign and must equal the authority the output declares; an
-    /// operand's authority may likewise be any signing remaining account.
+    /// Default authority signer. Each State read or written requires its stored authority to
+    /// sign, either here or among the remaining accounts.
     pub authority: Signer<'info>,
     /// Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
     /// counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
     /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// System program used for persistent output creation.
+    /// System program used for rent top-ups and lazy meter creation.
     pub system_program: Program<'info, System>,
     /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
-    /// persistent values the execution touches. Only the `program` half is proved (from the
-    /// output authority, on create), so no caller can rotate a fresh *signer* to reach another
+    /// States controlled by the default authority. State creation proves the authority is a PDA
+    /// of `program`, so no caller can rotate a fresh *signer* to reach another
     /// program's meter — but a program declares its own `scope` freely, and a fresh scope is a
     /// fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply
     /// this meter; trusted applications and the unrestricted default omit it. An
@@ -95,8 +93,7 @@ pub fn fhe_execute<'info>(
     let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
     // The account table owns every remaining-accounts invariant for the execution:
     // duplicate rejection (at construction), the used-account bitmap (marked in
-    // preflight, asserted before execution mutates state), persistent-output
-    // claims, and output-PDA derivation.
+    // preflight), canonical State validation, and cached State/scratch writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
     // every persistent value the default authority controls belongs to. Metering and rand seeds

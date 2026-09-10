@@ -1,4 +1,4 @@
-//! `FheExecutionBuilder`'s admission machine: the step commit path and the four typed ceilings.
+//! `FheExecutionBuilder`'s admission machine: the step commit path and three typed resource ceilings.
 //!
 //! Public API surface: app programs. The named op methods live in `ops.rs` — this file is the
 //! part that decides whether a step, and finally the execution, is admitted at all.
@@ -10,15 +10,11 @@
 //! that region three times — building, serializing the packet, and assembling the CPI account
 //! tables in `FheExecution::invoke` — and the budget below charges all three.
 //!
-//! An execution `build` returns is one whose *app-side* instruction fits: four ceilings make
-//! every wall the builder can see a typed rejection instead of a runtime abort, each an exact
-//! function of the shape:
+//! Three resource ceilings reject an oversized build before it reaches the app's CPI path.
+//! The app must also budget its own allocations and the surrounding transaction:
 //!
 //! - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling
 //!   ([`FheExecutionBuildError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
-//! - **Persistent creates** — at most [`crate::cost::MAX_PERSISTENT_CREATES`] (20), the SDK's
-//!   policy cap; with one system CPI per create the instruction trace no longer binds
-//!   ([`FheExecutionBuildError::ExceedsPersistentCreateLimit`]).
 //! - **CPI packet** — the serialized packet must fit the 10 KiB a CPI may carry, counted
 //!   exactly at `finish` ([`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`]).
 //! - **Build heap** — the builder admits every byte it requests from the allocator against
@@ -32,13 +28,11 @@
 //!   byte-for-byte against a counting allocator across the whole shape frontier in `heap_budget`,
 //!   and the never-crosses claim has its own adversarial test there.
 //!
-//! One wall is deliberately *not* typed, because no app-side number can see it: the host's own
-//! CPI frame grows with created outputs times allowed keys per output — and the host's heap cost
-//! for MMR-mature updates — which are pinned by the boundary sweeps in
-//! `runtime-tests/tests/fhe_execute_boundary.rs` and documented in invariant #61; see
-//! `crate::cost`'s module doc for the mechanism. `FheExecution::cost` reports the exact packet
-//! bytes, trace floor, and tallied heap so an app composing a larger transaction can budget the
-//! rest.
+//! The host's heap is not covered by these ceilings: its allocations depend on live State size,
+//! MMR peaks and permissions per output. Boundary sweeps in `runtime-tests/tests/fhe_execute_boundary.rs`
+//! measure those limits (invariant #61). State creation is separate; execution may grow existing
+//! States and top up rent. [`FheExecution::cost`] reports packet bytes, trace bounds and tallied
+//! app-side heap so callers can budget the surrounding transaction.
 
 use zama_host::{
     AppScope, CoprocessorInputAttestation, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
@@ -70,8 +64,8 @@ pub struct FheExecutionBuilder<'id> {
     pub(crate) authority: ExecutionAuthority,
     pub(crate) steps: TalliedVec<FheExecuteStep>,
     pub(crate) produced_types: TalliedVec<u8>,
-    /// Persistent accounts this execution has already written. A later persistent-shaped reference
-    /// to one of them is rejected with `StateSlotWrittenEarlier`: the app must feed the
+    /// State slots this execution has already written. A later slot reference to one of them
+    /// is rejected with `StateSlotWrittenEarlier`: the app must feed the
     /// earlier step's transient value instead, which is the only spelling the host accepts.
     pub(crate) persistent_producers: TalliedVec<(u8, Option<u8>)>,
     pub(crate) remaining_accounts: TalliedVec<ExecutionAccountMeta>,
@@ -83,13 +77,10 @@ pub struct FheExecutionBuilder<'id> {
     /// Coprocessor attestations backing `VerifiedInput` operands, referenced by index. Held here
     /// (rather than inline in the operand) so `Operand` stays `Copy`.
     pub(crate) verified_inputs: TalliedVec<CoprocessorInputAttestation>,
-    /// The application every persistent value of the execution belongs to, once one has been
-    /// referenced. The host meters, deny-checks and seeds on it, and refuses a second one.
+    /// Application of States controlled by the default authority, once referenced. The host
+    /// meters and rand-seeds on it; States under additional signers may belong to other apps.
     pub(crate) app: Option<AppScope>,
-    /// Persistent outputs committed so far that create their account — one system CPI each on
-    /// the common host path, which is what [`crate::cost::instruction_trace_floor`] charges.
-    /// Capped at [`crate::cost::MAX_PERSISTENT_CREATES`].
-    /// Persistent outputs committed so far that update an existing account.
+    /// Committed State outputs; bounds possible rent top-ups in the instruction-trace estimate.
     pub(crate) state_outputs: usize,
     /// Whether any committed step is a rand step (the host emits one random-seeds event CPI).
     pub(crate) has_rand_step: bool,

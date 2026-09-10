@@ -418,7 +418,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for any persistent output accounts."
+            "Pays rent for State growth and lazy meter creation."
           ],
           "writable": true,
           "signer": true
@@ -426,10 +426,8 @@
         {
           "name": "authority",
           "docs": [
-            "Default authority signer: admits every persistent value read or written that does not name",
-            "an authority of its own. An output that sets `authority_index` points at a remaining account",
-            "instead, and that account must sign and must equal the authority the output declares; an",
-            "operand's authority may likewise be any signing remaining account."
+            "Default authority signer. Each State read or written requires its stored authority to",
+            "sign, either here or among the remaining accounts."
           ],
           "signer": true
         },
@@ -464,7 +462,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for persistent output creation."
+            "System program used for rent top-ups and lazy meter creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -473,8 +471,8 @@
           "docs": [
             "Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs",
             "(`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the",
-            "persistent values the execution touches. Only the `program` half is proved (from the",
-            "output authority, on create), so no caller can rotate a fresh *signer* to reach another",
+            "States controlled by the default authority. State creation proves the authority is a PDA",
+            "of `program`, so no caller can rotate a fresh *signer* to reach another",
             "program's meter — but a program declares its own `scope` freely, and a fresh scope is a",
             "fresh meter (INVARIANTS #41). Untrusted applications in the metering band MUST supply",
             "this meter; trusted applications and the unrestricted default omit it. An",

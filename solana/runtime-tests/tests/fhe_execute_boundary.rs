@@ -790,11 +790,9 @@ fn cost_snapshot_solana_ceilings() {
             ceiling(
                 64,
                 false,
-                "every instruction executed in a transaction, top-level plus each CPI; each \
-                 created output issues 1 CPI on the common path (3 on the squat fallback), so \
-                 twenty creates plus both event CPIs spend 24 of the 64 and the heap, not the \
-                 trace, is the binding wall; the trace is shared with the app's own CPIs in the \
-                 same transaction",
+                "every top-level instruction and CPI shares this transaction limit; budget \
+                 State and scratch creation, rent top-ups, lazy meter creation, host events, \
+                 final scratch close and the app's other CPIs",
             ),
         ),
         (

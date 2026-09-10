@@ -7,10 +7,10 @@
 //! A value admitted by an additional signing authority belongs to that authority's own
 //! application and does not fold: the signature is that program's consent, given through
 //! `invoke_signed`, for this execution to read the value or write it. That is how programs
-//! compose on Solana — the token program spends a batcher-owned amount, or writes the batcher a
-//! receipt of what it transferred — while the meter stays on the application that built the
-//! execution. The deny list is not scoped that way: a write is an allow in the value's own
-//! application, so every application touched is checked, whoever signed for it.
+//! compose on Solana: the token can spend an amount in a JoinRecord's contribution State when
+//! the batcher signs as that JoinRecord. The meter stays on the default authority's application.
+//! States read, written or used to initiate a grant are deny-checked independently of that meter;
+//! a grant's consumer State is deny-checked when the grant is consumed.
 
 use super::account_table::ExecutionAccountTable;
 use super::*;
@@ -73,7 +73,7 @@ struct Preflight<'t, 'a, 'info> {
     app: Option<AppScope>,
     /// Every distinct application touched, the default authority's included, in first-seen order.
     touched_apps: Vec<AppScope>,
-    /// Persistent accounts written by completed earlier steps. Operands are checked
+    /// State slots written by completed earlier steps. Operands are checked
     /// before the current step's output is recorded, so read-then-update in one
     /// step remains valid.
     slots_written: Vec<(u8, [u8; 32])>,

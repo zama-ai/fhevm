@@ -24,8 +24,8 @@ pub struct Quit<'info> {
     /// The pending batch being quit.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; transfer authority for the refund and the reset
-    /// execution's value authority.
+    /// Owns the token account funding the refund.
+    /// CHECK: canonical per-batch authority PDA, checked by seeds below.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch.
@@ -112,10 +112,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
-    // Phase 1: exact refund — the joined encrypted State IS the transfer amount. The
-    // batch authority signs via invoke_signed; the token's spend gate accepts it because the
-    // batch authority controls every joined value, and the host admits the read by that same
-    // signature.
+    // Phase 1: refund the contribution slot's amount. The batch authority signs to spend
+    // from the batch's token account; the JoinRecord signs to read its contribution State.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     let bump = [ctx.accounts.join_record.bump];

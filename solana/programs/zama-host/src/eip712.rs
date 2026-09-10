@@ -117,8 +117,8 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
 /// version 1 is exactly 33 bytes and carries the 32-byte context id in `extra_data[1..33]`;
-/// version 3 is exactly 65 bytes: the same 32-byte id at that offset, then the 32-byte key of the
-/// encrypted State whose public leaf the certificate is about (RFC 035).
+/// version 4 is exactly 65 bytes: the same id, then the State address used to route the request.
+/// This function extracts only the context id; the verifier checks the public leaf separately.
 /// Because the KMS signs over `extra_data`, the returned id is authenticated by the
 /// certificate. Returns `None` for an unsupported version or a short payload.
 ///

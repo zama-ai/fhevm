@@ -64,7 +64,7 @@ pub(crate) enum PersistKind {
 /// Pre-built app data for a persist-heavy shape: the persistent input the chain starts from and
 /// one ready persistent output per persisting step, each allowing `allows_per_output` distinct
 /// keys so every key interns its own dictionary entry — the heaviest audience per output. A
-/// create carries a three-seed authority proof (tag, 32-byte owner, bump), the token shape.
+/// create writes an empty State slot; update replaces an existing slot.
 pub(crate) fn persist_shape_data(
     kind: PersistKind,
     outputs: usize,
@@ -92,10 +92,8 @@ pub(crate) fn persist_shape_data(
     (input, outputs)
 }
 
-/// The chain shape at full depth with the first `outputs.len()` steps writing persistent
-/// outputs and the rest staying transient, the value threading through all of them. With one
-/// create this is the dep-chain / load-smoke shape; with `MAX_PERSISTENT_CREATES` creates it is
-/// the heaviest create-load the builder admits.
+/// A dependent chain whose first `outputs.len()` steps write State outputs and whose remaining
+/// steps stay transient. The dep-chain / load-smoke specimen uses one State output.
 pub(crate) fn chain_with_outputs(
     steps: usize,
     input: Uint64Handle,
@@ -186,7 +184,7 @@ pub(crate) fn persist_shape(
 
 /// The invariant #61 counterexample shape: `creates` public outputs that all allow the same
 /// eight keys. The shared keys intern once in the dictionary, so the app-side ceilings price
-/// this shape like a narrow one — while the host seals one leaf per key per created account in
+/// this shape like a narrow one — while the host seals one leaf per key per output in
 /// its own CPI frame.
 pub(crate) fn shared_audience_public_creates_shape(
     creates: usize,

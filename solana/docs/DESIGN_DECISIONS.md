@@ -1,7 +1,11 @@
 # Solana PoC Design Decisions
 
+Last synced: 2026-09-10.
+
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
-Older entries preserve the rationale at the time of their adoption. DD-049 supersedes the account, permission, and composition interfaces of DD-032/033/036/039/047/048; consult it for the current model. For the EVM mapping see
+Older entries preserve the rationale at the time of their adoption. DD-049 supersedes the account, permission, disclosure, and composition interfaces of
+DD-032/033/036/039/045/047/048; consult it for the current model. DD-046 retains the allocator
+decision with current resource limits. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
@@ -2221,30 +2225,19 @@ Why not ship an allocator:
 
 1. The guild precedent (Pinocchio, 2026-06-25): a low-level win bought with permanent complexity
    is not worth it while the executor "doesn't do much compute at all" — stay on the framework
-   default for the PoC, revisit only with benchmarks. No benchmark showing a real app blocked on
-   heap after the fhevm-internal#1872 copy reductions exists.
-2. The current failure modes are good: every ceiling the app can hit at build time is a typed
-   error — `TooManySteps` at the host's one step cap, `ExceedsPersistentCreateLimit` at the
-   SDK's create cap, `ExceedsCpiInstructionDataLimit`
-   where the packet outgrows what a CPI may carry, and `ExceedsBuildHeapBudget` where the
-   builder's own byte tally — build, packet, and the invoke-side account tables together,
-   proven equal to a counting allocator across the shape frontier in `heap_budget/` — says
-   the instruction cannot survive the fixed region — plus a clean revert
-   committing nothing host-side. The forward-growing custom-allocator
-   pattern degrades past the mapped region into a VM access violation instead of a clean error,
-   and the granted heap size is not discoverable at runtime (no syscall), so a program can never
-   verify it got the frame it requested.
-3. A bigger heap would buy almost nothing. The `fhe_execute_boundary/*` snapshot entries show the
-   walls per execution shape: chain-shaped executions reach the host's step cap without touching
-   the heap, and for the all-created-public shape the heap wall (21 steps) and the transaction's
-   non-extendable 64-entry instruction trace (common path: 1 CPI per created output; squat
-   fallback: 3) sit within one
-   step of each other — an allocator spending a raised frame would gain that shape at most one
-   step before the trace stops it anyway. The one axis a raised frame would genuinely extend —
-   persistent updates of MMR-mature values, whose decode cost grows with on-chain state
-   (`mature_updates_peaks_8`, `mature_updates_peaks_32` and `mature_updates` at the peak cap: 19, 7, 4 steps) — is bounded by history the app accumulated
-   itself, not by anything a transaction can request more of. Storage rent and compute dominate
-   cost.
+   default for the PoC, revisit with a benchmark of the application that needs more heap.
+2. The builder has typed limits for steps (`TooManySteps`), CPI instruction data
+   (`ExceedsCpiInstructionDataLimit`) and its own requested heap
+   (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
+   These limits do not model live State size or prevent the host from exhausting its separate
+   heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
+3. State outputs no longer create an account per result, so the old create cap and
+   per-result system-CPI trace argument no longer apply. The runtime snapshots now show
+   32-step dependent chains reaching the step cap, shared-audience public outputs reaching
+   24 before the host heap fails at 25, and updates across States with 8, 32 and 64 MMR peaks
+   reaching 15, 7 and 4 steps. These are shape limits; the allocator decision does not make
+   a host heap failure acceptable for an application we intend to support. A failing application
+   benchmark is grounds to reopen fhevm-internal#1872.
 
 The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
 back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB

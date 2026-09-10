@@ -1,13 +1,9 @@
-//! Single owner of every remaining-accounts safety invariant for one
-//! `fhe_execute` execution.
+//! Validates and caches remaining accounts for one `fhe_execute` execution.
 //!
-//! Construction rejects duplicate account keys. Preflight marks every account
-//! the execution references and [`ExecutionAccountTable::assert_all_used`] rejects
-//! dangling accounts before any pass touches state, so later passes access by
-//! index without their own bookkeeping. Persistent-output claims (one write per
-//! account per execution), authority-signer lookup, deny-record location by
-//! canonical derived address, and output-PDA derivation also live here, so the
-//! invariants of the execution's account handling exist in exactly one place.
+//! Construction rejects duplicate keys. Preflight marks referenced accounts, and
+//! `assert_all_used` rejects unused accounts. Canonical State/scratch validation,
+//! authority-signer lookup, deny-record lookup and flushing dirty accounts live here.
+//! Preflight separately enforces one write per State slot.
 
 use super::*;
 
@@ -22,9 +18,7 @@ pub(super) struct ExecutionAccountTable<'a, 'info> {
 
 impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
     /// Rejects duplicate keys up front so no index-referenced account can be
-    /// validated as one role and used as another. The scan is quadratic; the
-    /// bound is the transaction account limit (~64 keys today, `u16::MAX`
-    /// under SIMD-0406-style extensions), so it stays trivial.
+    /// validated as one role and used as another.
     pub(super) fn new(accounts: &'a [AccountInfo<'info>]) -> Result<Self> {
         for (index, account) in accounts.iter().enumerate() {
             require!(

@@ -18,11 +18,11 @@ pub struct Join<'info> {
     /// The pending batch being joined.
     #[account(mut, constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
-    /// CHECK: per-batch authority PDA; recipient owner of the transfer and authority of the
-    /// receipt the token program writes.
+    /// Owns the batch's destination token account.
+    /// CHECK: canonical per-batch authority PDA, checked by seeds below.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
-    /// The user's join record for this batch; created on first join.
+    /// The user's join record for this batch; created on first join and controls its contribution State.
     #[account(
         init_if_needed,
         payer = payer,

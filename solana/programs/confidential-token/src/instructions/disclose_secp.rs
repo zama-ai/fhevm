@@ -9,11 +9,12 @@ use super::*;
 pub struct DiscloseSecp<'info> {
     /// Confidential mint whose application scopes the disclosed encrypted State and event.
     pub mint: Box<Account<'info, ConfidentialMint>>,
-    /// Confidential token account for account-scoped kinds. Must be absent for total supply.
+    /// Token account whose State contains the handle. Absent for the mint total-supply State.
     pub token_account: Option<Box<Account<'info, ConfidentialTokenAccount>>>,
-    /// The `EncryptedState` encrypted State the disclosed handle belongs to.
-    /// CHECK: canonical PDA, layout, and host ownership are validated by the `verify_public_decrypt`
-    /// CPI; this handler additionally binds it to one exact token state field of `mint`.
+    /// The State whose history contains a public permission for the disclosed handle.
+    /// The handler binds its program, mint scope and token-account or total-supply authority.
+    /// Disclosure authenticates the handle and cleartext, without a token-specific field label.
+    /// CHECK: canonical PDA, layout and host ownership are validated by the verifier CPI.
     pub encrypted_state: UncheckedAccount<'info>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,

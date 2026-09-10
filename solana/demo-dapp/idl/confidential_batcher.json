@@ -617,7 +617,7 @@
         {
           "name": "batch_authority",
           "docs": [
-            "receipt the token program writes."
+            "Owns the batch's destination token account."
           ],
           "pda": {
             "seeds": [
@@ -651,7 +651,7 @@
         {
           "name": "join_record",
           "docs": [
-            "The user's join record for this batch; created on first join."
+            "The user's join record for this batch; created on first join and controls its contribution State."
           ],
           "writable": true,
           "pda": {
@@ -1106,7 +1106,7 @@
         {
           "name": "batch_authority",
           "docs": [
-            "execution's value authority."
+            "Owns the token account funding the refund."
           ],
           "pda": {
             "seeds": [

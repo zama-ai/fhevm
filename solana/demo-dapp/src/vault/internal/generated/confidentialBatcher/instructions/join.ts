@@ -240,9 +240,9 @@ export type JoinAsyncInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** receipt the token program writes. */
+  /** Owns the batch's destination token account. */
   batchAuthority?: Address<TAccountBatchAuthority>;
-  /** The user's join record for this batch; created on first join. */
+  /** The user's join record for this batch; created on first join and controls its contribution State. */
   joinRecord?: Address<TAccountJoinRecord>;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
@@ -538,9 +538,9 @@ export type JoinInput<
   batcher: Address<TAccountBatcher>;
   /** The pending batch being joined. */
   batch: Address<TAccountBatch>;
-  /** receipt the token program writes. */
+  /** Owns the batch's destination token account. */
   batchAuthority: Address<TAccountBatchAuthority>;
-  /** The user's join record for this batch; created on first join. */
+  /** The user's join record for this batch; created on first join and controls its contribution State. */
   joinRecord: Address<TAccountJoinRecord>;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
@@ -804,9 +804,9 @@ export type ParsedJoinInstruction<
     batcher: TAccountMetas[2];
     /** The pending batch being joined. */
     batch: TAccountMetas[3];
-    /** receipt the token program writes. */
+    /** Owns the batch's destination token account. */
     batchAuthority: TAccountMetas[4];
-    /** The user's join record for this batch; created on first join. */
+    /** The user's join record for this batch; created on first join and controls its contribution State. */
     joinRecord: TAccountMetas[5];
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[6];

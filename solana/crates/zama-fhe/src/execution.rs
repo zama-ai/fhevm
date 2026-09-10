@@ -34,7 +34,7 @@ use anchor_lang::prelude::AccountInfo;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
     pub(crate) authority: ExecutionAuthority,
-    /// The application every persistent value belongs to; `None` for a transient-only execution.
+    /// Application of referenced States controlled by the default authority, or `None`.
     pub(crate) app: Option<AppScope>,
     /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
     pub(crate) has_rand_step: bool,
@@ -126,9 +126,10 @@ impl FheExecution {
         self.authority
     }
 
-    /// The application this execution runs as — the `(program, scope)` of every persistent value
-    /// it reads or writes — or `None` when it touches no persistent value. The host keys its deny
-    /// record, HCU meter and trust record on it, so this is what an app derives those PDAs from.
+    /// The `(program, scope)` of referenced States controlled by the default authority, or `None`
+    /// when it controls none. The host keys its HCU meter and trust record on this application.
+    /// States under additional signing authorities may belong to other applications; each
+    /// application's deny record is checked independently.
     pub fn app(&self) -> Option<AppScope> {
         self.app
     }
