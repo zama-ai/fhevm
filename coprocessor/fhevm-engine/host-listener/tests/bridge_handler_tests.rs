@@ -421,7 +421,11 @@ async fn ingest_fallback_block_at(
         summary: BlockSummary {
             number: block_number,
             hash: block_hash,
-            parent_hash: FixedBytes::ZERO,
+            // Consecutive synthetic blocks must link to the predecessor used
+            // by ingest_fallback_block, just like finalized RPC deliveries.
+            parent_hash: FixedBytes::from(
+                [block_number.saturating_sub(1) as u8; 32],
+            ),
             timestamp: BLOCK_TIMESTAMP,
         },
         catchup: false,

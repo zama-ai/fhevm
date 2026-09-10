@@ -71,3 +71,12 @@ Set `BATCH_WATCH_DATABASE_URL` to that disposable database before running the
 command. The test applies migrations and temporarily installs a trigger that
 rejects the second insert, then verifies rollback and idempotent retry. Do not
 point it at a shared or production database.
+
+### Combined live and finalized registration
+
+`ListenerConsumer::register_contracts_with_finality(&contracts)` registers both
+sets in one atomic WATCH command. Declare live, catchup, final, and final-catchup
+queues first. A live delivery then proves the complete filter set is active.
+Use `consume_final` and `consume_final_catchup` for finalized deliveries, and
+unregister both sets on shutdown. Finality policy belongs to listener-core;
+consumers do not choose an independent depth or RPC tag.

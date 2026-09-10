@@ -20,6 +20,8 @@ use crate::database::tfhe_event_propagate::Database;
 use consumer::BlockPayload;
 pub mod catchup;
 mod drift_recovery;
+#[cfg(test)]
+mod finalization_tests;
 mod ingestion;
 mod runner;
 pub use runner::run_consumer;

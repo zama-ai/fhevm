@@ -181,6 +181,45 @@ material. Downloads do not block broker acknowledgement. The worker stops with
 its delivery subscription during drift recovery and shutdown, and respects stack
 retirement. No additional CLI option is required.
 
-At this stage block finalization must still be supplied by a legacy listener or
-poller. Compressed material for an existing key still requires their RPC-finality
-check; the consumer does not provide an RPC finalized height.
+The consumer subscribes to live, catchup, finalized and finalized-catchup flows.
+Live and finalized contract filters are registered atomically. Finalized payloads
+are re-ingested idempotently, then their exact chain/block hash is finalized in
+the same transaction, including orphan cleanup and deferred fallback grants.
+Only a successful commit permits acknowledgement; contradictory ancestry retries.
+Ordinary catchup never implies finality.
+
+The KMS worker checks candidate block status in PostgreSQL. It processes only its
+own chain, including compressed migration of an existing key, and requires no
+RPC connection. Legacy listener/poller callers retain their additional RPC gate.
+
+Configure `blockchain.finality_active: true` in listener-core. With
+`blockchain.finality_tag: true`, core uses the chain's RPC `finalized` tag;
+otherwise core uses its configured `finality_depth`. The consumer trusts the
+selected policy and has no separate finality flag. Disabling core finality leaves
+pending activations waiting; the consumer does not infer finality from live depth.
+
+Manual and drift replay request both ordinary and finalized catchup for the same
+resolved bounds. Core clamps finalized replay to its finality boundary. All four flows
+and the KMS worker stop together during drift recovery and shutdown.
+
+The library test `consumer::finalization_tests` exercises real PostgreSQL and a
+mock material store: pre-final downloads, quiet-chain retries, missed-live CRS
+recovery, duplicate final delivery, orphan cancellation, chain isolation, and
+transaction rollback on contradictory ancestry. The broker catchup tests also
+exercise both finalized queues with real PostgreSQL ingestion.
+
+## Optional contract parity
+
+ProtocolConfig and ConfidentialBridge addresses remain optional, as in the
+legacy listener. ProtocolConfig proposals are processed only on the configured
+canonical chain. If that role is enabled without a ProtocolConfig address, the
+consumer emits the same warning as legacy.
+
+Broker integration tests cover registration, omitted and incorrect addresses,
+canonical-chain filtering, bridge source-chain and destination-handle validation,
+and deferred fallback synthesis on finalized catchup. Legacy tests remain in place.
+Run with Docker and an isolated Redis or RabbitMQ broker:
+
+```sh
+CATCHUP_BROKER_URL=redis://127.0.0.1:6379 SQLX_OFFLINE=true cargo test -p host-listener --test consumer_optional_contracts_tests -- --ignored
+```

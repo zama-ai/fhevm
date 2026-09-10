@@ -111,7 +111,7 @@ struct Args {
     #[arg(
         long,
         allow_hyphen_values = true,
-        help = "Replay from this block, inclusive; negative values are offsets from the first observed live block"
+        help = "Replay finalized blocks only, starting from this block, inclusive; negative values are offsets from the first observed live block"
     )]
     pub catchup_from_block: Option<i64>,
 
@@ -119,7 +119,7 @@ struct Args {
         long,
         allow_hyphen_values = true,
         requires = "catchup_from_block",
-        help = "Last replay block, inclusive; defaults to -1 (one block before the first observed live block); negative values are offsets from that block. Live processing continues"
+        help = "Last requested replay block, inclusive; only finalized blocks are replayed; defaults to -1 (one block before the first observed live block); negative values are offsets from that block. Live processing continues"
     )]
     pub catchup_up_to_block: Option<i64>,
 

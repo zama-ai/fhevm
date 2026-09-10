@@ -106,7 +106,13 @@ impl BlockIngestor {
     }
 
     /// One supervised worker per delivery subscription; retry even on quiet chains.
-    pub(super) async fn process_kms(&self, cancel: CancellationToken) {
+    pub(super) async fn process_kms<
+        A: crate::kms_generation::aws_s3::AwsS3Interface + Clone + 'static,
+    >(
+        &self,
+        s3: A,
+        cancel: CancellationToken,
+    ) {
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval
             .set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -119,7 +125,7 @@ impl BlockIngestor {
             let result = tokio::select! {
                 biased;
                 _ = self.cancel.cancelled() => return,
-                result = self.process_kms_once() => result,
+                result = self.process_kms_once(s3.clone()) => result,
             };
             if let Err(error) = result {
                 warn!(%error, "KMS activation pass failed; retrying on next tick");
@@ -127,15 +133,16 @@ impl BlockIngestor {
         }
     }
 
-    async fn process_kms_once(&self) -> Result<(), HandlerError> {
+    async fn process_kms_once<
+        A: crate::kms_generation::aws_s3::AwsS3Interface + Clone + 'static,
+    >(
+        &self,
+        s3: A,
+    ) -> Result<(), HandlerError> {
         if self.ready().await? {
-            crate::kms_generation::process_kms_generation_activations(
-                self.db.pool().await,
-                crate::kms_generation::aws_s3::AwsS3Client {},
-                None,
-            )
-            .await
-            .map_err(|error| HandlerError::Transient(error.into()))?;
+            crate::kms_generation::process_kms_generation_activations_for_chain(
+                self.db.pool().await, s3, self.chain_id,
+            ).await.map_err(|error| HandlerError::Transient(error.into()))?;
         }
         Ok(())
     }
@@ -160,7 +167,12 @@ impl BlockIngestor {
             parent_hash: payload.parent_hash,
             timestamp: payload.timestamp,
         };
-        let catchup = payload.flow == BlockFlow::Catchup;
+        let finalized =
+            matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
+        let catchup = matches!(
+            payload.flow,
+            BlockFlow::Catchup | BlockFlow::FinalCatchup
+        );
         // Historical and finalized deliveries do not measure live ingestion timing.
         if payload.flow == BlockFlow::Live {
             observe_consumer_block_timing(
@@ -184,7 +196,7 @@ impl BlockIngestor {
             summary: block_summary,
             logs,
             catchup,
-            finalized: false,
+            finalized,
         };
         match ingest_with_retry(
             chain_id,
@@ -202,6 +214,16 @@ impl BlockIngestor {
         {
             Ok(_) => {
                 db.tick.update();
+                if finalized && !catchup {
+                    if let Err(error) = db
+                        .prune_finalized_block_history(
+                            block_summary.number as i64,
+                        )
+                        .await
+                    {
+                        warn!(%error, "Could not prune finalized block history");
+                    }
+                }
 
                 inc_blocks_processed(chain_id_str, 1);
                 Ok(AckDecision::Ack)
