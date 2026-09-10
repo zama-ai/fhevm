@@ -1381,7 +1381,9 @@ impl Database {
         fhe_event_count: i32,
         allow_event_count: i32,
     ) -> Result<(), SqlxError> {
-        let status = if finalized { "finalized" } else { "pending" };
+        // Never publish finalized state before the linkage check and deferred
+        // effects succeed, including when this is the first observation.
+        let status = "pending";
         // Insert with per-block event counts (written once at first insert and
         // not touched on later finalization transitions). On conflict, preserve
         // existing state but repair missing/stale ancestry so branch resolution
@@ -1410,28 +1412,19 @@ impl Database {
         .execute(tx.deref_mut())
         .await?;
 
-        // 2. Finalize this block or orphan the competing observed branch. This
-        // path just recorded the block it finalizes (ingestion of a finalized
-        // block), so a linkage refusal (None) means the recorded row genuinely
-        // contradicts the finalized predecessor: leave it for the finalization
-        // loop to sort out. Orphaned rows in the work/ACL tables are left in
-        // place (pre-wave1 semantics): handles are fork-scoped by
-        // construction, so orphaned state is unreferenced on the canonical
-        // branch and benign. Bridge/authorization event rows are keyed by
-        // observation block instead and are retracted in the same
-        // transaction.
-        if finalized {
-            if let Some(orphaned_hashes) = self
-                .update_block_as_finalized(
-                    tx,
-                    block_summary.number as i64,
-                    &block_summary.hash,
-                )
-                .await?
-            {
-                self.retract_orphaned_event_state(tx, &orphaned_hashes)
-                    .await?;
-            }
+        if finalized
+            && !crate::database::ingest::finalize_observed_block_tx(
+                self,
+                tx,
+                block_summary.number as i64,
+                &block_summary.hash,
+            )
+            .await?
+        {
+            return Err(SqlxError::Protocol(
+                "Refused finalized block: orphaned or contradictory ancestry"
+                    .into(),
+            ));
         }
         Ok(())
     }

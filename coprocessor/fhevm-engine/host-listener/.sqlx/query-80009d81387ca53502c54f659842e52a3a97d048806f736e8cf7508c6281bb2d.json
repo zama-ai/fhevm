@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            chain_id,\n            block_hash,\n            crs_id,\n            crs_digest,\n            storage_urls\n        FROM kms_crs_activation_events\n        WHERE\n            status = 'pending'\n            AND crs_content IS NULL\n        FOR UPDATE SKIP LOCKED\n        ",
+  "query": "\n        SELECT\n            chain_id,\n            block_hash,\n            crs_id,\n            crs_digest,\n            storage_urls\n        FROM kms_crs_activation_events\n        WHERE\n            ($1::bigint IS NULL OR chain_id = $1) AND\n            status = 'pending'\n            AND crs_content IS NULL\n        FOR UPDATE SKIP LOCKED\n        ",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Int8"
+      ]
     },
     "nullable": [
       false,
@@ -40,5 +42,5 @@
       false
     ]
   },
-  "hash": "9d174a381db2612da046ebb58eab90320717f3057752205275e05f8a4640cf8b"
+  "hash": "80009d81387ca53502c54f659842e52a3a97d048806f736e8cf7508c6281bb2d"
 }

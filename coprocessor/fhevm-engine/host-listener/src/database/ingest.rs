@@ -1210,8 +1210,8 @@ async fn notify_coprocessor_upgrade_proposed(
 ///
 /// Like every finality-gated feature (state-hash stamping, the bridge
 /// src-finality gate, KMS activations), this runs only where finalization
-/// runs: a consumer-mode (broker-fed) ingest must be paired with a
-/// finalizing listener/poller or deferred grants never materialize.
+/// runs: broker-fed consumers invoke this through finalized deliveries,
+/// while legacy listeners/pollers invoke it through their finalization loop.
 pub async fn synthesize_finalized_fallback_grants(
     db: &Database,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -1400,6 +1400,31 @@ pub async fn update_finalized_blocks(
     .await;
 }
 
+/// Finalize an observed canonical block with all deferred side effects in the
+/// caller's transaction. A refusal must not be acknowledged as finalization.
+pub async fn finalize_observed_block_tx(
+    db: &Database,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    block_number: i64,
+    block_hash: &BlockHash,
+) -> Result<bool, sqlx::Error> {
+    let Some(orphaned_hashes) = db
+        .update_block_as_finalized(tx, block_number, block_hash)
+        .await?
+    else {
+        return Ok(false);
+    };
+    db.retract_orphaned_event_state(tx, &orphaned_hashes)
+        .await?;
+    synthesize_finalized_fallback_grants(db, tx, block_number, block_hash)
+        .await?;
+    // Wake delayed delegations only when finalization commits.
+    sqlx::query!("NOTIFY new_host_block",)
+        .execute(&mut **tx)
+        .await?;
+    Ok(true)
+}
+
 pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     db: &mut Database,
     last_block_number: u64,
@@ -1498,48 +1523,11 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         }
     };
     for (block_number, block_hash) in canonical {
-        match db
-            .update_block_as_finalized(&mut tx, block_number, &block_hash)
+        match finalize_observed_block_tx(db, &mut tx, block_number, &block_hash)
             .await
         {
-            Ok(Some(orphaned_hashes)) => {
-                // Orphaned work/ACL rows are deliberately left in place
-                // (pre-wave1 semantics): handles are fork-scoped by
-                // construction, so orphaned state is unreferenced on the
-                // canonical branch and benign. Bridge/authorization event
-                // rows are keyed by observation block instead and must be
-                // retracted with the branch that carried them.
-                if let Err(err) = db
-                    .retract_orphaned_event_state(&mut tx, &orphaned_hashes)
-                    .await
-                {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to retract orphaned event state during finalization"
-                    );
-                    return;
-                }
-                // The block just became final: materialize its deferred
-                // fallback grants in the same transaction, so the synthesis
-                // is atomic with the finalization it is gated on.
-                if let Err(err) = synthesize_finalized_fallback_grants(
-                    db,
-                    &mut tx,
-                    block_number,
-                    &block_hash,
-                )
-                .await
-                {
-                    error!(
-                        block_number,
-                        ?err,
-                        "Failed to synthesize finalized fallback grants"
-                    );
-                    return;
-                }
-            }
-            Ok(None) => {
+            Ok(true) => {}
+            Ok(false) => {
                 // Finalization refused (missing row / orphaned / parent
                 // linkage contradiction). STOP the batch: the next height's
                 // linkage check would pass vacuously without a finalized
@@ -1565,11 +1553,6 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     if let Err(err) = tx.commit().await {
         error!(?err, "Failed to commit finalized blocks update");
         return;
-    }
-    // Notify the database of the new block
-    // Delayed delegation rely on this signal to reconsider ready delegation
-    if let Err(err) = db.block_notification().await {
-        error!(error = %err, "Error notifying listener for new block");
     }
     // Best-effort maintenance: drop old finalized block rows nothing
     // references anymore, so ancestry probes and the table itself stop

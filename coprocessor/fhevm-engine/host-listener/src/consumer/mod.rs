@@ -32,6 +32,8 @@ use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
 };
 pub mod catchup;
+#[cfg(test)]
+mod finalization_tests;
 mod ingestion;
 mod metrics;
 
@@ -95,7 +97,7 @@ pub(super) struct KnownDrift {
     catchup_to: i64,
 }
 
-const STARTING_DRIFT: KnownDrift = KnownDrift {
+pub(super) const STARTING_DRIFT: KnownDrift = KnownDrift {
     id: -1,
     is_finished: true,
     catchup_to: 0,
@@ -353,11 +355,12 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     info!("Consumer ensure queues");
     client.ensure_consumer().await?;
+    client.ensure_final_consumer().await?;
     if manual_catchup.enabled() {
-        client.ensure_catchup_consumer().await?;
+        client.ensure_final_catchup_consumer().await?;
     }
     info!("Consumer registering contracts");
-    client.register_contracts(&contracts).await?;
+    client.register_contracts_with_finality(&contracts).await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -384,6 +387,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         is_protocol_config_listener,
         disable_synthetic_ops: config.disable_synthetic_ops,
     };
+    if ingest_options.is_protocol_config_listener
+        && config.protocol_config_address.is_none()
+    {
+        warn!(
+            chain_id = %chain_id,
+            "ProtocolConfig listener has no --protocol-config-address; \
+             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
+        );
+    }
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused; the
@@ -425,7 +437,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // remain explicit so recovery can later pause live independently.
     let handle_block =
         move |payload: BlockPayload, _cancel: CancellationToken| {
-            if payload.flow != BlockFlow::Catchup {
+            if payload.flow == BlockFlow::Live {
                 blockchain_tick.update();
             }
             let db = db.clone();
@@ -450,7 +462,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                     return Ok(AckDecision::Ack);
                 }
                 live_reference.observe(&payload).await;
-                if payload.flow == BlockFlow::Catchup {
+                if matches!(
+                    payload.flow,
+                    BlockFlow::Catchup | BlockFlow::FinalCatchup
+                ) {
                     // Temporary: discard the drifted block and its tail, even
                     // after cleanup. A later commit adds replay restart and
                     // generation isolation. Never mutate the live drift gate.
@@ -499,13 +514,16 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let mut tasks = tokio::task::JoinSet::new();
     let cancel = client.cancel_token.clone();
     tasks.spawn(async move {
-        kms.process_kms(cancel).await;
+        kms.process_kms(crate::kms_generation::aws_s3::AwsS3Client {}, cancel)
+            .await;
         Ok(())
     });
     let live = client.consume(handle_block.clone());
+    let final_blocks = client.consume_final(handle_block.clone());
     tasks.spawn(async move { live.await.map_err(anyhow::Error::from) });
+    tasks.spawn(async move { final_blocks.await.map_err(anyhow::Error::from) });
     if manual_catchup.enabled() {
-        let catchup = client.consume_catchup(handle_block);
+        let catchup = client.consume_final_catchup(handle_block);
         tasks.spawn(async move { catchup.await.map_err(anyhow::Error::from) });
     }
 
@@ -513,8 +531,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         if manual_catchup.enabled() {
             let reference = head_rx.await.map_err(|_| anyhow::anyhow!("Live consumer ended before providing the catchup reference"))?;
             let (start, end) = manual_catchup.resolve(reference)?;
-            info!(reference, start, end, "Requesting manual catchup (inclusive); live processing continues");
-            client.request_catchup(start, end).await?;
+            info!(reference, start, end, "Requesting manual finalized catchup (inclusive); live processing continues");
+            client.request_final_catchup(start, end).await?;
             info!(start, end, "Manual catchup request published");
         }
         Ok::<_, anyhow::Error>(())

@@ -154,12 +154,68 @@ pub async fn insert_kms_generation_events_tx(
     Ok(())
 }
 
+/// Legacy callers retain their additional RPC gate. Broker consumers use the
+/// database finality established by core, restricted to their own chain.
+#[derive(Clone, Copy)]
+pub(crate) enum ActivationScope {
+    Legacy(Option<i64>),
+    Consumer(ChainId),
+}
+
+impl From<Option<i64>> for ActivationScope {
+    fn from(height: Option<i64>) -> Self {
+        Self::Legacy(height)
+    }
+}
+
+impl ActivationScope {
+    fn chain_id(self) -> Option<i64> {
+        match self {
+            Self::Legacy(_) => None,
+            Self::Consumer(chain) => Some(chain.as_i64()),
+        }
+    }
+    fn rpc_height(self) -> Option<i64> {
+        match self {
+            Self::Legacy(height) => height,
+            Self::Consumer(_) => None,
+        }
+    }
+    fn compressed_enabled(self) -> bool {
+        !matches!(self, Self::Legacy(None))
+    }
+}
+
 pub async fn process_kms_generation_activations<
     A: AwsS3Interface + Clone + 'static,
 >(
     db_pool: Pool<Postgres>,
     s3_client: A,
     rpc_finalized_block: Option<i64>,
+) -> anyhow::Result<u64> {
+    process_activations(
+        db_pool,
+        s3_client,
+        ActivationScope::Legacy(rpc_finalized_block),
+    )
+    .await
+}
+
+pub async fn process_kms_generation_activations_for_chain<
+    A: AwsS3Interface + Clone + 'static,
+>(
+    db_pool: Pool<Postgres>,
+    s3_client: A,
+    chain_id: ChainId,
+) -> anyhow::Result<u64> {
+    process_activations(db_pool, s3_client, ActivationScope::Consumer(chain_id))
+        .await
+}
+
+async fn process_activations<A: AwsS3Interface + Clone + 'static>(
+    db_pool: Pool<Postgres>,
+    s3_client: A,
+    scope: ActivationScope,
 ) -> anyhow::Result<u64> {
     // These write `kms_key_activation_events` / `kms_crs_activation_events`, which cutover
     // treats as duplicated-for-isolation, so the transaction has to be fenced: it takes the
@@ -181,13 +237,12 @@ pub async fn process_kms_generation_activations<
             return Ok(0);
         }
     };
-    cancel_orphaned_key_activations(&mut tx).await?;
-    cancel_orphaned_crs_activations(&mut tx).await?;
-    activate_ready_key_activations(&mut tx).await?;
+    cancel_orphaned_key_activations(&mut tx, scope.chain_id()).await?;
+    cancel_orphaned_crs_activations(&mut tx, scope.chain_id()).await?;
+    activate_ready_key_activations(&mut tx, scope.chain_id()).await?;
     let applied_compressed_materials =
-        apply_ready_compressed_key_materials(&mut tx, rpc_finalized_block)
-            .await?;
-    activate_ready_crs_activations(&mut tx).await?;
+        apply_ready_compressed_key_materials(&mut tx, scope).await?;
+    activate_ready_crs_activations(&mut tx, scope.chain_id()).await?;
     tx.commit().await?;
     for material in applied_compressed_materials {
         info!(
@@ -223,15 +278,14 @@ pub async fn process_kms_generation_activations<
         }
     };
     let key_activations =
-        all_pending_key_activations_to_download(&mut tx).await?;
+        all_pending_key_activations_to_download(&mut tx, scope.chain_id())
+            .await?;
     let compressed_materials =
-        all_pending_compressed_key_materials_to_download(
-            &mut tx,
-            rpc_finalized_block,
-        )
-        .await?;
+        all_pending_compressed_key_materials_to_download(&mut tx, scope)
+            .await?;
     let crs_activations =
-        all_pending_crs_activations_to_download(&mut tx).await?;
+        all_pending_crs_activations_to_download(&mut tx, scope.chain_id())
+            .await?;
     if key_activations.is_empty()
         && compressed_materials.is_empty()
         && crs_activations.is_empty()
@@ -260,8 +314,7 @@ pub async fn process_kms_generation_activations<
     download_and_store_crs_activations(&mut tx, &s3_client, crs_activations)
         .await?;
     let newly_applied_compressed_materials =
-        apply_ready_compressed_key_materials(&mut tx, rpc_finalized_block)
-            .await?;
+        apply_ready_compressed_key_materials(&mut tx, scope).await?;
     if compressed_material_failures == 0 {
         info!("Downloading succeeded for KMSGeneration and CRS");
     } else {

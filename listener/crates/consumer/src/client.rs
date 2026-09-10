@@ -477,12 +477,35 @@ impl ListenerConsumer {
     /// not database activation. Requires core with atomic WATCH support.
     /// `register_filter` remains available for a single custom filter.
     pub async fn register_contracts(&self, contracts: &[Address]) -> Result<(), ConsumerError> {
-        let mut command = WatchCommand::Atomic(
-            contracts
-                .iter()
-                .map(|address| self.create_filter_on_log_address(*address))
-                .collect(),
-        );
+        self.register_contract_filters(contracts, false).await
+    }
+
+    /// Register live and finalized filters together, after declaring all four
+    /// delivery queues. The first live delivery then proves both sets are active.
+    pub async fn register_contracts_with_finality(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        self.register_contract_filters(contracts, true).await
+    }
+
+    async fn register_contract_filters(
+        &self,
+        contracts: &[Address],
+        include_final: bool,
+    ) -> Result<(), ConsumerError> {
+        let mut filters: Vec<_> = contracts
+            .iter()
+            .map(|address| self.create_filter_on_log_address(*address))
+            .collect();
+        if include_final {
+            filters.extend(
+                contracts
+                    .iter()
+                    .map(|address| self.create_final_filter_on_log_address(*address)),
+            );
+        }
+        let mut command = WatchCommand::Atomic(filters);
         command.validate()?;
         let namespace = chain_id_to_namespace(self.chain_id);
         let publisher = self.broker.publisher(&namespace).await?;
