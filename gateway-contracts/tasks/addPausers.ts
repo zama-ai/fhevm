@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config';
 
-import { getPauserSetContract, getRequiredEnvVar } from './utils/loadVariables';
+import { getPauserSetContract, getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
 
 task('task:addGatewayPausers')
   .addParam(
@@ -10,7 +10,7 @@ task('task:addGatewayPausers')
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    const numPausers = parseInt(getRequiredEnvVar('NUM_PAUSERS'));
+    const numPausers = getRequiredCountEnvVar('NUM_PAUSERS');
 
     const pausers = [];
     for (let idx = 0; idx < numPausers; idx++) {

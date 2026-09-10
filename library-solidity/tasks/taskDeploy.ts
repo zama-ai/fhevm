@@ -7,7 +7,7 @@ import { task, types } from 'hardhat/config';
 import type { TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import { getRequiredEnvVar } from './utils/loadVariables';
+import { getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
 
 const LEGACY_DEPLOY_ALL_HOST_CONTRACTS_WARNING = `task:deployLegacyAllHostContracts is deprecated and will be removed after the v0.13 rollout.
 It deploys KMSGeneration and is valid only for canonical-host deployments.
@@ -180,7 +180,7 @@ function buildKmsNodeParams(): {
   caCert: string;
   storagePrefix: string;
 }[] {
-  const numNodes = +getRequiredEnvVar('NUM_KMS_NODES');
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
   const nodes: {
     txSenderAddress: string;
     signerAddress: string;
@@ -303,8 +303,8 @@ task('task:deployInputVerifier')
     const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
     let initialSigners: string[] = [];
-    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < +numSigners; idx++) {
+    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
