@@ -40,7 +40,8 @@ async fn http_errors_are_not_retried_inside_submission() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let url = format!("http://{}", listener.local_addr()?).parse()?;
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let provider: alloy::providers::RootProvider = ProviderBuilder::default().connect_reqwest(gateway_http_client(&url)?, url);
+    let provider: alloy::providers::RootProvider =
+        ProviderBuilder::default().connect_reqwest(gateway_http_client(&url)?, url);
     let result = tokio::time::timeout(
         Duration::from_secs(2),
         provider.raw_request::<_, Value>("eth_sendRawTransaction".into(), ["0x00"]),
