@@ -207,11 +207,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         )?;
     blockchain_timeout_tick.update();
 
-    let mut db = Database::new_with_gcs_mode(
+    let stack_mode = StackMode::new(config.gcs_mode);
+    let mut db = Database::new_with_stack_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
-        config.gcs_mode,
+        stack_mode.clone(),
     )
     .await?;
     let aws_s3_client = AwsS3Client {};
@@ -264,7 +265,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
-    let stack_mode = StackMode::new(config.gcs_mode);
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();
