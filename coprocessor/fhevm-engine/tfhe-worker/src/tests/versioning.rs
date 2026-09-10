@@ -56,6 +56,31 @@ async fn gcs_mode_tracks_consensus_version_not_release() {
 }
 
 #[tokio::test]
+async fn gcs_mode_fails_before_the_consensus_column_exists() {
+    let db = setup_test_db(ImportMode::None)
+        .await
+        .expect("setup test db");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(db.db_url())
+        .await
+        .expect("connect");
+
+    // The previous release's database: versioning exists, the column does not.
+    sqlx::query("ALTER TABLE versioning DROP COLUMN consensus_version")
+        .execute(&pool)
+        .await
+        .expect("drop column");
+    let error = resolve_gcs_mode(db.db_url())
+        .await
+        .expect_err("must not pick a mode from an unmigrated database");
+    assert!(
+        format!("{error:#}").contains("consensus_version"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[tokio::test]
 async fn bootstrap_refuses_existing_database_and_consensus_downgrade() {
     let db = setup_test_db(ImportMode::None)
         .await

@@ -327,10 +327,11 @@ pub struct StaleStackError {
     pub live: i64,
 }
 
-/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) or `undefined_column`
-/// (SQLSTATE 42703) - i.e. the `versioning` row is not readable yet (migrations not applied).
+/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) - i.e. the `versioning`
+/// table does not exist yet (migrations not applied). A missing `consensus_version` column
+/// is the previous release's database before this release's migration; that stays an error.
 fn is_unmigrated(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if matches!(db.code().as_deref(), Some("42P01" | "42703")))
+    matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
 }
 
 /// Fetch the live consensus version singleton, or `None` if the `versioning` row is
