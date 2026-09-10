@@ -1,6 +1,11 @@
+use std::time::Duration;
+
 use fhevm_engine_common::bootstrap_versioning::bootstrap_versioning;
-use fhevm_engine_common::versioning::resolve_gcs_mode;
+use fhevm_engine_common::versioning::{
+    resolve_gcs_mode, run_stack_version_listener, StackMode, EVENT_STACK_VERSION_UPGRADED,
+};
 use test_harness::instance::{setup_test_db, ImportMode};
+use tokio_util::sync::CancellationToken;
 
 async fn set_consensus_version(db_url: &str, version: i64) {
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -53,6 +58,37 @@ async fn gcs_mode_tracks_consensus_version_not_release() {
             "the next version must run green"
         );
     }
+}
+
+#[tokio::test]
+async fn stack_mode_leaves_gcs_on_the_upgrade_notification() {
+    let db = setup_test_db(ImportMode::None)
+        .await
+        .expect("setup test db");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(db.db_url())
+        .await
+        .expect("connect");
+
+    let mode = StackMode::new(true);
+    let cancel = CancellationToken::new();
+    tokio::spawn(run_stack_version_listener(
+        pool.clone(),
+        mode.clone(),
+        cancel.clone(),
+    ));
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while mode.gcs_mode() && tokio::time::Instant::now() < deadline {
+        sqlx::query(&format!("NOTIFY {EVENT_STACK_VERSION_UPGRADED}"))
+            .execute(&pool)
+            .await
+            .expect("notify");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    cancel.cancel();
+    assert!(!mode.gcs_mode(), "the listener must flip the mode to live");
 }
 
 #[tokio::test]
