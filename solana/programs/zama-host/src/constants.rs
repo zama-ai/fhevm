@@ -36,22 +36,12 @@ pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///
-/// Derived from measured budgets on the interned wire format (fhevm-internal#1853 W8), not chosen
-/// a priori. Measured on the max-op cost-snapshot execution: a marginal chained step costs ~9 bytes of
-/// instruction data and ~3,700 CU. At 32 ops the maximum execution measures ~450 bytes of instruction
-/// data (the whole signed transaction stays under the 1,232-byte packet limit with >=150 bytes of
-/// envelope headroom — asserted by `mollusk_fhe_execute_max_op_transaction_fits_packet`) and ~150k CU
-/// (under the 200k default budget, so no compute-budget instruction is required). 48 ops would
-/// exceed the default CU budget and leave <5% packet headroom for realistic account envelopes.
-/// Capacity below this cap is shape-dependent: the all-created-public shape executes at most 20
-/// creates in one instruction, stopped by the fixed 32 KB heap at 21 — which no compute-budget
-/// request can raise (DD-046) — with the transaction's non-extendable 64-entry instruction trace
-/// (each created output issues 1 CPI on the common `create_account` path, 3 only on the
-/// pre-funded squat fallback) within one step of the same wall; executions beyond a
-/// wall revert cleanly (measured; pinned per shape by the `fhe_execute_boundary/*` snapshot
-/// entries, whose `limited_by` field names the binding axis). Wire
-/// indices (`producer_index`, dictionary and account indices) are `u8`, bounding any future raise
-/// at 256.
+/// The runtime boundary suite measures whole transactions, including scratch
+/// open/close, under the fixed 32 KiB heap and 1,232-byte packet limit. Dependent
+/// chains reach this cap; wide permissions and State histories can hit a lower
+/// limit. See `runtime-tests/cost-snapshots/fhe_execute_boundary.json` for each
+/// measured shape and its binding resource. Raising this cap requires new
+/// measurements, not extrapolation from the smallest execution.
 pub const MAX_FHE_EXECUTION_STEPS: usize = 32;
 /// At most 32 selected 32-byte handles fit the return-data channel, independently of step count.
 pub const MAX_RETURNED_HANDLES: usize =

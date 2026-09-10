@@ -1485,7 +1485,8 @@ mod fhe_execute_acl_tests {
     }
 
     #[test]
-    fn state_slot_reload_uses_transaction_origin_across_host_calls() {
+    fn state_slot_origin_is_shared_across_host_calls_and_reset_between_transactions(
+    ) {
         use crate::solana_adapter::SolanaHostRecord;
         use zama_host::{
             ExecutionResultRef, FheBinaryOpCode, FheExecuteEffect,

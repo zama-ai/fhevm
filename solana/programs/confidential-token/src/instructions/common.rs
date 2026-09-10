@@ -30,7 +30,7 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) instructions: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    /// Deny records for the token, input state, and result consumer applications,
+    /// Deny records for the token and input State applications,
     /// omitting absent and duplicate applications.
     pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,

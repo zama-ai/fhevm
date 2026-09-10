@@ -29,7 +29,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
         Ok(Self {
             accounts,
             states: (0..accounts.len()).map(|_| None).collect(),
-            dirty_states: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+            dirty_states: Vec::with_capacity(MAX_FHE_EXECUTION_EFFECTS),
             used: vec![false; accounts.len()],
         })
     }

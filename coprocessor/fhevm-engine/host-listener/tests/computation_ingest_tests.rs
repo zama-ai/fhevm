@@ -334,6 +334,14 @@ async fn disabling_slow_lane_waits_for_locked_rows() -> anyhow::Result<()> {
         Database::new(&instance.db_url, ChainId::try_from(12345_u64)?, 100)
             .await?;
     let pool = db.pool.read().await.clone();
+    let statement_timeout: String =
+        sqlx::query_scalar("SHOW statement_timeout")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        statement_timeout, "2min",
+        "the reset's row-lock waits are bounded"
+    );
     sqlx::query("INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, block_timestamp, block_height, schedule_priority) VALUES ($1, 'updated', NOW(), NOW(), 1, 1)")
         .bind(vec![1u8; 32]).execute(&pool).await?;
     let mut lock = pool.begin().await?;

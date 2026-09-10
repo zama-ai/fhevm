@@ -5,6 +5,33 @@
 use super::*;
 
 #[test]
+fn repeated_results_keep_maximum_depth_for_every_authorized_state() {
+    use bytemuck::Zeroable;
+
+    let mut scratch = TransientState::zeroed();
+    let producer = Pubkey::new_unique();
+    let other_producer = Pubkey::new_unique();
+    let consumer = Pubkey::new_unique();
+    let handle = [7; 32];
+    assert_eq!(scratch.origin_depth(handle), None);
+    scratch.record(handle, producer, 3).unwrap();
+    scratch.allow(handle, consumer).unwrap();
+    scratch.record(handle, other_producer, 9).unwrap();
+    scratch.record(handle, producer, 4).unwrap();
+    scratch.record([8; 32], producer, 100).unwrap();
+
+    assert_eq!(scratch.len(), 4);
+    assert_eq!(scratch.result(0).unwrap().depth, 3);
+    assert_eq!(scratch.origin_depth(handle), Some(9));
+    for authorized in [producer, other_producer, consumer] {
+        assert_eq!(scratch.authorized_depth(handle, authorized), Some(9));
+    }
+    assert_eq!(scratch.authorized_depth(handle, Pubkey::new_unique()), None);
+    assert_eq!(scratch.authorized_depth([8; 32], consumer), None);
+    assert_eq!(scratch.authorized_depth([9; 32], consumer), None);
+}
+
+#[test]
 fn latest_prior_bank_hash_tolerates_skipped_slots() {
     let entries = vec![(8, [8; 32]), (6, [6; 32]), (3, [3; 32])];
 

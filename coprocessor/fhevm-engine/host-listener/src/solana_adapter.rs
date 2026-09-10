@@ -95,7 +95,7 @@ pub fn normalize_solana_records_for_db(
 ) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
-    for (index, record) in records.into_iter().enumerate() {
+    for record in records {
         let computation = match record {
             SolanaHostRecord::FheBinaryOp(record) => binary_computation(record),
             SolanaHostRecord::FheTernaryOp(record) => {
@@ -140,12 +140,7 @@ pub fn normalize_solana_records_for_db(
                 continue;
             }
         };
-        tfhe_logs.push(to_log_tfhe(
-            computation,
-            transaction_id,
-            block,
-            index as u64,
-        ));
+        tfhe_logs.push(to_log_tfhe(computation, transaction_id, block));
     }
 
     dedup_material_requests(&mut material_requests);
@@ -248,11 +243,10 @@ fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
     }
 }
 
-pub fn to_log_tfhe(
+fn to_log_tfhe(
     computation: Computation,
     transaction_id: TransactionHash,
     block: SolanaBlockMeta,
-    log_index: u64,
 ) -> LogTfhe {
     LogTfhe {
         allowed_outputs: computation.outputs.iter().copied().collect(),
@@ -266,7 +260,8 @@ pub fn to_log_tfhe(
         // `Default::default()` placeholders.
         tx_depth_size: 0,
         dependence_chain: transaction_id,
-        log_index: Some(log_index),
+        // Assigned across the complete sealed block before origin reconstruction.
+        log_index: None,
         // Every reconstructed host op ran on-chain in this signature. Operand
         // origin bits are derived afterwards by `populate_operand_boundary_masks`,
         // the same walk the EVM ingest path uses.
@@ -733,14 +728,13 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-            7,
         );
 
         assert_eq!(log.transaction_hash, Some(tx_id));
         assert_eq!(log.block_number, 42);
         assert_eq!(log.block_timestamp, block_timestamp);
         assert!(!log.allowed_outputs.is_empty());
-        assert_eq!(log.log_index, Some(7));
+        assert_eq!(log.log_index, None);
         assert!(log.is_executor_minted);
         assert!(log.operand_boundary_mask.is_none());
     }
@@ -903,7 +897,8 @@ mod tests {
                 .iter()
                 .map(|log| log.log_index)
                 .collect::<Vec<_>>(),
-            vec![Some(0), Some(1), Some(2)]
+            vec![None; 3],
+            "block ingestion assigns indexes across transaction groups"
         );
         assert!(
             !tfhe_logs[0].allowed_outputs.is_empty(),

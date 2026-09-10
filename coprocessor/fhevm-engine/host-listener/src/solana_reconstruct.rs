@@ -1,9 +1,9 @@
-//! Phase 2: reconstruct zama-host decoded op records from decoded instruction data +
-//! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
+//! Reconstruct zama-host operations and State effects from instruction data and
+//! block context. Random operations additionally use their signed seed event CPI.
 //!
 //! Covers the `fhe_execute` execution walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission), the
-//! encrypted-state history each step appends (the keys it allows and whether it
+//! encrypted-state history the effects append (the keys they allow and whether a result
 //! is made public: the leaf record of RFC 035).
 
 use std::collections::HashSet;
@@ -159,7 +159,7 @@ fn resolve_rhs(
 
 /// Reconstructs the per-step op records a `fhe_execute` execution produces, mirroring
 /// the program's `walk_steps`: walk steps in order, resolve operands
-/// (`Transient` referring to earlier steps' produced handles), recompute each
+/// (`EarlierStep` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's execution primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).

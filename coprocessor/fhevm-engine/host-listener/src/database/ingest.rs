@@ -120,8 +120,7 @@ pub(crate) fn populate_operand_boundary_masks(
     logs.sort_by_key(|log| log.log_index.unwrap_or(u64::MAX));
     let mut previous_index = None;
     for log in logs.iter() {
-        let log_index =
-            log.log_index.expect("validated mask-bearing log index");
+        let log_index = log.log_index.expect("validated computation log index");
         if previous_index == Some(log_index) {
             return Err(refuse_mask_derivation(
                 "refusing duplicate computation log index for operand-origin derivation",
@@ -137,7 +136,7 @@ pub(crate) fn populate_operand_boundary_masks(
     for log in logs.iter_mut() {
         let transaction_hash = log
             .transaction_hash
-            .expect("validated mask-bearing transaction hash");
+            .expect("validated computation transaction hash");
         let minted = minted_by_transaction.entry(transaction_hash).or_default();
         let mask = log.computation.boundary_mask(|handle| {
             minted.contains(handle)

@@ -624,6 +624,7 @@ impl Database {
         }
 
         // Wait for locked rows: skipping the last Slow row would falsely finish the reset.
+        // The pool's statement_timeout bounds each batch, including its row-lock wait.
         let mut total_promoted: u64 = 0;
         loop {
             let updated = sqlx::query!(
@@ -770,7 +771,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn insert_computation_legacy_row(
+    async fn insert_computation_row(
         &self,
         tx: &mut Transaction<'_>,
         output_handle: &[u8],
@@ -878,7 +879,7 @@ impl Database {
         let mut inserted = 0;
         for (index, output) in outputs.iter().enumerate() {
             inserted += usize::from(
-                self.insert_computation_legacy_row(
+                self.insert_computation_row(
                     tx,
                     output.as_slice(),
                     &dependencies,

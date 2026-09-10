@@ -30,7 +30,7 @@ pub(super) fn preflight_execution<'info>(
         authority: ctx.accounts.authority.key(),
         app,
         touched_apps: Vec::new(),
-        slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_STEPS),
+        slots_written: Vec::with_capacity(MAX_FHE_EXECUTION_EFFECTS),
     };
     preflight.admit_state(args.execution_state_index)?;
     require_keys_eq!(
@@ -424,41 +424,58 @@ mod tests {
     /// Reading a value needs its authority's signature: the default context signer admits it,
     /// so does a signing remaining account, and nothing else does.
     #[test]
-    fn state_slot_is_admitted_by_its_authority_signature_only() {
+    fn state_operand_is_admitted_by_its_authority_signature_only() {
         let authority = Pubkey::new_unique();
-        let args = execution(vec![read_step(0, 2)]);
+        for lhs in [
+            FheExecuteOperand::StateSlot {
+                handle_index: 0,
+                state_index: 0,
+                key_index: 2,
+            },
+            FheExecuteOperand::TransientResult {
+                handle_index: 0,
+                consumer_state_index: 0,
+            },
+        ] {
+            let args = execution(vec![FheExecuteStep::Binary {
+                op: FheBinaryOpCode::Add,
+                lhs,
+                rhs: FheExecuteOperand::Scalar { value_index: 1 },
+                output_fhe_type: 5,
+            }]);
 
-        let by_default_signer = vec![encrypted_state(app(1), authority, [9; 32])];
-        assert_eq!(
-            run(&by_default_signer, &args, authority).unwrap().app,
-            app(1)
-        );
+            let by_default_signer = vec![encrypted_state(app(1), authority, [9; 32])];
+            assert_eq!(
+                run(&by_default_signer, &args, authority).unwrap().app,
+                app(1)
+            );
 
-        let by_remaining_signer = vec![
-            encrypted_state(app(1), authority, [9; 32]),
-            signer_account(authority, true),
-        ];
-        assert!(run(&by_remaining_signer, &args, Pubkey::new_unique()).is_ok());
+            let by_remaining_signer = vec![
+                encrypted_state(app(1), authority, [9; 32]),
+                signer_account(authority, true),
+            ];
+            assert!(run(&by_remaining_signer, &args, Pubkey::new_unique()).is_ok());
 
-        let authority_present_but_not_signing = vec![
-            encrypted_state(app(1), authority, [9; 32]),
-            signer_account(authority, false),
-        ];
-        assert_eq!(
-            run(
-                &authority_present_but_not_signing,
-                &args,
-                Pubkey::new_unique()
-            )
-            .unwrap_err(),
-            error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
-        );
+            let authority_present_but_not_signing = vec![
+                encrypted_state(app(1), authority, [9; 32]),
+                signer_account(authority, false),
+            ];
+            assert_eq!(
+                run(
+                    &authority_present_but_not_signing,
+                    &args,
+                    Pubkey::new_unique()
+                )
+                .unwrap_err(),
+                error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
+            );
 
-        let nobody = vec![encrypted_state(app(1), authority, [9; 32])];
-        assert_eq!(
-            run(&nobody, &args, Pubkey::new_unique()).unwrap_err(),
-            error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
-        );
+            let nobody = vec![encrypted_state(app(1), authority, [9; 32])];
+            assert_eq!(
+                run(&nobody, &args, Pubkey::new_unique()).unwrap_err(),
+                error!(ZamaHostError::EncryptedStateAccountAuthorityMismatch)
+            );
+        }
     }
 
     /// One execution under its default authority cannot mix States from two applications.

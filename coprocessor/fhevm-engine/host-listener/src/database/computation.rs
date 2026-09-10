@@ -117,9 +117,9 @@ impl Computation {
         Ok(mask)
     }
 
-    /// Decode semantics once, while the native event remains available to
-    /// its caller for provenance and diagnostics. Administrative events and
-    /// input verification do not enqueue computations.
+    /// Decode computation semantics at the EVM boundary. The caller retains
+    /// chain/transaction/log provenance; administrative events and input
+    /// verification do not enqueue computations.
     pub fn from_evm(event: &E) -> Option<Self> {
         use Operand::{Clear as P, Encrypted as H};
         use SupportedFheOperations as O;
@@ -438,6 +438,64 @@ impl Computation {
 mod tests {
     use super::*;
     use alloy_primitives::{Address, FixedBytes, U256};
+
+    #[test]
+    fn administrative_and_input_verification_events_do_not_create_computations()
+    {
+        for event in [
+            E::Initialized(C::Initialized { version: 1 }),
+            E::Upgraded(C::Upgraded {
+                implementation: Address::ZERO,
+            }),
+            E::VerifyInput(C::VerifyInput {
+                caller: Address::ZERO,
+                inputHandle: Handle::repeat_byte(1),
+                userAddress: Address::ZERO,
+                inputProof: Default::default(),
+                inputType: 5,
+                result: Handle::repeat_byte(2),
+            }),
+        ] {
+            assert_eq!(Computation::from_evm(&event), None);
+        }
+    }
+
+    #[cfg(feature = "solana-reconstruct")]
+    #[test]
+    fn boundary_bits_match_the_host_at_every_position() {
+        let computation = Computation::single(
+            SupportedFheOperations::FheSum,
+            (0..=u8::MAX)
+                .map(|index| Operand::Encrypted(Handle::repeat_byte(index)))
+                .collect(),
+            Handle::ZERO,
+        );
+        for boundary in 0..256 {
+            assert_eq!(
+                computation
+                    .boundary_mask(|handle| usize::from(handle[0]) != boundary)
+                    .unwrap(),
+                zama_host::operand_boundary_mask(
+                    (0..256).map(|index| index == boundary)
+                )
+                .unwrap(),
+            );
+        }
+        let mixed = Computation::single(
+            SupportedFheOperations::FheMulDiv,
+            vec![
+                Operand::encrypted([1; 32]),
+                Operand::Clear(vec![2; 32]),
+                Operand::Clear(vec![3; 32]),
+            ],
+            Handle::ZERO,
+        );
+        assert_eq!(
+            mixed.boundary_mask(|_| false).unwrap(),
+            zama_host::operand_boundary_mask([true, false, false]).unwrap(),
+            "clear operands retain their positions without setting a boundary bit",
+        );
+    }
 
     #[test]
     fn clear_operands_keep_the_worker_byte_widths() {

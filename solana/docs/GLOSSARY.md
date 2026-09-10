@@ -60,7 +60,7 @@ stack where one exists.
 | **HCU** | Homomorphic compute unit: the metering unit of FHE work. | — | HCU |
 
 | **result grant** | Transaction-local compute permission for an exact produced handle and consumer State. Held in shared host-owned scratch; the consumer authority must sign consumption, not grant creation. Never a decrypt leaf. | — | `allowTransient` composition |
-| **scratch** | Host-owned PDA `["transient", payer]`, opened once by a top-level payer signature and closed by the exact final top-level instruction. All FHE calls share its result occurrences, grants and HCU. Payer funds/refunds only; State authorities control use. Failed finalization rolls back all writes. | — | transient ACL storage |
+| **scratch** (transaction journal) | Host-owned PDA `["transient", payer]`, opened once by a top-level payer signature and closed by the exact final top-level instruction. All FHE calls share its result occurrences, grants and HCU. Payer funds/refunds only; State authorities control use. Failed finalization rolls back all writes. | — | transient ACL storage |
 | **returned result** | An explicitly selected `(step_index, output_index)` in `FheExecuteArgs.returned_results`. At most 32 entries in requested order, including duplicates; current operators require output index zero. Empty selection returns no handles. `build_returning` selects one typed result. | — | function return value |
 
 ## Entry and exit trust
