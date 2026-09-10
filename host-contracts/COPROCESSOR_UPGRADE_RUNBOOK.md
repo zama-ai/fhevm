@@ -10,6 +10,11 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
 
 - The new coprocessor version is built and the release tag is known (e.g. `v0.15.0`).
 - Its `CONSENSUS_PROTOCOL_VERSION` is one above the active `versioning.consensus_version`.
+- Every operator has run the new release's database migration before starting its green
+  stack. A green service started earlier exits with an error about
+  `versioning.consensus_version` until the migration has run.
+- The green release never creates a database: keep `dbMigration.allowBootstrap` off for it (the
+  chart default). Only the first install of an operator sets it on.
 
 `--software-version` takes the release tag, never the consensus version: `v0.15.0` for the
 v0.14 to v0.15 upgrade, `v0.15.1` for a v0.15 to v0.15.1 one. The consensus version is a

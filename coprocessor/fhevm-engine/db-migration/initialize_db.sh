@@ -286,6 +286,19 @@ initialize_versions_for_deployment() {
   bootstrap_versioning || { log "ERROR: failed to set initial versions"; exit 1; }
 }
 
+# A new database is created only when this release is told to. An empty database
+# must be set up by the release that is live; a newer release finds it later.
+require_bootstrap_allowed() {
+  if [ "$DEPLOYMENT_MODE" != "bootstrap" ]; then
+    return 0
+  fi
+  if [ "${ALLOW_DB_BOOTSTRAP:-false}" = "true" ]; then
+    return 0
+  fi
+  log "ERROR: empty database, but this release must not create one (ALLOW_DB_BOOTSTRAP is not true). Run the first release's migration first."
+  exit 1
+}
+
 # Add a marker before the first migration. It allows a failed setup to retry.
 prepare_version_bootstrap_intent() {
   if [ "$DEPLOYMENT_MODE" = "existing" ]; then
@@ -308,6 +321,7 @@ prepare_version_bootstrap_intent() {
 
 log "Running migrations..."
 resolve_deployment_mode
+require_bootstrap_allowed
 prepare_version_bootstrap_intent
 if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # Partial migrations — the host_chains table doesn't exist yet on this path,
