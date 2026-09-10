@@ -29,6 +29,9 @@ const SCENARIO_TIMEOUT_MS = 20 * 60_000;
 
 const WRAP_AMOUNT = 1000n;
 const BURN_AMOUNT = 7n;
+const hostIdl: { errors: readonly { name: string; code: number }[] } = await Bun.file(
+  new URL("../../../../coprocessor/fhevm-engine/host-listener/idl/zama_host.json", import.meta.url),
+).json();
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const hexToBytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.replace(/^0x/, ""), "hex"));
@@ -159,7 +162,9 @@ describe("solana confidential-token consume vertical", () => {
         throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
       }
       // Pin the named rejection (zama_host IDL: InvalidKmsContext), not any transaction failure.
-      expect(customProgramErrorCode(rejection)).toBe(6061);
+      const contextError = hostIdl.errors.find(({ name }) => name === "InvalidKmsContext");
+      expect(contextError).toBeDefined();
+      expect(customProgramErrorCode(rejection)).toBe(contextError!.code);
     },
     SCENARIO_TIMEOUT_MS,
   );
