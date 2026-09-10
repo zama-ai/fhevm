@@ -17,7 +17,8 @@ const addresses = requireEnv('ADDRESSES')
   .filter(Boolean);
 const deployerAddress = requireEnv('DEPLOYER_ADDRESS').toLowerCase();
 // 0.2 per test signer; default 1.0 for #9. Callers can raise it per chain
-// (Amoy uses 2.0 because canonical snapshot preparation deploys extra proxies).
+// (Amoy uses 2.0 for both: canonical snapshot preparation deploys extra proxies and
+// its gas prices make a single e2e fixture deploy cost more than the 0.2 default).
 const floorWei = BigInt(process.env.FLOOR_WEI || '200000000000000000');
 const deployerFloorWei = BigInt(process.env.DEPLOYER_FLOOR_WEI || '1000000000000000000');
 

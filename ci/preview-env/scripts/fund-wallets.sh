@@ -83,7 +83,11 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   fi
   # Polygon's canonical-snapshot flow deploys a throwaway proxy set before the
   # final contracts, and Amoy gas prices can make that exceed the 1-token default.
+  # The test signers need the same headroom: a single e2e fixture deploy on Amoy was
+  # measured at 0.3 POL, so the 0.2 default drains them partway through the suite and
+  # every later job dies on "insufficient funds" instead of exercising anything.
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
+    FLOOR_WEI="2000000000000000000" \
     DEPLOYER_FLOOR_WEI="2000000000000000000" \
     FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"

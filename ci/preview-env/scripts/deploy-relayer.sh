@@ -44,6 +44,13 @@ case "${kind}" in
     helm upgrade --install relayer "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
       -n "${NAMESPACE}" -f "${relayer_values}" \
       --set-string "image.tag=$(jq -r .relayer <<<"${TAGS_JSON}")"
+    # The relayer seeds /v2/keyurl at startup and exits if it cannot, and its poller
+    # reads the host chain at the FINALIZED block (relayer/src/host/keyurl_poller.rs),
+    # so on Sepolia getCrsMaterials reverts CrsNotGenerated for ~20 min after
+    # ActivateCrs lands at head. Without gating here the e2e suites open against a
+    # CrashLoopBackOff pod and every test fails on ECONNREFUSED to relayer:3000,
+    # which looks exactly like a product regression. Anvil clears this in seconds.
+    kubectl rollout status deployment/relayer -n "${NAMESPACE}" --timeout=30m
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \

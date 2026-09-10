@@ -258,9 +258,11 @@ The two host chains are the real public testnets, so this is the only preview sh
   (`httpUrlValueFrom`/`wsUrlValueFrom`), kms-connector (`$(RPC_ETH_URL)` / `$(RPC_POLYGON_URL)`
   through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
   funder reads the faucet Secrets, masked, from `deploy-rpc-secret.sh`.
-- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 and deployer
-  `#9` to 1.0 ETH on Sepolia / 2.0 POL on Amoy (`FLOOR_WEI` /
-  `DEPLOYER_FLOOR_WEI`), and fails fast if either faucet cannot cover the shortfall.
+- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 ETH on Sepolia and
+  deployer `#9` to 1.0 ETH; on Amoy both floors are 2.0 POL (`FLOOR_WEI` /
+  `DEPLOYER_FLOOR_WEI`), because gas there makes one e2e fixture deploy cost up to
+  0.3 POL and the signers would otherwise run dry mid-suite. It fails fast if either
+  faucet cannot cover the shortfall.
   The **KMS tx-senders also get 0.05 ETH each on Sepolia**: since RFC013 KMSGeneration
   sits on the canonical host chain, so they sign the keygen/crsgen responses there and
   the ceremony stalls at "insufficient funds" without it. Their decryption responses,
@@ -271,6 +273,10 @@ The two host chains are the real public testnets, so this is the only preview sh
   so `apply-chain-env.sh` raises the in-pod waits to `KEYGEN_WAIT_TIMEOUT_MS=60m` and
   `CRSGEN_WAIT_TIMEOUT_MS=40m` (both 15 m elsewhere), with `KEYGEN_TIMEOUT=110m` giving
   helm room for both in the one pod. Budget ~70 min of wall clock here on a good run.
+  The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
+  at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
+  waits on its rollout before the e2e Workflows start, otherwise every test fails on
+  ECONNREFUSED to `relayer:3000` and reads as a product regression.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
