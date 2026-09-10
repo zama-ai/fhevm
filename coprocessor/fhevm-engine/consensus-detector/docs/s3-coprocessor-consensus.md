@@ -252,6 +252,15 @@ still-skipped identity.
 
 ### 4. Download peer revisions
 
+Each poll selects the earliest due verification task for each host chain without
+locking. Each selected task is rechecked and claimed in its own short transaction;
+tasks already claimed by another worker are skipped. The selected chains are
+verified concurrently. The poller waits for the entire batch to finish, then
+sleeps for the smaller of the configured initial verification delay and the time
+remaining until the next eligible task, plus a 100 ms margin. Already-due work
+therefore waits 100 ms; an empty queue waits 10.1 seconds with the defaults. For claimed tasks, eligibility also waits for
+lease expiry. The delay is calculated after the batch completes.
+
 If a `GatewayConfig` snapshot already exists, publication binds the verification
 task to that snapshot in the same transaction as the S3 put. The verification
 delay then only waits for peers to upload. If no snapshot exists yet, a worker
@@ -332,6 +341,11 @@ expired claim cannot finalize the task. Retry count and delay are bounded by:
 
 - `--manifest-verification-retry-count`; and
 - `--manifest-verification-retry-delay`.
+
+The defaults make the first attempt eligible 10 seconds after publication, then
+allow 59 retries spaced 10 seconds apart (60 attempts total). This preserves a
+nominal ten-minute window: `10 s + 59 × 10 s`, excluding attempt execution time
+and polling latency. Consensus stops retries immediately.
 
 ### 5. Compare commitments
 

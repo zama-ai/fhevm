@@ -39,34 +39,6 @@ pub(crate) struct VerificationClaim {
     pub(super) peers: Vec<ClaimedPeer>,
 }
 
-pub(super) async fn bind_one_unbound_pending_task(
-    pool: &PgPool,
-    consensus_epoch: &str,
-) -> Result<(), ExecutionError> {
-    let mut trx = pool.begin().await?;
-    let task_id = sqlx::query_scalar!(
-        r#"
-        SELECT id
-          FROM block_manifest_verification_task
-         WHERE state = 'pending'
-           AND consensus_epoch = $1
-           AND required_quorum IS NULL
-           AND next_attempt_at <= NOW()
-         ORDER BY next_attempt_at, id
-         FOR UPDATE SKIP LOCKED
-         LIMIT 1
-        "#,
-        consensus_epoch,
-    )
-    .fetch_optional(trx.as_mut())
-    .await?;
-    if let Some(task_id) = task_id {
-        bind_task_to_current_registry(&mut trx, task_id).await?;
-    }
-    trx.commit().await?;
-    Ok(())
-}
-
 pub(super) async fn bind_task_to_current_registry(
     trx: &mut Transaction<'_, Postgres>,
     task_id: i64,
@@ -230,37 +202,99 @@ async fn postpone_registry_binding(
     Ok(())
 }
 
-pub(crate) async fn claim_due_task(
+/// A claimed task becomes eligible only after both its retry time and lease expiry.
+pub(super) async fn next_verification_delay(
+    pool: &PgPool,
+    consensus_epoch: &str,
+) -> Result<Option<Duration>, ExecutionError> {
+    let millis = sqlx::query_scalar!(
+        r#"
+        SELECT CEIL(EXTRACT(EPOCH FROM (
+            MIN(CASE WHEN state = 'claimed'
+                THEN GREATEST(next_attempt_at, claim_expires_at)
+                ELSE next_attempt_at END) - NOW()
+        )) * 1000)::BIGINT AS "millis"
+          FROM block_manifest_verification_task
+         WHERE consensus_epoch = $1
+           AND state IN ('pending', 'claimed')
+           AND next_attempt_at IS NOT NULL
+        "#,
+        consensus_epoch,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(millis.map(|millis| Duration::from_millis(millis.max(0) as u64)))
+}
+
+/// Read candidates without locking: one earliest due task per host chain.
+/// Each candidate must still be claimed and rechecked in its own transaction.
+pub(super) async fn ready_verification_tasks(
+    pool: &PgPool,
+    consensus_epoch: &str,
+) -> Result<Vec<i64>, ExecutionError> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT ON (manifest.host_chain_id) task.id
+          FROM block_manifest_verification_task task
+          JOIN block_manifest manifest
+            ON manifest.id = task.local_manifest_id
+           AND manifest.consensus_epoch = task.consensus_epoch
+         WHERE task.consensus_epoch = $1
+           AND task.next_attempt_at <= NOW()
+           AND (task.state = 'pending'
+                OR (task.state = 'claimed' AND task.claim_expires_at <= NOW()))
+         ORDER BY manifest.host_chain_id, task.next_attempt_at, task.id
+        "#,
+        consensus_epoch,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+pub(super) async fn claim_verification_task(
     pool: &PgPool,
     worker_id: &str,
     claim_duration: Duration,
     consensus_epoch: &str,
+    task_id: i64,
 ) -> Result<Option<VerificationClaim>, ExecutionError> {
     let claim_micros = duration_micros("verification claim", claim_duration)?;
     let mut trx = pool.begin().await?;
+    let quorum = sqlx::query_scalar!(
+        r#"
+        SELECT required_quorum
+          FROM block_manifest_verification_task
+         WHERE id = $1 AND consensus_epoch = $2
+           AND next_attempt_at <= NOW()
+           AND (state = 'pending'
+                OR (state = 'claimed' AND claim_expires_at <= NOW()))
+         FOR UPDATE SKIP LOCKED
+        "#,
+        task_id,
+        consensus_epoch,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?;
+    let Some(quorum) = quorum else {
+        // Locked by another worker, or no longer eligible since candidate selection.
+        trx.commit().await?;
+        return Ok(None);
+    };
+    if quorum.is_none() && !bind_task_to_current_registry(&mut trx, task_id).await? {
+        // Gateway configuration is not yet available or usable for this task.
+        trx.commit().await?;
+        return Ok(None);
+    }
     let row = sqlx::query!(
         r#"
-        WITH selected AS (
-            SELECT id
-              FROM block_manifest_verification_task
-             WHERE required_quorum IS NOT NULL
-               AND consensus_epoch = $3
-               AND next_attempt_at <= NOW()
-               AND (
-                    state = 'pending'
-                    OR (state = 'claimed' AND claim_expires_at <= NOW())
-               )
-             ORDER BY next_attempt_at, id
-             FOR UPDATE SKIP LOCKED
-             LIMIT 1
-        )
         UPDATE block_manifest_verification_task target
            SET state = 'claimed',
                claim_owner = $1,
                claim_expires_at = NOW() + $2::BIGINT * INTERVAL '1 microsecond',
                updated_at = NOW()
-          FROM selected, block_manifest manifest
-         WHERE target.id = selected.id
+          FROM block_manifest manifest
+         WHERE target.id = $4
+           AND target.consensus_epoch = $3
            AND manifest.id = target.local_manifest_id
            AND manifest.consensus_epoch = target.consensus_epoch
         RETURNING target.id,
@@ -279,6 +313,7 @@ pub(crate) async fn claim_due_task(
         worker_id,
         claim_micros,
         consensus_epoch,
+        task_id,
     )
     .fetch_optional(trx.as_mut())
     .await?;

@@ -1603,13 +1603,13 @@ consensusDetector:
     manifestPublicationRetryCount: 30
     # Delay after publication before the first peer verification attempt.
     # Clap: --manifest-verification-delay
-    manifestVerificationDelay: 5m
+    manifestVerificationDelay: 10s
     # Delay between peer verification retries.
     # Clap: --manifest-verification-retry-delay
-    manifestVerificationRetryDelay: 1m
+    manifestVerificationRetryDelay: 10s
     # Additional peer verification attempts after the initial attempt.
     # Clap: --manifest-verification-retry-count
-    manifestVerificationRetryCount: 5
+    manifestVerificationRetryCount: 59
     # Wall-clock stall with no newly computed handle before missing
     # ciphertext may be sealed as uncomputed. A computed handle resets it.
     # Clap: --incomplete-block-timeout

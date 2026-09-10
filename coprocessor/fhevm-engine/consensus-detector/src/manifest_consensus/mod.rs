@@ -119,9 +119,9 @@ impl Default for Config {
             discovery_interval: Duration::from_secs(10),
             publication_retry_delay: Duration::from_secs(60),
             publication_retry_count: 30,
-            verification_delay: Duration::from_secs(5 * 60),
-            verification_retry_delay: Duration::from_secs(60),
-            verification_retry_count: 5,
+            verification_delay: Duration::from_secs(10),
+            verification_retry_delay: Duration::from_secs(10),
+            verification_retry_count: 59,
             incomplete_block_timeout: Duration::from_secs(5 * 60),
             incomplete_manifest_max_lag: 3,
             publication_cadence_overrides: BTreeMap::new(),
@@ -292,6 +292,7 @@ pub(crate) async fn start(
         cancel.child_token(),
         client,
         work_gate,
+        config.manifest_consensus.verification_delay,
     );
     supervise("peer manifest verifier", handle, cancel);
 

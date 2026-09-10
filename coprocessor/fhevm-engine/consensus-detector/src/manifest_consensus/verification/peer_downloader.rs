@@ -4,8 +4,9 @@ use alloy_primitives::{Address, U256};
 use aws_sdk_s3::Client;
 #[cfg(test)]
 use block_manifest::ManifestVersion;
+use futures::future::join_all;
 use sqlx::{PgPool, Postgres, Transaction};
-use tokio::{task::JoinHandle, time::MissedTickBehavior};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -42,7 +43,7 @@ use crate::manifest_consensus::manifest_archive::{
     MAX_HISTORY_PREDECESSORS,
 };
 
-const DOWNLOAD_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const DOWNLOAD_POLL_MARGIN: Duration = Duration::from_millis(100);
 const DOWNLOAD_CLAIM: Duration = Duration::from_secs(5 * 60);
 const PEER_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const PEER_OBJECT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -71,8 +72,10 @@ impl fmt::Display for PeerManifestFailure {
     }
 }
 
-pub(crate) use super::verification_queue::claim_due_task;
-use super::verification_queue::{bind_one_unbound_pending_task, ClaimedPeer, VerificationClaim};
+use super::verification_queue::{
+    claim_verification_task, next_verification_delay, ready_verification_tasks, ClaimedPeer,
+    VerificationClaim,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Result returned after one claim has been finalized successfully.
@@ -90,9 +93,16 @@ pub(crate) fn spawn_peer_manifest_downloader(
     token: CancellationToken,
     client: Arc<Client>,
     work_gate: Arc<ManifestWorkGate>,
+    verification_delay: Duration,
 ) -> JoinHandle<Result<(), ExecutionError>> {
     let source = S3PeerManifestSource::new(client);
-    tokio::spawn(run_peer_manifest_downloader(pool, token, source, work_gate))
+    tokio::spawn(run_peer_manifest_downloader(
+        pool,
+        token,
+        source,
+        work_gate,
+        verification_delay,
+    ))
 }
 
 async fn run_peer_manifest_downloader<S: PeerManifestSource>(
@@ -100,66 +110,106 @@ async fn run_peer_manifest_downloader<S: PeerManifestSource>(
     token: CancellationToken,
     source: S,
     work_gate: Arc<ManifestWorkGate>,
+    verification_delay: Duration,
 ) -> Result<(), ExecutionError> {
     info!("Peer manifest verification enabled for this stack consensus_epoch");
     let worker_id = downloader_worker_id();
-    let mut ticker = tokio::time::interval(DOWNLOAD_POLL_INTERVAL);
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
     loop {
         tokio::select! {
             _ = token.cancelled() => return Ok(()),
-            _ = ticker.tick() => {}
-        }
-
-        let Some(consensus_epoch) = work_gate.pinned_consensus_epoch() else {
-            continue;
-        };
-
-        loop {
-            if !work_gate.work_enabled_for(&consensus_epoch) {
-                break;
+            result = run_verification_batch(&pool, &source, &worker_id, &work_gate) => {
+                if let Err(err) = result {
+                    if let ExecutionError::DbError(db) = &err {
+                        if is_fatal_connection_error(db) {
+                            return Err(err);
+                        }
+                    }
+                    error!(error = %err, "Peer manifest verification batch failed; retrying later");
+                }
             }
-            match run_peer_manifest_download_once(
-                &pool,
-                &source,
-                &worker_id,
+        }
+        // Wait after the whole batch, even when it found no ready work.
+        tokio::select! {
+            _ = token.cancelled() => return Ok(()),
+            _ = wait_for_next_verification_poll(&pool, &work_gate, verification_delay) => {}
+        }
+    }
+}
+
+fn verification_poll_delay(next_task: Option<Duration>, verification_delay: Duration) -> Duration {
+    next_task
+        .unwrap_or(verification_delay)
+        .min(verification_delay)
+        + DOWNLOAD_POLL_MARGIN
+}
+
+async fn wait_for_next_verification_poll(
+    pool: &PgPool,
+    work_gate: &ManifestWorkGate,
+    verification_delay: Duration,
+) {
+    let next_task = if let Some(epoch) = work_gate.pinned_consensus_epoch() {
+        match next_verification_delay(pool, &epoch).await {
+            Ok(delay) => delay,
+            Err(err) => {
+                error!(error = %err, "Cannot read next verification time; using default polling delay");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    tokio::time::sleep(verification_poll_delay(next_task, verification_delay)).await;
+}
+
+async fn run_verification_batch<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    worker_id: &str,
+    work_gate: &ManifestWorkGate,
+) -> Result<(), ExecutionError> {
+    let Some(consensus_epoch) = work_gate.pinned_consensus_epoch() else {
+        return Ok(());
+    };
+    let task_ids = ready_verification_tasks(pool, &consensus_epoch).await?;
+    let results = join_all(task_ids.into_iter().map(|task_id| {
+        let consensus_epoch = &consensus_epoch;
+        async move {
+            if !work_gate.work_enabled_for(consensus_epoch) {
+                return Ok(None);
+            }
+            run_verification_task(
+                pool,
+                source,
+                worker_id,
                 DOWNLOAD_CLAIM,
-                &consensus_epoch,
+                consensus_epoch,
+                task_id,
             )
             .await
-            {
-                Ok(Some(result)) => {
-                    debug!(
-                        task_id = result.task_id,
-                        attempt = result.attempt,
-                        outcome = ?result.outcome,
-                        "Completed peer manifest download attempt"
-                    );
-                }
-                Ok(None) => break,
-                Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
-                    VERIFICATION_FAILURE
-                        .with_label_values(&[&consensus_epoch])
-                        .inc();
-                    return Err(ExecutionError::DbError(err));
-                }
-                Err(ExecutionError::DbError(err)) => {
-                    error!(
-                        error = %err,
-                        "Peer manifest verification database error; retrying later"
-                    );
-                    break;
-                }
-                Err(err) => {
-                    VERIFICATION_FAILURE
-                        .with_label_values(&[&consensus_epoch])
-                        .inc();
-                    error!(error = %err, "Peer manifest verification attempt failed");
-                    break;
+        }
+    }))
+    .await;
+    let mut fatal_error = None;
+    for result in results {
+        match result {
+            Ok(Some(result)) => debug!(task_id = result.task_id, attempt = result.attempt,
+                outcome = ?result.outcome, "Completed peer manifest download attempt"),
+            Ok(None) => {}
+            Err(err) => {
+                VERIFICATION_FAILURE
+                    .with_label_values(&[&consensus_epoch])
+                    .inc();
+                error!(error = %err, "Peer manifest verification attempt failed");
+                if matches!(&err, ExecutionError::DbError(db) if is_fatal_connection_error(db)) {
+                    fatal_error = Some(err);
                 }
             }
         }
+    }
+    match fatal_error {
+        Some(err) => Err(err),
+        None => Ok(()),
     }
 }
 
@@ -180,19 +230,27 @@ pub(crate) async fn schedule_manifest_verification(
     .await
 }
 
-async fn run_peer_manifest_download_once<S: PeerManifestSource>(
+async fn run_verification_task<S: PeerManifestSource>(
     pool: &PgPool,
     source: &S,
     worker_id: &str,
     claim_duration: Duration,
     consensus_epoch: &str,
+    task_id: i64,
 ) -> Result<Option<VerificationRunResult>, ExecutionError> {
-    bind_one_unbound_pending_task(pool, consensus_epoch).await?;
-    let Some(claim) = claim_due_task(pool, worker_id, claim_duration, consensus_epoch).await?
+    let Some(claim) =
+        claim_verification_task(pool, worker_id, claim_duration, consensus_epoch, task_id).await?
     else {
         return Ok(None);
     };
+    verify_claim(pool, source, &claim).await
+}
 
+async fn verify_claim<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    claim: &VerificationClaim,
+) -> Result<Option<VerificationRunResult>, ExecutionError> {
     info!(
         task_id = claim.task_id,
         attempt = claim.attempt,
@@ -206,10 +264,10 @@ async fn run_peer_manifest_download_once<S: PeerManifestSource>(
     );
     let result = async {
         for peer in &claim.peers {
-            download_claimed_peer(pool, source, &claim, peer).await?;
+            download_claimed_peer(pool, source, claim, peer).await?;
         }
-        archive_history_for_disagreements(pool, source, &claim).await?;
-        finish_claim(pool, &claim).await
+        archive_history_for_disagreements(pool, source, claim).await?;
+        finish_claim(pool, claim).await
     }
     .await;
     match result {
@@ -218,7 +276,7 @@ async fn run_peer_manifest_download_once<S: PeerManifestSource>(
             Err(ExecutionError::DbError(err))
         }
         Err(ExecutionError::DbError(err)) => {
-            if let Err(apply_error) = apply_claimed_db_error(pool, &claim, &err).await {
+            if let Err(apply_error) = apply_claimed_db_error(pool, claim, &err).await {
                 if let ExecutionError::DbError(apply_db) = &apply_error {
                     if is_fatal_connection_error(apply_db) {
                         return Err(apply_error);

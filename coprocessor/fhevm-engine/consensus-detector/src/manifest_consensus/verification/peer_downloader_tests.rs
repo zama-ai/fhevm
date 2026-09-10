@@ -2,6 +2,7 @@ use super::*;
 use crate::manifest_consensus::manifest_archive::{
     manifest_object_key, store_authenticated_manifest, ManifestSource,
 };
+use crate::manifest_consensus::verification::verification_queue::bind_task_to_current_registry;
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::B256;
 use aws_sdk_s3::primitives::ByteStream;
@@ -2685,6 +2686,9 @@ mod localization_cache_tests;
 #[path = "lease_renewal_tests.rs"]
 mod lease_renewal_tests;
 
+#[path = "chain_batch_tests.rs"]
+mod chain_batch_tests;
+
 #[tokio::test]
 #[serial]
 async fn oversized_s3_head_is_rejected_and_falls_back_to_valid_older_revision() {
@@ -2858,4 +2862,64 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     // Model installation's state transition, not ciphertext replacement itself.
     sqlx::query("UPDATE drifted_handle SET healed_at = NOW(), claimed_by = NULL, claim_expires_at = NULL WHERE id = $1")
         .bind(id).execute(&pool).await.unwrap();
+}
+
+async fn bind_one_unbound_pending_task(
+    pool: &PgPool,
+    consensus_epoch: &str,
+) -> Result<(), ExecutionError> {
+    let mut trx = pool.begin().await?;
+    let task_id = sqlx::query_scalar!(
+        r#"
+        SELECT id
+          FROM block_manifest_verification_task
+         WHERE state = 'pending'
+           AND consensus_epoch = $1
+           AND required_quorum IS NULL
+           AND next_attempt_at <= NOW()
+         ORDER BY next_attempt_at, id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+        "#,
+        consensus_epoch,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?;
+    if let Some(task_id) = task_id {
+        bind_task_to_current_registry(&mut trx, task_id).await?;
+    }
+    trx.commit().await?;
+    Ok(())
+}
+
+async fn run_peer_manifest_download_once<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: &S,
+    worker_id: &str,
+    claim_duration: Duration,
+    consensus_epoch: &str,
+) -> Result<Option<VerificationRunResult>, ExecutionError> {
+    bind_one_unbound_pending_task(pool, consensus_epoch).await?;
+    let Some(claim) = claim_due_task(pool, worker_id, claim_duration, consensus_epoch).await?
+    else {
+        return Ok(None);
+    };
+
+    verify_claim(pool, source, &claim).await
+}
+
+async fn claim_due_task(
+    pool: &PgPool,
+    worker_id: &str,
+    claim_duration: Duration,
+    consensus_epoch: &str,
+) -> Result<Option<VerificationClaim>, ExecutionError> {
+    let Some(task_id) = ready_verification_tasks(pool, consensus_epoch)
+        .await?
+        .first()
+        .copied()
+    else {
+        return Ok(None);
+    };
+    claim_verification_task(pool, worker_id, claim_duration, consensus_epoch, task_id).await
 }

@@ -116,15 +116,15 @@ struct Args {
     manifest_publication_retry_count: u32,
 
     /// Delay after publication before the first peer verification attempt.
-    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
     manifest_verification_delay: Duration,
 
     /// Delay between peer verification retries.
-    #[arg(long, default_value = "1m", value_parser = parse_duration)]
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
     manifest_verification_retry_delay: Duration,
 
     /// Additional peer verification attempts after the initial attempt.
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 59)]
     manifest_verification_retry_count: u32,
 
     /// Wall-clock stall with no newly computed handle before missing
