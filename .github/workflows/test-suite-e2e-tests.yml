@@ -102,7 +102,7 @@ on:
         default: ""
         type: string
       scenario:
-        description: "Deployment scenario (e.g. two-of-three, two-of-three-multi-chain)"
+        description: "Deployment scenario (consumer-only multi-chain by default)"
         default: "two-of-three-multi-chain"
         type: string
       test-profile:
@@ -319,39 +319,50 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
-      # standard / standard-shard-stateful run normal drift recovery first,
-      # then consumer-only drift with all legacy host listeners/pollers stopped.
-      # The CLI restores the previously running services even on failure.
+      - name: Verify consumer-only topology before tests
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain' }}
+        run: python3 test-suite/fhevm/scripts/assert-consumer-stack.py
+
+      - name: Verify legacy topology before tests
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain-legacy' }}
+        run: python3 test-suite/fhevm/scripts/assert-legacy-stack.py
+
+      - name: Verify key bootstrap on the consumer-only stack
+        working-directory: test-suite/fhevm
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain' }}
+        run: bun scripts/assert-consumer-key-bootstrap.ts
+
+      # The complete suite, including bootstrap and both drift profiles, runs
+      # with consumers only. Legacy ingestion is exercised afterwards.
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
           args=("$TEST_PROFILE")
           ./fhevm-cli test "${args[@]}"
 
-      - name: Host listener consumer only test without drift-revert tests
-        # Runs with the full standard suite and with the decryption shard (the lightest
-        # shard, so these extras keep the sharded legs balanced).
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
-        working-directory: test-suite/fhevm
-        run: |
-          trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
-          docker stop coprocessor-host-listener coprocessor-host-listener-poller
-          for TEST in input-proof input-proof-compute-decrypt user-decryption delegated-user-decryption erc20 public-decrypt-http-ebool public-decrypt-http-mixed; do
-            ./fhevm-cli test $TEST
-          done
-          docker start coprocessor-host-listener coprocessor-host-listener-poller
-          trap - EXIT
+      - name: Verify consumer-only topology after tests
+        if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain' }}
+        run: python3 test-suite/fhevm/scripts/assert-consumer-stack.py
 
-      - name: Host listener poller test
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
+      - name: Verify legacy topology after tests
+        if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain-legacy' }}
+        run: python3 test-suite/fhevm/scripts/assert-legacy-stack.py
+
+      - name: Legacy host listener fallback tests
+        # Run the former consumer smoke coverage against the legacy listener,
+        # with consumers and pollers stopped on every operator and host chain.
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain' && (inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption') }}
         working-directory: test-suite/fhevm
-        run: |
-          trap 'docker start coprocessor-host-listener coprocessor-host-listener-consumer >/dev/null 2>&1 || true' EXIT
-          docker stop coprocessor-host-listener coprocessor-host-listener-consumer
-          args=(erc20)
-          ./fhevm-cli test "${args[@]}"
-          docker start coprocessor-host-listener coprocessor-host-listener-consumer
-          trap - EXIT
+        run: bun scripts/test-legacy-host-listeners.ts listener
+
+      - name: Legacy host poller fallback tests
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain' && (inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption') }}
+        working-directory: test-suite/fhevm
+        run: bun scripts/test-legacy-host-listeners.ts poller
+
+      - name: Verify consumer-only topology after fallback tests
+        if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain' }}
+        run: python3 test-suite/fhevm/scripts/assert-consumer-stack.py
 
       - name: Show logs
         working-directory: test-suite/fhevm

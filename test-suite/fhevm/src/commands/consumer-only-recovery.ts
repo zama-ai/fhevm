@@ -17,8 +17,8 @@ export const recoveryContainers = (doc: ComposeDoc, extraChains: ComposeDoc[] = 
     if (executable === "host_listener" || executable === "host_listener_poller") legacy.push(name);
     if (executable === "host_listener_consumer") consumers.push(name);
   }
-  if (!legacy.length || !consumers.length) {
-    throw new PreflightError("Consumer-only drift requires legacy and consumer services in the generated stack");
+  if (!consumers.length) {
+    throw new PreflightError("Consumer-only drift requires consumer services in the generated stack");
   }
   for (const name of legacy) {
     const consumer = name.replace(/host-listener(?:-poller)?/, "host-listener-consumer");

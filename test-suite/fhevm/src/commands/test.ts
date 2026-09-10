@@ -1,6 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import { consumerOnlyHostListeners, isLegacyHostListener, legacyOnlyHostListeners } from "../host-listener-mode";
 import YAML from "yaml";
 import { loadMergedComposeDoc } from "../generate/compose";
 import { withConsumerOnlyRecovery } from "./consumer-only-recovery";
@@ -640,10 +641,13 @@ const runNamedE2e = async (
 };
 
 /** Builds the coprocessor runtime container names for every configured instance. */
-const coprocessorRuntimeContainers = (instanceCount: number) =>
+const coprocessorRuntimeContainers = (instanceCount: number, consumerOnly = false) =>
   Array.from({ length: instanceCount }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`);
+    const suffixes = consumerOnly
+      ? [...DB_REVERT_CONTAINERS.filter((suffix) => !isLegacyHostListener(suffix)), "host-listener-consumer"]
+      : DB_REVERT_CONTAINERS;
+    return suffixes.map((suffix) => `${prefix}${suffix}`);
   }).flat();
 
 /** Builds the sns-worker container names for every configured coprocessor instance. */
@@ -1435,7 +1439,7 @@ const runDbStateRevert = async (
   }
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
-  const containers = coprocessorRuntimeContainers(topologyForState(state).count);
+  const containers = coprocessorRuntimeContainers(topologyForState(state).count, consumerOnlyHostListeners(state.scenario));
   const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
   const revertImage =
     localDbMigrationImageRef(state) ??
@@ -1965,9 +1969,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged(label, started, async () => {
       for (const profile of profiles) {
+        if (profile === "ciphertext-drift-consumer-recovery" && legacyOnlyHostListeners(state.scenario)) {
+          console.log("[test] consumer-specific drift recovery is disabled in legacy mode; legacy drift recovery ran in ciphertext-drift-auto-recovery");
+          continue;
+        }
         if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
+            if (consumerOnlyHostListeners(state.scenario)) {
+              throw new PreflightError(`Consumer-only E2E requires ${profile}: ${skipReason}`);
+            }
             console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
@@ -1975,6 +1986,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         if (profile === "coprocessor-db-state-revert") {
           const skipReason = dbStateRevertSkipReason();
           if (skipReason) {
+            if (consumerOnlyHostListeners(state.scenario)) {
+              throw new PreflightError(`Consumer-only E2E requires ${profile}: ${skipReason}`);
+            }
             console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
             continue;
           }
@@ -1982,6 +1996,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         if (profile === "ciphertext-drift-auto-recovery" || profile === "ciphertext-drift-consumer-recovery") {
           const skipReason = ciphertextDriftAutoRecoverySkipReason();
           if (skipReason) {
+            if (consumerOnlyHostListeners(state.scenario)) {
+              throw new PreflightError(`Consumer-only E2E requires ${profile}: ${skipReason}`);
+            }
             console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }

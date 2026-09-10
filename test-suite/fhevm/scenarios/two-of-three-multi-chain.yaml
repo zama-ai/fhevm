@@ -1,5 +1,6 @@
 version: 1
 kind: coprocessor-consensus
+hostListenerMode: consumer
 name: Two Of Three Multi Chain
 description: 3 coprocessors with threshold 2 across two host chains — enables consensus mismatch detection (for drift auto-recovery) plus multi-chain coverage.
 hostChains:
@@ -12,3 +13,13 @@ hostChains:
 topology:
   count: 3
   threshold: 2
+# The raw DB-revert profile does not emit a drift signal. Explicit startup
+# catchup restores its deleted history when the consumer containers restart.
+instances:
+  - index: 0
+    args: &startup-catchup
+      host-listener-consumer: [--catchup-from-block=0]
+  - index: 1
+    args: *startup-catchup
+  - index: 2
+    args: *startup-catchup
