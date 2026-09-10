@@ -1,7 +1,7 @@
 # Contract Addresses
 
 {% hint style="info" %}
-You do not need to configure these addresses manually. Inheriting from `ZamaEthereumConfig` automatically resolves the correct addresses based on the current `block.chainid`.
+You do not need to configure these addresses manually. Inheriting from `ZamaEthereumConfig`, `ZamaPolygonConfig` or `ZamaMultiChainConfig` automatically resolves the correct addresses based on the current `block.chainid`. Ethereum and Polygon share the same gateway contracts; Sepolia and Polygon Amoy share the testnet gateway.
 {% endhint %}
  
 ## Mainnet
@@ -15,9 +15,20 @@ You do not need to configure these addresses manually. Inheriting from `ZamaEthe
 | INPUT_VERIFIER             | 0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2 |
 | KMS_VERIFIER               | 0x77627828a55156b04Ac0DC0eb30467f1a552BB03 |
 | HCU_LIMIT                  | 0x3b4da65e45Fda2CAa0285A735ab4361a44F171E2 |
+| PROTOCOL_CONFIG            | 0xD8236B57394f90726b26aB25D38CeAC776E1a7C4 |
 
+### Polygon
 
-### Gateway 
+| Contract                   | Address                                    |
+| -------------------------- | ------------------------------------------ |
+| ACL                        | 0x6737F17e31cf26a1b62fb0362acC5a16CB156F49 |
+| FHEVM_EXECUTOR             | 0xAB0075E77fe06083f52bdf10e2ccDB3712483057 |
+| INPUT_VERIFIER             | 0xf40BD204B035522EaAc8E5afAdc55113Acac96ca |
+| KMS_VERIFIER               | 0x14e609595474874Dd6b6128376E336EfADfdBE37 |
+| HCU_LIMIT                  | 0x226cf23556E59e3284c3c7705868478746D338af |
+| PROTOCOL_CONFIG            | 0x17f62Ab3A1Ea519703cD597410147A30Fa1a7f1e |
+
+### Gateway (shared by Ethereum and Polygon)
 
 | Contract                   | Address                                    |
 | -------------------------- | ------------------------------------------ |
@@ -40,8 +51,20 @@ You do not need to configure these addresses manually. Inheriting from `ZamaEthe
 | INPUT_VERIFIER             | 0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0 |
 | KMS_VERIFIER               | 0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A |
 | HCU_LIMIT                  | 0xa10998783c8CF88D886Bc30307e631D6686F0A22 |
+| PROTOCOL_CONFIG            | 0x51f9AFBc89Ea792e1a21a12AB802ab58D4dbee83 |
 
-### Gateway
+### Polygon Amoy
+
+| Contract                   | Address                                    |
+| -------------------------- | ------------------------------------------ |
+| ACL_HOST                   | 0xD99Cb9Fc3c42c87f2A4A12e8Fd60318d6bDdf985 |
+| FHEVM_EXECUTOR             | 0x89420269f61e4db00545cd99da0aEcA7fF0912f9 |
+| INPUT_VERIFIER             | 0x6e5A7D8b0c645467Cba7e62D6624917085118631 |
+| KMS_VERIFIER               | 0xCD1D89E311bce4C8DEa9a0857a0c9A4E153D4041 |
+| HCU_LIMIT                  | 0x462f1920A9a7b5Aa74A36c3f49E38C34392B0546 |
+| PROTOCOL_CONFIG            | 0x4CcF009Aba90D04f52b31fc7aDdE240578aFe10F |
+
+### Gateway (shared by Sepolia and Polygon Amoy)
 
 | Contract                   | Address                                    |
 | -------------------------- | ------------------------------------------ |
