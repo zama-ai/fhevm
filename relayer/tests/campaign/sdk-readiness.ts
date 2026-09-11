@@ -1,4 +1,4 @@
-// Run through the deployed SDK's unchanged async-request implementation.
+// Run through the checked-out SDK's async-request implementation.
 // This exercises transport/result handling, not cryptographic SDK validation.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';

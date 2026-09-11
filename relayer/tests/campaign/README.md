@@ -2,8 +2,10 @@
 
 Run from `relayer/` with its pinned Rust toolchain. Install the SDK source
 checkout's dependencies first (`cd ../sdk/js-sdk && npm ci --ignore-scripts`).
-The SDK `RelayerAsyncRequest.ts` must match commit `07fb05fb7`; verify with
-`git diff 07fb05fb7 -- ../sdk/js-sdk/src/core/modules/relayer/module/RelayerAsyncRequest.ts`.
+These runners import the checked-out SDK source. On this main forward-port,
+that is main's SDK, not the deployed release SDK. To reproduce the historical
+0.13.2 client campaign, point the runner at an isolated SDK checkout at
+`07fb05fb7` with its own dependencies. Record the SDK commit for every run.
 Bun is required. These tests use real HTTP and a real relayer with the existing
 mock Gateway and test database, not a complete FHE stack or the application wrapper.
 
