@@ -262,9 +262,18 @@ The two host chains are the real public testnets, so this is the only preview sh
   deployer `#9` to 1.0 ETH; on Amoy the signers get 2.0 POL and the deployer 6.0
   (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`). Amoy gas is the reason for both: one e2e fixture
   deploy costs up to 0.3 POL, and the host-contracts deploy there spends ~2.5 POL at
-  69 gwei because the canonical-snapshot flow builds the empty-proxy set twice. Unspent
-  POL is stranded (fresh mnemonic per run), so raise these only against measured cost.
+  69 gwei because the canonical-snapshot flow builds the empty-proxy set twice.
   It fails fast if either faucet cannot cover the shortfall.
+  A floor has to cover the worst gas the run might meet, so most runs over-fund - about
+  16 POL and 2.2 ETH go out per run against a few POL actually burned. That is affordable
+  only because **teardown sweeps the wallets back**: `preview-env-destroy.yml` runs
+  `sweep-wallets.sh` *before* deleting the namespace, reading the mnemonic from the
+  `preview-wallets-mnemonic` Secret and returning every role, KMS and coprocessor
+  balance (minus one transfer's gas) to the faucet address. It is `continue-on-error`:
+  reclaiming test funds must never leave a namespace and its Crossplane-managed AWS
+  resources standing. Deleting a namespace **by hand skips the sweep** and takes the only
+  copy of the mnemonic with it, so those funds are then unrecoverable - always tear down
+  through the workflow (`preview-env destroy`).
   The **KMS tx-senders also get 0.05 ETH each on Sepolia**: since RFC013 KMSGeneration
   sits on the canonical host chain, so they sign the keygen/crsgen responses there and
   the ceremony stalls at "insufficient funds" without it. Their decryption responses,

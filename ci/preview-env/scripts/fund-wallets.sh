@@ -85,8 +85,9 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # throwaway, then again once the canonical ProtocolConfig snapshot is written - on top
   # of the 9 implementations. Measured at 69 gwei: 5.5M gas (0.38 POL) for a single
   # contract and ~2.5 POL for the whole deploy, so the old 2.0 floor died two
-  # implementations from the end. 6.0 absorbs a spike to ~165 gwei. Do not raise this
-  # much further: the mnemonic is regenerated per run, so anything unspent is stranded.
+  # implementations from the end. 6.0 absorbs a spike to ~165 gwei. A floor has to cover
+  # the worst gas the run might meet, so it over-funds by design; sweep-wallets.sh
+  # returns the remainder at teardown, which is what keeps that margin affordable.
   # The test signers need headroom too: one e2e fixture deploy on Amoy was measured at
   # 0.3 POL, so the 0.2 default drains them partway through the suite and every later
   # job dies on "insufficient funds" instead of exercising anything.
