@@ -1530,30 +1530,22 @@ async fn stop_retrying_verify_proof_on_gw_config_error(
     Ok(())
 }
 
-/// What a Gateway outage costs a proof over HTTP.
-///
-/// `verify_proof` has no unlimited-retry path: every send failure increments
-/// `retry_count`, and the selection query drops rows at
-/// `verify_proof_resp_max_retries`. Over WebSocket that budget was protected by
-/// `BackendGone`, which stopped the sender outright on a dead endpoint. Over
-/// HTTP no such signal exists, so the operation loop keeps cycling against the
-/// dead Gateway and spends the budget — with
-/// `verify_proof_remove_after_max_retries` the proof is then deleted.
-///
-/// This test measures how long that takes with the shipped backoff.
+/// A refused HTTP connection must not consume the proof retry budget. Observe
+/// more failures than the budget permits so an idle sender cannot pass.
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
 #[tokio::test]
 #[serial(db)]
-async fn gateway_outage_burns_verify_proof_retries(
+async fn gateway_outage_preserves_verify_proof_retries(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let conf = ConfigSettings {
-        verify_proof_resp_max_retries: 6,
+        verify_proof_resp_max_retries: 3,
         verify_proof_remove_after_max_retries: true,
         error_sleep_initial_secs: 1,
         error_sleep_max_secs: 4,
-        graceful_shutdown_timeout: Duration::from_secs(2),
+        // Allow the existing maximum 4-second operation backoff to finish.
+        graceful_shutdown_timeout: Duration::from_secs(5),
         ..Default::default()
     };
     let mut env = TestEnvironment::new_with_config(signer_type, conf.clone(), false).await?;
@@ -1577,6 +1569,16 @@ async fn gateway_outage_burns_verify_proof_retries(
     )
     .await?;
 
+    let failure_count = || {
+        prometheus::gather()
+            .iter()
+            .filter(|family| family.name() == "coprocessor_txn_sender_verify_proof_fail_counter")
+            .flat_map(|family| family.get_metric())
+            .filter_map(|metric| metric.get_counter().as_ref())
+            .map(|counter| counter.value() as u64)
+            .sum::<u64>()
+    };
+    let initial_failures = failure_count();
     let proof_id: u32 = random();
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -1599,45 +1601,30 @@ async fn gateway_outage_burns_verify_proof_retries(
     .execute(&env.db_pool)
     .await?;
 
-    let started = tokio::time::Instant::now();
-    let mut last_retry_count = 0i32;
-    let mut gone_after = None;
-    while started.elapsed() < Duration::from_secs(120) {
-        let rows = sqlx::query!(
-            "SELECT retry_count, last_error
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
-            proof_id as i64,
-        )
-        .fetch_all(&env.db_pool)
-        .await?;
-        match rows.first() {
-            Some(r) => last_retry_count = r.retry_count,
-            None => {
-                gone_after = Some(started.elapsed());
-                break;
-            }
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let retry_count: Option<i32> =
+            sqlx::query_scalar("SELECT retry_count FROM verify_proofs WHERE zk_proof_id = $1")
+                .bind(proof_id as i64)
+                .fetch_optional(&env.db_pool)
+                .await?;
+        assert_eq!(retry_count, Some(0), "outage must preserve eligibility");
+        assert!(
+            !run_handle.is_finished(),
+            "HTTP retries should stay in the operation loop"
+        );
+        if failure_count() - initial_failures > conf.verify_proof_resp_max_retries as u64 {
+            break;
         }
-        sleep(Duration::from_millis(200)).await;
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "sender did not exercise enough failures"
+        );
+        sleep(Duration::from_millis(100)).await;
     }
 
-    println!(
-        "verify_proof under a dead Gateway over HTTP: last observed retry_count={last_retry_count}, \
-row removed after {:?}",
-        gone_after
-    );
-    assert!(
-        gone_after.is_some(),
-        "the proof survived 120 s of outage with retry_count={last_retry_count}; \
-if this now holds, the retry budget is no longer being spent on transport failures"
-    );
-    assert!(
-        !run_handle.is_finished(),
-        "the sender kept running while it discarded the proof"
-    );
-
     env.cancel_token.cancel();
-    let _ = tokio::time::timeout(Duration::from_secs(10), run_handle).await;
+    tokio::time::timeout(Duration::from_secs(10), run_handle).await???;
     Ok(())
 }
 

@@ -28,6 +28,13 @@ use serde_json::Value;
 /// What the proxy does with a matching request.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fault {
+    /// Fail before forwarding, leaving upstream chain state untouched.
+    HttpError(u16),
+    /// Return an RPC error before forwarding, with the caller's request ID.
+    RpcError { code: i64, message: String },
+    /// Let the caller's deadline expire, then discard this request permanently.
+    /// Unlike Blackhole, clearing the fault never forwards an old request.
+    DiscardAfter(Duration),
     /// Park the request and never answer it, until the fault is cleared (then
     /// the parked request is forwarded normally). Models a blackholed RPC.
     Blackhole,
@@ -369,6 +376,30 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
     let mut hold_response = None;
 
     match fault {
+        Some(Fault::HttpError(status)) => {
+            use axum::response::IntoResponse;
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            return (
+                axum::http::StatusCode::from_u16(status).unwrap(),
+                "injected failure",
+            )
+                .into_response();
+        }
+        Some(Fault::RpcError { code, message }) => {
+            use axum::response::IntoResponse;
+            let body = serde_json::json!({
+                "jsonrpc": "2.0", "id": parsed.get("id"),
+                "error": { "code": code, "message": message },
+            });
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            return axum::Json(body).into_response();
+        }
+        Some(Fault::DiscardAfter(delay)) => {
+            use axum::response::IntoResponse;
+            tokio::time::sleep(delay).await;
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            return axum::http::StatusCode::GATEWAY_TIMEOUT.into_response();
+        }
         Some(Fault::Delay(d)) => tokio::time::sleep(d).await,
         Some(Fault::SuppressResponse) => suppress = true,
         Some(Fault::DelayResponse(d)) => hold_response = Some(d),
