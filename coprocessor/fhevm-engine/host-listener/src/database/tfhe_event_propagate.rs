@@ -38,11 +38,11 @@ use crate::contracts::BridgeContract::BridgeContractEvents;
 
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
-pub type TransactionHash = FixedBytes<32>;
+pub use super::transaction_id::TransactionId;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
-pub type ChainHash = TransactionHash;
+pub type ChainHash = TransactionId;
 /// Seals dropped because the database says the producer is discharged. The seal
 /// is derived state, so this is the half of convergence that shrinks it; a
 /// refresh that only ever grew the set left retired producers sealed until the
@@ -109,7 +109,7 @@ pub type SealedChainGuard = Arc<RwLock<lru::LruCache<ChainHash, ()>>>;
 ///
 /// Keyed by the producing op: group id for multi-output, else the handle.
 pub struct ConsumedBoundaries {
-    consumers: lru::LruCache<Handle, TransactionHash>,
+    consumers: lru::LruCache<Handle, TransactionId>,
     /// Boundary output -> group id, multi-output ops only.
     groups: lru::LruCache<Handle, Handle>,
 }
@@ -130,8 +130,8 @@ impl ConsumedBoundaries {
     pub fn consume(
         &mut self,
         handle: &Handle,
-        tx: TransactionHash,
-    ) -> Option<TransactionHash> {
+        tx: TransactionId,
+    ) -> Option<TransactionId> {
         let key = self.groups.get(handle).copied().unwrap_or(*handle);
         self.consumers.put(key, tx)
     }
@@ -246,14 +246,14 @@ pub struct Database {
 #[derive(Debug)]
 pub struct LogTfhe {
     pub computation: Computation,
-    pub transaction_hash: Option<TransactionHash>,
+    pub transaction_hash: Option<TransactionId>,
     /// The output handles of this event that are allowed.
     pub allowed_outputs: HashSet<Handle>,
     pub block_number: u64,
     pub block_hash: BlockHash,
     pub block_timestamp: PrimitiveDateTime,
     pub tx_depth_size: u64,
-    pub dependence_chain: TransactionHash,
+    pub dependence_chain: TransactionId,
     // global index per block (not by tx)
     pub log_index: Option<u64>,
     /// The exact operand-origin bits folded into this operation's result
@@ -682,10 +682,8 @@ impl Database {
             HashSet::with_capacity(rows.len() + dep_chain_ids.len());
         for row in rows {
             let dep_chain_id = row.dependence_chain_id;
-            if let Ok(dep_chain_bytes) =
-                <[u8; 32]>::try_from(dep_chain_id.as_slice())
-            {
-                slow_dep_chain_ids.insert(ChainHash::from(dep_chain_bytes));
+            if let Ok(id) = TransactionId::try_from(dep_chain_id.as_slice()) {
+                slow_dep_chain_ids.insert(id);
             }
         }
         Ok(slow_dep_chain_ids)
@@ -847,11 +845,10 @@ impl Database {
     ) -> Result<usize, SqlxError> {
         let computation = &log.computation;
         let outputs = computation.outputs();
-        telemetry::record_short_hex_if_some(
-            &tracing::Span::current(),
-            "txn_id",
-            log.transaction_hash.as_ref(),
-        );
+        if let Some(id) = log.transaction_hash {
+            tracing::Span::current()
+                .record("txn_id", tracing::field::display(id));
+        }
         self.record_transaction_begin(
             &log.transaction_hash.map(|h| h.to_vec()),
             log.block_number,
@@ -2320,8 +2317,8 @@ mod consumed_boundaries_tests {
         Handle::from([last; 32])
     }
 
-    fn tx(last: u8) -> TransactionHash {
-        TransactionHash::from([last; 32])
+    fn tx(last: u8) -> TransactionId {
+        TransactionId::from([last; 32])
     }
 
     #[test]

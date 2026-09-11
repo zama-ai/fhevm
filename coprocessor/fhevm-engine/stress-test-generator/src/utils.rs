@@ -1,4 +1,4 @@
-use alloy_primitives::Keccak256;
+use alloy_primitives::{Keccak256, B256};
 use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::crs::CrsCache;
@@ -7,7 +7,7 @@ use fhevm_engine_common::types::{AllowEvents, COMPUTED_HANDLE_INDEX_MARKER, HAND
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::computation::{Computation, OperandBoundaryMask};
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe,
 };
 use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
@@ -26,7 +26,7 @@ pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
 
 async fn fixture_operand_boundary_mask(
     tx: &mut sqlx::Transaction<'_, Postgres>,
-    transaction_hash: TransactionHash,
+    transaction_hash: B256,
     computation: &Computation,
 ) -> Result<OperandBoundaryMask, sqlx::Error> {
     let previously_minted = sqlx::query_scalar::<_, Vec<u8>>(
@@ -185,7 +185,7 @@ pub async fn allow_handle(
     handle: &Vec<u8>,
     event_type: AllowEvents,
     account_address: String,
-    transaction_id: TransactionHash,
+    transaction_id: B256,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
 
@@ -258,7 +258,7 @@ pub async fn generate_trivial_encrypt(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     _contract_address: &str,
     user_address: &str,
-    transaction_hash: TransactionHash,
+    transaction_hash: B256,
     listener_event_to_db: &ListenerDatabase,
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
@@ -288,11 +288,11 @@ pub async fn generate_trivial_encrypt(
             Default::default()
         },
         computation,
-        transaction_hash: Some(transaction_hash),
+        transaction_hash: Some(transaction_hash.into()),
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: transaction_hash,
+        dependence_chain: transaction_hash.into(),
         tx_depth_size: 0,
         log_index: None,
         operand_boundary_mask: Some(operand_boundary_mask),
@@ -448,7 +448,7 @@ impl EnvConfig {
 pub async fn insert_tfhe_event(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     listener_event_to_db: &ListenerDatabase,
-    transaction_hash: TransactionHash,
+    transaction_hash: B256,
     event: Log<TfheContractEvents>,
     is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -466,11 +466,11 @@ pub async fn insert_tfhe_event(
             Default::default()
         },
         computation,
-        transaction_hash: Some(transaction_hash),
+        transaction_hash: Some(transaction_hash.into()),
         block_number: 1,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: transaction_hash,
+        dependence_chain: transaction_hash.into(),
         tx_depth_size: 0,
         log_index: None,
         operand_boundary_mask: Some(operand_boundary_mask),

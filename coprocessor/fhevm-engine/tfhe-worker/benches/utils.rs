@@ -973,11 +973,11 @@ pub async fn insert_tfhe_event_with_dependence_chain(
             Default::default()
         },
         computation,
-        transaction_hash: Some(transaction_hash),
+        transaction_hash: Some(transaction_hash.into()),
         block_number: log.block_number.unwrap_or(0),
         block_hash: log.block_hash.unwrap_or_default(),
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain,
+        dependence_chain: dependence_chain.into(),
         tx_depth_size: 0,
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),

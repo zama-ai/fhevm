@@ -9,7 +9,6 @@ use std::collections::{HashMap, HashSet};
 use crate::database::computation::{Computation, Operand};
 use alloy_primitives::FixedBytes;
 use fhevm_engine_common::types::SupportedFheOperations as O;
-use sha2::{Digest, Sha256};
 use sqlx::Error as SqlxError;
 use Operand::{Clear as P, Encrypted as H};
 
@@ -25,7 +24,7 @@ use crate::database::ingest::{
     classify_slow_chains, populate_operand_boundary_masks,
 };
 use crate::database::tfhe_event_propagate::{
-    Database, Handle, LogTfhe, Transaction, TransactionHash,
+    Database, Handle, LogTfhe, Transaction, TransactionId,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,15 +61,6 @@ pub struct SolanaIngestStats {
     pub inserted_rows: usize,
 }
 
-/// The coprocessor schema's 32-byte `transaction_id` for a Solana transaction is
-/// `sha256(signature_bytes)`: Solana's native transaction id is the 64-byte ed25519 signature,
-/// hashed down here to fit the EVM-shaped 32-byte column. Anything joining coprocessor rows back
-/// to a Solana explorer must apply this same mapping.
-pub fn solana_transaction_id(signature_bytes: &[u8]) -> TransactionHash {
-    let digest: [u8; 32] = Sha256::digest(signature_bytes).into();
-    TransactionHash::from(digest)
-}
-
 // Only referenced by `solana_grpc_listener` (feature-gated) outside of tests.
 #[cfg_attr(not(feature = "solana-grpc"), allow(dead_code))]
 pub(crate) fn material_request(handle: [u8; 32]) -> SolanaMaterialRequest {
@@ -90,7 +80,7 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
 // work can waste cycles after a rare rollback but cannot authorize decryption.
 pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,
-    transaction_id: TransactionHash,
+    transaction_id: TransactionId,
     block: SolanaBlockMeta,
 ) -> Result<(Vec<LogTfhe>, Vec<SolanaMaterialRequest>), String> {
     let mut tfhe_logs = Vec::new();
@@ -140,7 +130,7 @@ pub fn normalize_solana_records_for_db(
                 continue;
             }
         }.map_err(|reason| format!(
-            "Solana computation in slot {}, transaction ID {transaction_id:#x}, record {record_index}: {reason}",
+            "Solana computation in slot {}, transaction ID {transaction_id}, record {record_index}: {reason}",
             block.block_number,
         ))?;
         tfhe_logs.push(to_log_tfhe(computation, transaction_id, block));
@@ -155,7 +145,7 @@ pub fn normalize_solana_records_for_db(
 pub async fn insert_solana_block_records(
     db: &Database,
     tx: &mut Transaction<'_>,
-    transactions: impl IntoIterator<Item = (TransactionHash, Vec<SolanaHostRecord>)>,
+    transactions: impl IntoIterator<Item = (TransactionId, Vec<SolanaHostRecord>)>,
     block: SolanaBlockMeta,
     dependent_ops_max_per_chain: u32,
 ) -> Result<SolanaIngestStats, SqlxError> {
@@ -249,7 +239,7 @@ fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
 
 fn to_log_tfhe(
     computation: Computation,
-    transaction_id: TransactionHash,
+    transaction_id: TransactionId,
     block: SolanaBlockMeta,
 ) -> LogTfhe {
     LogTfhe {
@@ -373,7 +363,7 @@ mod tests {
 
     #[test]
     fn malformed_collection_fails_normalization() {
-        let transaction_id = Handle::repeat_byte(7);
+        let transaction_id = TransactionId::from([7; 32]);
         let result = normalize_solana_records_for_db(
             [SolanaHostRecord::FheSum(FheSum {
                 version: EVENT_VERSION,
@@ -391,7 +381,7 @@ mod tests {
         );
         let error = result.unwrap_err();
         assert!(error.contains(&format!(
-            "slot 1, transaction ID {transaction_id:#x}, record 0",
+            "slot 1, transaction ID {transaction_id}, record 0",
         )));
         assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
         assert!(error.contains("received 257 operands"));
@@ -702,7 +692,7 @@ mod tests {
         for (record, operation, operands, scalar) in cases {
             let (logs, requests) = normalize_solana_records_for_db(
                 [record],
-                Handle::ZERO,
+                TransactionId::ZERO,
                 SolanaBlockMeta {
                     block_number: 1,
                     block_timestamp: PrimitiveDateTime::MIN,
@@ -723,18 +713,13 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_solana_signature_to_stable_transaction_id() {
+    fn preserves_native_solana_signature() {
         let signature = [7_u8; 64];
-
-        assert_eq!(
-            solana_transaction_id(&signature),
-            TransactionHash::from([
-                0x6c, 0xfe, 0xeb, 0x3a, 0xa2, 0x5d, 0x3f, 0x41, 0x1d, 0xae,
-                0x5e, 0xec, 0x17, 0xd7, 0x36, 0x9c, 0xa7, 0x15, 0x3e, 0x72,
-                0xdc, 0xf5, 0x4b, 0xcf, 0x4c, 0x3d, 0xae, 0xc0, 0xf5, 0xb2,
-                0x1f, 0xc7,
-            ])
+        let id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from(signature),
         );
+        assert_eq!(id.as_slice(), signature);
+        assert_eq!(id.to_string(), bs58::encode(signature).into_string());
     }
 
     #[test]
@@ -757,7 +742,9 @@ mod tests {
 
     #[test]
     fn builds_existing_db_log_shape() {
-        let tx_id = solana_transaction_id(&[1_u8; 64]);
+        let tx_id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from([1_u8; 64]),
+        );
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -798,7 +785,9 @@ mod tests {
         // materializable when an allow for its result landed in the same tx.
         // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
         // KMS independently gates plaintext release against Solana ACL state.
-        let tx_id = solana_transaction_id(&[7_u8; 64]);
+        let tx_id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from([7_u8; 64]),
+        );
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -835,7 +824,9 @@ mod tests {
 
     #[test]
     fn material_requests_keep_distinct_handles_in_one_batch() {
-        let tx_id = solana_transaction_id(&[9_u8; 64]);
+        let tx_id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from([9_u8; 64]),
+        );
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -869,7 +860,9 @@ mod tests {
     fn unrelated_allow_handle_does_not_affect_eager_compute_result() {
         // An allow for a DIFFERENT handle is irrelevant either way under eager
         // compute: this compute is schedulable regardless.
-        let tx_id = solana_transaction_id(&[8_u8; 64]);
+        let tx_id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from([8_u8; 64]),
+        );
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -904,7 +897,9 @@ mod tests {
 
     #[test]
     fn normalizes_interleaved_batch_events_for_worker_replay() {
-        let tx_id = solana_transaction_id(&[5_u8; 64]);
+        let tx_id = TransactionId::SolanaSignature(
+            solana_sdk::signature::Signature::from([5_u8; 64]),
+        );
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,

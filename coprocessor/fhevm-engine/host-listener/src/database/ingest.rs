@@ -25,7 +25,7 @@ use crate::database::synthetic_ops::{
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, Transaction, TransactionHash,
+    LogTfhe, Transaction, TransactionId,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -130,7 +130,7 @@ pub(crate) fn populate_operand_boundary_masks(
     }
 
     let mut minted_by_transaction: HashMap<
-        TransactionHash,
+        TransactionId,
         HashSet<EventHandle>,
     > = HashMap::new();
     for log in logs.iter_mut() {
@@ -469,7 +469,9 @@ pub async fn ingest_block_logs(
                 };
                 let log = LogTfhe {
                     computation,
-                    transaction_hash: log.transaction_hash,
+                    transaction_hash: log
+                        .transaction_hash
+                        .map(TransactionId::from),
                     block_number,
                     block_hash,
                     block_timestamp,
@@ -587,7 +589,7 @@ pub async fn ingest_block_logs(
                         computation: Computation::trivial(
                             e.plaintext.to_be_bytes(), dst_handle.0[30], dst_handle,
                         ),
-                        transaction_hash: log.transaction_hash,
+                        transaction_hash: log.transaction_hash.map(TransactionId::from),
                         block_number,
                         block_hash,
                         block_timestamp,
@@ -1325,7 +1327,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // ensures the handle is in the ACL.
             allowed_outputs: computation.outputs().iter().copied().collect(),
             computation,
-            transaction_hash,
+            transaction_hash: transaction_hash.map(TransactionId::from),
             block_number: block_number as u64,
             block_hash: *block_hash,
             block_timestamp: PrimitiveDateTime::new(
@@ -1609,14 +1611,14 @@ mod tests {
 
     fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
         Chain {
-            hash: FixedBytes::<32>::from([hash; 32]),
+            hash: TransactionId::from([hash; 32]),
             dependencies: dependencies
                 .iter()
-                .map(|dep| FixedBytes::<32>::from([*dep; 32]))
+                .map(|dep| TransactionId::from([*dep; 32]))
                 .collect(),
             split_dependencies: dependencies
                 .iter()
-                .map(|dep| FixedBytes::<32>::from([*dep; 32]))
+                .map(|dep| TransactionId::from([*dep; 32]))
                 .collect(),
             outer_boundary_handles: vec![],
             dependents: vec![],
@@ -1629,7 +1631,7 @@ mod tests {
 
     fn mask_log(
         event: TfheContractEvents,
-        tx: TransactionHash,
+        tx: TransactionId,
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
@@ -1657,7 +1659,7 @@ mod tests {
 
     #[test]
     fn derives_executor_compatible_masks_and_leaves_scalar_bits_clear() {
-        let tx = handle(0x11);
+        let tx = TransactionId::from(handle(0x11));
         let local = handle(0x21);
         let boundary = handle(0x22);
         let scalar = handle(0x23);
@@ -1714,7 +1716,7 @@ mod tests {
 
     #[test]
     fn synthetic_bridge_trivial_encrypt_is_not_treated_as_executor_minted() {
-        let tx = handle(0x31);
+        let tx = TransactionId::from(handle(0x31));
         let synthetic = handle(0x32);
         let boundary = handle(0x33);
         let mut logs = vec![
@@ -1763,7 +1765,7 @@ mod tests {
                 toType: 5,
                 result: handle(0x41),
             }),
-            handle(0x40),
+            handle(0x40).into(),
             None,
             true,
         )];

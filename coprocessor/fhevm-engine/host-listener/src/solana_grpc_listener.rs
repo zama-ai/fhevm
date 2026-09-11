@@ -19,6 +19,7 @@
 //! produced it, so the two records are built from the same input and committed
 //! together.
 
+use crate::database::transaction_id::TransactionId;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::Duration;
@@ -49,8 +50,7 @@ use crate::database::solana_leaves::{
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_adapter::{
-    insert_solana_block_records, solana_transaction_id, SolanaBlockMeta,
-    SolanaIngestStats,
+    insert_solana_block_records, SolanaBlockMeta, SolanaIngestStats,
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
@@ -946,7 +946,15 @@ async fn apply_block(
     let mut leaf_sources = Vec::new();
     for (transaction, records) in reconstructed {
         records_by_transaction.push((
-            solana_transaction_id(&transaction.info.signature),
+            TransactionId::SolanaSignature(
+                solana_sdk::signature::Signature::try_from(
+                    transaction.info.signature.as_slice(),
+                )
+                .map_err(|err| {
+                    IngestFailure::fatal(err)
+                        .context("invalid Solana signature")
+                })?,
+            ),
             records.records,
         ));
         if !records.leaf_sources.is_empty() {
