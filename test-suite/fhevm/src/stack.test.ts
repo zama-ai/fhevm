@@ -659,7 +659,6 @@ describe("stack", () => {
         ...blueGreenScenario,
         gcs: {
           source: { mode: "registry", tag: "04fb072", compatTag: "v0.15.0" },
-          stackVersion: "0.15.0",
           deferredStart: false,
           env: { FORCE_LEGACY_SERVER_KEY: "true" },
           args: {},
@@ -683,7 +682,7 @@ describe("stack", () => {
       async saveState(next: State) { saved.push(next); },
     };
 
-    await restagePromotedGreen({ stackVersion: "0.15.1" }, operations);
+    await restagePromotedGreen({}, operations);
 
     const next = saved[0]?.scenario;
     expect(next?.kind).toBe("blue-green");
@@ -691,7 +690,6 @@ describe("stack", () => {
       expect(next.bcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
       expect(next.bcs.env.FORCE_LEGACY_SERVER_KEY).toBe("true");
       expect(next.gcs.source).toEqual({ mode: "local" });
-      expect(next.gcs.stackVersion).toBe("0.15.1");
       expect(next.gcs.deferredStart).toBe(true);
       expect(next.gcs.env.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
     }

@@ -49,21 +49,20 @@ describe("RFC 029 rollout gates", () => {
 
   test("uses the last published 0.14 images as the first rollout predecessor", () => {
     const versions = migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" });
-    expect(versions.baselineTag).toBe("v0.14.0-10");
-    expect(versions.baseline.HOST_VERSION).toBe("v0.14.0-9");
-    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.0-10");
+    expect(versions.baselineTag).toBe("v0.14.1");
+    expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.1");
   });
 
   test("starts exact 0.15 Green with the legacy safeguard", () => {
     const scenario = parseBlueGreenScenario(
-      adoptionScenario("v0.14.0-10", "04fb072"),
+      adoptionScenario("v0.14.1", "04fb072"),
       "generated RFC 029 adoption scenario",
     );
     expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
-    expect(scenario.gcs.stackVersion).toBe("0.15.0");
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
   });

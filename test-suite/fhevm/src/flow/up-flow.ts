@@ -2164,7 +2164,6 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
 };
 
 export type RestageDeferredGreenOptions = {
-  stackVersion: string;
   env?: Record<string, string>;
   args?: Record<string, string[]>;
 };
@@ -2178,15 +2177,12 @@ export const restagePromotedGreen = async (
   if (!state || state.scenario.kind !== "blue-green" || state.scenario.gcs.deferredStart) {
     throw new PreflightError("restagePromotedGreen requires a started Green fleet in a Blue-Green scenario");
   }
-  if (options.stackVersion === state.scenario.gcs.stackVersion) {
-    throw new PreflightError("restagePromotedGreen requires a different next Green stack version");
+  if (state.scenario.gcs.source.mode !== "registry") {
+    throw new PreflightError("restagePromotedGreen requires pinned predecessor images");
   }
 
   const scenario = state.scenario;
-  const currentStackVersion = scenario.gcs.stackVersion;
-  const promotedSource = scenario.gcs.source.mode === "local"
-    ? { mode: "registry" as const, tag: `gcs-${currentStackVersion}`, compatTag: `v${currentStackVersion}` }
-    : { ...scenario.gcs.source, compatTag: `v${currentStackVersion}` };
+  const promotedSource = { ...state.scenario.gcs.source };
   const promotedBlue = {
     source: promotedSource,
     env: scenario.gcs.env,
@@ -2242,7 +2238,6 @@ export const restagePromotedGreen = async (
       bcs: promotedBlue,
       gcs: {
         source: { mode: "local" },
-        stackVersion: options.stackVersion,
         deferredStart: true,
         env: options.env ?? {},
         args: options.args ?? {},

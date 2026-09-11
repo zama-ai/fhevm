@@ -91,8 +91,6 @@ const buildPredecessorImages = async (ref: string, tag: string) => {
         target,
         "--build-arg",
         `RUST_IMAGE_VERSION=${rustVersion}`,
-        "--build-arg",
-        "BUILD_STACK_VERSION=0.15.0",
         "--tag",
         predecessorImage(image, tag),
         source,
@@ -206,7 +204,6 @@ gcs:
     mode: registry
     tag: ${JSON.stringify(greenTag)}
     compatTag: v0.15.0
-  stackVersion: "0.15.0"
   deferredStart: true
   env:
     FORCE_LEGACY_SERVER_KEY: "true"
@@ -678,7 +675,6 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
 
   logPhase("09 re-home promoted 0.15.0 as Blue and stage deferred 0.15.1 Green");
   await ctx.restagePromotedGreen({
-    stackVersion: "0.15.1",
     env: { FORCE_LEGACY_SERVER_KEY: "false" },
   });
   await assertActiveSafeguard();
@@ -688,7 +684,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const database = coprocessorDatabaseName(operator);
     const version = await sqlScalar(database, "SELECT stack_version FROM versioning WHERE singleton = TRUE;");
-    if (version !== "v0.15.0") {
+    if (version.replace(/^v/, "") !== "0.15.0") {
       throw new Error(`${database} did not retain the promoted v0.15.0 stack marker`);
     }
   }
@@ -777,7 +773,7 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
 
   logPhase("13 cut over from 0.15.0 Blue to 0.15.1 Green");
   await ctx.test("blue-green", {
-    blueGreenPredecessorVersion: "v0.15.0",
+    blueGreenPredecessorVersion: "0.15.0",
     blueGreenProposalId: "3",
     parallel: false,
   });

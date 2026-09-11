@@ -1256,7 +1256,6 @@ bcs:
   env: { FORCE_LEGACY_SERVER_KEY: "true" }
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.1"
   env: { FORCE_LEGACY_SERVER_KEY: "false" }
 `),
     );
