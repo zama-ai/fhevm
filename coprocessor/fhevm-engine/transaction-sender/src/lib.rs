@@ -1,4 +1,5 @@
 pub mod config;
+pub mod diagnostics;
 pub mod http_server;
 pub mod metrics;
 mod nonce_managed_provider;
@@ -86,8 +87,7 @@ impl HealthStatus {
 pub fn gateway_http_client(url: &Url) -> anyhow::Result<alloy::transports::http::reqwest::Client> {
     anyhow::ensure!(
         matches!(url.scheme(), "http" | "https"),
-        "transaction sender requires an http:// or https:// Gateway URL, got {}",
-        url.scheme()
+        "transaction sender requires an http:// or https:// Gateway URL"
     );
     Ok(alloy::transports::http::reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(4))
@@ -111,7 +111,7 @@ pub async fn get_chain_id(url: Url, retry_interval: Duration) -> anyhow::Result<
             }
             Err(e) => {
                 error!(
-                    error = %e,
+                    error = %diagnostics::safe_rpc_error(&e),
                     retry_interval = ?retry_interval,
                     "Failed to get chain ID from Gateway, retrying"
                 );
