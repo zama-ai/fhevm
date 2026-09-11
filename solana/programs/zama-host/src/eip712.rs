@@ -117,7 +117,7 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
 /// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
 /// version 1 is exactly 33 bytes and carries the 32-byte context id in `extra_data[1..33]`;
-/// version 4 is exactly 65 bytes: the same id, then the State address used to route the request.
+/// version 4 is exactly 65 bytes: the same id, then the Store address used to route the request.
 /// This function extracts only the context id; the verifier checks the public leaf separately.
 /// Because the KMS signs over `extra_data`, the returned id is authenticated by the
 /// certificate. Returns `None` for an unsupported version or a short payload.
@@ -372,7 +372,7 @@ mod tests {
         v1_long.extend_from_slice(&id(42));
         v1_long.push(0);
         assert_eq!(extract_kms_context_id(&v1_long, current), None);
-        // Solana v4 is exactly version + context + State address (65 bytes).
+        // Solana v4 is exactly version + context + Store address (65 bytes).
         let mut v4 = vec![4u8];
         v4.extend_from_slice(&id(42));
         v4.extend_from_slice(&[0xABu8; 32]);

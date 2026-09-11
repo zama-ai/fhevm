@@ -33,9 +33,7 @@ pub use errors::*;
 pub use state::*;
 
 use anchor_lang::prelude::*;
-use zama_fhe::{
-    ExecutionAuthority, ExecutionCpiAccounts, FheExecution, Output, Scalar, State, Uint,
-};
+use zama_fhe::{ExecutionCpiAccounts, FheExecution, Scalar, Store, Uint};
 use zama_host::program::ZamaHost;
 
 declare_id!("HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4");
@@ -64,42 +62,40 @@ pub mod dep_chain {
         // first operand by signing, so it needs no allow.
         let bump = [ctx.bumps.chain_authority];
         let authority_seeds: &[&[u8]] = &[CHAIN_AUTHORITY_SEED, chain.as_ref(), &bump];
-        zama_host::cpi::create_encrypted_state(
+        zama_host::cpi::create_encrypted_store(
             CpiContext::new_with_signer(
                 ctx.accounts.zama_program.key(),
-                zama_host::cpi::accounts::CreateEncryptedState {
+                zama_host::cpi::accounts::CreateEncryptedStore {
                     payer: ctx.accounts.owner.to_account_info(),
                     authority: ctx.accounts.chain_authority.to_account_info(),
-                    encrypted_state: ctx.accounts.encrypted_state.to_account_info(),
+                    encrypted_store: ctx.accounts.encrypted_store.to_account_info(),
                     host_config: ctx.accounts.host_config.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
                 },
                 &[authority_seeds],
             ),
-            zama_host::instructions::CreateEncryptedStateArgs {
+            zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
                 scope: chain.to_bytes(),
                 authority_seeds: authority_seeds.iter().map(|seed| seed.to_vec()).collect(),
             },
         )?;
-        let info = ctx.accounts.encrypted_state.to_account_info();
+        let info = ctx.accounts.encrypted_store.to_account_info();
         let account =
-            zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
-        let state = State::new(&account);
+            zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+        let state = Store::new(&account);
         let output = state
             .set(encrypted_tail_label())
             .allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build(
-            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
-            |builder| {
-                builder.trivial_encrypt_u64(0, Output::state(output))?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(state.id(), |builder| {
+            let result = builder.trivial_encrypt_u64(0)?;
+            builder.output(result, output)?;
+            Ok(())
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .resolve_accounts(
-                [ctx.accounts.encrypted_state.to_account_info()],
+                [ctx.accounts.encrypted_store.to_account_info()],
                 [ctx.accounts.chain_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
@@ -114,6 +110,8 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -131,45 +129,25 @@ pub mod dep_chain {
             DepChainError::InvalidChainLength
         );
         let chain = ctx.accounts.chain.key();
-        let state = State::new(&ctx.accounts.encrypted_state);
+        let state = Store::new(&ctx.accounts.encrypted_store);
         let operand = state
             .get::<Uint<64>>(encrypted_tail_label())
             .map_err(invalid_execution)?;
         let output = state
             .set(encrypted_tail_label())
             .allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build(
-            ExecutionAuthority::new(ctx.accounts.chain_authority.key()),
-            |builder| {
-                if links == 1 {
-                    builder.add(
-                        operand,
-                        Scalar::<Uint<64>>::u64(amount),
-                        Output::state(output),
-                    )?;
-                    return Ok(());
-                }
-                let mut value = builder.add(
-                    operand,
-                    Scalar::<Uint<64>>::u64(amount),
-                    Output::transient(),
-                )?;
-                for _ in 2..links {
-                    value =
-                        builder.add(value, Scalar::<Uint<64>>::u64(amount), Output::transient())?;
-                }
-                builder.add(
-                    value,
-                    Scalar::<Uint<64>>::u64(amount),
-                    Output::state(output),
-                )?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(state.id(), |builder| {
+            let mut value = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
+            for _ in 1..links {
+                value = builder.add(value, Scalar::<Uint<64>>::u64(amount))?;
+            }
+            builder.output(value, output)?;
+            Ok(())
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .resolve_accounts(
-                [ctx.accounts.encrypted_state.to_account_info()],
+                [ctx.accounts.encrypted_store.to_account_info()],
                 [ctx.accounts.chain_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
@@ -186,6 +164,8 @@ pub mod dep_chain {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -223,11 +203,16 @@ pub struct Initialize<'info> {
     pub chain_authority: UncheckedAccount<'info>,
     /// CHECK: created by the host CPI at the chain's canonical encrypted-value address.
     #[account(mut, address = chain_state_id(chain.key()).address() @ DepChainError::TailValueInvalid)]
-    pub encrypted_state: UncheckedAccount<'info>,
+    pub encrypted_store: UncheckedAccount<'info>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }
@@ -241,14 +226,19 @@ pub struct Extend<'info> {
     /// CHECK: PDA signing the host CPI as the encrypted-value authority.
     #[account(seeds = [CHAIN_AUTHORITY_SEED, chain.key().as_ref()], bump = chain.authority_bump)]
     pub chain_authority: UncheckedAccount<'info>,
-    /// Stable tail encrypted State; read for the current handle and replaced by this
+    /// Stable tail encrypted store; read for the current handle and replaced by this
     /// execution.
     #[account(mut, address = chain_state_id(chain.key()).address() @ DepChainError::TailValueInvalid)]
-    pub encrypted_state: Box<Account<'info, zama_host::EncryptedState>>,
+    pub encrypted_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }

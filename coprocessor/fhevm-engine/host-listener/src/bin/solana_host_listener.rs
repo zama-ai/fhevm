@@ -61,6 +61,13 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE)]
     dependence_cache_size: u16,
 
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Max dependent ops per chain before slow-lane (0 disables; startup promotes all chains to fast)"
+    )]
+    dependent_ops_max_per_chain: u32,
+
     /// Port of the HTTP server: health routes and the leaf-proof route.
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
@@ -122,6 +129,16 @@ async fn main() -> Result<()> {
     )
     .await
     .context("connect coprocessor database")?;
+
+    if args.dependent_ops_max_per_chain == 0 {
+        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+        if promoted > 0 {
+            info!(
+                count = promoted,
+                "Slow-lane disabled: promoted all chains to fast on startup"
+            );
+        }
+    }
 
     let pool = db.pool.read().await.clone();
     // Resume after the last block whose compute rows and leaves were committed; the
@@ -188,6 +205,7 @@ async fn main() -> Result<()> {
             x_token: args.grpc_x_token,
             program_id: program_id.to_string(),
             chain_id: host_config_chain_id,
+            dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },
         start,
         cancel.clone(),

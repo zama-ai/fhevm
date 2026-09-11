@@ -4,9 +4,8 @@ import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { DEP_CHAIN_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/depChain/programAddress';
-import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/encryptedCounter/programAddress';
 import { type SolanaDeployProgram } from './constants';
+import localnet from './generated/program-ids.json';
 import { type SolanaProgramProfile, programIdsFor } from './program-profile';
 
 const declaredProgramId = (profile: SolanaProgramProfile): Partial<Record<SolanaDeployProgram, string>> => {
@@ -18,8 +17,8 @@ const declaredProgramId = (profile: SolanaProgramProfile): Partial<Record<Solana
     confidential_batcher: ids.confidentialBatcher,
     ...(profile === 'localnet'
       ? {
-          encrypted_counter: ENCRYPTED_COUNTER_PROGRAM_ADDRESS,
-          dep_chain: DEP_CHAIN_PROGRAM_ADDRESS,
+          encrypted_counter: localnet.encrypted_counter,
+          dep_chain: localnet.dep_chain,
         }
       : {}),
   };

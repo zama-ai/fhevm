@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction, type SolanaFheTransactionAccounts } from "@fhevm/sdk/solana";
 // specimens — the typed drivers for the two specimen consumer programs the live scenarios stand
 // their encrypted values up through: encrypted-counter (the smallest complete consumer) and
 // dep-chain (the 32-step dependent-chain load shape).
@@ -11,7 +12,7 @@
 
 import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import { solanaEncryptedStateAddress } from "@sdk-src/solana/encryptedState.js";
+import { solanaEncryptedStoreAddress } from "@sdk-src/solana/encryptedStore.js";
 
 import { getExtendInstructionAsync, getInitializeInstructionAsync as getInitializeChainInstructionAsync } from "./internal/generated/depChain/instructions/index.js";
 import { findChainAuthorityPda, findChainPda } from "./internal/generated/depChain/pdas/index.js";
@@ -22,7 +23,7 @@ import {
 } from "./internal/generated/encryptedCounter/instructions/index.js";
 import { findCounterAuthorityPda, findCounterPda } from "./internal/generated/encryptedCounter/pdas/index.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
+import { ZAMA_HOST_PROGRAM_ADDRESS } from "../../../../solana/deploy/src/generated/zamaHost/programAddress.js";
 import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
 
@@ -43,7 +44,7 @@ export type SpecimenValue = {
   /** The program's authority PDA: the value's `encrypted_value_account_authority`. */
   readonly authority: Address;
   /** The value's `EncryptedValue` account. */
-  readonly encryptedState: Address;
+  readonly encryptedStore: Address;
 };
 
 /** A specimen value right after a write, with the handle that write installed. */
@@ -64,7 +65,7 @@ const specimenValue = async (
   authority,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
-  encryptedState: await solanaEncryptedStateAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
+  encryptedStore: await solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(program),
     authority: addressBytes(authority),
     scope: addressBytes(state),
@@ -95,18 +96,20 @@ const hostAccounts = async () => ({
  * to 0 and the owner allowed on that handle. Built separately from sending so a multisig can
  * propose it with a bare-address owner (`createNoopSigner`) — the vault PDA signs at execution.
  */
-export const buildInitializeCounterInstruction = async (owner: TransactionSigner): Promise<Instruction> =>
+export const buildInitializeCounterInstruction = async (owner: TransactionSigner, fhe: SolanaFheTransactionAccounts): Promise<Instruction> =>
   getInitializeCounterInstructionAsync({
+    ...fhe,
     owner,
-    encryptedState: (await counterValue(owner.address)).encryptedState,
+    encryptedStore: (await counterValue(owner.address)).encryptedStore,
     ...(await hostAccounts()),
   });
 
 /** `encrypted_counter::increment`: adds `amount` to the count; the owner is allowed on the new handle. */
-export const buildIncrementCounterInstruction = async (owner: TransactionSigner, amount: bigint): Promise<Instruction> =>
+export const buildIncrementCounterInstruction = async (owner: TransactionSigner, amount: bigint, fhe: SolanaFheTransactionAccounts): Promise<Instruction> =>
   getIncrementInstructionAsync({
+    ...fhe,
     owner,
-    encryptedState: (await counterValue(owner.address)).encryptedState,
+    encryptedStore: (await counterValue(owner.address)).encryptedStore,
     ...(await hostAccounts()),
     amount,
   });
@@ -120,10 +123,12 @@ const writeSpecimenValue = async (
   context: SolanaProvisioningContext,
   owner: TransactionSigner,
   value: SpecimenValue,
-  instruction: Instruction,
+  buildInstruction: (fhe: SolanaFheTransactionAccounts) => Promise<Instruction>,
 ): Promise<SpecimenHandle> => {
-  await context.sendTransaction(owner, [instruction], { skipPreflight: true });
-  return { value, handle: await currentHandle(context, value.encryptedState, value.key) };
+  const fhe = await createSolanaFheTransaction({ payer: owner });
+  const instruction = await buildInstruction(fhe.accounts);
+  await context.sendTransaction(owner, fhe.wrap([instruction]), { skipPreflight: true });
+  return { value, handle: await currentHandle(context, value.encryptedStore, value.key) };
 };
 
 /** Creates `owner`'s counter at 0. */
@@ -131,7 +136,7 @@ export const initializeCounter = async (
   context: SolanaProvisioningContext,
   owner: TransactionSigner,
 ): Promise<SpecimenHandle> =>
-  writeSpecimenValue(context, owner, await counterValue(owner.address), await buildInitializeCounterInstruction(owner));
+  writeSpecimenValue(context, owner, await counterValue(owner.address), (fhe) => buildInitializeCounterInstruction(owner, fhe));
 
 /** Adds `amount` to `owner`'s count (the update form of a persistent output). */
 export const incrementCounter = async (
@@ -143,7 +148,7 @@ export const incrementCounter = async (
     context,
     owner,
     await counterValue(owner.address),
-    await buildIncrementCounterInstruction(owner, amount),
+    (fhe) => buildIncrementCounterInstruction(owner, amount, fhe),
   );
 
 /** Creates `owner`'s chain with its tail at 0. */
@@ -156,7 +161,7 @@ export const initializeChain = async (
     context,
     owner,
     value,
-    await getInitializeChainInstructionAsync({ owner, encryptedState: value.encryptedState, ...(await hostAccounts()) }),
+    async (fhe) => getInitializeChainInstructionAsync({ ...fhe, owner, encryptedStore: value.encryptedStore, ...(await hostAccounts()) }),
   );
 };
 
@@ -175,9 +180,10 @@ export const extendChain = async (
     context,
     owner,
     value,
-    await getExtendInstructionAsync({
+    async (fhe) => getExtendInstructionAsync({
+      ...fhe,
       owner,
-      encryptedState: value.encryptedState,
+      encryptedStore: value.encryptedStore,
       ...(await hostAccounts()),
       links: params.links,
       amount: params.amount,

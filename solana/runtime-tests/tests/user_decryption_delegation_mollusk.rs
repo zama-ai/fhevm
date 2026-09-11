@@ -1318,7 +1318,7 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
 /// inputs — a seed-order drift on either side breaks both suites on the same bytes. The
 /// authority-specific row shares the `5bK6ZBSp…` literal of the SDK fixture above.
 #[test]
-fn relayer_fixture_wildcard_row_and_encrypted_state_addresses() {
+fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {
     let delegator = Pubkey::new_from_array([0x11; 32]);
     let delegate = Pubkey::new_from_array([0x22; 32]);
     let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
@@ -1330,7 +1330,7 @@ fn relayer_fixture_wildcard_row_and_encrypted_state_addresses() {
     );
 
     let (value_address, _) =
-        host::encrypted_state_address(Pubkey::new_from_array([0x33; 32]), delegator, [0x55; 32]);
+        host::encrypted_store_address(Pubkey::new_from_array([0x33; 32]), delegator, [0x55; 32]);
     assert_eq!(
         value_address.to_string(),
         "84mjyLg88hbMzH6suJKBS29kUPSc11D6MDPBnrRXDik3"

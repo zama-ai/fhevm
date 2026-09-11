@@ -43,7 +43,7 @@ on:
         default: "{}"
         type: string
       solana_action:
-        description: "Solana devnet: deploy returns unchanged for matching code; upgrade permits changed code at existing identities. Retains preview state."
+        description: "Solana devnet: deploy checks matching code; upgrade permits changed code at existing identities. Stop experiment traffic for the entire rollout."
         type: choice
         default: "off"
         options: ["off", "deploy", "upgrade"]
@@ -364,6 +364,7 @@ jobs:
     if: >-
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.check-labels.outputs.build_images == 'true' &&
+      needs.check-labels.outputs.build_test_suite_only != 'true' &&
       inputs.solana_action && inputs.solana_action != 'off'
     uses: ./.github/workflows/solana-programs-docker-build.yml
     permissions: *docker_permissions

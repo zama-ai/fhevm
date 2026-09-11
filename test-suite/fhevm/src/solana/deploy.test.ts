@@ -5,14 +5,14 @@ import { createHash } from 'node:crypto';
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
 import { PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/program-profile';
-import { getHostConfigEncoder } from './internal/generated/zamaHost/accounts/hostConfig';
+import { getHostConfigEncoder } from '../../../../solana/deploy/src/generated/zamaHost/accounts/hostConfig';
 import {
   getDefineKmsContextInstructionDataDecoder,
   getDefineKmsContextInstructionDataEncoder,
-} from './internal/generated/zamaHost/instructions/defineKmsContext';
-import { getInitializeHostConfigInstructionDataDecoder } from './internal/generated/zamaHost/instructions/initializeHostConfig';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from './internal/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
+} from '../../../../solana/deploy/src/generated/zamaHost/instructions/defineKmsContext';
+import { getInitializeHostConfigInstructionDataDecoder } from '../../../../solana/deploy/src/generated/zamaHost/instructions/initializeHostConfig';
+import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { zamaHostProgramDataAddress } from './provision';
 import type { SolanaProvisioningContext } from './provision';
 

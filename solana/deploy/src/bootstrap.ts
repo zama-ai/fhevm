@@ -17,16 +17,16 @@ import {
 } from '@solana/kit';
 import { createHash } from 'node:crypto';
 
-import { HOST_CONFIG_DISCRIMINATOR, getHostConfigDecoder } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/accounts/hostConfig.js';
+import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
+import type { GatewayBootstrapInputs } from './gateway';
+import { HOST_CONFIG_DISCRIMINATOR, getHostConfigDecoder } from './generated/zamaHost/accounts/hostConfig.js';
 import {
   getDefineKmsContextInstructionAsync,
   getInitializeHostConfigInstructionAsync,
-} from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/instructions/index.js';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/programAddress.js';
-import { getKmsThresholdsDecoder } from '../../../test-suite/fhevm/src/solana/internal/generated/zamaHost/types/kmsThresholds.js';
-import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
-import type { GatewayBootstrapInputs } from './gateway';
+} from './generated/zamaHost/instructions/index.js';
+import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from './generated/zamaHost/pdas/index.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/zamaHost/programAddress.js';
+import { getKmsThresholdsDecoder } from './generated/zamaHost/types/kmsThresholds.js';
 import type { HostDeployContext } from './send';
 
 const BPF_UPGRADEABLE_LOADER = 'BPFLoaderUpgradeab1e11111111111111111111111' as Address;

@@ -190,7 +190,6 @@ SENTINEL_ROOTS=(
 # scan surface: check 4 finds retrofits anywhere in the owned trees, and this list fails loudly when
 # a file that used to carry one no longer does, so the list cannot rot into fake coverage.
 SENTINEL_FILES=(
-  coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   relayer/src/core/event.rs
 )
 # The two staleness arms below read a list that lives in code, so the self-test cannot violate them
@@ -212,8 +211,7 @@ RETROFIT_JUSTIFICATIONS=()
 
 # Same assertion the swept roots get above, for the same reason: these four listener files are named
 # individually and read behind `2>/dev/null || true`, so a rename or a typo in any of them would
-# silently narrow checks 4 and 5 instead of failing. `solana_adapter.rs` alone contributes most of
-# check 4's hits, so its disappearance would look exactly like a clean run.
+# silently narrow checks 4 and 5 instead of failing.
 for root in "${SENTINEL_ROOTS[@]}"; do
   [ -e "$root" ] || { echo "dead-surface-check: sentinel root does not exist: $root" >&2; exit 2; }
 done

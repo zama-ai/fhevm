@@ -1,7 +1,7 @@
 //! The leaf-proof reader: the one place in the authorization path that talks to the
 //! coprocessors' leaf record.
 //!
-//! An encrypted state stores nothing about who may decrypt it; every decrypt permission
+//! An encrypted store stores nothing about who may decrypt it; every decrypt permission
 //! ever sealed on it is a leaf of the account's MMR, and the account holds only the peaks. The
 //! leaf and its sibling path live in the coprocessors' record of the host program's events, so
 //! the connector fetches them from there and verifies them against the peaks it observed on
@@ -41,8 +41,8 @@ pub enum LeafKind {
 /// One leaf to prove.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct LeafQuery {
-    /// The encrypted state whose MMR holds the leaf.
-    pub encrypted_state: SolanaPubkeyBytes,
+    /// The encrypted store whose MMR holds the leaf.
+    pub encrypted_store: SolanaPubkeyBytes,
     /// The handle the leaf names.
     pub handle: HandleBytes,
     /// Which leaf.
@@ -171,7 +171,7 @@ pub enum ProofReadError {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LeafQueryWire {
-    encrypted_state: String,
+    encrypted_store: String,
     handle: String,
     kind: LeafKindWire,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -218,7 +218,7 @@ pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> impl Serialize {
     let leaves = queries
         .iter()
         .map(|query| LeafQueryWire {
-            encrypted_state: alloy::hex::encode(query.encrypted_state),
+            encrypted_store: alloy::hex::encode(query.encrypted_store),
             handle: alloy::hex::encode(query.handle),
             kind: match query.kind {
                 LeafKind::Allowed { .. } => LeafKindWire::Allowed,
@@ -404,12 +404,12 @@ mod tests {
         );
         let queries = [
             LeafQuery {
-                encrypted_state: [0xAC; 32],
+                encrypted_store: [0xAC; 32],
                 handle: [0x10; 32],
                 kind: LeafKind::Allowed { key: [0xA1; 32] },
             },
             LeafQuery {
-                encrypted_state: [0xAC; 32],
+                encrypted_store: [0xAC; 32],
                 handle: [0x11; 32],
                 kind: LeafKind::Public,
             },

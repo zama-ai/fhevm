@@ -6,7 +6,7 @@
 //! literals — deliberately few, with no generator: the layout is frozen behind its version byte,
 //! so a change that moves these bytes is a protocol change, not a fixture refresh.
 //!
-//! The carrier names the encrypted state whose history contains a public handle and nothing else; the
+//! The carrier names the encrypted store whose history contains a public handle and nothing else; the
 //! `PublicDecryptLeaf` proof is fetched by the connector, never carried. The `malformed` section
 //! pins the strictness that makes the fixed width a real property: a longer blob, a shorter one,
 //! and any other version byte are all refused.
@@ -50,7 +50,7 @@ struct ExtraDataRecord {
 #[derive(Deserialize)]
 struct ExtraDataInput {
     context_id_hex: String,
-    encrypted_state_hex: String,
+    encrypted_store_hex: String,
 }
 
 #[derive(Deserialize)]
@@ -68,7 +68,7 @@ fn extra_data_vectors_encode_and_round_trip() {
 
     for record in &file.records {
         let context_id = key32(&record.input.context_id_hex);
-        let encrypted_state = key32(&record.input.encrypted_state_hex);
+        let encrypted_store = key32(&record.input.encrypted_store_hex);
         let expected_blob = bytes(&record.blob_hex);
 
         assert_eq!(
@@ -78,7 +78,7 @@ fn extra_data_vectors_encode_and_round_trip() {
             record.name
         );
         assert_eq!(
-            encode_solana_public_decrypt_extra_data(context_id, encrypted_state),
+            encode_solana_public_decrypt_extra_data(context_id, encrypted_store),
             expected_blob,
             "{}: encoder must produce the committed blob",
             record.name
@@ -86,7 +86,7 @@ fn extra_data_vectors_encode_and_round_trip() {
         let parsed = parse_solana_public_decrypt_extra_data(&expected_blob)
             .unwrap_or_else(|| panic!("{}: the strict parser must accept this blob", record.name));
         assert_eq!(parsed.context_id, context_id, "{}", record.name);
-        assert_eq!(parsed.encrypted_state, encrypted_state, "{}", record.name);
+        assert_eq!(parsed.encrypted_store, encrypted_store, "{}", record.name);
     }
 
     assert!(!file.malformed.is_empty());

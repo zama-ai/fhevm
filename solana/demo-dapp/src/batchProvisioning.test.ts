@@ -64,7 +64,7 @@ const config = {
   batchers: { deposit: { batcher: 'batcher-1', lookupTable: 'table-batch-0' }, redeem: { batcher: 'batcher-2', lookupTable: 'table-redeem-0' } },
 } as never;
 
-const keeper = { address: 'keeper' } as never;
+const keeper = { address: '5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5' } as never;
 
 /** A lookup-table account whose stored deactivation slot is `deactivationSlot`. */
 const lookupTableAccount = (deactivationSlot: bigint) => {

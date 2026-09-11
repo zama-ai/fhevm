@@ -18,7 +18,8 @@ flowchart LR
 ```
 
 The deployment core and CLI live in `solana/deploy/src`; local harnesses import that
-implementation directly. Generated program clients remain in their existing shared tree.
+implementation directly. Deployment bootstrap codecs live in `src/generated`; the existing
+SDK Codama generator owns their regeneration and derives program IDs from committed IDLs.
 
 ## Build and run
 
@@ -141,13 +142,19 @@ It records the Solana host and associates the canonical host key material in Pos
 ### Stop, resume and reset
 
 Keep one active experiment per shared set of public-devnet program IDs. Do not submit
-transactions while its listener is down. Recovery relies on provider replay of transactions
+transactions throughout a rollout, including while old components still appear healthy.
+The workflow stops the old Solana listeners before activating changed programs, then
+recreates them with the matching image. A failed rollout leaves them stopped until a
+successful retry; do not resume traffic merely because the program upgrade succeeded.
+Recovery relies on provider replay of transactions
 **and Clock/SlotHashes updates**; verify actual retention and replay against the provider.
 A checkpoint always takes precedence over a configured initial start slot.
 
 Use `preview-env-destroy.yml` for explicit teardown. It destroys the off-chain history;
-public Solana accounts remain. A new experiment after lost history needs fresh identities
-and fixtures, or a proven complete restore/replay. Recreating a namespace does not reset
+public Solana accounts remain. A new experiment after lost history needs fresh application
+identities, encrypted stores and fixtures whose history the new listener captures from the
+beginning, or a proven complete restore/replay. Program addresses can remain the same when
+host bindings still match. Recreating a namespace does not reset
 Solana. Failed bootstrap without a completed marker also requires explicit inspection/reset.
 Anvil snapshots support this experiment's restart loop; they are not a production chain
 or a guarantee of crash-consistent recovery across the whole distributed stack.
@@ -185,6 +192,11 @@ replay or cluster connectivity; repeat that acceptance in the provisioned previe
 
 The preview workflow rejects Solana with blue-green enabled. This does not guard manually
 configured Helm deployments: keep exactly one Solana listener per coprocessor database.
+
+Component restarts, program upgrades and discarding experiment data are separate operations.
+This development preview does not promise compatibility with discarded PoC account formats.
+The retained-state upgrade scenario tests a compatible transition, not a production migration
+or DAO proposal execution.
 
 An existing host's KMS context cannot be reinitialized with a different signer set.
 A mismatch is terminal for this bootstrap command. Restore the original configuration,

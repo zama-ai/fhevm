@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use host_listener::database::computation::Computation;
+
 use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::{chain_id::ChainId, types::AllowEvents};
 use rand::Rng;
@@ -14,8 +16,7 @@ use alloy::primitives::{FixedBytes, Log};
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    operand_boundary_mask_from_minted, uniform_allowed_outputs, ClearConst,
-    Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, ToType, Transaction,
 };
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::PgPool;
@@ -959,13 +960,19 @@ pub async fn insert_tfhe_event_with_dependence_chain(
     .await?
     .into_iter()
     .collect::<std::collections::HashSet<_>>();
-    let operand_boundary_mask = operand_boundary_mask_from_minted(&log.inner.data, |handle| {
-        previously_minted.contains(handle.as_slice())
-    })
-    .map_err(sqlx::Error::Protocol)?;
+    let computation = Computation::from_evm(&log.inner.data)
+        .expect("valid computation encoding")
+        .expect("computation fixture");
+    let operand_boundary_mask = computation
+        .boundary_mask(|handle| previously_minted.contains(handle.as_slice()))
+        .map_err(sqlx::Error::Protocol)?;
     let event = LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&log.inner, is_allowed),
-        event: log.inner,
+        allowed_outputs: if is_allowed {
+            computation.outputs().iter().copied().collect()
+        } else {
+            Default::default()
+        },
+        computation,
         transaction_hash: Some(transaction_hash),
         block_number: log.block_number.unwrap_or(0),
         block_hash: log.block_hash.unwrap_or_default(),
@@ -976,7 +983,9 @@ pub async fn insert_tfhe_event_with_dependence_chain(
         operand_boundary_mask: Some(operand_boundary_mask),
         is_executor_minted: true,
     };
-    db.insert_tfhe_event(tx, &event).await
+    db.insert_tfhe_event(tx, &event)
+        .await
+        .map(|count| count > 0)
 }
 
 pub async fn allow_handle(

@@ -14399,6 +14399,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "borsh",
+ "bytemuck",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-keccak-hasher",

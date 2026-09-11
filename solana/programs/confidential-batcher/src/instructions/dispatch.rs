@@ -3,7 +3,7 @@
 //! underlying for deposit batchers, confidential shares for redeem batchers).
 //!
 //! Permissionless after `min_batch_age_slots`. The batch account's own balance
-//! encrypted State IS the burn amount (`confidential_burn_from_value`'s whole-balance
+//! encrypted store IS the burn amount (`confidential_burn_from_value`'s whole-balance
 //! alias, deduped inside the token program), so the created-public burned handle
 //! certifies exactly this batch's sum and nothing else.
 
@@ -36,18 +36,23 @@ pub struct Dispatch<'info> {
     /// token CPI and pinned below.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted State — read as the burn amount AND
+    /// CHECK: batch's stable balance encrypted store — read as the burn amount AND
     /// replaced as the burn's balance output (the whole-balance alias).
     #[account(mut)]
-    pub batch_balance_state: UncheckedAccount<'info>,
-    /// CHECK: mint's stable total-supply encrypted State; replaced by the token CPI.
+    pub batch_balance_store: UncheckedAccount<'info>,
+    /// CHECK: mint's stable total-supply encrypted store; replaced by the token CPI.
     #[account(mut)]
-    pub total_supply_state: UncheckedAccount<'info>,
+    pub total_supply_store: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; created by the token CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
@@ -107,12 +112,14 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
                 owner_ata: ctx.accounts.batch_authority_ata.to_account_info(),
                 token_account: ctx.accounts.batch_join_token_account.to_account_info(),
                 total_supply_authority: ctx.accounts.total_supply_authority.to_account_info(),
-                balance_state: ctx.accounts.batch_balance_state.to_account_info(),
-                total_supply_state: ctx.accounts.total_supply_state.to_account_info(),
+                balance_store: ctx.accounts.batch_balance_store.to_account_info(),
+                total_supply_store: ctx.accounts.total_supply_store.to_account_info(),
                 pending_burn: ctx.accounts.pending_burn.to_account_info(),
-                // Whole-balance burn: the balance encrypted State is also the amount.
-                amount_state: ctx.accounts.batch_balance_state.to_account_info(),
+                // Whole-balance burn: the balance encrypted store is also the amount.
+                amount_store: ctx.accounts.batch_balance_store.to_account_info(),
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -129,9 +136,9 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         ct::balance_key(),
     )?;
 
-    let burned_total_handle = fhe::read_state(&ctx.accounts.batch_balance_state)?
+    let burned_total_handle = fhe::read_state(&ctx.accounts.batch_balance_store)?
         .get(&ct::burned_amount_key())
-        .ok_or(BatcherError::EncryptedStateInvalid)?;
+        .ok_or(BatcherError::EncryptedStoreInvalid)?;
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Dispatched;
     batch.burned_total_handle = burned_total_handle;

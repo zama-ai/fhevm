@@ -97,7 +97,7 @@ joining many times with zero — and we say so instead of pretending otherwise.
 
 - **A user deposits and then waits.** No user action ever branches on an
   encrypted value (no "instant exit if the pool is big enough"), because
-  anything that reacts to encrypted state can be probed until the secret leaks.
+  anything that reacts to encrypted store can be probed until the secret leaks.
 - **Settlement is self-serve; cancellation is policy-controlled.** Dispatch, settle, and claim are
   permissionless. The join mint's wrapper authority controls dispatch cancellation; once the batch
   is refund-only, each participant can self-serve `quit` for their exact joined amount.

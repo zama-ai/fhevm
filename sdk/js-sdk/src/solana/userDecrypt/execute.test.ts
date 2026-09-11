@@ -60,7 +60,7 @@ const handle = (): Uint8Array => {
 };
 
 const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
-  { handle: handle(), allowedKey: identity(0x11), encryptedState: identity(0xea) },
+  { handle: handle(), allowedKey: identity(0x11), encryptedStore: identity(0xea) },
 ];
 
 const clock = { delay: (): Promise<void> => Promise.resolve() };

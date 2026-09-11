@@ -40,12 +40,12 @@ pub enum BatcherError {
     /// Dispatch was attempted before the batch reached its minimum age.
     #[msg("batch is younger than the minimum batch age")]
     BatchTooYoung,
-    /// A derived token or encrypted State did not match its canonical address.
+    /// A derived token or encrypted store did not match its canonical address.
     #[msg("account does not match its canonical derived address")]
     DerivedAccountMismatch,
-    /// An encrypted State was malformed or not owned by the host.
-    #[msg("encrypted State is invalid")]
-    EncryptedStateInvalid,
+    /// An encrypted store was malformed or not owned by the host.
+    #[msg("encrypted store is invalid")]
+    EncryptedStoreInvalid,
     /// The batcher produced an invalid FHE execution (internal invariant).
     #[msg("invalid FHE execution")]
     InvalidFheExecution,

@@ -52,8 +52,8 @@ function snapshot(path) {
   );
 }
 
-// One Codama render per target program. Only the zama-host client (the stateless public-decrypt
-// verifier, verifyPublicDecrypt) stays in the SDK; the confidential-token, confidential-batcher,
+// One Codama render per target program. The zama-host lifecycle and public-decrypt verifier
+// stay in the SDK; the confidential-token, confidential-batcher,
 // and demo-vault clients are dapp code and render into the demo dapp
 // (solana/demo-dapp/src/vault — fhevm-internal#1859 §6d). The codegen stays here because the
 // committed IDLs, the codama toolchain, and the --check build gate all live with the SDK.
@@ -63,17 +63,12 @@ const targets = [
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialToken`,
     keep: {
-      // The two app-facing instructions plus the four the confidential-vault demo builds directly:
-      // confidentialTransferFromValue and wrapUsdc (the on-chain from-value/wrap surface, deferred
-      // in #1680 and now absorbed), initializeTokenAccount (the vault `claim` flow needs the user
-      // payout token account to pre-exist), and initializeMint (the demo seeder mints cUSDC/cShares
-      // — fhevm-internal#1760, no hand-rolled instruction bytes). redeemBurnedAmount stays pruned —
-      // it is a batcher-internal CPI inside settle, never built by the SDK.
+      // Keep only the demo's direct token calls. From-value transfer and burn redemption
+      // are on-chain CPIs; their clients do not belong in the JavaScript surface.
       instructions: new Set([
         'confidentialTransfer',
         'discloseSecp',
         'makeTokenAccountHandlePublic',
-        'confidentialTransferFromValue',
         'wrapUsdc',
         'initializeTokenAccount',
         'initializeMint',
@@ -81,12 +76,10 @@ const targets = [
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
-      // transferInput selects a State slot or a transient grant for confidentialTransferFromValue.
       definedTypes: new Set([
         'coprocessorInputAttestation',
         'disclosedValueKind',
         'mmrInclusionProof',
-        'transferInput',
       ]),
       // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
       // initializeTokenAccount → tokenAccount).
@@ -111,12 +104,13 @@ const targets = [
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/src/solana/internal/generated/zamaHost`,
     keep: {
-      // Beside the stateless verifier: the delegation pair and the permit-watermark revocation —
+      // Keep the transaction lifecycle pair, stateless verifier, and delegation/revocation —
       // the three self-custody instructions a wallet (or a multisig proposal) builds through the
       // SDK's hand-written wrappers in src/solana/actions.
       instructions: new Set([
         'verifyPublicDecrypt',
-        'closeScratch',
+        'openTransientStore',
+        'closeTransientStore',
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
         'revokePermits',
@@ -136,13 +130,9 @@ const targets = [
     },
   },
   {
-    // The zama-host client for the bring-up bootstrap pair (test-suite/fhevm/src/solana/deploy.ts):
-    // initializeHostConfig + defineKmsContext — the retired live-client's last production duty,
-    // now typed. Nothing else: a wallet cannot sign fhe_execute or make_handle_public (RFC 035
-    // proves every value authority to be a PDA of its program), so the scenarios stand up values
-    // through the encrypted-counter specimen below instead of a raw driver.
+    // Deployment owns the host bootstrap client; the local harness consumes the same codecs.
     idlPath: idlUrl('zama_host.json'),
-    generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/zamaHost`,
+    generatedPath: `${sdkRoot}/../../solana/deploy/src/generated/zamaHost`,
     keep: {
       instructions: new Set(['initializeHostConfig', 'defineKmsContext']),
       // InitializeHostConfigArgs is inlined into its instruction by Codama; KmsThresholds survives
@@ -299,12 +289,14 @@ const targets = [
 ];
 
 let stale = false;
+const deploymentProgramIds = {};
 for (const target of targets) {
   const before = check ? snapshot(target.generatedPath) : undefined;
   const temporaryRoot = mkdtempSync(`${tmpdir()}/fhevm-codama-`);
   const temporaryGeneratedPath = `${temporaryRoot}/generated`;
 
   const anchorIdl = JSON.parse(readFileSync(target.idlPath, 'utf8'));
+  deploymentProgramIds[anchorIdl.metadata.name] = anchorIdl.address;
   const codama = createFromRoot(rootNodeFromAnchor(anchorIdl));
   const program = codama.getRoot().program;
 
@@ -374,6 +366,15 @@ for (const target of targets) {
     cpSync(temporaryGeneratedPath, target.generatedPath, { recursive: true });
   }
   rmSync(temporaryRoot, { force: true, recursive: true });
+}
+
+// Derive deployment identities from the same IDLs as all application clients.
+const identitiesPath = `${sdkRoot}/../../solana/deploy/src/generated/program-ids.json`;
+const identities = JSON.stringify(deploymentProgramIds, null, 2) + '\n';
+if (check) {
+  if (!existsSync(identitiesPath) || readFileSync(identitiesPath, 'utf8') !== identities) stale = true;
+} else {
+  writeFileSync(identitiesPath, identities);
 }
 
 if (check && stale) {

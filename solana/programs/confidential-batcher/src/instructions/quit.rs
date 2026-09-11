@@ -50,18 +50,23 @@ pub struct Quit<'info> {
     /// so the refund can only land with the quitting user, never back on the batch account.
     #[account(mut)]
     pub user_token_account: UncheckedAccount<'info>,
-    /// CHECK: batch's stable balance encrypted State; replaced by the token CPI.
+    /// CHECK: batch's stable balance encrypted store; replaced by the token CPI.
     #[account(mut)]
-    pub batch_balance_state: UncheckedAccount<'info>,
-    /// CHECK: user's stable balance encrypted State; replaced by the token CPI.
+    pub batch_balance_store: UncheckedAccount<'info>,
+    /// CHECK: user's stable balance encrypted store; replaced by the token CPI.
     #[account(mut)]
-    pub user_balance_state: UncheckedAccount<'info>,
-    /// CHECK: the user's joined encrypted State; spent read-only as the refund
+    pub user_balance_store: UncheckedAccount<'info>,
+    /// CHECK: the user's joined encrypted store; spent read-only as the refund
     /// amount, then reset to an encrypted zero by the batcher execution.
     #[account(mut)]
-    pub join_state: UncheckedAccount<'info>,
+    pub join_store: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
     pub zama_program: Program<'info, ZamaHost>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
@@ -74,7 +79,7 @@ pub struct Quit<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Refunds the exact recorded amount and resets the joined encrypted State to zero.
+/// Refunds the exact recorded amount and resets the joined encrypted store to zero.
 pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     require!(
         matches!(
@@ -89,8 +94,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         BatcherError::ConfidentialMintMismatch
     );
     require_keys_eq!(
-        ctx.accounts.join_state.key(),
-        join_state_id(ctx.accounts.batch.key(), ctx.accounts.join_record.key()).address(),
+        ctx.accounts.join_store.key(),
+        join_store_id(ctx.accounts.batch.key(), ctx.accounts.join_record.key()).address(),
         BatcherError::DerivedAccountMismatch
     );
     let mint_key = ctx.accounts.join_confidential_mint.key();
@@ -113,7 +118,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     );
 
     // Phase 1: refund the contribution slot's amount. The batch authority signs to spend
-    // from the batch's token account; the JoinRecord signs to read its contribution State.
+    // from the batch's token account; the JoinRecord signs to read its contribution Store.
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     let bump = [ctx.accounts.join_record.bump];
@@ -130,12 +135,14 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
                 to_ata: ctx.accounts.user_ata.to_account_info(),
                 from_account: ctx.accounts.batch_join_token_account.to_account_info(),
                 to_account: ctx.accounts.user_token_account.to_account_info(),
-                from_state: ctx.accounts.batch_balance_state.to_account_info(),
-                to_state: ctx.accounts.user_balance_state.to_account_info(),
-                amount_state: Some(ctx.accounts.join_state.to_account_info()),
+                from_store: ctx.accounts.batch_balance_store.to_account_info(),
+                to_store: ctx.accounts.user_balance_store.to_account_info(),
+                amount_store: Some(ctx.accounts.join_store.to_account_info()),
                 amount_authority: Some(ctx.accounts.join_record.to_account_info()),
-                amount_scratch: None,
+
                 zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -154,17 +161,17 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         },
     )?;
 
-    let account = fhe::read_state(&ctx.accounts.join_state)?;
-    let output = zama_fhe::Output::state(
-        zama_fhe::State::new(&account)
-            .set(joined_amount_key())
-            .allow(user),
-    );
-    let execution = zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(ctx.accounts.join_record.key()),
-        |builder| builder.trivial_encrypt_u64(0, output),
-    )
-    .map_err(fhe::invalid_execution)?;
+    let account = fhe::read_state(&ctx.accounts.join_store)?;
+    let output = zama_fhe::Store::new(&account)
+        .set(joined_amount_key())
+        .allow(user);
+    let execution =
+        zama_fhe::FheExecution::build_returning(zama_fhe::Store::new(&account).id(), |builder| {
+            let zero = builder.trivial_encrypt_u64(0)?;
+            builder.output(zero, output)?;
+            Ok(zero)
+        })
+        .map_err(fhe::invalid_execution)?;
     fhe::JoinExecute {
         batch: batch_key,
         user,
@@ -173,11 +180,13 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         payer: ctx.accounts.payer.to_account_info(),
         host_config: ctx.accounts.host_config.to_account_info(),
         event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+        transient_store: ctx.accounts.transient_store.to_account_info(),
+        instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: ctx.remaining_accounts,
     }
-    .invoke(execution, vec![ctx.accounts.join_state.to_account_info()])?;
+    .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 
     emit!(QuitBatch {
         version: APP_EVENT_VERSION,

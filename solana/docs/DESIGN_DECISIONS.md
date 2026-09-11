@@ -4,7 +4,8 @@ Last synced: 2026-09-10.
 
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
 Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
-and composition model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-046 keeps the
+model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-050 defines
+transaction composition, transient store, operand origins and HCU on top of that Store model. DD-046 keeps the
 allocator decision, restated against the current resource limits. For the EVM mapping see
 [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
@@ -56,7 +57,7 @@ Consequences:
 Historical decrypt requests must carry the observed ACL record. KMS does not guess, scan, or derive
 ACL accounts from handles.
 
-## DD-002: Keep App State And Host ACL State Separate
+## DD-002: Keep App Store And Host ACL Store Separate
 
 Status: adopted
 
@@ -567,35 +568,16 @@ identical* computations produce distinct handles; removing it means an identical
 yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor` binds **no**
 per-output nonce, and **no** per-slot/per-caller/per-encrypted value account value, for
 binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` folded into the rand
-*seed*), so the deletion **improves** EVM parity. The recorded collision-case analysis:
+*seed*), so the deletion **improves** EVM parity. The original account and sequence binding are gone.
 
-```text
-case                                             prevented by
-different slot                                   previous_bank_hash (+ unix_timestamp) block entropy
-same slot, same batch, different steps      op_index (+ the FheExecuteDuplicateHandle guard)
-same slot, different txs, same op/operands/ctx   Solana write-lock serializes the two mut writes to
-                                                 the one EncryptedValue PDA (single-writer-per-value,
-                                                 DD-036); an update must match previous_handle, so
-                                                 the 2nd is a distinct state transition. If it does
-                                                 recompute byte-identically, the material is identical
-                                                 (deterministic) → sharing a handle is correct, not a
-                                                 distinct-material collision (= EVM same-block behavior)
-cross-value_account, same computation, same slot       not a collision: identical op/operands/type/ctx is
-                                                 identical ciphertext material, so a shared handle is
-                                                 correct (exactly EVM's behavior). The encrypted value accounts are
-                                                 still distinct on-chain accounts (distinct encrypted value ID
-                                                 PDA seed); only the handle is shared, as on EVM
-fhe_rand / trivial / ternary outputs             same as above; rand within-slot distinctness comes
-                                                 from context_id + op_index + entropy (as it already
-                                                 did for transient rand), never from a binding
-```
-
-Verdict: SAFE-TO-DELETE. Both handle-binding components (the encrypted value ID and the sequence) are gone;
-the persistent handle is the plain base handle, matching EVM's shape. The encrypted value ID remains only as the
-`EncryptedValue` PDA seed, so encrypted value accounts are still distinct accounts. The IDL/wire is unchanged — the
-binding was never an instruction argument (the sequence was the on-chain `leaf_count` read at
-execution; the encrypted value ID is derived from args already present), so `FheExecuteArgs` and the
-persistent-output args (including Option-2 `make_public`) are unaffected.
+The current transaction model supersedes that historical collision analysis: all
+result occurrences are recorded, including identical recomputations. Operand-bearing
+preimages include the transaction-origin mask; the journal determines that mask before
+recording the result. Equal handles refer to the same encrypted computation, while
+Store identity and explicit grants independently determine who may use it. Store slot
+writes use the initial snapshot and ordered effects, rather than a duplicate-handle
+rejection. Random outputs retain their nonce-derived seed. See the canonical preimage
+helpers in `state/mod.rs` and the current execution invariants.
 
 ## DD-016: Confidential Balances Use The Immediate-Available-Balance Profile
 
@@ -1063,7 +1045,7 @@ Two distinct "revert" notions were easy to conflate in the coprocessor.
 
 Decision:
 
-State them apart, explicitly:
+Store them apart, explicitly:
 
 - **`drift_revert`** = COPROCESSOR consensus: two coprocessors disagree on a ciphertext's bitwise
   representation. It **fires even on a chain that never reorgs** (`fhevm_engine_common::drift_revert`;
@@ -1235,7 +1217,7 @@ events do, or stay event-free and let consumers decode instruction data instead.
 
 Decision:
 
-State-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`,
+Store-changing `EncryptedValue` lifecycle paths (`fhe_execute` persistent outputs, `allow_subjects`,
 `remove_subject`, and `make_handle_public`) emit no ACL lifecycle Anchor events by design. The host-listener reconstructs
 compute and material requests from confirmed Yellowstone transaction instructions plus streamed
 Clock/SlotHashes state. The solana-proof-service decodes lifecycle changes from instruction data —
@@ -1887,7 +1869,7 @@ permissionless dispatch/settle/claim and an exact-refund `quit` — no operator 
 Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
 (trivially defeated by one actor joining N times with encrypted zeros; a single-participant batch
 reveals that participant's amount and we document it instead of gating it), **no protocol-level
-noise injection**, **no action that branches on encrypted state** (push-only flow; reactive designs
+noise injection**, **no action that branches on encrypted store** (push-only flow; reactive designs
 are probeable), and **no reward/incentive machinery** (the EVM campaign's dominant operational pain;
 demo yield is simulated by donating underlying to the vault). The demo vault is new, deliberately
 minimal code whose instruction interface mirrors Jupiter Earn's and is isolated behind one CPI
@@ -2229,12 +2211,12 @@ Why not ship an allocator:
 2. The builder has typed limits for steps (`TooManySteps`), CPI instruction data
    (`ExceedsCpiInstructionDataLimit`) and its own requested heap
    (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
-   These limits do not model live State size or prevent the host from exhausting its separate
+   These limits do not model live Store size or prevent the host from exhausting its separate
    heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
-3. State outputs no longer create an account per result, so the old create cap and
+3. Store outputs no longer create an account per result, so the old create cap and
    per-result system-CPI trace argument no longer apply. The runtime snapshots now show
    32-step dependent chains reaching the step cap, shared-audience public outputs reaching
-   24 before the host heap fails at 25, and updates across States with 8, 32 and 64 MMR peaks
+   24 before the host heap fails at 25, and updates across Stores with 8, 32 and 64 MMR peaks
    reaching 15, 7 and 4 steps. These are shape limits; the allocator decision does not make
    a host heap failure acceptable for an application we intend to support. A failing application
    benchmark is grounds to reopen fhevm-internal#1872.
@@ -2388,18 +2370,18 @@ Consequences:
   that is the author's choice, not a stranding.
 
 
-## DD-049 — Shared encrypted State and transaction-local result grants
+## DD-049 — Shared encrypted store and transaction-local result grants
 
 **Status:** adopted in RFC35 / PR3883. No compatibility with the retired PoC account model.
 
-A host-owned `EncryptedState` PDA uses `(program, authority, scope)` identity, with bounded
-slot keys and one shared MMR. State creation proves the program-owned authority; execution
+A host-owned `EncryptedStore` PDA uses `(program, authority, scope)` identity, with bounded
+slot keys and one shared MMR. Store creation proves the program-owned authority; execution
 requires its signature. Slot keys are not PDA seeds. Each batch participant's JoinRecord
-is the authority of its contribution State, scoped to the batch.
+is the authority of its contribution Store, scoped to the batch.
 
-`State` outputs independently choose a slot write, exact-handle private/public permission
-leaves, and scratch grants. Scratch grants authorize an exact produced handle for a consumer
-State whose authority must sign use. Scratch opens and closes in one transaction, with a
+`Store` outputs independently choose a slot write, exact-handle private/public permission
+leaves, and transient store grants. Transient grants authorize an exact produced handle for a consumer
+Store whose authority must sign use. The transient store opens and closes in one transaction, with a
 mandatory final top-level close and the recorded rent refund destination. It is not a decryption
 permission or a restriction on what authorized computations can subsequently reveal.
 
@@ -2409,12 +2391,37 @@ empty selection returns none. Return bytes do not authorize use. Token transfer 
 result and the batcher performs its own contribution update; there is no transferred-amount
 register or token-owned accumulator API. Burn retains its result slot and PendingBurn lifecycle.
 
-Decryption uses State-based v4 extraData and exact-handle MMR proofs. Current-slot publication
+Decryption uses Store-based v4 extraData and exact-handle MMR proofs. Current-slot publication
 and fresh slotless permissions are supported. Adding new private/public permissions to a
 history-only handle is deferred to fhevm-internal#2007. Generic disclosure authenticates
-State/handle/cleartext, not a token-kind label. Original token events establish provenance.
+Store/handle/cleartext, not a token-kind label. Original token events establish provenance.
 
 This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, standalone
 `make_handle_public`, v3 account extraData, and receipt-based transfer composition in this log.
 The existing input-attestation, threshold-KMS, program-upgrade and confirmed-RPC trust
 assumptions still apply. Resource limits remain shape-dependent; see runtime cost snapshots.
+
+
+## DD-050 — Transient storage shared across the transaction
+
+**Status:** implemented for fhevm-internal#2003, building on DD-049.
+
+`TransientStore` is payer-derived and opened once at the top level, before any app calls. Every FHE invocation validates
+that same transient store against the exact final top-level close. Payer identity controls funding/refund only. The bounded
+zero-copy account holds 112 produced occurrences, 32 explicit grants and transaction HCU total; every occurrence
+records its producing Store and depth. No resizing, initiating-Store credential or client session nonce is needed.
+
+Each `fhe_execute` explicitly names its producing Store. That Store implicitly may use every result from its execution,
+including unstored intermediates, across calls in this transaction. Foreign Stores need an explicit grant and must
+sign consumption. Ordered arithmetic and ordered effects are separate; typed Rust expressions select effects with
+`fhe.output(result, state.set(key)...)`. Initial slot snapshots, duplicate-write rejection and ordered MMR cursors remain.
+
+Production membership determines operand origin independently of the supplied witness. The 256-bit big-endian mask
+enters operand-bearing handle preimages; bit 0 marks input position 0. The listener reconstructs membership per
+transaction. HCU total and depth use the same journal, while each application's block meter receives only that call's
+cost. Return data remains immediate CPI transport, independent of permissions and result storage.
+
+This removes per-call transient store opening, token result-scratch/result-authority account bundles, duplicate host metering
+and redundant add-zero balance copies. All affected PoC clients must migrate together; no compatibility path is kept
+for the retired wire layout. Resource snapshots include lifecycle CU overhead and separate whole-transaction packet
+checks. The branch retains current slot/publication and PendingBurn semantics; historical re-sharing is still #2007.

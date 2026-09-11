@@ -1,4 +1,4 @@
-//! Off-chain reconstruction of an encrypted State's full leaf list.
+//! Off-chain reconstruction of an encrypted store's full leaf list.
 //!
 //! The on-chain account stores only the MMR peaks and leaf count, never the ordered leaves a
 //! decrypt proof needs. This module rebuilds that leaf list from the account's chronological
@@ -20,7 +20,7 @@ use crate::{
 
 /// Why a reconstruction or proof-build could not be trusted against chain state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StateHistoryError {
+pub enum StoreHistoryError {
     /// The reconstructed `(peaks, leaf_count)` diverge from the on-chain account's.
     /// The record is incomplete or reordered; any proof built from it would be rejected by
     /// the KMS at verify time.
@@ -29,20 +29,20 @@ pub enum StateHistoryError {
     LeafIndexOutOfRange,
 }
 
-/// One leaf-appending operation in an encrypted State's history, in chronological
+/// One leaf-appending operation in an encrypted store's history, in chronological
 /// order. Each is one leaf, decodable from the host instruction that sealed it with no prior
 /// state: a write names the handle it installs and the keys it allows on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum StateHistoryEvent {
+pub enum StoreHistoryEvent {
     /// One `allow` of `key` on `handle`, sealed by the write that installed `handle`.
     Allowed { handle: [u8; 32], key: [u8; 32] },
     /// `handle` was made publicly decryptable.
     MarkedPublic { handle: [u8; 32] },
 }
 
-/// The full ordered leaf list of an encrypted State plus the MMR state it implies.
+/// The full ordered leaf list of an encrypted store plus the MMR state it implies.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReconstructedStateHistory {
+pub struct ReconstructedStoreHistory {
     pub leaves: Vec<[u8; 32]>,
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
@@ -54,33 +54,33 @@ pub struct ReconstructedStateHistory {
 /// bound into each from a single running counter — exactly as the on-chain handler uses
 /// `leaf_count` before each append — so indices can never desynchronize from event order.
 pub fn reconstruct(
-    encrypted_state_account: [u8; 32],
-    events: &[StateHistoryEvent],
-) -> ReconstructedStateHistory {
+    encrypted_store_account: [u8; 32],
+    events: &[StoreHistoryEvent],
+) -> ReconstructedStoreHistory {
     let leaves: Vec<[u8; 32]> = events
         .iter()
         .zip(0u64..)
         .map(|(event, leaf_index)| match event {
-            StateHistoryEvent::Allowed { handle, key } => historical_access_leaf_commitment(
-                encrypted_state_account,
+            StoreHistoryEvent::Allowed { handle, key } => historical_access_leaf_commitment(
+                encrypted_store_account,
                 leaf_index,
                 *handle,
                 *key,
             ),
-            StateHistoryEvent::MarkedPublic { handle } => {
-                public_decrypt_leaf_commitment(encrypted_state_account, leaf_index, *handle)
+            StoreHistoryEvent::MarkedPublic { handle } => {
+                public_decrypt_leaf_commitment(encrypted_store_account, leaf_index, *handle)
             }
         })
         .collect();
     let peaks = mmr_peaks_from_leaves(&leaves);
-    ReconstructedStateHistory {
+    ReconstructedStoreHistory {
         leaf_count: leaves.len() as u64,
         leaves,
         peaks,
     }
 }
 
-impl ReconstructedStateHistory {
+impl ReconstructedStoreHistory {
     /// Builds the inclusion proof for the leaf at `leaf_index`, or `None` if out of range.
     pub fn build_proof(&self, leaf_index: u64) -> Option<MmrProof> {
         mmr_build_proof(&self.leaves, leaf_index)
@@ -93,42 +93,42 @@ impl ReconstructedStateHistory {
     }
 
     /// Builds a proof only after confirming the reconstruction matches chain state, so a
-    /// wrong or incomplete record surfaces as [`StateHistoryError::PeaksDiverged`]
+    /// wrong or incomplete record surfaces as [`StoreHistoryError::PeaksDiverged`]
     /// here rather than as a silent KMS rejection later.
     pub fn build_verified_proof(
         &self,
         on_chain_peaks: &[[u8; 32]],
         on_chain_leaf_count: u64,
         leaf_index: u64,
-    ) -> Result<MmrProof, StateHistoryError> {
+    ) -> Result<MmrProof, StoreHistoryError> {
         if !self.peaks_match(on_chain_peaks, on_chain_leaf_count) {
-            return Err(StateHistoryError::PeaksDiverged);
+            return Err(StoreHistoryError::PeaksDiverged);
         }
         self.build_proof(leaf_index)
-            .ok_or(StateHistoryError::LeafIndexOutOfRange)
+            .ok_or(StoreHistoryError::LeafIndexOutOfRange)
     }
 }
 
 /// One-shot reconstruction + proof build for the leaf at `leaf_index`. Does NOT cross-check
 /// against chain state; for that use [`build_verified_proof_from_events`].
 pub fn build_proof_from_events(
-    encrypted_state_account: [u8; 32],
-    events: &[StateHistoryEvent],
+    encrypted_store_account: [u8; 32],
+    events: &[StoreHistoryEvent],
     leaf_index: u64,
 ) -> Option<MmrProof> {
-    reconstruct(encrypted_state_account, events).build_proof(leaf_index)
+    reconstruct(encrypted_store_account, events).build_proof(leaf_index)
 }
 
 /// One-shot reconstruction + chain-verified proof build for the leaf at `leaf_index`.
-/// See [`ReconstructedStateHistory::build_verified_proof`].
+/// See [`ReconstructedStoreHistory::build_verified_proof`].
 pub fn build_verified_proof_from_events(
-    encrypted_state_account: [u8; 32],
-    events: &[StateHistoryEvent],
+    encrypted_store_account: [u8; 32],
+    events: &[StoreHistoryEvent],
     on_chain_peaks: &[[u8; 32]],
     on_chain_leaf_count: u64,
     leaf_index: u64,
-) -> Result<MmrProof, StateHistoryError> {
-    reconstruct(encrypted_state_account, events).build_verified_proof(
+) -> Result<MmrProof, StoreHistoryError> {
+    reconstruct(encrypted_store_account, events).build_verified_proof(
         on_chain_peaks,
         on_chain_leaf_count,
         leaf_index,
@@ -139,9 +139,9 @@ pub fn build_verified_proof_from_events(
 mod tests {
     use super::*;
     use crate::{
-        authorize_state_historical, authorize_state_public, mmr_append, mmr_verify, EncryptedState,
+        authorize_state_historical, authorize_state_public, mmr_append, mmr_verify, EncryptedStore,
     };
-    use StateHistoryEvent::{Allowed, MarkedPublic};
+    use StoreHistoryEvent::{Allowed, MarkedPublic};
 
     fn h(tag: u8) -> [u8; 32] {
         [tag; 32]
@@ -157,7 +157,7 @@ mod tests {
         (peaks, count)
     }
 
-    fn assert_every_leaf_proves(account: &ReconstructedStateHistory) {
+    fn assert_every_leaf_proves(account: &ReconstructedStoreHistory) {
         for i in 0..account.leaf_count {
             let proof = account.build_proof(i).unwrap();
             assert!(mmr_verify(
@@ -244,23 +244,23 @@ mod tests {
 
         assert_eq!(
             account.build_verified_proof(&peaks, count + 1, 0),
-            Err(StateHistoryError::PeaksDiverged)
+            Err(StoreHistoryError::PeaksDiverged)
         );
         let mut tampered = peaks.clone();
         tampered[0][0] ^= 0xff;
         assert_eq!(
             account.build_verified_proof(&tampered, count, 0),
-            Err(StateHistoryError::PeaksDiverged)
+            Err(StoreHistoryError::PeaksDiverged)
         );
         assert_eq!(
             account.build_verified_proof(&peaks, count, 2),
-            Err(StateHistoryError::LeafIndexOutOfRange)
+            Err(StoreHistoryError::LeafIndexOutOfRange)
         );
 
         let missing_one = [events[0].clone()];
         assert_eq!(
             build_verified_proof_from_events(acct, &missing_one, &peaks, count, 0),
-            Err(StateHistoryError::PeaksDiverged)
+            Err(StoreHistoryError::PeaksDiverged)
         );
         assert!(build_verified_proof_from_events(acct, &events, &peaks, count, 0).is_ok());
     }
@@ -284,7 +284,7 @@ mod tests {
         assert_every_leaf_proves(&account);
     }
 
-    /// A proof built off the reconstruction authorizes against an `EncryptedState` carrying
+    /// A proof built off the reconstruction authorizes against an `EncryptedStore` carrying
     /// only the reconstructed peaks and leaf count (what the chain stores); the account key is
     /// bound into every leaf, so the same events under another account never cross-authorize.
     #[test]
@@ -302,7 +302,7 @@ mod tests {
             },
         ];
         let account = reconstruct(acct, &events);
-        let value = EncryptedState {
+        let value = EncryptedStore {
             slots: vec![crate::EncryptedSlot {
                 key: [0; 32],
                 handle: h(11),
@@ -323,7 +323,7 @@ mod tests {
 
         let pub_events = [MarkedPublic { handle: h(10) }];
         let pub_account = reconstruct(acct, &pub_events);
-        let pub_value = EncryptedState {
+        let pub_value = EncryptedStore {
             leaf_count: pub_account.leaf_count,
             peaks: pub_account.peaks.clone(),
             ..Default::default()

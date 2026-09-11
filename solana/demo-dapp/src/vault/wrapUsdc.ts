@@ -1,3 +1,4 @@
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getWrapUsdcInstructionAsync } from './internal/generated/confidentialToken/instructions/wrapUsdc.js';
@@ -13,6 +14,7 @@ import {
 } from './internal/tokenAccounts.js';
 
 export type SolanaVaultWrapUsdcParameters = {
+  readonly fhe: SolanaFheTransactionAccounts;
   /** Token owner and transfer authority. */
   readonly owner: TransactionSigner;
   /** The confidential mint whose balance is increased (e.g. cUSDC). */
@@ -32,7 +34,7 @@ export type SolanaVaultWrapUsdcParameters = {
  * owner's associated token account and rotates the owner's confidential balance by that amount. The
  * amount is public at the wrap boundary, so — unlike a confidential transfer — this needs NO input
  * proof. The owner's confidential token account, the program's underlying vault, both persistent
- * encrypted States, and the two Anchor event authorities are derived here from the mints and owner;
+ * encrypted stores, and the two Anchor event authorities are derived here from the mints and owner;
  * the seeder/scenario supplies only semantic roots and assembles/sends the returned instruction.
  */
 export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcParameters): Promise<Instruction> {
@@ -41,14 +43,15 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
   const [mintVaultAuthority] = await findMintVaultAuthorityPda({ mint });
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint });
   return getWrapUsdcInstructionAsync({
+    ...parameters.fhe,
     owner,
     mint,
     tokenAccount,
     underlyingMint,
     userUsdc: await associatedTokenAddress(owner.address, underlyingMint, parameters.tokenProgram),
     vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint, parameters.tokenProgram),
-    balanceState: await tokenStateAddress(mint, tokenAccount),
-    totalSupplyState: await tokenStateAddress(mint, totalSupplyAuthority),
+    balanceStore: await tokenStateAddress(mint, tokenAccount),
+    totalSupplyStore: await tokenStateAddress(mint, totalSupplyAuthority),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     tokenProgram: parameters.tokenProgram,

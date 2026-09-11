@@ -4,6 +4,7 @@
 import { resolveServiceOverrides } from "../layout";
 import { OVERRIDE_GROUPS, STEP_NAMES, TARGETS, type LocalOverride, type OverrideGroup, type StepName, type VersionTarget } from "../types";
 import { PreflightError } from "../errors";
+import { validateSha } from "../resolve/target";
 import { asBool, asString, asStringList } from "./shared";
 
 const ALL_OVERRIDES: LocalOverride[] = OVERRIDE_GROUPS.map((group) => ({ group }));
@@ -35,7 +36,7 @@ const parseLocalOverride = (value: string): LocalOverride[] => {
 /** Normalizes and validates `up` command arguments before stack execution. */
 export const parseUpInput = (args: Record<string, unknown>) => {
   const target = asString(args.target);
-  const sha = asString(args.sha);
+  const sha = asString(args.sha)?.trim();
   const fromStepRaw = asString(args["from-step"] ?? args.fromStep);
   const lockFile = asString(args["lock-file"] ?? args.lockFile);
   const scenarioPath = asString(args.scenario);
@@ -89,6 +90,9 @@ export const parseUpInput = (args: Record<string, unknown>) => {
   }
   if (fromStep && !resume && !dryRun) {
     throw new PreflightError("--from-step requires --resume or --dry-run");
+  }
+  if (sha) {
+    validateSha(sha);
   }
 
   const overrideValues = asStringList(args.override);

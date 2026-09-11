@@ -2,7 +2,7 @@
 //!
 //! The kit holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment,
 //! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
-//! `EncryptedState`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
+//! `EncryptedStore`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
 //! that replays `fhe_execute` CPIs, and the rolling cost snapshots. Program-specific fixtures
 //! (a token's mints, a batcher's batches) stay with their suites.
 //!
@@ -13,6 +13,7 @@
 pub mod cost_snapshot;
 pub mod oracle;
 pub mod signing;
+pub mod transaction;
 
 pub mod contracts;
 
@@ -299,16 +300,16 @@ pub fn read_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> T 
     T::try_deserialize(&mut account.data.as_slice()).expect("account should deserialize")
 }
 
-/// Reads the canonical `EncryptedState` at `address` from the context store.
-pub fn read_encrypted_state(context: &Ctx, address: Pubkey) -> host::EncryptedState {
+/// Reads the canonical `EncryptedStore` at `address` from the context store.
+pub fn read_encrypted_store(context: &Ctx, address: Pubkey) -> host::EncryptedStore {
     read_account(context, address)
 }
 
-/// Reads one required slot handle from a canonical encrypted state.
-pub fn read_state_handle(context: &Ctx, address: Pubkey, key: [u8; 32]) -> [u8; 32] {
-    read_encrypted_state(context, address)
+/// Reads one required slot handle from a canonical encrypted store.
+pub fn read_store_handle(context: &Ctx, address: Pubkey, key: [u8; 32]) -> [u8; 32] {
+    read_encrypted_store(context, address)
         .get(&key)
-        .expect("encrypted state slot should exist")
+        .expect("encrypted store slot should exist")
 }
 
 /// Amount held by the token account at `address` — classic SPL Token or Token-2022, decided by
@@ -523,15 +524,15 @@ pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, 
     )
 }
 
-/// Builds a canonical encrypted state with the supplied initial slots and no
+/// Builds a canonical encrypted store with the supplied initial slots and no
 /// ACL history.
-pub fn new_encrypted_state(
+pub fn new_encrypted_store(
     app: host::AppScope,
     authority: Pubkey,
     slots: impl IntoIterator<Item = ([u8; 32], [u8; 32])>,
-) -> (Pubkey, host::EncryptedState) {
-    let (address, bump) = host::encrypted_state_address(app.program, authority, app.scope);
-    let state = host::EncryptedState {
+) -> (Pubkey, host::EncryptedStore) {
+    let (address, bump) = host::encrypted_store_address(app.program, authority, app.scope);
+    let state = host::EncryptedStore {
         program: app.program,
         authority,
         scope: app.scope,
@@ -546,18 +547,18 @@ pub fn new_encrypted_state(
     (address, state)
 }
 
-/// Builds a canonical encrypted state containing one initial slot.
-pub fn new_encrypted_state_with_slot(
+/// Builds a canonical encrypted store containing one initial slot.
+pub fn new_encrypted_store_with_slot(
     app: host::AppScope,
     authority: Pubkey,
     key: [u8; 32],
     handle: [u8; 32],
-) -> (Pubkey, host::EncryptedState) {
-    new_encrypted_state(app, authority, [(key, handle)])
+) -> (Pubkey, host::EncryptedStore) {
+    new_encrypted_store(app, authority, [(key, handle)])
 }
 
-/// Wraps an `EncryptedState` into an account entry for direct fixture seeding.
-pub fn encrypted_state_account(state: &host::EncryptedState) -> Account {
+/// Wraps an `EncryptedStore` into an account entry for direct fixture seeding.
+pub fn encrypted_store_account(state: &host::EncryptedStore) -> Account {
     Account {
         lamports: 10_000_000_000,
         data: serialized_account(state.clone()),
@@ -576,19 +577,4 @@ pub fn encrypted_state_account(state: &host::EncryptedState) -> Account {
 pub(crate) fn decode_fhe_execute_args(data: &[u8]) -> Option<host::FheExecuteArgs> {
     let payload = data.strip_prefix(host::instruction::FheExecute::DISCRIMINATOR)?;
     host::FheExecuteArgs::deserialize(&mut &*payload).ok()
-}
-
-/// The output descriptor of any execution step variant.
-pub(crate) fn execution_step_output(step: &host::FheExecuteStep) -> &host::FheExecuteOutput {
-    match step {
-        host::FheExecuteStep::Binary { output, .. }
-        | host::FheExecuteStep::Ternary { output, .. }
-        | host::FheExecuteStep::TrivialEncrypt { output, .. }
-        | host::FheExecuteStep::Rand { output, .. }
-        | host::FheExecuteStep::Unary { output, .. }
-        | host::FheExecuteStep::RandBounded { output, .. }
-        | host::FheExecuteStep::Sum { output, .. }
-        | host::FheExecuteStep::IsIn { output, .. }
-        | host::FheExecuteStep::MulDiv { output, .. } => output,
-    }
 }

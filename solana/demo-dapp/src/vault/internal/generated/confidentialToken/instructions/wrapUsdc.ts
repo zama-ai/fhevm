@@ -58,9 +58,11 @@ export type WrapUsdcInstruction<
   TAccountVaultUsdc extends string | AccountMeta<string> = string,
   TAccountVaultAuthority extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
-  TAccountBalanceState extends string | AccountMeta<string> = string,
-  TAccountTotalSupplyState extends string | AccountMeta<string> = string,
+  TAccountBalanceStore extends string | AccountMeta<string> = string,
+  TAccountTotalSupplyStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
@@ -86,11 +88,13 @@ export type WrapUsdcInstruction<
       TAccountTotalSupplyAuthority extends string
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
-      TAccountBalanceState extends string ? WritableAccount<TAccountBalanceState> : TAccountBalanceState,
-      TAccountTotalSupplyState extends string ? WritableAccount<TAccountTotalSupplyState> : TAccountTotalSupplyState,
+      TAccountBalanceStore extends string ? WritableAccount<TAccountBalanceStore> : TAccountBalanceStore,
+      TAccountTotalSupplyStore extends string ? WritableAccount<TAccountTotalSupplyStore> : TAccountTotalSupplyStore,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
@@ -145,9 +149,11 @@ export type WrapUsdcAsyncInput<
   TAccountVaultUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceState extends string = string,
-  TAccountTotalSupplyState extends string = string,
+  TAccountBalanceStore extends string = string,
+  TAccountTotalSupplyStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountTokenProgram extends string = string,
@@ -171,11 +177,13 @@ export type WrapUsdcAsyncInput<
   vaultUsdc: Address<TAccountVaultUsdc>;
   vaultAuthority?: Address<TAccountVaultAuthority>;
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
-  balanceState: Address<TAccountBalanceState>;
-  /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
-  totalSupplyState: Address<TAccountTotalSupplyState>;
+  /** Stable balance encrypted store; read for the current handle and replaced by this execution. */
+  balanceStore: Address<TAccountBalanceStore>;
+  /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
+  totalSupplyStore: Address<TAccountTotalSupplyStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -208,9 +216,11 @@ export async function getWrapUsdcInstructionAsync<
   TAccountVaultUsdc extends string,
   TAccountVaultAuthority extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceState extends string,
-  TAccountTotalSupplyState extends string,
+  TAccountBalanceStore extends string,
+  TAccountTotalSupplyStore extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountTokenProgram extends string,
@@ -230,9 +240,11 @@ export async function getWrapUsdcInstructionAsync<
     TAccountVaultUsdc,
     TAccountVaultAuthority,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountTokenProgram,
@@ -254,9 +266,11 @@ export async function getWrapUsdcInstructionAsync<
     TAccountVaultUsdc,
     TAccountVaultAuthority,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountTokenProgram,
@@ -283,15 +297,17 @@ export async function getWrapUsdcInstructionAsync<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    balanceState: { value: input.balanceState ?? null, isWritable: true },
-    totalSupplyState: {
-      value: input.totalSupplyState ?? null,
+    balanceStore: { value: input.balanceStore ?? null, isWritable: true },
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
@@ -343,9 +359,11 @@ export async function getWrapUsdcInstructionAsync<
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('balanceState', accounts.balanceState),
-      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
+      getAccountMeta('balanceStore', accounts.balanceStore),
+      getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
@@ -367,9 +385,11 @@ export async function getWrapUsdcInstructionAsync<
     TAccountVaultUsdc,
     TAccountVaultAuthority,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountTokenProgram,
@@ -390,9 +410,11 @@ export type WrapUsdcInput<
   TAccountVaultUsdc extends string = string,
   TAccountVaultAuthority extends string = string,
   TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceState extends string = string,
-  TAccountTotalSupplyState extends string = string,
+  TAccountBalanceStore extends string = string,
+  TAccountTotalSupplyStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountTokenProgram extends string = string,
@@ -416,11 +438,13 @@ export type WrapUsdcInput<
   vaultUsdc: Address<TAccountVaultUsdc>;
   vaultAuthority: Address<TAccountVaultAuthority>;
   totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
-  /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
-  balanceState: Address<TAccountBalanceState>;
-  /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
-  totalSupplyState: Address<TAccountTotalSupplyState>;
+  /** Stable balance encrypted store; read for the current handle and replaced by this execution. */
+  balanceStore: Address<TAccountBalanceStore>;
+  /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
+  totalSupplyStore: Address<TAccountTotalSupplyStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -453,9 +477,11 @@ export function getWrapUsdcInstruction<
   TAccountVaultUsdc extends string,
   TAccountVaultAuthority extends string,
   TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceState extends string,
-  TAccountTotalSupplyState extends string,
+  TAccountBalanceStore extends string,
+  TAccountTotalSupplyStore extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountTokenProgram extends string,
@@ -475,9 +501,11 @@ export function getWrapUsdcInstruction<
     TAccountVaultUsdc,
     TAccountVaultAuthority,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountTokenProgram,
@@ -498,9 +526,11 @@ export function getWrapUsdcInstruction<
   TAccountVaultUsdc,
   TAccountVaultAuthority,
   TAccountTotalSupplyAuthority,
-  TAccountBalanceState,
-  TAccountTotalSupplyState,
+  TAccountBalanceStore,
+  TAccountTotalSupplyStore,
   TAccountZamaEventAuthority,
+  TAccountTransientStore,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountTokenProgram,
@@ -526,15 +556,17 @@ export function getWrapUsdcInstruction<
       value: input.totalSupplyAuthority ?? null,
       isWritable: false,
     },
-    balanceState: { value: input.balanceState ?? null, isWritable: true },
-    totalSupplyState: {
-      value: input.totalSupplyState ?? null,
+    balanceStore: { value: input.balanceStore ?? null, isWritable: true },
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
@@ -576,9 +608,11 @@ export function getWrapUsdcInstruction<
       getAccountMeta('vaultUsdc', accounts.vaultUsdc),
       getAccountMeta('vaultAuthority', accounts.vaultAuthority),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
-      getAccountMeta('balanceState', accounts.balanceState),
-      getAccountMeta('totalSupplyState', accounts.totalSupplyState),
+      getAccountMeta('balanceStore', accounts.balanceStore),
+      getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
@@ -600,9 +634,11 @@ export function getWrapUsdcInstruction<
     TAccountVaultUsdc,
     TAccountVaultAuthority,
     TAccountTotalSupplyAuthority,
-    TAccountBalanceState,
-    TAccountTotalSupplyState,
+    TAccountBalanceStore,
+    TAccountTotalSupplyStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountTokenProgram,
@@ -634,31 +670,33 @@ export type ParsedWrapUsdcInstruction<
     vaultUsdc: TAccountMetas[5];
     vaultAuthority: TAccountMetas[6];
     totalSupplyAuthority: TAccountMetas[7];
-    /** Stable balance encrypted State; read for the current handle and replaced by this execution. */
-    balanceState: TAccountMetas[8];
-    /** Stable total-supply encrypted State; read for the current handle and replaced by this execution. */
-    totalSupplyState: TAccountMetas[9];
+    /** Stable balance encrypted store; read for the current handle and replaced by this execution. */
+    balanceStore: TAccountMetas[8];
+    /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
+    totalSupplyStore: TAccountMetas[9];
     zamaEventAuthority: TAccountMetas[10];
+    transientStore: TAccountMetas[11];
+    instructions: TAccountMetas[12];
     /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[11];
+    zamaProgram: TAccountMetas[13];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[12];
+    hostConfig: TAccountMetas[14];
     /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-    tokenProgram: TAccountMetas[13];
+    tokenProgram: TAccountMetas[15];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[14];
+    systemProgram: TAccountMetas[16];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[15] | undefined;
+    hcuBlockMeter?: TAccountMetas[17] | undefined;
     /**
      * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[16] | undefined;
-    eventAuthority: TAccountMetas[17];
-    program: TAccountMetas[18];
+    hcuTrustedAppRecord?: TAccountMetas[18] | undefined;
+    eventAuthority: TAccountMetas[19];
+    program: TAccountMetas[20];
   };
   data: WrapUsdcInstructionData;
 };
@@ -666,10 +704,10 @@ export type ParsedWrapUsdcInstruction<
 export function parseWrapUsdcInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedWrapUsdcInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 19) {
+  if (instruction.accounts.length < 21) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 19,
+      expectedAccountMetas: 21,
     });
   }
   let accountIndex = 0;
@@ -693,9 +731,11 @@ export function parseWrapUsdcInstruction<TProgram extends string, TAccountMetas 
       vaultUsdc: getNextAccount(),
       vaultAuthority: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
-      balanceState: getNextAccount(),
-      totalSupplyState: getNextAccount(),
+      balanceStore: getNextAccount(),
+      totalSupplyStore: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      transientStore: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       tokenProgram: getNextAccount(),

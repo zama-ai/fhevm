@@ -7,8 +7,8 @@
 mod common;
 mod transient;
 pub use transient::*;
-pub mod create_encrypted_state;
-pub use create_encrypted_state::*;
+pub mod create_encrypted_store;
+pub use create_encrypted_store::*;
 pub mod define_kms_context;
 pub mod delegate_for_user_decryption;
 pub mod destroy_kms_context;
@@ -27,7 +27,7 @@ pub mod set_hcu_block_cap_per_app;
 pub mod set_host_pause;
 pub mod set_max_hcu_depth_per_tx;
 pub mod set_max_hcu_per_tx;
-mod state_history;
+mod store_history;
 pub mod verify_public_decrypt;
 
 pub use define_kms_context::*;
@@ -47,5 +47,5 @@ pub use set_hcu_block_cap_per_app::*;
 pub use set_host_pause::*;
 pub use set_max_hcu_depth_per_tx::*;
 pub use set_max_hcu_per_tx::*;
-pub use state_history::*;
+pub use store_history::*;
 pub use verify_public_decrypt::*;

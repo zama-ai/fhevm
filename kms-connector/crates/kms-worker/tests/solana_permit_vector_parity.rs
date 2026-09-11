@@ -114,7 +114,7 @@ impl Wrapper {
         SolanaHandleEntryWire {
             handle: handle(tag, FHE_TYPE_UINT64).to_vec(),
             allowed_key: [key_tag; 32].to_vec(),
-            encrypted_state: [key_tag ^ 0xff; 32].to_vec(),
+            encrypted_store: [key_tag ^ 0xff; 32].to_vec(),
         }
     }
 }

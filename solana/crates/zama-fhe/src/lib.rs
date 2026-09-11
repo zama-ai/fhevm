@@ -16,10 +16,10 @@
 //! read the built execution first — for its value authorities, or for the application
 //! whose deny record and meter it must pass — needs the execution in hand anyway.
 //!
-//! [`State::get`] reads a typed handle from a slot. [`State::set`] describes a slot write,
-//! and [`State::result`] describes permissions on a result without storing it in a slot.
-//! [`StateOutput::allow`] appends decrypt permission to the State history;
-//! [`StateOutput::allow_transient`] shares computation rights through transaction scratch.
+//! [`Store::get`] reads a typed handle from a slot. [`Store::set`] describes a slot write,
+//! and [`Store::result`] describes permissions on a result without storing it in a slot.
+//! [`StoreOutput::allow`] appends decrypt permission to the Store history;
+//! [`StoreOutput::allow_transient`] shares computation rights through transaction transient store.
 //! Intermediate [`Encrypted`] values can be consumed by later steps in the same execution.
 
 #![allow(unexpected_cfgs)]
@@ -36,20 +36,19 @@ mod heap_tally;
 mod lower;
 mod operand;
 mod ops;
-mod state;
+mod store;
 #[cfg(test)]
 mod tests;
 mod types;
-pub use state::{State, StateId, StateOutput};
+pub use store::{Store, StoreId, StoreOutput};
 mod validate;
 
 pub use accounts::{
-    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionAuthority,
-    ExecutionAuthorityRequirement,
+    ExecutionAccountPurpose, ExecutionAccountRequirement, ExecutionAuthorityRequirement,
 };
 #[cfg(feature = "cpi")]
 pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
-pub use acl::{AppScope, BoundedU64UpperBound, Output};
+pub use acl::{AppScope, BoundedU64UpperBound};
 pub use builder::FheExecutionBuilder;
 pub use cost::{
     instruction_trace_floor, FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES,
@@ -70,9 +69,9 @@ pub type Result<T> = std::result::Result<T, FheExecutionBuildError>;
 /// Builder failures that can be detected before invoking the host program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FheExecutionBuildError {
-    MissingStateSlot,
+    MissingStoreSlot,
     ResultNotProduced,
-    StateHistoryMismatch,
+    StoreHistoryMismatch,
     TooManyResultGrants,
     /// More accounts were referenced than fit in the host's `u8` wire indices.
     TooManyRemainingAccounts,
@@ -86,15 +85,14 @@ pub enum FheExecutionBuildError {
     DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     InvalidTransientReference,
-    /// A persistent operand referenced an account written by an earlier step.
-    /// Use the producer returned by that step for the new value, or consume the
-    /// old persistent value before writing the account.
-    StateSlotWrittenEarlier,
+    /// Two effects write the same Store slot in one execution.
+    DuplicateSlotWrite,
     /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`) — the one step
     /// ceiling, on-chain and off. The heap no longer bounds the step count by itself: the
     /// builder's own budget ([`ExceedsBuildHeapBudget`](Self::ExceedsBuildHeapBudget)) holds
     /// every admitted shape inside the fixed 32 KB region, which cannot be raised (DD-046).
     TooManySteps,
+    TooManyEffects,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
     /// runtime would reject the invoke. Verified-input attestations are the heavy term
@@ -133,7 +131,7 @@ pub enum FheExecutionBuildError {
     TernaryOperandTypeMismatch,
     /// An allowed key is the zero key or repeats another (host parity: `InvalidAllowKey`).
     InvalidAllowKey,
-    /// The fixed encrypted State authority is the default pubkey, so it can never sign.
+    /// The fixed encrypted store authority is the default pubkey, so it can never sign.
     InvalidExecutionAuthority,
     /// A lowered host account index does not match the execution account list.
     InvalidRemainingAccountReference,

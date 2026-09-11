@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 // Scenario: delegated user-decrypt — the #1690 evidence pack, live.
 //
 // Two arcs over the same protocol surface:
@@ -46,6 +47,7 @@ import {
   executeVaultTransaction,
   proposeThroughSquad,
   web3KeypairFromBytes,
+  toWeb3Instruction,
 } from "../harness/solana/squads";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
@@ -73,7 +75,7 @@ const delegatedDecrypt = (
   params: { readonly value: SpecimenValue; readonly handle: Uint8Array; readonly delegateSecretKey: string },
 ): Promise<bigint> =>
   userDecryptExpect(setup.config, {
-    encryptedState: params.value.encryptedState,
+    encryptedStore: params.value.encryptedStore,
     handle: params.handle,
     secretKey: params.delegateSecretKey,
     allowedKey: params.value.owner,
@@ -119,7 +121,7 @@ describe("solana delegated user-decrypt", () => {
         payer: wallet.signer,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
         expirationSlot: (await currentSlot(setup)) + EXPIRATION_SLOTS_AHEAD,
       });
       await context.sendTransaction(wallet.signer, [grant]);
@@ -128,7 +130,7 @@ describe("solana delegated user-decrypt", () => {
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       expect(rows.exact).not.toBeNull();
       expect(solana.isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await currentSlot(setup))).toBe(true);
@@ -175,7 +177,7 @@ describe("solana delegated user-decrypt", () => {
       }) as typeof fetch;
       try {
         const entries = [
-          { handle, encryptedState: addressBytes(value.encryptedState), allowedKey: addressBytes(value.owner) },
+          { handle, encryptedStore: addressBytes(value.encryptedStore), allowedKey: addressBytes(value.owner) },
         ];
         const first = await client.userDecrypt({ session, entries });
         const second = await client.userDecrypt({ session, entries });
@@ -195,13 +197,13 @@ describe("solana delegated user-decrypt", () => {
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
         delegator: wallet.signer,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       await context.sendTransaction(wallet.signer, [revoke]);
       const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       expect(revokedRows.exact?.revoked).toBe(true);
       // The typed label, not the message text: the label IS the relayer's contract, while the
@@ -251,18 +253,22 @@ describe("solana delegated user-decrypt", () => {
       const delegate = await generateSolanaKeypair();
       const delegateSecretKey = hex(delegate.bytes.subarray(0, 32));
 
+      // These proposals name member[0] as transient store sponsor, so its signature is required at execution.
+      // The vault still authenticates its own State by CPI.
+      const fhe = await createSolanaFheTransaction({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address) });
+      const [open, close] = fhe.wrap([]).map(toWeb3Instruction);
       // The DAO's value: the vault's own counter at 42, written through two approved proposals.
       for (const instruction of [
-        await buildInitializeCounterInstruction(vaultSigner),
-        await buildIncrementCounterInstruction(vaultSigner, 42n),
+        await buildInitializeCounterInstruction(vaultSigner, fhe.accounts),
+        await buildIncrementCounterInstruction(vaultSigner, 42n, fhe.accounts),
       ]) {
         const index = await proposeThroughSquad(connection, squad, members[0]!, instruction);
         await approveProposal(connection, squad, members[0]!, index);
         await approveProposal(connection, squad, members[1]!, index);
-        await executeVaultTransaction(connection, squad, members[0]!, index);
+        await executeVaultTransaction(connection, squad, members[0]!, index, (ix) => [open!, ix, close!]);
       }
       const value = await counterValue(vaultAddress);
-      const handle = await currentHandle(context, value.encryptedState, value.key);
+      const handle = await currentHandle(context, value.encryptedStore, value.key);
       await stack.waitForSnsCommit(hex(handle));
 
       // The proposal's inner instruction: vault -> delegate, the vault paying its own rent.
@@ -270,7 +276,7 @@ describe("solana delegated user-decrypt", () => {
         payer: vaultAddress,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
         expirationSlot: (await currentSlot(setup)) + EXPIRATION_SLOTS_AHEAD,
       });
       const grantIndex = await proposeThroughSquad(connection, squad, members[0]!, grant);
@@ -288,7 +294,7 @@ describe("solana delegated user-decrypt", () => {
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       expect(rows.exact?.delegator).toBe(vaultAddress);
 
@@ -299,7 +305,7 @@ describe("solana delegated user-decrypt", () => {
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       const revokeIndex = await proposeThroughSquad(connection, squad, members[0]!, revoke);
       await approveProposal(connection, squad, members[0]!, revokeIndex);
@@ -308,7 +314,7 @@ describe("solana delegated user-decrypt", () => {
       const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStateAuthority: value.authority,
+        encryptedStoreAuthority: value.authority,
       });
       expect(revokedRows.exact?.revoked).toBe(true);
       // Pinned the same way as the headless arc above: the label, not the rendered message.

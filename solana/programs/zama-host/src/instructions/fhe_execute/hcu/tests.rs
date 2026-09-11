@@ -2,8 +2,8 @@ mod evm_parity;
 
 use super::*;
 use crate::state::{
-    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteOutput,
-    FheExecuteStep, FheTernaryOpCode,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep,
+    FheTernaryOpCode,
 };
 
 // FHE type ids (handle byte 30): 0 = ebool, 2..=6 = euint8..euint128.
@@ -40,12 +40,11 @@ const ALL_BINARY_OPS: [FheBinaryOpCode; 20] = [
     FheBinaryOpCode::Max,
 ];
 
-// ---- execution builders (handles are irrelevant to metering; only operand KIND matters) ----
+// These fixtures run the production execution walk, including handle validation and derivation.
 fn trivial(fhe_type: u8) -> FheExecuteStep {
     FheExecuteStep::TrivialEncrypt {
         plaintext: [0u8; 32],
         fhe_type,
-        output: FheExecuteOutput::Transient,
     }
 }
 fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheExecuteStep {
@@ -58,7 +57,6 @@ fn add_local(ty: u8, lhs_producer: u8, rhs_producer: u8) -> FheExecuteStep {
             producer_index: rhs_producer,
         },
         output_fhe_type: ty,
-        output: FheExecuteOutput::Transient,
     }
 }
 fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
@@ -69,22 +67,20 @@ fn add_scalar(ty: u8, lhs_producer: u8) -> FheExecuteStep {
         },
         rhs: FheExecuteOperand::Scalar { value_index: 0 },
         output_fhe_type: ty,
-        output: FheExecuteOutput::Transient,
     }
 }
-fn add_state_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
+fn add_store_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
     FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::EarlierStep {
             producer_index: lhs_producer,
         },
-        rhs: FheExecuteOperand::StateSlot {
-            handle_index: 0,
-            state_index: 0,
-            key_index: 0,
+        rhs: FheExecuteOperand::StoreSlot {
+            handle_index: 1,
+            store_index: 0,
+            key_index: 2,
         },
         output_fhe_type: ty,
-        output: FheExecuteOutput::Transient,
     }
 }
 
@@ -125,7 +121,9 @@ fn unary_op_hcu_covers_every_validated_output_type() {
 
 fn handle_of(ty: u8) -> [u8; 32] {
     let mut handle = [0u8; 32];
+    handle[22..30].copy_from_slice(&crate::SOLANA_POC_CHAIN_ID.to_be_bytes());
     handle[30] = ty;
+    handle[31] = crate::HANDLE_VERSION;
     handle
 }
 
@@ -360,10 +358,9 @@ fn meter_comparison_prices_operand_width_not_ebool() {
             lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
             rhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
             output_fhe_type: EBOOL,
-            output: FheExecuteOutput::Transient,
         },
     ];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let expected = trivial_encrypt_hcu(EU64).unwrap()
         + binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap();
     assert_eq!(m.total, expected);
@@ -374,56 +371,37 @@ fn meter_comparison_prices_dictionary_and_verified_input_width() {
     let handle = handle_of(EU64);
     let stored = FheExecuteStep::Binary {
         op: FheBinaryOpCode::Ge,
-        lhs: FheExecuteOperand::StateSlot {
-            handle_index: 0,
-            state_index: 0,
-            key_index: 0,
+        lhs: FheExecuteOperand::StoreSlot {
+            handle_index: 1,
+            store_index: 0,
+            key_index: 2,
         },
-        rhs: FheExecuteOperand::StateSlot {
-            handle_index: 0,
-            state_index: 0,
-            key_index: 0,
+        rhs: FheExecuteOperand::StoreSlot {
+            handle_index: 1,
+            store_index: 0,
+            key_index: 2,
         },
         output_fhe_type: EBOOL,
-        output: FheExecuteOutput::Transient,
     };
-    let stored_meter = meter_execution(&[stored], &[handle], u64::MAX, u64::MAX).unwrap();
+    let stored_meter = meter_execution(&[stored], &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     assert_eq!(
         stored_meter.total,
         binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap()
     );
 
-    let attestation = CoprocessorInputAttestation {
-        input_handle: handle,
-        ct_handles: vec![handle],
-        handle_index: 0,
-        user_address: [0u8; 32],
-        contract_address: [0u8; 32],
-        contract_chain_id: 0,
-        extra_data: vec![],
-        signatures: vec![],
-    };
+    let attestation = input_attestation(handle);
     let verified = FheExecuteStep::Binary {
         op: FheBinaryOpCode::Ge,
         lhs: FheExecuteOperand::VerifiedInput {
-            attestation: Box::new(attestation),
+            attestation: Box::new(attestation.clone()),
         },
         rhs: FheExecuteOperand::VerifiedInput {
-            attestation: Box::new(CoprocessorInputAttestation {
-                input_handle: handle,
-                ct_handles: vec![handle],
-                handle_index: 0,
-                user_address: [0u8; 32],
-                contract_address: [0u8; 32],
-                contract_chain_id: 0,
-                extra_data: vec![],
-                signatures: vec![],
-            }),
+            attestation: Box::new(attestation),
         },
         output_fhe_type: EBOOL,
-        output: FheExecuteOutput::Transient,
     };
-    let verified_meter = meter_execution(&[verified], &[], u64::MAX, u64::MAX).unwrap();
+    let verified_meter =
+        meter_execution(&[verified], &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     assert_eq!(
         verified_meter.total,
         binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap()
@@ -503,7 +481,7 @@ fn step_depth_overflow_fails_closed() {
 #[test]
 fn meter_single_step_total_and_depth() {
     let steps = vec![trivial(EU64)];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let cost = trivial_encrypt_hcu(EU64).unwrap();
     assert_eq!(m.total, cost);
     assert_eq!(m.step_depths, vec![cost]);
@@ -512,7 +490,7 @@ fn meter_single_step_total_and_depth() {
 #[test]
 fn meter_chain_depth_accumulates_along_path() {
     let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_local(EU64, 1, 1)];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
     assert_eq!(m.step_depths, vec![t, add + t, add + add + t]);
@@ -522,7 +500,7 @@ fn meter_chain_depth_accumulates_along_path() {
 #[test]
 fn meter_total_sums_all_steps_depth_le_total() {
     let steps = vec![trivial(EU64), trivial(EU64), add_local(EU64, 0, 1)];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
     assert_eq!(m.total, t + t + add);
@@ -541,7 +519,7 @@ fn meter_total_exceeds_limit_errors() {
     let total = trivial_encrypt_hcu(EU64).unwrap()
         + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
     assert_eq!(
-        meter_execution(&steps, &[], total - 1, u64::MAX).unwrap_err(),
+        meter_execution(&steps, &walk_dictionary(), total - 1, u64::MAX).unwrap_err(),
         error!(ZamaHostError::HcuTransactionLimitExceeded)
     );
 }
@@ -551,7 +529,7 @@ fn meter_total_within_limit_ok() {
     let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
     let total = trivial_encrypt_hcu(EU64).unwrap()
         + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-    let m = meter_execution(&steps, &[], total, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), total, u64::MAX).unwrap();
     assert_eq!(m.total, total);
 }
 
@@ -562,7 +540,7 @@ fn meter_depth_exceeds_limit_independent_of_total() {
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
     let max_depth = add + t; // depth of step c (add+add+t) exceeds this
     assert_eq!(
-        meter_execution(&steps, &[], u64::MAX, max_depth).unwrap_err(),
+        meter_execution(&steps, &walk_dictionary(), u64::MAX, max_depth).unwrap_err(),
         error!(ZamaHostError::HcuTransactionDepthLimitExceeded)
     );
 }
@@ -572,20 +550,17 @@ fn meter_depth_within_limit_ok() {
     let steps = vec![trivial(EU64), add_local(EU64, 0, 0)];
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
-    let m = meter_execution(&steps, &[], u64::MAX, add + t).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, add + t).unwrap();
     assert_eq!(*m.step_depths.last().unwrap(), add + t);
 }
 
 #[test]
-fn meter_unknown_cost_propagates() {
-    // A Rand of type 7 has no cost row -> the walk surfaces HcuUnknownCost (fail-closed).
-    let steps = vec![FheExecuteStep::Rand {
-        fhe_type: 7,
-        output: FheExecuteOutput::Transient,
-    }];
+fn meter_unknown_type_fails_before_charging() {
+    // Unsupported types never reach charging; missing cost rows are covered above.
+    let steps = vec![FheExecuteStep::Rand { fhe_type: 7 }];
     assert_eq!(
-        meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap_err(),
-        error!(ZamaHostError::HcuUnknownCost)
+        meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap_err(),
+        error!(ZamaHostError::UnsupportedFheType)
     );
 }
 
@@ -594,7 +569,7 @@ fn meter_unknown_cost_propagates() {
 #[test]
 fn meter_scalar_is_zero_leaf() {
     let steps = vec![trivial(EU64), add_scalar(EU64, 0)];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
     assert_eq!(m.total, t + add_scalar_cost);
@@ -603,16 +578,7 @@ fn meter_scalar_is_zero_leaf() {
 
 #[test]
 fn meter_verified_input_is_zero_leaf() {
-    let attestation = CoprocessorInputAttestation {
-        input_handle: [9u8; 32],
-        ct_handles: vec![[9u8; 32]],
-        handle_index: 0,
-        user_address: [0u8; 32],
-        contract_address: [0u8; 32],
-        contract_chain_id: 0,
-        extra_data: vec![],
-        signatures: vec![],
-    };
+    let attestation = input_attestation(handle_of(EU64));
     let steps = vec![FheExecuteStep::Binary {
         op: FheBinaryOpCode::Add,
         lhs: FheExecuteOperand::VerifiedInput {
@@ -620,9 +586,8 @@ fn meter_verified_input_is_zero_leaf() {
         },
         rhs: FheExecuteOperand::Scalar { value_index: 0 },
         output_fhe_type: EU64,
-        output: FheExecuteOutput::Transient,
     }];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let add_scalar_cost = binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap();
     assert_eq!(m.total, add_scalar_cost);
     assert_eq!(m.step_depths, vec![add_scalar_cost]);
@@ -634,9 +599,9 @@ fn meter_operands_never_add_to_total() {
         trivial(EU64),
         add_local(EU64, 0, 0),
         add_scalar(EU64, 1),
-        add_state_slot(EU64, 2),
+        add_store_slot(EU64, 2),
     ];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let expected = trivial_encrypt_hcu(EU64).unwrap()
         + binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
         + binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap()
@@ -645,11 +610,11 @@ fn meter_operands_never_add_to_total() {
 }
 
 #[test]
-fn meter_state_slot_input_is_zero_depth_leaf() {
-    // A State-slot operand contributes depth 0 (in-execution reset), so a
-    // chain split across a State boundary resets depth there rather than carrying it forward.
-    let steps = vec![trivial(EU64), add_state_slot(EU64, 0)];
-    let m = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+fn meter_store_slot_input_is_zero_depth_leaf() {
+    // A Store-slot operand contributes depth 0 (in-execution reset), so a
+    // chain split across a Store boundary resets depth there rather than carrying it forward.
+    let steps = vec![trivial(EU64), add_store_slot(EU64, 0)];
+    let m = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     let t = trivial_encrypt_hcu(EU64).unwrap();
     let add = binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap();
     assert_eq!(*m.step_depths.last().unwrap(), add + t); // add + max(depth(a)=t, State slot=0)
@@ -667,7 +632,7 @@ fn meter_disabled_limits_accept_costliest_plan() {
         steps.push(add_local(EU128, i - 1, i - 1));
     }
     assert_eq!(steps.len(), crate::state::MAX_FHE_EXECUTION_STEPS);
-    assert!(meter_execution(&steps, &[], u64::MAX, u64::MAX).is_ok());
+    assert!(meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).is_ok());
 }
 
 // ---- determinism is the on-chain==off-chain parity basis ----
@@ -675,24 +640,186 @@ fn meter_disabled_limits_accept_costliest_plan() {
 #[test]
 fn meter_is_deterministic() {
     let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_scalar(EU64, 1)];
-    let a = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
-    let b = meter_execution(&steps, &[], u64::MAX, u64::MAX).unwrap();
+    let a = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
+    let b = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
     assert_eq!(a.total, b.total);
     assert_eq!(a.step_depths, b.step_depths);
 }
 
-// ---- Documentation test for the deferred cross-execution gap (NOT an invariant guard) ----
-
 #[test]
-fn doc_cross_batch_total_not_metered() {
-    // the total is per-execution. Two separate executions, each under the per-execution
-    // total, BOTH succeed even though their combined cost exceeds the limit. A future reviewer
-    // must not "fix" this into a false cross-execution coverage claim.
+fn cross_execution_total_is_metered_in_one_journal() {
     let execution = vec![trivial(EU64), add_local(EU64, 0, 0)];
-    let one = meter_execution(&execution, &[], u64::MAX, u64::MAX)
+    let one = meter_execution(&execution, &walk_dictionary(), u64::MAX, u64::MAX)
         .unwrap()
         .total;
-    let limit = one + one / 2; // < 2 * one
-    assert!(meter_execution(&execution, &[], limit, u64::MAX).is_ok()); // execution A
-    assert!(meter_execution(&execution, &[], limit, u64::MAX).is_ok()); // execution B — combined exceeds `limit`
+    let mut transient_store = Box::new(<crate::TransientStore as bytemuck::Zeroable>::zeroed());
+    run_walk(
+        &execution,
+        &walk_dictionary(),
+        one + one / 2,
+        u64::MAX,
+        &mut transient_store,
+    )
+    .unwrap();
+    assert_eq!(
+        run_walk(
+            &execution,
+            &walk_dictionary(),
+            one + one / 2,
+            u64::MAX,
+            &mut transient_store
+        )
+        .unwrap_err(),
+        error!(ZamaHostError::HcuTransactionLimitExceeded)
+    );
+}
+
+fn walk_dictionary() -> [[u8; 32]; 3] {
+    [[0; 32], handle_of(EU64), [42; 32]]
+}
+
+fn signing_key() -> k256::ecdsa::SigningKey {
+    k256::ecdsa::SigningKey::from_bytes(&[0x44; 32].into()).unwrap()
+}
+
+fn input_attestation(handle: [u8; 32]) -> CoprocessorInputAttestation {
+    let user_address = [1; 32];
+    let contract_address = [2; 32];
+    let hash = crate::eip712::ciphertext_verification_struct_hash(
+        &[handle],
+        &user_address,
+        &contract_address,
+        crate::SOLANA_POC_CHAIN_ID,
+        &[],
+    );
+    let domain = crate::eip712::domain_separator(b"InputVerification", b"1", 31337, &[0xCD; 20]);
+    let digest = crate::eip712::typed_data_digest(&domain, &hash);
+    let (signature, recovery_id) = signing_key().sign_prehash_recoverable(&digest).unwrap();
+    let mut bytes = [0; 65];
+    bytes[..64].copy_from_slice(&signature.to_bytes());
+    bytes[64] = recovery_id.to_byte() + 27;
+    CoprocessorInputAttestation {
+        input_handle: handle,
+        ct_handles: vec![handle],
+        handle_index: 0,
+        user_address,
+        contract_address,
+        contract_chain_id: crate::SOLANA_POC_CHAIN_ID,
+        extra_data: vec![],
+        signatures: vec![bytes],
+    }
+}
+
+#[derive(Debug)]
+struct Metered {
+    total: u64,
+    step_depths: Vec<u64>,
+}
+
+fn meter_execution(
+    steps: &[FheExecuteStep],
+    dictionary: &[[u8; 32]],
+    total: u64,
+    depth: u64,
+) -> Result<Metered> {
+    let mut transient_store = Box::new(<crate::TransientStore as bytemuck::Zeroable>::zeroed());
+    run_walk(steps, dictionary, total, depth, &mut transient_store)
+}
+
+// Directly exercises the same walk used by fhe_execute. Signature admission and
+// transaction lifetime are covered separately by preflight and runtime tests.
+fn run_walk(
+    steps: &[FheExecuteStep],
+    dictionary: &[[u8; 32]],
+    total: u64,
+    depth: u64,
+    transient_store: &mut crate::TransientStore,
+) -> Result<Metered> {
+    use crate::{AppScope, EncryptedSlot, EncryptedStore, FheExecuteArgs, HostConfig};
+    let app = AppScope {
+        program: Pubkey::new_from_array([2; 32]),
+        scope: [3; 32],
+    };
+    let authority = Pubkey::new_from_array([4; 32]);
+    let mut state = EncryptedStore {
+        program: app.program,
+        scope: app.scope,
+        authority,
+        slots: vec![EncryptedSlot {
+            key: [42; 32],
+            handle: handle_of(EU64),
+        }],
+        leaf_count: 0,
+        peaks: vec![],
+        bump: 0,
+    };
+    let (address, bump) = state.canonical_address();
+    state.bump = bump;
+    let mut data = Vec::new();
+    state.try_serialize(&mut data).unwrap();
+    let mut lamports = 0;
+    let account = AccountInfo::new(
+        &address,
+        false,
+        true,
+        &mut lamports,
+        &mut data,
+        &crate::ID,
+        false,
+    );
+    let accounts = [account];
+    let mut table = super::super::account_table::ExecutionAccountTable::new(&accounts)?;
+    let public = signing_key().verifying_key().to_encoded_point(false);
+    let hash = solana_keccak_hasher::hash(&public.as_bytes()[1..]).to_bytes();
+    let signer: [u8; 20] = hash[12..].try_into().unwrap();
+    let config = HostConfig {
+        admin: authority,
+        chain_id: crate::SOLANA_POC_CHAIN_ID,
+        gateway_chain_id: 31337,
+        input_verification_contract: [0xCD; 20],
+        coprocessor_signers: crate::pack_coprocessor_signers(&[signer]),
+        coprocessor_signer_count: 1,
+        coprocessor_threshold: 1,
+        decryption_contract: [1; 20],
+        current_kms_context_id: [0; 32],
+        paused: false,
+        grant_deny_list_enabled: false,
+        max_hcu_per_tx: total,
+        max_hcu_depth_per_tx: depth,
+        hcu_block_cap_per_app: u64::MAX,
+        updated_slot: 0,
+        bump: 0,
+    };
+    let context = super::super::walk::ExecutionHandleContext {
+        derivation: crate::HandleDerivationContext {
+            chain_id: config.chain_id,
+            previous_bank_hash: [1; 32],
+            unix_timestamp: 42,
+        },
+        rand: Some(super::super::walk::RandContext { nonce: 0, app }),
+    };
+    let args = FheExecuteArgs {
+        execution_store_index: 0,
+        account_count: 1,
+        dictionary: dictionary.to_vec(),
+        steps: steps.to_vec(),
+        effects: vec![],
+        returned_results: vec![],
+    };
+    let start = transient_store.len();
+    super::super::execute_steps(
+        &mut table,
+        transient_store,
+        start,
+        &args,
+        app,
+        &context,
+        &config,
+    )?;
+    Ok(Metered {
+        total: transient_store.total_hcu,
+        step_depths: (start..transient_store.len())
+            .map(|i| transient_store.result(i).unwrap().depth)
+            .collect(),
+    })
 }

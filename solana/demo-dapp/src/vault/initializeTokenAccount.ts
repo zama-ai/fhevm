@@ -1,3 +1,4 @@
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
 
 import { getInitializeTokenAccountInstructionAsync } from './internal/generated/confidentialToken/instructions/initializeTokenAccount.js';
@@ -6,6 +7,7 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confide
 import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
+  readonly fhe: SolanaFheTransactionAccounts;
   /** Signer funding the new confidential account and encrypted balance. */
   readonly payer: TransactionSigner;
   /** Owner of the confidential account. This address does not need to sign. */
@@ -27,7 +29,7 @@ export function needsConfidentialTokenAccountInitialization(accountOwner: Addres
 
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted State, and
+ * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted store, and
  * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
  * sends the returned instruction.
  */
@@ -36,11 +38,12 @@ export async function buildInitializeTokenAccountInstruction(
 ): Promise<Instruction> {
   const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
   return getInitializeTokenAccountInstructionAsync({
+    ...parameters.fhe,
     payer: parameters.payer,
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount,
-    balanceEncryptedState: await tokenStateAddress(parameters.mint, tokenAccount),
+    balanceEncryptedStore: await tokenStateAddress(parameters.mint, tokenAccount),
     zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     eventAuthority: await tokenEventAuthorityAddress(),

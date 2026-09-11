@@ -185,7 +185,7 @@ pub struct SolanaHandleJson {
     /// The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
     /// itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
     pub allowed_key: String,
-    /// The 32-byte address of the `EncryptedState` account whose history grants access
+    /// The 32-byte address of the `EncryptedStore` account whose history grants access
     /// (`0x` + 64 hex).
-    pub encrypted_state: String,
+    pub encrypted_store: String,
 }

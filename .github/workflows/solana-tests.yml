@@ -78,12 +78,14 @@ jobs:
               # The source IDLs the generated clients are rendered from. The confidential_batcher
               # and demo_vault IDLs live under solana/demo-dapp/idl and are already matched above;
               # these two are vendored with the listener, so without naming them an IDL change
-              # would not run the codegen check that reads it. zama_host feeds the test-suite's
-              # generated bootstrap client, whose committed output is also matched so a hand edit
-              # to the generated tree runs the check too.
+              # would not run the codegen check that reads it. Include deployment and harness
+              # outputs so hand edits to any generated client also run the check.
               - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
               - test-suite/fhevm/src/solana/internal/generated/**
+              - solana/deploy/src/generated/**
+              - solana/programs/encrypted-counter/idl/**
+              - solana/programs/dep-chain/idl/**
             test-suite-fhevm:
               - solana/deploy/**
               - .github/workflows/solana-tests.yml
@@ -225,6 +227,10 @@ jobs:
       # both of their own dependency graphs must exist for their types to resolve.
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
         run: npm ci --prefix sdk/js-sdk
+
+      - name: Build public SDK exports used by the test suite
+        working-directory: sdk/js-sdk
+        run: npm run build:esm && npm run build:types
 
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp

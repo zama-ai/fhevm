@@ -88,9 +88,9 @@
           }
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "docs": [
-            "Stable tail encrypted State; read for the current handle and replaced by this",
+            "Stable tail encrypted store; read for the current handle and replaced by this",
             "execution."
           ],
           "writable": true
@@ -100,6 +100,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -200,7 +207,7 @@
           }
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "writable": true
         },
         {
@@ -208,6 +215,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -245,7 +259,7 @@
     {
       "code": 6001,
       "name": "TailValueInvalid",
-      "msg": "tail encrypted State mismatch"
+      "msg": "tail encrypted store mismatch"
     },
     {
       "code": 6002,
@@ -301,7 +315,7 @@
       }
     },
     {
-      "name": "EncryptedState",
+      "name": "EncryptedStore",
       "type": {
         "kind": "struct",
         "fields": [

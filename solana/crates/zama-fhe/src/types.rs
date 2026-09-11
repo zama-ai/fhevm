@@ -112,10 +112,10 @@ pub struct Encrypted<'id, T> {
     identity: BuilderIdentity<'id>,
 }
 
-/// A persistent value as an operand: its handle plus the encrypted State holding it.
+/// A persistent value as an operand: its handle plus the encrypted store holding it.
 ///
 /// Brand-free on purpose. A stored value belongs to no builder, so app code can read one out of
-/// account state — with its own error handling — before it opens an execution, and then feed it to
+/// account store — with its own error handling — before it opens an execution, and then feed it to
 /// whichever builder needs it. Only the values a builder hands back carry an identity ([`Encrypted`]),
 /// because only those are meaningless outside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

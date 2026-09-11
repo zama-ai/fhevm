@@ -6,10 +6,9 @@
 //! On drop, an uncommitted step rolls back interned tables in place so a failed step leaves
 //! the builder as it found them.
 
-use zama_host::{CoprocessorInputAttestation, FheExecuteOperand, FheExecuteOutput};
+use zama_host::{CoprocessorInputAttestation, FheExecuteEffect, FheExecuteOperand};
 
-use crate::accounts::{ExecutionAccountMeta, ExecutionAccountPurpose, ExecutionAuthority};
-use crate::acl::{Output, OutputKind};
+use crate::accounts::{ExecutionAccountMeta, ExecutionAccountPurpose};
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::operand::{Operand, OperandKind};
 use crate::{FheExecutionBuildError, Result};
@@ -28,18 +27,16 @@ struct MetaPromotion {
 /// The builder's intern tables for the duration of one step, borrowed in place, plus the undo log
 /// that lets a step that fails half-way leave them exactly as it found them.
 ///
-/// Lowering only ever appends to the three tables, with one exception: an account that is already
+/// Lowering only ever appends to the two tables, with one exception: an account that is already
 /// interned is widened in place. So an undo is the recorded lengths plus one small record per
 /// promotion — no table is copied, which is what keeps an execution built on-chain inside the
 /// SBF entrypoint's fixed 32 KB bump heap.
 pub(crate) struct StepTables<'b> {
     remaining_accounts: &'b mut TalliedVec<ExecutionAccountMeta>,
     dictionary: &'b mut TalliedVec<[u8; 32]>,
-    persistent_producers: &'b mut TalliedVec<(u8, Option<u8>)>,
     budget: &'b mut HeapBudget,
     remaining_accounts_len: usize,
     dictionary_len: usize,
-    persistent_producers_len: usize,
     promotions: TalliedVec<(usize, MetaPromotion)>,
     committed: bool,
 }
@@ -56,16 +53,13 @@ impl<'b> StepTables<'b> {
     pub(crate) fn open(
         remaining_accounts: &'b mut TalliedVec<ExecutionAccountMeta>,
         dictionary: &'b mut TalliedVec<[u8; 32]>,
-        persistent_producers: &'b mut TalliedVec<(u8, Option<u8>)>,
         budget: &'b mut HeapBudget,
     ) -> Self {
         Self {
             remaining_accounts_len: remaining_accounts.len(),
             dictionary_len: dictionary.len(),
-            persistent_producers_len: persistent_producers.len(),
             remaining_accounts,
             dictionary,
-            persistent_producers,
             budget,
             promotions: TalliedVec::new(),
             committed: false,
@@ -98,8 +92,6 @@ impl<'b> StepTables<'b> {
         self.remaining_accounts
             .truncate(self.remaining_accounts_len);
         self.dictionary.truncate(self.dictionary_len);
-        self.persistent_producers
-            .truncate(self.persistent_producers_len);
     }
 
     pub(crate) fn account_index(&mut self, required: ExecutionAccountMeta) -> Result<u8> {
@@ -152,19 +144,19 @@ impl<'b> StepTables<'b> {
         Ok(index)
     }
 
-    /// The signer slot for a State authority: none when it is the execution's fixed
+    /// The signer slot for a Store authority: none when it is the execution's fixed
     /// CPI signer, otherwise a readonly signing remaining account.
-    fn state_authority_index(
+    fn store_authority_index(
         &mut self,
         authority: anchor_lang::prelude::Pubkey,
-        execution_authority: ExecutionAuthority,
+        execution_authority: anchor_lang::prelude::Pubkey,
     ) -> Result<Option<u8>> {
-        if authority == execution_authority.pubkey() {
+        if authority == execution_authority {
             return Ok(None);
         }
         self.account_index(ExecutionAccountMeta::readonly_signer(
             authority,
-            ExecutionAccountPurpose::StateAuthority,
+            ExecutionAccountPurpose::StoreAuthority,
         ))
         .map(Some)
     }
@@ -172,48 +164,33 @@ impl<'b> StepTables<'b> {
 
 pub(crate) fn lower_operand(
     tables: &mut StepTables<'_>,
-    execution_authority: ExecutionAuthority,
+    execution_authority: anchor_lang::prelude::Pubkey,
     produced_count: usize,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
     match operand.0 {
-        OperandKind::StateSlot { state, key, handle } => {
-            let state_index = tables.account_index(ExecutionAccountMeta::readonly(
-                state.address,
-                ExecutionAccountPurpose::StateInput,
+        OperandKind::StoreSlot { store, key, handle } => {
+            let store_index = tables.account_index(ExecutionAccountMeta::readonly(
+                store.address,
+                ExecutionAccountPurpose::StoreInput,
             ))?;
             let key_index = tables.dictionary_index(key)?;
-            if tables
-                .persistent_producers
-                .contains(&(state_index, Some(key_index)))
-            {
-                return Err(FheExecutionBuildError::StateSlotWrittenEarlier);
-            }
-            tables.state_authority_index(state.authority, execution_authority)?;
-            Ok(FheExecuteOperand::StateSlot {
-                state_index,
+            tables.store_authority_index(store.authority, execution_authority)?;
+            Ok(FheExecuteOperand::StoreSlot {
+                store_index,
                 key_index,
                 handle_index: tables.dictionary_index(handle)?,
             })
         }
-        OperandKind::Granted {
-            consumer,
-            scratch,
-            handle,
-        } => {
-            let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
+        OperandKind::Granted { consumer, handle } => {
+            let consumer_store_index = tables.account_index(ExecutionAccountMeta::readonly(
                 consumer.address,
-                ExecutionAccountPurpose::StateInput,
+                ExecutionAccountPurpose::StoreInput,
             ))?;
-            tables.state_authority_index(consumer.authority, execution_authority)?;
-            let scratch_index = tables.account_index(ExecutionAccountMeta::readonly(
-                scratch,
-                ExecutionAccountPurpose::StateInput,
-            ))?;
+            tables.store_authority_index(consumer.authority, execution_authority)?;
             Ok(FheExecuteOperand::TransientResult {
-                consumer_state_index,
-                scratch_index,
+                consumer_store_index,
                 handle_index: tables.dictionary_index(handle)?,
             })
         }
@@ -248,89 +225,64 @@ pub(crate) fn lower_operand(
     }
 }
 
-pub(crate) fn lower_output(
+pub(crate) fn lower_effect(
     tables: &mut StepTables<'_>,
-    execution_authority: ExecutionAuthority,
-    output: Output,
-) -> Result<FheExecuteOutput> {
-    match output.0 {
-        OutputKind::State(output) => {
-            crate::validate::validate_allow_keys(&output.allows)?;
-            if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
-                return Err(FheExecutionBuildError::TooManyResultGrants);
-            }
-            let state_index = tables.account_index(
-                if output.slot.is_some() || !output.allows.is_empty() || output.make_public {
-                    ExecutionAccountMeta::writable(
-                        output.state.address,
-                        ExecutionAccountPurpose::StateOutput,
-                    )
-                } else {
-                    ExecutionAccountMeta::readonly(
-                        output.state.address,
-                        ExecutionAccountPurpose::StateOutput,
-                    )
-                },
-            )?;
-            tables.state_authority_index(output.state.authority, execution_authority)?;
-            let slot = output
-                .slot
-                .map(|(key, previous)| -> Result<_> {
-                    Ok(zama_host::SlotWrite {
-                        key_index: tables.dictionary_index(key)?,
-                        previous_handle_index: previous
-                            .map(|h| tables.dictionary_index(h))
-                            .transpose()?,
-                    })
-                })
-                .transpose()?;
-            if let Some(slot) = &slot {
-                let claim = (state_index, Some(slot.key_index));
-                if tables.persistent_producers.contains(&claim) {
-                    return Err(FheExecutionBuildError::StateSlotWrittenEarlier);
-                }
-                tables.persistent_producers.try_push(tables.budget, claim)?;
-            }
-            let mut allows = TalliedVec::try_with_capacity(tables.budget(), output.allows.len())?;
-            for subject in output.allows {
-                let index = tables.dictionary_index(subject.to_bytes())?;
-                allows.try_push(tables.budget(), index)?;
-            }
-            let mut grants = TalliedVec::try_with_capacity(tables.budget(), output.grants.len())?;
-            for (initiating, consumer) in output.grants {
-                tables.state_authority_index(initiating.authority, execution_authority)?;
-                let initiating_state_index =
-                    tables.account_index(ExecutionAccountMeta::readonly(
-                        initiating.address,
-                        ExecutionAccountPurpose::StateInput,
-                    ))?;
-                let consumer_state_index = tables.account_index(ExecutionAccountMeta::readonly(
-                    consumer.address,
-                    ExecutionAccountPurpose::StateInput,
-                ))?;
-                let scratch_index = tables.account_index(ExecutionAccountMeta::writable(
-                    initiating.scratch_address(),
-                    ExecutionAccountPurpose::StateOutput,
-                ))?;
-                grants.try_push(
-                    tables.budget(),
-                    zama_host::ResultGrant {
-                        initiating_state_index,
-                        consumer_state_index,
-                        scratch_index,
-                    },
-                )?;
-            }
-            Ok(FheExecuteOutput::State {
-                state_index,
-                previous_leaf_count: output.previous_leaf_count,
-                slot,
-                allow_indexes: allows.into_inner(),
-                make_public: output.make_public,
-                grants: grants.into_inner(),
-            })
-        }
-
-        OutputKind::Transient => Ok(FheExecuteOutput::Transient),
+    execution_authority: anchor_lang::prelude::Pubkey,
+    result: zama_host::ExecutionResultRef,
+    output: crate::StoreOutput,
+) -> Result<FheExecuteEffect> {
+    crate::validate::validate_allow_keys(&output.allows)?;
+    if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
+        return Err(FheExecutionBuildError::TooManyResultGrants);
     }
+    let store_index = tables.account_index(
+        if output.slot.is_some() || !output.allows.is_empty() || output.make_public {
+            ExecutionAccountMeta::writable(
+                output.store.address,
+                ExecutionAccountPurpose::StoreOutput,
+            )
+        } else {
+            ExecutionAccountMeta::readonly(
+                output.store.address,
+                ExecutionAccountPurpose::StoreOutput,
+            )
+        },
+    )?;
+    tables.store_authority_index(output.store.authority, execution_authority)?;
+    let slot = output
+        .slot
+        .map(|(key, previous)| -> Result<_> {
+            Ok(zama_host::SlotWrite {
+                key_index: tables.dictionary_index(key)?,
+                previous_handle_index: previous.map(|h| tables.dictionary_index(h)).transpose()?,
+            })
+        })
+        .transpose()?;
+    let mut allows = TalliedVec::try_with_capacity(tables.budget(), output.allows.len())?;
+    for subject in output.allows {
+        let index = tables.dictionary_index(subject.to_bytes())?;
+        allows.try_push(tables.budget(), index)?;
+    }
+    let mut grants = TalliedVec::try_with_capacity(tables.budget(), output.grants.len())?;
+    for consumer in output.grants {
+        let consumer_store_index = tables.account_index(ExecutionAccountMeta::readonly(
+            consumer.address,
+            ExecutionAccountPurpose::StoreInput,
+        ))?;
+        grants.try_push(
+            tables.budget(),
+            zama_host::ResultGrant {
+                consumer_store_index,
+            },
+        )?;
+    }
+    Ok(FheExecuteEffect {
+        result,
+        store_index,
+        previous_leaf_count: output.previous_leaf_count,
+        slot,
+        allow_indexes: allows.into_inner(),
+        make_public: output.make_public,
+        grants: grants.into_inner(),
+    })
 }

@@ -12,7 +12,7 @@ use zama_host::cpi;
 #[derive(Accounts)]
 #[event_cpi]
 pub struct AllowTotalSupplyViewers<'info> {
-    /// Pays for encrypted State growth.
+    /// Pays for encrypted store growth.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Existing confidential mint authority. Governance may own this key later.
@@ -23,11 +23,16 @@ pub struct AllowTotalSupplyViewers<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Encrypted total-supply value; read for the current handle and replaced.
-    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
-    pub total_supply_state: Box<Account<'info, zama_host::EncryptedState>>,
+    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
     /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
@@ -53,8 +58,8 @@ pub struct MakeTotalSupplyHandlePublic<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Encrypted total-supply value whose current handle is sealed.
-    #[account(mut, address = encrypted_state_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
-    pub total_supply_state: Box<Account<'info, zama_host::EncryptedState>>,
+    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
@@ -67,18 +72,20 @@ pub fn allow_total_supply_viewers<'info>(
 ) -> Result<()> {
     let mint = ctx.accounts.mint.key();
     let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let total_supply_state = &ctx.accounts.total_supply_state;
+    let total_supply_store = &ctx.accounts.total_supply_store;
     assert_token_value(
-        total_supply_state,
+        total_supply_store,
         mint,
         total_supply_authority,
         total_supply_key(),
     )?;
-    let old_total_supply_handle = fhe::state_handle(total_supply_state, total_supply_key())?;
+    let old_total_supply_handle = fhe::store_handle(total_supply_store, total_supply_key())?;
     let new_total_supply_handle = rewrite_allowing(
         fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
+            transient_store: &ctx.accounts.transient_store,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(
@@ -98,9 +105,9 @@ pub fn allow_total_supply_viewers<'info>(
                 .as_ref()
                 .map(|account| account.to_account_info()),
         },
-        total_supply_state,
+        total_supply_store,
         total_supply_slot(mint),
-        fhe::StateAuthority::total_supply(
+        fhe::StoreAuthority::total_supply(
             &ctx.accounts.total_supply_authority,
             mint,
             ctx.bumps.total_supply_authority,
@@ -111,9 +118,9 @@ pub fn allow_total_supply_viewers<'info>(
         version: APP_EVENT_VERSION,
         mint,
         old_handle: old_total_supply_handle,
-        old_encrypted_state: total_supply_state.key(),
+        old_encrypted_store: total_supply_store.key(),
         new_handle: new_total_supply_handle,
-        new_encrypted_state: total_supply_state.key(),
+        new_encrypted_store: total_supply_store.key(),
         reason: TotalSupplyUpdateReason::AllowViewers,
     });
     Ok(())
@@ -126,7 +133,7 @@ pub fn make_total_supply_handle_public<'info>(
 ) -> Result<()> {
     let mint = ctx.accounts.mint.key();
     assert_token_value(
-        &ctx.accounts.total_supply_state,
+        &ctx.accounts.total_supply_store,
         mint,
         ctx.accounts.total_supply_authority.key(),
         total_supply_key(),
@@ -136,13 +143,13 @@ pub fn make_total_supply_handle_public<'info>(
 
     let bump = [ctx.bumps.total_supply_authority];
     let seeds: &[&[u8]] = &[b"total-supply", mint.as_ref(), &bump];
-    cpi::make_state_handle_public(
+    cpi::make_store_handle_public(
         CpiContext::new_with_signer(
             ctx.accounts.zama_program.key(),
-            cpi::accounts::MakeStateHandlePublic {
+            cpi::accounts::MakeStoreHandlePublic {
                 payer: ctx.accounts.payer.to_account_info(),
                 authority: ctx.accounts.total_supply_authority.to_account_info(),
-                encrypted_state: ctx.accounts.total_supply_state.to_account_info(),
+                encrypted_store: ctx.accounts.total_supply_store.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 deny_scope_record,
                 system_program: ctx.accounts.system_program.to_account_info(),
@@ -151,6 +158,6 @@ pub fn make_total_supply_handle_public<'info>(
         ),
         total_supply_key(),
         handle,
-        ctx.accounts.total_supply_state.leaf_count,
+        ctx.accounts.total_supply_store.leaf_count,
     )
 }

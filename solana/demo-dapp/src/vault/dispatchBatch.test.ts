@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -50,6 +51,7 @@ describe('buildDispatchBatchInstruction', () => {
 
   it('derives every non-root account exactly as dispatch.rs validates them', async () => {
     const instruction = await buildDispatchBatchInstruction({
+      fhe: (await createSolanaFheTransaction({ payer })).accounts,
       payer,
       batcher,
       batch,
@@ -92,6 +94,8 @@ describe('buildDispatchBatchInstruction', () => {
         base58.decode(batchJoinTokenAccount),
       ]),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
+      await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]),
+      address('Sysvar1nstructions1111111111111111111111111'),
       ZAMA_HOST_PROGRAM_ADDRESS,
       hostConfig,
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
@@ -105,11 +109,12 @@ describe('buildDispatchBatchInstruction', () => {
   });
 
   // Golden pins for the fixed fixture: the encrypted value accounts are re-pinned from the RFC 035 seed
-  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedState
+  // derivation (`encrypted_value_seeds`, mirrored and pinned in the SDK's encryptedStore
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildDispatchBatchInstruction({
+      fhe: (await createSolanaFheTransaction({ payer })).accounts,
       payer,
       batcher,
       batch,
@@ -122,9 +127,9 @@ describe('buildDispatchBatchInstruction', () => {
     expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
     expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
     expect(addresses[9]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchBalanceValue
-    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyState
+    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyStore
     // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
     expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[15]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[17]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });
 });

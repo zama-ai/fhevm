@@ -1,7 +1,7 @@
 //! The public-decrypt path, pinned from outside the module that hosts it.
 //!
 //! Solana public decrypt has no live on-chain "is public" flag: public-ness is a `PublicDecryptLeaf`
-//! sealed in the encrypted state's MMR, and the account holds only the peaks. The request
+//! sealed in the encrypted store's MMR, and the account holds only the peaks. The request
 //! supplies one thing — which account the handle lives in, carried in the version-`0x04`
 //! `extraData` — and the connector does the rest: it reads the account at `confirmed`, asks the
 //! coprocessors' leaf record for the leaf, and verifies the sibling path against the peaks it
@@ -28,7 +28,7 @@ use kms_worker::core::solana::snapshot::{
 };
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
-use solana_support::{EncryptedStateFixture, deployment, handle};
+use solana_support::{EncryptedStoreFixture, deployment, handle};
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
 /// production constant.
@@ -43,8 +43,8 @@ const API_KEY: &str = "test-key";
 /// The FHE type byte of the fixture handles: any type will do, public-ness is per handle.
 const FHE_TYPE_UINT64: u8 = 5;
 
-/// The carrier as the client builds it: version, context id, the handle's encrypted state.
-fn carrier(fixture: &EncryptedStateFixture) -> Vec<u8> {
+/// The carrier as the client builds it: version, context id, the handle's encrypted store.
+fn carrier(fixture: &EncryptedStoreFixture) -> Vec<u8> {
     let mut blob = vec![CARRIER_VERSION];
     blob.extend_from_slice(&[0x11; 32]);
     blob.extend_from_slice(&fixture.account_key);
@@ -53,8 +53,8 @@ fn carrier(fixture: &EncryptedStateFixture) -> Vec<u8> {
 
 /// An account whose current handle was made public, then replaced: the public leaf survives
 /// the update because it names the handle, not the slot the handle occupied.
-fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedStateFixture {
-    let mut fixture = EncryptedStateFixture::new(public);
+fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedStoreFixture {
+    let mut fixture = EncryptedStoreFixture::new(public);
     fixture.mark_public();
     fixture.update(replacement);
     fixture
@@ -129,7 +129,7 @@ fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHo
 /// matched on the byte-exact leaf-proof request. Returns both servers (kept alive by the caller)
 /// and a host wired to them.
 async fn host_answering(
-    fixture: &EncryptedStateFixture,
+    fixture: &EncryptedStoreFixture,
     query: LeafQuery,
     outcome: LeafProofOutcome,
 ) -> (MockServer, MockServer, SolanaHost) {
@@ -203,7 +203,7 @@ async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
 #[tokio::test]
 async fn an_allow_leaf_does_not_prove_public_ness() {
     let allowed = handle(0x30, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedStateFixture::allowing(allowed, [0x42; 32]);
+    let mut fixture = EncryptedStoreFixture::allowing(allowed, [0x42; 32]);
     fixture.update(handle(0x31, FHE_TYPE_UINT64));
     let allow_query = fixture.allowed_query(allowed, [0x42; 32]);
     // The record answers the public query with the allow leaf's proof.
@@ -229,7 +229,7 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
 #[tokio::test]
 async fn a_handle_never_made_public_is_refused_terminally() {
     let private = handle(0x40, FHE_TYPE_UINT64);
-    let fixture = EncryptedStateFixture::allowing(private, [0x42; 32]);
+    let fixture = EncryptedStoreFixture::allowing(private, [0x42; 32]);
     let query = fixture.public_query(private);
     let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
@@ -402,7 +402,7 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
 
     let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
         .await
-        .expect_err("a foreign program's account is not an encrypted state");
+        .expect_err("a foreign program's account is not an encrypted store");
     irrecoverable_containing(err, "is owned by");
 }
 

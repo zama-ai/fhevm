@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { address } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { buildPublicLeafProof, bytesToHex, reconstructSolanaStateHistory } from '@sdk-src/solana/proof.js';
+import { buildPublicLeafProof, bytesToHex, reconstructSolanaStoreHistory } from '@sdk-src/solana/proof.js';
 import { publicProof } from './publicProof.js';
 
 const fetchState = vi.hoisted(() => vi.fn());
-vi.mock('@sdk-src/solana/encryptedState.js', () => ({ fetchSolanaEncryptedState: fetchState }));
+vi.mock('@sdk-src/solana/encryptedStore.js', () => ({ fetchSolanaEncryptedStore: fetchState }));
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -21,7 +21,7 @@ function fixture() {
     { kind: 'markedPublic' as const, handle },
     { kind: 'allowed' as const, handle: new Uint8Array(32).fill(4), key },
   ];
-  const live = reconstructSolanaStateHistory(base58.decode(state), events);
+  const live = reconstructSolanaStoreHistory(base58.decode(state), events);
   const proof = buildPublicLeafProof(base58.decode(state), live, events, 2n);
   fetchState.mockResolvedValue(live);
   return { state, handle, proof };
@@ -47,7 +47,7 @@ describe('publicProof', () => {
     vi.stubGlobal('fetch', request);
     expect(await publicProof({} as never, service, state, handle)).toEqual(proof);
     expect(JSON.parse(request.mock.calls[0]![1].body).leaves[0]).toEqual({
-      encryptedState: bytesToHex(base58.decode(state)),
+      encryptedStore: bytesToHex(base58.decode(state)),
       handle: bytesToHex(handle),
       kind: 'public',
     });

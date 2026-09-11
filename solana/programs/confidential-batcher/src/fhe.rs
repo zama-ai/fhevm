@@ -10,13 +10,13 @@ pub(crate) fn invalid_execution(
     error!(BatcherError::InvalidFheExecution)
 }
 
-pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedState> {
+pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedStore> {
     require_keys_eq!(
         *info.owner,
         zama_host::ID,
-        BatcherError::EncryptedStateInvalid
+        BatcherError::EncryptedStoreInvalid
     );
-    let state = zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+    let state = zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
     require_keys_eq!(
         info.key(),
         state.canonical_address().0,
@@ -33,6 +33,8 @@ pub(crate) struct JoinExecute<'a, 'info> {
     pub payer: AccountInfo<'info>,
     pub host_config: AccountInfo<'info>,
     pub event_authority: AccountInfo<'info>,
+    pub transient_store: AccountInfo<'info>,
+    pub instructions: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
     pub deny_records: &'a [AccountInfo<'info>],
@@ -69,6 +71,8 @@ impl<'info> JoinExecute<'_, 'info> {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: self.event_authority,
+                transient_store: self.transient_store,
+                instructions: self.instructions,
                 program: self.program,
             },
             &resolved,

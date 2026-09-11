@@ -52,7 +52,7 @@ export type VerifyPublicDecryptInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
-  TAccountEncryptedState extends string | AccountMeta<string> = string,
+  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -60,7 +60,7 @@ export type VerifyPublicDecryptInstruction<
     [
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
-      TAccountEncryptedState extends string ? ReadonlyAccount<TAccountEncryptedState> : TAccountEncryptedState,
+      TAccountEncryptedStore extends string ? ReadonlyAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       ...TRemainingAccounts,
     ]
   >;
@@ -71,7 +71,7 @@ export type VerifyPublicDecryptInstructionData = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted State's MMR. */
+  /** Index of the proven leaf within the encrypted store's MMR. */
   leafIndex: bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -82,7 +82,7 @@ export type VerifyPublicDecryptInstructionDataArgs = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted State's MMR. */
+  /** Index of the proven leaf within the encrypted store's MMR. */
   leafIndex: number | bigint;
   /** Authentication path from the leaf up to its mountain peak. */
   siblings: Array<ReadonlyUint8Array>;
@@ -128,7 +128,7 @@ export function getVerifyPublicDecryptInstructionDataCodec(): Codec<
 export type VerifyPublicDecryptAsyncInput<
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
 > = {
   /**
    * Canonical singleton host config: source of the current KMS context id and the gateway
@@ -140,8 +140,8 @@ export type VerifyPublicDecryptAsyncInput<
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
   kmsContext: Address<TAccountKmsContext>;
-  /** The encrypted State whose peaks the inclusion proof is checked against. */
-  encryptedState: Address<TAccountEncryptedState>;
+  /** The encrypted store whose peaks the inclusion proof is checked against. */
+  encryptedStore: Address<TAccountEncryptedStore>;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
   signatures: VerifyPublicDecryptInstructionDataArgs['signatures'];
@@ -153,13 +153,13 @@ export type VerifyPublicDecryptAsyncInput<
 export async function getVerifyPublicDecryptInstructionAsync<
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: VerifyPublicDecryptAsyncInput<TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState>,
+  input: VerifyPublicDecryptAsyncInput<TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore>,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
-  VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState>
+  VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
@@ -168,7 +168,7 @@ export async function getVerifyPublicDecryptInstructionAsync<
   const originalAccounts = {
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: false },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -185,17 +185,17 @@ export async function getVerifyPublicDecryptInstructionAsync<
     accounts: [
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
     ],
     data: getVerifyPublicDecryptInstructionDataEncoder().encode(args as VerifyPublicDecryptInstructionDataArgs),
     programAddress,
-  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState>);
+  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore>);
 }
 
 export type VerifyPublicDecryptInput<
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
 > = {
   /**
    * Canonical singleton host config: source of the current KMS context id and the gateway
@@ -207,8 +207,8 @@ export type VerifyPublicDecryptInput<
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
   kmsContext: Address<TAccountKmsContext>;
-  /** The encrypted State whose peaks the inclusion proof is checked against. */
-  encryptedState: Address<TAccountEncryptedState>;
+  /** The encrypted store whose peaks the inclusion proof is checked against. */
+  encryptedStore: Address<TAccountEncryptedStore>;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
   signatures: VerifyPublicDecryptInstructionDataArgs['signatures'];
@@ -220,12 +220,12 @@ export type VerifyPublicDecryptInput<
 export function getVerifyPublicDecryptInstruction<
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: VerifyPublicDecryptInput<TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState>,
+  input: VerifyPublicDecryptInput<TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore>,
   config?: { programAddress?: TProgramAddress },
-): VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState> {
+): VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
@@ -233,7 +233,7 @@ export function getVerifyPublicDecryptInstruction<
   const originalAccounts = {
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: false },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: false },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -245,11 +245,11 @@ export function getVerifyPublicDecryptInstruction<
     accounts: [
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
     ],
     data: getVerifyPublicDecryptInstructionDataEncoder().encode(args as VerifyPublicDecryptInstructionDataArgs),
     programAddress,
-  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedState>);
+  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext, TAccountEncryptedStore>);
 }
 
 export type ParsedVerifyPublicDecryptInstruction<
@@ -268,8 +268,8 @@ export type ParsedVerifyPublicDecryptInstruction<
      * signed `extra_data`, and must not be destroyed. Verified in the handler.
      */
     kmsContext: TAccountMetas[1];
-    /** The encrypted State whose peaks the inclusion proof is checked against. */
-    encryptedState: TAccountMetas[2];
+    /** The encrypted store whose peaks the inclusion proof is checked against. */
+    encryptedStore: TAccountMetas[2];
   };
   data: VerifyPublicDecryptInstructionData;
 };
@@ -297,7 +297,7 @@ export function parseVerifyPublicDecryptInstruction<
     accounts: {
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),
-      encryptedState: getNextAccount(),
+      encryptedStore: getNextAccount(),
     },
     data: getVerifyPublicDecryptInstructionDataDecoder().decode(instruction.data),
   };

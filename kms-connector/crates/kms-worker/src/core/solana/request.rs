@@ -8,7 +8,7 @@
 //!
 //! Three absences are deliberate. No `authority` field and no
 //! `(program, scope)` field, in either the wire form or the validated form: both are properties
-//! of the handle's encrypted state, and the only way to learn them is to read and
+//! of the handle's encrypted store, and the only way to learn them is to read and
 //! validate that account. A request cannot name them, so a substituted authority is not a check
 //! that can be forgotten — it is a value that does not exist. And no proof: the leaf proof that
 //! binds a key to a handle is fetched from the coprocessor's leaf record by the pipeline and
@@ -27,7 +27,7 @@ pub use zama_solana_request::{
 pub struct SolanaHandleEntry {
     handle: HandleBytes,
     allowed_key: SolanaPubkeyBytes,
-    encrypted_state: SolanaPubkeyBytes,
+    encrypted_store: SolanaPubkeyBytes,
 }
 
 impl SolanaHandleEntry {
@@ -43,10 +43,10 @@ impl SolanaHandleEntry {
         self.allowed_key
     }
 
-    /// The encrypted state this entry qualifies under, as named by the request. Read
+    /// The encrypted store this entry qualifies under, as named by the request. Read
     /// and validated before anything is taken from it.
-    pub fn encrypted_state(&self) -> SolanaPubkeyBytes {
-        self.encrypted_state
+    pub fn encrypted_store(&self) -> SolanaPubkeyBytes {
+        self.encrypted_store
     }
 }
 
@@ -140,7 +140,7 @@ fn decode_entry(
     Ok(SolanaHandleEntry {
         handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
         allowed_key: entry_identity(index, EntryField::AllowedKey, &entry.allowed_key)?,
-        encrypted_state: entry_identity(index, EntryField::EncryptedState, &entry.encrypted_state)?,
+        encrypted_store: entry_identity(index, EntryField::EncryptedStore, &entry.encrypted_store)?,
     })
 }
 
@@ -199,6 +199,6 @@ pub enum EntryField {
     Handle,
     /// The key whose allow leaf authorizes the entry.
     AllowedKey,
-    /// The encrypted state address.
-    EncryptedState,
+    /// The encrypted store address.
+    EncryptedStore,
 }

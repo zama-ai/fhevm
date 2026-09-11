@@ -1,4 +1,4 @@
-//! The RFC 035 leaf record of Solana encrypted state accounts.
+//! The RFC 035 leaf record of Solana encrypted store accounts.
 //!
 //! Every state output the host accepts may seal leaves: one
 //! historical-access leaf per allowed key on the handle it installs, then one
@@ -23,8 +23,8 @@ use crate::database::tfhe_event_propagate::Transaction;
 
 /// A `fhe_execute` state output, with its account resolved.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncryptedStateWrite {
-    pub encrypted_state: [u8; 32],
+pub struct EncryptedStoreWrite {
+    pub encrypted_store: [u8; 32],
     pub previous_leaf_count: u64,
     pub handle: [u8; 32],
     pub allowed_keys: Vec<[u8; 32]>,
@@ -33,14 +33,14 @@ pub struct EncryptedStateWrite {
 
 /// The leaf sources of one confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransactionStateWrites {
+pub struct TransactionStoreWrites {
     pub transaction_index: u64,
-    pub sources: Vec<EncryptedStateWrite>,
+    pub sources: Vec<EncryptedStoreWrite>,
 }
 
-/// The persisted proof-history cursor of one encrypted state account.
+/// The persisted proof-history cursor of one encrypted store account.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncryptedStateHistory {
+pub struct EncryptedStoreHistory {
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
     /// False when the first observed output declared a nonzero prior count. The
@@ -67,7 +67,7 @@ impl LeafKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedLeaf {
-    pub encrypted_state: [u8; 32],
+    pub encrypted_store: [u8; 32],
     pub leaf_index: u64,
     pub commitment: [u8; 32],
     pub kind: LeafKind,
@@ -80,7 +80,7 @@ pub struct StagedLeaf {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlockLeafReduction {
     /// Every account the block touched, with its state after the block.
-    pub states: BTreeMap<[u8; 32], EncryptedStateHistory>,
+    pub states: BTreeMap<[u8; 32], EncryptedStoreHistory>,
     pub leaves: Vec<StagedLeaf>,
 }
 
@@ -88,17 +88,17 @@ pub struct BlockLeafReduction {
 /// diverged from chain state, and continuing would seal wrong leaves.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LeafReduceError {
-    #[error("encrypted state {} declared previous leaf count {declared}, record holds {recorded}", bs58::encode(encrypted_state).into_string())]
+    #[error("encrypted store {} declared previous leaf count {declared}, record holds {recorded}", bs58::encode(encrypted_store).into_string())]
     PreviousLeafCountMismatch {
-        encrypted_state: [u8; 32],
+        encrypted_store: [u8; 32],
         declared: u64,
         recorded: u64,
     },
-    #[error("leaf count overflow on encrypted state {}", bs58::encode(encrypted_state).into_string())]
-    LeafCountOverflow { encrypted_state: [u8; 32] },
-    #[error("MMR append failed on encrypted state {}: {error:?}", bs58::encode(encrypted_state).into_string())]
+    #[error("leaf count overflow on encrypted store {}", bs58::encode(encrypted_store).into_string())]
+    LeafCountOverflow { encrypted_store: [u8; 32] },
+    #[error("MMR append failed on encrypted store {}: {error:?}", bs58::encode(encrypted_store).into_string())]
     Mmr {
-        encrypted_state: [u8; 32],
+        encrypted_store: [u8; 32],
         error: AclError,
     },
 }
@@ -109,8 +109,8 @@ pub enum LeafReduceError {
 /// state first seen above leaf zero is tracked with `history_complete = false`:
 /// its cursor advances, but no leaf or proof is stored.
 pub fn reduce_block_leaves(
-    transactions: &[TransactionStateWrites],
-    existing: BTreeMap<[u8; 32], EncryptedStateHistory>,
+    transactions: &[TransactionStoreWrites],
+    existing: BTreeMap<[u8; 32], EncryptedStoreHistory>,
 ) -> Result<BlockLeafReduction, LeafReduceError> {
     let mut reduction = BlockLeafReduction {
         states: existing,
@@ -127,12 +127,12 @@ pub fn reduce_block_leaves(
 
 fn apply_write(
     reduction: &mut BlockLeafReduction,
-    write: &EncryptedStateWrite,
+    write: &EncryptedStoreWrite,
     transaction_index: u64,
 ) -> Result<(), LeafReduceError> {
-    let account = write.encrypted_state;
+    let account = write.encrypted_store;
     let state = reduction.states.entry(account).or_insert_with(|| {
-        EncryptedStateHistory {
+        EncryptedStoreHistory {
             leaf_count: write.previous_leaf_count,
             peaks: Vec::new(),
             history_complete: write.previous_leaf_count == 0,
@@ -140,7 +140,7 @@ fn apply_write(
     });
     if state.leaf_count != write.previous_leaf_count {
         return Err(LeafReduceError::PreviousLeafCountMismatch {
-            encrypted_state: account,
+            encrypted_store: account,
             declared: write.previous_leaf_count,
             recorded: state.leaf_count,
         });
@@ -149,7 +149,7 @@ fn apply_write(
         && state.peaks.len() != state.leaf_count.count_ones() as usize
     {
         return Err(LeafReduceError::Mmr {
-            encrypted_state: account,
+            encrypted_store: account,
             error: AclError::MmrInconsistent,
         });
     }
@@ -159,7 +159,7 @@ fn apply_write(
             .and_then(|count| count.checked_add(u64::from(write.make_public)))
             .and_then(|count| state.leaf_count.checked_add(count))
             .ok_or(LeafReduceError::LeafCountOverflow {
-                encrypted_state: account,
+                encrypted_store: account,
             })?;
         state.leaf_count = appended;
         return Ok(());
@@ -190,7 +190,7 @@ fn apply_write(
 }
 
 fn append_leaf(
-    state: &mut EncryptedStateHistory,
+    state: &mut EncryptedStoreHistory,
     leaves: &mut Vec<StagedLeaf>,
     account: [u8; 32],
     kind: LeafKind,
@@ -207,12 +207,12 @@ fn append_leaf(
     };
     mmr_append(&mut state.peaks, &mut state.leaf_count, commitment).map_err(
         |error| LeafReduceError::Mmr {
-            encrypted_state: account,
+            encrypted_store: account,
             error,
         },
     )?;
     leaves.push(StagedLeaf {
-        encrypted_state: account,
+        encrypted_store: account,
         leaf_index,
         commitment,
         kind,
@@ -250,10 +250,10 @@ fn sql_u64(value: i64, field: &str) -> Result<u64, SqlxError> {
 
 /// Locks and loads the recorded state of `accounts`; accounts without a row are
 /// absent from the result.
-pub async fn load_encrypted_state_histories(
+pub async fn load_encrypted_store_histories(
     tx: &mut Transaction<'_>,
     accounts: &[[u8; 32]],
-) -> Result<BTreeMap<[u8; 32], EncryptedStateHistory>, SqlxError> {
+) -> Result<BTreeMap<[u8; 32], EncryptedStoreHistory>, SqlxError> {
     if accounts.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -274,7 +274,7 @@ pub async fn load_encrypted_state_histories(
         .map(|row| {
             Ok((
                 bytes32(&row.encrypted_state)?,
-                EncryptedStateHistory {
+                EncryptedStoreHistory {
                     leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
                     peaks: bytes32_vec(&row.peaks)?,
                     history_complete: row.history_complete,
@@ -326,7 +326,7 @@ pub async fn store_block_leaves(
                  allowed_key, block_slot, transaction_index)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
-            &leaf.encrypted_state[..],
+            &leaf.encrypted_store[..],
             leaf_index,
             &leaf.commitment[..],
             leaf.kind as i16,
@@ -392,7 +392,7 @@ pub async fn load_checkpoint(
 /// row was read are cut off by that bound, so the two always agree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordedLeaves {
-    pub state: EncryptedStateHistory,
+    pub state: EncryptedStoreHistory,
     pub leaves: Vec<StagedLeaf>,
 }
 
@@ -413,7 +413,7 @@ pub async fn load_recorded_leaves(
     else {
         return Ok(None);
     };
-    let state = EncryptedStateHistory {
+    let state = EncryptedStoreHistory {
         leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
         peaks: bytes32_vec(&row.peaks)?,
         history_complete: row.history_complete,
@@ -435,7 +435,7 @@ pub async fn load_recorded_leaves(
         .into_iter()
         .map(|row| {
             Ok(StagedLeaf {
-                encrypted_state: account,
+                encrypted_store: account,
                 leaf_index: sql_u64(row.leaf_index, "leaf_index")?,
                 commitment: bytes32(&row.commitment)?,
                 kind: LeafKind::from_i16(row.leaf_kind).ok_or_else(|| {
@@ -467,9 +467,9 @@ mod tests {
         handle: [u8; 32],
         allowed_keys: Vec<[u8; 32]>,
         make_public: bool,
-    ) -> EncryptedStateWrite {
-        EncryptedStateWrite {
-            encrypted_state: STATE,
+    ) -> EncryptedStoreWrite {
+        EncryptedStoreWrite {
+            encrypted_store: STATE,
             previous_leaf_count,
             handle,
             allowed_keys,
@@ -478,9 +478,9 @@ mod tests {
     }
 
     fn transaction(
-        sources: Vec<EncryptedStateWrite>,
-    ) -> TransactionStateWrites {
-        TransactionStateWrites {
+        sources: Vec<EncryptedStoreWrite>,
+    ) -> TransactionStoreWrites {
+        TransactionStoreWrites {
             transaction_index: 3,
             sources,
         }
@@ -533,12 +533,12 @@ mod tests {
     #[test]
     fn rejects_count_gap_for_complete_and_incomplete_histories() {
         for history in [
-            EncryptedStateHistory {
+            EncryptedStoreHistory {
                 leaf_count: 4,
                 peaks: vec![[1; 32]],
                 history_complete: true,
             },
-            EncryptedStateHistory {
+            EncryptedStoreHistory {
                 leaf_count: 4,
                 peaks: vec![],
                 history_complete: false,
@@ -552,7 +552,7 @@ mod tests {
             assert_eq!(
                 error,
                 LeafReduceError::PreviousLeafCountMismatch {
-                    encrypted_state: STATE,
+                    encrypted_store: STATE,
                     declared: 3,
                     recorded: 4,
                 }
@@ -578,7 +578,7 @@ mod tests {
             &[transaction(vec![write(0, [1; 32], vec![], false)])],
             BTreeMap::from([(
                 STATE,
-                EncryptedStateHistory {
+                EncryptedStoreHistory {
                     leaf_count: 0,
                     peaks: vec![[1; 32]],
                     history_complete: true,
@@ -589,7 +589,7 @@ mod tests {
         assert_eq!(
             error,
             LeafReduceError::Mmr {
-                encrypted_state: STATE,
+                encrypted_store: STATE,
                 error: AclError::MmrInconsistent,
             }
         );

@@ -26,13 +26,12 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
-import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
-  CLOSE_SCRATCH_DISCRIMINATOR,
-  getCloseScratchInstructionDataDecoder,
-} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  getCloseTransientStoreInstructionDataDecoder,
+} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
@@ -152,34 +151,23 @@ describe('joinBatch (attested arm)', () => {
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
     const message = decompileTransactionMessage(compiled);
-    // The host validates this transaction shape from the instructions sysvar: close_scratch must
-    // be final and must name the exact scratch opened by join plus its recorded payer refund.
-    expect(message.instructions).toHaveLength(3);
-    const close = message.instructions[2]!;
-    const joinRecord = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
-      utf8('join-record'),
-      base58.decode(params.batch),
-      base58.decode(params.user.address),
-    ]);
-    const joinState = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [
-      utf8('encrypted-state'),
-      base58.decode(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
-      base58.decode(joinRecord),
-      base58.decode(params.batch),
-    ]);
-    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(joinState)]);
+    // The host validates this transaction shape from the instructions sysvar: close_transientStore must
+    // be final and must name the exact transient store opened before join plus its recorded payer refund.
+    expect(message.instructions).toHaveLength(4);
+    const close = message.instructions[3]!;
+    const transientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(params.payer.address)]);
     expect(close.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(Array.from(close.accounts ?? [], (account) => account.address)).toEqual([
       address('Sysvar1nstructions1111111111111111111111111'),
-      scratch,
+      transientStore,
       params.payer.address,
     ]);
-    expect(Array.from(getCloseScratchInstructionDataDecoder().decode(close.data!).discriminator)).toEqual(
-      Array.from(CLOSE_SCRATCH_DISCRIMINATOR),
+    expect(Array.from(getCloseTransientStoreInstructionDataDecoder().decode(close.data!).discriminator)).toEqual(
+      Array.from(CLOSE_TRANSIENT_STORE_DISCRIMINATOR),
     );
 
-    // [0] = SetComputeUnitLimit, [1] = join, [2] = close_scratch.
-    const data = getJoinInstructionDataDecoder().decode(message.instructions[1]!.data!);
+    // [0] = compute limit, [1] = open_transientStore, [2] = join, [3] = close_transientStore.
+    const data = getJoinInstructionDataDecoder().decode(message.instructions[2]!.data!);
     expect(data.handleIndex).toBe(0);
     expect(data.contractChainId).toBe(CHAIN_ID);
     expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.getInputHandles()[0]!.bytes32));

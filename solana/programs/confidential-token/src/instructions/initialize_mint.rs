@@ -16,14 +16,19 @@ pub struct InitializeMint<'info> {
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
     /// Classic Token or Token-2022 program owning `underlying_mint`.
     pub token_program: Interface<'info, TokenInterface>,
-    /// CHECK: Mint-scoped encrypted State authority for total-supply handles.
+    /// CHECK: Mint-scoped encrypted store authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub total_supply_encrypted_state: UncheckedAccount<'info>,
+    pub total_supply_encrypted_store: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial total-supply handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -46,33 +51,30 @@ pub struct InitializeMint<'info> {
 pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     let mint_key = ctx.accounts.mint.key();
-    let total_supply_authority = ctx.accounts.total_supply_authority.key();
-    let authority = fhe::StateAuthority::total_supply(
+    let authority = fhe::StoreAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
         ctx.bumps.total_supply_authority,
     )?;
     authority.create_state(
         mint_key,
-        ctx.accounts.total_supply_encrypted_state.to_account_info(),
+        ctx.accounts.total_supply_encrypted_store.to_account_info(),
         ctx.accounts.authority.to_account_info(),
         ctx.accounts.host_config.to_account_info(),
         ctx.accounts.system_program.to_account_info(),
     )?;
-    let total_supply_encrypted_state = ctx.accounts.total_supply_encrypted_state.key();
+    let total_supply_encrypted_store = ctx.accounts.total_supply_encrypted_store.key();
     let total_supply_output = fhe::SlotOutput::new(
-        ctx.accounts.total_supply_encrypted_state.to_account_info(),
+        ctx.accounts.total_supply_encrypted_store.to_account_info(),
         total_supply_slot(mint_key),
         &authority,
         [],
     )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(total_supply_authority),
-        |builder| {
-            builder.trivial_encrypt_u64(0, total_supply_output.output())?;
-            Ok(())
-        },
-    )
+    let execution = zama_fhe::FheExecution::build(total_supply_slot(mint_key).0, |builder| {
+        let new_total_supply = builder.trivial_encrypt_u64(0)?;
+        builder.output(new_total_supply, total_supply_output.output())?;
+        Ok(())
+    })
     .map_err(invalid_execution)?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
@@ -83,6 +85,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.authority,
             event_authority: &ctx.accounts.zama_event_authority,
+            transient_store: &ctx.accounts.transient_store,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(
@@ -114,9 +118,9 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: [0; 32],
-        old_encrypted_state: Pubkey::default(),
+        old_encrypted_store: Pubkey::default(),
         new_handle: total_supply_handle,
-        new_encrypted_state: total_supply_encrypted_state,
+        new_encrypted_store: total_supply_encrypted_store,
         reason: TotalSupplyUpdateReason::Initialize,
     });
     Ok(())

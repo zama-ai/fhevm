@@ -15,9 +15,7 @@ pub use errors::*;
 pub use state::*;
 
 use anchor_lang::prelude::*;
-use zama_fhe::{
-    ExecutionAuthority, ExecutionCpiAccounts, FheExecution, Output, Scalar, State, Uint,
-};
+use zama_fhe::{ExecutionCpiAccounts, FheExecution, Scalar, Store, Uint};
 use zama_host::program::ZamaHost;
 
 declare_id!("6zEiFjcGjYaVDmVETVPRQB2p6vk9zj6aPbXCKGVuS8wj");
@@ -37,40 +35,38 @@ pub mod encrypted_counter {
         // increment's operand by signing, so it needs no allow.
         let bump = [ctx.bumps.counter_authority];
         let authority_seeds: &[&[u8]] = &[COUNTER_AUTHORITY_SEED, counter.as_ref(), &bump];
-        zama_host::cpi::create_encrypted_state(
+        zama_host::cpi::create_encrypted_store(
             CpiContext::new_with_signer(
                 ctx.accounts.zama_program.key(),
-                zama_host::cpi::accounts::CreateEncryptedState {
+                zama_host::cpi::accounts::CreateEncryptedStore {
                     payer: ctx.accounts.owner.to_account_info(),
                     authority: ctx.accounts.counter_authority.to_account_info(),
-                    encrypted_state: ctx.accounts.encrypted_state.to_account_info(),
+                    encrypted_store: ctx.accounts.encrypted_store.to_account_info(),
                     host_config: ctx.accounts.host_config.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
                 },
                 &[authority_seeds],
             ),
-            zama_host::instructions::CreateEncryptedStateArgs {
+            zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
                 scope: counter.to_bytes(),
                 authority_seeds: authority_seeds.iter().map(|seed| seed.to_vec()).collect(),
             },
         )?;
-        let info = ctx.accounts.encrypted_state.to_account_info();
+        let info = ctx.accounts.encrypted_store.to_account_info();
         let account =
-            zama_host::EncryptedState::try_deserialize(&mut &info.try_borrow_data()?[..])?;
-        let state = State::new(&account);
+            zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
+        let state = Store::new(&account);
         let output = state.set(count_key()).allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build(
-            ExecutionAuthority::new(ctx.accounts.counter_authority.key()),
-            |builder| {
-                builder.trivial_encrypt_u64(0, Output::state(output))?;
-                Ok(())
-            },
-        )
+        let execution = FheExecution::build(state.id(), |builder| {
+            let result = builder.trivial_encrypt_u64(0)?;
+            builder.output(result, output)?;
+            Ok(())
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .resolve_accounts(
-                [ctx.accounts.encrypted_state.to_account_info()],
+                [ctx.accounts.encrypted_store.to_account_info()],
                 [ctx.accounts.counter_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
@@ -85,6 +81,8 @@ pub mod encrypted_counter {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -95,26 +93,21 @@ pub mod encrypted_counter {
     /// Adds a plaintext amount to the encrypted count.
     pub fn increment<'info>(ctx: Context<'info, Increment<'info>>, amount: u64) -> Result<()> {
         let counter = ctx.accounts.counter.key();
-        let state = State::new(&ctx.accounts.encrypted_state);
+        let state = Store::new(&ctx.accounts.encrypted_store);
         let operand = state
             .get::<Uint<64>>(count_key())
             .map_err(invalid_execution)?;
         let output = state.set(count_key()).allow(ctx.accounts.owner.key());
-        let execution = FheExecution::build_returning(
-            ExecutionAuthority::new(ctx.accounts.counter_authority.key()),
-            |builder| {
-                builder.add(
-                    operand,
-                    Scalar::<Uint<64>>::u64(amount),
-                    Output::state(output),
-                )
-            },
-        )
+        let execution = FheExecution::build_returning(state.id(), |builder| {
+            let count = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
+            builder.output(count, output)?;
+            Ok(count)
+        })
         .map_err(invalid_execution)?;
         let resolved = execution
             .execution()
             .resolve_accounts(
-                [ctx.accounts.encrypted_state.to_account_info()],
+                [ctx.accounts.encrypted_store.to_account_info()],
                 [ctx.accounts.counter_authority.to_account_info()],
             )
             .map_err(invalid_execution_accounts)?;
@@ -131,6 +124,8 @@ pub mod encrypted_counter {
                 hcu_trusted_app_record: None,
                 rand_nonce: None,
                 event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
                 program: ctx.accounts.zama_program.to_account_info(),
             },
             &resolved,
@@ -170,11 +165,16 @@ pub struct Initialize<'info> {
     pub counter_authority: UncheckedAccount<'info>,
     /// CHECK: created by the host at the counter's canonical state address.
     #[account(mut, address = counter_state_id(counter.key()).address() @ CounterError::CountValueInvalid)]
-    pub encrypted_state: UncheckedAccount<'info>,
+    pub encrypted_store: UncheckedAccount<'info>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }
@@ -190,11 +190,16 @@ pub struct Increment<'info> {
     pub counter_authority: UncheckedAccount<'info>,
     /// Host-owned dictionary holding the current count and decrypt history.
     #[account(mut, address = counter_state_id(counter.key()).address() @ CounterError::CountValueInvalid)]
-    pub encrypted_state: Box<Account<'info, zama_host::EncryptedState>>,
+    pub encrypted_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: ZamaHost config PDA; validated by the host program.
     pub host_config: UncheckedAccount<'info>,
     /// CHECK: ZamaHost event-CPI authority; validated by the host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }

@@ -13,11 +13,12 @@ const certificate = vi.hoisted(() => vi.fn());
 vi.mock('@sdk-src/solana/actions/publicDecryptCertificate.js', () => ({ publicDecryptCertificate: certificate }));
 
 const getCurrentBatch = vi.hoisted(() => vi.fn());
-const getEncryptedState = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedState }));
+const getEncryptedStore = vi.hoisted(() => vi.fn());
+vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedStore }));
 
 import {
   address,
+  decompileTransactionMessage,
   generateKeyPairSigner,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
@@ -34,7 +35,9 @@ import {
   type VaultDemoRoots,
 } from './derive.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import { getSettleInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -116,7 +119,7 @@ describe('settleBatch', () => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
     getCurrentBatch.mockReset();
-    getEncryptedState.mockReset();
+    getEncryptedStore.mockReset();
     publicProof.mockReset();
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -134,7 +137,7 @@ describe('settleBatch', () => {
     expect(certificate.mock.calls[0]![1]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
       contextId: opts.contextId,
-      encryptedState: base58.decode(batchAddresses.batchBurnedAmountState),
+      encryptedStore: base58.decode(batchAddresses.batchBurnedAmountStore),
       options: undefined,
     });
 
@@ -144,7 +147,7 @@ describe('settleBatch', () => {
 
     const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
     const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    expect(compiled.version).toBe(0);
+    if (compiled.version !== 0) throw new Error('Expected an ALT-aware v0 transaction');
 
     // The v0 message references the batch's lookup table, and every derivable settle account moved
     // into it.
@@ -172,22 +175,62 @@ describe('settleBatch', () => {
     expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
     expect(staticAccounts).not.toContain(accounts.pendingBurn);
     expect(provisioned).toContain(accounts.pendingBurn);
-    // The static set is closed at 13: the fee payer, the program ids settle passes as accounts
-    // (system, SPL token, the CPI targets) and the event-CPI authorities. Pinning the count makes
+    // The static set is closed at 10: the fee payer, transient store, instructions sysvar,
+    // compute-budget program and fixed program IDs. Pinning the count makes
     // growth a deliberate edit with a fresh look at the 1232-byte budget.
-    expect(staticAccounts).toHaveLength(13);
+    expect(staticAccounts).toHaveLength(10);
     // And nothing is paid for twice: an address provisioned into the table must not also sit in
     // the static set.
     expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
 
     // The certified 32-byte cleartext was decoded to the u64 settle argument, and the locally built
     // proof of the second leaf rode along. instructions[0] is the prepended SetComputeUnitLimit; the
-    // settle instruction is instructions[1].
-    const compiledInstructions = (compiled as unknown as { instructions: { data?: Uint8Array }[] }).instructions;
-    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[1]!.data!);
+    // open is instructions[1] and settle is instructions[2].
+    const compiledInstructions = compiled.instructions;
+    expect(compiledInstructions).toHaveLength(4);
+    expect(compiledInstructions.at(-1)!.data).toEqual(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
+    expect(staticAccounts[compiledInstructions.at(-1)!.programAddressIndex]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    const message = decompileTransactionMessage(compiled, {
+      addressesByLookupTableAddress: { [opts.lookupTableAddress]: provisioned },
+    });
+    const open = message.instructions[1]!;
+    const settle = message.instructions[2]!;
+    const close = message.instructions[3]!;
+    const parsed = parseSettleInstruction({ ...settle, accounts: settle.accounts!, data: settle.data! });
+    expect(open.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    expect(close.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    expect(parsed.accounts.instructions.address).toBe(address('Sysvar1nstructions1111111111111111111111111'));
+    expect(open.accounts?.[2]?.address).toBe(parsed.accounts.instructions.address);
+    expect(close.accounts?.[0]?.address).toBe(parsed.accounts.instructions.address);
+    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
     expect(data.cleartextTotal).toBe(800n);
     expect(data.leafIndex).toBe(3n);
     expect(data.siblings).toHaveLength(2);
+  });
+
+  it.each([{ threshold: 1, depth: 2 }, { threshold: 7, depth: 0 }, { threshold: 7, depth: 2 }, { threshold: 7, depth: 5 }])('fits $threshold signatures and $depth proof siblings with the provisioned table', async ({ threshold, depth }) => {
+    const { chain, keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: threshold }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: depth }, () => new Uint8Array(32)) });
+    await settleBatch(chain, keeper, opts);
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
+    expect(bytes.length).toBeLessThanOrEqual(1232);
+  });
+
+  it('rejects an oversized certificate/proof before simulation or send', async () => {
+    const { chain, keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: 6 }, () => new Uint8Array(32)) });
+    await expect(settleBatch(chain, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
+    expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
+    expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {

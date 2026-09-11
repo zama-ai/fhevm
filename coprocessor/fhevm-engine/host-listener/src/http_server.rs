@@ -131,8 +131,8 @@ pub enum LeafQueryKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LeafQuery {
-    /// The encrypted state account whose MMR holds the leaf.
-    pub encrypted_state: String,
+    /// The encrypted store account whose MMR holds the leaf.
+    pub encrypted_store: String,
     pub handle: String,
     pub kind: LeafQueryKind,
     /// The allowed key; required for `allowed`, absent for `public`.
@@ -316,7 +316,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 struct ParsedQuery {
-    encrypted_state: [u8; 32],
+    encrypted_store: [u8; 32],
     handle: [u8; 32],
     kind: LeafKind,
     key: Option<[u8; 32]>,
@@ -337,9 +337,9 @@ impl ParsedQuery {
             }
         };
         Ok(Self {
-            encrypted_state: parse_hex32(
-                "encryptedState",
-                &query.encrypted_state,
+            encrypted_store: parse_hex32(
+                "encryptedStore",
+                &query.encrypted_store,
             )?,
             handle: parse_hex32("handle", &query.handle)?,
             kind,
@@ -362,7 +362,7 @@ async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
 ) -> Result<LeafProof, HttpError> {
-    let recorded = load_recorded_leaves(pool, query.encrypted_state)
+    let recorded = load_recorded_leaves(pool, query.encrypted_store)
         .await
         .map_err(|err| {
             error!(error = %err, "leaf record read failed");
@@ -391,7 +391,7 @@ async fn prove(
     // imply; a proof from a record that fails this check would be wrong, not stale.
     let inconsistent = || {
         error!(
-            encrypted_state = %bs58::encode(query.encrypted_state).into_string(),
+            encrypted_store = %bs58::encode(query.encrypted_store).into_string(),
             leaf_count,
             recorded_leaves = commitments.len(),
             "leaf record inconsistent"
@@ -433,7 +433,7 @@ impl Modify for BearerApiKey {
 #[openapi(
     info(
         title = "Solana host listener leaf proofs",
-        description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted states, for the KMS connector.",
+        description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
         version = "1.0.0",
     ),
     paths(leaf_proofs),
@@ -527,7 +527,7 @@ mod tests {
     fn allowed_needs_a_key_and_public_refuses_one() {
         let bare = "ac".repeat(32);
         let mut query = LeafQuery {
-            encrypted_state: bare.clone(),
+            encrypted_store: bare.clone(),
             handle: bare.clone(),
             kind: LeafQueryKind::Allowed,
             key: None,
@@ -560,7 +560,7 @@ mod tests {
         let client = reqwest::Client::new();
         let body = LeafProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_state: "ac".repeat(32),
+                encrypted_store: "ac".repeat(32),
                 handle: "10".repeat(32),
                 kind: LeafQueryKind::Public,
                 key: None,

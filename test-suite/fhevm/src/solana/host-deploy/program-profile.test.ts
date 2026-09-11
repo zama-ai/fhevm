@@ -6,7 +6,7 @@ import path from 'node:path';
 import { REPO_ROOT } from '../../layout';
 import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from '../../layout';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { BRINGUP_KMS_CONTEXT_ID } from '../../../../../solana/deploy/src/constants';
 import {
   PREVIEW_ENV_CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,

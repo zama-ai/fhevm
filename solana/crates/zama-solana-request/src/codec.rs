@@ -59,7 +59,7 @@ struct RequestBody {
 struct RequestBodyEntry {
     handle: Vec<u8>,
     allowed_key: Vec<u8>,
-    encrypted_state: Vec<u8>,
+    encrypted_store: Vec<u8>,
 }
 
 impl From<&SolanaUserDecryptRequestWire> for RequestBody {
@@ -103,13 +103,13 @@ impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
         let SolanaHandleEntryWire {
             handle,
             allowed_key,
-            encrypted_state,
+            encrypted_store,
         } = entry;
 
         Self {
             handle: handle.clone(),
             allowed_key: allowed_key.clone(),
-            encrypted_state: encrypted_state.clone(),
+            encrypted_store: encrypted_store.clone(),
         }
     }
 }
@@ -154,13 +154,13 @@ impl From<RequestBodyEntry> for SolanaHandleEntryWire {
         let RequestBodyEntry {
             handle,
             allowed_key,
-            encrypted_state,
+            encrypted_store,
         } = entry;
 
         Self {
             handle,
             allowed_key,
-            encrypted_state,
+            encrypted_store,
         }
     }
 }

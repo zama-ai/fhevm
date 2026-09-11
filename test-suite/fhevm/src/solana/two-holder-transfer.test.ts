@@ -4,7 +4,7 @@ import {
   parseTransferWorkerResult,
   runSolanaTwoHolderTransfer,
   solanaUserDecryptContext,
-  type BalanceState,
+  type BalanceStore,
   type TwoHolderDependencies,
   type TwoHolderScenario,
 } from "./two-holder-transfer";
@@ -18,12 +18,12 @@ const scenario: TwoHolderScenario = {
   alice,
   bob,
 };
-const balance = (owner: string, handleByte: string): BalanceState => ({
+const balance = (owner: string, handleByte: string): BalanceStore => ({
   version: 1,
   mint: scenario.mint,
   owner,
   tokenAccount: owner === alice.owner ? "5".repeat(32) : "6".repeat(32),
-  encryptedState: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
+  encryptedStore: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
   currentHandle: hex32(handleByte),
   chainId: "9223372036854788153",
 });

@@ -30,7 +30,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for encrypted State growth on the host."
+            "Pays for encrypted store growth on the host."
           ],
           "writable": true,
           "signer": true
@@ -85,9 +85,9 @@
           }
         },
         {
-          "name": "balance_state",
+          "name": "balance_store",
           "docs": [
-            "Stable balance encrypted State; read for the current handle and replaced."
+            "Stable balance encrypted store; read for the current handle and replaced."
           ],
           "writable": true
         },
@@ -96,6 +96,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -158,7 +165,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays for encrypted State growth."
+            "Pays for encrypted store growth."
           ],
           "writable": true,
           "signer": true
@@ -205,7 +212,7 @@
           }
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
             "Encrypted total-supply value; read for the current handle and replaced."
           ],
@@ -216,6 +223,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -325,16 +339,16 @@
           }
         },
         {
-          "name": "balance_state",
+          "name": "balance_store",
           "docs": [
-            "Stable balance encrypted State; read for the current handle and replaced by this execution."
+            "Stable balance encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
-            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -382,6 +396,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -497,16 +518,16 @@
           }
         },
         {
-          "name": "balance_state",
+          "name": "balance_store",
           "docs": [
-            "Stable balance encrypted State; read for the current handle and replaced by this execution."
+            "Stable balance encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
-            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -519,6 +540,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -578,7 +606,7 @@
     {
       "name": "confidential_burn_from_value",
       "docs": [
-        "Burns an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or",
+        "Burns an encrypted amount taken from an existing on-chain `EncryptedStore` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the burn-side analog",
         "of `confidential_transfer_from_value` (fhevm-internal#1755). The batcher uses this to burn an",
         "execution's computed encrypted total, then requests the KMS burn certificate. The signing",
@@ -600,8 +628,8 @@
         {
           "name": "owner",
           "docs": [
-            "Token owner and burn authority. Must control `amount_state` (the spend gate).",
-            "Not `mut`: rent for the burned-amount encrypted State's first bind is paid by `payer`, so the owner",
+            "Token owner and burn authority. Must control `amount_store` (the spend gate).",
+            "Not `mut`: rent for the burned-amount encrypted store's first bind is paid by `payer`, so the owner",
             "may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`."
           ],
           "signer": true
@@ -609,7 +637,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the burned-amount encrypted State on its first bind."
+            "Pays rent for the burned-amount encrypted store on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -663,16 +691,16 @@
           }
         },
         {
-          "name": "balance_state",
+          "name": "balance_store",
           "docs": [
-            "Stable balance encrypted State; read for the current handle and replaced by this execution."
+            "Stable balance encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
-            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
@@ -684,17 +712,24 @@
           "writable": true
         },
         {
-          "name": "amount_state",
+          "name": "amount_store",
           "docs": [
             "The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent",
             "operand — never replaced, never consumed. Its address is the canonical PDA of its own",
-            "`(program, authority, scope, label)` fields, so an encrypted State from any app may",
+            "`(program, authority, scope, label)` fields, so an encrypted store from any app may",
             "be passed here when that app's value authority is the signing `owner` (a program PDA",
             "authorizing through `invoke_signed`), or when it is one of the burner's own token values."
           ]
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -780,7 +815,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount encrypted State on its first bind."
+            "Pays rent for growth of the encrypted stores written by the transfer."
           ],
           "writable": true,
           "signer": true
@@ -812,21 +847,28 @@
           "writable": true
         },
         {
-          "name": "from_state",
+          "name": "from_store",
           "docs": [
-            "Sender state: the host reads and updates its balance slot."
+            "Sender store: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
-          "name": "to_state",
+          "name": "to_store",
           "docs": [
-            "Recipient state: the host reads and updates its balance slot."
+            "Recipient store: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -865,17 +907,7 @@
           "optional": true
         },
         {
-          "name": "result_state",
-          "optional": true
-        },
-        {
-          "name": "result_scratch",
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "result_authority",
-          "signer": true,
+          "name": "result_store",
           "optional": true
         },
         {
@@ -899,7 +931,7 @@
     {
       "name": "confidential_transfer_from_value",
       "docs": [
-        "Transfers an encrypted amount taken from an existing on-chain `EncryptedState` (a computed or",
+        "Transfers an encrypted amount taken from an existing on-chain `EncryptedStore` (a computed or",
         "received handle) instead of a freshly attested client-side encryption — the path that lets a",
         "contract be the sender of a computed amount (fhevm-internal#1680). The signing owner must",
         "control the amount value (the token spend gate); the amount is spent read-only."
@@ -918,14 +950,14 @@
         {
           "name": "owner",
           "docs": [
-            "Sender and transfer authority. Must control `amount_state` (the spend gate)."
+            "Sender and transfer authority. Must control `amount_store` (the spend gate)."
           ],
           "signer": true
         },
         {
           "name": "payer",
           "docs": [
-            "Pays rent for the transferred-amount encrypted State on its first bind."
+            "Pays rent for the transferred-amount encrypted store on its first bind."
           ],
           "writable": true,
           "signer": true
@@ -957,21 +989,21 @@
           "writable": true
         },
         {
-          "name": "from_state",
+          "name": "from_store",
           "docs": [
             "Sender state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
-          "name": "to_state",
+          "name": "to_store",
           "docs": [
             "Recipient state: the host reads and updates its balance slot."
           ],
           "writable": true
         },
         {
-          "name": "amount_state",
+          "name": "amount_store",
           "optional": true
         },
         {
@@ -980,11 +1012,14 @@
           "optional": true
         },
         {
-          "name": "amount_scratch",
-          "optional": true
+          "name": "zama_event_authority"
         },
         {
-          "name": "zama_event_authority"
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1061,20 +1096,20 @@
         {
           "name": "mint",
           "docs": [
-            "Confidential mint whose application scopes the disclosed encrypted State and event."
+            "Confidential mint whose application scopes the disclosed encrypted store and event."
           ]
         },
         {
           "name": "token_account",
           "docs": [
-            "Token account whose State contains the handle. Absent for the mint total-supply State."
+            "Token account whose Store contains the handle. Absent for the mint total-supply Store."
           ],
           "optional": true
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "docs": [
-            "The State whose history contains a public permission for the disclosed handle.",
+            "The Store whose history contains a public permission for the disclosed handle.",
             "The handler binds its program, mint scope and token-account or total-supply authority.",
             "Disclosure authenticates the handle and cleartext, without a token-specific field label."
           ]
@@ -1223,11 +1258,18 @@
           }
         },
         {
-          "name": "total_supply_encrypted_state",
+          "name": "total_supply_encrypted_store",
           "writable": true
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1347,11 +1389,18 @@
           }
         },
         {
-          "name": "balance_encrypted_state",
+          "name": "balance_encrypted_store",
           "writable": true
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1403,7 +1452,7 @@
       "name": "make_token_account_handle_public",
       "docs": [
         "Seals one token-account state handle publicly. The owner authorizes the request and the",
-        "token-account PDA signs as encrypted State authority."
+        "token-account PDA signs as encrypted store authority."
       ],
       "discriminator": [
         59,
@@ -1468,7 +1517,7 @@
           }
         },
         {
-          "name": "encrypted_state",
+          "name": "encrypted_store",
           "writable": true
         },
         {
@@ -1507,7 +1556,7 @@
       "name": "make_total_supply_handle_public",
       "docs": [
         "Seals encrypted total supply publicly. The mint authority authorizes the request and the",
-        "total-supply PDA signs as encrypted State authority."
+        "total-supply PDA signs as encrypted store authority."
       ],
       "discriminator": [
         235,
@@ -1564,7 +1613,7 @@
           }
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
             "Encrypted total-supply value whose current handle is sealed."
           ],
@@ -1687,10 +1736,10 @@
           }
         },
         {
-          "name": "burned_amount_state",
+          "name": "burned_amount_store",
           "docs": [
-            "Burned amount `EncryptedState` account whose handle is redeemed. Bound to the mint/token",
-            "account by `assert_burned_amount_state_account`; its canonical PDA, layout, host ownership,",
+            "Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token",
+            "account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,",
             "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
           ]
         },
@@ -1920,21 +1969,28 @@
           }
         },
         {
-          "name": "balance_state",
+          "name": "balance_store",
           "docs": [
-            "Stable balance encrypted State; read for the current handle and replaced by this execution."
+            "Stable balance encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "docs": [
-            "Stable total-supply encrypted State; read for the current handle and replaced by this execution."
+            "Stable total-supply encrypted store; read for the current handle and replaced by this execution."
           ],
           "writable": true
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -2191,7 +2247,7 @@
     },
     {
       "code": 6012,
-      "name": "CurrentEncryptedStateMismatch",
+      "name": "CurrentEncryptedStoreMismatch",
       "msg": "current encrypted value does not match token account state"
     },
     {
@@ -2232,7 +2288,7 @@
     {
       "code": 6020,
       "name": "PublicDecryptProofInvalid",
-      "msg": "public-decrypt MMR proof is invalid for this encrypted State"
+      "msg": "public-decrypt MMR proof is invalid for this encrypted store"
     },
     {
       "code": 6021,
@@ -2361,13 +2417,13 @@
     },
     {
       "code": 6046,
-      "name": "EncryptedStateAuthorityMismatch",
-      "msg": "encrypted State authority does not match token account"
+      "name": "EncryptedStoreAuthorityMismatch",
+      "msg": "encrypted store authority does not match token account"
     },
     {
       "code": 6047,
-      "name": "TokenEncryptedStateMismatch",
-      "msg": "token encrypted State is not canonical"
+      "name": "TokenEncryptedStoreMismatch",
+      "msg": "token encrypted store is not canonical"
     },
     {
       "code": 6048,
@@ -2465,7 +2521,7 @@
             }
           },
           {
-            "name": "old_encrypted_state",
+            "name": "old_encrypted_store",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -2484,7 +2540,7 @@
             }
           },
           {
-            "name": "new_encrypted_state",
+            "name": "new_encrypted_store",
             "docs": [
               "New ZamaHost ACL record."
             ],
@@ -2557,7 +2613,7 @@
             }
           },
           {
-            "name": "burned_encrypted_state",
+            "name": "burned_encrypted_store",
             "docs": [
               "ACL record for `burned_handle`."
             ],
@@ -2629,7 +2685,7 @@
             }
           },
           {
-            "name": "burned_encrypted_state",
+            "name": "burned_encrypted_store",
             "docs": [
               "ZamaHost ACL record for `burned_handle`."
             ],
@@ -2643,8 +2699,8 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access encrypted State live in the",
-        "`EncryptedState` account at `total_supply_encrypted_state`."
+        "The total supply's current handle and access encrypted store live in the",
+        "`EncryptedStore` account at `total_supply_encrypted_store`."
       ],
       "type": {
         "kind": "struct",
@@ -2678,8 +2734,8 @@
       "docs": [
         "Confidential token account state.",
         "",
-        "The balance's current handle and access encrypted State live in the",
-        "`EncryptedState` account at `balance_encrypted_state`, not here — addressing",
+        "The balance's current handle and access encrypted store live in the",
+        "`EncryptedStore` account at `balance_encrypted_store`, not here — addressing",
         "is stable per token account, so no nonce/sequence bookkeeping is needed."
       ],
       "type": {
@@ -2772,7 +2828,7 @@
             }
           },
           {
-            "name": "transferred_encrypted_state",
+            "name": "transferred_encrypted_store",
             "docs": [
               "ZamaHost ACL record for `transferred_handle`."
             ],
@@ -2925,7 +2981,7 @@
       }
     },
     {
-      "name": "EncryptedState",
+      "name": "EncryptedStore",
       "type": {
         "kind": "struct",
         "fields": [
@@ -2998,7 +3054,7 @@
           {
             "name": "mint",
             "docs": [
-              "Confidential mint whose application scopes the disclosed encrypted State."
+              "Confidential mint whose application scopes the disclosed encrypted store."
             ],
             "type": "pubkey"
           },
@@ -3015,9 +3071,9 @@
             }
           },
           {
-            "name": "encrypted_state",
+            "name": "encrypted_store",
             "docs": [
-              "ZamaHost `EncryptedState` encrypted State the handle belongs to."
+              "ZamaHost `EncryptedStore` encrypted store the handle belongs to."
             ],
             "type": "pubkey"
           },
@@ -3316,7 +3372,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted State's MMR."
+              "Index of the proven leaf within the encrypted store's MMR."
             ],
             "type": "u64"
           },
@@ -3437,9 +3493,9 @@
             }
           },
           {
-            "name": "burned_encrypted_state",
+            "name": "burned_encrypted_store",
             "docs": [
-              "Shared `burned_amount` EncryptedState account for the token account."
+              "Shared `burned_amount` EncryptedStore account for the token account."
             ],
             "type": "pubkey"
           }
@@ -3485,7 +3541,7 @@
             }
           },
           {
-            "name": "old_encrypted_state",
+            "name": "old_encrypted_store",
             "docs": [
               "Previous ZamaHost ACL record."
             ],
@@ -3504,7 +3560,7 @@
             }
           },
           {
-            "name": "new_encrypted_state",
+            "name": "new_encrypted_store",
             "docs": [
               "New ZamaHost ACL record."
             ],

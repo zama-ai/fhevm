@@ -37,6 +37,16 @@ if [[ "$PREVIEW_BOOTSTRAP" == true ]]; then
     --dry-run=client -o yaml | kubectl apply -f -
 fi
 
+# Stop the old decoder before activating new instructions. Experiment traffic must remain
+# stopped throughout the rollout; provider replay is still required for the outage window.
+for i in $(seq 1 "$NB_COPROCESSOR"); do
+  listener="deployment/coprocessor-$i-solana-host-listener"
+  if [[ -n $(kubectl get "$listener" -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
+    kubectl scale "$listener" -n "$NAMESPACE" --replicas=0
+    kubectl rollout status "$listener" -n "$NAMESPACE" --timeout=5m
+  fi
+done
+
 cp "$values/values-solana-programs-e2e.yaml" "$work/host.yaml"
 KMS_T=$(( (NB_KMS_CORE - 1) / 3 )) COPRO_T=1 yq -i '
   (.scDeploy.env[] | select(.name == "KMS_THRESHOLD").value) = strenv(KMS_T) |

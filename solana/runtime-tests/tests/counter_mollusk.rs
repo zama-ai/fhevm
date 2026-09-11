@@ -1,8 +1,9 @@
 //! Mollusk test for the `encrypted-counter` specimen — the copy-paste source for testing a new
 //! `zama-host` consumer with `zama-solana-test-kit`: a fixture of about twenty lines, real host
-//! CPIs, and cleartext-ledger assertions on the encrypted state.
+//! CPIs, and cleartext-ledger assertions on the encrypted store.
 
 use encrypted_counter as counter;
+use kit::transaction::process_fhe_instruction;
 use mollusk_svm::result::Check;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::collections::HashMap;
@@ -20,7 +21,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
     let owner = Pubkey::new_unique();
     let counter = counter::counter_address(owner).0;
     let counter_authority = counter::counter_authority_address(counter).0;
-    let encrypted_state = counter::counter_state_id(counter).address();
+    let encrypted_store = counter::counter_state_id(counter).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&counter::id(), "encrypted_counter");
     mollusk.add_program(&host::id(), "zama_host");
@@ -30,17 +31,19 @@ fn counter_initializes_to_zero_and_adds_increments() {
         (host_config, host_config_data),
         (event_authority(host::id()), system_account(0)),
     ]));
-    ensure_system_accounts(&context, &[counter, counter_authority, encrypted_state]);
+    ensure_system_accounts(&context, &[counter, counter_authority, encrypted_store]);
     let mut ledger = CleartextLedger::default();
 
-    let initialize = |encrypted_state: Pubkey| {
+    let initialize = |encrypted_store: Pubkey| {
         anchor_ix(
             counter::id(),
             counter::accounts::Initialize {
                 owner,
+                transient_store: host::transient_store_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -54,9 +57,11 @@ fn counter_initializes_to_zero_and_adds_increments() {
             counter::id(),
             counter::accounts::Increment {
                 owner,
+                transient_store: host::transient_store_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 counter,
                 counter_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
                 zama_program: host::id(),
@@ -68,27 +73,29 @@ fn counter_initializes_to_zero_and_adds_increments() {
     // Runs one counter instruction, replays its single `fhe_execute` CPI in cleartext, and
     // asserts the count behind the persisted handle.
     let assert_count = |ledger: &mut CleartextLedger, ix: &Instruction, expected: u64| {
-        let result = context.process_and_validate_instruction(ix, &[Check::success()]);
+        let result = process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
         assert_eq!(
-            ledger.u64_in_state(&context, encrypted_state, counter::count_key()),
+            ledger.u64_in_state(&context, encrypted_store, counter::count_key()),
             expected
         );
     };
 
-    // A wrongly derived encrypted State is rejected before any CPI runs.
-    let bogus_encrypted_state = Pubkey::new_unique();
-    ensure_system_accounts(&context, &[bogus_encrypted_state]);
-    context.process_and_validate_instruction(
-        &initialize(bogus_encrypted_state),
+    // A wrongly derived encrypted store is rejected before any CPI runs.
+    let bogus_encrypted_store = Pubkey::new_unique();
+    ensure_system_accounts(&context, &[bogus_encrypted_store]);
+    process_fhe_instruction(
+        &context,
+        owner,
+        &initialize(bogus_encrypted_store),
         &[anchor_error_check(
             counter::CounterError::CountValueInvalid as u32,
         )],
     );
 
-    assert_count(&mut ledger, &initialize(encrypted_state), 0);
+    assert_count(&mut ledger, &initialize(encrypted_store), 0);
     assert_count(&mut ledger, &increment(5), 5);
     assert_count(&mut ledger, &increment(37), 42);
 }

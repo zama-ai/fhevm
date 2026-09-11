@@ -16,7 +16,7 @@ mod solana_support;
 
 use kms_worker::core::solana_acl::HandleBytes;
 use solana_support::{
-    APP_PROGRAM, EncryptedStateFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, SCOPE,
+    APP_PROGRAM, EncryptedStoreFixture, FHE_TYPE_UINT64, PermitBuilder, RequestBuilder, SCOPE,
     Wallet, handle,
 };
 use zama_solana_request::{
@@ -32,8 +32,8 @@ fn reference_wire() -> SolanaUserDecryptRequestWire {
     let own = handle(10, FHE_TYPE_UINT64);
     let delegated = handle(11, FHE_TYPE_UINT64);
 
-    let own_account = EncryptedStateFixture::allowing(own, wallet.pubkey());
-    let delegated_account = EncryptedStateFixture::allowing(delegated, delegator.pubkey());
+    let own_account = EncryptedStoreFixture::allowing(own, wallet.pubkey());
+    let delegated_account = EncryptedStoreFixture::allowing(delegated, delegator.pubkey());
 
     RequestBuilder::new(&wallet)
         .permit(PermitBuilder::new(wallet.pubkey()).scope(&[(APP_PROGRAM, SCOPE)]))
@@ -130,8 +130,8 @@ fn every_wire_field_reaches_the_canonical_bytes() {
     variants.push(("entry.allowed_key", wire));
 
     let mut wire = base.clone();
-    wire.handles[1].encrypted_state[0] ^= 1;
-    variants.push(("entry.encrypted_state", wire));
+    wire.handles[1].encrypted_store[0] ^= 1;
+    variants.push(("entry.encrypted_store", wire));
 
     for (field, variant) in variants {
         let bytes = encode_solana_request(&variant).expect("every variant serializes");

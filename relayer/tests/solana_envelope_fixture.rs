@@ -208,11 +208,11 @@ fn every_accepted_record_becomes_a_solana_request() {
             .unwrap_or_else(|err| panic!("{name}: should validate: {err}"));
 
         let handle_count = parsed.attested_payload.handles.len();
-        let encrypted_states = parsed
+        let encrypted_stores = parsed
             .attested_payload
             .handles
             .iter()
-            .map(|entry| hex::decode(entry.encrypted_state.trim_start_matches("0x")).unwrap())
+            .map(|entry| hex::decode(entry.encrypted_store.trim_start_matches("0x")).unwrap())
             .collect::<Vec<_>>();
         let request = UserDecryptRequest::try_from(parsed)
             .unwrap_or_else(|err| panic!("{name}: should convert: {err}"));
@@ -245,10 +245,10 @@ fn every_accepted_record_becomes_a_solana_request() {
                 assert_eq!(
                     wire.handles
                         .iter()
-                        .map(|entry| entry.encrypted_state.clone())
+                        .map(|entry| entry.encrypted_store.clone())
                         .collect::<Vec<_>>(),
-                    encrypted_states,
-                    "{name}: encryptedState travels into the canonical request"
+                    encrypted_stores,
+                    "{name}: encryptedStore travels into the canonical request"
                 );
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),

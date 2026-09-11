@@ -1,17 +1,19 @@
-//! Phase 2: reconstruct zama-host decoded op records from decoded instruction data +
-//! block context, WITHOUT relying on on-chain `emit_cpi!`/`emit!`.
+//! Reconstruct zama-host operations and State effects from instruction data and
+//! block context. Random operations additionally use their signed seed event CPI.
 //!
 //! Covers the `fhe_execute` execution walk (recomputing each step's handle via the
 //! program's own `computed_*` functions, byte-identical to on-chain emission), the
-//! encrypted-state history each step appends (the keys it allows and whether it
+//! encrypted-state history the effects append (the keys they allow and whether a result
 //! is made public: the leaf record of RFC 035).
+
+use std::collections::HashSet;
 
 use zama_host::state::{
     computed_eval_handle, computed_eval_is_in_handle,
     computed_eval_mul_div_handle, computed_eval_sum_handle,
     computed_eval_ternary_handle, computed_eval_trivial_handle,
     computed_eval_unary_handle, computed_rand_bounded_handle,
-    computed_rand_handle, FheExecuteArgs, FheExecuteOperand, FheExecuteOutput,
+    computed_rand_handle, FheExecuteArgs, FheExecuteEffect, FheExecuteOperand,
     FheExecuteStep,
 };
 use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
@@ -59,22 +61,22 @@ pub fn decode_fhe_execute_random_seeds_event(
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
-pub const MAKE_STATE_ENCRYPTED_STATE_INDEX: usize = 2;
+pub const MAKE_STATE_ENCRYPTED_STORE_INDEX: usize = 2;
 
-pub fn is_make_state_handle_public_instruction(data: &[u8]) -> bool {
+pub fn is_make_store_handle_public_instruction(data: &[u8]) -> bool {
     data.get(..8)
-        == Some(zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR)
+        == Some(zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR)
 }
 
-pub fn decode_make_state_handle_public(
+pub fn decode_make_store_handle_public(
     data: &[u8],
 ) -> Option<([u8; 32], [u8; 32], u64)> {
-    if !is_make_state_handle_public_instruction(data) {
+    if !is_make_store_handle_public_instruction(data) {
         return None;
     }
     let mut body = data.get(8..)?;
     let args =
-        zama_host::instruction::MakeStateHandlePublic::deserialize(&mut body)
+        zama_host::instruction::MakeStoreHandlePublic::deserialize(&mut body)
             .ok()?;
     Some((args.key, args.handle, args.previous_leaf_count))
 }
@@ -120,7 +122,7 @@ fn resolve_operand(
     produced: &[[u8; 32]],
 ) -> Option<[u8; 32]> {
     match operand {
-        FheExecuteOperand::StateSlot { handle_index, .. }
+        FheExecuteOperand::StoreSlot { handle_index, .. }
         | FheExecuteOperand::TransientResult { handle_index, .. } => {
             dictionary.get(usize::from(*handle_index)).copied()
         }
@@ -157,7 +159,7 @@ fn resolve_rhs(
 
 /// Reconstructs the per-step op records a `fhe_execute` execution produces, mirroring
 /// the program's `walk_steps`: walk steps in order, resolve operands
-/// (`Transient` referring to earlier steps' produced handles), recompute each
+/// (`EarlierStep` referring to earlier steps' produced handles), recompute each
 /// step's result handle via the program's execution primitives, and produce one record
 /// per step. Persistent and instruction-local outputs derive the identical base
 /// handle — no per-output binding (matches EVM `FHEVMExecutor`).
@@ -167,11 +169,12 @@ fn resolve_rhs(
 /// chain_id / previous_bank_hash / unix_timestamp. Random seeds are supplied by
 /// the host's signed event-CPI execution because their anchor includes the live
 /// rand nonce, which is not caller-provided instruction data.
-pub fn reconstruct_fhe_execute_steps(
+pub fn reconstruct_fhe_execute(
     execution: &FheExecuteArgs,
     random_seeds: &[FheExecuteRandomSeed],
     ctx: &ReconstructContext,
-) -> Option<Vec<ReconstructedExecutionStep>> {
+    produced_in_tx: &mut HashSet<[u8; 32]>,
+) -> Option<ReconstructedExecution> {
     let expected_random_steps = execution
         .steps
         .iter()
@@ -194,7 +197,7 @@ pub fn reconstruct_fhe_execute_steps(
         return None;
     }
     let mut produced: Vec<[u8; 32]> = Vec::with_capacity(execution.steps.len());
-    let mut steps_out: Vec<ReconstructedExecutionStep> =
+    let mut records: Vec<SolanaHostRecord> =
         Vec::with_capacity(execution.steps.len());
 
     for (index, step) in execution.steps.iter().enumerate() {
@@ -217,9 +220,14 @@ pub fn reconstruct_fhe_execute_steps(
                     rhs_handle,
                     scalar,
                     *output_fhe_type,
+                    boundary_mask(
+                        [Some(lhs_handle), (!scalar).then_some(rhs_handle)],
+                        produced_in_tx,
+                    )?,
                     ctx,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheBinaryOp(FheBinaryOp {
                     version: EVENT_VERSION,
                     op: *op,
@@ -252,9 +260,11 @@ pub fn reconstruct_fhe_execute_steps(
                     t,
                     f,
                     *output_fhe_type,
+                    boundary_mask([Some(c), Some(t), Some(f)], produced_in_tx)?,
                     ctx,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: *op,
@@ -272,6 +282,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_eval_trivial_handle(*plaintext, *fhe_type, ctx);
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     plaintext: *plaintext,
@@ -287,6 +298,7 @@ pub fn reconstruct_fhe_execute_steps(
                 let result =
                     computed_rand_handle(seed, *fhe_type, ctx.chain_id);
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
                     seed,
@@ -298,7 +310,6 @@ pub fn reconstruct_fhe_execute_steps(
                 op,
                 operand,
                 output_fhe_type,
-                output: _,
             } => {
                 let operand_handle =
                     resolve_operand(operand, &execution.dictionary, &produced)?;
@@ -306,9 +317,11 @@ pub fn reconstruct_fhe_execute_steps(
                     *op,
                     operand_handle,
                     *output_fhe_type,
+                    boundary_mask([Some(operand_handle)], produced_in_tx)?,
                     ctx,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheUnaryOp(FheUnaryOp {
                     version: EVENT_VERSION,
                     op: *op,
@@ -332,6 +345,7 @@ pub fn reconstruct_fhe_execute_steps(
                     ctx.chain_id,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheRandBounded(FheRandBounded {
                     version: EVENT_VERSION,
                     upper_bound: *upper_bound,
@@ -340,11 +354,7 @@ pub fn reconstruct_fhe_execute_steps(
                     result,
                 })
             }
-            FheExecuteStep::Sum {
-                operands,
-                fhe_type,
-                output: _,
-            } => {
+            FheExecuteStep::Sum { operands, fhe_type } => {
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| {
@@ -355,9 +365,17 @@ pub fn reconstruct_fhe_execute_steps(
                         )
                     })
                     .collect::<Option<_>>()?;
-                let result =
-                    computed_eval_sum_handle(&operand_handles, *fhe_type, ctx);
+                let result = computed_eval_sum_handle(
+                    &operand_handles,
+                    *fhe_type,
+                    boundary_mask(
+                        operand_handles.iter().copied().map(Some),
+                        produced_in_tx,
+                    )?,
+                    ctx,
+                );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheSum(FheSum {
                     version: EVENT_VERSION,
                     operands: operand_handles,
@@ -369,7 +387,6 @@ pub fn reconstruct_fhe_execute_steps(
                 value,
                 set,
                 fhe_type,
-                output: _,
             } => {
                 let value_handle =
                     resolve_operand(value, &execution.dictionary, &produced)?;
@@ -387,9 +404,15 @@ pub fn reconstruct_fhe_execute_steps(
                     value_handle,
                     &set_handles,
                     *fhe_type,
+                    boundary_mask(
+                        std::iter::once(Some(value_handle))
+                            .chain(set_handles.iter().copied().map(Some)),
+                        produced_in_tx,
+                    )?,
                     ctx,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheIsIn(FheIsIn {
                     version: EVENT_VERSION,
                     value: value_handle,
@@ -403,7 +426,6 @@ pub fn reconstruct_fhe_execute_steps(
                 factor2,
                 divisor,
                 output_fhe_type,
-                output: _,
             } => {
                 let factor1_handle =
                     resolve_operand(factor1, &execution.dictionary, &produced)?;
@@ -415,9 +437,17 @@ pub fn reconstruct_fhe_execute_steps(
                     *divisor,
                     scalar,
                     *output_fhe_type,
+                    boundary_mask(
+                        [
+                            Some(factor1_handle),
+                            (!scalar).then_some(factor2_handle),
+                        ],
+                        produced_in_tx,
+                    )?,
                     ctx,
                 );
                 produced.push(result);
+                produced_in_tx.insert(result);
                 SolanaHostRecord::FheMulDiv(FheMulDiv {
                     version: EVENT_VERSION,
                     factor1: factor1_handle,
@@ -428,32 +458,53 @@ pub fn reconstruct_fhe_execute_steps(
                 })
             }
         };
-        let result = *produced.last()?;
-        steps_out.push(ReconstructedExecutionStep {
-            record,
-            state_output: fhe_execute_step_state_output(
-                step,
-                &execution.dictionary,
-                result,
-            )?,
-        });
+        records.push(record);
     }
-    Some(steps_out)
+    let mut store_outputs = Vec::new();
+    for effect in &execution.effects {
+        if effect.result.output_index != 0 {
+            return None;
+        }
+        let handle = *produced.get(usize::from(effect.result.step_index))?;
+        // A computation-only grant does not ask the worker to persist its result.
+        if effect.slot.is_some()
+            || !effect.allow_indexes.is_empty()
+            || effect.make_public
+        {
+            store_outputs.push(state_leaf_output(
+                effect,
+                &execution.dictionary,
+                handle,
+            )?);
+        }
+    }
+    Some(ReconstructedExecution {
+        records,
+        store_outputs,
+    })
 }
 
-/// One reconstructed `fhe_execute` step: the decoded op record plus the history
-/// append declared by a `State` output.
-pub struct ReconstructedExecutionStep {
-    pub record: SolanaHostRecord,
-    pub state_output: Option<StateLeafOutput>,
+fn boundary_mask(
+    operands: impl IntoIterator<Item = Option<[u8; 32]>>,
+    produced: &HashSet<[u8; 32]>,
+) -> Option<[u8; 32]> {
+    zama_host::operand_boundary_mask(operands.into_iter().map(|operand| {
+        operand.is_some_and(|handle| !produced.contains(&handle))
+    }))
+    .ok()
+}
+
+pub struct ReconstructedExecution {
+    pub records: Vec<SolanaHostRecord>,
+    pub store_outputs: Vec<StoreLeafOutput>,
 }
 
 /// The leaves a `State` output appends, read from instruction data the host
 /// validated before accepting the confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StateLeafOutput {
-    /// Index into `remaining_accounts` of the `EncryptedState` PDA.
-    pub state_index: u8,
+pub struct StoreLeafOutput {
+    /// Index into `remaining_accounts` of the `EncryptedStore` PDA.
+    pub store_index: u8,
     /// The state's leaf count before this output.
     pub previous_leaf_count: u64,
     pub handle: [u8; 32],
@@ -463,65 +514,22 @@ pub struct StateLeafOutput {
     pub make_public: bool,
 }
 
-/// Resolves a step's `State` output against the execution dictionary, or
-/// `None` on a dictionary reference out of range (a malformed execution).
-fn fhe_execute_step_state_output(
-    step: &FheExecuteStep,
+fn state_leaf_output(
+    effect: &FheExecuteEffect,
     dictionary: &[[u8; 32]],
     handle: [u8; 32],
-) -> Option<Option<StateLeafOutput>> {
-    let FheExecuteOutput::State {
-        state_index,
-        previous_leaf_count,
-        allow_indexes,
-        make_public,
-        ..
-    } = fhe_execute_step_output(step)
-    else {
-        return Some(None);
-    };
-    let entry = |index: &u8| dictionary.get(usize::from(*index)).copied();
-    Some(Some(StateLeafOutput {
-        state_index: *state_index,
-        previous_leaf_count: *previous_leaf_count,
+) -> Option<StoreLeafOutput> {
+    Some(StoreLeafOutput {
+        store_index: effect.store_index,
+        previous_leaf_count: effect.previous_leaf_count,
         handle,
-        allowed_keys: allow_indexes
+        allowed_keys: effect
+            .allow_indexes
             .iter()
-            .map(entry)
+            .map(|index| dictionary.get(usize::from(*index)).copied())
             .collect::<Option<Vec<_>>>()?,
-        make_public: *make_public,
-    }))
-}
-
-/// The output policy of an execution step, independent of step kind.
-fn fhe_execute_step_output(step: &FheExecuteStep) -> &FheExecuteOutput {
-    match step {
-        FheExecuteStep::Binary { output, .. }
-        | FheExecuteStep::Ternary { output, .. }
-        | FheExecuteStep::TrivialEncrypt { output, .. }
-        | FheExecuteStep::Rand { output, .. }
-        | FheExecuteStep::Unary { output, .. }
-        | FheExecuteStep::RandBounded { output, .. }
-        | FheExecuteStep::Sum { output, .. }
-        | FheExecuteStep::IsIn { output, .. }
-        | FheExecuteStep::MulDiv { output, .. } => output,
-    }
-}
-
-/// Reconstructs just the per-step op records (without ACL-record indices) —
-/// the shape the shadow-compare consumes. Thin wrapper over
-/// [`reconstruct_fhe_execute_steps`].
-pub fn reconstruct_fhe_execute_records(
-    execution: &FheExecuteArgs,
-    random_seeds: &[FheExecuteRandomSeed],
-    ctx: &ReconstructContext,
-) -> Option<Vec<SolanaHostRecord>> {
-    Some(
-        reconstruct_fhe_execute_steps(execution, random_seeds, ctx)?
-            .into_iter()
-            .map(|step| step.record)
-            .collect(),
-    )
+        make_public: effect.make_public,
+    })
 }
 
 #[cfg(test)]
@@ -540,48 +548,50 @@ mod tests {
 
     #[test]
     fn decodes_state_public_args_from_program_type() {
-        let args = zama_host::instruction::MakeStateHandlePublic {
+        let args = zama_host::instruction::MakeStoreHandlePublic {
             key: [1; 32],
             handle: [2; 32],
             previous_leaf_count: 7,
         };
         let mut data =
-            zama_host::instruction::MakeStateHandlePublic::DISCRIMINATOR
+            zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR
                 .to_vec();
         args.serialize(&mut data).unwrap();
-        assert!(is_make_state_handle_public_instruction(&data));
+        assert!(is_make_store_handle_public_instruction(&data));
         assert_eq!(
-            decode_make_state_handle_public(&data),
+            decode_make_store_handle_public(&data),
             Some(([1; 32], [2; 32], 7))
         );
         data.pop();
-        assert_eq!(decode_make_state_handle_public(&data), None);
+        assert_eq!(decode_make_store_handle_public(&data), None);
 
         // A create-state payload starts with enough fixed-width bytes to deserialize as the
         // public-seal arguments if the discriminator is ignored. It must never fabricate a
         // history write.
-        let create = zama_host::instruction::CreateEncryptedState {
-            args: zama_host::instructions::CreateEncryptedStateArgs {
+        let create = zama_host::instruction::CreateEncryptedStore {
+            args: zama_host::instructions::CreateEncryptedStoreArgs {
                 program: Pubkey::new_unique(),
                 scope: [4; 32],
                 authority_seeds: vec![vec![12; 4]],
             },
         };
         let mut create_data =
-            zama_host::instruction::CreateEncryptedState::DISCRIMINATOR
+            zama_host::instruction::CreateEncryptedStore::DISCRIMINATOR
                 .to_vec();
         create.serialize(&mut create_data).unwrap();
-        assert_eq!(decode_make_state_handle_public(&create_data), None);
+        assert_eq!(decode_make_store_handle_public(&create_data), None);
     }
 
     #[test]
     fn fhe_execute_batch_round_trips_via_program_type() {
         use anchor_lang::AnchorSerialize;
         use zama_host::state::{
-            FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-            FheExecuteOutput, FheExecuteStep,
+            FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
         };
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
@@ -589,14 +599,12 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Binary {
                     op: FheBinaryOpCode::Add,
                     lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
             ],
         };
@@ -656,6 +664,9 @@ mod tests {
     #[test]
     fn fhe_execute_walk_chains_transient_handles() {
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
@@ -663,19 +674,23 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [7u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Binary {
                     op: FheBinaryOpCode::Add,
                     lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
                     rhs: FheExecuteOperand::Scalar { value_index: 0 },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
             ],
         };
-        let records = reconstruct_fhe_execute_records(&execution, &[], &ctx())
-            .expect("walk");
+        let records = reconstruct_fhe_execute(
+            &execution,
+            &[],
+            &ctx(),
+            &mut HashSet::new(),
+        )
+        .map(|execution| execution.records)
+        .expect("walk");
         assert_eq!(records.len(), 2);
         let step0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => {
@@ -706,23 +721,29 @@ mod tests {
         // On-chain preflight requires a rand execution to anchor at least one persistent
         // output (fhevm-internal#1853 W4), so the fixture binds one.
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![zama_host::FheExecuteEffect {
+                result: zama_host::ExecutionResultRef {
+                    step_index: 0,
+                    output_index: 0,
+                },
+                store_index: 0,
+                previous_leaf_count: 0,
+                slot: Some(zama_host::SlotWrite {
+                    key_index: 2,
+                    previous_handle_index: None,
+                }),
+                allow_indexes: vec![3],
+                make_public: false,
+                grants: vec![],
+            }],
+
             returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xA1; 32], [0xA2; 32], [0xA3; 32], [0xA4; 32]],
             steps: vec![FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type: 5,
-                output: FheExecuteOutput::State {
-                    state_index: 0,
-                    previous_leaf_count: 0,
-                    slot: Some(zama_host::SlotWrite {
-                        key_index: 2,
-                        previous_handle_index: None,
-                    }),
-                    allow_indexes: vec![3],
-                    make_public: false,
-                    grants: vec![],
-                },
             }],
         };
 
@@ -730,9 +751,14 @@ mod tests {
             step_index: 0,
             seed: [7; 16],
         }];
-        let records =
-            reconstruct_fhe_execute_records(&execution, &random_seeds, &ctx())
-                .expect("walk");
+        let records = reconstruct_fhe_execute(
+            &execution,
+            &random_seeds,
+            &ctx(),
+            &mut HashSet::new(),
+        )
+        .map(|execution| execution.records)
+        .expect("walk");
         match &records[..] {
             [SolanaHostRecord::FheRandBounded(event)] => {
                 assert_eq!(event.upper_bound, upper_bound);
@@ -753,6 +779,23 @@ mod tests {
         // The execution ends in a rand step, so it anchors a persistent output
         // (fhevm-internal#1853 W4); dictionary entries 1..=4 are its identity and allow list.
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![zama_host::FheExecuteEffect {
+                result: zama_host::ExecutionResultRef {
+                    step_index: 6,
+                    output_index: 0,
+                },
+                store_index: 0,
+                previous_leaf_count: 0,
+                slot: Some(zama_host::SlotWrite {
+                    key_index: 3,
+                    previous_handle_index: None,
+                }),
+                allow_indexes: vec![4],
+                make_public: false,
+                grants: vec![],
+            }],
+
             returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![
@@ -762,12 +805,10 @@ mod tests {
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [9u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::TrivialEncrypt {
                     plaintext: [4u8; 32],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Unary {
                     op: FheUnaryOpCode::Neg,
@@ -775,7 +816,6 @@ mod tests {
                         producer_index: 0,
                     },
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::Sum {
                     operands: vec![
@@ -783,7 +823,6 @@ mod tests {
                         FheExecuteOperand::EarlierStep { producer_index: 1 },
                     ],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::IsIn {
                     value: FheExecuteOperand::EarlierStep { producer_index: 0 },
@@ -791,7 +830,6 @@ mod tests {
                         producer_index: 1,
                     }],
                     fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::MulDiv {
                     factor1: FheExecuteOperand::EarlierStep {
@@ -800,34 +838,24 @@ mod tests {
                     factor2: FheExecuteOperand::Scalar { value_index: 0 },
                     divisor: [3u8; 32],
                     output_fhe_type: 5,
-                    output: FheExecuteOutput::Transient,
                 },
                 FheExecuteStep::RandBounded {
                     upper_bound: ub,
                     fhe_type: 5,
-                    output: FheExecuteOutput::State {
-                        state_index: 0,
-                        previous_leaf_count: 0,
-                        slot: Some(zama_host::SlotWrite {
-                            key_index: 3,
-                            previous_handle_index: None,
-                        }),
-                        allow_indexes: vec![4],
-                        make_public: false,
-                        grants: vec![],
-                    },
                 },
             ],
         };
         let random_seed = [9; 16];
-        let records = reconstruct_fhe_execute_records(
+        let records = reconstruct_fhe_execute(
             &execution,
             &[FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,
             }],
             &cx,
+            &mut HashSet::new(),
         )
+        .map(|execution| execution.records)
         .expect("walk");
         assert_eq!(records.len(), 7);
         let h0 = match &records[0] {
@@ -846,7 +874,13 @@ mod tests {
                 assert_eq!(e.operand, h0);
                 assert_eq!(
                     e.result,
-                    computed_eval_unary_handle(FheUnaryOpCode::Neg, h0, 5, &cx,)
+                    computed_eval_unary_handle(
+                        FheUnaryOpCode::Neg,
+                        h0,
+                        5,
+                        [0; 32],
+                        &cx,
+                    )
                 );
             }
             other => panic!("expected FheUnaryOp, got {other:?}"),
@@ -856,7 +890,7 @@ mod tests {
                 assert_eq!(e.operands, vec![h0, h1]);
                 assert_eq!(
                     e.result,
-                    computed_eval_sum_handle(&[h0, h1], 5, &cx,)
+                    computed_eval_sum_handle(&[h0, h1], 5, [0; 32], &cx,)
                 );
             }
             other => panic!("expected FheSum, got {other:?}"),
@@ -867,7 +901,7 @@ mod tests {
                 assert_eq!(e.set, vec![h1]);
                 assert_eq!(
                     e.result,
-                    computed_eval_is_in_handle(h0, &[h1], 5, &cx,)
+                    computed_eval_is_in_handle(h0, &[h1], 5, [0; 32], &cx,)
                 );
             }
             other => panic!("expected FheIsIn, got {other:?}"),
@@ -881,7 +915,7 @@ mod tests {
                 assert_eq!(
                     e.result,
                     computed_eval_mul_div_handle(
-                        h0, [2u8; 32], [3u8; 32], true, 5, &cx,
+                        h0, [2u8; 32], [3u8; 32], true, 5, [0; 32], &cx,
                     )
                 );
             }
@@ -909,6 +943,9 @@ mod tests {
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![[2u8; 32]],
@@ -917,91 +954,123 @@ mod tests {
                 lhs: FheExecuteOperand::EarlierStep { producer_index: 5 },
                 rhs: FheExecuteOperand::Scalar { value_index: 0 },
                 output_fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             }],
         };
-        assert!(
-            reconstruct_fhe_execute_records(&execution, &[], &ctx()).is_none()
-        );
+        assert!(reconstruct_fhe_execute(
+            &execution,
+            &[],
+            &ctx(),
+            &mut HashSet::new()
+        )
+        .map(|execution| execution.records)
+        .is_none());
     }
 
     /// A `State` output exposes only proof-history inputs; slot and grant policy
     /// do not enter leaf reconstruction.
     #[test]
-    fn fhe_execute_walk_extracts_state_output() {
+    fn fhe_execute_walk_extracts_store_output() {
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![zama_host::FheExecuteEffect {
+                result: zama_host::ExecutionResultRef {
+                    step_index: 0,
+                    output_index: 0,
+                },
+                store_index: 3,
+                previous_leaf_count: 9,
+                slot: None,
+                allow_indexes: vec![0, 1],
+                make_public: true,
+                grants: vec![],
+            }],
+
             returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xB1; 32], [0xB2; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7u8; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::State {
-                    state_index: 3,
-                    previous_leaf_count: 9,
-                    slot: None,
-                    allow_indexes: vec![0, 1],
-                    make_public: true,
-                    grants: vec![],
-                },
             }],
         };
-        let steps = reconstruct_fhe_execute_steps(&execution, &[], &ctx())
-            .expect("walk");
-        let handle = match &steps[0].record {
+        let steps = reconstruct_fhe_execute(
+            &execution,
+            &[],
+            &ctx(),
+            &mut HashSet::new(),
+        )
+        .expect("walk");
+        let handle = match &steps.records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
         };
         assert_eq!(
-            steps[0].state_output,
-            Some(StateLeafOutput {
-                state_index: 3,
+            steps.store_outputs,
+            vec![StoreLeafOutput {
+                store_index: 3,
                 previous_leaf_count: 9,
                 handle,
                 allowed_keys: vec![[0xB1; 32], [0xB2; 32]],
                 make_public: true,
-            })
+            }]
         );
     }
 
     #[test]
-    fn transient_has_no_state_output() {
+    fn transient_has_no_store_output() {
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+
             returned_results: Vec::new(),
             account_count: 0,
             dictionary: vec![],
             steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7u8; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::Transient,
             }],
         };
-        let steps = reconstruct_fhe_execute_steps(&execution, &[], &ctx())
-            .expect("walk");
-        assert!(steps[0].state_output.is_none());
+        let steps = reconstruct_fhe_execute(
+            &execution,
+            &[],
+            &ctx(),
+            &mut HashSet::new(),
+        )
+        .expect("walk");
+        assert!(steps.store_outputs.is_empty());
     }
 
     #[test]
-    fn rejects_state_output_dictionary_overflow() {
+    fn rejects_store_output_dictionary_overflow() {
         let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![zama_host::FheExecuteEffect {
+                result: zama_host::ExecutionResultRef {
+                    step_index: 0,
+                    output_index: 0,
+                },
+                store_index: 0,
+                previous_leaf_count: 0,
+                slot: None,
+                allow_indexes: vec![1],
+                make_public: false,
+                grants: vec![],
+            }],
+
             returned_results: Vec::new(),
             account_count: 1,
             dictionary: vec![[0xA1; 32]],
             steps: vec![FheExecuteStep::TrivialEncrypt {
                 plaintext: [7u8; 32],
                 fhe_type: 5,
-                output: FheExecuteOutput::State {
-                    state_index: 0,
-                    previous_leaf_count: 0,
-                    slot: None,
-                    allow_indexes: vec![1],
-                    make_public: false,
-                    grants: vec![],
-                },
             }],
         };
-        assert!(
-            reconstruct_fhe_execute_steps(&execution, &[], &ctx()).is_none()
-        );
+        assert!(reconstruct_fhe_execute(
+            &execution,
+            &[],
+            &ctx(),
+            &mut HashSet::new()
+        )
+        .is_none());
     }
 }

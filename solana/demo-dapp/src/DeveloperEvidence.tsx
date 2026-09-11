@@ -15,7 +15,7 @@ import type { DemoController } from './useDemoController';
 type TransactionEvidence = {
   readonly label: string;
   readonly signature: Signature;
-  readonly slot: bigint;
+  readonly slot: bigint | null;
   readonly status: 'succeeded' | 'failed' | 'unavailable';
   readonly computeUnitsConsumed: bigint | null;
   readonly programIds: readonly Address[];
@@ -123,7 +123,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
           return true;
         });
         const transactionResults = await Promise.allSettled(
-          transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence | null> => {
+          transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence> => {
             const transaction = await rpc
               .getTransaction(signature, {
                 commitment: 'confirmed',
@@ -131,22 +131,25 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 maxSupportedTransactionVersion: 0,
               })
               .send();
-            if (transaction === null) return null;
             return {
               label,
               signature,
-              slot: transaction.slot,
+              slot: transaction?.slot ?? null,
               status:
-                transaction.meta === null ? 'unavailable' : transaction.meta.err === null ? 'succeeded' : 'failed',
-              computeUnitsConsumed: transaction.meta?.computeUnitsConsumed ?? null,
-              programIds: [...new Set(transaction.transaction.message.instructions.map(({ programId }) => programId))],
+                transaction === null || transaction.meta === null
+                  ? 'unavailable'
+                  : transaction.meta.err === null
+                    ? 'succeeded'
+                    : 'failed',
+              computeUnitsConsumed: transaction?.meta?.computeUnitsConsumed ?? null,
+              programIds: [...new Set(transaction?.transaction.message.instructions.map(({ programId }) => programId) ?? [])],
             } satisfies TransactionEvidence;
           }),
         );
         const transactionFailures = transactionResults.filter((result) => result.status === 'rejected').length;
         const nextTransactions = transactionResults
-          .flatMap((result) => (result.status === 'fulfilled' && result.value !== null ? [result.value] : []))
-          .sort((left, right) => (left.slot === right.slot ? 0 : left.slot > right.slot ? -1 : 1));
+          .flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+          .sort((left, right) => (left.slot === right.slot ? 0 : (left.slot ?? -1n) > (right.slot ?? -1n) ? -1 : 1));
         const [nextShares, nextUsdc] = await Promise.all([
           readOptionalBalanceEvidence(() =>
             readConfidentialBalanceEvidence(session, session.config.mints.payoutConfidential),
@@ -186,7 +189,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
       <summary>
         <span>
           <strong>Developer evidence</strong>
-          <small>Localnet transactions & encrypted state</small>
+          <small>Localnet transactions & encrypted store</small>
         </span>
       </summary>
       <div className="evidence-content">
@@ -241,9 +244,9 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                 </a>
               </div>
               <div>
-                <dt>Encrypted state</dt>
+                <dt>Encrypted store</dt>
                 <dd>
-                  <CopyValue label="encrypted state" value={shares.encryptedState} />
+                  <CopyValue label="encrypted store" value={shares.encryptedStore} />
                 </dd>
               </div>
             </>
@@ -274,8 +277,8 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                         ? 'Succeeded'
                         : transaction.status === 'failed'
                           ? 'Failed'
-                          : 'Status unavailable'}
-                      {' · '}slot {transaction.slot.toString()}
+                          : 'Unavailable from RPC'}
+                      {transaction.slot === null ? '' : ` · slot ${transaction.slot}`}
                       {transaction.computeUnitsConsumed === null
                         ? ''
                         : ` · ${transaction.computeUnitsConsumed.toLocaleString()} CU`}
@@ -285,12 +288,14 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                   <a href={explorerUrl(transaction.signature, session.config.rpcUrl)} target="_blank" rel="noreferrer">
                     Explorer
                   </a>
-                  <details>
-                    <summary>Top-level programs</summary>
-                    {transaction.programIds.map((programId) => (
-                      <CopyValue key={programId} label="program ID" value={programId} />
-                    ))}
-                  </details>
+                  {transaction.programIds.length > 0 && (
+                    <details>
+                      <summary>Top-level programs</summary>
+                      {transaction.programIds.map((programId) => (
+                        <CopyValue key={programId} label="program ID" value={programId} />
+                      ))}
+                    </details>
+                  )}
                 </li>
               ))}
             </ul>

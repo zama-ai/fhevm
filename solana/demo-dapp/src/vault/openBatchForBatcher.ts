@@ -1,3 +1,4 @@
+import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { TransactionSigner } from '@solana/kit';
 
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
@@ -6,6 +7,7 @@ import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddres
 import { batchAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
+  readonly fhe: SolanaFheTransactionAccounts;
   /** The batcher's immutable topology (from the demo-config projection). */
   readonly roots: VaultDemoRoots;
   /** Zero-based index of the batch to open. The first `open_batch` on a fresh batcher opens index 0. */
@@ -21,7 +23,7 @@ export type SolanaVaultOpenBatchForBatcherParameters = {
 /**
  * Opens one batch on a batcher from its {@link VaultDemoRoots} — the single call the demo seeder makes
  * per batcher. It derives every one of `open_batch`'s accounts (batch, the batch's join/payout
- * token accounts and their balance encrypted States, and the two
+ * token accounts and their balance encrypted stores, and the two
  * Anchor event authorities) from the roots and the batch index, assembles the settle lookup-table
  * address set, and delegates to {@link openBatch} for the create/extend instructions. The seeder never
  * hand-rolls these accounts; the risky derivation stays here on the tested SDK surface.
@@ -35,16 +37,17 @@ export async function openBatchForBatcher(
   const previousBatch = batchIndex === 0n ? undefined : await batchAddress(roots.batcher, batchIndex - 1n);
   return openBatch({
     openBatch: {
+      ...parameters.fhe,
       payer,
       batcher: roots.batcher,
       ...(previousBatch === undefined ? {} : { previousBatch }),
       batch: batch.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       batchJoinTokenAccount: batch.batchJoinTokenAccount,
-      batchJoinBalanceState: await tokenStateAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
+      batchJoinBalanceStore: await tokenStateAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
       payoutConfidentialMint: roots.payoutConfidentialMint,
       batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
-      batchPayoutBalanceState: batch.batchPayoutBalanceState,
+      batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       zamaEventAuthority: await zamaEventAuthorityAddress(),

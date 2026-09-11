@@ -99,7 +99,7 @@ impl Batch {
 }
 
 /// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned
-/// `EncryptedState` account at `joined_encrypted_state`: the user may decrypt their pending
+/// `EncryptedStore` account at `joined_encrypted_store`: the user may decrypt their pending
 /// amount, and the batch authority computes refunds and claims from it by signature.
 #[account]
 #[derive(InitSpace)]
@@ -165,8 +165,8 @@ pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
     Ok(u64::try_from(rate).unwrap_or(u64::MAX))
 }
 
-pub fn join_state_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StateId {
-    zama_fhe::StateId::new(crate::ID, record, batch.to_bytes())
+pub fn join_store_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StoreId {
+    zama_fhe::StoreId::new(crate::ID, record, batch.to_bytes())
 }
 
 pub fn joined_amount_key() -> [u8; 32] {

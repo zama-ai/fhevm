@@ -54,8 +54,10 @@ export type InitializeTokenAccountInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBalanceEncryptedState extends string | AccountMeta<string> = string,
+  TAccountBalanceEncryptedStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
@@ -74,12 +76,14 @@ export type InitializeTokenAccountInstruction<
       TAccountOwner extends string ? ReadonlyAccount<TAccountOwner> : TAccountOwner,
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
       TAccountTokenAccount extends string ? WritableAccount<TAccountTokenAccount> : TAccountTokenAccount,
-      TAccountBalanceEncryptedState extends string
-        ? WritableAccount<TAccountBalanceEncryptedState>
-        : TAccountBalanceEncryptedState,
+      TAccountBalanceEncryptedStore extends string
+        ? WritableAccount<TAccountBalanceEncryptedStore>
+        : TAccountBalanceEncryptedStore,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
@@ -125,8 +129,10 @@ export type InitializeTokenAccountAsyncInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountBalanceEncryptedState extends string = string,
+  TAccountBalanceEncryptedStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
@@ -145,8 +151,10 @@ export type InitializeTokenAccountAsyncInput<
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   tokenAccount?: Address<TAccountTokenAccount>;
-  balanceEncryptedState: Address<TAccountBalanceEncryptedState>;
+  balanceEncryptedStore: Address<TAccountBalanceEncryptedStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used to create the initial balance handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -172,8 +180,10 @@ export async function getInitializeTokenAccountInstructionAsync<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountBalanceEncryptedState extends string,
+  TAccountBalanceEncryptedStore extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
@@ -188,8 +198,10 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedState,
+    TAccountBalanceEncryptedStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -206,8 +218,10 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedState,
+    TAccountBalanceEncryptedStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -226,14 +240,16 @@ export async function getInitializeTokenAccountInstructionAsync<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    balanceEncryptedState: {
-      value: input.balanceEncryptedState ?? null,
+    balanceEncryptedStore: {
+      value: input.balanceEncryptedStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -269,8 +285,10 @@ export async function getInitializeTokenAccountInstructionAsync<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('balanceEncryptedState', accounts.balanceEncryptedState),
+      getAccountMeta('balanceEncryptedStore', accounts.balanceEncryptedStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -287,8 +305,10 @@ export async function getInitializeTokenAccountInstructionAsync<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedState,
+    TAccountBalanceEncryptedStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -304,8 +324,10 @@ export type InitializeTokenAccountInput<
   TAccountOwner extends string = string,
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountBalanceEncryptedState extends string = string,
+  TAccountBalanceEncryptedStore extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountSystemProgram extends string = string,
@@ -324,8 +346,10 @@ export type InitializeTokenAccountInput<
   /** Confidential mint this account belongs to. */
   mint: Address<TAccountMint>;
   tokenAccount: Address<TAccountTokenAccount>;
-  balanceEncryptedState: Address<TAccountBalanceEncryptedState>;
+  balanceEncryptedStore: Address<TAccountBalanceEncryptedStore>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program used to create the initial balance handle. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
@@ -351,8 +375,10 @@ export function getInitializeTokenAccountInstruction<
   TAccountOwner extends string,
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountBalanceEncryptedState extends string,
+  TAccountBalanceEncryptedStore extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountSystemProgram extends string,
@@ -367,8 +393,10 @@ export function getInitializeTokenAccountInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedState,
+    TAccountBalanceEncryptedStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -384,8 +412,10 @@ export function getInitializeTokenAccountInstruction<
   TAccountOwner,
   TAccountMint,
   TAccountTokenAccount,
-  TAccountBalanceEncryptedState,
+  TAccountBalanceEncryptedStore,
   TAccountZamaEventAuthority,
+  TAccountTransientStore,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountSystemProgram,
@@ -403,14 +433,16 @@ export function getInitializeTokenAccountInstruction<
     owner: { value: input.owner ?? null, isWritable: false },
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    balanceEncryptedState: {
-      value: input.balanceEncryptedState ?? null,
+    balanceEncryptedStore: {
+      value: input.balanceEncryptedStore ?? null,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
@@ -440,8 +472,10 @@ export function getInitializeTokenAccountInstruction<
       getAccountMeta('owner', accounts.owner),
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('balanceEncryptedState', accounts.balanceEncryptedState),
+      getAccountMeta('balanceEncryptedStore', accounts.balanceEncryptedStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('systemProgram', accounts.systemProgram),
@@ -458,8 +492,10 @@ export function getInitializeTokenAccountInstruction<
     TAccountOwner,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountBalanceEncryptedState,
+    TAccountBalanceEncryptedStore,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountSystemProgram,
@@ -486,26 +522,28 @@ export type ParsedInitializeTokenAccountInstruction<
     /** Confidential mint this account belongs to. */
     mint: TAccountMetas[2];
     tokenAccount: TAccountMetas[3];
-    balanceEncryptedState: TAccountMetas[4];
+    balanceEncryptedStore: TAccountMetas[4];
     zamaEventAuthority: TAccountMetas[5];
+    transientStore: TAccountMetas[6];
+    instructions: TAccountMetas[7];
     /** ZamaHost program used to create the initial balance handle. */
-    zamaProgram: TAccountMetas[6];
+    zamaProgram: TAccountMetas[8];
     /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[7];
+    hostConfig: TAccountMetas[9];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[8];
+    systemProgram: TAccountMetas[10];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
-    hcuBlockMeter?: TAccountMetas[9] | undefined;
+    hcuBlockMeter?: TAccountMetas[11] | undefined;
     /**
      * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
      * means the mint is metered.
      */
-    hcuTrustedAppRecord?: TAccountMetas[10] | undefined;
-    eventAuthority: TAccountMetas[11];
-    program: TAccountMetas[12];
+    hcuTrustedAppRecord?: TAccountMetas[12] | undefined;
+    eventAuthority: TAccountMetas[13];
+    program: TAccountMetas[14];
   };
   data: InitializeTokenAccountInstructionData;
 };
@@ -516,10 +554,10 @@ export function parseInitializeTokenAccountInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeTokenAccountInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 13) {
+  if (instruction.accounts.length < 15) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 13,
+      expectedAccountMetas: 15,
     });
   }
   let accountIndex = 0;
@@ -539,8 +577,10 @@ export function parseInitializeTokenAccountInstruction<
       owner: getNextAccount(),
       mint: getNextAccount(),
       tokenAccount: getNextAccount(),
-      balanceEncryptedState: getNextAccount(),
+      balanceEncryptedStore: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      transientStore: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       systemProgram: getNextAccount(),

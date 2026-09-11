@@ -1,4 +1,4 @@
-// The hand-rolled EncryptedState account decoder, pinned byte by byte.
+// The hand-rolled EncryptedStore account decoder, pinned byte by byte.
 //
 // There is no IDL to generate this from, so the layout lives in two places by construction: the
 // crate's struct and this decoder. What these tests pin is everything that keeps that duplication
@@ -10,12 +10,12 @@ import { describe, expect, it } from 'vitest';
 import { getProgramDerivedAddress, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 import {
-  SOLANA_ENCRYPTED_STATE_SEED,
-  decodeSolanaEncryptedState,
-  fetchSolanaEncryptedState,
-  solanaEncryptedStateAddress,
+  SOLANA_ENCRYPTED_STORE_SEED,
+  decodeSolanaEncryptedStore,
+  fetchSolanaEncryptedStore,
+  solanaEncryptedStoreAddress,
   type SolanaRpc,
-} from './encryptedState.js';
+} from './encryptedStore.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Account bytes, built the way the program writes them
@@ -23,8 +23,8 @@ import {
 
 const bytes32 = (fill: number): Uint8Array => new Uint8Array(32).fill(fill);
 
-/** `sha256("account:EncryptedState")[..8]` — the same pin the decoder matches. */
-const ENCRYPTED_VALUE_DISCRIMINATOR = new Uint8Array([40, 50, 14, 85, 213, 243, 124, 173]);
+/** `sha256("account:EncryptedStore")[..8]` — the same pin the decoder matches. */
+const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
 
 const u32LE = (value: number): Uint8Array => {
   const out = new Uint8Array(4);
@@ -57,7 +57,7 @@ function accountData(state: {
   const leafCount = state.leafCount ?? 3n;
   const peaks = state.peaks ?? [bytes32(0x71), bytes32(0x72)];
   return concat(
-    ENCRYPTED_VALUE_DISCRIMINATOR, // matched by the decoder before anything else
+    ENCRYPTED_STORE_DISCRIMINATOR, // matched by the decoder before anything else
     bytes32(0x11), // program
     bytes32(0x22), // encrypted value account authority
     bytes32(0x33), // scope
@@ -74,9 +74,9 @@ function accountData(state: {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('decoding an EncryptedState account', () => {
+describe('decoding an EncryptedStore account', () => {
   it('returns every field of a well-formed account', () => {
-    const state = decodeSolanaEncryptedState(accountData({}), 'the fixture account');
+    const state = decodeSolanaEncryptedStore(accountData({}), 'the fixture account');
 
     expect(state.program).toBe(base58.encode(bytes32(0x11)));
     expect(state.authority).toBe(base58.encode(bytes32(0x22)));
@@ -90,12 +90,12 @@ describe('decoding an EncryptedState account', () => {
   // The account realloc-grows and never shrinks: a shorter live value leaves stale capacity after
   // it, always in whole 32-byte vector elements.
   it('accepts trailing realloc capacity in whole 32-byte elements', () => {
-    const state = decodeSolanaEncryptedState(accountData({ trailingBytes: 64 }), 'the fixture account');
+    const state = decodeSolanaEncryptedStore(accountData({ trailingBytes: 64 }), 'the fixture account');
     expect(state.leafCount).toBe(3n);
   });
 
   it('rejects trailing capacity that is not whole elements — the layout has drifted', () => {
-    expect(() => decodeSolanaEncryptedState(accountData({ trailingBytes: 31 }), 'the fixture account')).toThrow(
+    expect(() => decodeSolanaEncryptedStore(accountData({ trailingBytes: 31 }), 'the fixture account')).toThrow(
       'drifted',
     );
   });
@@ -105,13 +105,13 @@ describe('decoding an EncryptedState account', () => {
   // shifted fields as if they were real.
   it('rejects a peak count that does not match the leaf count', () => {
     const data = accountData({ leafCount: 3n, peaks: [bytes32(0x71)] });
-    expect(() => decodeSolanaEncryptedState(data, 'the fixture account')).toThrow('drifted');
+    expect(() => decodeSolanaEncryptedStore(data, 'the fixture account')).toThrow('drifted');
   });
 
   it('rejects an account of another type by its discriminator', () => {
     const data = accountData({});
     data[0] = data[0]! ^ 0xff;
-    expect(() => decodeSolanaEncryptedState(data, 'the fixture account')).toThrow('discriminator');
+    expect(() => decodeSolanaEncryptedStore(data, 'the fixture account')).toThrow('discriminator');
   });
 });
 
@@ -126,14 +126,14 @@ describe('the account address', () => {
     };
     const [expected] = await getProgramDerivedAddress({
       programAddress: base58.encode(HOST_PROGRAM) as Address,
-      seeds: [SOLANA_ENCRYPTED_STATE_SEED, seeds.program, seeds.authority, seeds.scope],
+      seeds: [SOLANA_ENCRYPTED_STORE_SEED, seeds.program, seeds.authority, seeds.scope],
     });
-    expect(await solanaEncryptedStateAddress(HOST_PROGRAM, seeds)).toBe(expected);
-    expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STATE_SEED)).toBe('encrypted-state');
+    expect(await solanaEncryptedStoreAddress(HOST_PROGRAM, seeds)).toBe(expected);
+    expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STORE_SEED)).toBe('encrypted-state');
   });
 });
 
-describe('fetching an EncryptedState account', () => {
+describe('fetching an EncryptedStore account', () => {
   const HOST_PROGRAM = 'HostProgram1111111111111111111111111111111';
   const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 
@@ -164,7 +164,7 @@ describe('fetching an EncryptedState account', () => {
     } as unknown as SolanaRpc;
 
     await expect(
-      fetchSolanaEncryptedState(rpc, 'Missing111111111111111111111111111111111111' as never),
+      fetchSolanaEncryptedStore(rpc, 'Missing111111111111111111111111111111111111' as never),
     ).rejects.toThrow('Missing111111111111111111111111111111111111');
   });
 
@@ -173,7 +173,7 @@ describe('fetching an EncryptedState account', () => {
   // decoder as a phantom layout drift.
   it('refuses a foreign-owned account when the expected owner is pinned', async () => {
     await expect(
-      fetchSolanaEncryptedState(
+      fetchSolanaEncryptedStore(
         rpcWithAccount(SYSTEM_PROGRAM),
         'Dusted11111111111111111111111111111111111111' as never,
         undefined,
@@ -183,7 +183,7 @@ describe('fetching an EncryptedState account', () => {
   });
 
   it('decodes a host-owned account when the expected owner is pinned', async () => {
-    const state = await fetchSolanaEncryptedState(
+    const state = await fetchSolanaEncryptedStore(
       rpcWithAccount(HOST_PROGRAM),
       'Dusted11111111111111111111111111111111111111' as never,
       undefined,

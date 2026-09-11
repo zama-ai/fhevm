@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   createFhevmDecryptClient: vi.fn(),
   userDecrypt: vi.fn(),
   getAccountInfo: vi.fn(),
-  getEncryptedState: vi.fn(),
+  getEncryptedStore: vi.fn(),
   signPermit: vi.fn(),
   tokenAccountAddress: vi.fn(),
 }));
@@ -21,7 +21,7 @@ vi.mock('@fhevm/sdk/solana', () => ({
 }));
 vi.mock('./vault/index.js', () => ({
   tokenStateAddress: mocks.tokenStateAddress,
-  getEncryptedState: mocks.getEncryptedState,
+  getEncryptedStore: mocks.getEncryptedStore,
   tokenAccountAddress: mocks.tokenAccountAddress,
 }));
 
@@ -87,7 +87,7 @@ describe('confidential balance reveal evidence', () => {
     });
     mocks.tokenAccountAddress.mockResolvedValue('token-account');
     mocks.tokenStateAddress.mockResolvedValue('encrypted-value-account');
-    mocks.getEncryptedState.mockResolvedValue({
+    mocks.getEncryptedStore.mockResolvedValue({
       slots: [
         { key: new TextEncoder().encode('balance_________________________'), handle: new Uint8Array(32).fill(0x12) },
       ],
@@ -144,7 +144,7 @@ describe('confidential balance reveal evidence', () => {
     const [parameters] = mocks.userDecrypt.mock.calls[0] ?? [];
     expect(parameters).toMatchObject({
       session: PERMIT_SESSION,
-      entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedState: new Uint8Array(32) }],
+      entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedStore: new Uint8Array(32) }],
     });
   });
 

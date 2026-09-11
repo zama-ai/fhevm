@@ -9,7 +9,7 @@ import path from 'node:path';
 import { REPO_ROOT } from '../../src/layout';
 import { withDeploymentLock } from '../../../../solana/deploy/src/lock';
 import { programIdsFor } from '../../../../solana/deploy/src/program-profile';
-import { findHostConfigPda } from '../../src/solana/internal/generated/zamaHost/pdas/hostConfig';
+import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/hostConfig';
 import { validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
 

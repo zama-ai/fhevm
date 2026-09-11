@@ -176,7 +176,7 @@ fn pushes_from_empty(count: usize, elem_size: usize) -> (usize, usize) {
 /// Fixed accounts on the host's `fhe_execute` CPI account struct (payer through the event CPI
 /// program). The invoke-measurement test in `heap_budget` pins this against the real Anchor
 /// struct, so it cannot drift silently when the host's account list changes.
-pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = 9;
+pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = zama_host::FHE_EXECUTE_FIXED_ACCOUNTS;
 
 /// Heap bytes the crate's own invoke path requests *after* `build()`: the CPI account-meta and
 /// account-info tables (`invoke`), and `resolve_accounts`'s three right-sized tables. An exact

@@ -1,4 +1,4 @@
-import { encryptedStateHandle } from '@sdk-src/solana/encryptedState.js';
+import { encryptedStoreHandle } from '@sdk-src/solana/encryptedStore.js';
 import { BALANCE_KEY } from './vault/internal/tokenAccounts.js';
 import { createSolanaRpc, getAddressEncoder, type Address } from '@solana/kit';
 import {
@@ -7,7 +7,7 @@ import {
   setFhevmRuntimeConfig,
   type SolanaDecryptTrust,
 } from '@fhevm/sdk/solana';
-import { tokenStateAddress, getEncryptedState, tokenAccountAddress } from './vault/index.js';
+import { tokenStateAddress, getEncryptedStore, tokenAccountAddress } from './vault/index.js';
 
 import type { DemoSession } from './demoSession';
 import { permitSessionFor } from './permitCache';
@@ -21,7 +21,7 @@ export type RevealedBalance = {
 };
 
 export type ConfidentialBalanceEvidence = {
-  readonly encryptedState: string;
+  readonly encryptedStore: string;
   readonly handle: string;
   readonly tokenAccount: string;
 };
@@ -61,8 +61,8 @@ const revealConfidentialBalance = async (
   label: 'cShares' | 'cUSDC',
 ): Promise<RevealedBalance> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const encryptedState = await tokenStateAddress(mint, tokenAccount);
-  const state = await getEncryptedState(createSolanaRpc(session.config.rpcUrl), encryptedState, {
+  const encryptedStore = await tokenStateAddress(mint, tokenAccount);
+  const state = await getEncryptedStore(createSolanaRpc(session.config.rpcUrl), encryptedStore, {
     commitment: 'confirmed',
   });
   const encodeAddress = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
@@ -112,7 +112,7 @@ const revealConfidentialBalance = async (
   let responseAt: number | null = null;
   const [clearValue] = await client.userDecrypt({
     session: permit,
-    entries: [{ handle: encryptedStateHandle(state, BALANCE_KEY), encryptedState: encodeAddress(encryptedState) }],
+    entries: [{ handle: encryptedStoreHandle(state, BALANCE_KEY), encryptedStore: encodeAddress(encryptedStore) }],
     options: {
       timeout: 60_000,
       onProgress: (progress) => {
@@ -129,7 +129,7 @@ const revealConfidentialBalance = async (
   if (clearValue === undefined || typeof clearValue.value !== 'bigint') {
     throw new Error(`decrypted ${label} balance is not an integer`);
   }
-  const handle = handleHex(encryptedStateHandle(state, BALANCE_KEY));
+  const handle = handleHex(encryptedStoreHandle(state, BALANCE_KEY));
   const totalElapsedMs = Math.round(performance.now() - startedAt);
   if (jobId !== null && queuedAt !== null && responseAt !== null) {
     recordDecryptionEvidence(session, {
@@ -147,23 +147,23 @@ const revealConfidentialBalance = async (
 export const readClaimedSharesHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.payoutConfidential;
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const state = await getEncryptedState(
+  const state = await getEncryptedStore(
     createSolanaRpc(session.config.rpcUrl),
     await tokenStateAddress(mint, tokenAccount),
     { commitment: 'confirmed' },
   );
-  return handleHex(encryptedStateHandle(state, BALANCE_KEY));
+  return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
 
 export const readClaimedUsdcHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.joinConfidential;
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const state = await getEncryptedState(
+  const state = await getEncryptedStore(
     createSolanaRpc(session.config.rpcUrl),
     await tokenStateAddress(mint, tokenAccount),
     { commitment: 'confirmed' },
   );
-  return handleHex(encryptedStateHandle(state, BALANCE_KEY));
+  return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
 
 export const readConfidentialBalanceEvidence = async (
@@ -171,13 +171,13 @@ export const readConfidentialBalanceEvidence = async (
   mint: DemoSession['config']['mints']['joinConfidential'],
 ): Promise<ConfidentialBalanceEvidence> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const encryptedState = await tokenStateAddress(mint, tokenAccount);
-  const state = await getEncryptedState(createSolanaRpc(session.config.rpcUrl), encryptedState, {
+  const encryptedStore = await tokenStateAddress(mint, tokenAccount);
+  const state = await getEncryptedStore(createSolanaRpc(session.config.rpcUrl), encryptedStore, {
     commitment: 'confirmed',
   });
   return {
-    encryptedState,
-    handle: handleHex(encryptedStateHandle(state, BALANCE_KEY)),
+    encryptedStore,
+    handle: handleHex(encryptedStoreHandle(state, BALANCE_KEY)),
     tokenAccount,
   };
 };

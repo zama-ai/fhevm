@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use zama_host::{
     assert_binary_operand_types, assert_ternary_operand_types, assert_unary_operand_type,
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand,
-    FheExecuteOutput, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
 use zama_solana_test_kit::{binary_contract_tests, composite_contract_tests, unary_contract_tests};
@@ -43,7 +43,6 @@ fn run_binary(
         lhs: persistent(lhs_handle),
         rhs,
         output_fhe_type: output_type,
-        output: local_output(),
     }]);
     assert_eq!(
         evaluate(&execution, &inputs).unwrap(),
@@ -63,7 +62,6 @@ fn run_unary(
         op,
         operand: persistent(input_handle),
         output_fhe_type: output_type,
-        output: local_output(),
     }]);
     let inputs = HashMap::from([(
         input_handle,
@@ -85,7 +83,6 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
         if_true: persistent(true_handle),
         if_false: persistent(false_handle),
         output_fhe_type: fhe_type,
-        output: local_output(),
     }]);
     let inputs = HashMap::from([
         (control, typed(0, 1)),
@@ -102,7 +99,6 @@ fn run_trivial(fhe_type: u8, plaintext: u64, expected: u64) {
     let execution = args(vec![FheExecuteStep::TrivialEncrypt {
         plaintext: be(plaintext),
         fhe_type,
-        output: local_output(),
     }]);
     assert_eq!(
         evaluate(&execution, &ClearInputs::new()).unwrap(),
@@ -183,10 +179,7 @@ fn run_mul_div(
 }
 
 fn run_rand(fhe_type: u8) {
-    let execution = args(vec![FheExecuteStep::Rand {
-        fhe_type,
-        output: local_output(),
-    }]);
+    let execution = args(vec![FheExecuteStep::Rand { fhe_type }]);
     let first = evaluate(&execution, &ClearInputs::new()).unwrap();
     let second = evaluate(&execution, &ClearInputs::new()).unwrap();
     assert_eq!(first, second, "test random must be repeatable");
@@ -256,7 +249,6 @@ mod edges {
         let execution = args(vec![FheExecuteStep::TrivialEncrypt {
             plaintext: high_only,
             fhe_type: 0,
-            output: local_output(),
         }]);
         assert_eq!(
             evaluate(&execution, &ClearInputs::new()).unwrap(),
@@ -290,7 +282,6 @@ mod edges {
             if_true: persistent(if_true),
             if_false: persistent(if_false),
             output_fhe_type: 2,
-            output: local_output(),
         }]);
         let inputs = HashMap::from([
             (control, typed(0, 0)),
@@ -324,10 +315,7 @@ mod edges {
     #[test]
     fn rand_then_bounded_rand_preserves_deterministic_output_order() {
         let execution = args(vec![
-            FheExecuteStep::Rand {
-                fhe_type: 6,
-                output: local_output(),
-            },
+            FheExecuteStep::Rand { fhe_type: 6 },
             bounded_rand_step(be(16), 2),
         ]);
         let first = evaluate(&execution, &ClearInputs::new()).unwrap();
@@ -360,13 +348,11 @@ mod rejected {
                     op: FheUnaryOpCode::Not,
                     operand: persistent(u256),
                     output_fhe_type: 8,
-                    output: local_output(),
                 },
                 &|| FheExecuteStep::Unary {
                     op: FheUnaryOpCode::Cast,
                     operand: persistent(u256),
                     output_fhe_type: 2,
-                    output: local_output(),
                 },
                 &|| is_in_step(persistent(u160), vec![], 7),
             ];
@@ -487,7 +473,6 @@ mod rejected {
                 if_true: persistent(if_true),
                 if_false: persistent(if_false),
                 output_fhe_type: 2,
-                output: local_output(),
             }]);
             let inputs = HashMap::from([
                 (control, typed(0, 1)),
@@ -506,7 +491,6 @@ mod rejected {
                 if_true: persistent(missing_branch),
                 if_false: persistent(missing_branch),
                 output_fhe_type: 1,
-                output: local_output(),
             }]);
             expect_error(
                 execution,
@@ -523,7 +507,6 @@ mod rejected {
                 args(vec![FheExecuteStep::TrivialEncrypt {
                     plaintext: be(1),
                     fhe_type: 1,
-                    output: local_output(),
                 }]),
                 ClearInputs::new(),
                 "UnsupportedFheType",
@@ -653,10 +636,7 @@ mod rejected {
         #[test]
         fn rand_u160_type() {
             expect_error(
-                args(vec![FheExecuteStep::Rand {
-                    fhe_type: 7,
-                    output: local_output(),
-                }]),
+                args(vec![FheExecuteStep::Rand { fhe_type: 7 }]),
                 ClearInputs::new(),
                 "UnsupportedFheType",
             );
@@ -721,7 +701,6 @@ mod operand_sources {
                 op: FheUnaryOpCode::Not,
                 operand: FheExecuteOperand::EarlierStep { producer_index: 0 },
                 output_fhe_type: 2,
-                output: local_output(),
             },
         ]);
         assert_eq!(
@@ -743,7 +722,6 @@ mod operand_sources {
                 op: FheUnaryOpCode::Not,
                 operand: FheExecuteOperand::EarlierStep { producer_index },
                 output_fhe_type: 2,
-                output: local_output(),
             }]),
             ClearInputs::new(),
             "missing earlier local output",
@@ -899,16 +877,11 @@ fn binary(
         lhs,
         rhs,
         output_fhe_type,
-        output: local_output(),
     }
 }
 
 fn sum_step(operands: Vec<FheExecuteOperand>, fhe_type: u8) -> FheExecuteStep {
-    FheExecuteStep::Sum {
-        operands,
-        fhe_type,
-        output: local_output(),
-    }
+    FheExecuteStep::Sum { operands, fhe_type }
 }
 
 fn is_in_step(
@@ -920,7 +893,6 @@ fn is_in_step(
         value,
         set,
         fhe_type,
-        output: local_output(),
     }
 }
 
@@ -935,7 +907,6 @@ fn mul_div_step(
         factor2,
         divisor,
         output_fhe_type,
-        output: local_output(),
     }
 }
 
@@ -943,7 +914,6 @@ fn bounded_rand_step(upper_bound: [u8; 32], fhe_type: u8) -> FheExecuteStep {
     FheExecuteStep::RandBounded {
         upper_bound,
         fhe_type,
-        output: local_output(),
     }
 }
 
@@ -971,15 +941,13 @@ fn intern(bytes: [u8; 32]) -> u8 {
 
 fn args(steps: Vec<FheExecuteStep>) -> FheExecuteArgs {
     FheExecuteArgs {
+        execution_store_index: 0,
+        effects: vec![],
         returned_results: Vec::new(),
         account_count: 0,
         dictionary: INTERNED_DICTIONARY.with(|dictionary| dictionary.take()),
         steps,
     }
-}
-
-fn local_output() -> FheExecuteOutput {
-    FheExecuteOutput::Transient
 }
 
 fn scalar(value: [u8; 32]) -> FheExecuteOperand {
@@ -989,9 +957,9 @@ fn scalar(value: [u8; 32]) -> FheExecuteOperand {
 }
 
 fn persistent(handle: Handle) -> FheExecuteOperand {
-    FheExecuteOperand::StateSlot {
+    FheExecuteOperand::StoreSlot {
         handle_index: intern(handle),
-        state_index: 0,
+        store_index: 0,
         key_index: intern([0; 32]),
     }
 }
