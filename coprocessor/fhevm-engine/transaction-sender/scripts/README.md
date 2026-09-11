@@ -28,9 +28,10 @@ cargo test --release --locked -p transaction-sender --test gateway_retry_campaig
 cargo test --release --locked -p transaction-sender --test gateway_mixed_campaign_tests -- --ignored --nocapture
 ```
 
-The mixed-workload test currently fails its fairness assertion. This is an
-intentional acceptance gate exposing an unresolved runtime limitation; do not
-change it to an expected panic or count recovery after fault removal as a pass.
+The mixed-workload test requires healthy proofs to drain while selective faults
+remain active, with new arrivals and two sender restarts. It also requires
+repeated attempts of deferred proofs, preservation of all fields except retry
+scheduling, and recovery after removing faults. It is not an expected panic.
 
 For the actual OTLP capture, build `gateway_otlp_campaign_tests` with `--no-run`,
 set `GW_OTLP_TEST_EXECUTABLE` to its absolute executable path, install Python
