@@ -1,5 +1,7 @@
 # HTTP transaction sender: proof retry reliability test protocol
 
+Deployment prerequisites and observation steps: [HTTP rollout notes](transaction-sender-http-rollout.md).
+
 Recorded: 2026-09-11. Reviewed baseline: `8833a4f06` on v0.13.4.
 
 Status: candidate patch implemented; focused local checks
