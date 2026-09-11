@@ -1752,3 +1752,96 @@ async fn test_cross_chain_acl_partial_deny() {
 
     setup.shutdown().await;
 }
+
+/// Actual SDK HTTP handling against a real relayer and mock Gateway.
+/// Run explicitly; requires Bun and sdk/js-sdk dependencies installed.
+#[tokio::test]
+#[ignore = "extended SDK readiness campaign"]
+async fn test_campaign_sdk_deployed_readiness_window() {
+    let dir = TempDir::new().unwrap();
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_str(&std::fs::read_to_string("tests/relayer-test-config.yaml").unwrap())
+            .unwrap();
+    config["gateway"]["readiness_checker"]["gw_ciphertext_check"]["retry"]["max_attempts"] =
+        75.into();
+    config["gateway"]["readiness_checker"]["gw_ciphertext_check"]["retry"]["retry_interval_ms"] =
+        3000.into();
+    let config_path = dir.path().join("readiness.yaml");
+    std::fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    let setup = TestSetup::new_with_config_path(Some(config_path))
+        .await
+        .unwrap();
+    setup.fhevm_mock.set_readiness_failure();
+    let payload = helpers::create_user_decrypt_payload(
+        &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+        helpers::random_address(),
+        helpers::random_address(),
+    );
+    let payload_path = dir.path().join("payload.json");
+    std::fs::write(&payload_path, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let started = std::time::Instant::now();
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(360),
+        tokio::process::Command::new("bun")
+            .arg("tests/campaign/sdk-readiness.ts")
+            .arg(helpers::v2_user_decrypt_post_url(&setup))
+            .arg(payload_path)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("SDK readiness campaign exceeded 360 seconds")
+    .unwrap();
+    println!("SDK campaign: {}", String::from_utf8_lossy(&output.stdout));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(started.elapsed() >= std::time::Duration::from_secs(222));
+    setup.shutdown().await;
+}
+
+#[tokio::test]
+#[ignore = "extended readiness boundary campaign"]
+async fn test_campaign_readiness_final_attempt_and_fresh_request() {
+    for failures in [3, 4] {
+        let setup = TestSetup::new_with_fast_readiness().await.unwrap();
+        setup
+            .fhevm_mock
+            .set_readiness_success_after_n_failures(failures);
+        let user_address = helpers::random_address();
+        let payload = helpers::create_user_decrypt_payload(
+            &setup.settings.gateway.blockchain_rpc.chain_id.to_string(),
+            helpers::random_address(),
+            user_address,
+        );
+        setup.fhevm_mock.on_user_decrypt_success(
+            UserDecryptKind::Direct,
+            helpers::extract_ciphertext_handles_from_user_payload(&payload),
+            user_address,
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
+        let original = helpers::submit_request(&setup, &payload).await;
+        let (status, body) = helpers::poll_until_terminal(&setup, &original).await;
+        if failures == 3 {
+            assert_eq!(status, reqwest::StatusCode::OK);
+            assert_eq!(body.status, ApiResponseStatus::Succeeded);
+        } else {
+            assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(body.error.unwrap().label(), "readiness_check_timed_out");
+            let fresh = helpers::submit_request(&setup, &payload).await;
+            assert_ne!(
+                original, fresh,
+                "Terminal readiness failure must permit a fresh job"
+            );
+            let (status, body) = helpers::poll_until_terminal(&setup, &fresh).await;
+            assert_eq!(status, reqwest::StatusCode::OK);
+            assert_eq!(body.status, ApiResponseStatus::Succeeded);
+            let (status, body) = helpers::poll_until_terminal(&setup, &original).await;
+            assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(body.error.unwrap().label(), "readiness_check_timed_out");
+        }
+        setup.shutdown().await;
+    }
+}
