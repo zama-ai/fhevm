@@ -1,6 +1,6 @@
 # Solana PoC Design Decisions
 
-Last synced: 2026-09-10.
+Last synced: 2026-09-11.
 
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
 Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
@@ -2145,24 +2145,25 @@ does not check freeze. Redeem destination ownership is not required: the confide
 owner must sign, which is the theft check; `destination_usdc.owner == owner` was only a
 no-unwrap-to-third-party policy and is not enforced.
 
-What this freeze mirror does not reach (fhevm-internal#1981). The issuer's freeze acts on
-SPL token accounts, and the mirror reads the canonical associated token account of each owner. A
-confidential balance is not an SPL account, so two holders escape it:
+What this freeze mirror does not reach (fhevm-internal#1981). Transfer checks both owners' canonical
+underlying ATAs; burn checks the owner's ATA. Wrap and redeem check the SPL source and destination
+accounts they move. These account-level checks do not establish a durable restriction on a holder:
 
 - A holder who never held the underlying: funds arrive as a confidential transfer from a third party
   (an exchange paying out directly into the wrapped mint). No canonical ATA exists, absent reads as
-  not frozen, and the issuer has nothing to freeze.
+  not frozen, and there is no holder ATA for the issuer to freeze. The shared underlying vault
+  remains subject to its own freeze status.
 - A holder who wrapped their entire balance: the canonical ATA is empty, and the issuer freezes an
   empty account. Classic Token and Token-2022 both allow closing a frozen account with a zero
-  balance, so the holder closes it and recreates it unfrozen. The check only bites while the
-  holder keeps a balance on the ATA.
+  balance, so the holder can close it and recreate it unfrozen. The check rejects the frozen ATA
+  while it exists, including when its balance is zero; closure removes that restriction.
 
-This is the same account-level semantics the native tokens have: an SPL freeze never reached
-balances held in a program's own accounts either. What is new is that the wrapper is now such a
-program, holding balances the issuer cannot see or freeze. Closing that gap needs a wrapper-level
-freeze authority (a per-owner frozen flag on the confidential token account, settable by an
-authority the issuer holds or delegates), so the issuer and not Zama decides. That is launch work
-under fhevm-internal#1981, outside this PoC, and a product decision recorded there.
+The PoC retains these checks and their limitations. An issuer-authorized restriction on confidential
+holders is one proposed response in fhevm-internal#1981, not an adopted design. Before launch, product,
+compliance and the issuer must agree on the required behavior, authority authentication and rotation,
+and treatment of pending burns. Neither the host admin nor the wrapper creator is automatically the
+issuer. Host application-deny, pause and upgrade controls remain separate; these checks alone do not
+establish Zama's compliance responsibilities.
 
 Wrap credits use the same saturating `ge → select` pattern as burn debits (`tryIncrease` parity).
 The clamp is unreachable while wrap stays 1:1 with an SPL `u64` vault.
