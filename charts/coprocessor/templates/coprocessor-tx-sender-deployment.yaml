@@ -156,7 +156,7 @@ spec:
             {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
             {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayUrl }}
+            {{- with (.Values.txSender.config.gatewayUrl | default .Values.commonConfig.gatewayUrl) }}
             - name: GATEWAY_URL
               {{- if .value }}
               value: {{ .value | quote }}
