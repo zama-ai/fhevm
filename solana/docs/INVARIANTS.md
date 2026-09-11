@@ -392,7 +392,7 @@ both owners' canonical ATAs (`from_ata`/`to_ata`), burn checks the owner's ATA (
 and redeem check the SPL source and destination accounts they move. Redeem does not recheck the
 burner's ATA and may pay a third party. An uninitialized canonical ATA is treated as not frozen;
 an empty frozen ATA can be closed and recreated unfrozen. These are account-level checks, not a
-durable holder denylist; see DD-045 and fhevm-internal#1981 for the unresolved launch decision.
+persistent holder denylist; see DD-045 and fhevm-internal#1981 for the unresolved launch decision.
 Cancel-pending-burn has no issuer-freeze check. Token-2022 transfer-fee, transfer-hook,
 non-transferable, and confidential-transfer behavior cannot be inherited
 accidentally because those mint extensions fail closed under #56.
