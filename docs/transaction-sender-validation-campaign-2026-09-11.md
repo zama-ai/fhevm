@@ -227,3 +227,57 @@ It uses a mock Gateway and two attempts separated by 50 ms, asserting HTTP
 window. The first invocation omitted the integration-test feature and failed
 to compile the optional mock dependency; the corrected invocation passed.
 Artifact: `/tmp/fhevm-validation-locked/relayer-readiness-boundary.log`.
+
+## SDK readiness campaign continuation
+
+The actual SDK async-request source at `07fb05fb7` was executed with Bun 1.3.14
+against real relayer HTTP handlers and a mock Gateway. The app wrapper and
+cryptographic decryption are outside these focused tests.
+
+| Test | Result |
+| --- | --- |
+| Relayer v0.13.4, 75 attempts × 3 s, SDK defaults | Passed: 75 false readiness observations, one POST, 28 GETs, terminal 503 at 224.096 s |
+| Relayer v0.13.0 rollback, same SDK/config | Passed: 75 false readiness observations, one POST, 28 GETs, terminal 503 at 224.093 s |
+| SDK default Retry-After and one-second floor | 2/2 passed against a local HTTP fixture; each stops on 503 without another POST |
+| Final readiness attempt and fresh identical request after exhaustion | Passed in 6.20 s using four attempts at 250 ms: final-attempt success; after exhaustion a new job succeeds and the original stays failed |
+
+Both unscaled cases observe an additional three seconds after rejection with
+no further SDK requests. The HTTP count reflects this fixture's server ETA,
+not the incident's polling cadence. Rollback validation used a separate v0.13.0
+worktree and Cargo artifacts, adding only the test and runner; runtime source
+was unchanged. Logs are `sdk-relayer-readiness.log`,
+`sdk-relayer-rollback-readiness.log`, `sdk-polling.log` and
+`readiness-final-attempt.log` in `/tmp/fhevm-validation-locked/`. Commands and
+prerequisites are in `relayer/tests/campaign/README.md`.
+
+The real-stack e2e container initially had SDK 0.13.2-0. Installing with npm
+workspace discovery did not expose the requested package to the e2e suite;
+repeating with `--workspaces=false` installed and resolved exact SDK 0.13.2.
+The initial real-stack attempt failed during encryption-key fetch because
+the relayer was still starting after configuration reload. The harness restored
+the sender and original configuration, and now checks that the relayer accepts
+HTTP requests before starting. This initial failure is not a readiness result.
+
+The corrected real-stack public-decryption case **passed** (one case, 235.8 s).
+It used the HTTP sender already installed in the local stack, relayer image
+`ghcr.io/zama-ai/fhevm/relayer:8234edf` (v0.13.4), exact published SDK 0.13.2,
+and real local contracts/workers/KMS. The sender was paused before creating
+new ciphertexts, holding registration through the full readiness window.
+The SDK returned the expected readiness error at 224.131 s. After unpausing
+the sender, one explicit fresh call for the same ciphertext returned the
+correct boolean plaintext at 233.200 s, 9.069 s after the terminal observation.
+The watchdog reported three ciphertexts, zero divergence and zero stalled
+pending items. The original runtime configuration was restored and the sender
+was verified unpaused. Logs: `full-stack-readiness.log`, `full-stack-runner.log`;
+source hashes and image digest: `readiness-metadata.json`. No funded Gateway
+transactions were made in this continuation.
+
+Remaining boundaries: the full-stack case covers public decryption on v0.13.4
+with a fully paused sender, not user decryption or rollback full-stack behavior,
+and not selective RPC failure. Rollback/user-decryption coverage above is
+SDK-to-real-relayer with a mock Gateway. Application wrapper 3.5.1 automatic
+resubmission remains untested and is not inferred. Real-stack recovery before
+the final readiness check and repeated outage/restart races remain unrun.
+The known later-proof starvation failure remains unresolved. None of these
+results establish deferred nonce reconciliation safety or production-path
+mixed-contract capacity.
