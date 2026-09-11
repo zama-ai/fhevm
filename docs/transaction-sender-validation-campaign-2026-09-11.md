@@ -200,3 +200,30 @@ it reproduced the same fairness failure in 29.94 seconds, with all 50 proofs
 recovered after fault removal and later completions `[0, 0, 0]` during faults.
 Formatting with the pinned formatter, Python syntax checks, and diff whitespace
 checks passed. Harness usage is documented in the sender's `scripts/README.md`.
+
+## Deployed SDK/readiness clarification
+
+The deployment owner supplied `@zama-fhe/sdk@3.5.1` → `@fhevm/sdk@0.13.2`
+(commit `07fb05fb7`), relayer v0.13.4 and rollback v0.13.0. This resolves the
+version/configuration question above. Source comparison confirms that the
+SDK async-request implementation matches this branch, and that the readiness
+loop and example retry settings match all three relayer tags v0.13.0/.2/.4.
+The SDK throws on the relayer's terminal 503; its one-hour deadline does not
+retry that result. Approximately 225 seconds describes the relayer readiness
+budget, not an application retry limit (74 three-second sleeps plus RPC time).
+
+The prior input-proof expiry test covers a different state machine. The test
+protocol now includes section C for decryption readiness, the final-attempt
+race, actual SDK terminal-error behavior and explicit fresh calls after
+recovery, for both relayer versions. Those full-stack scenarios remain unrun;
+no automatic application resubmission guarantee is inferred from SDK polling.
+This clarification does not change the passing sender preservation results
+or resolve the observed selective-failure starvation gate.
+
+Focused readiness regression: `test_readiness_timeout_returns_503_with_correct_label`
+passed (1/1, 0.91 seconds) with Rust 1.91.1 and `--features integration-tests`.
+It uses a mock Gateway and two attempts separated by 50 ms, asserting HTTP
+503 and the exact readiness label. It does not exercise the SDK or the deployed
+window. The first invocation omitted the integration-test feature and failed
+to compile the optional mock dependency; the corrected invocation passed.
+Artifact: `/tmp/fhevm-validation-locked/relayer-readiness-boundary.log`.
