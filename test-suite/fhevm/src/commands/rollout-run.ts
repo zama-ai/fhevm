@@ -101,7 +101,6 @@ export type RolloutRunContext = {
   startDeferredGreen(): Promise<void>;
   /** Re-homes promoted Green as Blue and prepares a newer deferred Green fleet. */
   restagePromotedGreen(options: {
-    stackVersion: string;
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   }): Promise<void>;
@@ -455,7 +454,7 @@ export const createRolloutContext = (
     },
     async restagePromotedGreen(options) {
       await restageStackPromotedGreen(options);
-      await receipt.record("restage-green", `restaged promoted fleet before v${options.stackVersion}`, { docker: true });
+      await receipt.record("restage-green", "restaged promoted fleet before the next compiled release", { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;
