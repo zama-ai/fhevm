@@ -15,7 +15,6 @@ use kms_connector_api::{ErrorCode, ErrorResponse};
 use pingora::{
     Error, ErrorSource, ErrorType,
     http::{RequestHeader, ResponseHeader},
-    modules::http::HttpModules,
     prelude::HttpPeer,
     proxy::{FailToProxy, ProxyHttp, Session},
 };
@@ -98,9 +97,6 @@ impl ProxyHttp for Proxy {
             body_bytes: 0,
         }
     }
-
-    // No downstream module: in particular no response compression, bodies must stay untouched.
-    fn init_downstream_modules(&self, _modules: &mut HttpModules) {}
 
     async fn early_request_filter(
         &self,
