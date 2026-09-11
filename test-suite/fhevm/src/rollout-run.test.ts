@@ -89,8 +89,8 @@ const fakeContext = () => {
     async startDeferredGreen() {
       calls.push("start-green");
     },
-    async restagePromotedGreen(options) {
-      calls.push(`restage-green:${options.stackVersion}`);
+    async restagePromotedGreen() {
+      calls.push("restage-green");
     },
     async resolveVersionLock(name, options) {
       calls.push(`resolve-lock:${name}:${options.versions.CORE_VERSION ?? ""}`);
