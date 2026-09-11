@@ -387,13 +387,13 @@ accounts. Classic Token and extension-free Token-2022 are supported.
 Token-2022 mint extensions are rejected unless explicitly allowlisted;
 today none are allowlisted. Token accounts allow only `ImmutableOwner`.
 
-**57. [HOLDS]** Frozen underlying token accounts cannot wrap, confidential-transfer, burn, or
-redeem. Transfer checks both owners' associated token accounts (`from_ata`/`to_ata`); burn
-checks the burner's (`owner_ata`). Uninitialized at that ATA address is treated as not frozen,
-so the mirror does not reach a holder with no canonical ATA (funded by confidential transfer
-only) or one who closed and recreated an empty frozen ATA; see DD-045 and fhevm-internal#1981.
-Wrap and redeem keep checking the
-accounts they actually move. Cancel-pending-burn is not freeze-gated. Token-2022 transfer-fee, transfer-hook,
+**57. [HOLDS]** Each token operation rejects a frozen underlying account that it checks: transfer checks
+both owners' canonical ATAs (`from_ata`/`to_ata`), burn checks the owner's ATA (`owner_ata`), and wrap
+and redeem check the SPL source and destination accounts they move. Redeem does not recheck the
+burner's ATA and may pay a third party. An uninitialized canonical ATA is treated as not frozen;
+an empty frozen ATA can be closed and recreated unfrozen. These are account-level checks, not a
+durable holder denylist; see DD-045 and fhevm-internal#1981 for the unresolved launch decision.
+Cancel-pending-burn has no issuer-freeze check. Token-2022 transfer-fee, transfer-hook,
 non-transferable, and confidential-transfer behavior cannot be inherited
 accidentally because those mint extensions fail closed under #56.
 
