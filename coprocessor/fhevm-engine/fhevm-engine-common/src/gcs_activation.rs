@@ -85,12 +85,10 @@ fn gw_gate_value(
     gw_start_block: Option<i64>,
     current: i64,
 ) -> i64 {
-    if gw_dry_run_started {
-        gw_start_block.unwrap_or(current)
-    } else if state == "UpgradeAuthorized" || state == "LIVE" {
-        current
-    } else {
-        GCS_NOT_ACTIVATED
+    match state {
+        "DryRunStarted" if gw_dry_run_started => gw_start_block.unwrap_or(current),
+        "UpgradeAuthorized" | "LIVE" => current,
+        _ => GCS_NOT_ACTIVATED,
     }
 }
 
@@ -269,6 +267,10 @@ mod tests {
         assert_eq!(
             gw_gate_value("DryRunStarted", true, Some(200), GCS_NOT_ACTIVATED),
             200
+        );
+        assert_eq!(
+            gw_gate_value("LIVE", true, Some(100), GCS_NOT_ACTIVATED),
+            GCS_NOT_ACTIVATED
         );
         assert_eq!(gw_gate_value("LIVE", true, Some(200), 200), 200);
         assert_eq!(

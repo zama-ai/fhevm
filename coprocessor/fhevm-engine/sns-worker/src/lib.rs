@@ -12,6 +12,7 @@ pub use crate::s3_migration::{S3MigrationMode, DEFAULT_S3_MIGRATION_MAX_RETRIES}
 mod tests;
 
 use std::{
+    num::NonZeroUsize,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, AtomicI64, Ordering},
@@ -54,6 +55,7 @@ use tracing::{error, info, warn, Level};
 use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
+    keyset::fetch_latest_keyset,
     metrics::spawn_gauge_update_routine,
     s3_migration::{run_startup_migrations, S3MigrationConfig},
     s3_migration_dry_run::run_startup_migration_dry_run,
@@ -698,11 +700,15 @@ pub async fn run_all(
         });
     }
 
-    // GCS gating: spawn the activation watcher and pause until it observes
-    // `upgrade_state.start_block` for stack_role='GCS'. In BCS mode this is
-    // a no-op — the loop falls through immediately.
+    // GCS gating: preload the key, then pause until the activation watcher
+    // observes `upgrade_state.start_block` for stack_role='GCS'.
     let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
+    let keys_cache = Arc::new(RwLock::new(lru::LruCache::new(
+        NonZeroUsize::new(10).unwrap(),
+    )));
     if conf.gcs_mode {
+        let _ = fetch_latest_keyset(&keys_cache, &pool_mngr.pool()).await?;
+
         let watcher_pool = pool_mngr.pool();
         let watcher_state = start_block_state.clone();
         spawn(async move {
@@ -774,6 +780,7 @@ pub async fn run_all(
             events_tx.clone(),
             stack_mode.clone(),
             start_block_state.clone(),
+            keys_cache,
         )
         .await?,
     );

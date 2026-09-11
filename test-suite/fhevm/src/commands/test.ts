@@ -991,7 +991,10 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
  */
 const runBlueGreenProfile = async (
   state: State,
-  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  options: Pick<
+    TestOptions,
+    "blueGreenPredecessorVersion" | "blueGreenProposalId" | "network" | "noHardhatCompile"
+  >,
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1003,6 +1006,9 @@ const runBlueGreenProfile = async (
   // The proposal names the release the GCS image was built as.
   const gcsStackVersion = await gcsBinaryRelease();
   const gcsVersionLive = gcsStackVersion;
+  const predecessorVersion = options.blueGreenPredecessorVersion ?? "v0.14";
+  const proposalId = options.blueGreenProposalId ?? "2";
+  const failedProposalId = (BigInt(proposalId) - 1n).toString();
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
@@ -1026,12 +1032,25 @@ const runBlueGreenProfile = async (
   console.log(`\n[1/11] verify initial state`);
   for (const db of operatorDatabases) {
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
+    if (version !== predecessorVersion) {
+      throw new Error(`${db}.versioning = "${version}", expected "${predecessorVersion}" (prior test residue?)`);
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
-      throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
+      const reusable = options.blueGreenPredecessorVersion
+        ? await psqlQuery(
+            db,
+            `SELECT CASE
+               WHEN BOOL_AND(stack_role = 'GCS' AND state = 'LIVE' AND status = 'completed'
+                             AND version = (SELECT stack_version FROM versioning WHERE singleton = TRUE))
+               THEN 'yes' ELSE 'no'
+             END
+               FROM upgrade_state;`,
+          )
+        : "no";
+      if (reusable !== "yes") {
+        throw new Error(`${db}.upgrade_state has ${rows} non-reusable rows (prior test residue?)`);
+      }
     }
     const schema = await psqlQuery(
       db,
@@ -1041,7 +1060,9 @@ const runBlueGreenProfile = async (
       throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
-  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  console.log(
+    `OK:   ${opCount} DB(s) at ${predecessorVersion}, reusable upgrade_state, gcs-${gcsStackVersion} schema present`,
+  );
 
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
 
@@ -1108,17 +1129,18 @@ const runBlueGreenProfile = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 60s --buffer 10s ' +
-      '--proposal-id 1 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      '--proposal-id "$PROPOSE_ID" --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
         LOCAL_HOST_CHAINS: localHostChains,
         PROPOSE_START_TIME: failStartTime,
         PROPOSE_SW_VERSION: gcsVersionLive,
+        PROPOSE_ID: failedProposalId,
       },
     },
   );
-  console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
+  console.log(`OK:   activation emitted via task (proposalId=${failedProposalId}, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1184,8 +1206,10 @@ const runBlueGreenProfile = async (
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    if (version !== predecessorVersion) {
+      throw new Error(
+        `${db}.versioning = "${version}" after failed upgrade, expected "${predecessorVersion}"`,
+      );
     }
     const schema = await psqlQuery(
       db,
@@ -1202,7 +1226,9 @@ const runBlueGreenProfile = async (
     if (residue !== "0") {
       throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
     }
-    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+    console.log(
+      `OK:   ${db}  PAUSED/failed, latches cleared, ${predecessorVersion} kept, gcs schema recreated empty`,
+    );
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
@@ -1247,17 +1273,18 @@ const runBlueGreenProfile = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      '--proposal-id "$PROPOSE_ID" --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
         LOCAL_HOST_CHAINS: localHostChains,
         PROPOSE_START_TIME: proposeStartTime,
         PROPOSE_SW_VERSION: gcsVersionLive,
+        PROPOSE_ID: proposalId,
       },
     },
   );
-  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(`OK:   activation emitted via task (proposalId=${proposalId}, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {

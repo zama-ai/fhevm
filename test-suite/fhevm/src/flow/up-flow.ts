@@ -2163,6 +2163,98 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
   }
 };
 
+export type RestageDeferredGreenOptions = {
+  env?: Record<string, string>;
+  args?: Record<string, string[]>;
+};
+
+/** Re-homes promoted Green as Blue, preserving its images and databases, then stages the next Green. */
+export const restagePromotedGreen = async (
+  options: RestageDeferredGreenOptions,
+  operations: DeferredGreenOperations = deferredGreenOperations,
+) => {
+  const state = await operations.loadState();
+  if (!state || state.scenario.kind !== "blue-green" || state.scenario.gcs.deferredStart) {
+    throw new PreflightError("restagePromotedGreen requires a started Green fleet in a Blue-Green scenario");
+  }
+  if (state.scenario.gcs.source.mode !== "registry") {
+    throw new PreflightError("restagePromotedGreen requires pinned predecessor images");
+  }
+
+  const scenario = state.scenario;
+  const promotedSource = { ...state.scenario.gcs.source };
+  const promotedBlue = {
+    source: promotedSource,
+    env: scenario.gcs.env,
+    args: scenario.gcs.args,
+  };
+  const transitionState: State = {
+    ...state,
+    scenario: {
+      ...scenario,
+      bcs: promotedBlue,
+      gcs: { ...scenario.gcs, deferredStart: true },
+    },
+  };
+  const blueServices = blueGreenServiceNames(transitionState, { includeMigration: false });
+  const oldBlueServices = blueGreenServiceNames(state, { includeMigration: false, includeDeferredGreen: true })
+    .filter((service) => !service.includes("-gcs-"));
+  const promotedGreenServices = blueGreenServiceNames(state, {
+    includeMigration: false,
+    includeDeferredGreen: true,
+  }).filter((service) => service.includes("-gcs-"));
+  const extraBlueByChain = extraHostChains(transitionState).map((chain) => ({
+    chain,
+    services: listenerContainersForChain(transitionState, chain.key),
+  }));
+  const extraPromotedGreen = extraHostChains(state).flatMap((chain) =>
+    listenerContainersForChain(state, chain.key).map((service) =>
+      service.replace(/^(coprocessor\d*)-/, "$1-gcs-"),
+    ),
+  );
+
+  try {
+    await operations.removeContainers(oldBlueServices);
+    await operations.generateRuntime(transitionState, stackSpecForState(transitionState));
+    await operations.composeUp("coprocessor", blueServices, { noDeps: true });
+    await operations.waitForCoprocessorServices(transitionState, true);
+    for (const { chain, services } of extraBlueByChain) {
+      await operations.multiChainComposeUp(coprocessorHostKey(chain.key), services);
+      for (const service of services) {
+        await operations.waitForContainer(service, "running");
+      }
+    }
+    await operations.postBootHealthGate([...blueServices, ...extraBlueByChain.flatMap(({ services }) => services)]);
+  } catch (error) {
+    await operations.removeContainers(blueServices);
+    await operations.generateRuntime(state, stackSpecForState(state));
+    throw error;
+  }
+
+  const nextState: State = {
+    ...transitionState,
+    scenario: {
+      ...scenario,
+      bcs: promotedBlue,
+      gcs: {
+        source: { mode: "local" },
+        deferredStart: true,
+        env: options.env ?? {},
+        args: options.args ?? {},
+      },
+    },
+  };
+  try {
+    await operations.generateRuntime(nextState, stackSpecForState(nextState));
+    await operations.saveState(nextState);
+  } catch (error) {
+    await operations.removeContainers(blueServices);
+    await operations.generateRuntime(state, stackSpecForState(state));
+    throw error;
+  }
+  await operations.removeContainers([...promotedGreenServices, ...extraPromotedGreen]);
+};
+
 type ThresholdKmsNodeUpgradeOperations = {
   composeUp: typeof composeUp;
   ensureRuntimeArtifacts: typeof ensureRuntimeArtifacts;
