@@ -53,7 +53,7 @@ enum Transport {
 }
 
 impl Transport {
-    /// Strict: an unrecognised value panics rather than silently defaulting.
+    /// Strict: an unrecognized value panics rather than silently defaulting.
     /// A silent default here mislabelled a whole arm of an earlier comparison.
     fn from_env() -> Self {
         let raw = std::env::var("GW_TRANSPORT").unwrap_or_else(|_| "https".into());
@@ -79,7 +79,6 @@ struct Secrets {
     /// Every (address, key) pair in the file, in order. The first is the
     /// primary account used by single-account runs.
     accounts: Vec<(Address, String)>,
-    recipient: Option<Address>,
 }
 
 impl Secrets {
@@ -92,12 +91,6 @@ impl Secrets {
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("no http(s) Gateway URL available"))?,
         })
-    }
-    fn address(&self) -> Address {
-        self.accounts[0].0
-    }
-    fn pkey(&self) -> &str {
-        &self.accounts[0].1
     }
 }
 
@@ -114,7 +107,6 @@ fn load_secrets() -> anyhow::Result<Secrets> {
 
     let mut wss = None;
     let mut https = None;
-    let mut recipient = None;
     // Address/Pkey lines come in pairs, possibly repeated for extra accounts.
     let mut pending_address: Option<Address> = None;
     let mut accounts: Vec<(Address, String)> = Vec::new();
@@ -159,7 +151,6 @@ fn load_secrets() -> anyhow::Result<Secrets> {
                     .ok_or_else(|| anyhow::anyhow!("a Pkey line has no preceding Address line"))?;
                 accounts.push((a, value.to_string()));
             }
-            "recipient" | "gw_recipient" => recipient = Some(Address::from_str(value)?),
             _ => {}
         }
     }
@@ -176,7 +167,6 @@ fn load_secrets() -> anyhow::Result<Secrets> {
         // driver probes it at startup and records that it was derived, not given.
         https: https.or_else(|| wss.map(|u| u.replacen("wss://", "https://", 1))),
         accounts,
-        recipient,
     })
 }
 
@@ -193,7 +183,7 @@ fn old_redacted_endpoint(url: &str) -> String {
             let host = rest.split(['/', '?']).next().unwrap_or("");
             format!("{scheme}://{host}/<redacted>")
         }
-        None => "<unparseable>".to_string(),
+        None => "<unparsable>".to_string(),
     }
 }
 
@@ -299,7 +289,7 @@ fn pct(sorted: &[f64], p: f64) -> f64 {
     sorted[idx]
 }
 
-fn summarise(label: &str, mut v: Vec<f64>) {
+fn summarize(label: &str, mut v: Vec<f64>) {
     if v.is_empty() {
         println!("  {label:<26}: no samples");
         return;
@@ -765,13 +755,13 @@ async fn run_campaign() -> anyhow::Result<()> {
 (sampled {} in-window)",
             tx_ms.len()
         );
-        summarise("  per-tx total", tx_ms.clone());
-        summarise(
+        summarize("  per-tx total", tx_ms.clone());
+        summarize(
             "  gas estimate",
             samples.estimate_ms.lock().unwrap().clone(),
         );
         if !pool_mode {
-            summarise(
+            summarize(
                 "  batch wall time",
                 samples.batch_ms.lock().unwrap().clone(),
             );
