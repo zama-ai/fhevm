@@ -297,6 +297,18 @@ client polling does not justify deleting unfinished proofs.
 
 ### C. Incident-specific decryption acceptance matrix
 
+Focused execution results are recorded in
+[the campaign log](transaction-sender-validation-campaign-2026-09-11.md#sdk-readiness-campaign-continuation).
+The actual SDK request implementation reached terminal readiness 503 at about
+224 seconds against both relayer versions with mocked Gateway readiness.
+Polling-default/floor and shortened final-attempt/fresh-request controls passed.
+The separate real-stack public-decryption case passed on v0.13.4 with SDK
+0.13.2: readiness expiry at 224.131 seconds, followed by correct plaintext
+from one explicit fresh call after sender recovery at 233.200 seconds.
+This does not establish automatic application-wrapper retries, full-stack
+user decryption, or full-stack rollback behavior.
+
+
 Run with the specified SDK version against relayer v0.13.4, then repeat on
 v0.13.0. Record application wrapper version, resolved SDK package integrity,
 relayer image digest and effective runtime retry configuration. Use real
