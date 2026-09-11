@@ -170,6 +170,76 @@ auditing, partial failures/fairness, repeated restart and mixed-operation cases,
 and actual client/relayer expiry and retry behavior. Unit classification of a
 fault is not equivalent to end-to-end validation of that fault.
 
+## Review follow-up: startup errors and credential-safe diagnostics
+
+The reviewer follow-up keeps the public `get_chain_id` API fallible: an invalid
+URL scheme returns an error rather than panicking or retrying forever. All
+callers propagate the result. The former `client_policy_is_bounded` assertion
+was removed because comparing two duration literals did not exercise the client.
+URL rejection tests now include credential markers and the public startup probe.
+The binary parses its Gateway URL after clap so malformed-URL errors cannot echo
+the supplied credential-bearing argument.
+
+Both legacy provider reconnect flags remain accepted. The review corrects the
+documentation: startup probing uses `graceful_shutdown_timeout` as its interval
+in this branch, as it did before the transport switch; `provider_retry_interval`
+does not control it. This follow-up does not change that startup timing.
+
+`diagnostics::safe_rpc_error` emits fixed error categories, HTTP/RPC codes, and a
+small allowlist of known messages. It never formats arbitrary Gateway response
+bodies, RPC data, custom error strings, or local-signing error details. This
+protects against bare tokens echoed by an upstream as well as full URLs.
+`safe_error` locates typed RPC/reqwest failures inside error chains before
+formatting them; other non-Gateway diagnostics retain their existing text.
+Original error objects still drive retry classification, contract error decoding,
+and BackendGone handling. Sanitization changes presentation, not those decisions.
+
+Safe diagnostics are used for startup probes, operation failures, both proof and
+ciphertext error columns, health responses, and final process-error output.
+The sender's logging setup additionally disables Alloy/HTTP/TLS dependency events
+and spans that independently expose URLs or response bodies, at all log levels.
+The filter is global to both JSON logging and OTLP. Application logs and metrics
+remain available. Shared tracing initialization retains its existing default
+behavior for other services; only the sender opts into this filter. Library
+consumers supplying their own tracing subscriber must apply the same filter if
+they enable dependency diagnostics.
+
+This prevents new sender diagnostic leaks. It does not rewrite previously
+persisted error strings or purge historical logs in external stores. Historical
+cleanup must target the actual deployment stores; URL-only substitution is not
+sufficient if old response bodies contain bare tokens.
+
+Additional focused validation:
+
+- Unit cases cover credential-bearing HTTP errors, custom/local errors, RPC
+  messages/data, malformed JSON, and anyhow contexts, retaining original types.
+- Binary startup tests inspect stdout/stderr for malformed and unsupported
+  credential-bearing URLs.
+- `gateway_diagnostics_tests` uses real providers and PostgreSQL, captures logs
+  with TRACE enabled, and injects URLs containing user/password/path/query
+  markers plus an independent bare token. HTTP 400, HTTP 429, RPC errors, and
+  malformed JSON exercise both limited and unlimited database-write paths. It
+  also checks startup-probe and health diagnostics.
+- Re-run the classifier and proof-preservation/recovery regressions to ensure
+  sanitizing diagnostics does not change recovery behavior.
+
+Local validation on 2026-09-11 passed all 18 targeted tests: 6 library tests,
+7 HTTP/startup tests, 1 database/log privacy integration test, and 4 proof
+preservation/recovery tests. A separate binary smoke check at TRACE with a
+credential-bearing unreachable HTTP endpoint also passed without leaking markers.
+Changed Rust files pass formatting checks; the workspace-wide formatting check
+reports pre-existing differences in generated Gateway bindings.
+
+Deployed JSON-log and OTLP-export inspection with synthetic credential markers
+remains part of the campaign; do not use real credentials as assertion output or
+fault-response fixtures.
+
+```sh
+cargo test --release --locked -p transaction-sender --lib \
+  --test https_transport_tests --test gateway_diagnostics_tests \
+  --test verify_proof_transport_tests
+```
+
 ## Scope and acceptance contracts
 
 On the unfixed baseline, issue 1 is proof retry-budget exhaustion during Gateway infrastructure failures.
