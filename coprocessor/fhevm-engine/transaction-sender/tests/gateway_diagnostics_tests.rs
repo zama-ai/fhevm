@@ -134,7 +134,8 @@ async fn gateway_credentials_stay_out_of_logs_health_and_database() -> anyhow::R
         (
             200,
             format!("<html>{echoed}</html>"),
-            "invalid JSON response",
+            // Unreadable responses preserve the prior proof error and budget.
+            "JSON-RPC error -32000",
             "invalid JSON response",
         ),
     ];

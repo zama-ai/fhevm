@@ -12,6 +12,10 @@ use thiserror::Error;
 /// loop so its normal backoff (or BackendGone shutdown) still applies.
 pub(crate) fn is_transient_gateway_error(err: &RpcError<TransportErrorKind>) -> bool {
     match err {
+        // HTML maintenance pages, empty bodies and malformed JSON provide no
+        // evidence that the proof is invalid. Preserve work with scheduling
+        // delay even when an intermediary returned HTTP 200.
+        RpcError::DeserError { .. } => true,
         RpcError::Transport(TransportErrorKind::BackendGone)
         | RpcError::Transport(TransportErrorKind::MissingBatchResponse(_)) => true,
         RpcError::Transport(TransportErrorKind::HttpError(err)) => {

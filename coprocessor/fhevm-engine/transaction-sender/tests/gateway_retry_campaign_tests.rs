@@ -34,6 +34,15 @@ use transaction_sender::{
 #[case::estimate_504("eth_estimateGas", Fault::HttpError(504), true, true, 0)]
 #[case::nonce_504("eth_getTransactionCount", Fault::HttpError(504), true, true, 0)]
 #[case::send_504("eth_sendRawTransactionSync", Fault::HttpError(504), true, false, 0)]
+#[case::unreadable_estimate_html("eth_estimateGas", Fault::RawResponse { status: 200, body: "<html>maintenance GW_BARE_SECRET</html>".into() }, true, true, 0)]
+#[case::unreadable_estimate_empty("eth_estimateGas", Fault::RawResponse { status: 200, body: "".into() }, true, true, 0)]
+#[case::unreadable_estimate_malformed("eth_estimateGas", Fault::RawResponse { status: 200, body: "{invalid GW_BARE_SECRET".into() }, true, true, 0)]
+#[case::unreadable_nonce_html("eth_getTransactionCount", Fault::RawResponse { status: 200, body: "<html>maintenance GW_BARE_SECRET</html>".into() }, true, true, 0)]
+#[case::unreadable_nonce_empty("eth_getTransactionCount", Fault::RawResponse { status: 200, body: "".into() }, true, true, 0)]
+#[case::unreadable_nonce_malformed("eth_getTransactionCount", Fault::RawResponse { status: 200, body: "{invalid GW_BARE_SECRET".into() }, true, true, 0)]
+#[case::unreadable_send_html("eth_sendRawTransactionSync", Fault::RawResponse { status: 200, body: "<html>maintenance GW_BARE_SECRET</html>".into() }, true, true, 0)]
+#[case::unreadable_send_empty("eth_sendRawTransactionSync", Fault::RawResponse { status: 200, body: "".into() }, true, true, 0)]
+#[case::unreadable_send_malformed("eth_sendRawTransactionSync", Fault::RawResponse { status: 200, body: "{invalid GW_BARE_SECRET".into() }, true, true, 0)]
 #[case::long_outage_true("eth_sendRawTransactionSync", Fault::HttpError(503), true, true, 300)]
 #[case::long_outage_false("eth_sendRawTransactionSync", Fault::HttpError(503), false, true, 300)]
 #[case::estimate_never_answers(
@@ -153,8 +162,8 @@ async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    // Four attempts require 1 + 2 + 4 seconds of backoff, even for
-    // immediate failures. A success/continue busy loop must fail this check.
+    // Retain the original minimum backoff bound; per-proof cooldown may
+    // increase it. An immediate retry loop must fail this check.
     assert!(started.elapsed() >= Duration::from_secs(7));
     let audit_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM campaign_proof_audit
