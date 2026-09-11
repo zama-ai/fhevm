@@ -1,4 +1,4 @@
-use super::common::try_extract_non_retryable_config_error;
+use super::common::{is_transient_gateway_error, try_extract_non_retryable_config_error};
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -191,6 +191,16 @@ where
                     )
                     .await?;
                     return Ok(());
+                } else if is_transient_gateway_error(&e) {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        error = %e,
+                        "Gateway temporarily unavailable; preserving proof retry budget"
+                    );
+                    // Preserve eligibility, including at max_retries - 1.
+                    // Returning Err is essential: it invokes operation backoff.
+                    return Err(anyhow::Error::new(e));
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
