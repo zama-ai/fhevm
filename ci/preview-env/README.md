@@ -276,7 +276,12 @@ The two host chains are the real public testnets, so this is the only preview sh
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on
-  ECONNREFUSED to `relayer:3000` and reads as a product regression.
+  ECONNREFUSED to `relayer:3000` and reads as a product regression. That wait needs the
+  `readinessProbe` on `/v2/keyurl` in `relayer/values-relayer-e2e.yaml`: with no probe a
+  pod counts as Ready the moment the container starts, so the rollout returns while the
+  relayer is still crash-looping. `/v2/keyurl` is probed rather than `/healthz` because it
+  serves an in-memory value with a hardcoded 200, so it cannot 503 the pod out of the
+  Service in the middle of a suite.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.

@@ -50,6 +50,8 @@ case "${kind}" in
     # ActivateCrs lands at head. Without gating here the e2e suites open against a
     # CrashLoopBackOff pod and every test fails on ECONNREFUSED to relayer:3000,
     # which looks exactly like a product regression. Anvil clears this in seconds.
+    # Only meaningful because values-relayer-e2e.yaml sets a readinessProbe: with no
+    # probe a pod is Ready as soon as the container starts and this returns at once.
     kubectl rollout status deployment/relayer -n "${NAMESPACE}" --timeout=30m
     ;;
   test-suite)

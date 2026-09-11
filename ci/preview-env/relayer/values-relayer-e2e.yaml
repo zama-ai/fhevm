@@ -44,6 +44,22 @@ service:
     - {name: http, port: 3000}
     - {name: metrics, port: 9898}
 
+# Without a probe the pod is Ready the instant the container starts, so the
+# rollout wait in scripts/deploy-relayer.sh passes while the process is still
+# crash-looping and the e2e suites open on a dead port. /v2/keyurl is the right
+# target rather than /healthz: the handler serves a clone of an in-memory watch
+# channel with a hardcoded 200, so it costs no chain call and can never flap,
+# whereas /healthz answers 503 whenever a dependency dips and would eject the
+# relayer from the Service mid-suite. Staying unready is the point here - on
+# testnets the poller reads at the finalized block, so the relayer exits on
+# CrsNotGenerated until Sepolia finalizes ActivateCrs.
+readinessProbe:
+  httpGet:
+    path: /v2/keyurl
+    port: 3000
+  periodSeconds: 10
+  failureThreshold: 3
+
 # relayer's own binary defaults to config/local.yaml relative to CWD with no
 # --config-file flag needed (Settings::new(None) already does
 # File::with_name("config/local").required(false)). The image's own WORKDIR
