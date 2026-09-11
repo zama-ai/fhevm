@@ -1823,8 +1823,7 @@ async fn test_campaign_readiness_final_attempt_and_fresh_request() {
             ethereum_rpc_mock::SubscriptionTarget::All,
         );
         let original = helpers::submit_request(&setup, &payload).await;
-        let (status, body) = helpers::poll_until_terminal(&setup, &original)
-        .await;
+        let (status, body) = helpers::poll_until_terminal(&setup, &original).await;
         if failures == 3 {
             assert_eq!(status, reqwest::StatusCode::OK);
             assert_eq!(body.status, ApiResponseStatus::Succeeded);
@@ -1836,8 +1835,7 @@ async fn test_campaign_readiness_final_attempt_and_fresh_request() {
                 original, fresh,
                 "Terminal readiness failure must permit a fresh job"
             );
-            let (status, body) = helpers::poll_until_terminal(&setup, &fresh)
-            .await;
+            let (status, body) = helpers::poll_until_terminal(&setup, &fresh).await;
             assert_eq!(status, reqwest::StatusCode::OK);
             assert_eq!(body.status, ApiResponseStatus::Succeeded);
             let (status, body) = helpers::poll_until_terminal(&setup, &original).await;

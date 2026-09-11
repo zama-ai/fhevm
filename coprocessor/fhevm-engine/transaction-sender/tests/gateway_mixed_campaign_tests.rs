@@ -99,12 +99,17 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
         .fetch_one(&env.db_pool)
         .await?;
         assert_eq!(early, 10, "early work lost eligibility");
+        // Wait for asynchronous healthy-proof progress, not database recovery.
+        // SQL errors fail immediately; retained rejections are no longer pending.
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
-                let remaining: i64 =
-                    sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id > 10")
-                        .fetch_one(&env.db_pool)
-                        .await?;
+                let remaining: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM verify_proofs
+                        WHERE zk_proof_id > 10
+                          AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))",
+                )
+                .fetch_one(&env.db_pool)
+                .await?;
                 if remaining == 0 {
                     break;
                 }
@@ -154,9 +159,12 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
             proxy.clear_all_faults();
             tokio::time::timeout(Duration::from_secs(60), async {
                 loop {
-                    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs")
-                        .fetch_one(&env.db_pool)
-                        .await?;
+                    let remaining: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(*) FROM verify_proofs
+                        WHERE verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)",
+                    )
+                    .fetch_one(&env.db_pool)
+                    .await?;
                     if remaining == 0 {
                         break;
                     }

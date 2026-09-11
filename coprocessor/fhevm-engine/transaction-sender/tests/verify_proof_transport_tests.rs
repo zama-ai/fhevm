@@ -128,7 +128,8 @@ async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
             let present: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM verify_proofs WHERE zk_proof_id = $1)",
+                "SELECT EXISTS(SELECT 1 FROM verify_proofs WHERE zk_proof_id = $1
+                   AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)))",
             )
             .bind(proof_id)
             .fetch_one(&env.db_pool)
@@ -142,7 +143,8 @@ async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
     })
     .await??;
 
-    // Deletion alone is not success: require the matching on-chain event.
+    // Queue removal alone is not success: require the matching on-chain event.
+    // Release 0.14 retains successful rejections with handles cleared until finalization.
     if verified {
         let events = input
             .VerifyProofResponse_filter()

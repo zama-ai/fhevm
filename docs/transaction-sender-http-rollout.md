@@ -1,14 +1,14 @@
-# Transaction sender HTTP rollout — release 0.13.x
+# Transaction sender HTTP rollout — release 0.14.x
 
 This rollout moves only the sender's Gateway transport to HTTP(S), preserves
 proof work on classified infrastructure failures, schedules retries fairly,
 and sanitizes Gateway diagnostics. The Gateway listener remains on WebSocket.
-Chart version: `0.12.2`. No database migration is required.
+Chart version: `0.13.10`. No database migration is required.
 
 ## Before deployment
 
 - Confirm all required CI checks, including standard e2e, pass for the exact
-  submitted release HEAD. CI is running; confirmation is pending from the
+  submitted release HEAD. Confirmation is pending from the
   release owner. Record the commit, CI run and deployed image digest in the
   release record. Earlier local e2e/soak results are not final-HEAD evidence.
 - Set **`txSender.config.gatewayUrl` explicitly to the HTTPS endpoint** in the
@@ -77,7 +77,7 @@ DATA frames. Alloy HTTP 1.1.2 normally reads the response body immediately via
 exception visible and remove it after all affected h2 dependencies are migrated
 to a patched version (0.4.16 or later). See the
 [upstream advisory](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h).
-The ruint exception also remains temporary, pending upgrade to 1.20.0 or later.
+Release 0.14 already locks ruint 1.20.0, so this port needs no ruint exception.
 
 Accepted-but-unmined nonce reconciliation, finite-cap ciphertext infrastructure
 retry handling, additional RPC error shapes, production mixed-contract capacity
