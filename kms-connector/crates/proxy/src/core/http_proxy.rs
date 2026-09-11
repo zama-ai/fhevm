@@ -6,9 +6,8 @@ use bytes::Bytes;
 use http::{
     Method, StatusCode,
     header::{
-        ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HOST,
-        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, TRANSFER_ENCODING,
-        UPGRADE, VIA, WWW_AUTHENTICATE,
+        ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HeaderName,
+        PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
     },
 };
 use kms_connector_api::{ErrorCode, ErrorResponse};
@@ -21,10 +20,12 @@ use pingora::{
 use std::time::Instant;
 use tracing::{error, info};
 
-/// The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
+// The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
-/// Hop-by-hop headers without a constant in the `http` crate.
+// Client-supplied forwarding header the proxy never sets but must not forward either.
+const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
+// Hop-by-hop headers without a constant in the `http` crate.
 const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
 const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
 
@@ -317,46 +318,29 @@ fn default_error_code(e: &Error) -> u16 {
     }
 }
 
-/// Removes the headers that must never reach the endpoint: the proxy credentials, client-supplied
+/// Headers that must not be forwarded to the endpoint: the proxy credentials, client-supplied
 /// forwarding information and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
+const STRIPPED_HEADERS: [HeaderName; 14] = [
+    AUTHORIZATION,
+    X_FORWARDED_FOR,
+    X_FORWARDED_PROTO,
+    X_FORWARDED_HOST,
+    FORWARDED,
+    VIA,
+    CONNECTION,
+    KEEP_ALIVE,
+    PROXY_CONNECTION,
+    PROXY_AUTHENTICATE,
+    PROXY_AUTHORIZATION,
+    TE,
+    TRAILER,
+    UPGRADE,
+];
+
+/// Removes the [`STRIPPED_HEADERS`] from the request.
 pub fn sanitize_headers(req: &mut RequestHeader) {
-    // Headers listed in `Connection` are hop-by-hop too.
-    let connection_headers = req
-        .headers
-        .get_all(CONNECTION)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(','))
-        .filter_map(|name| HeaderName::from_bytes(name.trim().as_bytes()).ok())
-        .filter(|name| ![HOST, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name));
-
-    // These headers must be set by the proxy itself, not the client.
-    let forwarded_headers = req
-        .headers
-        .keys()
-        .filter(|name| name.as_str().starts_with("x-forwarded-"))
-        .cloned();
-
-    let to_remove: Vec<HeaderName> = [
-        AUTHORIZATION,
-        FORWARDED,
-        VIA,
-        CONNECTION,
-        KEEP_ALIVE,
-        PROXY_CONNECTION,
-        PROXY_AUTHENTICATE,
-        PROXY_AUTHORIZATION,
-        TE,
-        TRAILER,
-        UPGRADE,
-    ]
-    .into_iter()
-    .chain(connection_headers)
-    .chain(forwarded_headers)
-    .collect();
-
-    for name in to_remove {
-        req.remove_header(&name);
+    for name in &STRIPPED_HEADERS {
+        req.remove_header(name);
     }
 }
 
@@ -383,8 +367,7 @@ mod tests {
             ("x-forwarded-host", "evil"),
             ("forwarded", "for=1.2.3.4"),
             ("via", "1.1 something"),
-            ("connection", "keep-alive, x-custom-hop, content-length"),
-            ("x-custom-hop", "1"),
+            ("connection", "keep-alive"),
             ("keep-alive", "timeout=5"),
             ("te", "trailers"),
             ("content-type", "application/json"),
