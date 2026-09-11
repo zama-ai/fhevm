@@ -140,7 +140,9 @@ spec:
             - name: HOST_FLOOR_WEI
               value: "500000000000000000"
             - name: GATEWAY_FLOOR_WEI
-              value: "200000000000000000"
+              value: "1000000000000000000"
+            - name: MAX_CLAIMS_PER_ADDR
+              value: "12"
           volumeMounts:
             - name: script
               mountPath: /fund
