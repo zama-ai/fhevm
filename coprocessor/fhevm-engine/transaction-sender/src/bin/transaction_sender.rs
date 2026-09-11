@@ -46,7 +46,8 @@ struct Conf {
     ciphertext_commits_address: Address,
 
     #[arg(short, long)]
-    gateway_url: Url,
+    // Parse after clap: clap's value-parser errors echo the supplied value.
+    gateway_url: String,
 
     #[arg(short, long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
@@ -205,15 +206,28 @@ fn get_provider(url: &Url, wallet: EthereumWallet) -> anyhow::Result<Provider> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), String> {
+    // Rust's default Result termination prints Debug, including anyhow source
+    // chains. Never hand it an unsanitized Gateway error.
+    run()
+        .await
+        .map_err(|error| transaction_sender::diagnostics::safe_error(error.as_ref()))
+}
+
+async fn run() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = parse_args();
+    let gateway_url: Url = conf
+        .gateway_url
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Gateway URL must be a valid http:// or https:// URL"))?;
 
-    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback_and_filter(
         conf.log_level,
         &conf.service_name,
         "otlp-layer",
+        transaction_sender::diagnostics::gateway_tracing_filter,
     );
 
     let cancel_token = CancellationToken::new();
@@ -223,12 +237,12 @@ async fn main() -> anyhow::Result<()> {
     // WebSocket to HTTP; a leftover `wss://` value would otherwise be retried
     // forever, which looks like an unreachable Gateway rather than a
     // misconfiguration.
-    gateway_http_client(&conf.gateway_url).context("Gateway URL is not usable by this build")?;
+    gateway_http_client(&gateway_url).context("Gateway URL is not usable by this build")?;
 
     // Try to get the chain ID until cancelled.
     let chain_id = tokio::select! {
         chain_id = get_chain_id(
-            conf.gateway_url.clone(),
+            gateway_url.clone(),
             conf.graceful_shutdown_timeout,
         ) => chain_id?,
 
@@ -262,7 +276,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
 
-    let gateway_provider = get_provider(&conf.gateway_url, wallet.clone())?;
+    let gateway_provider = get_provider(&gateway_url, wallet.clone())?;
     info!(
         transport = "http",
         "Gateway provider configured; legacy provider-max-retries is ignored"
@@ -367,11 +381,7 @@ async fn main() -> anyhow::Result<()> {
     let transaction_sender_res = transaction_sender_fut.await;
     let http_server_res = http_server_fut.await;
 
-    info!(
-        transaction_sender_res = ?transaction_sender_res,
-        http_server_res = ?http_server_res,
-        "Transaction sender and HTTP health check server tasks have stopped"
-    );
+    info!("Transaction sender and HTTP health check server tasks have stopped");
 
     transaction_sender_res??;
     http_server_res??;

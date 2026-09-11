@@ -28,6 +28,8 @@ use serde_json::Value;
 /// What the proxy does with a matching request.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fault {
+    /// Arbitrary body for testing echoed credentials and invalid JSON.
+    RawResponse { status: u16, body: String },
     /// Fail before forwarding, leaving upstream chain state untouched.
     HttpError(u16),
     /// Return an RPC error before forwarding, with the caller's request ID.
@@ -130,6 +132,7 @@ impl FaultProxy {
 
         let app = Router::new()
             .route("/", post(handle))
+            .fallback(handle)
             .with_state(shared.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
@@ -376,6 +379,17 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
     let mut hold_response = None;
 
     match fault {
+        Some(Fault::RawResponse { status, mut body }) => {
+            use axum::response::IntoResponse;
+            if let Ok(mut response) = serde_json::from_str::<Value>(&body) {
+                if response.get("jsonrpc").is_some() {
+                    response["id"] = parsed.get("id").cloned().unwrap_or(Value::Null);
+                    body = response.to_string();
+                }
+            }
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            return (axum::http::StatusCode::from_u16(status).unwrap(), body).into_response();
+        }
         Some(Fault::HttpError(status)) => {
             use axum::response::IntoResponse;
             record_end(&shared, &methods, began.elapsed().as_millis() as u64);

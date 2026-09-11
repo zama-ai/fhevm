@@ -254,7 +254,7 @@ where
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     warn!(
                         zk_proof_id = txn_request.0,
-                        error = %e,
+                        error = %crate::diagnostics::safe_rpc_error(&e),
                         "Gateway temporarily unavailable; preserving proof retry budget"
                     );
                     // Preserve eligibility, including at max_retries - 1.
@@ -264,13 +264,13 @@ where
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         zk_proof_id = txn_request.0,
-                        error = %e,
+                        error = %crate::diagnostics::safe_rpc_error(&e),
                         "Transaction sending failed"
                     );
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
                         current_retry_count,
-                        &e.to_string(),
+                        &crate::diagnostics::safe_rpc_error(&e),
                     )
                     .await?;
                     return Err(anyhow::Error::new(e));

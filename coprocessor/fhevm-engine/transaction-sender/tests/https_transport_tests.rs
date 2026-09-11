@@ -150,3 +150,31 @@ async fn public_chain_id_probe_returns_configuration_errors_without_panicking() 
     .expect_err("invalid scheme must return an error");
     assert!(!format!("{error:?}").contains("SECRET"));
 }
+
+#[test]
+fn binary_configuration_errors_do_not_echo_gateway_credentials() {
+    for url in [
+        "https://user:SECRET@gateway.invalid:invalid/SECRET",
+        "wss://user:SECRET@gateway.invalid/SECRET",
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_transaction_sender"))
+            .args([
+                "--gateway-url",
+                url,
+                "--input-verification-address",
+                "0x0000000000000000000000000000000000000001",
+                "--ciphertext-commits-address",
+                "0x0000000000000000000000000000000000000002",
+            ])
+            .output()
+            .expect("run sender binary");
+        assert!(!output.status.success());
+        for bytes in [&output.stdout, &output.stderr] {
+            assert!(
+                !String::from_utf8_lossy(bytes).contains("SECRET"),
+                "startup leaked credentials"
+            );
+        }
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Gateway URL"));
+    }
+}
