@@ -102,7 +102,7 @@ where
                                 if is_backend_gone(&e) {
                                     error!(
                                         channel = op_channel,
-                                        error = %e,
+                                        error = %crate::diagnostics::safe_error(e.as_ref()),
                                         "Backend gone error, stopping operation and signaling other operations to stop"
                                     );
                                     token.cancel();
@@ -110,7 +110,7 @@ where
                                 }
                                 error!(
                                     channel = op_channel,
-                                    error = %e,
+                                    error = %crate::diagnostics::safe_error(e.as_ref()),
                                     sleep_duration = sleep_duration,
                                     "Operation error, retrying after sleep"
                                 );
@@ -193,11 +193,11 @@ where
                             info!("An operation stopped gracefully");
                         }
                         Some(Ok(Err(e))) => {
-                            error!(error = %e, "An operation returned an error");
+                            error!(error = %crate::diagnostics::safe_error(e.as_ref()), "An operation returned an error");
                             break Err(e);
                         }
                         Some(Err(e)) => {
-                            error!(error = %e, "Join failed with an error");
+                            error!(error = %crate::diagnostics::safe_error(&e), "Join failed with an error");
                             break Err(e.into());
                         }
                         None => {
@@ -247,7 +247,10 @@ where
                 blockchain_connected = true;
             }
             Ok(Err(e)) => {
-                error_details.push(format!("Blockchain connection error: {}", e));
+                error_details.push(format!(
+                    "Blockchain connection error: {}",
+                    crate::diagnostics::safe_rpc_error(&e)
+                ));
             }
             Err(_) => {
                 error_details.push("Blockchain connection timeout".to_string());

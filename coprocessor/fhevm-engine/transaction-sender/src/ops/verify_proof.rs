@@ -1,4 +1,4 @@
-use super::common::try_extract_non_retryable_config_error;
+use super::common::{is_transient_gateway_error, try_extract_non_retryable_config_error};
 use super::TransactionOperation;
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -191,17 +191,34 @@ where
                     )
                     .await?;
                     return Ok(());
+                } else if is_transient_gateway_error(&e) {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        error = %crate::diagnostics::safe_rpc_error(&e),
+                        "Gateway temporarily unavailable; preserving proof retry budget"
+                    );
+                    // Keep the finite budget and last error intact, but persist
+                    // the attempt so a failing batch cannot monopolize selection.
+                    sqlx::query!(
+                        "UPDATE verify_proofs SET last_retry_at = NOW() WHERE zk_proof_id = $1",
+                        txn_request.0
+                    )
+                    .execute(&self.db_pool)
+                    .await?;
+                    // Retain operation backoff and BackendGone shutdown handling.
+                    return Err(anyhow::Error::new(e));
                 } else {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         zk_proof_id = txn_request.0,
-                        error = %e,
+                        error = %crate::diagnostics::safe_rpc_error(&e),
                         "Transaction sending failed"
                     );
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
                         current_retry_count,
-                        &e.to_string(),
+                        &crate::diagnostics::safe_rpc_error(&e),
                     )
                     .await?;
                     return Err(anyhow::Error::new(e));
@@ -289,10 +306,12 @@ where
             "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
-             ORDER BY zk_proof_id
+               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $3))
+             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id
              LIMIT $2",
             self.conf.verify_proof_resp_max_retries as i64,
-            self.conf.verify_proof_resp_batch_limit as i64
+            self.conf.verify_proof_resp_batch_limit as i64,
+            f64::from(self.conf.error_sleep_max_secs.max(1))
         )
         .fetch_all(&self.db_pool)
         .await?;
@@ -420,8 +439,19 @@ where
                     .await
             });
         }
+        // Drain mixed batches before returning an error. Dropping the JoinSet
+        // would cancel healthy submissions, possibly after nonce allocation.
+        let mut first_error = None;
         while let Some(res) = join_set.join_next().await {
-            res??;
+            if let Err(error) = res.map_err(anyhow::Error::from).and_then(|result| result) {
+                // Keep fatal transport shutdown even if another task failed first.
+                if first_error.is_none() || crate::is_backend_gone(&error) {
+                    first_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
         Ok(maybe_has_more_work)
     }

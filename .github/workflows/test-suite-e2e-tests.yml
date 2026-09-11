@@ -324,6 +324,23 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}" --dry-run
 
+      - name: Pull database image with retries
+        shell: bash
+        run: |
+          # Pre-pull the image from the compose file so a transient registry
+          # failure does not abort stack startup after other services start.
+          image="$(awk '$1 == "image:" { print $2; exit }' test-suite/fhevm/docker-compose/database-docker-compose.yml)"
+          for attempt in 1 2 3; do
+            if docker pull "$image"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Database image pull failed after three attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |

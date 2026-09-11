@@ -6,7 +6,7 @@ use alloy::{
     providers::fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, WalletFiller,
     },
-    providers::{Identity, ProviderBuilder, RootProvider, WsConnect},
+    providers::{Identity, ProviderBuilder, RootProvider},
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
@@ -19,9 +19,10 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use transaction_sender::{
-    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, get_chain_id, http_server::HttpServer,
-    make_abstract_signer, metrics::spawn_gauge_update_routine, AbstractSigner, ConfigSettings,
-    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT, gateway_http_client, get_chain_id,
+    http_server::HttpServer, make_abstract_signer, metrics::spawn_gauge_update_routine,
+    AbstractSigner, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
+    TransactionSender,
 };
 
 use fhevm_engine_common::{
@@ -47,7 +48,8 @@ struct Conf {
     ciphertext_commits_address: Address,
 
     #[arg(short, long)]
-    gateway_url: Url,
+    // Parse after clap: clap's value-parser errors echo the supplied value.
+    gateway_url: String,
 
     #[arg(short, long, value_enum, default_value = "private-key")]
     signer_type: SignerType,
@@ -107,9 +109,15 @@ struct Conf {
     #[arg(long, default_value_t = 30)]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value_t = u32::MAX)]
+    /// Legacy WebSocket reconnect setting. Accepted for compatibility and
+    /// unused on HTTP, where there is no persistent connection to retry.
+    #[arg(long, default_value_t = u32::MAX, hide = true)]
     provider_max_retries: u32,
 
+    /// Legacy WebSocket reconnect interval, accepted for compatibility and
+    /// unused. Note that the startup chain-ID probe paces itself with
+    /// `--graceful-shutdown-timeout`, which it did before this change too;
+    /// this flag never reached it.
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
 
@@ -181,75 +189,59 @@ type Provider = FillProvider<
     RootProvider,
 >;
 
-async fn get_provider(
-    conf: &Conf,
-    url: &Url,
-    name: &str,
-    wallet: EthereumWallet,
-    cancel_token: &CancellationToken,
-) -> anyhow::Result<Provider> {
-    loop {
-        if cancel_token.is_cancelled() {
-            info!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-            anyhow::bail!(
-                "Cancellation requested before provider ({}) was created on startup, exiting",
-                name
-            );
-        }
-        match ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(wallet.clone())
-            .connect_ws(
-                // Note here that max_retries and retry_interval apply to sending requests, not to initial connection.
-                // We assume they are set to big values such that when they are reached, the following `BackendGone` error
-                // means we can't move on and we would exit the whole sender.
-                WsConnect::new(url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(provider) => {
-                info!(name, "Connected to chain");
-                return Ok(provider);
-            }
-            Err(e) => {
-                error!(
-                    name,
-                    error = %e,
-                    retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to chain on startup, retrying"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
-    }
+/// Builds the Gateway provider.
+///
+/// The endpoint is now HTTP, so there is no connection to establish up front and
+/// nothing to reconnect: `reqwest` dials per request and pools the connection.
+/// `--provider-max-retries` and `--provider-retry-interval` were WebSocket
+/// reconnect settings; both are accepted for compatibility and unused.
+fn get_provider(url: &Url, wallet: EthereumWallet) -> anyhow::Result<Provider> {
+    Ok(ProviderBuilder::default()
+        .filler(FillersWithoutNonceManagement::default())
+        .wallet(wallet)
+        .connect_reqwest(gateway_http_client(url)?, url.clone()))
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), String> {
+    // Rust's default Result termination prints Debug, including anyhow source
+    // chains. Never hand it an unsanitized Gateway error.
+    run()
+        .await
+        .map_err(|error| transaction_sender::diagnostics::safe_error(error.as_ref()))
+}
+
+async fn run() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let conf = parse_args();
+    let gateway_url: Url = conf
+        .gateway_url
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Gateway URL must be a valid http:// or https:// URL"))?;
 
-    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
+    let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback_and_filter(
         conf.log_level,
         &conf.service_name,
         "otlp-layer",
+        transaction_sender::diagnostics::gateway_tracing_filter,
     );
 
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
 
+    // Fail fast on a URL this build cannot use. The Gateway endpoint moved from
+    // WebSocket to HTTP; a leftover `wss://` value would otherwise be retried
+    // forever, which looks like an unreachable Gateway rather than a
+    // misconfiguration.
+    gateway_http_client(&gateway_url).context("Gateway URL is not usable by this build")?;
+
     // Try to get the chain ID until cancelled.
     let chain_id = tokio::select! {
         chain_id = get_chain_id(
-            conf.gateway_url.clone(),
+            gateway_url.clone(),
             conf.graceful_shutdown_timeout,
-        ) => chain_id,
+        ) => chain_id?,
 
         _ = cancel_token.cancelled() => {
             info!("Cancellation requested before getting chain ID during startup, exiting");
@@ -281,20 +273,11 @@ async fn main() -> anyhow::Result<()> {
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
 
-    let Ok(gateway_provider) = get_provider(
-        &conf,
-        &conf.gateway_url,
-        "Gateway",
-        wallet.clone(),
-        &cancel_token,
-    )
-    .await
-    else {
-        info!(
-            "Cancellation requested before gateway chain provider was created on startup, exiting"
-        );
-        return Ok(());
-    };
+    let gateway_provider = get_provider(&gateway_url, wallet.clone())?;
+    info!(
+        transport = "http",
+        "Gateway provider configured; legacy provider-max-retries is ignored"
+    );
     let gateway_provider =
         NonceManagedProvider::new(gateway_provider, Some(wallet.default_signer().address()));
 
@@ -373,11 +356,7 @@ async fn main() -> anyhow::Result<()> {
     let transaction_sender_res = transaction_sender_fut.await;
     let http_server_res = http_server_fut.await;
 
-    info!(
-        transaction_sender_res = ?transaction_sender_res,
-        http_server_res = ?http_server_res,
-        "Transaction sender and HTTP health check server tasks have stopped"
-    );
+    info!("Transaction sender and HTTP health check server tasks have stopped");
 
     transaction_sender_res??;
     http_server_res??;
