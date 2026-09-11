@@ -28,6 +28,8 @@ use serde_json::Value;
 /// What the proxy does with a matching request.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Fault {
+    /// Close the HTTP response body with an I/O error without forwarding.
+    DisconnectBeforeForward,
     /// Arbitrary body for testing echoed credentials and invalid JSON.
     RawResponse { status: u16, body: String },
     /// Fail before forwarding, leaving upstream chain state untouched.
@@ -70,6 +72,7 @@ struct FaultSpec {
     fault: Fault,
     /// Remaining applications; `None` means unlimited.
     remaining: Option<usize>,
+    proof_id_max: Option<u64>,
 }
 
 #[derive(Default, Debug)]
@@ -158,12 +161,26 @@ impl FaultProxy {
 
     /// Applies `fault` to `method`. `remaining = None` means until cleared.
     pub fn set_fault(&self, method: &str, fault: Fault, remaining: Option<usize>) {
-        self.shared
-            .inner
-            .lock()
-            .unwrap()
-            .faults
-            .insert(method.to_string(), FaultSpec { fault, remaining });
+        self.shared.inner.lock().unwrap().faults.insert(
+            method.to_string(),
+            FaultSpec {
+                fault,
+                remaining,
+                proof_id_max: None,
+            },
+        );
+    }
+
+    /// Restrict estimation faults to proof IDs in the earliest batch.
+    pub fn set_early_proof_fault(&self, max_id: u64) {
+        self.shared.inner.lock().unwrap().faults.insert(
+            "eth_estimateGas".into(),
+            FaultSpec {
+                fault: Fault::HttpError(503),
+                remaining: None,
+                proof_id_max: Some(max_id),
+            },
+        );
     }
 
     pub fn clear_fault(&self, method: &str) {
@@ -338,12 +355,27 @@ fn record_end(shared: &Shared, methods: &[String], elapsed_ms: u64) {
 }
 
 /// Takes the fault to apply, consuming one unit of its budget.
-fn take_fault(shared: &Shared, methods: &[String]) -> Option<Fault> {
+fn take_fault(shared: &Shared, methods: &[String], body: &Value) -> Option<Fault> {
     let mut inner = shared.inner.lock().unwrap();
     for m in methods {
         let Some(spec) = inner.faults.get_mut(m) else {
             continue;
         };
+        if let Some(max_id) = spec.proof_id_max {
+            let tx = &body["params"][0];
+            let data = tx
+                .get("input")
+                .or_else(|| tx.get("data"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            // ABI first argument follows the four-byte function selector.
+            let id = data
+                .get(10..74)
+                .and_then(|word| u64::from_str_radix(word.trim_start_matches('0'), 16).ok());
+            if !matches!(id, Some(id) if id > 0 && id <= max_id) {
+                continue;
+            }
+        }
         match &mut spec.remaining {
             Some(0) => continue,
             Some(n) => *n -= 1,
@@ -374,11 +406,21 @@ async fn handle(State(shared): State<Arc<Shared>>, body: Bytes) -> axum::respons
     let methods = methods_of(&parsed);
     record_start(&shared, &methods, &parsed);
 
-    let fault = take_fault(&shared, &methods);
+    let fault = take_fault(&shared, &methods, &parsed);
     let mut suppress = false;
     let mut hold_response = None;
 
     match fault {
+        Some(Fault::DisconnectBeforeForward) => {
+            record_end(&shared, &methods, began.elapsed().as_millis() as u64);
+            let stream = futures_util::stream::once(async {
+                Err::<Bytes, std::io::Error>(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionReset,
+                    "injected disconnect",
+                ))
+            });
+            return axum::response::Response::new(axum::body::Body::from_stream(stream));
+        }
         Some(Fault::RawResponse { status, mut body }) => {
             use axum::response::IntoResponse;
             if let Ok(mut response) = serde_json::from_str::<Value>(&body) {
