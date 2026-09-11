@@ -10,6 +10,7 @@
 //! metadata is supplied by the fixture because LiteSVM computes no bank hash. Everything from
 //! `reconstruct_fhe_execute` inward is the production path; the wire above it is not.
 
+use host_listener::database::transaction_id::TransactionId;
 use std::path::PathBuf;
 
 use anchor_lang::{
@@ -22,9 +23,7 @@ use anchor_spl::token::spl_token;
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
     database::tfhe_event_propagate::Handle,
-    solana_adapter::{
-        insert_solana_block_records, solana_transaction_id, SolanaBlockMeta, SolanaHostRecord,
-    },
+    solana_adapter::{insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord},
     solana_reconstruct::{decode_fhe_execute_args, reconstruct_fhe_execute, ReconstructContext},
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
@@ -193,7 +192,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         &mut db_tx,
         [&diverged, &transfer].map(|outcome| {
             (
-                solana_transaction_id(outcome.signature.as_ref()),
+                TransactionId::SolanaSignature(outcome.signature),
                 outcome.events.clone(),
             )
         }),
@@ -212,7 +211,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
     assert_eq!(stored_mask, boundary_mask);
     assert_eq!(
         stored_transaction,
-        solana_transaction_id(transfer.signature.as_ref()).to_vec()
+        TransactionId::SolanaSignature(transfer.signature).to_vec()
     );
     wait_until_computed(&harness.app).await?;
 

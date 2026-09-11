@@ -4,6 +4,7 @@ use host_listener::database::computation::{Computation, Operand};
 use host_listener::database::tfhe_event_propagate::{
     Database, Handle, LogTfhe,
 };
+use host_listener::database::transaction_id::TransactionId;
 use sqlx::Row;
 use test_harness::instance::{setup_test_db, ImportMode};
 use time::PrimitiveDateTime;
@@ -112,7 +113,7 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
                 .map_err(anyhow::Error::msg)?,
         ),
         computation,
-        transaction_hash: Some(Handle::repeat_byte(20)),
+        transaction_hash: Some(TransactionId::Hash(Handle::repeat_byte(20))),
         allowed_outputs: [outputs[1]].into_iter().collect(),
         block_number: 1,
         block_hash: Handle::repeat_byte(30),
@@ -121,7 +122,7 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
             time::Time::MIDNIGHT,
         ),
         tx_depth_size: 0,
-        dependence_chain: Handle::repeat_byte(20),
+        dependence_chain: TransactionId::Hash(Handle::repeat_byte(20)),
         log_index: Some(0),
         is_executor_minted: true,
     };
@@ -168,8 +169,7 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
 async fn solana_records_reach_the_shared_sql_and_scheduler_path(
 ) -> anyhow::Result<()> {
     use host_listener::solana_adapter::{
-        insert_solana_block_records, solana_transaction_id, SolanaBlockMeta,
-        SolanaHostRecord,
+        insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord,
     };
     use zama_host::{
         records::{FheMulDiv, TrivialEncrypt},
@@ -182,7 +182,9 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         Database::new(&instance.db_url, ChainId::try_from(12345_u64)?, 100)
             .await?;
     let pool = db.pool.read().await.clone();
-    let transaction_id = solana_transaction_id(&[7; 64]);
+    let transaction_id = TransactionId::SolanaSignature(
+        solana_sdk::signature::Signature::from([7; 64]),
+    );
     let block = SolanaBlockMeta {
         block_number: 4,
         block_timestamp: PrimitiveDateTime::new(
@@ -231,10 +233,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         "MulDiv's clear divisor does not set factor2's flag"
     );
     assert_eq!(row.get::<Vec<u8>, _>("operand_boundary_mask")[31], 2);
-    assert_eq!(
-        row.get::<Vec<u8>, _>("transaction_id"),
-        transaction_id.to_vec()
-    );
+    assert_eq!(row.get::<Vec<u8>, _>("transaction_id"), vec![7_u8; 64]);
     assert!(row.get::<bool, _>("is_allowed"));
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM dependence_chain")
@@ -252,8 +251,8 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
 ) -> anyhow::Result<()> {
     use fhevm_engine_common::types::SchedulePriority;
     use host_listener::solana_adapter::{
-        insert_solana_block_records, solana_transaction_id, SolanaBlockMeta,
-        SolanaHostRecord as R, SolanaMaterialRequest,
+        insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord as R,
+        SolanaMaterialRequest,
     };
     use zama_host::{
         records::{FheBinaryOp, TrivialEncrypt},
@@ -298,7 +297,11 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
             handle: Handle::repeat_byte(value),
         })
     };
-    let ids = [1, 2, 3].map(|n| solana_transaction_id(&[n; 64]));
+    let ids = [1, 2, 3].map(|n| {
+        TransactionId::SolanaSignature(solana_sdk::signature::Signature::from(
+            [n; 64],
+        ))
+    });
     let records = vec![
         (ids[0], vec![trivial(1), material(1), material(1)]),
         (ids[1], vec![add(1, 2)]),
@@ -374,8 +377,18 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         &db,
         &mut tx,
         [
-            (solana_transaction_id(&[4; 64]), vec![add(2, 4)]),
-            (solana_transaction_id(&[5; 64]), vec![add(2, 5)]),
+            (
+                TransactionId::SolanaSignature(
+                    solana_sdk::signature::Signature::from([4; 64]),
+                ),
+                vec![add(2, 4)],
+            ),
+            (
+                TransactionId::SolanaSignature(
+                    solana_sdk::signature::Signature::from([5; 64]),
+                ),
+                vec![add(2, 5)],
+            ),
         ],
         next,
         10,

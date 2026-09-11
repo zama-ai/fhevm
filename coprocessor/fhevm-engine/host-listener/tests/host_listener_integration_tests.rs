@@ -16,6 +16,7 @@ use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
+use host_listener::database::transaction_id::TransactionId;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
@@ -807,8 +808,8 @@ async fn test_slow_lane_cross_block_parent_lookup_finds_known_slow_parent_locall
     )
     .await?;
 
-    let slow_parent = FixedBytes::<32>::from([0x11; 32]);
-    let fast_parent = FixedBytes::<32>::from([0x22; 32]);
+    let slow_parent = TransactionId::from([0x11; 32]);
+    let fast_parent = TransactionId::from([0x22; 32]);
 
     sqlx::query(
         r#"
@@ -2165,10 +2166,12 @@ async fn test_sealed_chain_survives_restart(
     let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
 
-    let parent = FixedBytes::<32>::from([0xD1; 32]);
-    let gated_child = FixedBytes::<32>::from([0xD2; 32]);
-    let discharged_child = FixedBytes::<32>::from([0xD3; 32]);
-    let quiet_parent = FixedBytes::<32>::from([0xD4; 32]);
+    let parent = TransactionId::SolanaSignature(
+        solana_sdk::signature::Signature::from([0xD1; 64]),
+    );
+    let gated_child = TransactionId::from([0xD2; 32]);
+    let discharged_child = TransactionId::from([0xD3; 32]);
+    let quiet_parent = TransactionId::from([0xD4; 32]);
 
     // parent -> gated_child, still gated: seals the parent.
     // quiet_parent -> discharged_child, gate already discharged: seals nothing.
@@ -2239,11 +2242,11 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
     let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
 
-    let parent_incomplete = FixedBytes::<32>::from([0xA1; 32]);
-    let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
-    let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
-    let parent_materialized = FixedBytes::<32>::from([0xA4; 32]);
-    let child = FixedBytes::<32>::from([0xC1; 32]);
+    let parent_incomplete = TransactionId::from([0xA1; 32]);
+    let parent_processed = TransactionId::from([0xA2; 32]);
+    let parent_unknown = TransactionId::from([0xA3; 32]);
+    let parent_materialized = TransactionId::from([0xA4; 32]);
+    let child = TransactionId::from([0xC1; 32]);
     // One boundary handle per parent: the gate is armed per handle, not per
     // chain, so the test has to name what the child actually waits for.
     let handle_incomplete = FixedBytes::<32>::from([0xB1; 32]);
