@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm (POC)
 
-Last synced: 2026-09-10.
+Last synced: 2026-09-11.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -283,7 +283,7 @@ setters, pause included.
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
 compared limits are finite and the block cap is nonzero, setters enforce `block cap ≥ max per tx ≥ max depth`.
-Total and critical-path depth accumulate across all calls in the shared the transaction’s transient store, including calls from
+Total and critical-path depth accumulate across all calls in the transaction’s shared transient store, including calls from
 different applications. Each application block meter is charged only the cost of its own execution. Repeated handle
 occurrences retain the maximum depth for that handle; changing its operand witness cannot reset its depth.
 

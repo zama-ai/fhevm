@@ -460,7 +460,10 @@ pub async fn ingest_block_logs(
             {
                 fhe_event_count = fhe_event_count.saturating_add(1);
                 let Some(computation) = Computation::from_evm(&event)
-                    .map_err(sqlx::Error::Protocol)?
+                    .map_err(|reason| sqlx::Error::Protocol(format!(
+                        "EVM computation in block {block_number}, transaction {:?}, log {:?}: {reason}",
+                        log.transaction_hash, log.log_index,
+                    )))?
                 else {
                     continue;
                 };

@@ -63,36 +63,65 @@ impl Computation {
             H(_) => true,
             P(bytes) => bytes.len() == 32,
         };
-        let valid = match (operation.op_type(), operands.as_slice()) {
-            (FheOperationType::Binary, [H(_), rhs]) => word(rhs),
-            (FheOperationType::Unary, [H(_)]) => true,
-            (FheOperationType::Other, inputs) => match (operation, inputs) {
-                (O::FheCast, [H(_), P(kind)]) => kind.len() == 1,
-                (O::FheTrivialEncrypt, [P(value), P(kind)]) => {
-                    value.len() == 32 && kind.len() == 1
-                }
-                (O::FheIfThenElse, [H(_), H(_), H(_)]) => true,
-                (O::FheRand, [P(seed), P(kind)]) => {
-                    seed.len() == 16 && kind.len() == 1
-                }
-                (O::FheRandBounded, [P(seed), P(bound), P(kind)]) => {
-                    seed.len() == 16 && bound.len() == 32 && kind.len() == 1
-                }
-                (O::FheSum | O::FheIsIn, inputs) => {
+        let inputs = operands.as_slice();
+        let (valid, expected) = match operation.op_type() {
+            FheOperationType::Binary => (
+                matches!(inputs, [H(_), rhs] if word(rhs)),
+                "[encrypted, encrypted or clear(32 bytes)]",
+            ),
+            FheOperationType::Unary => (
+                matches!(inputs, [H(_)]),
+                "[encrypted]",
+            ),
+            FheOperationType::Other => match operation {
+                O::FheCast => (
+                    matches!(inputs, [H(_), P(kind)] if kind.len() == 1),
+                    "[encrypted, clear(1 byte)]",
+                ),
+                O::FheTrivialEncrypt => (
+                    matches!(inputs, [P(value), P(kind)] if value.len() == 32 && kind.len() == 1),
+                    "[clear(32 bytes), clear(1 byte)]",
+                ),
+                O::FheIfThenElse => (
+                    matches!(inputs, [H(_), H(_), H(_)]),
+                    "[encrypted, encrypted, encrypted]",
+                ),
+                O::FheRand => (
+                    matches!(inputs, [P(seed), P(kind)] if seed.len() == 16 && kind.len() == 1),
+                    "[clear(16 bytes), clear(1 byte)]",
+                ),
+                O::FheRandBounded => (
+                    matches!(inputs, [P(seed), P(bound), P(kind)] if seed.len() == 16 && bound.len() == 32 && kind.len() == 1),
+                    "[clear(16 bytes), clear(32 bytes), clear(1 byte)]",
+                ),
+                O::FheSum | O::FheIsIn => (
                     (operation == O::FheSum || !inputs.is_empty())
                         && inputs.len() <= OPERAND_BOUNDARY_MASK_BYTES * 8
-                        && inputs.iter().all(|operand| matches!(operand, H(_)))
-                }
-                (O::FheMulDiv, [H(_), rhs, P(divisor)]) => {
-                    word(rhs) && divisor.len() == 32
-                }
-                _ => false,
+                        && inputs.iter().all(|operand| matches!(operand, H(_))),
+                    if operation == O::FheSum {
+                        "0..=256 encrypted operands"
+                    } else {
+                        "1..=256 encrypted operands (searched value first)"
+                    },
+                ),
+                O::FheMulDiv => (
+                    matches!(inputs, [H(_), rhs, P(divisor)] if word(rhs) && divisor.len() == 32),
+                    "[encrypted, encrypted or clear(32 bytes), clear(32 bytes)]",
+                ),
+                _ => (false, "an executable FHE operation"),
             },
-            _ => false,
         };
         if !valid {
+            let received: Vec<_> = operands
+                .iter()
+                .map(|operand| match operand {
+                    H(_) => "encrypted".to_owned(),
+                    P(bytes) => format!("clear({} bytes)", bytes.len()),
+                })
+                .collect();
             return Err(format!(
-                "invalid operand shape or byte widths for {operation:?}"
+                "invalid operands for {operation:?}: expected {expected}; received {} operands [{}]",
+                operands.len(), received.join(", "),
             ));
         }
         if !is_valid_multi_output_arity(outputs.len()) {
@@ -549,6 +578,14 @@ mod tests {
         assert!(
             Computation::single(O::FheIsIn, vec![H(handle)], handle).is_ok()
         );
+
+        let error = Computation::single(
+            O::FheAdd,
+            vec![H(handle), P(vec![0xAB; 31])],
+            handle,
+        )
+        .unwrap_err();
+        assert_eq!(error, "invalid operands for FheAdd: expected [encrypted, encrypted or clear(32 bytes)]; received 2 operands [encrypted, clear(31 bytes)]");
     }
 
     #[test]

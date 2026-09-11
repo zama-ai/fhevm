@@ -18,6 +18,7 @@ vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedStore }));
 
 import {
   address,
+  decompileTransactionMessage,
   generateKeyPairSigner,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
@@ -34,7 +35,7 @@ import {
   type VaultDemoRoots,
 } from './derive.js';
 import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import { getSettleInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 
@@ -189,6 +190,18 @@ describe('settleBatch', () => {
     expect(compiledInstructions).toHaveLength(4);
     expect(compiledInstructions.at(-1)!.data).toEqual(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
     expect(staticAccounts[compiledInstructions.at(-1)!.programAddressIndex]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    const message = decompileTransactionMessage(compiled, {
+      addressesByLookupTableAddress: { [opts.lookupTableAddress]: provisioned },
+    });
+    const open = message.instructions[1]!;
+    const settle = message.instructions[2]!;
+    const close = message.instructions[3]!;
+    const parsed = parseSettleInstruction({ ...settle, accounts: settle.accounts!, data: settle.data! });
+    expect(open.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    expect(close.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    expect(parsed.accounts.instructions.address).toBe(address('Sysvar1nstructions1111111111111111111111111'));
+    expect(open.accounts?.[2]?.address).toBe(parsed.accounts.instructions.address);
+    expect(close.accounts?.[0]?.address).toBe(parsed.accounts.instructions.address);
     const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
     expect(data.cleartextTotal).toBe(800n);
     expect(data.leafIndex).toBe(3n);

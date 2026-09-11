@@ -95,7 +95,7 @@ pub fn normalize_solana_records_for_db(
 ) -> Result<(Vec<LogTfhe>, Vec<SolanaMaterialRequest>), String> {
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
-    for record in records {
+    for (record_index, record) in records.into_iter().enumerate() {
         let computation = match record {
             SolanaHostRecord::FheBinaryOp(record) => binary_computation(record),
             SolanaHostRecord::FheTernaryOp(record) => {
@@ -139,7 +139,10 @@ pub fn normalize_solana_records_for_db(
                 material_requests.push(request);
                 continue;
             }
-        }?;
+        }.map_err(|reason| format!(
+            "Solana computation in slot {}, transaction ID {transaction_id:#x}, record {record_index}: {reason}",
+            block.block_number,
+        ))?;
         tfhe_logs.push(to_log_tfhe(computation, transaction_id, block));
     }
 
@@ -370,6 +373,7 @@ mod tests {
 
     #[test]
     fn malformed_collection_fails_normalization() {
+        let transaction_id = Handle::repeat_byte(7);
         let result = normalize_solana_records_for_db(
             [SolanaHostRecord::FheSum(FheSum {
                 version: EVENT_VERSION,
@@ -377,7 +381,7 @@ mod tests {
                 operands: vec![[1; 32]; 257],
                 result: [2; 32],
             })],
-            Handle::ZERO,
+            transaction_id,
             SolanaBlockMeta {
                 block_number: 1,
                 block_timestamp: PrimitiveDateTime::MIN,
@@ -385,7 +389,12 @@ mod tests {
                 parent_hash: [0; 32],
             },
         );
-        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.contains(&format!(
+            "slot 1, transaction ID {transaction_id:#x}, record 0",
+        )));
+        assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
+        assert!(error.contains("received 257 operands"));
     }
 
     fn handle(byte: u8) -> Handle {

@@ -128,7 +128,7 @@ impl FheExecution {
     }
 
     /// The producing Store's application. The host keys its HCU meter and trust record on it.
-    /// States under additional signing authorities may belong to other applications; each
+    /// Stores under additional signing authorities may belong to other applications; each
     /// application's deny record is checked independently.
     pub fn app(&self) -> AppScope {
         self.store.app()

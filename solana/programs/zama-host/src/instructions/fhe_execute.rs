@@ -322,8 +322,7 @@ struct ExecutionState<'t, 'a, 'info> {
     transient_store: &'t mut TransientStore,
     call_start: usize,
     producer_store: Pubkey,
-    /// The application every persistent value of the execution belongs to; `None` when the
-    /// execution touches none.
+    /// The producing Store's application, used for input binding and random seeds.
     app: AppScope,
     chain_id: u64,
     host_config: &'t HostConfig,

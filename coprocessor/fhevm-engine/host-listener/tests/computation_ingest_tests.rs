@@ -9,6 +9,83 @@ use test_harness::instance::{setup_test_db, ImportMode};
 use time::PrimitiveDateTime;
 
 #[tokio::test]
+async fn malformed_evm_computation_reports_its_source() -> anyhow::Result<()> {
+    use alloy::primitives::{Address, Log};
+    use alloy::rpc::types::Log as RpcLog;
+    use alloy::sol_types::SolEvent;
+    use host_listener::cmd::block_history::BlockSummary;
+    use host_listener::contracts::TfheContract;
+    use host_listener::database::ingest::{
+        ingest_block_logs, BlockLogs, IngestOptions,
+    };
+
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let chain_id = ChainId::try_from(12345_u64)?;
+    let mut db = Database::new(&instance.db_url, chain_id, 100).await?;
+    let transaction_id = Handle::repeat_byte(7);
+    let executor = Address::repeat_byte(8);
+    let event = TfheContract::FheSum {
+        caller: Address::repeat_byte(9),
+        values: vec![Handle::repeat_byte(1); 257],
+        result: Handle::repeat_byte(2),
+    };
+    let block = BlockLogs {
+        logs: vec![RpcLog {
+            inner: Log {
+                address: executor,
+                data: event.encode_log_data(),
+            },
+            transaction_hash: Some(transaction_id),
+            log_index: Some(13),
+            ..Default::default()
+        }],
+        summary: BlockSummary {
+            number: 42,
+            hash: Handle::repeat_byte(42),
+            parent_hash: Handle::repeat_byte(41),
+            timestamp: 1_000,
+        },
+        catchup: false,
+        finalized: false,
+    };
+    let error = ingest_block_logs(
+        chain_id,
+        &mut db,
+        &block,
+        &None,
+        &Some(executor),
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: false,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains(&format!(
+        "EVM computation in block 42, transaction Some({transaction_id:#x}), log Some(13)",
+    )));
+    assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
+    assert!(error.contains("received 257 operands"));
+    let pool = db.pool.read().await.clone();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM computations")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
 ) -> anyhow::Result<()> {
     let instance = setup_test_db(ImportMode::None)
