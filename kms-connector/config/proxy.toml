@@ -48,6 +48,14 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # ENV: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
 # shutdown_grace_period = "60s"
 
+# The endpoint used to monitor the connector components (optional, defaults to "0.0.0.0:9100")
+# ENV: KMS_CONNECTOR_MONITORING_ENDPOINT
+# monitoring_endpoint = "0.0.0.0:9100"
+
+# The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
+# ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# healthcheck_timeout = "3s"
+
 # TLS configuration of the proxy (required)
 [tls_config]
 # Path of the PEM certificate chain
