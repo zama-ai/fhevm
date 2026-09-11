@@ -281,3 +281,23 @@ the final readiness check and repeated outage/restart races remain unrun.
 The known later-proof starvation failure remains unresolved. None of these
 results establish deferred nonce reconciliation safety or production-path
 mixed-contract capacity.
+
+## Fairness remediation
+
+The new scheduling patch uses existing timestamps for persistent per-proof
+deferral and oldest-attempt/creation ordering. It preserves finite retry count
+and stored error, and drains mixed batches before returning task errors. No
+schema migration or nonce-recovery redesign is included. Protected-field audits
+now permit only `last_retry_at` updates during transient failure.
+
+The strengthened mixed test **passed in 54.31 seconds**: healthy work drained
+during all three selective-failure cycles, new proofs arrived at 200 ms
+intervals, deferred proofs received repeated attempts, two restarts completed,
+and all 50 proofs ultimately had matching contract events. This supersedes
+the earlier `[0, 0, 0]` starvation finding for the patched code.
+The first scheduling-only attempt failed on graceful-shutdown timeout while
+submissions were still active; inspection also exposed early-error batch
+cancellation. The final implementation drains all batch tasks, and the test
+allows twelve seconds for shutdown (send timeout plus operation backoff).
+Logs: `fairness-mixed.log` and `fairness-mixed-final.log` under the campaign
+artifact directory.

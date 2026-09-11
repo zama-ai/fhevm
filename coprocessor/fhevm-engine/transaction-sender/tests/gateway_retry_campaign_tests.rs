@@ -156,10 +156,16 @@ async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
     // Four attempts require 1 + 2 + 4 seconds of backoff, even for
     // immediate failures. A success/continue busy loop must fail this check.
     assert!(started.elapsed() >= Duration::from_secs(7));
-    let audit_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM campaign_proof_audit")
-        .fetch_one(&env.db_pool)
-        .await?;
-    assert_eq!(audit_count, 0, "infrastructure failures mutated proof rows");
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM campaign_proof_audit
+         WHERE (old_row - 'last_retry_at') IS DISTINCT FROM (new_row - 'last_retry_at')",
+    )
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert_eq!(
+        audit_count, 0,
+        "infrastructure failures changed more than retry scheduling"
+    );
     assert!(
         (proxy.calls(method) - initial_calls) as u64 <= 5 + started.elapsed().as_secs() / 3,
         "attempt rate exceeded bounded operation backoff"
