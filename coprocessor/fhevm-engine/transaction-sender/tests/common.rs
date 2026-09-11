@@ -19,7 +19,10 @@ use test_harness::localstack::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
-use transaction_sender::{get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings};
+use transaction_sender::{
+    gateway_http_client, get_chain_id, make_abstract_signer, AbstractSigner, ConfigSettings,
+    FillersWithoutNonceManagement, NonceManagedProvider,
+};
 
 sol!(
     #[sol(rpc)]
@@ -105,7 +108,7 @@ impl TestEnvironment {
 
         let anvil = Self::new_anvil()?;
         let chain_id =
-            get_chain_id(anvil.ws_endpoint_url(), std::time::Duration::from_secs(1)).await;
+            get_chain_id(anvil.endpoint_url(), std::time::Duration::from_secs(1)).await?;
         let abstract_signer;
         let localstack;
         match signer_type {
@@ -152,6 +155,53 @@ impl TestEnvironment {
 
     pub fn ws_endpoint_url(&self) -> Url {
         self.anvil.as_ref().unwrap().ws_endpoint_url()
+    }
+
+    /// The Gateway URL under test. The endpoint moved from WebSocket to HTTP,
+    /// so this is what the sender and its tests now use.
+    pub fn http_endpoint_url(&self) -> Url {
+        self.anvil.as_ref().unwrap().endpoint_url()
+    }
+
+    /// A provider built exactly the way the binary builds one: the pooled
+    /// client from `gateway_http_client`, attached with `connect_reqwest`.
+    pub fn http_provider(&self) -> anyhow::Result<alloy::providers::DynProvider> {
+        use alloy::providers::Provider as _;
+        let url = self.http_endpoint_url();
+        Ok(alloy::providers::ProviderBuilder::new()
+            .wallet(self.wallet.clone())
+            .connect_reqwest(gateway_http_client(&url)?, url)
+            .erased())
+    }
+
+    /// The inner provider the sender wraps: no nonce management in the filler
+    /// stack, because `NonceManagedProvider` supplies the nonce.
+    pub fn http_sender_inner(&self) -> anyhow::Result<alloy::providers::DynProvider> {
+        self.http_sender_inner_with(self.wallet.clone())
+    }
+
+    /// Same, for a caller-supplied wallet (an unfunded one, for instance).
+    pub fn http_sender_inner_with(
+        &self,
+        wallet: alloy::network::EthereumWallet,
+    ) -> anyhow::Result<alloy::providers::DynProvider> {
+        use alloy::providers::Provider as _;
+        let url = self.http_endpoint_url();
+        Ok(alloy::providers::ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(wallet)
+            .connect_reqwest(gateway_http_client(&url)?, url)
+            .erased())
+    }
+
+    /// The sender's provider, nonce management included.
+    pub fn http_sender_provider(
+        &self,
+    ) -> anyhow::Result<NonceManagedProvider<alloy::providers::DynProvider>> {
+        Ok(NonceManagedProvider::new(
+            self.http_sender_inner()?,
+            Some(self.wallet.default_signer().address()),
+        ))
     }
 
     pub fn recreate_anvil(&mut self) -> anyhow::Result<()> {
