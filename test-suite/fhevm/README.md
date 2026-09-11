@@ -99,6 +99,8 @@ services are restored in a `finally` block, including on failure. Extra host
 chains are stopped too; the drift workload targets the default chain.
 
 Both profiles run, in that order, in `standard` and `standard-shard-stateful`.
+In the default 0.15 CI scenario, consumers are the only host ingestion path
+from bootstrap onward, so both profiles run without any legacy services.
 They require an honest majority (for example, `two-of-three`); unsupported
 topologies are skipped by the standard suite and rejected by direct invocation.
 The recovery assertion checks restored computation counts and a successful
@@ -612,3 +614,52 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+## Full E2E with the new host listener stack
+
+The `two-of-three-multi-chain` scenario uses three coprocessors across
+both host chains with `hostListenerMode: consumer`. Each chain has a listener-core
+producer and each operator has one host-consumer per chain. Legacy host-listener
+and poller services are excluded from startup and restart targets. Their Compose
+entries remain available for every operator and chain behind an inactive
+`legacy-host-listeners` profile. The scenario sets `--catchup-from-block=0` so startup replay also restores history after the
+raw database-revert test, which does not create a drift signal.
+
+```sh
+./fhevm-cli up --scenario two-of-three-multi-chain --build
+./fhevm-cli test standard
+bun scripts/assert-consumer-key-bootstrap.ts
+```
+
+This is the default E2E workflow scenario for 0.15, used by the full `standard`
+job and all three standard shards with the PR-built images. Key bootstrap and
+the complete standard suite run with consumers only. CI checks that all six
+consumers and both producers are running
+and that no legacy host ingestion is running before and after the tests. Standard
+suite precondition failures are errors in this scenario, rather than skipped
+profiles. Gateway listeners and KMS connector services still run: this replaces
+host-chain ingestion only.
+
+After the main suite, CI tests the legacy listener with the former consumer smoke
+profiles, then tests the poller separately with ERC20. Both fallback phases also
+run multi-chain isolation. Each phase stops every consumer on both host chains,
+starts only the selected fallback on all three operators, checks the exclusive
+topology, and restores consumer-only ingestion even if a test fails.
+
+```sh
+bun scripts/test-legacy-host-listeners.ts listener
+bun scripts/test-legacy-host-listeners.ts poller
+```
+
+The explicit emergency fallback is `two-of-three-multi-chain-legacy`. It boots
+and runs the standard suite with legacy listeners and pollers on every operator
+and host chain; host-consumers and listener-core are not started. The dedicated
+`run-e2e-tests-legacy-stack` CI job tests this path from key bootstrap onward and
+checks that no consumer is running before and after the suite. Its standard
+suite includes legacy drift recovery; the consumer-specific repeat is omitted
+because consumers are intentionally disabled.
+
+```sh
+./fhevm-cli up --scenario two-of-three-multi-chain-legacy --build
+./fhevm-cli test standard
+```

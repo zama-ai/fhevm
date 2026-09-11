@@ -5,6 +5,7 @@ import type { EncryptedERC20 } from '../../types/contracts';
 import { createInstance as createHardhatInstance } from '../instance';
 import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
+import { alignDeploymentNonces } from './deploymentNonces';
 import { deployChainFixture } from './multiChain.fixture';
 import type { ChainConfig } from './multiChainHelper';
 import {
@@ -44,6 +45,7 @@ describe('Multi-Chain State Isolation', function () {
     this.deployerA = getWallet(this.chains[0], 50);
     this.deployerB = getWallet(this.chains[1], 50);
 
+    await alignDeploymentNonces([this.deployerA, this.deployerB]);
     this.chainA = await deployChainFixture(this.deployerA);
     this.chainB = await deployChainFixture(this.deployerB);
   });

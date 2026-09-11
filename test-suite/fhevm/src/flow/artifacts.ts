@@ -1,3 +1,4 @@
+import { COMPOSE_OUT_DIR, hostChainRuntimes } from "../layout";
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
 import { requiresMultichainAclAddress } from "../compat/compat";
@@ -87,6 +88,10 @@ export const runtimeArtifactPaths = (state: State) => {
     ...thresholdConfigPaths,
     ...COMPONENTS.map(envPath),
     ...[...generatedComposeComponents(plan)].map(composePath),
+    ...(plan.coprocessor?.hostListenerMode === "consumer"
+      ? hostChainRuntimes(plan.hostChains).map((chain) => path.join(COMPOSE_OUT_DIR,
+        `${chain.isDefault ? "listener-publisher-for-anvil" : `listener-publisher-${chain.key}`}.yaml`))
+      : []),
     ...Array.from({ length: Math.max(0, topology.count - 1) }, (_, index) => envPath(`coprocessor.${index + 1}`)),
     ...(state.discovery
       ? [

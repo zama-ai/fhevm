@@ -1,3 +1,6 @@
+import { legacyHostListenerContainers } from "./commands/legacy-host-listeners";
+import { coprocessorHealthContainers, listenerContainersForChain } from "./flow/readiness";
+import { resumeSteadyStateServices, multiChainCoprocessorUpgradeTargets } from "./flow/repair";
 import { describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -947,5 +950,111 @@ describe("test-suite docker socket runtime", () => {
     expect(raw).not.toContain("docker.sock");
     expect(raw).not.toContain("group_add");
     expect(raw).not.toContain("DOCKER_GID");
+  });
+});
+
+describe("consumer-only host ingestion", () => {
+  test("renders one consumer per operator and chain and an isolated producer per chain", async () => {
+    await withTempStateDir(async () => {
+      const consumerState: State = {
+        ...state,
+        scenario: resolveScenarioFile("consumer.yaml", parseCoprocessorScenario(
+          await readFile(path.join(TEMPLATE_COMPOSE_DIR, "../scenarios/two-of-three-multi-chain.yaml"), "utf8"),
+        )),
+      };
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2", "coprocessor-chain-b.0", "coprocessor-chain-b.1", "coprocessor-chain-b.2", "host-sc", "host-sc-chain-b"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      const plan = stackSpecForState(consumerState);
+      await generateComposeOverrides(consumerState, plan);
+      const main = await loadMergedComposeDoc("coprocessor");
+      const extra = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8")) as {services: Record<string, {command: string[]; profiles?: string[]; image?: unknown; env_file?: unknown}>};
+      const active = Object.entries(main.services).filter(([, service]) => !(service.profiles as string[] | undefined)?.includes("legacy-host-listeners"));
+      expect(active.filter(([, service]) => (service.command as string[] | undefined)?.[0] === "host_listener_consumer")).toHaveLength(3);
+      expect(active.some(([, service]) => ["host_listener", "host_listener_poller"].includes((service.command as string[] | undefined)?.[0] ?? ""))).toBe(false);
+      const extraConsumers = Object.fromEntries(Object.entries(extra.services).filter(([, service]) => !service.profiles?.includes("legacy-host-listeners")));
+      expect(Object.keys(extraConsumers)).toHaveLength(3);
+      expect(Object.values(extra.services).filter((service) => service.profiles?.includes("legacy-host-listeners"))).toHaveLength(6);
+      expect(Object.values(main.services).filter((service) => (service.profiles as string[] | undefined)?.includes("legacy-host-listeners"))).toHaveLength(6);
+      for (const service of Object.values(extraConsumers)) {
+        expect(service.command[0]).toBe("host_listener_consumer");
+        expect(service.command).toContain("--catchup-from-block=0");
+      }
+      for (const mode of ["listener", "poller"] as const) {
+        const fallback = legacyHostListenerContainers([main, extra], mode);
+        expect(fallback.consumers).toHaveLength(6);
+        expect(fallback.selected).toHaveLength(6);
+        for (const doc of [main, extra]) {
+          for (const name of fallback.selected.filter((name) => name in doc.services)) {
+            const consumer = name.replace(/host-listener(?:-poller)?/, "host-listener-consumer");
+            expect(doc.services[name].image).toEqual(doc.services[consumer].image);
+            expect(doc.services[name].env_file).toEqual(doc.services[consumer].env_file);
+          }
+        }
+      }
+      const startup = serviceNameList(consumerState, "coprocessor");
+      expect(startup.filter((name) => name.includes("host-listener"))).toEqual([
+        "coprocessor-host-listener-consumer", "coprocessor1-host-listener-consumer", "coprocessor2-host-listener-consumer",
+      ]);
+      const runtime = coprocessorHealthContainers(consumerState);
+      expect(runtime.filter((name) => name.includes("host-listener"))).toEqual(startup.filter((name) => name.includes("host-listener")));
+      const secondary = listenerContainersForChain(consumerState, "chain-b");
+      expect(secondary).toEqual(Object.keys(extraConsumers));
+      expect(multiChainCoprocessorUpgradeTargets(consumerState, runtime)[0].services).toEqual(secondary);
+      const resumed = resumeSteadyStateServices(consumerState);
+      expect(resumed.coprocessor?.filter((name) => name.includes("host-listener"))).toEqual([
+        ...startup.filter((name) => name.includes("host-listener")), ...secondary,
+      ]);
+      expect(resumed["listener-core"]).toEqual(["listener-redis", "listener-publisher-for-anvil", "listener-publisher-chain-b"]);
+      const core = await loadMergedComposeDoc("listener-core");
+      for (const [name, chain, rpc] of [
+        ["listener-publisher-for-anvil", 12345, "http://host-node:8545"],
+        ["listener-publisher-chain-b", 67890, "http://host-node-chain-b:8547"],
+      ] as const) {
+        const file = (core.services[name].volumes as string[])[0].replace(":/config.yaml:ro", "");
+        const config = YAML.parse(await readFile(file, "utf8"));
+        expect(config.blockchain.chain_id).toBe(chain);
+        expect(config.blockchain.rpc_url).toBe(rpc);
+        expect(config.database.db_url).toEndWith(`/listener_${chain}`);
+      }
+    });
+  });
+});
+
+describe("legacy emergency fallback", () => {
+  test("boots and resumes legacy ingestion on every operator and chain without consumers", async () => {
+    await withTempStateDir(async () => {
+      const legacyState: State = {
+        ...state,
+        scenario: resolveScenarioFile("legacy.yaml", parseCoprocessorScenario(
+          await readFile(path.join(TEMPLATE_COMPOSE_DIR, "../scenarios/two-of-three-multi-chain-legacy.yaml"), "utf8"),
+        )),
+      };
+      expect(legacyState.scenario.kind === "coprocessor-consensus" && legacyState.scenario.hostListenerMode).toBe("legacy");
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2", "coprocessor-chain-b.0", "coprocessor-chain-b.1", "coprocessor-chain-b.2", "host-sc", "host-sc-chain-b"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(legacyState, stackSpecForState(legacyState));
+      const main = await loadMergedComposeDoc("coprocessor");
+      const standby = Object.values(main.services).filter((service) => (service.command as string[] | undefined)?.[0] === "host_listener_consumer");
+      expect(standby).toHaveLength(3);
+      for (const service of standby) expect(service.profiles).toEqual(["host-consumers"]);
+      const startup = serviceNameList(legacyState, "coprocessor");
+      const expected = ["coprocessor", "coprocessor1", "coprocessor2"].flatMap((prefix) => [
+        `${prefix}-host-listener`, `${prefix}-host-listener-poller`,
+      ]);
+      expect(startup.filter((name) => name.includes("host-listener"))).toEqual(expected);
+      expect(coprocessorHealthContainers(legacyState).filter((name) => name.includes("host-listener"))).toEqual(expected);
+      const extra = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8"));
+      expect(Object.keys(extra.services)).toEqual(expected.map((name) => `${name}-chain-b`));
+      expect(listenerContainersForChain(legacyState, "chain-b")).toEqual(Object.keys(extra.services));
+      const resumed = resumeSteadyStateServices(legacyState);
+      expect(resumed.coprocessor?.filter((name) => name.includes("host-listener"))).toEqual([
+        ...expected, ...expected.map((name) => `${name}-chain-b`),
+      ]);
+      expect(resumed["listener-core"]).toBeUndefined();
+    });
   });
 });

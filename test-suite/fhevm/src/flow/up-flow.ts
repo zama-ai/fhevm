@@ -1,6 +1,7 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
+import { hostConsumerEnabled, consumerOnlyHostListeners, legacyOnlyHostListeners, listenerCoreServices } from "../host-listener-mode";
 
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -17,7 +18,6 @@ import {
   requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
-  supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
@@ -322,6 +322,11 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "e2ePublicRuntime
     for (const warning of overrideWarnings(overrides, state.target)) {
       console.log(`[warn] ${warning}`);
     }
+  }
+  if (consumerOnlyHostListeners(state.scenario)) {
+    console.log("[plan] host-ingestion=consumer only; legacy listeners and pollers disabled");
+  } else if (legacyOnlyHostListeners(state.scenario)) {
+    console.log("[plan] host-ingestion=legacy listener and poller; consumers disabled");
   }
   console.log(`[plan] test-suite=${localTestSuite ? "local workspace image" : "published image"}`);
   if (!localTestSuite) {
@@ -953,18 +958,22 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "listener-core":
-      if (!supportsHostListenerConsumer(state)) {
+      if (!hostConsumerEnabled(state)) {
         break;
       }
-      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+      const listenerDatabases = consumerOnlyHostListeners(state.scenario)
+        ? state.scenario.hostChains.map((chain) => `listener_${chain.chainId}`) : ["listener"];
+      for (const database of listenerDatabases) {
+        await postgresExec("", ["-c", `CREATE DATABASE ${database};`]);
+      }
       await stepComposeUp("listener-core", state,
         ["listener-redis"]
       );
       await waitForContainer("listener-redis", "running");
       await stepComposeUp("listener-core", state,
-        ["listener-publisher-for-anvil"]
+        listenerCoreServices(state.scenario)
       );
-      await waitForContainer("listener-publisher-for-anvil", "running");
+      for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
       break;
     case "coprocessor": {
       const skipMigration = await coprocessorDbsSeeded(state);
@@ -1862,7 +1871,7 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   }
   if (group === "listener-core") {
     await waitForContainer("listener-redis", "running");
-    await waitForContainer("listener-publisher-for-anvil", "running");
+    for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
     return;
   }
   if (group === "relayer") {

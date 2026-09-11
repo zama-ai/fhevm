@@ -1,0 +1,15 @@
+version: 1
+kind: coprocessor-consensus
+hostListenerMode: legacy
+name: Two Of Three Multi Chain Legacy
+description: Emergency fallback with legacy host-listener and poller on all three operators and both host chains; consumers disabled.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 3
+  threshold: 2
