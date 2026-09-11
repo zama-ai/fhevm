@@ -67,6 +67,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_ascii_whitespace() {
+        let verifier = verifier();
+        assert!(!verifier.verify(Some(&header(&format!("Bearer\u{00A0}{KEY}")))));
+        assert!(!verifier.verify(Some(&header(&format!("\u{3000}Bearer {KEY}")))));
+        assert!(!verifier.verify(Some(&header(&format!("Bearer {KEY}\u{00A0}")))));
+    }
+
+    #[test]
     fn rejects_bad_tokens() {
         let verifier = verifier();
         assert!(!verifier.verify(None));
