@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND zk_proof_id < $3\n             ORDER BY zk_proof_id\n             LIMIT $2",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND zk_proof_id < $3\n               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $4))\n             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id\n             LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -53,7 +53,8 @@
       "Left": [
         "Int4",
         "Int8",
-        "Int8"
+        "Int8",
+        "Float8"
       ]
     },
     "nullable": [
@@ -68,5 +69,5 @@
       true
     ]
   },
-  "hash": "84cabecdf429e48de030f75b0a123fbcacb99edeabea565a7cf65bb929719add"
+  "hash": "03a48beaf2772578697193310326319fd5717d69fd75c3f6dbd7d53d43df0689"
 }

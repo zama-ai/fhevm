@@ -579,3 +579,28 @@ fault class/location/schedule, expected classification, proof/job identities,
 database transition audit, RPC counts/outcomes, contract evidence, restart
 history, recovery time, and pass/fail reason. Record baseline and candidate
 results separately and identify any deviations from the predeclared bounds.
+
+## Fair scheduling follow-up
+
+Transient failures now update only `last_retry_at`; they still preserve the
+finite retry count, stored error and proof payload. Earlier zero-mutation audit
+results describe the pre-scheduling patch. Current audits must allow scheduling
+timestamp updates and reject all other mutations or deletion during transient
+failure. No schema migration is required.
+
+Selection excludes attempts newer than `error_sleep_max_secs` (minimum one
+second) and orders eligible rows by `COALESCE(last_retry_at, created_at)`, then
+proof ID. This bounded per-row delay also applies to existing limited-failure
+timestamps. Operation-level backoff remains. New arrivals must not indefinitely
+postpone a due retry, and failing rows must not monopolize the first batch.
+The timestamp persists across restart; there is no process-local retry cursor.
+
+Mixed batches drain every task before returning an error, retaining any fatal
+BackendGone signal. Otherwise the first failed task could cancel healthy
+submissions after nonce allocation. This avoids that cancellation path without
+changing nonce reconciliation or accepted-but-unmined retry handling.
+
+The mixed campaign streams new proofs at 200 ms intervals, checks complete
+healthy-proof drainage during each fault/restart cycle, observes repeated
+deferred attempts, audits protected fields, and requires contract evidence for
+all 50 proofs after recovery. Run the normal proof regression suite as well.

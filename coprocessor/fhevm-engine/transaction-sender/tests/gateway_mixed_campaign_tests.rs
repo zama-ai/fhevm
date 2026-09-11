@@ -19,7 +19,7 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
         add_ciphertexts_batch_limit: 10,
         verify_proof_resp_max_retries: 15,
         verify_proof_remove_after_max_retries: true,
-        graceful_shutdown_timeout: Duration::from_secs(6),
+        graceful_shutdown_timeout: Duration::from_secs(12),
         ..Default::default()
     };
     let mut env = TestEnvironment::new_with_config(SignerType::PrivateKey, conf, false).await?;
@@ -41,16 +41,6 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
     let mut next_id = 1i64;
     let mut later_completed = Vec::new();
     for cycle in 0..3 {
-        // More than two proof batches initially; new work arrives on each restart.
-        let count = if cycle == 0 { 30 } else { 10 };
-        for _ in 0..count {
-            sqlx::query("INSERT INTO verify_proofs
-                (zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count)
-                VALUES ($1,42,$2,$3,$4,$5,14)")
-                .bind(next_id).bind(env.contract_address.to_string()).bind(env.user_address.to_string())
-                .bind(vec![1u8;64]).bind(next_id % 2 == 0).execute(&env.db_pool).await?;
-            next_id += 1;
-        }
         for n in 0..10u8 {
             insert_ciphertext_digest(
                 &env.db_pool,
@@ -83,6 +73,18 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
         .await?;
         let calls = proxy.calls("eth_estimateGas");
         let run = tokio::spawn(async move { sender.run().await });
+        // More than two proof batches initially; new work arrives on each restart.
+        let count = if cycle == 0 { 30 } else { 10 };
+        for _ in 0..count {
+            sqlx::query("INSERT INTO verify_proofs
+                (zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count)
+                VALUES ($1,42,$2,$3,$4,$5,14)")
+                .bind(next_id).bind(env.contract_address.to_string()).bind(env.user_address.to_string())
+                .bind(vec![1u8;64]).bind(next_id % 2 == 0).execute(&env.db_pool).await?;
+            next_id += 1;
+            // Keep new work arriving while deferred early proofs become due.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
         // Require observed retries, rather than accepting an idle sender.
         tokio::time::timeout(Duration::from_secs(30), async {
             while proxy.calls("eth_estimateGas") < calls + 40 {
@@ -97,17 +99,33 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
         .fetch_one(&env.db_pool)
         .await?;
         assert_eq!(early, 10, "early work lost eligibility");
-        let remaining: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id > 10")
-                .fetch_one(&env.db_pool)
-                .await?;
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let remaining: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id > 10")
+                        .fetch_one(&env.db_pool)
+                        .await?;
+                if remaining == 0 {
+                    break;
+                }
+                assert!(!run.is_finished());
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            anyhow::Ok(())
+        })
+        .await??;
+        let remaining = 0;
         later_completed.push(next_id - 11 - remaining);
         let mutations: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM mixed_audit WHERE (old_row->>'zk_proof_id')::bigint <= 10",
+            "SELECT COUNT(*) FROM mixed_audit WHERE (old_row->>'zk_proof_id')::bigint <= 10
+             AND (old_row - 'last_retry_at') IS DISTINCT FROM (new_row - 'last_retry_at')",
         )
         .fetch_one(&env.db_pool)
         .await?;
-        assert_eq!(mutations, 0, "transient failures mutated early proofs");
+        assert_eq!(
+            mutations, 0,
+            "transient failures changed more than retry scheduling"
+        );
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let remaining: i64 = sqlx::query_scalar(
@@ -123,6 +141,15 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
             anyhow::Ok(())
         })
         .await??;
+        let retried: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mixed_audit
+             WHERE (old_row->>'zk_proof_id')::bigint <= 10
+               AND old_row->>'last_retry_at' IS NOT NULL
+               AND new_row->>'last_retry_at' IS DISTINCT FROM old_row->>'last_retry_at'",
+        )
+        .fetch_one(&env.db_pool)
+        .await?;
+        assert!(retried > 0, "new arrivals starved deferred retries");
         if cycle == 2 {
             proxy.clear_all_faults();
             tokio::time::timeout(Duration::from_secs(60), async {
@@ -140,7 +167,7 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
             .await??;
         }
         env.cancel_token.cancel();
-        tokio::time::timeout(Duration::from_secs(12), run).await???;
+        tokio::time::timeout(Duration::from_secs(15), run).await???;
         env.cancel_token = tokio_util::sync::CancellationToken::new();
     }
     let verified = input
