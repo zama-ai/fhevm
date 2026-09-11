@@ -81,14 +81,18 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
       FUNDER_PRIVATE_KEY="${ETH_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${sepolia_json}" \
       node "${script_dir}/fund-wallets-treasury.cjs"
   fi
-  # Polygon's canonical-snapshot flow deploys a throwaway proxy set before the
-  # final contracts, and Amoy gas prices can make that exceed the 1-token default.
-  # The test signers need the same headroom: a single e2e fixture deploy on Amoy was
-  # measured at 0.3 POL, so the 0.2 default drains them partway through the suite and
-  # every later job dies on "insufficient funds" instead of exercising anything.
+  # Polygon's canonical-snapshot flow deploys the empty-proxy set TWICE - once as a
+  # throwaway, then again once the canonical ProtocolConfig snapshot is written - on top
+  # of the 9 implementations. Measured at 69 gwei: 5.5M gas (0.38 POL) for a single
+  # contract and ~2.5 POL for the whole deploy, so the old 2.0 floor died two
+  # implementations from the end. 6.0 absorbs a spike to ~165 gwei. Do not raise this
+  # much further: the mnemonic is regenerated per run, so anything unspent is stranded.
+  # The test signers need headroom too: one e2e fixture deploy on Amoy was measured at
+  # 0.3 POL, so the 0.2 default drains them partway through the suite and every later
+  # job dies on "insufficient funds" instead of exercising anything.
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
     FLOOR_WEI="2000000000000000000" \
-    DEPLOYER_FLOOR_WEI="2000000000000000000" \
+    DEPLOYER_FLOOR_WEI="6000000000000000000" \
     FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
   # Only the Nitro gateway has a faucet on this path.

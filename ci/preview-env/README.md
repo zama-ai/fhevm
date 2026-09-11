@@ -259,10 +259,12 @@ The two host chains are the real public testnets, so this is the only preview sh
   through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
   funder reads the faucet Secrets, masked, from `deploy-rpc-secret.sh`.
 - **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 ETH on Sepolia and
-  deployer `#9` to 1.0 ETH; on Amoy both floors are 2.0 POL (`FLOOR_WEI` /
-  `DEPLOYER_FLOOR_WEI`), because gas there makes one e2e fixture deploy cost up to
-  0.3 POL and the signers would otherwise run dry mid-suite. It fails fast if either
-  faucet cannot cover the shortfall.
+  deployer `#9` to 1.0 ETH; on Amoy the signers get 2.0 POL and the deployer 6.0
+  (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`). Amoy gas is the reason for both: one e2e fixture
+  deploy costs up to 0.3 POL, and the host-contracts deploy there spends ~2.5 POL at
+  69 gwei because the canonical-snapshot flow builds the empty-proxy set twice. Unspent
+  POL is stranded (fresh mnemonic per run), so raise these only against measured cost.
+  It fails fast if either faucet cannot cover the shortfall.
   The **KMS tx-senders also get 0.05 ETH each on Sepolia**: since RFC013 KMSGeneration
   sits on the canonical host chain, so they sign the keygen/crsgen responses there and
   the ceremony stalls at "insufficient funds" without it. Their decryption responses,
