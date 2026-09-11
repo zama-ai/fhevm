@@ -292,7 +292,10 @@ The two host chains are the real public testnets, so this is the only preview sh
   pod counts as Ready the moment the container starts, so the rollout returns while the
   relayer is still crash-looping. `/v2/keyurl` is probed rather than `/healthz` because it
   serves an in-memory value with a hardcoded 200, so it cannot 503 the pod out of the
-  Service in the middle of a suite.
+  Service in the middle of a suite. It also needs the `progressDeadlineSeconds` patch:
+  `kubectl rollout status` fails the moment the Deployment reports
+  `ProgressDeadlineExceeded` and ignores its own `--timeout`, so the chart's 600s default
+  broke the gate at 10 min against a measured 21 min wait.
 - **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
   RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
   ProtocolConfig (canonical source) exactly as the Anvil Polygon does.

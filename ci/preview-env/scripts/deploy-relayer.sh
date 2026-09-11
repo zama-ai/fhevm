@@ -52,7 +52,14 @@ case "${kind}" in
     # which looks exactly like a product regression. Anvil clears this in seconds.
     # Only meaningful because values-relayer-e2e.yaml sets a readinessProbe: with no
     # probe a pod is Ready as soon as the container starts and this returns at once.
-    kubectl rollout status deployment/relayer -n "${NAMESPACE}" --timeout=30m
+    # rollout status also gives up the instant the Deployment reports
+    # ProgressDeadlineExceeded, whatever --timeout says, and the common chart leaves
+    # that at the 600s default - so the gate failed at 10m against a measured 21m
+    # wait. Widen it past the timeout below; progressDeadlineSeconds is not part of
+    # the pod template, so patching it starts no new rollout.
+    kubectl patch deployment relayer -n "${NAMESPACE}" \
+      -p '{"spec":{"progressDeadlineSeconds":2400}}'
+    kubectl rollout status deployment/relayer -n "${NAMESPACE}" --timeout=35m
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
