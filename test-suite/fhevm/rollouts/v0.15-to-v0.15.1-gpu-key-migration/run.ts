@@ -767,6 +767,12 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await ctx.startDeferredGreen();
   await assertActiveSafeguard();
   await assertGreenSafeguard();
+  const greenVersion = await run([
+    "docker", "exec", "coprocessor-gcs-upgrade-controller", "upgrade-controller", "--stack-version",
+  ]);
+  if (greenVersion.stdout.trim().replace(/^v/, "") !== "0.15.1") {
+    throw new Error(`adoption Green reports ${greenVersion.stdout.trim()}; expected 0.15.1`);
+  }
   await assertGreenWorkersParked();
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "compressed-xof", greenStartedAt);
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
@@ -774,7 +780,7 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   logPhase("13 cut over from 0.15.0 Blue to 0.15.1 Green");
   await ctx.test("blue-green", {
     blueGreenPredecessorVersion: "0.15.0",
-    blueGreenProposalId: "3",
+    blueGreenProposalId: "4",
     parallel: false,
   });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
