@@ -34,19 +34,60 @@ pub fn vault_address(executor: Pubkey) -> (Pubkey, u8) {
 pub mod delegator_vault {
     use super::*;
 
-    /// Exercises the host's rejection of nested scratch closure. Test-only; deployed nowhere.
-    pub fn close_scratch_via_cpi<'info>(
-        ctx: Context<'info, CloseScratchViaCpi<'info>>,
+    /// Exercises the host's rejection of nested transient store closure. Test-only; deployed nowhere.
+    pub fn close_transient_store_via_cpi<'info>(
+        ctx: Context<'info, CloseTransientStoreViaCpi<'info>>,
     ) -> Result<()> {
-        zama_host::cpi::close_scratch(
+        zama_host::cpi::close_transient_store(
             CpiContext::new(
                 ctx.accounts.zama_host.key(),
-                zama_host::cpi::accounts::CloseScratch {
+                zama_host::cpi::accounts::CloseTransientStore {
                     instructions: ctx.accounts.instructions.to_account_info(),
+                    transient_store: ctx.accounts.transient_store.to_account_info(),
+                    refund: ctx.accounts.refund.to_account_info(),
                 },
             )
             .with_remaining_accounts(ctx.remaining_accounts.to_vec()),
         )
+    }
+
+    /// Checks return data immediately after CPI, before the transaction's final
+    /// transient store close overwrites the runtime return channel.
+    pub fn check_cpi_return<'info>(
+        ctx: Context<'info, CheckCpiReturn<'info>>,
+        instruction_data: Vec<u8>,
+        expected: Vec<u8>,
+    ) -> Result<()> {
+        let instruction = Instruction {
+            program_id: ctx.accounts.callee.key(),
+            accounts: ctx
+                .remaining_accounts
+                .iter()
+                .map(|info| {
+                    if info.is_writable {
+                        AccountMeta::new(info.key(), info.is_signer)
+                    } else {
+                        AccountMeta::new_readonly(info.key(), info.is_signer)
+                    }
+                })
+                .collect(),
+            data: instruction_data,
+        };
+        anchor_lang::solana_program::program::invoke(&instruction, ctx.remaining_accounts)?;
+        match anchor_lang::solana_program::program::get_return_data() {
+            Some((program, returned)) => {
+                require_keys_eq!(program, ctx.accounts.callee.key());
+                require!(
+                    returned == expected,
+                    anchor_lang::error::ErrorCode::RequireEqViolated
+                );
+            }
+            None => require!(
+                expected.is_empty(),
+                anchor_lang::error::ErrorCode::RequireEqViolated
+            ),
+        }
+        Ok(())
     }
 
     /// Grants a user-decryption delegation with the executor's vault PDA as the delegator.
@@ -128,8 +169,22 @@ pub struct VaultDelegation<'info> {
 
 /// Accounts forwarded to the host in the nested-close negative test.
 #[derive(Accounts)]
-pub struct CloseScratchViaCpi<'info> {
+pub struct CloseTransientStoreViaCpi<'info> {
+    /// CHECK: test forwards the transient store to ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: ZamaHost checks the recorded refund destination.
+    #[account(mut)]
+    pub refund: UncheckedAccount<'info>,
     /// CHECK: validated by the host; this proxy deliberately adds no authorization.
     pub instructions: UncheckedAccount<'info>,
     pub zama_host: Program<'info, ZamaHost>,
+}
+
+/// The remaining accounts are the exact callee account list.
+#[derive(Accounts)]
+pub struct CheckCpiReturn<'info> {
+    /// CHECK: test probe intentionally invokes the supplied executable.
+    #[account(executable)]
+    pub callee: UncheckedAccount<'info>,
 }

@@ -43,9 +43,9 @@ pub enum ConfidentialTokenError {
     /// Vault token account was not the mint's canonical associated token account.
     #[msg("Vault token account is not the canonical mint vault")]
     VaultAccountMismatch,
-    /// Current EncryptedState account did not match token account state.
+    /// Current EncryptedStore account did not match token account state.
     #[msg("current encrypted value does not match token account state")]
-    CurrentEncryptedStateMismatch,
+    CurrentEncryptedStoreMismatch,
     /// Transfer amount handle does not carry the expected confidential balance type.
     #[msg("transfer amount handle type is invalid")]
     AmountHandleTypeMismatch,
@@ -70,8 +70,8 @@ pub enum ConfidentialTokenError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt proof for the pinned burned handle did not verify against
-    /// the encrypted State's current peaks.
-    #[msg("public-decrypt MMR proof is invalid for this encrypted State")]
+    /// the encrypted store's current peaks.
+    #[msg("public-decrypt MMR proof is invalid for this encrypted store")]
     PublicDecryptProofInvalid,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
@@ -134,7 +134,7 @@ pub enum ConfidentialTokenError {
     #[msg("pending burn is already initialized")]
     PendingBurnAlreadyInitialized,
     /// Redeem/cancel requires the burned handle to still be the burned-amount encrypted value
-    /// State's current slot handle.
+    /// Store's current slot handle.
     #[msg("pending burn handle is not the burned amount current handle")]
     PendingBurnHandleNotCurrent,
     /// Pending-burn account fields do not match the redeem/cancel accounts.
@@ -149,20 +149,20 @@ pub enum ConfidentialTokenError {
     /// A frozen underlying token account cannot participate in wrap, transfer, burn, or redeem.
     #[msg("underlying token account is frozen")]
     UnderlyingTokenAccountFrozen,
-    /// The disclosed encrypted State does not match the declared token state field.
+    /// The disclosed encrypted store does not match the declared token state field.
     #[msg("disclosed value does not match its declared token state field")]
     DisclosedValueBindingMismatch,
-    /// An encrypted State is not controlled by the supplied token account PDA.
-    #[msg("encrypted State authority does not match token account")]
-    EncryptedStateAuthorityMismatch,
+    /// An encrypted store is not controlled by the supplied token account PDA.
+    #[msg("encrypted store authority does not match token account")]
+    EncryptedStoreAuthorityMismatch,
     /// A token encrypted value does not belong to this program and mint at the expected
     /// authority and label.
-    #[msg("token encrypted State is not canonical")]
-    TokenEncryptedStateMismatch,
+    #[msg("token encrypted store is not canonical")]
+    TokenEncryptedStoreMismatch,
     /// Freeze checks bind the owner's associated token account for the wrapped mint.
     #[msg("underlying associated token account does not match")]
     UnderlyingAssociatedAccountMismatch,
-    /// Result grants require a state, its signing authority, and scratch; self-transfers cannot grant a result.
+    /// Result grants require a state, its signing authority, and transient store; self-transfers cannot grant a result.
     #[msg("invalid result grant accounts or self-transfer result request")]
     ResultGrantMismatch,
 }

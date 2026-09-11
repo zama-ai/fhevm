@@ -1,6 +1,6 @@
 use super::*;
 
-pub use zama_solana_acl::{ENCRYPTED_STATE_SEED, MAX_STATE_SLOTS};
+pub use zama_solana_acl::{ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct EncryptedSlot {
@@ -9,7 +9,7 @@ pub struct EncryptedSlot {
 }
 
 #[account]
-pub struct EncryptedState {
+pub struct EncryptedStore {
     pub program: Pubkey,
     pub authority: Pubkey,
     pub scope: [u8; 32],
@@ -19,13 +19,13 @@ pub struct EncryptedState {
     pub bump: u8,
 }
 
-impl EncryptedState {
+impl EncryptedStore {
     pub fn canonical_address(&self) -> (Pubkey, u8) {
-        encrypted_state_address(self.program, self.authority, self.scope)
+        encrypted_store_address(self.program, self.authority, self.scope)
     }
 
     pub(crate) fn validate(&self, address: Pubkey) -> Result<()> {
-        zama_solana_acl::encrypted_state::validate_state_shape(
+        zama_solana_acl::encrypted_store::validate_store_shape(
             self.slots.iter().map(|slot| slot.key),
             self.leaf_count,
             self.peaks.len(),
@@ -34,7 +34,7 @@ impl EncryptedState {
         let (expected, bump) = self.canonical_address();
         require!(
             address == expected && self.bump == bump,
-            ZamaHostError::EncryptedStatePdaMismatch
+            ZamaHostError::EncryptedStorePdaMismatch
         );
         Ok(())
     }
@@ -47,14 +47,14 @@ impl EncryptedState {
     ) -> Result<()> {
         require!(
             self.get(&key) == expected,
-            ZamaHostError::PreviousStateMismatch
+            ZamaHostError::PreviousStoreMismatch
         );
         if let Some(slot) = self.slots.iter_mut().find(|slot| slot.key == key) {
             slot.handle = handle;
         } else {
             require!(
-                self.slots.len() < MAX_STATE_SLOTS,
-                ZamaHostError::EncryptedStateCapacityExceeded
+                self.slots.len() < MAX_STORE_SLOTS,
+                ZamaHostError::EncryptedStoreCapacityExceeded
             );
             self.slots.push(EncryptedSlot { key, handle });
         }
@@ -69,14 +69,14 @@ impl EncryptedState {
     }
 }
 
-pub fn encrypted_state_address(
+pub fn encrypted_store_address(
     program: Pubkey,
     authority: Pubkey,
     scope: [u8; 32],
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
-            ENCRYPTED_STATE_SEED,
+            ENCRYPTED_STORE_SEED,
             program.as_ref(),
             authority.as_ref(),
             &scope,
@@ -93,8 +93,8 @@ mod tests {
         historical_access_leaf_commitment, mmr_append, mmr_build_proof, mmr_verify,
     };
 
-    fn empty_state() -> EncryptedState {
-        EncryptedState {
+    fn empty_state() -> EncryptedStore {
+        EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
             scope: [0; 32],
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn shared_decoder_accepts_the_host_wire_layout_and_identity() {
-        let mut state = EncryptedState {
+        let mut state = EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
             scope: [3; 32],
@@ -144,10 +144,10 @@ mod tests {
         let mut bytes = Vec::new();
         state.try_serialize(&mut bytes).unwrap();
         assert_eq!(
-            EncryptedState::DISCRIMINATOR,
-            zama_solana_acl::encrypted_state_discriminator()
+            EncryptedStore::DISCRIMINATOR,
+            zama_solana_acl::encrypted_store_discriminator()
         );
-        let decoded = zama_solana_acl::decode_encrypted_state(&bytes).unwrap();
+        let decoded = zama_solana_acl::decode_encrypted_store(&bytes).unwrap();
         assert_eq!(
             Pubkey::find_program_address(&decoded.seeds(), &crate::ID),
             (address, bump)
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(decoded.get(&[4; 32]), state.get(&[4; 32]));
         assert_eq!(
             bytes.len(),
-            zama_solana_acl::EncryptedState::account_size(1, 0)
+            zama_solana_acl::EncryptedStore::account_size(1, 0)
         );
     }
     #[test]
@@ -179,7 +179,7 @@ mod tests {
         let before = state.clone();
         assert_eq!(
             state.set(balance, Some(old_handle), [8; 32]),
-            Err(error!(ZamaHostError::PreviousStateMismatch))
+            Err(error!(ZamaHostError::PreviousStoreMismatch))
         );
         assert_eq!(state.slots, before.slots);
         assert_eq!(state.peaks, before.peaks);
@@ -189,13 +189,13 @@ mod tests {
     #[test]
     fn full_state_still_allows_replacement_but_never_silently_evicts() {
         let mut state = empty_state();
-        for key in 0..MAX_STATE_SLOTS as u8 {
+        for key in 0..MAX_STORE_SLOTS as u8 {
             state.set([key; 32], None, [1; 32]).unwrap();
         }
         let before = state.clone();
         assert_eq!(
             state.set([255; 32], None, [2; 32]),
-            Err(error!(ZamaHostError::EncryptedStateCapacityExceeded))
+            Err(error!(ZamaHostError::EncryptedStoreCapacityExceeded))
         );
         assert_eq!(state.slots, before.slots);
         assert_eq!(state.peaks, before.peaks);

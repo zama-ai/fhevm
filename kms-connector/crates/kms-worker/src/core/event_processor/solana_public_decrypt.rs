@@ -14,7 +14,7 @@ use crate::core::{
     event_processor::ProcessingError,
     solana::{
         deployment::DeploymentIdentity,
-        encrypted_state::{EncryptedStateFailure, resolve_encrypted_state},
+        encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store},
         failure::FailureClass,
         handle_binding::{
             HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
@@ -99,17 +99,17 @@ where
         .ok_or(PublicDecryptFailure::MalformedExtraData)?;
 
     let program_id = deployment.program_id();
-    let keys = SnapshotKeys::new([extra.encrypted_state]);
+    let keys = SnapshotKeys::new([extra.encrypted_store]);
     let observation = reader.read_accounts(&keys).await?;
-    let encrypted_state = resolve_encrypted_state(&observation, program_id, extra.encrypted_state)?;
+    let encrypted_store = resolve_encrypted_store(&observation, program_id, extra.encrypted_store)?;
 
     let batch = ProofBatch::new([(
         LeafQuery {
-            encrypted_state: encrypted_state.account_key(),
+            encrypted_store: encrypted_store.account_key(),
             handle,
             kind: LeafKind::Public,
         },
-        (&encrypted_state, handle),
+        (&encrypted_store, handle),
     )]);
     let bindings = verify_proofs_with_one_retry(proofs, &batch, |(account, handle), outcome| {
         check_public_binding(account, *handle, outcome)
@@ -128,7 +128,7 @@ pub enum PublicDecryptFailure {
         /// How many arrived.
         handles: usize,
     },
-    /// The `extraData` is not the version-4 carrier naming the encrypted state.
+    /// The `extraData` is not the version-4 carrier naming the encrypted store.
     #[error(
         "Solana public decryption requires the version-4 extraData naming the handle's encrypted \
          state"
@@ -137,9 +137,9 @@ pub enum PublicDecryptFailure {
     /// The account could not be observed.
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    /// The named account is not a valid encrypted state.
-    #[error("encrypted state: {0}")]
-    EncryptedState(#[from] EncryptedStateFailure),
+    /// The named account is not a valid encrypted store.
+    #[error("encrypted store: {0}")]
+    EncryptedStore(#[from] EncryptedStoreFailure),
     /// The leaf record could not be read at all.
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),
@@ -155,7 +155,7 @@ impl PublicDecryptFailure {
         match self {
             Self::NotSingleHandle { .. } | Self::MalformedExtraData => FailureClass::Terminal,
             Self::Snapshot(source) => source.class(),
-            Self::EncryptedState(source) => source.class(),
+            Self::EncryptedStore(source) => source.class(),
             Self::ProofRead(source) => source.class(),
             Self::HandleBinding(source) => source.class(),
         }

@@ -19,11 +19,11 @@ pub struct BalanceHandleUpdatedEvent {
     /// Previous balance handle.
     pub old_handle: [u8; 32],
     /// Previous ZamaHost ACL record.
-    pub old_encrypted_state: Pubkey,
+    pub old_encrypted_store: Pubkey,
     /// New balance handle.
     pub new_handle: [u8; 32],
     /// New ZamaHost ACL record.
-    pub new_encrypted_state: Pubkey,
+    pub new_encrypted_store: Pubkey,
     /// Reason this balance pointer changed.
     pub reason: BalanceHandleUpdateReason,
 }
@@ -61,11 +61,11 @@ pub struct TotalSupplyHandleUpdatedEvent {
     /// Previous total-supply handle.
     pub old_handle: [u8; 32],
     /// Previous ZamaHost ACL record.
-    pub old_encrypted_state: Pubkey,
+    pub old_encrypted_store: Pubkey,
     /// New total-supply handle.
     pub new_handle: [u8; 32],
     /// New ZamaHost ACL record.
-    pub new_encrypted_state: Pubkey,
+    pub new_encrypted_store: Pubkey,
     /// Reason this total-supply pointer changed.
     pub reason: TotalSupplyUpdateReason,
 }
@@ -92,12 +92,12 @@ pub enum TotalSupplyUpdateReason {
 pub struct HandleDisclosedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Confidential mint whose application scopes the disclosed encrypted State.
+    /// Confidential mint whose application scopes the disclosed encrypted store.
     pub mint: Pubkey,
     /// Disclosed handle, proven public by the host verifier.
     pub handle: [u8; 32],
-    /// ZamaHost `EncryptedState` encrypted State the handle belongs to.
-    pub encrypted_state: Pubkey,
+    /// ZamaHost `EncryptedStore` encrypted store the handle belongs to.
+    pub encrypted_store: Pubkey,
     /// Controller of the state containing the historical public leaf.
     pub authority: Pubkey,
     /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
@@ -133,7 +133,7 @@ pub struct BurnRedeemedEvent {
     /// Burned amount handle proven by KMS.
     pub burned_handle: [u8; 32],
     /// ACL record for `burned_handle`.
-    pub burned_encrypted_state: Pubkey,
+    pub burned_encrypted_store: Pubkey,
     /// Underlying token destination account.
     pub destination_usdc: Pubkey,
     /// KMS-certified cleartext amount released from the vault.
@@ -153,8 +153,8 @@ pub struct PendingBurnCancelledEvent {
     pub token_account: Pubkey,
     /// Burned amount handle that was cancelled (must be the current handle).
     pub burned_handle: [u8; 32],
-    /// Shared `burned_amount` EncryptedState account for the token account.
-    pub burned_encrypted_state: Pubkey,
+    /// Shared `burned_amount` EncryptedStore account for the token account.
+    pub burned_encrypted_store: Pubkey,
 }
 
 /// Emitted when a confidential burn computes the all-or-zero burned amount.
@@ -171,7 +171,7 @@ pub struct ConfidentialBurnEvent {
     /// Encrypted amount actually burned.
     pub burned_handle: [u8; 32],
     /// ZamaHost ACL record for `burned_handle`.
-    pub burned_encrypted_state: Pubkey,
+    pub burned_encrypted_store: Pubkey,
 }
 
 /// Emitted when a confidential transfer computes the all-or-zero moved amount.
@@ -192,5 +192,5 @@ pub struct ConfidentialTransferEvent {
     /// Encrypted amount actually transferred.
     pub transferred_handle: [u8; 32],
     /// ZamaHost ACL record for `transferred_handle`.
-    pub transferred_encrypted_state: Pubkey,
+    pub transferred_encrypted_store: Pubkey,
 }

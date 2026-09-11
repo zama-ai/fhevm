@@ -1,7 +1,7 @@
 {
   "toolchain": {
     "anchor": "anchor-cli 1.1.2",
-    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
   "measurements": {

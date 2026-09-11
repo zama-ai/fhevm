@@ -1,8 +1,9 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { buildClaimInstructions } from './claim.js';
+import { buildClaimInstruction } from './claim.js';
 import {
   CLAIM_DISCRIMINATOR,
   getClaimInstructionDataDecoder,
@@ -11,9 +12,9 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confi
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
 import {
-  CLOSE_SCRATCH_DISCRIMINATOR,
-  getCloseScratchInstructionDataDecoder,
-} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeScratch.js';
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  getCloseTransientStoreInstructionDataDecoder,
+} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -42,7 +43,7 @@ const batcherValuePda = (batch: Address, batchAuthority: Address): Promise<Addre
     base58.decode(batchAuthority),
     base58.decode(batch),
   ]);
-describe('buildClaimInstructions', () => {
+describe('buildClaimInstruction', () => {
   // Fixture aligned with derive.test.ts's consensus-critical golden: batcher = addr(2),
   // batch = the golden batch PDA for index 0, payout mint = addr(13) — so the batch-side payout
   // token-account / balance expectations can be pinned to the same golden base58 strings.
@@ -59,7 +60,9 @@ describe('buildClaimInstructions', () => {
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
-    const instructions = await buildClaimInstructions({
+    const fhe = await createSolanaFheTransaction({ payer });
+    const instruction = await buildClaimInstruction({
+      fhe: fhe.accounts,
       payer,
       user,
       batcher,
@@ -69,8 +72,9 @@ describe('buildClaimInstructions', () => {
       tokenProgram: SPL_TOKEN,
       hostConfig,
     });
-    expect(instructions).toHaveLength(2);
-    const [instruction, close] = instructions;
+    const instructions = fhe.wrap([instruction]);
+    expect(instructions).toHaveLength(3);
+    const close = instructions[2]!;
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
 
@@ -92,7 +96,7 @@ describe('buildClaimInstructions', () => {
       base58.decode(user),
     ]);
     const state = await batcherValuePda(batch, record);
-    const scratch = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(state)]);
+    const transientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
     const expected: Address[] = [
       payer.address,
       user,
@@ -101,7 +105,7 @@ describe('buildClaimInstructions', () => {
       batchAuthority,
       await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [utf8('join-record'), base58.decode(batch), base58.decode(user)]),
       state,
-      scratch,
+      transientStore,
       address('Sysvar1nstructions1111111111111111111111111'),
       payoutConfidentialMint,
       payoutUnderlyingMint,
@@ -124,11 +128,11 @@ describe('buildClaimInstructions', () => {
     expect(close!.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(close!.accounts!.map((a) => a.address)).toEqual([
       address('Sysvar1nstructions1111111111111111111111111'),
-      scratch,
+      transientStore,
       payer.address,
     ]);
-    expect(Array.from(getCloseScratchInstructionDataDecoder().decode(close!.data!).discriminator)).toEqual(
-      Array.from(CLOSE_SCRATCH_DISCRIMINATOR),
+    expect(Array.from(getCloseTransientStoreInstructionDataDecoder().decode(close!.data!).discriminator)).toEqual(
+      Array.from(CLOSE_TRANSIENT_STORE_DISCRIMINATOR),
     );
     // user carries no signer role (0x02/0x03 are the signer roles).
     expect(instruction.accounts![1]!.role & 0b10).toBe(0);
@@ -137,12 +141,13 @@ describe('buildClaimInstructions', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(CLAIM_DISCRIMINATOR));
   });
 
-  // Golden pins for the fixed fixture: the encrypted States are re-pinned from the RFC 035 seed
-  // derivation (`encrypted_state_seeds`, mirrored and pinned in the SDK's encryptedState
+  // Golden pins for the fixed fixture: the encrypted stores are re-pinned from the RFC 035 seed
+  // derivation (`encrypted_store_seeds`, mirrored and pinned in the SDK's encryptedStore
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
-    const [instruction] = await buildClaimInstructions({
+    const instruction = await buildClaimInstruction({
+      fhe: (await createSolanaFheTransaction({ payer })).accounts,
       payer,
       user,
       batcher,
@@ -154,7 +159,7 @@ describe('buildClaimInstructions', () => {
     });
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceState
+    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceStore
     expect(addresses[17]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
     expect(addresses[20]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
   });

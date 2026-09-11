@@ -24,7 +24,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     let owner = Pubkey::new_unique();
     let chain = chain_program::chain_address(owner).0;
     let chain_authority = chain_program::chain_authority_address(chain).0;
-    let encrypted_state = chain_program::chain_state_id(chain).address();
+    let encrypted_store = chain_program::chain_state_id(chain).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&chain_program::id(), "dep_chain");
     mollusk.add_program(&host::id(), "zama_host");
@@ -34,7 +34,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         (host_config, host_config_data),
         (event_authority(host::id()), system_account(0)),
     ]));
-    ensure_system_accounts(&context, &[chain, chain_authority, encrypted_state]);
+    ensure_system_accounts(&context, &[chain, chain_authority, encrypted_store]);
     let mut ledger = CleartextLedger::default();
 
     let initialize = || {
@@ -44,9 +44,11 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
+                transient_store: host::transient_store_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 zama_program: host::id(),
                 system_program: anchor_lang::system_program::ID,
             },
@@ -60,9 +62,11 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
                 owner,
                 chain,
                 chain_authority,
-                encrypted_state,
+                encrypted_store,
                 host_config,
                 zama_event_authority: event_authority(host::id()),
+                transient_store: host::transient_store_address(owner).0,
+                instructions: solana_sdk::sysvar::instructions::ID,
                 zama_program: host::id(),
                 system_program: anchor_lang::system_program::ID,
             },
@@ -72,14 +76,15 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     // Runs one chain instruction, replays its single `fhe_execute` CPI in cleartext — every
     // transient link included — and asserts the tail behind the one persisted handle.
     let assert_tail = |ledger: &mut CleartextLedger, ix: &Instruction, expected: u64| {
-        let result = context.process_and_validate_instruction(ix, &[Check::success()]);
+        let result =
+            kit::transaction::process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         let replay = ledger.replay_fhe_cpis(&context, &result);
         assert_eq!(replay.executions, 1);
         assert_eq!(replay.persistent_outputs, 1);
         assert_eq!(
             ledger.u64_in_state(
                 &context,
-                encrypted_state,
+                encrypted_store,
                 chain_program::encrypted_tail_label()
             ),
             expected
@@ -95,13 +100,17 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     assert_tail(&mut ledger, &extend(1, 2), 42);
 
     // Chain-length bounds fail closed before any CPI runs.
-    context.process_and_validate_instruction(
+    kit::transaction::process_fhe_instruction(
+        &context,
+        owner,
         &extend(0, 1),
         &[anchor_error_check(
             chain_program::DepChainError::InvalidChainLength as u32,
         )],
     );
-    context.process_and_validate_instruction(
+    kit::transaction::process_fhe_instruction(
+        &context,
+        owner,
         &extend(chain_program::MAX_CHAIN_LINKS + 1, 1),
         &[anchor_error_check(
             chain_program::DepChainError::InvalidChainLength as u32,

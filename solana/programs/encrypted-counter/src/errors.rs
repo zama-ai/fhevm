@@ -9,6 +9,6 @@ use anchor_lang::prelude::*;
 pub enum CounterError {
     #[msg("FHE execution failed to build or resolve")]
     InvalidFheExecution,
-    #[msg("counter encrypted state address mismatch")]
+    #[msg("counter encrypted store address mismatch")]
     CountValueInvalid,
 }

@@ -1,6 +1,7 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { createSolanaRpc, type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
-  buildClaimInstructions as buildVaultClaimInstructions,
+  buildClaimInstruction as buildVaultClaimInstruction,
   buildInitializeTokenAccountInstruction,
   deriveJoinRecordAddress,
   getBatchByIndex,
@@ -22,7 +23,7 @@ type ClaimSession = {
   readonly keeper: TransactionSigner;
 };
 
-const readClaimState = async (
+const readClaimStore = async (
   session: ClaimSession,
   position: BatchTarget,
   direction: VaultDirection,
@@ -51,7 +52,7 @@ const buildClaimInstructions = async (
   direction: VaultDirection,
   user: Address,
 ): Promise<{ readonly instructions: readonly Instruction[]; readonly initializesAccount: boolean } | null> => {
-  const { rpc, roots, claimed } = await readClaimState(session, position, direction, user);
+  const { rpc, roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
 
   const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);
@@ -62,10 +63,12 @@ const buildClaimInstructions = async (
   }
 
   const initializesAccount = account === null || account.owner === SYSTEM_PROGRAM_ADDRESS;
+  const fhe = await createSolanaFheTransaction({ payer: session.keeper });
   const instructions: Instruction[] = [];
   if (initializesAccount) {
     instructions.push(
       await buildInitializeTokenAccountInstruction({
+        fhe: fhe.accounts,
         payer: session.keeper,
         owner: user,
         mint: roots.payoutConfidentialMint,
@@ -74,7 +77,8 @@ const buildClaimInstructions = async (
     );
   }
   instructions.push(
-    ...(await buildVaultClaimInstructions({
+    await buildVaultClaimInstruction({
+      fhe: fhe.accounts,
       payer: session.keeper,
       user,
       batcher: roots.batcher,
@@ -83,9 +87,9 @@ const buildClaimInstructions = async (
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
       hostConfig: session.config.hostConfig,
-    })),
+    }),
   );
-  return { instructions, initializesAccount };
+  return { instructions: fhe.wrap(instructions), initializesAccount };
 };
 
 /**

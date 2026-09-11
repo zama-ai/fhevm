@@ -13,7 +13,7 @@ import {
   findJoinRecordPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { batchAddress, tokenStateAddress, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
+import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -54,10 +54,10 @@ export interface BatchAddresses {
   readonly batchJoinUnderlying: Address;
   /** Plain SPL account receiving the vault phase's output (payout underlying). */
   readonly batchPayoutUnderlying: Address;
-  /** The batch's burned-amount encrypted State on the join mint (the settle proof's `encrypted_state`). */
-  readonly batchBurnedAmountState: Address;
-  /** The batch payout token account's confidential balance encrypted State. */
-  readonly batchPayoutBalanceState: Address;
+  /** The batch's burned-amount encrypted store on the join mint (the settle proof's `encrypted_store`). */
+  readonly batchBurnedAmountStore: Address;
+  /** The batch payout token account's confidential balance encrypted store. */
+  readonly batchPayoutBalanceStore: Address;
 }
 
 /**
@@ -82,8 +82,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchPayoutUnderlying,
     // Burned amount: the join mint's `burned_amount` value of the batch's join token account.
     // Payout balance: the payout mint's `balance` value of the batch's payout token account.
-    batchBurnedAmountState: await tokenStateAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
-    batchPayoutBalanceState: await tokenStateAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
+    batchBurnedAmountStore: await tokenStateAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
+    batchPayoutBalanceStore: await tokenStateAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
 }
 
@@ -95,8 +95,8 @@ export async function deriveJoinRecordAddress(batch: Address, user: Address): Pr
 
 /**
  * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
- * exactly the settle instruction's non-signer, non-fixed accounts — the fee payer and the two
- * event-CPI authorities are the only accounts `settleBatch` still resolves itself. `pendingBurn`
+ * the settle instruction's non-fixed, batch-scoped accounts and event authorities.
+ * The payer and transaction transient store are resolved when the transaction is assembled. `pendingBurn`
  * is derived from the join mint and batch join token account, so it is known at `open_batch`.
  */
 export interface SolanaVaultSettleAccounts {
@@ -107,7 +107,7 @@ export interface SolanaVaultSettleAccounts {
   readonly joinUnderlyingMint: Address;
   readonly joinMintVaultUnderlying: Address;
   readonly joinMintVaultAuthority: Address;
-  readonly batchBurnedAmountState: Address;
+  readonly batchBurnedAmountStore: Address;
   /** The batch join token account's single pending burn, known before dispatch. */
   readonly pendingBurn: Address;
   readonly hostConfig: Address;
@@ -121,13 +121,18 @@ export interface SolanaVaultSettleAccounts {
   readonly payoutMintVaultUnderlying: Address;
   readonly payoutMintVaultAuthority: Address;
   readonly payoutTotalSupplyAuthority: Address;
-  readonly batchPayoutBalanceState: Address;
-  readonly payoutTotalSupplyState: Address;
+  readonly batchPayoutBalanceStore: Address;
+  readonly payoutTotalSupplyStore: Address;
+  readonly batchAuthority: Address;
+  readonly batchJoinUnderlying: Address;
+  readonly batchPayoutUnderlying: Address;
+  readonly zamaEventAuthority: Address;
+  readonly confidentialTokenEventAuthority: Address;
 }
 
 /**
  * The ordered address set the settle Address Lookup Table holds — every settle account derivable at
- * `open_batch`, i.e. the full settle set except the fee payer (always static). The demo seeder creates
+ * `open_batch`. The payer, transient store, sysvar and fixed program IDs stay static. The demo seeder creates
  * the on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so
  * the two agree by construction — the v0 message's table indices line up with the on-chain entries.
  */
@@ -155,7 +160,7 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'joinUnderlyingMint',
   'joinMintVaultUnderlying',
   'joinMintVaultAuthority',
-  'batchBurnedAmountState',
+  'batchBurnedAmountStore',
   'pendingBurn',
   'hostConfig',
   'kmsContext',
@@ -168,8 +173,13 @@ export const SETTLE_ALT_FIELD_ORDER = [
   'payoutMintVaultUnderlying',
   'payoutMintVaultAuthority',
   'payoutTotalSupplyAuthority',
-  'batchPayoutBalanceState',
-  'payoutTotalSupplyState',
+  'batchPayoutBalanceStore',
+  'payoutTotalSupplyStore',
+  'batchAuthority',
+  'batchJoinUnderlying',
+  'batchPayoutUnderlying',
+  'zamaEventAuthority',
+  'confidentialTokenEventAuthority',
 ] as const satisfies ReadonlyArray<keyof SolanaVaultSettleAccounts>;
 
 /** Flattens a settle account set into its ALT ordering. */
@@ -187,6 +197,11 @@ export async function deriveSettleAccounts(
   const [vaultAuthority] = await findDemoVaultAuthorityPda({ vault: roots.vault });
   const [vaultTokenAccount] = await findVaultTokenAccountPda({ vault: roots.vault });
   return {
+    batchAuthority: batch.batchAuthority,
+    batchJoinUnderlying: batch.batchJoinUnderlying,
+    batchPayoutUnderlying: batch.batchPayoutUnderlying,
+    zamaEventAuthority: await zamaEventAuthorityAddress(),
+    confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
     batcher: roots.batcher,
     batch: batch.batch,
     joinConfidentialMint: roots.joinConfidentialMint,
@@ -198,7 +213,7 @@ export async function deriveSettleAccounts(
       TOKEN_PROGRAM_ADDRESS,
     ),
     joinMintVaultAuthority,
-    batchBurnedAmountState: batch.batchBurnedAmountState,
+    batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: await pendingBurnAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
     hostConfig: roots.hostConfig,
     kmsContext: roots.kmsContext,
@@ -215,10 +230,10 @@ export async function deriveSettleAccounts(
     ),
     payoutMintVaultAuthority,
     payoutTotalSupplyAuthority,
-    batchPayoutBalanceState: batch.batchPayoutBalanceState,
-    // Total supply: domain = payout mint, encrypted State authority = its total-supply
+    batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
+    // Total supply: domain = payout mint, encrypted store authority = its total-supply
     // authority, encrypted value label =
     // `total_supply`.
-    payoutTotalSupplyState: await tokenStateAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
+    payoutTotalSupplyStore: await tokenStateAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
   };
 }

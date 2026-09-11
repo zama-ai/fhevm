@@ -6,7 +6,7 @@
 //! - **cancel** (`cancel_pending_burn`): FHE re-credit to confidential balance and total supply
 //!
 //! A new burn cannot begin until the previous pending burn has been settled through one of those
-//! terminal operations. This keeps the shared burned-amount encrypted State current and
+//! terminal operations. This keeps the shared burned-amount encrypted store current and
 //! removes the need for multiple pending burns per token account.
 
 use anchor_lang::prelude::*;

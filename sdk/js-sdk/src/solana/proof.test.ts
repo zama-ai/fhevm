@@ -20,11 +20,11 @@ import {
   mmrPeaksFromLeaves,
   mmrVerify,
   publicDecryptLeafCommitment,
-  reconstructSolanaStateHistory,
+  reconstructSolanaStoreHistory,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
   type MmrProof,
-  type SolanaStateHistoryEvent,
+  type SolanaStoreHistoryEvent,
 } from './proof.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
@@ -44,7 +44,7 @@ interface LeafVectorFile {
 interface LeafVector {
   readonly id: string;
   readonly comment: string;
-  readonly encrypted_state_account: string;
+  readonly encrypted_store_account: string;
   readonly events: readonly (
     | { readonly kind: 'allowed'; readonly handle: string; readonly key: string }
     | { readonly kind: 'marked_public'; readonly handle: string }
@@ -64,7 +64,7 @@ const file = JSON.parse(
 const unhex = (hex: string): Uint8Array => hexToBytes(`0x${hex}`);
 const rehex = (bytes: Uint8Array): string => bytesToHex(bytes).slice(2);
 
-const eventsOf = (vector: LeafVector): readonly SolanaStateHistoryEvent[] =>
+const eventsOf = (vector: LeafVector): readonly SolanaStoreHistoryEvent[] =>
   vector.events.map((event) =>
     event.kind === 'allowed'
       ? { kind: 'allowed', handle: unhex(event.handle), key: unhex(event.key) }
@@ -98,15 +98,15 @@ describe('the leaf vector file', () => {
 
 describe('reconstructing an account history', () => {
   it.each(named)('%s: reproduces every leaf, the leaf count and the peaks', (_id, vector) => {
-    const rebuilt = reconstructSolanaStateHistory(unhex(vector.encrypted_state_account), eventsOf(vector));
+    const rebuilt = reconstructSolanaStoreHistory(unhex(vector.encrypted_store_account), eventsOf(vector));
     expect(rebuilt.leaves.map(rehex)).toEqual(vector.leaves);
     expect(rebuilt.leafCount).toBe(BigInt(vector.leaf_count));
     expect(rebuilt.peaks.map(rehex)).toEqual(vector.peaks);
   });
 
   it.each(named)('%s: builds the committed proof, and the proof verifies against the peaks', (_id, vector) => {
-    const account = unhex(vector.encrypted_state_account);
-    const rebuilt = reconstructSolanaStateHistory(account, eventsOf(vector));
+    const account = unhex(vector.encrypted_store_account);
+    const rebuilt = reconstructSolanaStoreHistory(account, eventsOf(vector));
     const expected = proofOf(vector);
 
     const built = mmrBuildProof(rebuilt.leaves, expected.leafIndex);
@@ -133,7 +133,7 @@ describe('reconstructing an account history', () => {
 
   it('builds a verifying proof for every leaf of every vector', () => {
     for (const vector of file.vectors) {
-      const rebuilt = reconstructSolanaStateHistory(unhex(vector.encrypted_state_account), eventsOf(vector));
+      const rebuilt = reconstructSolanaStoreHistory(unhex(vector.encrypted_store_account), eventsOf(vector));
       for (const [index, leaf] of rebuilt.leaves.entries()) {
         const proof = mmrBuildProof(rebuilt.leaves, BigInt(index));
         expect(proof, `${vector.id}: leaf ${index}`).toBeDefined();
@@ -153,7 +153,7 @@ describe('reconstructing an account history', () => {
     expect(first).toBeDefined();
     expect(second).toBeDefined();
     expect(first!.events).toEqual(second!.events);
-    expect(first!.encrypted_state_account).not.toBe(second!.encrypted_state_account);
+    expect(first!.encrypted_store_account).not.toBe(second!.encrypted_store_account);
     expect(first!.leaves).not.toEqual(second!.leaves);
   });
 });
@@ -236,12 +236,12 @@ describe('buildPublicLeafProof', () => {
   const handle = new Uint8Array(32).fill(0x92);
   const owner = new Uint8Array(32).fill(0x11);
   // What a burn writes, then an explicit re-seal: one allow, the public leaf, the public leaf again.
-  const history: readonly SolanaStateHistoryEvent[] = [
+  const history: readonly SolanaStoreHistoryEvent[] = [
     { kind: 'allowed', handle, key: owner },
     { kind: 'markedPublic', handle },
     { kind: 'markedPublic', handle },
   ];
-  const live = reconstructSolanaStateHistory(account, history);
+  const live = reconstructSolanaStoreHistory(account, history);
 
   it('builds a proof of the requested public leaf that verifies against the live peaks', () => {
     const proof = buildPublicLeafProof(account, live, history, 1n);
@@ -250,7 +250,7 @@ describe('buildPublicLeafProof', () => {
   });
 
   it('rejects a live account whose leaves disagree with the expected history', () => {
-    const shorter = reconstructSolanaStateHistory(account, history.slice(0, 2));
+    const shorter = reconstructSolanaStoreHistory(account, history.slice(0, 2));
     expect(() => buildPublicLeafProof(account, shorter, history, 1n)).toThrow(
       /holds 2 leaves that do not match the 3-leaf history/,
     );

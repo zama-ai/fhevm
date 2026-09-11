@@ -12,7 +12,7 @@
 
 use super::delegation::DelegationFailure;
 use super::deployment::{DeploymentFailure, DeploymentIdentityError};
-use super::encrypted_state::EncryptedStateFailure;
+use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
 use super::kms_pair::KmsPairFailure;
 use super::pause::PauseFailure;
@@ -75,13 +75,13 @@ pub enum AuthorizationFailure {
     /// The host is paused, or its config singleton could not be read.
     #[error("host pause: {0}")]
     Pause(#[from] PauseFailure),
-    /// One entry's encrypted state could not be resolved.
-    #[error("entry {index}: encrypted state: {source}")]
-    EncryptedState {
+    /// One entry's encrypted store could not be resolved.
+    #[error("entry {index}: encrypted store: {source}")]
+    EncryptedStore {
         /// Which entry.
         index: usize,
         /// Why.
-        source: EncryptedStateFailure,
+        source: EncryptedStoreFailure,
     },
     /// The leaf record could not be read at all.
     #[error("leaf proofs: {0}")]
@@ -94,7 +94,7 @@ pub enum AuthorizationFailure {
         /// Why.
         source: HandleBindingFailure,
     },
-    /// One entry's encrypted state is outside the signed scope.
+    /// One entry's encrypted store is outside the signed scope.
     #[error("entry {index}: scope: {source}")]
     Scope {
         /// Which entry.
@@ -129,7 +129,7 @@ impl AuthorizationFailure {
             Self::KmsPair(source) => source.class(),
             Self::Snapshot(source) => source.class(),
             Self::Pause(source) => source.class(),
-            Self::EncryptedState { source, .. } => source.class(),
+            Self::EncryptedStore { source, .. } => source.class(),
             Self::ProofRead(source) => source.class(),
             Self::HandleBinding { source, .. } => source.class(),
             Self::Scope { source, .. } => source.class(),
@@ -247,10 +247,10 @@ impl PauseFailure {
     }
 }
 
-impl EncryptedStateFailure {
+impl EncryptedStoreFailure {
     /// Absence is the one outcome a later observation can change: the account may not have
     /// reached the observed commitment yet. Everything else is a statement about an account that
-    /// exists and is not the encrypted state it was claimed to be.
+    /// exists and is not the encrypted store it was claimed to be.
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Absent { .. } => FailureClass::Transient,

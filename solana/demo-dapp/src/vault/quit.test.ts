@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -20,6 +21,7 @@ describe('buildQuitInstruction', () => {
   it('builds the batcher quit instruction (from-value refund) with the right program, accounts, and data', async () => {
     const user = signer(addr(1));
     const instruction = await buildQuitInstruction({
+      ...(await createSolanaFheTransaction({ payer: signer(addr(2)) })).accounts,
       user,
       payer: signer(addr(2)),
       batcher: addr(3),
@@ -30,9 +32,9 @@ describe('buildQuitInstruction', () => {
       userAta: addr(18),
       batchJoinTokenAccount: addr(7),
       userTokenAccount: addr(8),
-      batchBalanceState: addr(9),
-      userBalanceState: addr(10),
-      joinState: addr(12),
+      batchBalanceStore: addr(9),
+      userBalanceStore: addr(10),
+      joinStore: addr(12),
       zamaEventAuthority: addr(13),
       hostConfig: addr(14),
       confidentialTokenEventAuthority: addr(15),
@@ -40,7 +42,7 @@ describe('buildQuitInstruction', () => {
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses).toHaveLength(21);
+    expect(addresses).toHaveLength(23);
     expect(addresses[0]).toBe(user.address); // user signer first
     expect(addresses[3]).toBe(addr(4)); // batch
 

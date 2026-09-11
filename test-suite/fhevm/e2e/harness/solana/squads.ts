@@ -208,6 +208,7 @@ export const executeVaultTransaction = async (
   squad: Squad,
   member: Keypair,
   transactionIndex: bigint,
+  wrapExecution: (instruction: TransactionInstruction) => readonly TransactionInstruction[] = (ix) => [ix],
 ): Promise<void> => {
   const { instruction, lookupTableAccounts } = await multisig.instructions.vaultTransactionExecute({
     connection,
@@ -219,7 +220,7 @@ export const executeVaultTransaction = async (
   const message = new TransactionMessage({
     payerKey: member.publicKey,
     recentBlockhash: blockhash,
-    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: EXECUTE_COMPUTE_UNIT_LIMIT }), instruction],
+    instructions: [ComputeBudgetProgram.setComputeUnitLimit({ units: EXECUTE_COMPUTE_UNIT_LIMIT }), ...wrapExecution(instruction)],
   }).compileToV0Message(lookupTableAccounts);
   const transaction = new VersionedTransaction(message);
   transaction.sign([member]);

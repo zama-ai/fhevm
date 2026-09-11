@@ -57,15 +57,17 @@ export type OpenBatchInstruction<
   TAccountBatchAuthority extends string | AccountMeta<string> = string,
   TAccountJoinConfidentialMint extends string | AccountMeta<string> = string,
   TAccountBatchJoinTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchJoinBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchJoinBalanceStore extends string | AccountMeta<string> = string,
   TAccountPayoutConfidentialMint extends string | AccountMeta<string> = string,
   TAccountBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
-  TAccountBatchPayoutBalanceState extends string | AccountMeta<string> = string,
+  TAccountBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountJoinUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountPayoutUnderlyingMint extends string | AccountMeta<string> = string,
   TAccountBatchJoinUnderlying extends string | AccountMeta<string> = string,
   TAccountBatchPayoutUnderlying extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
+  TAccountTransientStore extends string | AccountMeta<string> = string,
+  TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
@@ -90,18 +92,18 @@ export type OpenBatchInstruction<
       TAccountBatchJoinTokenAccount extends string
         ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
-      TAccountBatchJoinBalanceState extends string
-        ? WritableAccount<TAccountBatchJoinBalanceState>
-        : TAccountBatchJoinBalanceState,
+      TAccountBatchJoinBalanceStore extends string
+        ? WritableAccount<TAccountBatchJoinBalanceStore>
+        : TAccountBatchJoinBalanceStore,
       TAccountPayoutConfidentialMint extends string
         ? ReadonlyAccount<TAccountPayoutConfidentialMint>
         : TAccountPayoutConfidentialMint,
       TAccountBatchPayoutTokenAccount extends string
         ? WritableAccount<TAccountBatchPayoutTokenAccount>
         : TAccountBatchPayoutTokenAccount,
-      TAccountBatchPayoutBalanceState extends string
-        ? WritableAccount<TAccountBatchPayoutBalanceState>
-        : TAccountBatchPayoutBalanceState,
+      TAccountBatchPayoutBalanceStore extends string
+        ? WritableAccount<TAccountBatchPayoutBalanceStore>
+        : TAccountBatchPayoutBalanceStore,
       TAccountJoinUnderlyingMint extends string
         ? ReadonlyAccount<TAccountJoinUnderlyingMint>
         : TAccountJoinUnderlyingMint,
@@ -117,6 +119,8 @@ export type OpenBatchInstruction<
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
+      TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountConfidentialTokenEventAuthority extends string
@@ -172,15 +176,17 @@ export type OpenBatchAsyncInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchJoinBalanceState extends string = string,
+  TAccountBatchJoinBalanceStore extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchPayoutUnderlying extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -207,11 +213,11 @@ export type OpenBatchAsyncInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchJoinBalanceState: Address<TAccountBatchJoinBalanceState>;
+  batchJoinBalanceStore: Address<TAccountBatchJoinBalanceStore>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers).
@@ -227,6 +233,8 @@ export type OpenBatchAsyncInput<
   /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying?: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -248,15 +256,17 @@ export async function getOpenBatchInstructionAsync<
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchJoinBalanceState extends string,
+  TAccountBatchJoinBalanceStore extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountBatchPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
   TAccountJoinUnderlyingMint extends string,
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchPayoutUnderlying extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -273,15 +283,17 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -300,15 +312,17 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -335,8 +349,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchJoinBalanceState: {
-      value: input.batchJoinBalanceState ?? null,
+    batchJoinBalanceStore: {
+      value: input.batchJoinBalanceStore ?? null,
       isWritable: true,
     },
     payoutConfidentialMint: {
@@ -347,8 +361,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
     joinUnderlyingMint: {
@@ -371,6 +385,8 @@ export async function getOpenBatchInstructionAsync<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -431,15 +447,17 @@ export async function getOpenBatchInstructionAsync<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchJoinBalanceState', accounts.batchJoinBalanceState),
+      getAccountMeta('batchJoinBalanceStore', accounts.batchJoinBalanceStore),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchPayoutUnderlying', accounts.batchPayoutUnderlying),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -458,15 +476,17 @@ export async function getOpenBatchInstructionAsync<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -484,15 +504,17 @@ export type OpenBatchInput<
   TAccountBatchAuthority extends string = string,
   TAccountJoinConfidentialMint extends string = string,
   TAccountBatchJoinTokenAccount extends string = string,
-  TAccountBatchJoinBalanceState extends string = string,
+  TAccountBatchJoinBalanceStore extends string = string,
   TAccountPayoutConfidentialMint extends string = string,
   TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountBatchPayoutBalanceState extends string = string,
+  TAccountBatchPayoutBalanceStore extends string = string,
   TAccountJoinUnderlyingMint extends string = string,
   TAccountPayoutUnderlyingMint extends string = string,
   TAccountBatchJoinUnderlying extends string = string,
   TAccountBatchPayoutUnderlying extends string = string,
   TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountHostConfig extends string = string,
   TAccountConfidentialTokenEventAuthority extends string = string,
@@ -519,11 +541,11 @@ export type OpenBatchInput<
   /** Confidential mint users join batches with. */
   joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
   batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  batchJoinBalanceState: Address<TAccountBatchJoinBalanceState>;
+  batchJoinBalanceStore: Address<TAccountBatchJoinBalanceStore>;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
   batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
-  batchPayoutBalanceState: Address<TAccountBatchPayoutBalanceState>;
+  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers).
@@ -539,6 +561,8 @@ export type OpenBatchInput<
   /** Batch's plain SPL account receiving the vault phase's output at settle. */
   batchPayoutUnderlying: Address<TAccountBatchPayoutUnderlying>;
   zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
   hostConfig: Address<TAccountHostConfig>;
@@ -560,15 +584,17 @@ export function getOpenBatchInstruction<
   TAccountBatchAuthority extends string,
   TAccountJoinConfidentialMint extends string,
   TAccountBatchJoinTokenAccount extends string,
-  TAccountBatchJoinBalanceState extends string,
+  TAccountBatchJoinBalanceStore extends string,
   TAccountPayoutConfidentialMint extends string,
   TAccountBatchPayoutTokenAccount extends string,
-  TAccountBatchPayoutBalanceState extends string,
+  TAccountBatchPayoutBalanceStore extends string,
   TAccountJoinUnderlyingMint extends string,
   TAccountPayoutUnderlyingMint extends string,
   TAccountBatchJoinUnderlying extends string,
   TAccountBatchPayoutUnderlying extends string,
   TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
   TAccountZamaProgram extends string,
   TAccountHostConfig extends string,
   TAccountConfidentialTokenEventAuthority extends string,
@@ -585,15 +611,17 @@ export function getOpenBatchInstruction<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -611,15 +639,17 @@ export function getOpenBatchInstruction<
   TAccountBatchAuthority,
   TAccountJoinConfidentialMint,
   TAccountBatchJoinTokenAccount,
-  TAccountBatchJoinBalanceState,
+  TAccountBatchJoinBalanceStore,
   TAccountPayoutConfidentialMint,
   TAccountBatchPayoutTokenAccount,
-  TAccountBatchPayoutBalanceState,
+  TAccountBatchPayoutBalanceStore,
   TAccountJoinUnderlyingMint,
   TAccountPayoutUnderlyingMint,
   TAccountBatchJoinUnderlying,
   TAccountBatchPayoutUnderlying,
   TAccountZamaEventAuthority,
+  TAccountTransientStore,
+  TAccountInstructions,
   TAccountZamaProgram,
   TAccountHostConfig,
   TAccountConfidentialTokenEventAuthority,
@@ -645,8 +675,8 @@ export function getOpenBatchInstruction<
       value: input.batchJoinTokenAccount ?? null,
       isWritable: true,
     },
-    batchJoinBalanceState: {
-      value: input.batchJoinBalanceState ?? null,
+    batchJoinBalanceStore: {
+      value: input.batchJoinBalanceStore ?? null,
       isWritable: true,
     },
     payoutConfidentialMint: {
@@ -657,8 +687,8 @@ export function getOpenBatchInstruction<
       value: input.batchPayoutTokenAccount ?? null,
       isWritable: true,
     },
-    batchPayoutBalanceState: {
-      value: input.batchPayoutBalanceState ?? null,
+    batchPayoutBalanceStore: {
+      value: input.batchPayoutBalanceStore ?? null,
       isWritable: true,
     },
     joinUnderlyingMint: {
@@ -681,6 +711,8 @@ export function getOpenBatchInstruction<
       value: input.zamaEventAuthority ?? null,
       isWritable: false,
     },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     confidentialTokenEventAuthority: {
@@ -726,15 +758,17 @@ export function getOpenBatchInstruction<
       getAccountMeta('batchAuthority', accounts.batchAuthority),
       getAccountMeta('joinConfidentialMint', accounts.joinConfidentialMint),
       getAccountMeta('batchJoinTokenAccount', accounts.batchJoinTokenAccount),
-      getAccountMeta('batchJoinBalanceState', accounts.batchJoinBalanceState),
+      getAccountMeta('batchJoinBalanceStore', accounts.batchJoinBalanceStore),
       getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
       getAccountMeta('batchPayoutTokenAccount', accounts.batchPayoutTokenAccount),
-      getAccountMeta('batchPayoutBalanceState', accounts.batchPayoutBalanceState),
+      getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('joinUnderlyingMint', accounts.joinUnderlyingMint),
       getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
       getAccountMeta('batchJoinUnderlying', accounts.batchJoinUnderlying),
       getAccountMeta('batchPayoutUnderlying', accounts.batchPayoutUnderlying),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
@@ -753,15 +787,17 @@ export function getOpenBatchInstruction<
     TAccountBatchAuthority,
     TAccountJoinConfidentialMint,
     TAccountBatchJoinTokenAccount,
-    TAccountBatchJoinBalanceState,
+    TAccountBatchJoinBalanceStore,
     TAccountPayoutConfidentialMint,
     TAccountBatchPayoutTokenAccount,
-    TAccountBatchPayoutBalanceState,
+    TAccountBatchPayoutBalanceStore,
     TAccountJoinUnderlyingMint,
     TAccountPayoutUnderlyingMint,
     TAccountBatchJoinUnderlying,
     TAccountBatchPayoutUnderlying,
     TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
@@ -796,11 +832,11 @@ export type ParsedOpenBatchInstruction<
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[5];
     batchJoinTokenAccount: TAccountMetas[6];
-    batchJoinBalanceState: TAccountMetas[7];
+    batchJoinBalanceStore: TAccountMetas[7];
     /** Confidential mint claims pay out in. */
     payoutConfidentialMint: TAccountMetas[8];
     batchPayoutTokenAccount: TAccountMetas[9];
-    batchPayoutBalanceState: TAccountMetas[10];
+    batchPayoutBalanceStore: TAccountMetas[10];
     /**
      * SPL mint the join confidential mint wraps (vault underlying for deposit
      * batchers, vault shares for redeem batchers).
@@ -816,16 +852,18 @@ export type ParsedOpenBatchInstruction<
     /** Batch's plain SPL account receiving the vault phase's output at settle. */
     batchPayoutUnderlying: TAccountMetas[14];
     zamaEventAuthority: TAccountMetas[15];
+    transientStore: TAccountMetas[16];
+    instructions: TAccountMetas[17];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[16];
-    hostConfig: TAccountMetas[17];
-    confidentialTokenEventAuthority: TAccountMetas[18];
+    zamaProgram: TAccountMetas[18];
+    hostConfig: TAccountMetas[19];
+    confidentialTokenEventAuthority: TAccountMetas[20];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[19];
+    confidentialTokenProgram: TAccountMetas[21];
     /** SPL token program. */
-    tokenProgram: TAccountMetas[20];
+    tokenProgram: TAccountMetas[22];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[21];
+    systemProgram: TAccountMetas[23];
   };
   data: OpenBatchInstructionData;
 };
@@ -833,10 +871,10 @@ export type ParsedOpenBatchInstruction<
 export function parseOpenBatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedOpenBatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 22) {
+  if (instruction.accounts.length < 24) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 22,
+      expectedAccountMetas: 24,
     });
   }
   let accountIndex = 0;
@@ -859,15 +897,17 @@ export function parseOpenBatchInstruction<TProgram extends string, TAccountMetas
       batchAuthority: getNextAccount(),
       joinConfidentialMint: getNextAccount(),
       batchJoinTokenAccount: getNextAccount(),
-      batchJoinBalanceState: getNextAccount(),
+      batchJoinBalanceStore: getNextAccount(),
       payoutConfidentialMint: getNextAccount(),
       batchPayoutTokenAccount: getNextAccount(),
-      batchPayoutBalanceState: getNextAccount(),
+      batchPayoutBalanceStore: getNextAccount(),
       joinUnderlyingMint: getNextAccount(),
       payoutUnderlyingMint: getNextAccount(),
       batchJoinUnderlying: getNextAccount(),
       batchPayoutUnderlying: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
+      transientStore: getNextAccount(),
+      instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),

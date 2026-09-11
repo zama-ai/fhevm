@@ -67,6 +67,9 @@ export const validatorStartArgs = (parameters: {
   "127.0.0.1",
   "--ledger",
   parameters.ledgerDir,
+  // The 10,000-shred default prunes transaction evidence within a few minutes.
+  "--limit-ledger-size",
+  "1000000",
   "--deactivate-feature",
   "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g",
   "--geyser-plugin-config",

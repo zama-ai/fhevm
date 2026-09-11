@@ -6,14 +6,14 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-const EXTRA_DATA_SOLANA_VERSION: u8 = 0x04; // Solana public decrypt: context_id + encrypted state
+const EXTRA_DATA_SOLANA_VERSION: u8 = 0x04; // Solana public decrypt: context_id + encrypted store
 const EXTRA_DATA_SOLANA_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (account)
 
 /// Parse context ID from extra_data bytes.
 ///
 /// - v1: `[0x01 | context_id(32)]` — exactly 33 bytes (host parity)
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
-/// - v4 (Solana public decrypt): `[0x04 | context_id(32) | encrypted_state(32)]` —
+/// - v4 (Solana public decrypt): `[0x04 | context_id(32) | encrypted_store(32)]` —
 ///   only the shared `version ‖ context_id` prefix is read; the state is the connector's.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
@@ -172,12 +172,12 @@ mod tests {
 
     #[test]
     fn valid_solana_v4_returns_context_id() {
-        // Solana 0x04 carrier: [0x04 | context_id(32) | encrypted_state(32)].
+        // Solana 0x04 carrier: [0x04 | context_id(32) | encrypted_store(32)].
         // Only the shared version+context_id prefix is read; the state is opaque here.
         let context_id = U256::from(0x1234u64);
         let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
         data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&[7u8; 32]); // encrypted state
+        data.extend_from_slice(&[7u8; 32]); // encrypted store
 
         assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
     }

@@ -50,15 +50,15 @@ export interface SolanaUserDecryptHandleEntry {
    * direct entry, the delegator on a delegated one.
    */
   readonly allowedKey: Uint8Array;
-  /** The 32-byte address of the `EncryptedState` account the handle lives in. */
-  readonly encryptedState: Uint8Array;
+  /** The 32-byte address of the `EncryptedStore` account the handle lives in. */
+  readonly encryptedStore: Uint8Array;
 }
 
 /** One handle entry, as it travels. */
 export interface SolanaUserDecryptHandleJson {
   readonly handle: string;
   readonly allowedKey: string;
-  readonly encryptedState: string;
+  readonly encryptedStore: string;
 }
 
 /** The attested payload: the eight signed permit fields, plus the unsigned handle entries. */
@@ -98,7 +98,7 @@ export type SolanaUserDecryptRequestFailure =
   | {
       readonly reason: 'entry-field-width';
       readonly index: number;
-      readonly field: 'allowedKey' | 'encryptedState';
+      readonly field: 'allowedKey' | 'encryptedStore';
     };
 
 /** A request that was refused before it reached the network. */
@@ -174,8 +174,8 @@ export function admitSolanaUserDecryptRequest(admission: {
     if (entry.allowedKey.length !== 32) {
       throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'allowedKey' });
     }
-    if (entry.encryptedState.length !== 32) {
-      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'encryptedState' });
+    if (entry.encryptedStore.length !== 32) {
+      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'encryptedStore' });
     }
   }
 }
@@ -217,7 +217,7 @@ export function buildSolanaUserDecryptRequest(request: {
       handles: entries.map((entry) => ({
         handle: bytesToHex(entry.handle),
         allowedKey: bytesToHex(entry.allowedKey),
-        encryptedState: bytesToHex(entry.encryptedState),
+        encryptedStore: bytesToHex(entry.encryptedStore),
       })),
     },
     signature: bytesToHex(signedPermit.signature),

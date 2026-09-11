@@ -1,3 +1,4 @@
+use super::computation::Computation;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 
@@ -23,9 +24,8 @@ use crate::database::synthetic_ops::{
     SYNTHETIC_BLOCK_OFFSET,
 };
 use crate::database::tfhe_event_propagate::{
-    acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
-    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash,
+    acl_result_handles, Chain, ChainHash, Database, Handle as EventHandle,
+    LogTfhe, Transaction, TransactionHash,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -100,9 +100,7 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
 pub(crate) fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
 ) -> Result<(), sqlx::Error> {
-    let mask_bearing =
-        |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
-    for log in logs.iter().filter(|log| mask_bearing(log)) {
+    for log in logs.iter() {
         if log.transaction_hash.is_none() {
             return Err(refuse_mask_derivation(
                 "refusing computation event without transaction hash for operand-origin derivation",
@@ -121,9 +119,8 @@ pub(crate) fn populate_operand_boundary_masks(
     // depend on input delivery order.
     logs.sort_by_key(|log| log.log_index.unwrap_or(u64::MAX));
     let mut previous_index = None;
-    for log in logs.iter().filter(|log| mask_bearing(log)) {
-        let log_index =
-            log.log_index.expect("validated mask-bearing log index");
+    for log in logs.iter() {
+        let log_index = log.log_index.expect("validated computation log index");
         if previous_index == Some(log_index) {
             return Err(refuse_mask_derivation(
                 "refusing duplicate computation log index for operand-origin derivation",
@@ -136,12 +133,12 @@ pub(crate) fn populate_operand_boundary_masks(
         TransactionHash,
         HashSet<EventHandle>,
     > = HashMap::new();
-    for log in logs.iter_mut().filter(|log| mask_bearing(log)) {
+    for log in logs.iter_mut() {
         let transaction_hash = log
             .transaction_hash
-            .expect("validated mask-bearing transaction hash");
+            .expect("validated computation transaction hash");
         let minted = minted_by_transaction.entry(transaction_hash).or_default();
-        let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
+        let mask = log.computation.boundary_mask(|handle| {
             minted.contains(handle)
         })
         .map_err(|reason| {
@@ -154,10 +151,53 @@ pub(crate) fn populate_operand_boundary_masks(
         // This happens strictly after the mask above, exactly as the executor
         // computes the preimage before calling `_markMinted`.
         if log.is_executor_minted {
-            minted.extend(tfhe_result_handles(&log.event));
+            minted.extend(log.computation.outputs().iter().copied());
         }
     }
     Ok(())
+}
+
+/// Applies the shared chain-size cap and inherits Slow priority from split dependencies.
+pub(crate) async fn classify_slow_chains(
+    db: &Database,
+    tx: &mut Transaction<'_>,
+    chains: &[Chain],
+    dependent_ops_by_chain: &HashMap<ChainHash, u64>,
+    max_per_chain: u32,
+) -> Result<HashSet<ChainHash>, sqlx::Error> {
+    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
+    if max_per_chain > 0 {
+        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
+            chains,
+            dependent_ops_by_chain,
+            u64::from(max_per_chain),
+        );
+
+        let parent_dep_chain_ids = chains
+            .iter()
+            .flat_map(|chain| {
+                chain
+                    .split_dependencies
+                    .iter()
+                    .map(|dependency| dependency.to_vec())
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let existing_slow_parents = db
+            .find_slow_dep_chain_ids(tx, &parent_dep_chain_ids)
+            .await?;
+        slow_dep_chain_ids.extend(existing_slow_parents);
+        propagate_slow_lane_to_dependents(chains, &mut slow_dep_chain_ids);
+
+        let slow_marked_chains = chains
+            .iter()
+            .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
+            .count() as u64;
+        db.record_slow_lane_marked_chains(slow_marked_chains);
+    }
+
+    Ok(slow_dep_chain_ids)
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -419,8 +459,16 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
                 fhe_event_count = fhe_event_count.saturating_add(1);
+                let Some(computation) = Computation::from_evm(&event)
+                    .map_err(|reason| sqlx::Error::Protocol(format!(
+                        "EVM computation in block {block_number}, transaction {:?}, log {:?}: {reason}",
+                        log.transaction_hash, log.log_index,
+                    )))?
+                else {
+                    continue;
+                };
                 let log = LogTfhe {
-                    event,
+                    computation,
                     transaction_hash: log.transaction_hash,
                     block_number,
                     block_hash,
@@ -536,17 +584,9 @@ pub async fn ingest_block_logs(
                     // governance ensures the handle is in the ACL.
                     is_allowed.insert(dst_handle.to_vec());
                     tfhe_event_log.push(LogTfhe {
-                        event: alloy::primitives::Log {
-                            address: log.inner.address,
-                            data: TfheContract::TfheContractEvents::TrivialEncrypt(
-                                TfheContract::TrivialEncrypt {
-                                    caller: Address::ZERO,
-                                    pt: e.plaintext,
-                                    toType: dst_handle.0[30],
-                                    result: dst_handle,
-                                },
-                            ),
-                        },
+                        computation: Computation::trivial(
+                            e.plaintext.to_be_bytes(), dst_handle.0[30], dst_handle,
+                        ),
                         transaction_hash: log.transaction_hash,
                         block_number,
                         block_hash,
@@ -612,8 +652,11 @@ pub async fn ingest_block_logs(
         }
     }
     for tfhe_log in tfhe_event_log.iter_mut() {
-        tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
-            .into_iter()
+        tfhe_log.allowed_outputs = tfhe_log
+            .computation
+            .outputs()
+            .iter()
+            .copied()
             .filter(|h| is_allowed.contains(&h.to_vec()))
             .collect();
     }
@@ -638,16 +681,18 @@ pub async fn ingest_block_logs(
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
         let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
-        at_least_one_insertion |= inserted;
+        at_least_one_insertion |= inserted > 0;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
-        if slow_lane_enabled && inserted {
+        if slow_lane_enabled && inserted > 0 {
             dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
+                .and_modify(|count| {
+                    *count = count.saturating_add(inserted as u64)
+                })
+                .or_insert(inserted as u64);
         }
-        if block_logs.catchup && inserted {
+        if block_logs.catchup && inserted > 0 {
             info!(tfhe_log = ?tfhe_log, "TFHE event missed before");
             catchup_insertion += 1;
         } else {
@@ -686,38 +731,14 @@ pub async fn ingest_block_logs(
         }
     }
 
-    let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
-    if slow_lane_enabled {
-        let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
-        slow_dep_chain_ids = classify_slow_by_split_dependency_closure(
-            &chains,
-            &dependent_ops_by_chain,
-            max_per_chain,
-        );
-
-        let parent_dep_chain_ids = chains
-            .iter()
-            .flat_map(|chain| {
-                chain
-                    .split_dependencies
-                    .iter()
-                    .map(|dependency| dependency.to_vec())
-            })
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let existing_slow_parents = db
-            .find_slow_dep_chain_ids(&mut tx, &parent_dep_chain_ids)
-            .await?;
-        slow_dep_chain_ids.extend(existing_slow_parents);
-        propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
-
-        let slow_marked_chains = chains
-            .iter()
-            .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
-            .count() as u64;
-        db.record_slow_lane_marked_chains(slow_marked_chains);
-    }
+    let slow_dep_chain_ids = classify_slow_chains(
+        db,
+        &mut tx,
+        &chains,
+        &dependent_ops_by_chain,
+        options.dependent_ops_max_per_chain,
+    )
+    .await?;
 
     if catchup_insertion > 0 {
         if catchup_insertion == block_logs.logs.len() {
@@ -1276,13 +1297,10 @@ pub async fn synthesize_finalized_fallback_grants(
         // block timestamp, which host_chain_blocks_valid does not record. It
         // only feeds scheduling hints (schedule_order, chain last_updated_at),
         // never consensus-compared data.
-        let data = TfheContract::TfheContractEvents::TrivialEncrypt(
-            TfheContract::TrivialEncrypt {
-                caller: Address::ZERO,
-                pt: alloy::primitives::U256::from_be_slice(&plaintext),
-                toType: handle_bytes[30],
-                result: alloy::primitives::FixedBytes::from(handle_bytes),
-            },
+        let computation = Computation::trivial(
+            alloy::primitives::U256::from_be_slice(&plaintext).to_be_bytes(),
+            handle_bytes[30],
+            handle_bytes.into(),
         );
         // Derived per event from its shape with an EMPTY minted set, NOT
         // through the block-level derivation:
@@ -1298,19 +1316,15 @@ pub async fn synthesize_finalized_fallback_grants(
         // operands and derives the all-zero mask, and if the synthesized
         // shape ever gained one, every bit would correctly derive as
         // boundary.
-        let operand_boundary_mask =
-            operand_boundary_mask_from_minted(&data, |_| false)
-                .map_err(sqlx::Error::Protocol)?;
-        let event = alloy::primitives::Log {
-            address: Address::ZERO,
-            data,
-        };
+        let operand_boundary_mask = computation
+            .boundary_mask(|_| false)
+            .map_err(sqlx::Error::Protocol)?;
         dst_handles.push(EventHandle::from(handle_bytes));
         logs.push(LogTfhe {
             // Forced allowed, exactly like inline synthesis: governance
             // ensures the handle is in the ACL.
-            allowed_outputs: uniform_allowed_outputs(&event, true),
-            event,
+            allowed_outputs: computation.outputs().iter().copied().collect(),
+            computation,
             transaction_hash,
             block_number: block_number as u64,
             block_hash: *block_hash,
@@ -1619,13 +1633,12 @@ mod tests {
         log_index: Option<u64>,
         is_executor_minted: bool,
     ) -> LogTfhe {
-        let event = alloy::primitives::Log {
-            address: Address::ZERO,
-            data: event,
-        };
+        let computation = Computation::from_evm(&event)
+            .unwrap()
+            .expect("computation fixture");
         LogTfhe {
-            allowed_outputs: uniform_allowed_outputs(&event, true),
-            event,
+            allowed_outputs: computation.outputs().iter().copied().collect(),
+            computation,
             transaction_hash: Some(tx),
             block_number: 1,
             block_hash: FixedBytes::ZERO,

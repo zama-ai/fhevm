@@ -25,9 +25,14 @@ pub struct InitializeTokenAccount<'info> {
     pub token_account: Account<'info, ConfidentialTokenAccount>,
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
-    pub balance_encrypted_state: UncheckedAccount<'info>,
+    pub balance_encrypted_store: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
     pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program used to create the initial balance handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
@@ -59,29 +64,28 @@ pub fn initialize_token_account<'info>(
     let mint_key = ctx.accounts.mint.key();
     let owner = ctx.accounts.owner.key();
     let token_account_key = ctx.accounts.token_account.key();
-    let balance_encrypted_state = ctx.accounts.balance_encrypted_state.key();
-    let authority = fhe::StateAuthority::token_account(&ctx.accounts.token_account)?;
+    let balance_encrypted_store = ctx.accounts.balance_encrypted_store.key();
+    let authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
     authority.create_state(
         mint_key,
-        ctx.accounts.balance_encrypted_state.to_account_info(),
+        ctx.accounts.balance_encrypted_store.to_account_info(),
         ctx.accounts.payer.to_account_info(),
         ctx.accounts.host_config.to_account_info(),
         ctx.accounts.system_program.to_account_info(),
     )?;
     let balance_output = fhe::SlotOutput::new(
-        ctx.accounts.balance_encrypted_state.to_account_info(),
+        ctx.accounts.balance_encrypted_store.to_account_info(),
         balance_slot(mint_key, token_account_key),
         &authority,
         [owner],
     )?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(token_account_key),
-        |builder| {
-            builder.trivial_encrypt_u64(0, balance_output.output())?;
+    let execution =
+        zama_fhe::FheExecution::build(balance_slot(mint_key, token_account_key).0, |builder| {
+            let new_balance = builder.trivial_encrypt_u64(0)?;
+            builder.output(new_balance, balance_output.output())?;
             Ok(())
-        },
-    )
-    .map_err(invalid_execution)?;
+        })
+        .map_err(invalid_execution)?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [balance_output.account_info()],
@@ -91,6 +95,8 @@ pub fn initialize_token_account<'info>(
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.payer,
             event_authority: &ctx.accounts.zama_event_authority,
+            transient_store: &ctx.accounts.transient_store,
+            instructions: &ctx.accounts.instructions,
             zama_program: &ctx.accounts.zama_program,
             host_config: &ctx.accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(
@@ -121,9 +127,9 @@ pub fn initialize_token_account<'info>(
         owner: ctx.accounts.owner.key(),
         token_account: token_account.key(),
         old_handle: [0; 32],
-        old_encrypted_state: Pubkey::default(),
+        old_encrypted_store: Pubkey::default(),
         new_handle: balance_handle,
-        new_encrypted_state: balance_encrypted_state,
+        new_encrypted_store: balance_encrypted_store,
         reason: BalanceHandleUpdateReason::Initialize,
     });
     Ok(())

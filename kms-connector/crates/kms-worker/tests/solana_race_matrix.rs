@@ -108,14 +108,14 @@ fn assert_frozen_at(authorized: &AuthorizedRequest, reads: Reads, expected_accou
 async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
     let signer = Wallet::new(1);
     let named = handle(0x10, FHE_TYPE_UINT64);
-    let before = EncryptedStateFixture::allowing(named, signer.pubkey());
+    let before = EncryptedStoreFixture::allowing(named, signer.pubkey());
     let mut after = before.clone();
     after.update(handle(0x11, FHE_TYPE_UINT64));
     let request = RequestBuilder::new(&signer).direct(&before, named).typed();
 
     let (accepted, reads) = observe(
         World::running_at_slot(BEFORE)
-            .with_encrypted_state(&before)
+            .with_encrypted_store(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -128,7 +128,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&after)
+            .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -144,7 +144,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
 async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed() {
     let signer = Wallet::new(1);
     let replacement = handle(0x13, FHE_TYPE_UINT64);
-    let mut after = EncryptedStateFixture::allowing(handle(0x12, FHE_TYPE_UINT64), signer.pubkey());
+    let mut after = EncryptedStoreFixture::allowing(handle(0x12, FHE_TYPE_UINT64), signer.pubkey());
     after.update(replacement);
     let request = RequestBuilder::new(&signer)
         .direct(&after, replacement)
@@ -152,7 +152,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&after)
+            .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -181,7 +181,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
 async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it() {
     let signer = Wallet::new(1);
     let live = handle(0x20, FHE_TYPE_UINT64);
-    let mut before = EncryptedStateFixture::new(live);
+    let mut before = EncryptedStoreFixture::new(live);
     before.allow(Wallet::new(9).pubkey());
     let mut after = before.clone();
     after.allow(signer.pubkey());
@@ -189,7 +189,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
 
     let (outcome, _) = observe(
         World::running_at_slot(BEFORE)
-            .with_encrypted_state(&before)
+            .with_encrypted_store(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -206,7 +206,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&after)
+            .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )
@@ -226,18 +226,18 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
-    let encrypted_state = EncryptedStateFixture::allowing(live, delegator.pubkey());
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
     let mut revoked = granted;
     revoked.revoked = true;
     revoked.last_update_slot = AFTER;
     let request = RequestBuilder::new(&signer)
-        .delegated(&encrypted_state, live, delegator.pubkey())
+        .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
 
     let (accepted, reads) = observe(
         World::running_at_slot(BEFORE)
-            .with_encrypted_state(&encrypted_state)
+            .with_encrypted_store(&encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&granted),
         &request,
@@ -251,7 +251,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&encrypted_state)
+            .with_encrypted_store(&encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
         &request,
@@ -274,16 +274,16 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let own = handle(0x31, FHE_TYPE_UINT64);
-    let own_encrypted_state = EncryptedStateFixture::allowing(own, signer.pubkey());
+    let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
     let mut revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
     revoked.revoked = true;
     let request = RequestBuilder::new(&signer)
-        .direct(&own_encrypted_state, own)
+        .direct(&own_encrypted_store, own)
         .typed();
 
     let (outcome, reads) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&own_encrypted_state)
+            .with_encrypted_store(&own_encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
         &request,
@@ -308,19 +308,19 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
 async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
     let signer = Wallet::new(1);
     let sealed = handle(0x40, FHE_TYPE_UINT64);
-    let mut record_state = EncryptedStateFixture::allowing(sealed, signer.pubkey());
+    let mut record_state = EncryptedStoreFixture::allowing(sealed, signer.pubkey());
     record_state.allow(Wallet::new(2).pubkey());
-    assert_eq!(record_state.encrypted_state.leaf_count, 2);
+    assert_eq!(record_state.encrypted_store.leaf_count, 2);
     let mut chain_state = record_state.clone();
     chain_state.allow(Wallet::new(3).pubkey());
-    assert_eq!(chain_state.encrypted_state.leaf_count, 3);
+    assert_eq!(chain_state.encrypted_store.leaf_count, 3);
     let request = RequestBuilder::new(&signer)
         .direct(&chain_state, sealed)
         .typed();
 
     let (outcome, reads) = observe_with_record(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&chain_state)
+            .with_encrypted_store(&chain_state)
             .with_watermark(signer.pubkey(), 0),
         ProofRecord::of(&[&record_state]),
         &request,
@@ -345,16 +345,16 @@ async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
 async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
     let sealed = handle(0x50, FHE_TYPE_UINT64);
-    let record_state = EncryptedStateFixture::allowing(sealed, signer.pubkey());
-    assert_eq!(record_state.encrypted_state.leaf_count, 1);
+    let record_state = EncryptedStoreFixture::allowing(sealed, signer.pubkey());
+    assert_eq!(record_state.encrypted_store.leaf_count, 1);
     let mut chain_state = record_state.clone();
     chain_state.allow(Wallet::new(2).pubkey());
-    assert_eq!(chain_state.encrypted_state.leaf_count, 2);
+    assert_eq!(chain_state.encrypted_store.leaf_count, 2);
     let request = RequestBuilder::new(&signer)
         .direct(&chain_state, sealed)
         .typed();
     let world = World::running_at_slot(AFTER)
-        .with_encrypted_state(&chain_state)
+        .with_encrypted_store(&chain_state)
         .with_watermark(signer.pubkey(), 0);
 
     let (outcome, reads) =
@@ -400,7 +400,7 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
 async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
     let live = handle(0x60, FHE_TYPE_UINT64);
-    let behind = EncryptedStateFixture::new(live);
+    let behind = EncryptedStoreFixture::new(live);
     let mut caught_up = behind.clone();
     caught_up.allow(signer.pubkey());
     let request = RequestBuilder::new(&signer)
@@ -409,7 +409,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
 
     let (outcome, reads) = observe_with_record(
         World::running_at_slot(BEFORE)
-            .with_encrypted_state(&behind)
+            .with_encrypted_store(&behind)
             .with_watermark(signer.pubkey(), 0),
         ProofRecord::of(&[&caught_up]),
         &request,
@@ -439,7 +439,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
-            .with_encrypted_state(&caught_up)
+            .with_encrypted_store(&caught_up)
             .with_watermark(signer.pubkey(), 0),
         &request,
     )

@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -381,7 +382,9 @@ export async function depositToVault(
   }
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage('preparing');
+    const fhe = await createSolanaFheTransaction({ payer: signer });
     const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
+      fhe: fhe.accounts,
       payer: signer,
       owner: signer.address,
       mint: config.mints.joinConfidential,
@@ -390,6 +393,7 @@ export async function depositToVault(
     const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
     shieldInstructions.push(
       await buildWrapUsdcInstruction({
+        fhe: fhe.accounts,
         owner: signer,
         mint: config.mints.joinConfidential,
         underlyingMint: config.mints.joinUnderlying,
@@ -401,7 +405,7 @@ export async function depositToVault(
 
     onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;
-    const shieldSignature = await send(shieldInstructions, SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
+    const shieldSignature = await send(fhe.wrap(shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),

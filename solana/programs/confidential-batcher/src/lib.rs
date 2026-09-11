@@ -91,7 +91,7 @@ pub mod confidential_batcher {
     /// Joins the pending batch with the batcher's join token: one user-signed
     /// transaction that CPIs the coprocessor-attested confidential transfer
     /// into the batch's token account. The token returns the transferred handle and grants
-    /// the JoinRecord State access through scratch. The batcher adds it to the user's
+    /// the JoinRecord Store access through transient store. The batcher adds it to the user's
     /// contribution slot (decryptable by the user). Repeated joins accumulate.
     pub fn join<'info>(
         ctx: Context<'info, Join<'info>>,
@@ -103,7 +103,7 @@ pub mod confidential_batcher {
     /// Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:
     /// transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
-    /// resets the joined encrypted State to zero.
+    /// resets the joined encrypted store to zero.
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         instructions::quit(ctx)
     }

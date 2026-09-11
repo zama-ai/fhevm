@@ -1,6 +1,6 @@
 //! Minimal Merkle Mountain Range over 32-byte leaf commitments.
 //!
-//! The live `EncryptedState` account stores only the MMR *peaks* and the leaf
+//! The live `EncryptedStore` account stores only the MMR *peaks* and the leaf
 //! count; full inclusion proofs are reconstructed off-chain and verified here —
 //! and, identically, on-chain and in the KMS, since this is the single shared
 //! implementation. keccak256 with domain separation (the EVM ACL's hash, so both chains

@@ -39,26 +39,3 @@ impl TryFrom<u64> for BoundedU64UpperBound {
         Self::power_of_two(value)
     }
 }
-
-/// Output policy exposed by the builder.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Output(pub(crate) OutputKind);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-// Passed by value into lowering, which consumes it in place; boxing the persistent variant
-// would put one more allocation on the program's never-freeing heap per output.
-#[allow(clippy::large_enum_variant)]
-pub(crate) enum OutputKind {
-    Transient,
-    State(crate::StateOutput),
-}
-
-impl Output {
-    pub fn state(output: crate::StateOutput) -> Self {
-        Self(OutputKind::State(output))
-    }
-
-    pub fn transient() -> Self {
-        Self(OutputKind::Transient)
-    }
-}

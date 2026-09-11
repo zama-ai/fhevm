@@ -22,13 +22,15 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_account: &'a Account<'info, ConfidentialTokenAccount>,
     pub(crate) to_account: &'a Account<'info, ConfidentialTokenAccount>,
     /// Sender state: read and update its balance slot.
-    pub(crate) from_state: AccountInfo<'info>,
+    pub(crate) from_store: AccountInfo<'info>,
     /// Recipient state: read and update its balance slot.
-    pub(crate) to_state: AccountInfo<'info>,
+    pub(crate) to_store: AccountInfo<'info>,
     pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
+    pub(crate) transient_store: &'a UncheckedAccount<'info>,
+    pub(crate) instructions: &'a UncheckedAccount<'info>,
     pub(crate) zama_program: &'a Program<'info, ZamaHost>,
     pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
-    /// Deny records for the token, input state, and result consumer applications,
+    /// Deny records for the token and input Store applications,
     /// omitting absent and duplicate applications.
     pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
@@ -43,59 +45,37 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_ata: AccountInfo<'info>,
     /// ATA of `to_account.owner` on `underlying_mint`. May alias `from_ata` on self-transfer.
     pub(crate) to_ata: AccountInfo<'info>,
-    /// Optional scratch grant allowing the caller to compute with the returned transfer result.
+    /// Optional transient store grant allowing the caller to compute with the returned transfer result.
     pub(crate) result_grant: Option<ResultGrantAccounts<'info>>,
 }
 
 pub(crate) struct ResultGrantAccounts<'info> {
     pub state: AccountInfo<'info>,
-    pub scratch: AccountInfo<'info>,
-    pub authority: AccountInfo<'info>,
-    pub id: zama_fhe::StateId,
+    pub id: zama_fhe::StoreId,
 }
 
 impl<'info> ResultGrantAccounts<'info> {
-    pub(crate) fn bind(
-        state: Option<&UncheckedAccount<'info>>,
-        scratch: Option<&UncheckedAccount<'info>>,
-        authority: Option<&Signer<'info>>,
-    ) -> Result<Option<Self>> {
-        match (state, scratch, authority) {
-            (None, None, None) => Ok(None),
-            (Some(state), Some(scratch), Some(authority)) => {
+    pub(crate) fn bind(state: Option<&UncheckedAccount<'info>>) -> Result<Option<Self>> {
+        state
+            .map(|state| {
                 let account = fhe::read_state(&state.to_account_info())?;
-                require_keys_eq!(
-                    account.authority,
-                    authority.key(),
-                    ConfidentialTokenError::ResultGrantMismatch
-                );
-                let id = zama_fhe::State::new(&account).id();
-                require_keys_eq!(
-                    scratch.key(),
-                    id.scratch_address(),
-                    ConfidentialTokenError::ResultGrantMismatch
-                );
-                Ok(Some(Self {
+                Ok(Self {
                     state: state.to_account_info(),
-                    scratch: scratch.to_account_info(),
-                    authority: authority.to_account_info(),
-                    id,
-                }))
-            }
-            _ => err!(ConfidentialTokenError::ResultGrantMismatch),
-        }
+                    id: zama_fhe::Store::new(&account).id(),
+                })
+            })
+            .transpose()
     }
 }
 
 pub(crate) enum TransferAmountSource<'info> {
     Attested(zama_host::CoprocessorInputAttestation),
-    StateSlot {
-        amount_state: AccountInfo<'info>,
+    StoreSlot {
+        amount_store: AccountInfo<'info>,
         authority: Option<AccountInfo<'info>>,
         key: [u8; 32],
     },
     Grant {
-        scratch: AccountInfo<'info>,
         handle: [u8; 32],
     },
 }
@@ -106,14 +86,14 @@ pub(crate) struct TransferOutcome {
     pub(crate) from_token_account: Pubkey,
     pub(crate) old_from_handle: [u8; 32],
     pub(crate) new_from_handle: [u8; 32],
-    pub(crate) from_encrypted_state: Pubkey,
+    pub(crate) from_encrypted_store: Pubkey,
     pub(crate) transferred_handle: [u8; 32],
-    pub(crate) transferred_encrypted_state: Pubkey,
+    pub(crate) transferred_encrypted_store: Pubkey,
     pub(crate) to_owner: Pubkey,
     pub(crate) to_token_account: Pubkey,
     pub(crate) old_to_handle: [u8; 32],
     pub(crate) new_to_handle: [u8; 32],
-    pub(crate) to_encrypted_state: Pubkey,
+    pub(crate) to_encrypted_store: Pubkey,
 }
 
 #[inline(never)]
@@ -151,21 +131,21 @@ pub(crate) fn execute_transfer<'info>(
         &accounts.to_ata,
     )?;
     require_keys_eq!(
-        accounts.from_state.key(),
-        encrypted_state_address(mint_key, from.key()).0,
-        ConfidentialTokenError::CurrentEncryptedStateMismatch
+        accounts.from_store.key(),
+        encrypted_store_address(mint_key, from.key()).0,
+        ConfidentialTokenError::CurrentEncryptedStoreMismatch
     );
     require_keys_eq!(
-        accounts.to_state.key(),
-        encrypted_state_address(mint_key, to.key()).0,
-        ConfidentialTokenError::CurrentEncryptedStateMismatch
+        accounts.to_store.key(),
+        encrypted_store_address(mint_key, to.key()).0,
+        ConfidentialTokenError::CurrentEncryptedStoreMismatch
     );
     let from_key = from.key();
     let to_key = to.key();
     let from_owner = from.owner;
     let to_owner = to.owner;
-    let from_encrypted_state = accounts.from_state.key();
-    let to_encrypted_state = accounts.to_state.key();
+    let from_encrypted_store = accounts.from_store.key();
+    let to_encrypted_store = accounts.to_store.key();
     if from_key == to_key {
         require!(
             accounts.result_grant.is_none(),
@@ -175,10 +155,10 @@ pub(crate) fn execute_transfer<'info>(
         return Ok(None);
     }
 
-    let from_balance = fhe::read_state(&accounts.from_state)?;
-    let to_balance = fhe::read_state(&accounts.to_state)?;
-    let old_from_handle = fhe::state_handle(&from_balance, balance_key())?;
-    let old_to_handle = fhe::state_handle(&to_balance, balance_key())?;
+    let from_balance = fhe::read_state(&accounts.from_store)?;
+    let to_balance = fhe::read_state(&accounts.to_store)?;
+    let old_from_handle = fhe::store_handle(&from_balance, balance_key())?;
+    let old_to_handle = fhe::store_handle(&to_balance, balance_key())?;
 
     let (new_from_handle, transferred_handle, new_to_handle) = compute_transfer_handles(
         &accounts,
@@ -188,7 +168,7 @@ pub(crate) fn execute_transfer<'info>(
         &to_balance,
     )?;
 
-    let transferred_encrypted_state = accounts.from_state.key();
+    let transferred_encrypted_store = accounts.from_store.key();
 
     Ok(Some(TransferOutcome {
         mint: mint_key,
@@ -196,14 +176,14 @@ pub(crate) fn execute_transfer<'info>(
         from_token_account: from_key,
         old_from_handle,
         new_from_handle,
-        from_encrypted_state,
+        from_encrypted_store,
         transferred_handle,
-        transferred_encrypted_state,
+        transferred_encrypted_store,
         to_owner,
         to_token_account: to_key,
         old_to_handle,
         new_to_handle,
-        to_encrypted_state,
+        to_encrypted_store,
     }))
 }
 
@@ -211,77 +191,65 @@ pub(crate) fn execute_transfer<'info>(
 fn build_transfer_execution(
     accounts: &TransferAccounts<'_, '_>,
     amount_source: &TransferAmountSource<'_>,
-    from_account: &zama_host::EncryptedState,
-    to_account: &zama_host::EncryptedState,
-    stored_amount: Option<&zama_host::EncryptedState>,
+    from_account: &zama_host::EncryptedStore,
+    to_account: &zama_host::EncryptedStore,
+    stored_amount: Option<&zama_host::EncryptedStore>,
 ) -> Result<zama_fhe::ReturningFheExecution<zama_fhe::Uint<64>>> {
-    let from_state = Box::new(zama_fhe::State::new(from_account));
-    let to_state = Box::new(zama_fhe::State::new(to_account));
-    let from_balance = from_state
+    let from_store = Box::new(zama_fhe::Store::new(from_account));
+    let to_store = Box::new(zama_fhe::Store::new(to_account));
+    let from_balance = from_store
         .get::<zama_fhe::Uint<64>>(balance_key())
         .map_err(invalid_execution)?;
-    let to_balance = to_state
+    let to_balance = to_store
         .get::<zama_fhe::Uint<64>>(balance_key())
         .map_err(invalid_execution)?;
     let existing_operand = match (amount_source, stored_amount) {
-        (TransferAmountSource::StateSlot { key, .. }, Some(state)) => {
+        (TransferAmountSource::StoreSlot { key, .. }, Some(state)) => {
             Some(fhe::uint64_operand(state, *key)?)
         }
-        (TransferAmountSource::Grant { scratch, handle }, _) => {
-            // The host validates the scratch's initiating state and the exact consumer grant.
+        (TransferAmountSource::Grant { handle }, _) => {
+            // The host checks the handle grant to the sender Store in the shared transient store.
             Some(
-                zama_fhe::State::new(from_account)
-                    .granted_from_scratch(*handle, scratch.key())
+                zama_fhe::Store::new(from_account)
+                    .granted(*handle)
                     .map_err(invalid_execution)?,
             )
         }
         _ => None,
     };
-    let mut result_output = from_state.result().allow(accounts.from_account.owner);
+    let mut result_output = from_store.result().allow(accounts.from_account.owner);
     if accounts.to_account.owner != accounts.from_account.owner {
         result_output = result_output.allow(accounts.to_account.owner);
     }
     if let Some(grant) = &accounts.result_grant {
-        result_output = result_output.allow_transient(grant.id, grant.id);
+        result_output = result_output.allow_transient(grant.id);
     }
     let result_output = Box::new(result_output);
-    zama_fhe::FheExecution::build_returning(
-        zama_fhe::ExecutionAuthority::new(accounts.from_account.key()),
-        |fhe| {
-            let amount = match amount_source {
-                TransferAmountSource::Attested(attestation) => {
-                    fhe.verified_input(attestation.clone())?
-                }
-                _ => existing_operand.expect("state or grant operand").into(),
-            };
-            let success = fhe.ge(from_balance, amount, zama_fhe::Output::transient())?;
-            let debit = fhe.sub(from_balance, amount, zama_fhe::Output::transient())?;
-            let remaining =
-                fhe.if_then_else(success, debit, from_balance, zama_fhe::Output::transient())?;
-            let transferred = fhe.sub(
-                from_balance,
-                remaining,
-                zama_fhe::Output::state(*result_output),
-            )?;
-            fhe.add(
-                remaining,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                zama_fhe::Output::state(
-                    from_state
-                        .set(balance_key())
-                        .allow(accounts.from_account.owner),
-                ),
-            )?;
-            fhe.add(
-                to_balance,
-                transferred,
-                zama_fhe::Output::state(
-                    to_state.set(balance_key()).allow(accounts.to_account.owner),
-                ),
-            )?;
-            Ok(transferred)
-        },
-    )
+    zama_fhe::FheExecution::build_returning(from_store.id(), |fhe| {
+        let amount = match amount_source {
+            TransferAmountSource::Attested(attestation) => {
+                fhe.verified_input(attestation.clone())?
+            }
+            _ => existing_operand.expect("state or grant operand").into(),
+        };
+        let success = fhe.ge(from_balance, amount)?;
+        let debit = fhe.sub(from_balance, amount)?;
+        let remaining = fhe.if_then_else(success, debit, from_balance)?;
+        let transferred = fhe.sub(from_balance, remaining)?;
+        let credited = fhe.add(to_balance, transferred)?;
+        fhe.output(transferred, *result_output)?;
+        fhe.output(
+            remaining,
+            from_store
+                .set(balance_key())
+                .allow(accounts.from_account.owner),
+        )?;
+        fhe.output(
+            credited,
+            to_store.set(balance_key()).allow(accounts.to_account.owner),
+        )?;
+        Ok(transferred)
+    })
     .map_err(invalid_execution)
 }
 
@@ -289,12 +257,12 @@ fn compute_transfer_handles<'info>(
     accounts: &TransferAccounts<'_, 'info>,
     amount_source: &TransferAmountSource<'info>,
     mint_key: Pubkey,
-    from_account: &zama_host::EncryptedState,
-    to_account: &zama_host::EncryptedState,
+    from_account: &zama_host::EncryptedStore,
+    to_account: &zama_host::EncryptedStore,
 ) -> Result<([u8; 32], [u8; 32], [u8; 32])> {
     let stored_amount = match amount_source {
-        TransferAmountSource::StateSlot { amount_state, .. } => {
-            Some(Box::new(fhe::read_state(amount_state)?))
+        TransferAmountSource::StoreSlot { amount_store, .. } => {
+            Some(Box::new(fhe::read_state(amount_store)?))
         }
         _ => None,
     };
@@ -305,10 +273,10 @@ fn compute_transfer_handles<'info>(
         to_account,
         stored_amount.as_deref(),
     )?;
-    let mut dynamic = vec![accounts.from_state.clone(), accounts.to_state.clone()];
+    let mut dynamic = vec![accounts.from_store.clone(), accounts.to_store.clone()];
     let mut authorities = vec![
-        fhe::StateAuthority::token_account(accounts.from_account)?,
-        fhe::StateAuthority::token_account(accounts.to_account)?,
+        fhe::StoreAuthority::token_account(accounts.from_account)?,
+        fhe::StoreAuthority::token_account(accounts.to_account)?,
     ];
     let mut add_account = |info: AccountInfo<'info>| {
         if !dynamic.iter().any(|a| a.key() == info.key()) {
@@ -316,35 +284,30 @@ fn compute_transfer_handles<'info>(
         }
     };
     match amount_source {
-        TransferAmountSource::StateSlot {
-            amount_state,
+        TransferAmountSource::StoreSlot {
+            amount_store,
             authority,
             ..
         } => {
-            add_account(amount_state.clone());
+            add_account(amount_store.clone());
             if let Some(authority) = authority {
                 if !authorities.iter().any(|a| a.key() == authority.key()) {
-                    authorities.push(fhe::StateAuthority::external(authority.clone()));
+                    authorities.push(fhe::StoreAuthority::external(authority.clone()));
                 }
             }
             if stored_amount
                 .as_ref()
                 .is_some_and(|s| s.authority == accounts.transfer_authority.key())
             {
-                authorities.push(fhe::StateAuthority::external(
+                authorities.push(fhe::StoreAuthority::external(
                     accounts.transfer_authority.to_account_info(),
                 ));
             }
         }
-        TransferAmountSource::Grant { scratch, .. } => add_account(scratch.clone()),
-        TransferAmountSource::Attested(_) => {}
+        TransferAmountSource::Grant { .. } | TransferAmountSource::Attested(_) => {}
     }
     if let Some(grant) = &accounts.result_grant {
         add_account(grant.state.clone());
-        add_account(grant.scratch.clone());
-        if !authorities.iter().any(|a| a.key() == grant.authority.key()) {
-            authorities.push(fhe::StateAuthority::external(grant.authority.clone()));
-        }
     }
     let resolved =
         fhe::ExecutionAccountSet::for_execution(execution.execution(), dynamic, authorities)?;
@@ -352,17 +315,19 @@ fn compute_transfer_handles<'info>(
         context: fhe::ExecuteContext {
             payer: accounts.payer,
             event_authority: accounts.zama_event_authority,
+            transient_store: accounts.transient_store,
+            instructions: accounts.instructions,
             zama_program: accounts.zama_program,
             host_config: accounts.host_config,
             deny_scope_records: fhe::deny_scope_records(
                 accounts.host_config,
                 accounts.remaining_accounts,
-                std::iter::once(token_app(mint_key))
-                    .chain(stored_amount.as_ref().map(|s| zama_fhe::AppScope {
+                std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|s| {
+                    zama_fhe::AppScope {
                         program: s.program,
                         scope: s.scope,
-                    }))
-                    .chain(accounts.result_grant.as_ref().map(|g| g.id.app())),
+                    }
+                })),
             )?,
             system_program: accounts.system_program,
             hcu_block_meter: accounts.hcu_block_meter.clone(),
@@ -372,9 +337,9 @@ fn compute_transfer_handles<'info>(
         execution,
     })?;
     Ok((
-        fhe::state_handle(&fhe::read_state(&accounts.from_state)?, balance_key())?,
+        fhe::store_handle(&fhe::read_state(&accounts.from_store)?, balance_key())?,
         handle,
-        fhe::state_handle(&fhe::read_state(&accounts.to_state)?, balance_key())?,
+        fhe::store_handle(&fhe::read_state(&accounts.to_store)?, balance_key())?,
     ))
 }
 
@@ -383,24 +348,18 @@ fn compute_transfer_handles<'info>(
 /// `allow_total_supply_viewers`. Returns the new handle.
 pub(crate) fn rewrite_allowing<'info>(
     context: fhe::ExecuteContext<'_, 'info>,
-    value: &Account<'info, zama_host::EncryptedState>,
-    id: (zama_fhe::StateId, [u8; 32]),
-    authority: fhe::StateAuthority<'info>,
+    value: &Account<'info, zama_host::EncryptedStore>,
+    id: (zama_fhe::StoreId, [u8; 32]),
+    authority: fhe::StoreAuthority<'info>,
     allows: impl IntoIterator<Item = Pubkey>,
 ) -> Result<[u8; 32]> {
     let operand = fhe::uint64_operand(value, id.1)?;
     let output = fhe::SlotOutput::new(value.to_account_info(), id, &authority, allows)?;
-    let execution = zama_fhe::FheExecution::build(
-        zama_fhe::ExecutionAuthority::new(value.authority),
-        |builder| {
-            builder.add(
-                operand,
-                zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0),
-                output.output(),
-            )?;
-            Ok(())
-        },
-    )
+    let execution = zama_fhe::FheExecution::build(id.0, |builder| {
+        let result = builder.add(operand, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0))?;
+        builder.output(result, output.output())?;
+        Ok(())
+    })
     .map_err(invalid_execution)?;
     let accounts =
         fhe::ExecutionAccountSet::for_execution(&execution, [output.account_info()], [authority])?;
@@ -450,18 +409,18 @@ pub(crate) fn assert_amount_attestation_binding(
 /// so the spender must be that authority (another program's PDA signing through
 /// `invoke_signed`), or own the token account whose values this program signs for. The amount
 /// must be a confidential balance type.
-pub(crate) fn assert_amount_state_spendable(
-    amount_state: &zama_host::EncryptedState,
+pub(crate) fn assert_amount_store_spendable(
+    amount_store: &zama_host::EncryptedStore,
     key: [u8; 32],
     spender: Pubkey,
     spender_token_account: Pubkey,
 ) -> Result<()> {
     require!(
-        zama_host::handle_fhe_type(fhe::state_handle(amount_state, key)?) == BALANCE_FHE_TYPE,
+        zama_host::handle_fhe_type(fhe::store_handle(amount_store, key)?) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
     require!(
-        amount_state.authority == spender || amount_state.authority == spender_token_account,
+        amount_store.authority == spender || amount_store.authority == spender_token_account,
         ConfidentialTokenError::AmountSpendAuthorityMismatch
     );
     Ok(())
@@ -470,7 +429,7 @@ pub(crate) fn assert_amount_state_spendable(
 /// Binds an encrypted value to one exact token state field: this program's application for
 /// `mint`, the controlling PDA, and the field label.
 pub(crate) fn assert_token_value(
-    value: &zama_host::EncryptedState,
+    value: &zama_host::EncryptedStore,
     mint: Pubkey,
     authority: Pubkey,
     label: [u8; 32],
@@ -480,7 +439,7 @@ pub(crate) fn assert_token_value(
             && value.scope == mint.to_bytes()
             && value.authority == authority
             && value.get(&label).is_some(),
-        ConfidentialTokenError::TokenEncryptedStateMismatch
+        ConfidentialTokenError::TokenEncryptedStoreMismatch
     );
     Ok(())
 }
@@ -488,8 +447,8 @@ pub(crate) fn assert_token_value(
 /// Encrypted value account checks for the redeem path: burned-amount handle type and the exact
 /// token state field. The caller separately requires the pending handle to be current and proves
 /// its publicness through the exact-handle MMR proof verified by `verify_public_decrypt`.
-pub(crate) fn assert_burned_amount_state_account(
-    amount_state: &Account<zama_host::EncryptedState>,
+pub(crate) fn assert_burned_amount_store_account(
+    amount_store: &Account<zama_host::EncryptedStore>,
     burned_handle: [u8; 32],
     mint: Pubkey,
     token_account: Pubkey,
@@ -498,11 +457,11 @@ pub(crate) fn assert_burned_amount_state_account(
         zama_host::handle_fhe_type(burned_handle) == BALANCE_FHE_TYPE,
         ConfidentialTokenError::AmountHandleTypeMismatch
     );
-    assert_token_value(amount_state, mint, token_account, burned_amount_key())
+    assert_token_value(amount_store, mint, token_account, burned_amount_key())
         .map_err(|_| error!(ConfidentialTokenError::AmountAclMismatch))?;
     require_keys_eq!(
-        amount_state.key(),
-        encrypted_state_address(mint, token_account).0,
+        amount_store.key(),
+        encrypted_store_address(mint, token_account).0,
         ConfidentialTokenError::AmountAclMismatch
     );
     Ok(())

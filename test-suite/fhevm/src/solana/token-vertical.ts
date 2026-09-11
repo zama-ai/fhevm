@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 // token-vertical — the typed confidential-token consume arc the token scenario drives:
 // burn (attested external amount) -> seal -> KMS-certified public decrypt -> redeem + disclose.
 //
@@ -50,7 +51,7 @@ export type ConfidentialBurnTarget = {
   readonly tokenAccount: Address;
   readonly pendingBurn: Address;
   /** The burned-amount `EncryptedValue` account: the certificate's account + the proof's leaves. */
-  readonly burnedAmountState: Address;
+  readonly burnedAmountStore: Address;
 };
 
 /** Derives the burn-facing accounts for `owner`'s confidential token account under `mint`. */
@@ -60,7 +61,7 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
   return {
     tokenAccount,
     pendingBurn: await vault.pendingBurnAddress(mint, tokenAccount),
-    burnedAmountState: await vault.tokenStateAddress(mint, tokenAccount),
+    burnedAmountStore: await vault.tokenStateAddress(mint, tokenAccount),
   };
 };
 
@@ -83,7 +84,9 @@ export const confidentialBurn = async (
   const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: params.mint });
+  const fhe = await createSolanaFheTransaction({ payer: params.owner });
   const instruction = await getConfidentialBurnInstructionAsync({
+    ...fhe.accounts,
     owner: params.owner,
     mint: params.mint,
     underlyingMint: params.underlyingMint,
@@ -93,8 +96,8 @@ export const confidentialBurn = async (
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
     tokenAccount: target.tokenAccount,
-    balanceState: await vault.tokenStateAddress(params.mint, target.tokenAccount),
-    totalSupplyState: await vault.tokenStateAddress(params.mint, totalSupplyAuthority),
+    balanceStore: await vault.tokenStateAddress(params.mint, target.tokenAccount),
+    totalSupplyStore: await vault.tokenStateAddress(params.mint, totalSupplyAuthority),
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
     hostConfig: await hostConfigAddress(),
@@ -102,7 +105,7 @@ export const confidentialBurn = async (
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: params.amountAttestation,
   });
-  await context.sendTransaction(params.owner, [instruction], {
+  await context.sendTransaction(params.owner, fhe.wrap([instruction]), {
     skipPreflight: true,
   });
 };
@@ -143,7 +146,7 @@ export const redeemBurnedAmount = async (
       params.underlyingMint,
       SPL_TOKEN_PROGRAM_ADDRESS,
     ),
-    burnedAmountState: target.burnedAmountState,
+    burnedAmountStore: target.burnedAmountStore,
     hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -174,7 +177,7 @@ export const sealBurnedAmountHandle = async (
       owner: params.owner,
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      encryptedState: target.burnedAmountState,
+      encryptedStore: target.burnedAmountStore,
       hostConfig: await hostConfigAddress(),
       kind: vault.DisclosedValueKind.BurnedAmount,
       handle: params.handle,
@@ -201,7 +204,7 @@ export const discloseBurnedAmount = async (
     {
       mint: params.mint,
       tokenAccount: target.tokenAccount,
-      encryptedState: target.burnedAmountState,
+      encryptedStore: target.burnedAmountStore,
       kmsContext: await kmsContextAddress(),
       hostConfig: await hostConfigAddress(),
     },

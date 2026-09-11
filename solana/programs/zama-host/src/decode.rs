@@ -12,13 +12,13 @@ pub use anchor_lang::event::EVENT_IX_TAG_LE;
 
 /// One zama-host instruction an off-chain consumer reconstructs state from:
 /// the `fhe_execute` execution (which allows keys inline on every persistent
-/// write) plus the one standalone `EncryptedState` ACL mutation.
+/// write) plus the one standalone `EncryptedStore` ACL mutation.
 /// Payloads are decoded through the generated `crate::instruction` structs and
 /// their `Discriminator` consts, so the fields are the handler arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ZamaHostInstruction {
     FheExecute(crate::state::FheExecuteArgs),
-    MakeStateHandlePublic {
+    MakeStoreHandlePublic {
         key: [u8; 32],
         handle: [u8; 32],
         previous_leaf_count: u64,
@@ -29,7 +29,7 @@ pub enum ZamaHostInstruction {
 /// did not deserialize. Consumers decide whether that halts ingestion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MalformedInstruction {
-    /// Snake-case handler name, e.g. `"make_state_handle_public"`.
+    /// Snake-case handler name, e.g. `"make_store_handle_public"`.
     pub instruction: &'static str,
     pub message: String,
 }
@@ -66,10 +66,10 @@ pub fn decode_instruction(
         |args: crate::instruction::FheExecute| { ZamaHostInstruction::FheExecute(args.args) }
     );
     arm!(
-        MakeStateHandlePublic,
-        "make_state_handle_public",
-        |args: crate::instruction::MakeStateHandlePublic| {
-            ZamaHostInstruction::MakeStateHandlePublic {
+        MakeStoreHandlePublic,
+        "make_store_handle_public",
+        |args: crate::instruction::MakeStoreHandlePublic| {
+            ZamaHostInstruction::MakeStoreHandlePublic {
                 key: args.key,
                 handle: args.handle,
                 previous_leaf_count: args.previous_leaf_count,
@@ -134,8 +134,8 @@ mod tests {
             sha256_discriminator("global", "fhe_execute")
         );
         assert_eq!(
-            crate::instruction::MakeStateHandlePublic::DISCRIMINATOR,
-            sha256_discriminator("global", "make_state_handle_public")
+            crate::instruction::MakeStoreHandlePublic::DISCRIMINATOR,
+            sha256_discriminator("global", "make_store_handle_public")
         );
         assert_eq!(
             crate::events::PublicOutputsProducedEvent::DISCRIMINATOR,
@@ -151,16 +151,16 @@ mod tests {
     fn decode_instruction_roundtrips_each_variant_and_accepts_trailing_bytes() {
         let cases: Vec<(Vec<u8>, ZamaHostInstruction)> = vec![
             {
-                let args = crate::instruction::MakeStateHandlePublic {
+                let args = crate::instruction::MakeStoreHandlePublic {
                     key: [8; 32],
                     handle: [7; 32],
                     previous_leaf_count: 0,
                 };
-                let mut data = crate::instruction::MakeStateHandlePublic::DISCRIMINATOR.to_vec();
+                let mut data = crate::instruction::MakeStoreHandlePublic::DISCRIMINATOR.to_vec();
                 args.serialize(&mut data).unwrap();
                 (
                     data,
-                    ZamaHostInstruction::MakeStateHandlePublic {
+                    ZamaHostInstruction::MakeStoreHandlePublic {
                         key: [8; 32],
                         handle: [7; 32],
                         previous_leaf_count: 0,
@@ -170,6 +170,8 @@ mod tests {
             {
                 let args = crate::instruction::FheExecute {
                     args: crate::state::FheExecuteArgs {
+                        execution_store_index: 0,
+                        effects: vec![],
                         returned_results: vec![crate::ExecutionResultRef {
                             step_index: 0,
                             output_index: 0,
@@ -179,7 +181,6 @@ mod tests {
                         steps: vec![crate::state::FheExecuteStep::TrivialEncrypt {
                             plaintext: [0; 32],
                             fhe_type: 5,
-                            output: crate::state::FheExecuteOutput::Transient,
                         }],
                     },
                 };

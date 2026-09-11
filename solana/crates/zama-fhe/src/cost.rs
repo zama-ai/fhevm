@@ -1,7 +1,7 @@
-//! Cost bounds for one app-to-host execution. State accounts are created separately;
+//! Cost bounds for one app-to-host execution. Store accounts are created separately;
 //! execution may grow them and top up rent, but never creates per-result accounts.
 //! Public API surface: application transaction planners inspect these bounds before composing CPIs.
-//! Host heap use still depends on live State/history and is measured by runtime tests.
+//! Host heap use still depends on live Store/history and is measured by runtime tests.
 
 /// Instructions one transaction may execute, top-level and CPI together — agave's
 /// `MAX_INSTRUCTION_TRACE_LENGTH` (`solana-transaction-context`); exceeding it aborts the
@@ -48,8 +48,8 @@ pub fn instruction_trace_floor(random_event: bool, public_event: bool) -> usize 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FheExecutionCost {
     pub steps: usize,
-    /// Conservative bound on State rent top-ups; multiple outputs may share one State.
-    pub state_outputs: usize,
+    /// Conservative bound on Store rent top-ups; multiple outputs may share one Store.
+    pub store_outputs: usize,
     pub emits_random_seeds_event: bool,
     /// Whether the host will emit the public-outputs event CPI (any `make_public` output).
     pub emits_public_outputs_event: bool,
@@ -72,7 +72,7 @@ pub struct FheExecutionCost {
     /// Remaining accounts the app must supply as dynamic accounts to `resolve_accounts`.
     pub dynamic_accounts: usize,
     /// Value-authority witnesses the app must supply to `resolve_accounts` (the fixed
-    /// execution authority plus each State’s own authority that differs from it).
+    /// execution authority plus each Store’s own authority that differs from it).
     pub value_authorities: usize,
 }
 
@@ -84,10 +84,10 @@ impl FheExecutionCost {
         )
     }
 
-    /// Includes a possible rent transfer per State output and lazy meter creation.
-    /// App-level State/scratch creation, final close and other CPIs must be added by the caller.
+    /// Includes a possible rent transfer per Store output and lazy meter creation.
+    /// App-level Store/transient store creation, final close and other CPIs must be added by the caller.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor() + self.state_outputs + CPIS_PER_SQUAT_CREATE
+        self.instruction_trace_floor() + self.store_outputs + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -95,10 +95,10 @@ impl FheExecutionCost {
 mod tests {
     use super::*;
 
-    fn cost(state_outputs: usize, random: bool, public: bool) -> FheExecutionCost {
+    fn cost(store_outputs: usize, random: bool, public: bool) -> FheExecutionCost {
         FheExecutionCost {
             steps: 1,
-            state_outputs,
+            store_outputs,
             emits_random_seeds_event: random,
             emits_public_outputs_event: public,
             packet_bytes: 0,
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn worst_case_charges_each_state_output_and_one_lazy_meter_creation() {
+    fn worst_case_charges_each_store_output_and_one_lazy_meter_creation() {
         let cost = cost(3, true, true);
         assert_eq!(cost.instruction_trace_floor(), 4);
         assert_eq!(

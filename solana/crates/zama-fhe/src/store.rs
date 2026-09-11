@@ -4,16 +4,16 @@ use crate::operand::{Operand, OperandKind};
 use crate::{AppScope, FheExecutionBuildError, FheHandle, FheTyped, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StateId {
+pub struct StoreId {
     pub(crate) address: Pubkey,
     pub(crate) authority: Pubkey,
     pub(crate) app: AppScope,
 }
 
-impl StateId {
+impl StoreId {
     pub fn new(program: Pubkey, authority: Pubkey, scope: [u8; 32]) -> Self {
         Self {
-            address: zama_host::encrypted_state_address(program, authority, scope).0,
+            address: zama_host::encrypted_store_address(program, authority, scope).0,
             authority,
             app: AppScope { program, scope },
         }
@@ -28,26 +28,23 @@ impl StateId {
     pub fn app(self) -> AppScope {
         self.app
     }
-    pub fn scratch_address(self) -> Pubkey {
-        zama_host::transient_address(self.address).0
-    }
 }
 
 /// A borrowed snapshot of a host-owned encrypted dictionary.
-pub struct State<'a> {
-    id: StateId,
-    account: &'a zama_host::EncryptedState,
+pub struct Store<'a> {
+    id: StoreId,
+    account: &'a zama_host::EncryptedStore,
 }
 
-impl<'a> State<'a> {
-    pub fn new(account: &'a zama_host::EncryptedState) -> Self {
+impl<'a> Store<'a> {
+    pub fn new(account: &'a zama_host::EncryptedStore) -> Self {
         Self {
-            id: StateId::new(account.program, account.authority, account.scope),
+            id: StoreId::new(account.program, account.authority, account.scope),
             account,
         }
     }
 
-    pub fn id(&self) -> StateId {
+    pub fn id(&self) -> StoreId {
         self.id
     }
 
@@ -55,28 +52,28 @@ impl<'a> State<'a> {
         let handle = self
             .account
             .get(&key)
-            .ok_or(FheExecutionBuildError::MissingStateSlot)?;
+            .ok_or(FheExecutionBuildError::MissingStoreSlot)?;
         FheHandle::from_handle_operand(
             handle,
-            Operand(OperandKind::StateSlot {
-                state: self.id,
+            Operand(OperandKind::StoreSlot {
+                store: self.id,
                 key,
                 handle,
             }),
         )
     }
 
-    pub fn set(&self, key: [u8; 32]) -> StateOutput {
-        StateOutput {
+    pub fn set(&self, key: [u8; 32]) -> StoreOutput {
+        StoreOutput {
             slot: Some((key, self.account.get(&key))),
             ..self.result()
         }
     }
 
     /// Seal or share a result without allocating a dictionary slot.
-    pub fn result(&self) -> StateOutput {
-        StateOutput {
-            state: self.id,
+    pub fn result(&self) -> StoreOutput {
+        StoreOutput {
+            store: self.id,
             previous_leaf_count: self.account.leaf_count,
             slot: None,
             allows: vec![],
@@ -85,24 +82,11 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn granted<T: FheTyped>(
-        &self,
-        handle: [u8; 32],
-        initiating: StateId,
-    ) -> Result<FheHandle<T>> {
-        self.granted_from_scratch(handle, initiating.scratch_address())
-    }
-
-    pub fn granted_from_scratch<T: FheTyped>(
-        &self,
-        handle: [u8; 32],
-        scratch: Pubkey,
-    ) -> Result<FheHandle<T>> {
+    pub fn granted<T: FheTyped>(&self, handle: [u8; 32]) -> Result<FheHandle<T>> {
         FheHandle::from_handle_operand(
             handle,
             Operand(OperandKind::Granted {
                 consumer: self.id,
-                scratch,
                 handle,
             }),
         )
@@ -110,16 +94,16 @@ impl<'a> State<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StateOutput {
-    pub(crate) state: StateId,
+pub struct StoreOutput {
+    pub(crate) store: StoreId,
     pub(crate) previous_leaf_count: u64,
     pub(crate) slot: Option<([u8; 32], Option<[u8; 32]>)>,
     pub(crate) allows: Vec<Pubkey>,
     pub(crate) make_public: bool,
-    pub(crate) grants: Vec<(StateId, StateId)>,
+    pub(crate) grants: Vec<StoreId>,
 }
 
-impl StateOutput {
+impl StoreOutput {
     pub fn allow(mut self, subject: Pubkey) -> Self {
         self.allows.push(subject);
         self
@@ -128,8 +112,8 @@ impl StateOutput {
         self.make_public = true;
         self
     }
-    pub fn allow_transient(mut self, initiating: StateId, consumer: StateId) -> Self {
-        self.grants.push((initiating, consumer));
+    pub fn allow_transient(mut self, consumer: StoreId) -> Self {
+        self.grants.push(consumer);
         self
     }
 }
@@ -137,11 +121,11 @@ impl StateOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ExecutionAuthority, FheExecution, Output, Scalar, Uint};
+    use crate::{FheExecution, Scalar, Uint};
 
     #[test]
     fn slots_share_history_and_a_failed_rewrite_does_not_poison_the_builder() {
-        let account = zama_host::EncryptedState {
+        let account = zama_host::EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
             scope: [3; 32],
@@ -150,38 +134,24 @@ mod tests {
             peaks: vec![],
             bump: 0,
         };
-        let state = State::new(&account);
-        let execution = FheExecution::build(ExecutionAuthority::new(account.authority), |fhe| {
-            let first = fhe.trivial_encrypt_u64(
-                1,
-                Output::state(state.set([1; 32]).allow(account.authority)),
-            )?;
+        let store = Store::new(&account);
+        let execution = FheExecution::build(store.id(), |fhe| {
+            let first = fhe.trivial_encrypt_u64(1)?;
+            fhe.output(first, store.set([1; 32]).allow(account.authority))?;
             assert_eq!(
-                fhe.trivial_encrypt_u64(2, Output::state(state.set([1; 32])))
-                    .unwrap_err(),
-                FheExecutionBuildError::StateSlotWrittenEarlier
+                fhe.output(first, store.set([1; 32])).unwrap_err(),
+                FheExecutionBuildError::DuplicateSlotWrite
             );
-            fhe.add(
-                first,
-                Scalar::<Uint<64>>::u64(1),
-                Output::state(state.set([2; 32]).make_public()),
-            )?;
+            let second = fhe.add(first, Scalar::<Uint<64>>::u64(1))?;
+            fhe.output(second, store.set([2; 32]).make_public())?;
             Ok(())
         })
         .unwrap();
         let counts: Vec<_> = execution
             .args
-            .steps
+            .effects
             .iter()
-            .map(
-                |step| match crate::execution::fhe_execute_step_output(step) {
-                    zama_host::FheExecuteOutput::State {
-                        previous_leaf_count,
-                        ..
-                    } => *previous_leaf_count,
-                    _ => panic!("state output"),
-                },
-            )
+            .map(|effect| effect.previous_leaf_count)
             .collect();
         assert_eq!(counts, [0, 1]);
     }

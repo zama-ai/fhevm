@@ -11,7 +11,7 @@ type Environment = Readonly<Record<string, string | undefined>>;
 type PublicDecryptRequest = {
   handle: string;
   contextId: Uint8Array;
-  encryptedState: Uint8Array;
+  encryptedStore: Uint8Array;
 };
 /**
  * The KMS public-decrypt certificate the SDK action returns — the glossary term is "certificate"
@@ -72,7 +72,7 @@ export const runSolanaPublicDecrypt = async (
   const request: PublicDecryptRequest = {
     handle: bytes32Hex(environment, 'PD_HANDLE'),
     contextId: bytes32(environment, 'PD_CONTEXT_ID'),
-    encryptedState: bytes32(environment, 'PD_ENCRYPTED_STATE'),
+    encryptedStore: bytes32(environment, 'PD_ENCRYPTED_STORE'),
   };
   const call = dependencies.publicDecryptCertificate ?? runPublicSdkPublicDecrypt;
   const certificate = await call({

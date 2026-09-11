@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x04 + 32-byte contextId + 32-byte encrypted state";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x04 + 32-byte contextId + 32-byte encrypted store";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -135,7 +135,7 @@ pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError>
 }
 
 /// Solana public-decrypt `extraData` (`0x04`): `[version(1B) | contextId(32B) |
-/// encryptedState(32B)]`, 65 bytes. The canonical layout lives in the kms-connector
+/// encryptedStore(32B)]`, 65 bytes. The canonical layout lives in the kms-connector
 /// `solana_extra_data` module; the connector reads the state and fetches the public leaf
 /// itself, so the carrier holds no proof.
 const EXTRA_DATA_SOLANA_HEX_LEN: usize = 2 + 65 * 2;
@@ -154,7 +154,7 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
         .description(Some(
             "Extra data forwarded verbatim to the gateway contract. Accepts `\"0x00\"`, version `0x01` \
              (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), \
-             or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted state). \
+             or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). \
              contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).",
         ))
         // Deprecated `example` (singular) matches what `#[schema(example = ...)]`
@@ -175,7 +175,7 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
 ///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars). The contextId must be
 ///   0x07-tagged and the epochId must be 0x08-tagged (first byte of each, respectively).
 /// - `"0x04" + 128 hex chars`: Version 4 (Solana public decrypt) —
-///   `[version(1B) | contextId(32B) | encryptedState(32B)]` = 65 bytes.
+///   `[version(1B) | contextId(32B) | encryptedStore(32B)]` = 65 bytes.
 ///
 /// The contextId and epochId are opaque to the Relayer: they are not interpreted beyond
 /// their type tag, and the bytes are propagated verbatim to the Gateway.
@@ -489,7 +489,7 @@ mod tests {
     fn solana_public_decrypt_extra_data_hex() -> String {
         let mut bytes = vec![0x04u8];
         bytes.extend_from_slice(&[0u8; 32]); // context_id
-        bytes.extend_from_slice(&[7u8; 32]); // encrypted state
+        bytes.extend_from_slice(&[7u8; 32]); // encrypted store
         format!("0x{}", hex::encode(bytes))
     }
 

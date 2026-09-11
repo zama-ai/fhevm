@@ -9,11 +9,11 @@
 //!   → KMS pair servability
 //!   → READ host state
 //!   → host pause switch, from that first read
-//!   → if any entry is delegated: resolve its encrypted state to learn its
+//!   → if any entry is delegated: resolve its encrypted store to learn its
 //!     authority, then READ again with the delegation records added — that read is the
 //!     deciding observation and the first read's values are discarded
 //!   → invalidation watermark
-//!   → per entry: encrypted state → scope
+//!   → per entry: encrypted store → scope
 //!   → READ the leaf proofs, one batch for the request, once more if the record is behind
 //!   → per entry: handle binding against the account's own peaks
 //!   → per delegated entry: delegation freshness
@@ -27,7 +27,7 @@
 //!
 //! Every rule below the account reads takes the *deciding* snapshot: the last read, whole and on
 //! its own. A delegated request reads twice because a delegation address is not computable before
-//! an encrypted state has been read, and the earlier read is a discovery step whose values
+//! an encrypted store has been read, and the earlier read is a discovery step whose values
 //! decide nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
 //! deciding read older than the discovery read is refused as the lagging node it is, transiently.
 //!
@@ -52,7 +52,7 @@ use super::delegation::{
     AuthorizedRow, check_delegation, delegation_address, wildcard_delegation_address,
 };
 use super::deployment::{DeploymentIdentity, check_deployment};
-use super::encrypted_state::{ResolvedEncryptedState, resolve_encrypted_state};
+use super::encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store};
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
 use super::kms_pair::KmsPairValidator;
@@ -84,11 +84,11 @@ pub struct AuthorizedEntry {
     /// The key whose allow leaf was proven: the signer for a direct entry, the delegator for a
     /// delegated one.
     pub allowed_key: SolanaPubkeyBytes,
-    /// The authority, read from the validated encrypted state.
-    pub state_authority: SolanaPubkeyBytes,
-    /// The application program, read from the validated encrypted state.
+    /// The authority, read from the validated encrypted store.
+    pub store_authority: SolanaPubkeyBytes,
+    /// The application program, read from the validated encrypted store.
     pub program: SolanaPubkeyBytes,
-    /// The program-declared scope, read from the validated encrypted state.
+    /// The program-declared scope, read from the validated encrypted store.
     pub scope: SolanaPubkeyBytes,
 }
 
@@ -223,8 +223,8 @@ where
         .await?;
 
     // The reads. The first covers the deployment's config singleton, the signer's invalidation
-    // record and one account per named encrypted state; a delegated entry then needs a
-    // second, because its record's address is a function of an authority only its encrypted state
+    // record and one account per named encrypted store; a delegated entry then needs a
+    // second, because its record's address is a function of an authority only its encrypted store
     // can supply.
     let first_keys = plan_first_read(request, context.deployment);
     let first = reader.read_accounts(&first_keys).await?;
@@ -252,12 +252,12 @@ where
 
     let mut accounts = Vec::with_capacity(request.handles().len());
     for (index, entry) in request.handles().iter().enumerate() {
-        let encrypted_state =
-            resolve_encrypted_state(&observation, program_id, entry.encrypted_state())
-                .map_err(|source| AuthorizationFailure::EncryptedState { index, source })?;
-        check_scope(permit.allowed_scopes(), &encrypted_state)
+        let encrypted_store =
+            resolve_encrypted_store(&observation, program_id, entry.encrypted_store())
+                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
+        check_scope(permit.allowed_scopes(), &encrypted_store)
             .map_err(|source| AuthorizationFailure::Scope { index, source })?;
-        accounts.push(encrypted_state);
+        accounts.push(encrypted_store);
     }
 
     // The proof read: one batch for the request, planned from the resolved accounts. The key the
@@ -272,7 +272,7 @@ where
             .map(|(entry, account)| {
                 (
                     LeafQuery {
-                        encrypted_state: account.account_key(),
+                        encrypted_store: account.account_key(),
                         handle: entry.handle(),
                         kind: LeafKind::Allowed {
                             key: entry.allowed_key(),
@@ -290,9 +290,9 @@ where
 
     let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();
-    for (index, (entry, encrypted_state)) in request.handles().iter().zip(&accounts).enumerate() {
+    for (index, (entry, encrypted_store)) in request.handles().iter().zip(&accounts).enumerate() {
         let query = LeafQuery {
-            encrypted_state: encrypted_state.account_key(),
+            encrypted_store: encrypted_store.account_key(),
             handle: entry.handle(),
             kind: LeafKind::Allowed {
                 key: entry.allowed_key(),
@@ -309,16 +309,16 @@ where
             delegated.push((
                 index,
                 entry.allowed_key(),
-                encrypted_state.authority(),
+                encrypted_store.authority(),
                 entry.handle(),
             ));
         }
         entries.push(AuthorizedEntry {
             handle: entry.handle(),
             allowed_key: entry.allowed_key(),
-            state_authority: encrypted_state.authority(),
-            program: encrypted_state.program(),
-            scope: encrypted_state.scope(),
+            store_authority: encrypted_store.authority(),
+            program: encrypted_store.program(),
+            scope: encrypted_store.scope(),
         });
     }
 
@@ -359,11 +359,11 @@ where
 /// Derives the delegation-record addresses a delegated request needs, from the discovery read.
 ///
 /// This is the only use the first read of a delegated request is put to, and it is why the read
-/// happens at all. The encrypted state is resolved here to learn its authority and for no other
+/// happens at all. The encrypted store is resolved here to learn its authority and for no other
 /// purpose: every rule, including the resolution of this same
-/// encrypted state, is applied again against the deciding observation.
+/// encrypted store, is applied again against the deciding observation.
 ///
-/// Two addresses per delegated entry, because two rows can carry the grant: the encrypted state's
+/// Two addresses per delegated entry, because two rows can carry the grant: the encrypted store's
 /// authority and the delegator's wildcard row. Both are planned unconditionally rather
 /// than the wildcard being fetched only when the authority-specific row is missing — that would
 /// be a third read, and a rule that reads state after the deciding observation is the thing this
@@ -383,11 +383,11 @@ fn discover_delegation_keys(
         if delegator == signer {
             continue;
         }
-        let encrypted_state: ResolvedEncryptedState =
-            resolve_encrypted_state(first, program_id, entry.encrypted_state())
-                .map_err(|source| AuthorizationFailure::EncryptedState { index, source })?;
+        let encrypted_store: ResolvedEncryptedStore =
+            resolve_encrypted_store(first, program_id, entry.encrypted_store())
+                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
         let (account_key, _) =
-            delegation_address(program_id, delegator, signer, encrypted_state.authority());
+            delegation_address(program_id, delegator, signer, encrypted_store.authority());
         keys.push(account_key);
         let (wildcard_key, _) = wildcard_delegation_address(program_id, delegator, signer);
         keys.push(wildcard_key);

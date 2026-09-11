@@ -5,6 +5,39 @@
 use super::*;
 
 #[test]
+fn repeated_results_keep_maximum_depth_for_every_authorized_state() {
+    use bytemuck::Zeroable;
+
+    let mut transient_store = TransientStore::zeroed();
+    let producer = Pubkey::new_unique();
+    let other_producer = Pubkey::new_unique();
+    let consumer = Pubkey::new_unique();
+    let handle = [7; 32];
+    assert_eq!(transient_store.origin_depth(handle), None);
+    transient_store.record(handle, producer, 3).unwrap();
+    transient_store.allow(handle, consumer).unwrap();
+    transient_store.record(handle, other_producer, 9).unwrap();
+    transient_store.record(handle, producer, 4).unwrap();
+    transient_store.record([8; 32], producer, 100).unwrap();
+
+    assert_eq!(transient_store.len(), 4);
+    assert_eq!(transient_store.result(0).unwrap().depth, 3);
+    assert_eq!(transient_store.origin_depth(handle), Some(9));
+    for authorized in [producer, other_producer, consumer] {
+        assert_eq!(
+            transient_store.authorized_depth(handle, authorized),
+            Some(9)
+        );
+    }
+    assert_eq!(
+        transient_store.authorized_depth(handle, Pubkey::new_unique()),
+        None
+    );
+    assert_eq!(transient_store.authorized_depth([8; 32], consumer), None);
+    assert_eq!(transient_store.authorized_depth([9; 32], consumer), None);
+}
+
+#[test]
 fn latest_prior_bank_hash_tolerates_skipped_slots() {
     let entries = vec![(8, [8; 32]), (6, [6; 32]), (3, [3; 32])];
 
@@ -52,6 +85,7 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
         [2; 32],
         true,
         3,
+        [0; 32],
         &HandleDerivationContext {
             chain_id,
             previous_bank_hash: [9; 32],

@@ -99,11 +99,11 @@
           "writable": true
         },
         {
-          "name": "batch_balance_state",
+          "name": "batch_balance_store",
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "writable": true
         },
         {
@@ -115,6 +115,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -171,7 +178,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the claim encrypted State and transfer output rent. Anyone."
+            "Pays the claim encrypted store and transfer output rent. Anyone."
           ],
           "writable": true,
           "signer": true
@@ -264,11 +271,11 @@
           }
         },
         {
-          "name": "join_state",
+          "name": "join_store",
           "writable": true
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -305,11 +312,11 @@
           "writable": true
         },
         {
-          "name": "batch_payout_balance_state",
+          "name": "batch_payout_balance_store",
           "writable": true
         },
         {
-          "name": "user_payout_balance_state",
+          "name": "user_payout_balance_store",
           "writable": true
         },
         {
@@ -439,14 +446,14 @@
           "writable": true
         },
         {
-          "name": "batch_balance_state",
+          "name": "batch_balance_store",
           "docs": [
             "replaced as the burn's balance output (the whole-balance alias)."
           ],
           "writable": true
         },
         {
-          "name": "total_supply_state",
+          "name": "total_supply_store",
           "writable": true
         },
         {
@@ -455,6 +462,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -571,7 +585,7 @@
         "Joins the pending batch with the batcher's join token: one user-signed",
         "transaction that CPIs the coprocessor-attested confidential transfer",
         "into the batch's token account. The token returns the transferred handle and grants",
-        "the JoinRecord State access through scratch. The batcher adds it to the user's",
+        "the JoinRecord Store access through transient store. The batcher adds it to the user's",
         "contribution slot (decryptable by the user). Repeated joins accumulate."
       ],
       "discriminator": [
@@ -651,7 +665,7 @@
         {
           "name": "join_record",
           "docs": [
-            "The user's join record for this batch; created on first join and controls its contribution State."
+            "The user's join record for this batch; created on first join and controls its contribution Store."
           ],
           "writable": true,
           "pda": {
@@ -713,19 +727,19 @@
           "writable": true
         },
         {
-          "name": "user_balance_state",
+          "name": "user_balance_store",
           "writable": true
         },
         {
-          "name": "batch_balance_state",
+          "name": "batch_balance_store",
           "writable": true
         },
         {
-          "name": "join_state",
+          "name": "join_store",
           "writable": true
         },
         {
-          "name": "scratch",
+          "name": "transient_store",
           "writable": true
         },
         {
@@ -897,7 +911,7 @@
           "writable": true
         },
         {
-          "name": "batch_join_balance_state",
+          "name": "batch_join_balance_store",
           "writable": true
         },
         {
@@ -911,7 +925,7 @@
           "writable": true
         },
         {
-          "name": "batch_payout_balance_state",
+          "name": "batch_payout_balance_store",
           "writable": true
         },
         {
@@ -1016,6 +1030,13 @@
           "name": "zama_event_authority"
         },
         {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
           "name": "zama_program",
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
@@ -1063,7 +1084,7 @@
         "Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:",
         "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined encrypted State to zero."
+        "resets the joined encrypted store to zero."
       ],
       "discriminator": [
         191,
@@ -1201,15 +1222,15 @@
           "writable": true
         },
         {
-          "name": "batch_balance_state",
+          "name": "batch_balance_store",
           "writable": true
         },
         {
-          "name": "user_balance_state",
+          "name": "user_balance_store",
           "writable": true
         },
         {
-          "name": "join_state",
+          "name": "join_store",
           "docs": [
             "amount, then reset to an encrypted zero by the batcher execution."
           ],
@@ -1217,6 +1238,13 @@
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1397,7 +1425,7 @@
           }
         },
         {
-          "name": "batch_burned_amount_state"
+          "name": "batch_burned_amount_store"
         },
         {
           "name": "pending_burn",
@@ -1502,15 +1530,22 @@
           "name": "payout_total_supply_authority"
         },
         {
-          "name": "batch_payout_balance_state",
+          "name": "batch_payout_balance_store",
           "writable": true
         },
         {
-          "name": "payout_total_supply_state",
+          "name": "payout_total_supply_store",
           "writable": true
         },
         {
           "name": "zama_event_authority"
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
         },
         {
           "name": "zama_program",
@@ -1809,8 +1844,8 @@
     },
     {
       "code": 6012,
-      "name": "EncryptedStateInvalid",
-      "msg": "encrypted State is invalid"
+      "name": "EncryptedStoreInvalid",
+      "msg": "encrypted store is invalid"
     },
     {
       "code": 6013,
@@ -2330,8 +2365,8 @@
       "docs": [
         "Confidential mint state for the token PoC.",
         "",
-        "The total supply's current handle and access encrypted State live in the",
-        "`EncryptedState` account at `total_supply_encrypted_state`."
+        "The total supply's current handle and access encrypted store live in the",
+        "`EncryptedStore` account at `total_supply_encrypted_store`."
       ],
       "type": {
         "kind": "struct",
@@ -2461,7 +2496,7 @@
       "name": "JoinRecord",
       "docs": [
         "Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned",
-        "`EncryptedState` account at `joined_encrypted_state`: the user may decrypt their pending",
+        "`EncryptedStore` account at `joined_encrypted_store`: the user may decrypt their pending",
         "amount, and the batch authority computes refunds and claims from it by signature."
       ],
       "type": {
@@ -2529,16 +2564,16 @@
             "type": "pubkey"
           },
           {
-            "name": "joined_encrypted_state",
+            "name": "joined_encrypted_store",
             "docs": [
-              "`EncryptedState` encrypted State holding the user's accumulated joined amount."
+              "`EncryptedStore` encrypted store holding the user's accumulated joined amount."
             ],
             "type": "pubkey"
           },
           {
             "name": "joined_handle",
             "docs": [
-              "Current handle of the joined encrypted State after this join."
+              "Current handle of the joined encrypted store after this join."
             ],
             "type": {
               "array": [
@@ -2564,7 +2599,7 @@
           {
             "name": "leaf_index",
             "docs": [
-              "Index of the proven leaf within the encrypted State's MMR."
+              "Index of the proven leaf within the encrypted store's MMR."
             ],
             "type": "u64"
           },
@@ -2615,9 +2650,9 @@
             "type": "pubkey"
           },
           {
-            "name": "claim_state",
+            "name": "claim_store",
             "docs": [
-              "`EncryptedState` encrypted State holding the claimed payout amount."
+              "`EncryptedStore` encrypted store holding the claimed payout amount."
             ],
             "type": "pubkey"
           },
@@ -2640,7 +2675,7 @@
       "name": "QuitBatch",
       "docs": [
         "Emitted when a user quits a pending batch: the exact recorded amount was",
-        "transferred back and the joined encrypted State reset to zero."
+        "transferred back and the joined encrypted store reset to zero."
       ],
       "type": {
         "kind": "struct",

@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
@@ -27,7 +28,9 @@ describe('generated confidentialTransfer instruction', () => {
     const underlyingMint = key(14);
     const fromAta = key(15);
     const toAta = key(15);
+    const fhe = await createSolanaFheTransaction({ payer });
     const instruction = getConfidentialTransferInstruction({
+      ...fhe.accounts,
       owner,
       payer,
       mint,
@@ -36,8 +39,8 @@ describe('generated confidentialTransfer instruction', () => {
       toAta,
       fromAccount: aliasedToken,
       toAccount: aliasedToken,
-      fromState: aliasedBalance,
-      toState: aliasedBalance,
+      fromStore: aliasedBalance,
+      toStore: aliasedBalance,
       zamaEventAuthority: zamaEvent,
       hostConfig,
       eventAuthority: tokenEvent,
@@ -66,12 +69,12 @@ describe('generated confidentialTransfer instruction', () => {
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [zamaEvent, AccountRole.READONLY],
+      [fhe.accounts.transientStore, AccountRole.WRITABLE],
+      [fhe.accounts.instructions, AccountRole.READONLY],
       ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
       ['11111111111111111111111111111111', AccountRole.READONLY],
-      // HCU witnesses and the optional result grant triple resolve to the program id.
-      [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
-      [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
+      // HCU witnesses and the optional result State resolve to the program id.
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],

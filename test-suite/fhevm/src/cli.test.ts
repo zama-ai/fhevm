@@ -239,7 +239,10 @@ describe("cli", () => {
 
   test("invalid sha does not print the resume hint", async () => {
     await withState(persistedState(), async (env) => {
-      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex"], env);
+      const result = await execCli(["up", "--target", "sha", "--sha", "invalidhex"], {
+        ...env,
+        DOCKER_HOST: `unix://${path.join(env.FHEVM_STATE_DIR, "absent-docker.sock")}`,
+      });
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("Hint: run with --resume");
@@ -248,7 +251,10 @@ describe("cli", () => {
 
   test("invalid sha with equals-form flags does not print the resume hint", async () => {
     await withState(persistedState(), async (env) => {
-      const result = await execCli(["up", "--target=sha", "--sha=invalidhex"], env);
+      const result = await execCli(["up", "--target=sha", "--sha=invalidhex"], {
+        ...env,
+        DOCKER_HOST: `unix://${path.join(env.FHEVM_STATE_DIR, "absent-docker.sock")}`,
+      });
       expect(result.code).toBe(1);
       expect(result.stderr).toContain("Invalid sha invalidhex; expected 7 or 40 hex characters");
       expect(result.stderr).not.toContain("Hint: run with --resume");

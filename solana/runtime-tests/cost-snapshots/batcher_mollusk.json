@@ -1,89 +1,89 @@
 {
   "toolchain": {
     "anchor": "anchor-cli 1.1.2",
-    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
   "measurements": {
     "claim": {
-      "compute_units": 249811,
+      "compute_units": 239734,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 9,
-      "total_cpi_instruction_data_bytes": 1431,
-      "max_cpi_instruction_data_bytes": 378
+      "cpi_instructions": 7,
+      "total_cpi_instruction_data_bytes": 1339,
+      "max_cpi_instruction_data_bytes": 342
     },
     "dispatch": {
-      "compute_units": 203040,
-      "unique_accounts": 19,
+      "compute_units": 220625,
+      "unique_accounts": 21,
       "instruction_data_bytes": 8,
       "cpi_instructions": 10,
-      "total_cpi_instruction_data_bytes": 1172,
-      "max_cpi_instruction_data_bytes": 376
+      "total_cpi_instruction_data_bytes": 1138,
+      "max_cpi_instruction_data_bytes": 342
     },
     "join": {
-      "compute_units": 338790,
+      "compute_units": 325087,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
-      "cpi_instructions": 12,
-      "total_cpi_instruction_data_bytes": 2248,
-      "max_cpi_instruction_data_bytes": 773
+      "cpi_instructions": 10,
+      "total_cpi_instruction_data_bytes": 2157,
+      "max_cpi_instruction_data_bytes": 737
     },
     "open_batch": {
-      "compute_units": 212764,
-      "unique_accounts": 22,
+      "compute_units": 241442,
+      "unique_accounts": 24,
       "instruction_data_bytes": 16,
       "cpi_instructions": 20,
-      "total_cpi_instruction_data_bytes": 1590,
+      "total_cpi_instruction_data_bytes": 1602,
       "max_cpi_instruction_data_bytes": 242
     },
     "redeem_claim": {
-      "compute_units": 272312,
+      "compute_units": 259235,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 9,
-      "total_cpi_instruction_data_bytes": 1431,
-      "max_cpi_instruction_data_bytes": 378
+      "cpi_instructions": 7,
+      "total_cpi_instruction_data_bytes": 1339,
+      "max_cpi_instruction_data_bytes": 342
     },
     "redeem_dispatch": {
-      "compute_units": 203041,
-      "unique_accounts": 19,
+      "compute_units": 222126,
+      "unique_accounts": 21,
       "instruction_data_bytes": 8,
       "cpi_instructions": 10,
-      "total_cpi_instruction_data_bytes": 1172,
-      "max_cpi_instruction_data_bytes": 376
+      "total_cpi_instruction_data_bytes": 1138,
+      "max_cpi_instruction_data_bytes": 342
     },
     "redeem_join": {
-      "compute_units": 355291,
+      "compute_units": 359588,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
-      "cpi_instructions": 12,
-      "total_cpi_instruction_data_bytes": 2248,
-      "max_cpi_instruction_data_bytes": 773
+      "cpi_instructions": 10,
+      "total_cpi_instruction_data_bytes": 2157,
+      "max_cpi_instruction_data_bytes": 737
     },
     "redeem_open_batch": {
-      "compute_units": 235265,
-      "unique_accounts": 22,
+      "compute_units": 266943,
+      "unique_accounts": 24,
       "instruction_data_bytes": 16,
       "cpi_instructions": 20,
-      "total_cpi_instruction_data_bytes": 1590,
+      "total_cpi_instruction_data_bytes": 1602,
       "max_cpi_instruction_data_bytes": 242
     },
     "redeem_settle": {
-      "compute_units": 305721,
-      "unique_accounts": 34,
+      "compute_units": 325386,
+      "unique_accounts": 36,
       "instruction_data_bytes": 174,
       "cpi_instructions": 13,
-      "total_cpi_instruction_data_bytes": 1537,
-      "max_cpi_instruction_data_bytes": 397
+      "total_cpi_instruction_data_bytes": 1536,
+      "max_cpi_instruction_data_bytes": 396
     },
     "settle": {
-      "compute_units": 274179,
-      "unique_accounts": 34,
+      "compute_units": 292344,
+      "unique_accounts": 36,
       "instruction_data_bytes": 174,
       "cpi_instructions": 13,
-      "total_cpi_instruction_data_bytes": 1537,
-      "max_cpi_instruction_data_bytes": 397
+      "total_cpi_instruction_data_bytes": 1536,
+      "max_cpi_instruction_data_bytes": 396
     }
   }
 }

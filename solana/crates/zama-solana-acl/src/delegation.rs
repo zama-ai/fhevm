@@ -21,10 +21,10 @@ use crate::AclError;
 /// Seed of the delegation record PDA: `[seed, delegator, delegate, authority]`.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 
-/// The sentinel a wildcard row carries in place of an encrypted State authority.
-/// No real authority can collide with it: an encrypted State authority must sign
+/// The sentinel a wildcard row carries in place of an encrypted store authority.
+/// No real authority can collide with it: an encrypted store authority must sign
 /// `fhe_execute`, and the sentinel has no key — and the connector independently refuses any
-/// encrypted State naming it (its resolution guard), so an account carrying the
+/// encrypted store naming it (its resolution guard), so an account carrying the
 /// sentinel never reaches a row read.
 pub const WILDCARD_AUTHORITY: [u8; 32] = [0xff; 32];
 
@@ -68,7 +68,7 @@ pub const USER_DECRYPTION_DELEGATION_DISCRIMINATOR: [u8; ANCHOR_DISCRIMINATOR_LE
 /// Decodes an account's raw data, discriminator included, into a delegation record.
 ///
 /// Strict on both ends: the account is exactly discriminator + body (the record is never
-/// realloc-grown, unlike the encrypted State), and every field decodes or the whole
+/// realloc-grown, unlike the encrypted store), and every field decodes or the whole
 /// account is refused.
 pub fn decode_user_decryption_delegation(
     data: &[u8],

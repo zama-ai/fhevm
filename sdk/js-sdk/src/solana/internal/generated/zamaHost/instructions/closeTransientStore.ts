@@ -27,68 +27,87 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
+  type WritableAccount,
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
-export const CLOSE_SCRATCH_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([29, 191, 137, 78, 203, 150, 199, 39]);
+export const CLOSE_TRANSIENT_STORE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
+  107, 197, 28, 166, 51, 173, 83, 189,
+]);
 
-export function getCloseScratchDiscriminatorBytes(): ReadonlyUint8Array {
-  return fixEncoderSize(getBytesEncoder(), 8).encode(CLOSE_SCRATCH_DISCRIMINATOR);
+export function getCloseTransientStoreDiscriminatorBytes(): ReadonlyUint8Array {
+  return fixEncoderSize(getBytesEncoder(), 8).encode(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
 }
 
-export type CloseScratchInstruction<
+export type CloseTransientStoreInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountInstructions extends string | AccountMeta<string> = 'Sysvar1nstructions1111111111111111111111111',
+  TAccountTransientStore extends string | AccountMeta<string> = string,
+  TAccountRefund extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
+      TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
+      TAccountRefund extends string ? WritableAccount<TAccountRefund> : TAccountRefund,
       ...TRemainingAccounts,
     ]
   >;
 
-export type CloseScratchInstructionData = { discriminator: ReadonlyUint8Array };
+export type CloseTransientStoreInstructionData = {
+  discriminator: ReadonlyUint8Array;
+};
 
-export type CloseScratchInstructionDataArgs = {};
+export type CloseTransientStoreInstructionDataArgs = {};
 
-export function getCloseScratchInstructionDataEncoder(): FixedSizeEncoder<CloseScratchInstructionDataArgs> {
+export function getCloseTransientStoreInstructionDataEncoder(): FixedSizeEncoder<CloseTransientStoreInstructionDataArgs> {
   return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)]]), (value) => ({
     ...value,
-    discriminator: CLOSE_SCRATCH_DISCRIMINATOR,
+    discriminator: CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   }));
 }
 
-export function getCloseScratchInstructionDataDecoder(): FixedSizeDecoder<CloseScratchInstructionData> {
+export function getCloseTransientStoreInstructionDataDecoder(): FixedSizeDecoder<CloseTransientStoreInstructionData> {
   return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)]]);
 }
 
-export function getCloseScratchInstructionDataCodec(): FixedSizeCodec<
-  CloseScratchInstructionDataArgs,
-  CloseScratchInstructionData
+export function getCloseTransientStoreInstructionDataCodec(): FixedSizeCodec<
+  CloseTransientStoreInstructionDataArgs,
+  CloseTransientStoreInstructionData
 > {
-  return combineCodec(getCloseScratchInstructionDataEncoder(), getCloseScratchInstructionDataDecoder());
+  return combineCodec(getCloseTransientStoreInstructionDataEncoder(), getCloseTransientStoreInstructionDataDecoder());
 }
 
-export type CloseScratchInput<TAccountInstructions extends string = string> = {
+export type CloseTransientStoreInput<
+  TAccountInstructions extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountRefund extends string = string,
+> = {
   instructions?: Address<TAccountInstructions>;
+  transientStore: Address<TAccountTransientStore>;
+  refund: Address<TAccountRefund>;
 };
 
-export function getCloseScratchInstruction<
+export function getCloseTransientStoreInstruction<
   TAccountInstructions extends string,
+  TAccountTransientStore extends string,
+  TAccountRefund extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: CloseScratchInput<TAccountInstructions>,
+  input: CloseTransientStoreInput<TAccountInstructions, TAccountTransientStore, TAccountRefund>,
   config?: { programAddress?: TProgramAddress },
-): CloseScratchInstruction<TProgramAddress, TAccountInstructions> {
+): CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountRefund> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
   // Original accounts.
   const originalAccounts = {
     instructions: { value: input.instructions ?? null, isWritable: false },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    refund: { value: input.refund ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -100,30 +119,39 @@ export function getCloseScratchInstruction<
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
-    accounts: [getAccountMeta('instructions', accounts.instructions)],
-    data: getCloseScratchInstructionDataEncoder().encode({}),
+    accounts: [
+      getAccountMeta('instructions', accounts.instructions),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('refund', accounts.refund),
+    ],
+    data: getCloseTransientStoreInstructionDataEncoder().encode({}),
     programAddress,
-  } as CloseScratchInstruction<TProgramAddress, TAccountInstructions>);
+  } as CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountRefund>);
 }
 
-export type ParsedCloseScratchInstruction<
+export type ParsedCloseTransientStoreInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountMetas extends readonly AccountMeta[] = readonly AccountMeta[],
 > = {
   programAddress: Address<TProgram>;
   accounts: {
     instructions: TAccountMetas[0];
+    transientStore: TAccountMetas[1];
+    refund: TAccountMetas[2];
   };
-  data: CloseScratchInstructionData;
+  data: CloseTransientStoreInstructionData;
 };
 
-export function parseCloseScratchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
+export function parseCloseTransientStoreInstruction<
+  TProgram extends string,
+  TAccountMetas extends readonly AccountMeta[],
+>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
-): ParsedCloseScratchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 1) {
+): ParsedCloseTransientStoreInstruction<TProgram, TAccountMetas> {
+  if (instruction.accounts.length < 3) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 1,
+      expectedAccountMetas: 3,
     });
   }
   let accountIndex = 0;
@@ -134,7 +162,11 @@ export function parseCloseScratchInstruction<TProgram extends string, TAccountMe
   };
   return {
     programAddress: instruction.programAddress,
-    accounts: { instructions: getNextAccount() },
-    data: getCloseScratchInstructionDataDecoder().decode(instruction.data),
+    accounts: {
+      instructions: getNextAccount(),
+      transientStore: getNextAccount(),
+      refund: getNextAccount(),
+    },
+    data: getCloseTransientStoreInstructionDataDecoder().decode(instruction.data),
   };
 }

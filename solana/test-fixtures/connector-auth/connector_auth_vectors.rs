@@ -189,7 +189,7 @@ pub struct WireHandleEntry {
     /// a direct entry, the delegator for a delegated one.
     pub allowed_key: String,
     /// The encrypted value account the handle lives in, hex.
-    pub encrypted_state: String,
+    pub encrypted_store: String,
 }
 
 /// The state a record is authorized against.
@@ -214,7 +214,7 @@ pub struct Observation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedLeafProof {
     /// The encrypted value account asked about, hex.
-    pub encrypted_state: String,
+    pub encrypted_store: String,
     /// The handle asked about, hex.
     pub handle: String,
     /// The key whose allow leaf was asked for, hex.

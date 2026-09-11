@@ -29,6 +29,9 @@ const SCENARIO_TIMEOUT_MS = 20 * 60_000;
 
 const WRAP_AMOUNT = 1000n;
 const BURN_AMOUNT = 7n;
+const hostIdl: { errors: readonly { name: string; code: number }[] } = await Bun.file(
+  new URL("../../../../coprocessor/fhevm-engine/host-listener/idl/zama_host.json", import.meta.url),
+).json();
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const hexToBytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.replace(/^0x/, ""), "hex"));
@@ -103,7 +106,7 @@ describe("solana confidential-token consume vertical", () => {
       });
 
       const target = await confidentialBurnTarget(mint, wallet.signer.address);
-      const burnedHandle = await currentHandle(context, target.burnedAmountState, new TextEncoder().encode("burned_amount___________________"));
+      const burnedHandle = await currentHandle(context, target.burnedAmountStore, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
       // Seal through the token wrapper (it signs the Host CPI as the State authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
@@ -113,12 +116,12 @@ describe("solana confidential-token consume vertical", () => {
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
       const inclusionProof = await livePublicLeafProof(
         context,
-        target.burnedAmountState,
+        target.burnedAmountStore,
         burnedHandle,
       );
 
       const { cleartext, certificate } = await certifiedPublicDecrypt(config, {
-        encryptedState: target.burnedAmountState,
+        encryptedStore: target.burnedAmountStore,
         handle: burnedHandle,
       });
       expect(cleartext).toBe(BURN_AMOUNT);
@@ -159,7 +162,9 @@ describe("solana confidential-token consume vertical", () => {
         throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
       }
       // Pin the named rejection (zama_host IDL: InvalidKmsContext), not any transaction failure.
-      expect(customProgramErrorCode(rejection)).toBe(6061);
+      const contextError = hostIdl.errors.find(({ name }) => name === "InvalidKmsContext");
+      expect(contextError).toBeDefined();
+      expect(customProgramErrorCode(rejection)).toBe(contextError!.code);
     },
     SCENARIO_TIMEOUT_MS,
   );

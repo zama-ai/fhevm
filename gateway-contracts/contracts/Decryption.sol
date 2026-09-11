@@ -151,7 +151,7 @@ contract Decryption is
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /**
-     * @notice The exact length of Solana public-decrypt extraData: version, context ID, and EncryptedState address.
+     * @notice The exact length of Solana public-decrypt extraData: version, context ID, and EncryptedStore address.
      */
     uint256 internal constant SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LENGTH = 65;
 
@@ -1105,7 +1105,7 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Versions 1 (EVM), 2 (EVM reserved/epoch), and 4 (Solana EncryptedState) share the
+        // Versions 1 (EVM), 2 (EVM reserved/epoch), and 4 (Solana EncryptedStore) share the
         // `version ‖ contextId(32 BE)` prefix. V1 and v2 retain their extensible trailing data;
         // v4 has one exact layout so malformed requests fail before fee collection rather than at
         // the KMS Connector.

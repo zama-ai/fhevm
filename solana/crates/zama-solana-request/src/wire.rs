@@ -6,7 +6,7 @@
 //!
 //! Three absences are deliberate: no `authority` field, no
 //! `(program, scope)` field, and no proof. The first two are properties of the handle's
-//! encrypted state, and the only way to learn them is to read and validate that
+//! encrypted store, and the only way to learn them is to read and validate that
 //! account. A request cannot name them, so a substituted authority is not a check that can
 //! be forgotten — it is a value that does not exist. The proof is fetched by the verifier
 //! from the coprocessor's leaf record and verified against the account's own peaks; a proof
@@ -16,7 +16,7 @@
 //!
 //! Naming the authority in a request must stay a compile error, because the delegated branch
 //! is looked up by it: a request that could name one could name an authority the signer does
-//! hold a delegation for, against an encrypted state belonging to somebody else.
+//! hold a delegation for, against an encrypted store belonging to somebody else.
 //!
 //! ```compile_fail
 //! use zama_solana_request::SolanaHandleEntryWire;
@@ -24,7 +24,7 @@
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
 //!     allowed_key: vec![0; 32],
-//!     encrypted_state: vec![0; 32],
+//!     encrypted_store: vec![0; 32],
 //!     authority: vec![0; 32],
 //! };
 //! ```
@@ -38,7 +38,7 @@
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
 //!     allowed_key: vec![0; 32],
-//!     encrypted_state: vec![0; 32],
+//!     encrypted_store: vec![0; 32],
 //! };
 //! ```
 
@@ -48,7 +48,7 @@ use zama_solana_permit::PermitWireFields;
 ///
 /// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
 /// Solana RPC node serves at most 100 accounts per call. The worst-case request needs three
-/// accounts per entry — the encrypted state plus the two delegation rows — and the
+/// accounts per entry — the encrypted store plus the two delegation rows — and the
 /// signer's invalidation record on top: `3 * N + 1 <= 100` gives 33.
 ///
 /// It lives here, next to the wire form, because both ends need the same number: the relayer
@@ -83,6 +83,6 @@ pub struct SolanaHandleEntryWire {
     /// Claimed 32-byte key whose allow leaf on the handle authorizes this entry: the
     /// requester itself for a direct entry, the delegator for a delegated one.
     pub allowed_key: Vec<u8>,
-    /// Claimed 32-byte address of the encrypted state whose history contains the handle.
-    pub encrypted_state: Vec<u8>,
+    /// Claimed 32-byte address of the encrypted store whose history contains the handle.
+    pub encrypted_store: Vec<u8>,
 }

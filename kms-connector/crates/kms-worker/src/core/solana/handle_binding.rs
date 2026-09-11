@@ -1,6 +1,6 @@
 //! Handle binding: a sealed leaf, proven against the account's own peaks.
 //!
-//! Every decrypt permission in an encrypted state is a leaf of the account's MMR — an
+//! Every decrypt permission in an encrypted store is a leaf of the account's MMR — an
 //! `Allowed(key, handle)` leaf for a key, a `Public(handle)` leaf for everyone — and the account
 //! itself holds only the peaks. Binding a handle to a key therefore means: the coprocessors' leaf
 //! record says where the leaf is, and its sibling path hashes up to a peak the connector observed
@@ -17,12 +17,12 @@
 //! the leaf is not in it — there is no such permission — or the record is behind and may yet seal
 //! it. The first is terminal, the second is retried.
 
-use super::encrypted_state::ResolvedEncryptedState;
+use super::encrypted_store::ResolvedEncryptedStore;
 use super::failure::FailureClass;
 use super::proof::{HostProofReader, LeafProofOutcome, ProofBatch, ProofReadError, check_length};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{
-    AclError, EncryptedState, MmrProof, authorize_state_historical, authorize_state_public,
+    AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
 /// Verify every peer against the same observation, then retry only unresolved, retryable queries.
@@ -87,19 +87,19 @@ fn verify_candidates(
     Err(failure.unwrap_or(HandleBindingFailure::AccountUnknownToProofRecord))
 }
 
-/// Establishes that `allowed_key` may decrypt `handle` under this encrypted state.
+/// Establishes that `allowed_key` may decrypt `handle` under this encrypted store.
 ///
 /// Takes the resolved account — never raw account bytes — so the peaks it verifies against are
 /// the validated ones, and the record's answer for exactly this `(account, handle, key)` leaf.
 pub fn check_handle_binding(
-    encrypted_state: &ResolvedEncryptedState,
+    encrypted_store: &ResolvedEncryptedStore,
     handle: HandleBytes,
     allowed_key: SolanaPubkeyBytes,
     outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
-    check_leaf(encrypted_state, outcome, |state, proof| {
+    check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_historical(
-            encrypted_state.account_key(),
+            encrypted_store.account_key(),
             state,
             handle,
             allowed_key,
@@ -108,23 +108,23 @@ pub fn check_handle_binding(
     })
 }
 
-/// Establishes that `handle` was made public under this encrypted state.
+/// Establishes that `handle` was made public under this encrypted store.
 pub fn check_public_binding(
-    encrypted_state: &ResolvedEncryptedState,
+    encrypted_store: &ResolvedEncryptedStore,
     handle: HandleBytes,
     outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
-    check_leaf(encrypted_state, outcome, |state, proof| {
-        authorize_state_public(encrypted_state.account_key(), state, handle, proof)
+    check_leaf(encrypted_store, outcome, |state, proof| {
+        authorize_state_public(encrypted_store.account_key(), state, handle, proof)
     })
 }
 
 fn check_leaf(
-    encrypted_state: &ResolvedEncryptedState,
+    encrypted_store: &ResolvedEncryptedStore,
     outcome: &LeafProofOutcome,
-    verify: impl Fn(&EncryptedState, &MmrProof) -> Result<(), AclError>,
+    verify: impl Fn(&EncryptedStore, &MmrProof) -> Result<(), AclError>,
 ) -> Result<(), HandleBindingFailure> {
-    let state = encrypted_state.encrypted_state();
+    let state = encrypted_store.encrypted_store();
     let live_leaf_count = state.leaf_count;
 
     let (leaf_index, siblings, record_leaf_count) = match outcome {
@@ -224,10 +224,10 @@ pub enum HandleBindingFailure {
         live_leaf_count: u64,
     },
     /// The record has never seen this account, which exists on chain.
-    #[error("the leaf record does not know this encrypted state")]
+    #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
     /// The record's history for this account has a gap it cannot close.
-    #[error("the leaf record's history for this encrypted state is incomplete")]
+    #[error("the leaf record's history for this encrypted store is incomplete")]
     HistoryIncomplete,
     /// The proof did not verify against the observed peaks.
     #[error(
@@ -249,6 +249,6 @@ pub enum HandleBindingFailure {
         leaf_count: u64,
     },
     /// The account's own MMR state is internally inconsistent, which no retry can repair.
-    #[error("encrypted state MMR history is internally inconsistent")]
+    #[error("encrypted store MMR history is internally inconsistent")]
     MmrStateInconsistent,
 }

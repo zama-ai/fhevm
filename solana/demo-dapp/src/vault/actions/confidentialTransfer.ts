@@ -1,3 +1,4 @@
+import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import {
   AccountRole,
   address,
@@ -57,8 +58,8 @@ export type SolanaConfidentialTransferParameters = {
   readonly toAccount: Address;
   /** Recipient owner; used to derive the destination freeze ATA. */
   readonly toOwner: Address;
-  readonly fromState: Address;
-  readonly toState: Address;
+  readonly fromStore: Address;
+  readonly toStore: Address;
   readonly hostConfig: Address;
   readonly hcuBlockMeter?: Address | undefined;
   readonly hcuTrustedAppRecord?: Address | undefined;
@@ -119,7 +120,9 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
+  const fhe = await createSolanaFheTransaction({ payer: feePayer });
   const transferInstruction = getConfidentialTransferInstruction({
+    ...fhe.accounts,
     owner,
     payer: feePayer,
     mint,
@@ -128,8 +131,8 @@ export async function confidentialTransfer(
     toAta: await associatedTokenAddress(parameters.toOwner, parameters.underlyingMint, parameters.tokenProgram),
     fromAccount: parameters.fromAccount,
     toAccount: parameters.toAccount,
-    fromState: parameters.fromState,
-    toState: parameters.toState,
+    fromStore: parameters.fromStore,
+    toStore: parameters.toStore,
     zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
     hostConfig: parameters.hostConfig,
@@ -170,7 +173,7 @@ export async function confidentialTransfer(
     // A live transfer has been observed to exceed 400k CU (PDA bump search and
     // emit_cpi! overhead vary per run); 800k keeps headroom under the 1.4M/tx cap.
     (m) => setTransactionMessageComputeUnitLimit(800_000, m),
-    (m) => appendTransactionMessageInstructions([instruction], m),
+    (m) => appendTransactionMessageInstructions(fhe.wrap([instruction]), m),
   );
   const transaction = await signTransactionMessageWithSigners(message);
   assertIsFullySignedTransaction(transaction);

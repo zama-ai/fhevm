@@ -189,7 +189,7 @@ mod helpers {
                     "handle": random_handle(),
                     // The allowed key of a direct entry is the requester itself.
                     "allowedKey": format!("0x{}", hex::encode(user_pubkey)),
-                    "encryptedState": random_0x_hex(32),
+                    "encryptedStore": random_0x_hex(32),
                 }],
             },
             "signature": format!("0x{}", hex::encode(signature)),
@@ -511,7 +511,7 @@ async fn v3_rejects_handle_entry_missing_contract_address() {
 }
 
 #[tokio::test]
-async fn v3_rejects_solana_handle_entry_missing_encrypted_state() {
+async fn v3_rejects_solana_handle_entry_missing_encrypted_store() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
@@ -522,9 +522,9 @@ async fn v3_rejects_solana_handle_entry_missing_encrypted_state() {
             p["attestedPayload"]["handles"][0]
                 .as_object_mut()
                 .unwrap()
-                .remove("encryptedState");
+                .remove("encryptedStore");
         },
-        expect_v2_missing_field("encryptedState"),
+        expect_v2_missing_field("encryptedStore"),
     )
     .await;
 

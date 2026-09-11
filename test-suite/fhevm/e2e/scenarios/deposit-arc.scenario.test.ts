@@ -1,4 +1,5 @@
-import { encryptedStateHandle } from "@sdk-src/solana/encryptedState.js";
+import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { encryptedStoreHandle } from "@sdk-src/solana/encryptedStore.js";
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
 // decrypt, the live-cluster exercise of the confidential vault's forward path via
@@ -277,31 +278,35 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       };
 
 
+      const aliceFhe = await createSolanaFheTransaction({ payer: alice });
       // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
       // cShares (payout mint) for the claim phase: claim.rs requires the user's payout account to
       // ALREADY exist (nothing creates it on the fly), so it is provisioned here with the same
       // one-time initialization the join mint gets, keeping the claim phase a pure claim. initialize
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
-      await send(alice, [
+      await send(alice, aliceFhe.wrap([
         await vault.buildInitializeTokenAccountInstruction({
+          fhe: aliceFhe.accounts,
           payer: alice,
           owner: alice.address,
           mint: config.mints.joinConfidential,
           hostConfig: config.hostConfig,
         }),
         await vault.buildInitializeTokenAccountInstruction({
+          fhe: aliceFhe.accounts,
           payer: alice,
           owner: alice.address,
           mint: config.mints.payoutConfidential,
           hostConfig: config.hostConfig,
         }),
-      ]);
+      ]));
 
       // Step 3: wrap the funded mock USDC into alice's confidential cUSDC balance. wrap_usdc escrows a
       // PUBLIC amount and needs no input proof, which is why it wires cheaply here.
       const wrapBaseUnits = BigInt(Math.round(DEPOSIT_USDC * 10 ** USDC_DECIMALS));
-      await send(alice, [
+      await send(alice, aliceFhe.wrap([
         await vault.buildWrapUsdcInstruction({
+          fhe: aliceFhe.accounts,
           owner: alice,
           mint: config.mints.joinConfidential,
           underlyingMint: config.mints.joinUnderlying,
@@ -309,7 +314,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           hostConfig: config.hostConfig,
           amount: wrapBaseUnits,
         }),
-      ]);
+      ]));
 
       // Step 4: on-chain assertion for the wrap phase. Read alice's cUSDC confidential token account
       // back and assert it now exists and is owned by the confidential-token program — the concrete
@@ -438,10 +443,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // encrypted value accounts, event authorities — from these five roots (its unit test pins each derivation
       // against dispatch.rs), so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
+      const keeperFhe = await createSolanaFheTransaction({ payer: keeper });
       await send(
         keeper,
-        [
+        keeperFhe.wrap([
           await vault.buildDispatchBatchInstruction({
+            fhe: keeperFhe.accounts,
             payer: keeper,
             batcher: roots.batcher,
             batch,
@@ -450,7 +457,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             tokenProgram: vault.TOKEN_PROGRAM_ADDRESS,
             hostConfig: config.hostConfig,
           }),
-        ],
+        ]),
         DISPATCH_COMPUTE_UNIT_LIMIT,
       );
 
@@ -519,8 +526,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,
-        [
-          ...await vault.buildClaimInstructions({
+        aliceFhe.wrap([
+          await vault.buildClaimInstruction({
+            fhe: aliceFhe.accounts,
             payer: alice,
             user: alice.address,
             batcher: roots.batcher,
@@ -530,7 +538,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             tokenProgram: vault.TOKEN_PROGRAM_ADDRESS,
             hostConfig: config.hostConfig,
           }),
-        ],
+        ]),
         CLAIM_COMPUTE_UNIT_LIMIT,
       );
 
@@ -545,12 +553,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
-      // getEncryptedState throws while the account is missing and reads at the RPC default
+      // getEncryptedStore throws while the account is missing and reads at the RPC default
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
       const claimValueState = await until(
         async () => {
-          const state = await vault.getEncryptedState(rpc, claimValueAccount);
-          return encryptedStateHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
+          const state = await vault.getEncryptedStore(rpc, claimValueAccount);
+          return encryptedStoreHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
@@ -582,7 +590,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
       const clearValues = await decryptClient.userDecrypt({
         session: permitSession,
-        entries: [{ handle: encryptedStateHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedState: addressBytes(claimValueAccount) }],
+        entries: [{ handle: encryptedStoreHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedStore: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
       } as never);
 

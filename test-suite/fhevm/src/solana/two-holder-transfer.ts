@@ -14,14 +14,14 @@ import {
   generateSolanaKeypair,
   initializeConfidentialTokenAccount,
   mintSplTo,
-  readTokenBalanceState,
+  readTokenBalanceStore,
   wrapUnderlying,
-  type BalanceState,
+  type BalanceStore,
 } from "./provision";
 import { waitForSnsCommit } from "./sns";
 import { run } from "../utils/process";
 
-export type { BalanceState };
+export type { BalanceStore };
 
 export const SOLANA_TWO_HOLDER_TRANSFER_PROFILE = "solana-two-holder-transfer";
 export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
@@ -68,10 +68,10 @@ export type TwoHolderConfig = {
 
 export type TwoHolderDependencies = {
   provision(): Promise<TwoHolderScenario>;
-  readBalance(scenario: TwoHolderScenario, holder: Holder): Promise<BalanceState>;
+  readBalance(scenario: TwoHolderScenario, holder: Holder): Promise<BalanceStore>;
   waitForHandle(handle: string): Promise<void>;
-  transfer(scenario: TwoHolderScenario, alice: BalanceState, bob: BalanceState): Promise<void>;
-  decrypt(scenario: TwoHolderScenario, holder: Holder, state: BalanceState, expected: bigint): Promise<bigint>;
+  transfer(scenario: TwoHolderScenario, alice: BalanceStore, bob: BalanceStore): Promise<void>;
+  decrypt(scenario: TwoHolderScenario, holder: Holder, state: BalanceStore, expected: bigint): Promise<bigint>;
   cleanup(scenario: TwoHolderScenario | undefined): Promise<void>;
 };
 
@@ -162,7 +162,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       return { mint, underlyingMint, alice: alice.holder, bob: bob.holder };
     },
     async readBalance(scenario, holder) {
-      return readTokenBalanceState(context, { mint: address(scenario.mint), owner: address(holder.owner) });
+      return readTokenBalanceStore(context, { mint: address(scenario.mint), owner: address(holder.owner) });
     },
     async waitForHandle(handle) {
       await waitForSnsCommit(handle);
@@ -186,8 +186,8 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
           TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
           TRANSFER_TO_ACCOUNT: bob.tokenAccount,
-          TRANSFER_FROM_STATE: alice.encryptedState,
-          TRANSFER_TO_STATE: bob.encryptedState,
+          TRANSFER_FROM_STATE: alice.encryptedStore,
+          TRANSFER_TO_STATE: bob.encryptedStore,
         },
       });
       parseTransferWorkerResult(result.stdout);
@@ -208,7 +208,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         UD_HANDLE: state.currentHandle,
         // The balance account the probe derived and verified; the Connector reads it and proves
         // the owner's allow leaf itself.
-        UD_ENCRYPTED_STATE: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedState))).toString("hex")}`,
+        UD_ENCRYPTED_STORE: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedStore))).toString("hex")}`,
         UD_SECRET_KEY: holder.secretKey,
         UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(kmsPair.kmsContextId),
         UD_EPOCH_ID: bytes32HexFromId(kmsPair.kmsEpochId),

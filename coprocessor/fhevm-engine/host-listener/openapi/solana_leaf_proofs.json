@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solana host listener leaf proofs",
-    "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted states, for the KMS connector.",
+    "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
     "license": {
       "name": "BSD-3-Clause-Clear",
       "identifier": "BSD-3-Clause-Clear"
@@ -231,14 +231,14 @@
         "type": "object",
         "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
         "required": [
-          "encryptedState",
+          "encryptedStore",
           "handle",
           "kind"
         ],
         "properties": {
-          "encryptedState": {
+          "encryptedStore": {
             "type": "string",
-            "description": "The encrypted state account whose MMR holds the leaf."
+            "description": "The encrypted store account whose MMR holds the leaf."
           },
           "handle": {
             "type": "string"

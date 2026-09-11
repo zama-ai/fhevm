@@ -53,7 +53,7 @@ export type DiscloseSecpInstruction<
   TProgram extends string = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTokenAccount extends string | AccountMeta<string> = string,
-  TAccountEncryptedState extends string | AccountMeta<string> = string,
+  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
@@ -66,7 +66,7 @@ export type DiscloseSecpInstruction<
     [
       TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
       TAccountTokenAccount extends string ? ReadonlyAccount<TAccountTokenAccount> : TAccountTokenAccount,
-      TAccountEncryptedState extends string ? ReadonlyAccount<TAccountEncryptedState> : TAccountEncryptedState,
+      TAccountEncryptedStore extends string ? ReadonlyAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
@@ -128,23 +128,23 @@ export function getDiscloseSecpInstructionDataCodec(): Codec<
 export type DiscloseSecpInput<
   TAccountMint extends string = string,
   TAccountTokenAccount extends string = string,
-  TAccountEncryptedState extends string = string,
+  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Confidential mint whose application scopes the disclosed encrypted State and event. */
+  /** Confidential mint whose application scopes the disclosed encrypted store and event. */
   mint: Address<TAccountMint>;
-  /** Token account whose State contains the handle. Absent for the mint total-supply State. */
+  /** Token account whose Store contains the handle. Absent for the mint total-supply Store. */
   tokenAccount?: Address<TAccountTokenAccount>;
   /**
-   * The State whose history contains a public permission for the disclosed handle.
+   * The Store whose history contains a public permission for the disclosed handle.
    * The handler binds its program, mint scope and token-account or total-supply authority.
    * Disclosure authenticates the handle and cleartext, without a token-specific field label.
    */
-  encryptedState: Address<TAccountEncryptedState>;
+  encryptedStore: Address<TAccountEncryptedStore>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
   hostConfig: Address<TAccountHostConfig>;
   /**
@@ -166,7 +166,7 @@ export type DiscloseSecpInput<
 export function getDiscloseSecpInstruction<
   TAccountMint extends string,
   TAccountTokenAccount extends string,
-  TAccountEncryptedState extends string,
+  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
   TAccountZamaProgram extends string,
@@ -177,7 +177,7 @@ export function getDiscloseSecpInstruction<
   input: DiscloseSecpInput<
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountZamaProgram,
@@ -189,7 +189,7 @@ export function getDiscloseSecpInstruction<
   TProgramAddress,
   TAccountMint,
   TAccountTokenAccount,
-  TAccountEncryptedState,
+  TAccountEncryptedStore,
   TAccountHostConfig,
   TAccountKmsContext,
   TAccountZamaProgram,
@@ -203,7 +203,7 @@ export function getDiscloseSecpInstruction<
   const originalAccounts = {
     mint: { value: input.mint ?? null, isWritable: false },
     tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedState: { value: input.encryptedState ?? null, isWritable: false },
+    encryptedStore: { value: input.encryptedStore ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
@@ -226,7 +226,7 @@ export function getDiscloseSecpInstruction<
     accounts: [
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('encryptedState', accounts.encryptedState),
+      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -239,7 +239,7 @@ export function getDiscloseSecpInstruction<
     TProgramAddress,
     TAccountMint,
     TAccountTokenAccount,
-    TAccountEncryptedState,
+    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountZamaProgram,
@@ -254,16 +254,16 @@ export type ParsedDiscloseSecpInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Confidential mint whose application scopes the disclosed encrypted State and event. */
+    /** Confidential mint whose application scopes the disclosed encrypted store and event. */
     mint: TAccountMetas[0];
-    /** Token account whose State contains the handle. Absent for the mint total-supply State. */
+    /** Token account whose Store contains the handle. Absent for the mint total-supply Store. */
     tokenAccount?: TAccountMetas[1] | undefined;
     /**
-     * The State whose history contains a public permission for the disclosed handle.
+     * The Store whose history contains a public permission for the disclosed handle.
      * The handler binds its program, mint scope and token-account or total-supply authority.
      * Disclosure authenticates the handle and cleartext, without a token-specific field label.
      */
-    encryptedState: TAccountMetas[2];
+    encryptedStore: TAccountMetas[2];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
     hostConfig: TAccountMetas[3];
     /**
@@ -303,7 +303,7 @@ export function parseDiscloseSecpInstruction<TProgram extends string, TAccountMe
     accounts: {
       mint: getNextAccount(),
       tokenAccount: getNextOptionalAccount(),
-      encryptedState: getNextAccount(),
+      encryptedStore: getNextAccount(),
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),
       zamaProgram: getNextAccount(),

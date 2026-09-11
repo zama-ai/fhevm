@@ -1,26 +1,18 @@
+use super::common::{assert_no_remaining_accounts, create_pda_strict};
+use crate::{errors::ZamaHostError, state::*};
 use anchor_lang::solana_program::instruction::{
     get_stack_height, Instruction, TRANSACTION_LEVEL_STACK_HEIGHT,
 };
-use anchor_lang::{prelude::*, Discriminator};
+use anchor_lang::{prelude::*, AccountsExit, Discriminator};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
-use super::common::{assert_no_remaining_accounts, create_pda_strict, write_account};
-use crate::{errors::ZamaHostError, state::*};
-
 #[derive(Accounts)]
-pub struct OpenScratch<'info> {
+pub struct OpenTransientStore<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(address = encrypted_state.authority)]
-    pub authority: Signer<'info>,
-    #[account(
-        seeds = [ENCRYPTED_STATE_SEED, encrypted_state.program.as_ref(), encrypted_state.authority.as_ref(), &encrypted_state.scope],
-        bump = encrypted_state.bump,
-    )]
-    pub encrypted_state: Account<'info, EncryptedState>,
-    /// CHECK: derived from the canonical initiating state and created empty below.
+    /// CHECK: payer-derived host PDA, strictly created below.
     #[account(mut)]
-    pub scratch: UncheckedAccount<'info>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: only the runtime's Instructions sysvar is accepted.
     #[account(address = solana_instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
@@ -28,65 +20,52 @@ pub struct OpenScratch<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CloseScratch<'info> {
+pub struct CloseTransientStore<'info> {
     /// CHECK: only the runtime's Instructions sysvar is accepted.
     #[account(address = solana_instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
-    // Remaining accounts are writable (scratch, recorded refund) pairs.
+    #[account(mut, close = refund)]
+    pub transient_store: AccountLoader<'info, TransientStore>,
+    /// CHECK: must match the rent payer recorded by OpenTransientStore.
+    #[account(mut)]
+    pub refund: UncheckedAccount<'info>,
 }
 
-pub fn open_scratch(ctx: Context<OpenScratch>) -> Result<()> {
+pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>>) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    let instructions = ctx.accounts.instructions.to_account_info();
-    let (last_index, close) = final_close(&instructions)?;
     require!(
-        load_current_index_checked(&instructions)? < last_index,
+        get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT,
         ZamaHostError::TransientCloseMissing
     );
-    let state = ctx.accounts.encrypted_state.key();
-    let (address, bump) = transient_address(state);
-    let scratch = ctx.accounts.scratch.to_account_info();
+    let payer = ctx.accounts.payer.key();
+    let (address, bump) = transient_store_address(payer);
     require_keys_eq!(
-        scratch.key(),
+        ctx.accounts.transient_store.key(),
         address,
         ZamaHostError::TransientAccountInvalid
     );
-    let mut matches = close.accounts[1..]
-        .chunks_exact(2)
-        .filter(|pair| pair[0].pubkey == address);
-    let pair = matches.next().ok_or(ZamaHostError::TransientCloseMissing)?;
-    require!(
-        matches.next().is_none(),
-        ZamaHostError::TransientCloseMissing
-    );
-    require!(
-        pair[0].is_writable && pair[1].is_writable,
-        ZamaHostError::TransientCloseMissing
-    );
-    require_keys_eq!(
-        pair[1].pubkey,
-        ctx.accounts.payer.key(),
-        ZamaHostError::TransientCloseMissing
-    );
+    assert_final_close(address, payer, &ctx.accounts.instructions)?;
     create_pda_strict(
         &ctx.accounts.payer.to_account_info(),
-        &scratch,
+        &ctx.accounts.transient_store.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
-        TransientState::SPACE,
-        &[TRANSIENT_SEED, state.as_ref(), &[bump]],
+        TransientStore::SPACE,
+        &[TRANSIENT_SEED, payer.as_ref(), &[bump]],
     )?;
-    write_account(
-        &scratch,
-        &TransientState {
-            initiating_state: state,
-            refund: ctx.accounts.payer.key(),
-            grants: Vec::new(),
-            bump,
-        },
-    )
+    let loader = AccountLoader::<TransientStore>::try_from_unchecked(
+        &crate::ID,
+        &ctx.accounts.transient_store,
+    )?;
+    {
+        let mut transient_store = loader.load_init()?;
+        transient_store.payer = payer;
+        transient_store.bump = bump;
+    }
+    loader.exit(&crate::ID)
 }
 
-pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
+pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
+    assert_no_remaining_accounts(ctx.remaining_accounts)?;
     require!(
         get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT,
         ZamaHostError::TransientCloseMissing
@@ -97,58 +76,47 @@ pub fn close_scratch(ctx: Context<CloseScratch>) -> Result<()> {
         load_current_index_checked(&instructions)? == last_index,
         ZamaHostError::TransientCloseMissing
     );
-    let accounts = ctx.remaining_accounts;
     require!(
-        !accounts.is_empty() && accounts.len().is_multiple_of(2),
+        ctx.accounts.transient_store.to_account_info().data_len() == TransientStore::SPACE,
         ZamaHostError::TransientAccountInvalid
     );
-    for (index, pair) in accounts.chunks_exact(2).enumerate() {
-        let scratch = &pair[0];
-        let refund = &pair[1];
-        require!(
-            scratch.is_writable && refund.is_writable,
-            ZamaHostError::TransientAccountInvalid
-        );
-        require!(
-            !accounts
-                .chunks_exact(2)
-                .any(|other| other[0].key() == refund.key()),
-            ZamaHostError::TransientAccountInvalid
-        );
-        require!(
-            !accounts[..index * 2]
-                .chunks_exact(2)
-                .any(|other| other[0].key() == scratch.key()),
-            ZamaHostError::TransientAccountInvalid
-        );
-        require_keys_eq!(
-            *scratch.owner,
-            crate::ID,
-            ZamaHostError::TransientAccountInvalid
-        );
-        require!(
-            scratch.data_len() == TransientState::SPACE,
-            ZamaHostError::TransientAccountInvalid
-        );
-        let data = TransientState::try_deserialize(&mut &scratch.try_borrow_data()?[..])
-            .map_err(|_| error!(ZamaHostError::TransientAccountInvalid))?;
-        let (address, bump) = transient_address(data.initiating_state);
-        require_keys_eq!(
-            scratch.key(),
-            address,
-            ZamaHostError::TransientAccountInvalid
-        );
-        require!(data.bump == bump, ZamaHostError::TransientAccountInvalid);
-        require_keys_eq!(
-            refund.key(),
-            data.refund,
-            ZamaHostError::TransientAccountInvalid
-        );
-        refund.add_lamports(scratch.lamports())?;
-        **scratch.try_borrow_mut_lamports()? = 0;
-        scratch.assign(&System::id());
-        scratch.resize(0)?;
-    }
+    let transient_store = ctx.accounts.transient_store.load()?;
+    transient_store.validate(ctx.accounts.transient_store.key())?;
+    require_keys_eq!(
+        ctx.accounts.refund.key(),
+        transient_store.payer,
+        ZamaHostError::TransientAccountInvalid
+    );
+    require_keys_neq!(
+        ctx.accounts.transient_store.key(),
+        ctx.accounts.refund.key(),
+        ZamaHostError::TransientAccountInvalid
+    );
+    Ok(())
+}
+
+/// Every host execution must use the single transient store closed by the final
+/// instruction. Strict top-level creation and final-only closure prevent resets.
+pub(super) fn assert_final_close(
+    transient_store: Pubkey,
+    payer: Pubkey,
+    instructions: &AccountInfo,
+) -> Result<()> {
+    let (last, close) = final_close(instructions)?;
+    require!(
+        load_current_index_checked(instructions)? < last,
+        ZamaHostError::TransientCloseMissing
+    );
+    require_keys_eq!(
+        close.accounts[1].pubkey,
+        transient_store,
+        ZamaHostError::TransientCloseMissing
+    );
+    require_keys_eq!(
+        close.accounts[2].pubkey,
+        payer,
+        ZamaHostError::TransientCloseMissing
+    );
     Ok(())
 }
 
@@ -167,11 +135,10 @@ fn final_close(instructions: &AccountInfo) -> Result<(u16, Instruction)> {
         ZamaHostError::TransientCloseMissing
     );
     require!(
-        close.data == crate::instruction::CloseScratch::DISCRIMINATOR,
-        ZamaHostError::TransientCloseMissing
-    );
-    require!(
-        close.accounts.len() >= 3 && close.accounts.len() % 2 == 1,
+        close.data == crate::instruction::CloseTransientStore::DISCRIMINATOR
+            && close.accounts.len() == 3
+            && close.accounts[1].is_writable
+            && close.accounts[2].is_writable,
         ZamaHostError::TransientCloseMissing
     );
     require_keys_eq!(

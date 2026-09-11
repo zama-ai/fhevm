@@ -115,11 +115,11 @@ def vendored_idls() -> dict[str, dict[str, Any]]:
 
 
 PINNED_SCHEMAS = [
-    ("zama_host", "account", "EncryptedState", True),
-    ("zama_host", "instruction_args", "create_encrypted_state", True),
-    ("zama_host", "instruction_args", "open_scratch", True),
-    ("zama_host", "instruction_args", "close_scratch", True),
-    ("zama_host", "instruction_args", "make_state_handle_public", True),
+    ("zama_host", "account", "EncryptedStore", True),
+    ("zama_host", "instruction_args", "create_encrypted_store", True),
+    ("zama_host", "instruction_args", "open_transient_store", True),
+    ("zama_host", "instruction_args", "close_transient_store", True),
+    ("zama_host", "instruction_args", "make_store_handle_public", True),
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),

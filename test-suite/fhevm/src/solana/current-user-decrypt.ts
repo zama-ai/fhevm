@@ -17,8 +17,8 @@ type CurrentUserDecryptSdkInput = {
   trust: SolanaDecryptTrust;
   request: {
     handle: Uint8Array;
-    /** The `EncryptedState` account the handle lives in; the Connector reads it and proves the leaf. */
-    encryptedState: Uint8Array;
+    /** The `EncryptedStore` account the handle lives in; the Connector reads it and proves the leaf. */
+    encryptedStore: Uint8Array;
     durationSeconds: bigint;
     /** The delegator's pubkey on a delegated entry; absent on a direct one. */
     allowedKey?: Uint8Array | undefined;
@@ -87,7 +87,7 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
     entries: [
       {
         handle: input.request.handle,
-        encryptedState: input.request.encryptedState,
+        encryptedStore: input.request.encryptedStore,
         ...(input.request.allowedKey !== undefined ? { allowedKey: input.request.allowedKey } : {}),
       },
     ],
@@ -140,7 +140,7 @@ export const runSolanaCurrentUserDecrypt = async (
     },
     request: {
       handle: bytes(handle, 'UD_HANDLE'),
-      encryptedState: bytes32(environment, 'UD_ENCRYPTED_STATE'),
+      encryptedStore: bytes32(environment, 'UD_ENCRYPTED_STORE'),
       durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? '3600'),
       // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
       // key names whose allow on the handle is asked under.

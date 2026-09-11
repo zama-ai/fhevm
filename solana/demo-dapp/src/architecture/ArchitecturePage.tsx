@@ -133,7 +133,7 @@ flowchart TB
     subgraph solana["Solana"]
         direction LR
         Tx["Confirmed host instruction"]
-        Value["EncryptedState PDA<br/>slots and permission history"]
+        Value["EncryptedStore PDA<br/>slots and permission history"]
         Handle["Current handle"]
         Tx --> Value --> Handle
     end

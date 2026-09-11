@@ -1,13 +1,13 @@
 {
   "schema": "zama-solana-public-decrypt-extra-data/v1",
-  "description": "Literal byte vectors for the Solana public-decrypt extraData blob \u2014 the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_public_decrypt_extra_data / parse_solana_public_decrypt_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptExtraData, TypeScript). The blob is 0x04 \u2016 context_id(32) \u2016 encrypted_state(32), exactly 65 bytes: the connector fetches the PublicDecryptLeaf proof itself from the coprocessors' leaf record, so nothing but the account the handle lives in travels here. Encoders on both sides must produce blob_hex from input; the strict parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed. Hand-committed literals, deliberately few \u2014 the layout is versioned and changes only with a new version byte.",
+  "description": "Literal byte vectors for the Solana public-decrypt extraData blob \u2014 the hand-mirrored codec in kms-connector/crates/utils/src/types/solana_extra_data.rs (encode_solana_public_decrypt_extra_data / parse_solana_public_decrypt_extra_data, Rust) and sdk/js-sdk/src/solana/actions/publicDecryptCertificate.ts (buildSolanaPublicDecryptExtraData, TypeScript). The blob is 0x04 \u2016 context_id(32) \u2016 encrypted_store(32), exactly 65 bytes: the connector fetches the PublicDecryptLeaf proof itself from the coprocessors' leaf record, so nothing but the account the handle lives in travels here. Encoders on both sides must produce blob_hex from input; the strict parser must round-trip every record and reject every malformed entry. All hex is lowercase and unprefixed. Hand-committed literals, deliberately few \u2014 the layout is versioned and changes only with a new version byte.",
   "records": [
     {
       "name": "public-decrypt-v4",
-      "description": "v0x04: version, the 32-byte KMS context id, the 32-byte encrypted state address.",
+      "description": "v0x04: version, the 32-byte KMS context id, the 32-byte encrypted store address.",
       "input": {
         "context_id_hex": "0707070707070707070707070707070707070707070707070707070707070707",
-        "encrypted_state_hex": "0909090909090909090909090909090909090909090909090909090909090909"
+        "encrypted_store_hex": "0909090909090909090909090909090909090909090909090909090909090909"
       },
       "blob_hex": "0407070707070707070707070707070707070707070707070707070707070707070909090909090909090909090909090909090909090909090909090909090909"
     },
@@ -16,7 +16,7 @@
       "description": "v0x04 with an all-zero context id: the parser reads the fields positionally and gives no byte value a meaning of its own.",
       "input": {
         "context_id_hex": "0000000000000000000000000000000000000000000000000000000000000000",
-        "encrypted_state_hex": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
+        "encrypted_store_hex": "a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
       },
       "blob_hex": "040000000000000000000000000000000000000000000000000000000000000000a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
     }

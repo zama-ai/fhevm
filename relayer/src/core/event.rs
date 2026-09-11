@@ -548,7 +548,7 @@ pub enum UserDecryptRequest {
     /// `userDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds, bytes publicKey,
     /// bytes extraData, bytes solanaRequest)` overload.
     /// Everything Solana-specific — the permit fields, the ed25519 signature, and the
-    /// per-handle entries (handle, allowed key, encrypted state) — is serialized into
+    /// per-handle entries (handle, allowed key, encrypted store) — is serialized into
     /// the opaque `solana_request` by the builder (canonical `version ‖ borsh(body)`); the
     /// gateway never reads it, and each KMS party's connector decodes it, verifies the
     /// signature off-chain and fetches the allow leaves itself. The fields below are exactly
@@ -970,13 +970,13 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         for (index, entry) in payload.handles.iter().enumerate() {
             let handle = parse_0x_hex_32(&entry.handle, "handle", index)?;
             let allowed_key = parse_0x_hex_32(&entry.allowed_key, "allowedKey", index)?;
-            let encrypted_state = parse_0x_hex_32(&entry.encrypted_state, "encryptedState", index)?;
+            let encrypted_store = parse_0x_hex_32(&entry.encrypted_store, "encryptedStore", index)?;
 
             ct_handles.push(U256::from_be_bytes::<32>(handle));
             handle_wires.push(SolanaHandleEntryWire {
                 handle: handle.to_vec(),
                 allowed_key: allowed_key.to_vec(),
-                encrypted_state: encrypted_state.to_vec(),
+                encrypted_store: encrypted_store.to_vec(),
             });
         }
 
@@ -1449,7 +1449,7 @@ mod tests {
             handles: vec![SolanaHandleJson {
                 handle: format!("0x{}", "11".repeat(32)),
                 allowed_key: solana_test_user_pubkey(),
-                encrypted_state: format!("0x{}", "22".repeat(32)),
+                encrypted_store: format!("0x{}", "22".repeat(32)),
             }],
         }
     }
@@ -1508,14 +1508,14 @@ mod tests {
     }
 
     #[test]
-    fn solana_builder_rejects_a_wrong_width_encrypted_state() {
+    fn solana_builder_rejects_a_wrong_width_encrypted_store() {
         // Every entry identity is exactly 32 bytes; the connector's decode refuses anything else
         // and so does this one, before the request costs a gateway transaction.
         let mut payload = valid_solana_payload();
-        payload.handles[0].encrypted_state = format!("0x{}", "22".repeat(31));
+        payload.handles[0].encrypted_store = format!("0x{}", "22".repeat(31));
         let error = UserDecryptRequest::try_from(solana_envelope(payload))
-            .expect_err("a 31-byte encrypted state must be rejected");
-        assert!(error.to_string().contains("encryptedState"), "got: {error}");
+            .expect_err("a 31-byte encrypted store must be rejected");
+        assert!(error.to_string().contains("encryptedStore"), "got: {error}");
     }
 
     /// A permit that is well formed in every typed respect but carries a signature from another

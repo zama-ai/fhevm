@@ -69,14 +69,14 @@ pub enum ZamaHostError {
     /// A bounded random request has an invalid upper bound.
     #[msg("bounded random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// The signer for an output does not match the encrypted State authority the
+    /// The signer for an output does not match the encrypted store authority the
     /// execution declared for it, or a persistent operand's authority did not sign.
-    #[msg("signer does not match the encrypted State authority")]
-    EncryptedStateAccountAuthorityMismatch,
+    #[msg("signer does not match the encrypted store authority")]
+    EncryptedStoreAccountAuthorityMismatch,
     /// A create's authority seeds do not derive the declared authority under the declared
     /// program: the authority is not that program's PDA.
     #[msg("encrypted value authority is not a PDA of the declared program")]
-    EncryptedStateAuthorityNotProgramPda,
+    EncryptedStoreAuthorityNotProgramPda,
     /// A deny-list witness is required but was not supplied.
     #[msg("deny-list witness account is required")]
     DenyRecordMissing,
@@ -113,9 +113,6 @@ pub enum ZamaHostError {
     /// An fhe_execute instruction referenced a step output that no earlier step produced.
     #[msg("fhe_execute transient operand is missing")]
     FheExecuteEarlierStepMissing,
-    /// An fhe_execute instruction produced the same handle twice, transient or persistent.
-    #[msg("fhe_execute output handle is duplicated")]
-    FheExecuteDuplicateHandle,
     /// An fhe_execute persistent output account already exists.
     #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
@@ -143,26 +140,26 @@ pub enum ZamaHostError {
     /// The attested `contract_chain_id` does not match the host chain id (EVM `contractChainId == block.chainid`).
     #[msg("attested contract chain id does not match the host chain id")]
     AttestationChainIdMismatch,
-    // ---- EncryptedState ACL model ----
-    /// An `EncryptedState` account is not the canonical PDA for its identity seeds.
-    #[msg("encrypted State does not match the canonical PDA")]
-    EncryptedStatePdaMismatch,
+    // ---- EncryptedStore ACL model ----
+    /// An `EncryptedStore` account is not the canonical PDA for its identity seeds.
+    #[msg("encrypted store does not match the canonical PDA")]
+    EncryptedStorePdaMismatch,
     /// The declared previous handle did not match the account's current handle: a create on an
     /// existing value, an update on a fresh one, or an update built on stale state.
     #[msg("encrypted value previous handle does not match the account")]
-    PreviousStateMismatch,
+    PreviousStoreMismatch,
     /// `make_handle_public` named a handle that is not the account's current handle.
     #[msg("encrypted value public handle does not match the account")]
-    EncryptedStatePublicHandleMismatch,
+    EncryptedStorePublicHandleMismatch,
     /// An allowed key is the zero key or repeats another key of the same output.
     #[msg("encrypted value allowed key is invalid")]
     InvalidAllowKey,
     /// The MMR peaks/leaf-count invariant was violated.
     #[msg("encrypted value MMR state is inconsistent")]
-    EncryptedStateMmrInconsistent,
+    EncryptedStoreMmrInconsistent,
     /// The MMR peak count reached the representational cap.
     #[msg("encrypted value MMR peak capacity exceeded")]
-    EncryptedStateMmrPeakCapacityExceeded,
+    EncryptedStoreMmrPeakCapacityExceeded,
     /// The per-app in-slot HCU would exceed the block cap; also the `cap == 0` ban and a meter
     /// accumulation overflow (all fail closed). Analog of EVM `HCUBlockLimitExceeded`.
     #[msg("per-app in-slot HCU exceeds the block cap")]
@@ -202,11 +199,6 @@ pub enum ZamaHostError {
     )]
     InvalidChainTypeBit,
 
-    /// Under a finite `hcu_block_cap_per_app`, an execution that reads or writes no persistent
-    /// value has no application identity to meter. Such an execution is also value-less — its
-    /// transient outputs create no ACL leaf and are undecryptable — so it is rejected outright.
-    #[msg("FHE execution touches no persistent value under a finite HCU block cap")]
-    FheExecuteUnanchoredUnderBlockCap,
     /// The persistent values one execution's default authority reads and writes belong to
     /// different applications; one execution is metered against exactly one `(program, scope)`.
     /// Values admitted by an additional signing authority are that program's own and do not count.
@@ -225,7 +217,7 @@ pub enum ZamaHostError {
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
     /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
-    /// encrypted State's current peaks.
+    /// encrypted store's current peaks.
     #[msg("public-decrypt inclusion proof is invalid")]
     PublicDecryptProofInvalid,
 
@@ -278,10 +270,6 @@ pub enum ZamaHostError {
     /// `FheExecuteArgs::account_count` does not match the actual remaining-accounts length.
     #[msg("fhe_execute declared account count mismatch")]
     FheExecuteAccountCountMismatch,
-    /// A `FheHandle` operand referenced an account written by an earlier step.
-    /// In-execution dependencies must use `EarlierStep`.
-    #[msg("fhe_execute persistent operand was written earlier in the execution")]
-    FheExecutePersistentOperandWrittenEarlier,
     /// An interned dictionary entry was never referenced by any step; an execution must not
     /// carry dead bytes.
     #[msg("fhe_execute dictionary entry is not referenced by any step")]
@@ -292,12 +280,12 @@ pub enum ZamaHostError {
     HcuLimitZeroReserved,
     #[msg("invalid transient workspace account")]
     TransientAccountInvalid,
-    #[msg("matching final top-level scratch close is required")]
+    #[msg("matching final top-level transient_store close is required")]
     TransientCloseMissing,
     #[msg("transient workspace grant capacity exceeded")]
     TransientCapacityExceeded,
-    #[msg("encrypted state slot capacity exceeded")]
-    EncryptedStateCapacityExceeded,
+    #[msg("encrypted store slot capacity exceeded")]
+    EncryptedStoreCapacityExceeded,
     #[msg("invalid execution return selection")]
     InvalidReturnSelection,
 }
