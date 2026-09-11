@@ -132,6 +132,8 @@ configmapFiles:
           # to match the actually-deployed nb_kms_core, so keep this in sync with
           # the default only - do NOT hardcode a higher party count's value here.
           user_decrypt_shares_threshold: 3
+          user_decrypt_additional_shares: 1
+          user_decrypt_additional_shares_timeout_secs: 5
         gw_event_not_found_retry:
           max_retries: 5
           retry_delay_ms: 1000
