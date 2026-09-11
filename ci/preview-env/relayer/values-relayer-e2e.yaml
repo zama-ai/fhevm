@@ -131,7 +131,7 @@ configmapFiles:
       # isValidSignature static call. Its absence aborts startup with
       # 'missing configuration field "user_decrypt_signature_check"'.
       user_decrypt_signature_check:
-        erc1271_gas_limit: 100000
+        erc1271_gas_limit: 250000
       log:
         format: "json"
         show_file_line: true

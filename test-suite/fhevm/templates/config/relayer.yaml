@@ -12,8 +12,8 @@ protocol_config:
 
 user_decrypt_signature_check:
   # Gas cap for the ERC-1271 `isValidSignature` STATICCALL. A nested Safe (a Safe owning
-  # a Safe) costs ~91k gas; the rest is headroom for deeper nesting, and a call needing
-  # more than 100k is logged. Keep equal to the KMS connector default and the js-sdk
+  # a Safe) costs ~91k gas; the rest is headroom for deeper nesting. Keep equal to the
+  # KMS connector default and the js-sdk
   # ERC1271_GAS_LIMIT, which cap the same call.
   erc1271_gas_limit: 250000
 

@@ -110,7 +110,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
 # Bounds resource use when verifying signatures from smart-account users (Safe, Argent,
 # ERC-4337). A nested Safe (a Safe owning a Safe) costs ~91k; the rest is headroom for
-# deeper nesting, and a call needing more than 100k is logged. (optional, defaults to 250000)
+# deeper nesting. (optional, defaults to 250000)
 # ENV: KMS_CONNECTOR_ERC1271_GAS_LIMIT
 # erc1271_gas_limit = 250000
 
