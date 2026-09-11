@@ -32,7 +32,10 @@ fn run() -> anyhow::Result<()> {
             // The tonic OTLP exporter spawns its channel worker with `tokio::spawn` at build time,
             // so a runtime must be entered here. The worker then runs on this runtime's threads,
             // so it must stay alive for the whole process lifetime.
-            let runtime = tokio::runtime::Runtime::new()?;
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()?;
             let _guard = runtime.enter();
             init_otlp_setup(config.service_name.clone())?;
 
