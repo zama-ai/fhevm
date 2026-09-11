@@ -5,6 +5,7 @@
 // Dispatch-only default: relayer_sdk_version=0.4.4 (PR stays empty → @fhevm/sdk only).
 
 const ALLOWED = new Set([
+  "solana_programs_version",
   "host_contracts_version",
   "gateway_contracts_version",
   "contracts_chart_version",
@@ -53,6 +54,7 @@ if (raw && raw !== "{}") {
     process.exit(1);
   }
   for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "string" && /[\r\n]/.test(value)) throw new Error(`overrides.${key} must be a single line`);
     if (value !== undefined && value !== null && typeof value !== "string") {
       console.error(`::error::overrides.${key} must be a string`);
       process.exit(1);

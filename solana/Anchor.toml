@@ -1,5 +1,6 @@
 [toolchain]
 anchor_version = "1.1.2"
+solana_version = "4.1.2"
 
 [features]
 resolution = true
@@ -10,6 +11,14 @@ confidential_batcher = "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG"
 confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
 demo_vault = "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
 zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+
+# Durable preview-env host on public Solana **devnet**. Compile with
+# `--features preview-env`. Not local e2e, not official Zama protocol 0.15.
+[programs.devnet]
+demo_vault = "gjgLTv4tB3QBP4RCnHgZvL7GZWP198HuesTA4oM9EdE"
+confidential_batcher = "A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da"
+confidential_token = "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
+zama_host = "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
 
 [provider]
 cluster = "localnet"

@@ -1,0 +1,29 @@
+# Merge after values-kms-connector-e2e.yaml for every KMS party.
+# This single-coprocessor example preserves the canonical EVM chain.
+# With multiple coprocessors, list each release's internal Service in solanaProofEndpoints.
+kmsConnectorKmsWorker:
+  env:
+    - name: SOLANA_RPC_URL
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: rpc-url}
+    - name: SOLANA_PROOF_API_KEY
+      valueFrom:
+        secretKeyRef: {name: solana-proof-api, key: api-key}
+    - name: SOLANA_HOST_PROGRAM_ID
+      valueFrom:
+        configMapKeyRef: {name: solana-host-addresses, key: zama_host.address}
+  config:
+    hostChains:
+      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
+        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
+      - url: "$(SOLANA_RPC_URL)"
+        chainId: "9223372036854788153"
+        chainKind: solana
+        solanaHostProgramId: "$(SOLANA_HOST_PROGRAM_ID)"
+        solanaProofEndpoints:
+          - http://coprocessor-1-solana-host-listener:8080
+        solanaProofApiKey: "$(SOLANA_PROOF_API_KEY)"
+
+kmsConnectorDbMigration:
+  runOnUpgrade: true

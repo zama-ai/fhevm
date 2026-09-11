@@ -27,6 +27,7 @@ on:
   pull_request:
     branches:
       - feature/solana
+      - elias/solana-rfc-035
   workflow_dispatch:
     inputs:
       deposit-amount:

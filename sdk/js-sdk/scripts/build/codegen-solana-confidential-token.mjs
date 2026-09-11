@@ -130,13 +130,9 @@ const targets = [
     },
   },
   {
-    // The zama-host client for the bring-up bootstrap pair (test-suite/fhevm/src/solana/deploy.ts):
-    // initializeHostConfig + defineKmsContext — the retired live-client's last production duty,
-    // now typed. Nothing else: a wallet cannot sign fhe_execute or make_handle_public (RFC 035
-    // proves every value authority to be a PDA of its program), so the scenarios stand up values
-    // through the encrypted-counter specimen below instead of a raw driver.
+    // Deployment owns the host bootstrap client; the local harness consumes the same codecs.
     idlPath: idlUrl('zama_host.json'),
-    generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/zamaHost`,
+    generatedPath: `${sdkRoot}/../../solana/deploy/src/generated/zamaHost`,
     keep: {
       instructions: new Set(['initializeHostConfig', 'defineKmsContext']),
       // InitializeHostConfigArgs is inlined into its instruction by Codama; KmsThresholds survives
@@ -293,12 +289,14 @@ const targets = [
 ];
 
 let stale = false;
+const deploymentProgramIds = {};
 for (const target of targets) {
   const before = check ? snapshot(target.generatedPath) : undefined;
   const temporaryRoot = mkdtempSync(`${tmpdir()}/fhevm-codama-`);
   const temporaryGeneratedPath = `${temporaryRoot}/generated`;
 
   const anchorIdl = JSON.parse(readFileSync(target.idlPath, 'utf8'));
+  deploymentProgramIds[anchorIdl.metadata.name] = anchorIdl.address;
   const codama = createFromRoot(rootNodeFromAnchor(anchorIdl));
   const program = codama.getRoot().program;
 
@@ -368,6 +366,15 @@ for (const target of targets) {
     cpSync(temporaryGeneratedPath, target.generatedPath, { recursive: true });
   }
   rmSync(temporaryRoot, { force: true, recursive: true });
+}
+
+// Derive deployment identities from the same IDLs as all application clients.
+const identitiesPath = `${sdkRoot}/../../solana/deploy/src/generated/program-ids.json`;
+const identities = JSON.stringify(deploymentProgramIds, null, 2) + '\n';
+if (check) {
+  if (!existsSync(identitiesPath) || readFileSync(identitiesPath, 'utf8') !== identities) stale = true;
+} else {
+  writeFileSync(identitiesPath, identities);
 }
 
 if (check && stale) {

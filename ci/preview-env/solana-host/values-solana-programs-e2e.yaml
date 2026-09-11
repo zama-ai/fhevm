@@ -1,0 +1,69 @@
+# Protocol host only. Install after gateway contracts; demos use a separate release.
+scDeploy:
+  enabled: true
+  runOnUpgrade: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/solana-programs
+    tag: latest
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  configmap:
+    name: solana-host-addresses
+  env:
+    - name: SOLANA_DEPLOY_DATABASE_URL
+      valueFrom:
+        secretKeyRef: {name: solana-deployment-lock, key: database-url}
+    - {name: SOLANA_ARTIFACTS_DIR, value: "/app/programs"}
+    - {name: ADDRESSES_DIR, value: "/app/addresses"}
+    - {name: SOLANA_PROGRAM_PROFILE, value: "preview-env"}
+    - name: SOLANA_RPC_URL
+      valueFrom:
+        secretKeyRef:
+          name: solana-rpc
+          key: rpc-url
+    - {name: GATEWAY_RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    - name: GATEWAY_CONFIG_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: gateway_config.address
+    - name: INPUT_VERIFICATION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: input_verification.address
+    - name: DECRYPTION_ADDRESS
+      valueFrom:
+        configMapKeyRef:
+          name: gw-sc-addresses
+          key: decryption.address
+    - name: SOLANA_DEPLOYER_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef:
+          name: solana-deployer
+          key: deployer.json
+    - name: SOLANA_ZAMA_HOST_KEYPAIR_JSON
+      valueFrom:
+        secretKeyRef:
+          name: solana-deployer
+          key: zama_host.json
+          optional: true
+    # Preview-env default is a 4-party KMS (t=1). Override if the dispatch used nb_kms_core=13.
+    - {name: KMS_THRESHOLD, value: "1"}
+    - {name: COPROCESSOR_THRESHOLD, value: "1"}
+  deployCommands:
+    - node /app/cli.mjs host deploy
+  verifyContracts: false
+nodeSelector:
+  kubernetes.io/arch: amd64
+persistence:
+  enabled: false
+  volumeClaim:
+    create: false
+scUpgrade:
+  enabled: false

@@ -78,13 +78,16 @@ jobs:
               # The source IDLs the generated clients are rendered from. The confidential_batcher
               # and demo_vault IDLs live under solana/demo-dapp/idl and are already matched above;
               # these two are vendored with the listener, so without naming them an IDL change
-              # would not run the codegen check that reads it. zama_host feeds the test-suite's
-              # generated bootstrap client, whose committed output is also matched so a hand edit
-              # to the generated tree runs the check too.
+              # would not run the codegen check that reads it. Include deployment and harness
+              # outputs so hand edits to any generated client also run the check.
               - coprocessor/fhevm-engine/host-listener/idl/confidential_token.json
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
               - test-suite/fhevm/src/solana/internal/generated/**
+              - solana/deploy/src/generated/**
+              - solana/programs/encrypted-counter/idl/**
+              - solana/programs/dep-chain/idl/**
             test-suite-fhevm:
+              - solana/deploy/**
               - .github/workflows/solana-tests.yml
               - test-suite/fhevm/**
               # The job's `tsc` resolves through the `@sdk-src/*` and `@demo-dapp/*` path aliases
@@ -233,6 +236,9 @@ jobs:
         working-directory: solana/demo-dapp
         run: bun install --frozen-lockfile
 
+      - name: Install the shared deployer dependency graph
+        run: bun install --cwd solana/deploy --frozen-lockfile
+
       - name: Install the test-suite's frozen dependency graph
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
@@ -291,6 +297,8 @@ jobs:
           solana --version
           anchor --version
           test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
+          # AVM can change the active Solana CLI when resolving Anchor. Check after it runs.
+          test "$(solana --version | awk '{print $2}')" = "${SOLANA_VERSION}"
           test "$(awk -F'"' '/^anchor_version/ { print $2 }' Anchor.toml)" = "${ANCHOR_VERSION}"
 
       - name: Build Anchor programs and check host-listener IDL sync
@@ -344,3 +352,50 @@ jobs:
 
       - name: Run Clippy on the zama-host decode feature
         run: cargo clippy -p zama-host --features decode --all-targets -- -D warnings
+
+  deployer-image:
+    name: solana-tests/deployer-image
+    needs: check-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-solana == 'true' || needs.check-changes.outputs.changes-test-suite-fhevm == 'true' }}
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [localnet, preview-env]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+      - uses: oven-sh/setup-bun@ecf28ddc73e819eb6fa29df6b34ef8921c743461 # v2.1.3
+        with:
+          bun-version: "1.3.14"
+      - name: Build deployer without private program keys
+        env:
+          PROGRAM_PROFILE: ${{ matrix.profile }}
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -f solana/deploy/Dockerfile --build-arg "PROGRAM_PROFILE=$PROGRAM_PROFILE" -t solana-programs:ci .
+          docker run --rm solana-programs:ci --help
+
+      - name: Install pinned native validator and Anchor
+        if: matrix.profile == 'localnet'
+        run: |
+          curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/solana-install.sh
+          sh /tmp/solana-install.sh
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu" -o "$HOME/.local/bin/anchor"
+          chmod +x "$HOME/.local/bin/anchor"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Exercise packaged CLI against a disposable validator
+        if: matrix.profile == 'localnet'
+        env:
+          SOLANA_DEPLOY_TEST_IMAGE: solana-programs:ci
+        run: |
+          bun install --cwd solana/deploy --frozen-lockfile
+          bun install --cwd test-suite/fhevm --frozen-lockfile
+          bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts

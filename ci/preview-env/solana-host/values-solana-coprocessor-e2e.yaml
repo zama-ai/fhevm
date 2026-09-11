@@ -1,0 +1,22 @@
+# Merge into EACH existing coprocessor release, keeping its commonConfig/database and workers.
+solanaHostListener:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener
+    tag: latest
+  env:
+    - name: SOLANA_RPC_URL
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: rpc-url}
+    - name: SOLANA_GRPC_URL
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: grpc-url}
+    - name: SOLANA_GRPC_X_TOKEN
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: grpc-x-token}
+    - name: SOLANA_PROOF_API_KEY
+      valueFrom:
+        secretKeyRef: {name: solana-proof-api, key: api-key}
+    - name: SOLANA_HOST_PROGRAM_ID
+      valueFrom:
+        configMapKeyRef: {name: solana-host-addresses, key: zama_host.address}

@@ -181,6 +181,9 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - solana/programs/zama-host/**
+          - solana/crates/**
+          - solana/Cargo.*
 
   check-changes-sns-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml

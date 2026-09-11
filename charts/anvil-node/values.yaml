@@ -49,3 +49,6 @@ resources:
 #           operator: In
 #           values:
 #           - zws-pool
+
+# Opt-in for previews that retain gateway/host state between rollouts.
+persistState: false

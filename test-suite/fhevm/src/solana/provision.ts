@@ -35,7 +35,7 @@ import {
 
 import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
 
-import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from './internal/generated/zamaHost/accounts/index.js';
+import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/index.js';
 
 import {
   SPL_MINT_ACCOUNT_SPACE,
@@ -49,8 +49,8 @@ import {
   setComputeUnitLimitInstruction,
 } from './spl';
 
-import { findHostConfigPda } from './internal/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
+import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { vaultModule, sdkHandleModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic

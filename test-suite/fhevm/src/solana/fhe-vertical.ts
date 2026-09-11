@@ -23,7 +23,7 @@ import { publicProof } from '@demo-dapp/vault/internal/publicProof.js';
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 
 import { runSolanaCurrentUserDecrypt } from './current-user-decrypt';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
 

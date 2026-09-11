@@ -89,6 +89,8 @@ commonConfig:
 # Sets up the database schema for KMS connector
 kmsConnectorDbMigration:
   enabled: true
+  # Recreate the migration Job before each persistent runtime rollout.
+  runOnUpgrade: false
   nameOverride:
   annotations:
 

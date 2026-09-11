@@ -494,7 +494,7 @@ metadata() {
 test_env() {
   require_clean_source
   verify_build_manifest
-  # Quote every value so callers can safely use `eval "$(... test-env)"` to
+  # Quote every value so callers can safely load the test-env output to
   # feed the Hardhat container only metadata derived from the audited build
   # manifest, rather than manually asserted CPU/GPU labels.
   # shellcheck disable=SC1090

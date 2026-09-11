@@ -19,6 +19,9 @@
 scDeploy:
   enabled: true
 
+  # Create a new Job for each Helm revision (including retries at the same image tag).
+  runOnUpgrade: false
+
   # Prevent redeployment if already done for current version
   # preventRedeployment: false
 

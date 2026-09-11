@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
-# deploy-demo-programs.sh — build + deploy the two confidential-vault demo programs (#1760).
-#
-# Zero-logic glue over `anchor build` + `solana program deploy`, mirroring
-# the e2e side's zama_host/confidential_token deploy exactly (explicit -k, --program-id from
-# committed keypairs; --use-rpc). These two programs are deployed by NOTHING in the e2e vertical;
-# the demo is their only deployer. Run AFTER clean-e2e.sh has the validator + stack up.
-#
-# Committed program keypairs (low-value, local-only) live under scripts/e2e/test-keypairs/ next to
-# the other PoC program keys and pin each program id to its `declare_id!` (see that dir's README).
+# Demo build and local key fixtures; deployment uses the packaged CLI entry point.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -23,17 +15,14 @@ for p in demo_vault confidential_batcher; do
   cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json"
 done
 
-# Per-crate anchor build (--ignore-keys: keep the committed keypairs, do not regenerate ids).
-( cd "$SOLANA" \
-    && anchor build --ignore-keys --no-idl -p demo_vault \
-    && anchor build --ignore-keys --no-idl -p confidential_batcher ) \
-  || { echo "[demo-deploy] anchor build failed" >&2; exit 1; }
-
-# --use-rpc: deploy over RPC 8899 (the TPU ports are not published). `solana program deploy`
-# upgrades in place when the program already exists (deployer is the upgrade authority), so a
-# re-run against an already-seeded stack redeploys idempotently rather than erroring.
-for p in demo_vault confidential_batcher; do
-  solana program deploy -u "$VALIDATOR_RPC" -k "$DEPLOYER_KEYPAIR" --use-rpc \
-    --program-id "$SOLANA/target/deploy/$p-keypair.json" "$SOLANA/target/deploy/$p.so" >/dev/null
-  echo "    $p=$(solana address -k "$SOLANA/target/deploy/$p-keypair.json") deployed"
-done
+bash "$SOLANA/scripts/build-programs.sh" localnet confidential_token demo_vault confidential_batcher
+if [[ -z "${SOLANA_DEPLOY_DATABASE_URL:-}" ]]; then
+  SOLANA_DEPLOY_DATABASE_URL=$(cd "$ROOT/test-suite/fhevm" && bun -e 'import { readCoprocessorDatabaseUrl } from "./src/solana/deploy"; process.stdout.write(await readCoprocessorDatabaseUrl());')
+fi
+SOLANA_DEPLOY_DATABASE_URL="$SOLANA_DEPLOY_DATABASE_URL" \
+SOLANA_RPC_URL="$VALIDATOR_RPC" \
+SOLANA_DEPLOYER_KEYPAIR="$DEPLOYER_KEYPAIR" \
+SOLANA_ARTIFACTS_DIR="$SOLANA/target/deploy" \
+SOLANA_PROGRAM_PROFILE=localnet \
+ADDRESSES_DIR="$SOLANA/target/deploy" \
+bun run "$ROOT/solana/deploy/src/cli.ts" demos "${1:-deploy}"

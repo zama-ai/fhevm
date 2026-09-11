@@ -23,7 +23,7 @@ import {
 } from "./internal/generated/encryptedCounter/instructions/index.js";
 import { findCounterAuthorityPda, findCounterPda } from "./internal/generated/encryptedCounter/pdas/index.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS } from "./internal/generated/zamaHost/programAddress.js";
+import { ZAMA_HOST_PROGRAM_ADDRESS } from "../../../../solana/deploy/src/generated/zamaHost/programAddress.js";
 import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
 

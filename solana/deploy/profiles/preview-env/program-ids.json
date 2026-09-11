@@ -1,0 +1,10 @@
+{
+  "profile": "preview-env",
+  "cluster": "solana-devnet",
+  "note": "Stable fhevm preview-env host on public Solana **devnet**. Not localnet e2e, not official Zama protocol 0.15/0.16. Public ids are config. Private keypairs are gitignored; human source of truth is 1Password vault 'Preview Env' item 'preview-env - Solana host keypairs (public Solana cluster)'. CI uses AWS Secrets Manager, not 1Password.",
+  "zama_host": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
+  "confidential_token": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
+  "deployer": "3VbwWz9pfrhqE7Xb65AdSVef2jfZoHd4rQWcZdzVm85f",
+  "demo_vault": "gjgLTv4tB3QBP4RCnHgZvL7GZWP198HuesTA4oM9EdE",
+  "confidential_batcher": "A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da"
+}

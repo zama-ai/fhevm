@@ -2099,6 +2099,36 @@ export const downDemo = async (): Promise<void> =>
     await stopDemoManifest(manifest);
   });
 
+/** Restart only this boot's listener; its validator and coprocessor database stay intact. */
+export const restartDemoSolanaListener = async (): Promise<void> =>
+  withLifecycleLock(async () => {
+    const manifest = await readDemoManifest();
+    if (!manifest || !(await isOwnedBootReseedable(manifest))) {
+      throw new Error('listener restart requires a healthy, exactly-owned demo core stack');
+    }
+    // Bootstrap commands must load before the stack installs its Solana dependency graph.
+    const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
+    const { programIdsFor } = await import("../../../solana/deploy/src/program-profile");
+    const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
+    const logDir = path.join(runtimeDir, 'logs');
+    await stopOwnedProcess('listener', manifest.processes.listener);
+    await startHostListener({
+      zamaHostId: programIdsFor('localnet').zamaHost,
+      databaseUrl: await readCoprocessorDatabaseUrl(),
+      grpcUrl: process.env.GRPC_URL ?? 'http://127.0.0.1:10000',
+      logDir,
+      lifecycleDir: runtimeDir,
+    });
+    const listener = await processFromPidFile(
+      'listener',
+      ['solana_host_listener'],
+      path.join(runtimeDir, 'listener.pid'),
+      path.join(logDir, 'host-listener.log'),
+    );
+    await writeDemoManifest({ ...manifest, processes: { ...manifest.processes, listener } });
+    await waitForHttp('http://127.0.0.1:8080/healthz', 'Solana listener');
+  });
+
 const reseedReadyMessage = ({
   bootId,
   launchUrl,
@@ -2115,8 +2145,10 @@ export const reseedTargetAction = (
 export const reseedDemo = async ({
   announce = true,
   expectedBootId,
+  upgradePrograms = false,
 }: {
   readonly announce?: boolean;
+  readonly upgradePrograms?: boolean;
   readonly expectedBootId?: string;
 } = {}): Promise<SupervisorReseedResult> =>
   withLifecycleLock(async () => {
@@ -2165,6 +2197,7 @@ export const reseedDemo = async ({
         [
           "bash",
           path.join(REPO_ROOT, "solana/scripts/demo/deploy-demo-programs.sh"),
+          upgradePrograms ? "upgrade" : "deploy",
         ],
         {
           cwd: REPO_ROOT,
