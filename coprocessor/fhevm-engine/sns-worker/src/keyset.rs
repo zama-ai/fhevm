@@ -19,7 +19,7 @@ fn decode_server_key(
         CompressedXofKeysetEncoding::CompressedXof => {
             let kxs: CompressedXofKeySet = safe_deserialize_sns_key(blob)?;
             info!("Decompressing CompressedXofKeySet to ServerKey");
-            let (_public_key, server_key) = kxs.decompress()?.into_raw_parts();
+            let (_public_key, server_key) = kxs.decompress().into_raw_parts();
             Ok(server_key)
         }
         CompressedXofKeysetEncoding::Legacy => Ok(safe_deserialize_sns_key(blob)?),

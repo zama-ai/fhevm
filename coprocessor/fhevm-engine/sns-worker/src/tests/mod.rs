@@ -765,10 +765,7 @@ fn write_test_file(filename: &str) {
     // readers (sns-worker, tfhe-worker GPU) traverse, so the
     // CompactPublicKey we encrypt under matches what the DB pks_key
     // column will carry.
-    let (compact_public_key, server_key) = keyset
-        .decompress()
-        .expect("decompress xof keyset")
-        .into_raw_parts();
+    let (compact_public_key, server_key) = keyset.decompress().into_raw_parts();
 
     // CompactCiphertextList expansion and CompressedCiphertextList
     // build both consult the thread-local server key.
