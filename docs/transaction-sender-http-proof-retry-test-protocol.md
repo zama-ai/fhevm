@@ -269,6 +269,62 @@ fix; the additional end-to-end protocol assesses reliance on client retries.
 Neither protocol establishes issue-2 nonce safety for accepted-but-unmined
 submissions. Record any such failures separately rather than overlooking them.
 
+## Deployed readiness boundary (clarified 2026-09-11)
+
+The deployment owner identifies the application as `@zama-fhe/sdk@3.5.1`
+wrapping `@fhevm/sdk@0.13.2` (commit `07fb05fb7`), with relayer v0.13.4
+and v0.13.0 as rollback. These deployment identities are supplied information;
+the wrapper's application-level retry behavior has not been independently tested.
+The SDK's `RelayerAsyncRequest.ts` is byte-identical between that commit and
+this branch. Its GET 503 path throws immediately; it does not start a fresh
+request. The default one-hour global deadline and 1,440-loop cap therefore do
+not provide recovery after `readiness_check_timed_out`. Network fetch retries
+and polling 202 responses are different from application resubmission after a
+terminal error. Do not infer the latter from the former.
+
+The readiness loop and testnet example settings are identical at relayer tags
+v0.13.0, v0.13.2 and v0.13.4: 75 attempts separated by three-second sleeps.
+There are 74 sleeps before exhaustion, approximately 222 seconds plus RPC time;
+“225 seconds” is an operational approximation, not a hard wall-clock deadline.
+A never-ready contract result produces the readiness timeout; contract RPC
+errors can produce a different terminal error. Record both separately.
+
+This readiness check concerns ciphertext availability for **decryption**.
+It is distinct from input-proof job expiry and redispatch in section B.
+The existing mock input-proof expiry test does not validate the incident's
+readiness boundary. Preserve section A's unconditional sender recovery gate;
+client polling does not justify deleting unfinished proofs.
+
+### C. Incident-specific decryption acceptance matrix
+
+Run with the specified SDK version against relayer v0.13.4, then repeat on
+v0.13.0. Record application wrapper version, resolved SDK package integrity,
+relayer image digest and effective runtime retry configuration. Use real
+ciphertext registration and decryption in the local stack; mocked readiness
+checks are focused controls only. Include both public and user decryption.
+
+| Scenario | Required observation |
+| --- | --- |
+| Ciphertext registration delayed, readiness restored before the final check | Original request completes correctly, with no terminal readiness error or application resubmission. Correlate sender submission, Gateway registration, readiness checks and SDK result. |
+| Ciphertext remains unavailable through all 75 checks | Relayer returns 503 with `readiness_check_timed_out`; actual SDK call rejects on that response, without waiting an hour or automatically issuing another POST. Count GETs and POSTs. |
+| Recovery immediately before versus after the final readiness observation | Before: existing request can succeed. After: terminal request stays failed; test an explicit fresh application call after recovery and establish its deduplication/result behavior. Do not assume input-proof deduplication rules apply to decryption. |
+| SDK receives network errors, 202 and terminal 503 | Verify network retry and Retry-After polling independently; neither may be reported as retrying the terminal 503. Include absent Retry-After and a value below the SDK's one-second floor. |
+| Sender-wide outage and selective proof failures during readiness | Track addCiphertext progress independently of proof responses. Require recovery without DB repair; record later-proof starvation as a separate failing gate even if decryption completes. |
+| Outage exceeds the readiness window | Preserve sender work and recover it; expect the original SDK call to fail. Any claim of automatic user recovery requires observing an application-level retry policy, not an idealized retrying test client. |
+
+Use shortened attempt intervals for deterministic boundary/race tests, and at
+least one unscaled 75-attempt run per relayer version. Synchronize boundary
+injection to observed check numbers, not a sleep near 225 seconds. Retain a
+monotonic timeline, readiness call counts, SDK HTTP counts, job IDs, terminal
+labels and final plaintext correctness. SDK poll counts alone do not measure
+relayer check counts. Keep the extra KMS-share wait and its latency separate
+from the readiness window.
+
+Passing preservation and HTTP performance tests supports the sender patch;
+it does not promise uninterrupted client success across an outage longer than
+the relayer readiness budget. Automatic resubmission after 503 remains an
+application behavior to establish, not a requirement to redesign this patch.
+
 ## Repository evidence
 
 - [Proof retry and selection logic](../coprocessor/fhevm-engine/transaction-sender/src/ops/verify_proof.rs):
