@@ -28,6 +28,9 @@ const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto
 const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
 const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
 
+/// Error message for oversized request bodies.
+const BODY_TOO_LARGE: &str = "request body too large";
+
 /// Per-request context.
 pub struct RequestContext {
     started_at: Instant,
@@ -143,14 +146,7 @@ impl ProxyHttp for Proxy {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
         if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
-            let error = ErrorResponse::new(
-                ErrorCode::Malformed,
-                format!(
-                    "request body exceeds the {} bytes limit",
-                    self.config.max_body_bytes
-                ),
-                None,
-            );
+            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE, None);
             self.respond_with_error(session, StatusCode::BAD_REQUEST, error, &[])
                 .await?;
             return Ok(true);
@@ -172,10 +168,7 @@ impl ProxyHttp for Proxy {
             if ctx.body_bytes > self.config.max_body_bytes {
                 return abort_with(ErrorResponse::new(
                     ErrorCode::Malformed,
-                    format!(
-                        "request body exceeds the {} bytes limit",
-                        self.config.max_body_bytes
-                    ),
+                    BODY_TOO_LARGE,
                     None,
                 ));
             }
