@@ -145,11 +145,11 @@ pub async fn insert_event(
             Default::default()
         },
         computation,
-        transaction_hash: Some(tx_id),
+        transaction_hash: Some(tx_id.into()),
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: tx_id,
+        dependence_chain: tx_id.into(),
         tx_depth_size: 0,
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),
