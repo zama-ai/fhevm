@@ -1,6 +1,13 @@
 # Transaction sender validation campaign — 2026-09-11
 
-Candidate: `c353ee772`, on transport `67762d493` and retry accounting `0fab89ce1`.
+Latest status: the reproduced proof-starvation finding is fixed in `15ce75f88`
+and the strengthened mixed campaign passes. The unreadable-response follow-up
+also passes all nine new recovery cases. See the remediation sections below.
+Earlier failures and commit IDs are retained as campaign history; performance
+and full-stack results apply to their recorded binaries, not automatically to
+these later changes.
+
+Initial candidate: `c353ee772`, on transport `67762d493` and retry accounting `0fab89ce1`.
 Protocol: [proof retry reliability](transaction-sender-http-proof-retry-test-protocol.md).
 
 ## Execution started
@@ -301,3 +308,44 @@ cancellation. The final implementation drains all batch tasks, and the test
 allows twelve seconds for shutdown (send timeout plus operation backoff).
 Logs: `fairness-mixed.log` and `fairness-mixed-final.log` under the campaign
 artifact directory.
+
+## Unreadable-response remediation and regression results
+
+Alloy deserialization failures now preserve proof work through the same fair
+scheduling path. This includes HTTP 200 maintenance HTML, empty bodies and
+malformed JSON. The diagnostic test now expects the proof's previous stored
+error to remain unchanged for these failures; response contents stay omitted.
+
+Nine new proxy cases **passed in 259.77 seconds**: each of the three response
+shapes at estimation, nonce lookup and submission, with cleanup enabled and
+retry count 14 of 15. Each audited protected fields throughout repeated
+failures, checked bounded attempt rate, and required recovery contract evidence.
+The updated real logs/DB privacy test passed in 8.19 seconds; six library tests
+passed, including existing terminal error classification controls. The fairness
+implementation passed all 33 proof regressions (private-key and AWS KMS cases)
+in 249.60 seconds. Targeted Clippy with CI warning flags, pinned formatting,
+changed-file spelling checks and diff whitespace checks passed.
+
+The mixed campaign's healthy completion totals were `[20, 30, 40]`, with every
+healthy row drained before each restart/fault-removal boundary. The final
+50-event assertion includes the ten initially failing proofs after recovery.
+Artifacts: `unreadable-recovery.log`, `unreadable-diagnostics.log`,
+`fairness-proof-regressions.log`, `fairness-unit.log` and `fairness-clippy.log`
+under `/tmp/fhevm-validation-locked/`. No funded Gateway test was required for
+these changes. Production-path capacity and accepted-but-unmined nonce recovery
+remain outside this validation.
+
+The five-minute HTTP 503 submission outage rerun **passed in 306.25 seconds**
+with cleanup enabled and the proof initially at retry count 14 of 15. The proof
+retained its budget and protected fields, made bounded retries, and completed
+after fault removal. Log: `fairness-long-outage.log`.
+
+Additional review boundaries: add-ciphertext retains its existing Alloy-based
+limited/unlimited classification. HTTP connect/timeouts and statuses such as
+500/502/504 can consume its limited counter; a finite configured cap can thus
+make work ineligible. The deployed effectively unbounded cap mitigates this
+exhaustion risk, but this follow-up does not fix finite-cap behavior. Likewise,
+proof handling of `NullResp` and HTTP statuses outside the explicit allowlist
+is unchanged; this patch does not claim all possible infrastructure response
+shapes are covered. Future classifier expansion requires reachability and
+preservation/fairness tests rather than broad RPC-message matching.

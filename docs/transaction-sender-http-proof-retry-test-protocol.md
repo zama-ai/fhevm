@@ -604,3 +604,18 @@ The mixed campaign streams new proofs at 200 ms intervals, checks complete
 healthy-proof drainage during each fault/restart cycle, observes repeated
 deferred attempts, audits protected fields, and requires contract evidence for
 all 50 proofs after recovery. Run the normal proof regression suite as well.
+
+## Unreadable-response follow-up
+
+Treat Alloy `RpcError::DeserError` as transient. HTTP 200 carrying HTML, an
+empty body or malformed JSON provides no evidence of invalid proof work. Keep
+retry count and stored error unchanged, record the scheduling timestamp, and
+retry fairly with backoff. A persistently incompatible RPC response can therefore
+remain pending indefinitely, but must not prevent healthy proof progress.
+
+Run each response shape at estimation, nonce lookup and submission (nine real
+HTTP fault-proxy cases), with removal enabled and retry count at max minus one.
+Require repeated attempts, protected-field audit preservation, bounded attempt
+rate, and matching contract evidence after restoring valid responses. Retain
+the credential-leak test: unreadable bodies must remain absent from diagnostic
+sinks. Explicit transaction/contract errors keep their existing policy.
