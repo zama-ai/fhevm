@@ -41,7 +41,8 @@ fi
 # stopped throughout the rollout; provider replay is still required for the outage window.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
   listener="deployment/coprocessor-$i-solana-host-listener"
-  if [[ -n $(kubectl get "$listener" -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
+  listener_name=$(kubectl get "$listener" -n "$NAMESPACE" --ignore-not-found -o name)
+  if [[ -n "$listener_name" ]]; then
     kubectl scale "$listener" -n "$NAMESPACE" --replicas=0
     kubectl rollout status "$listener" -n "$NAMESPACE" --timeout=5m
   fi
