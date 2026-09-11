@@ -134,10 +134,13 @@ impl Default for Config {
                 cert_path: PathBuf::from("/etc/kms-connector/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/kms-connector/proxy/tls.key"),
             },
-            api_key_digest: "0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+            api_key_digest: "0x0000000000000000000000000000000000000000000000000000000000000000"
                 .parse()
                 .unwrap(),
-            endpoint_addresses: vec!["kms-connector-endpoint:8080".parse().unwrap()],
+            endpoint_addresses: vec![
+                "kms-connector-endpoint-1:8080".parse().unwrap(),
+                "kms-connector-endpoint-2:9090".parse().unwrap(),
+            ],
             endpoint_connect_timeout: default_endpoint_connect_timeout(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),

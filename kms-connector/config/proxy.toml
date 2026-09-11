@@ -11,14 +11,15 @@
 # SHA-256 digest of the API key the relayer sends as `Authorization: Bearer <key>` (required).
 # The plaintext key lives in a secret shared with the relayer; only its digest is configured here.
 # Compute it with: printf '%s' "$API_KEY" | sha256sum
+# The value below is a placeholder that matches no key: it must be replaced before deployment.
 # ENV: KMS_CONNECTOR_API_KEY_DIGEST
-api_key_digest = "0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+api_key_digest = "0x0000000000000000000000000000000000000000000000000000000000000000"
 
 # `host:port` addresses of the Connector endpoint replicas (required).
 # Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
 # plain IPs. Hostnames are resolved once at startup.
 # ENV: KMS_CONNECTOR_ENDPOINT_ADDRESSES (comma-separated list, e.g. "endpoint-1:8080,endpoint-2:8080")
-endpoint_addresses = ["kms-connector-endpoint:8080"]
+endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2:9090"]
 
 # Timeout to establish a TCP connection to an endpoint (optional, defaults to "3s")
 # ENV: KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
