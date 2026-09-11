@@ -527,50 +527,70 @@ async fn prune_gcs_computations_before_start(
     Ok(result.rows_affected())
 }
 
-/// True iff for every block in `[start_block - READINESS_CONFIRMATIONS, start_block]`
-/// on the given chain, either `fhe_event_count = 0` (block had no FHE events)
-/// or every computation in that block has `is_completed = true` AND
-/// `is_error = false`. An errored computation in the window blocks readiness.
+/// True iff every computation in `[start_block - READINESS_CONFIRMATIONS, start_block]`
+/// on the given chain has `is_completed = true` AND `is_error = false`. Checked
+/// directly against `computations`, so a block with no computations trivially
+/// satisfies it and — unlike driving the scan off `host_chain_blocks_valid` —
+/// this half of the check cannot be defeated by `prune_finalized_block_history`
+/// pruning an old block's row out from under it.
+///
+/// Deliberately does *not* also require `pbs_computations` to be settled:
+/// `pbs_computations` feeds the ct128/S3-publication pipeline (`sns-worker`),
+/// entirely separate from the base `ciphertexts` row `query_ciphertexts`'s
+/// pre-snapshot fallback reads — `tfhe-worker` never touches `pbs_computations`.
+/// A pending PBS job doesn't threaten dry-run correctness; it only threatens
+/// cutover if blue is retired mid-upload, which is `assert_bcs_ciphertexts_uploaded`'s
+/// job, not this gate's.
 ///
 /// Also requires the BCS host-listener to have reached at least `start_block`
 /// (via `MAX(block_number)` in `host_chain_blocks_valid`) — otherwise the
 /// predicate would be vacuously true for un-ingested blocks above the watermark.
+/// `MAX(block_number)` is never itself prunable: pruning only removes rows more
+/// than `BLOCKS_VALID_RETENTION` blocks behind the tip, so the current watermark
+/// row is always safe.
 ///
 /// Additionally requires `start_block` itself to be `finalized` (a
 /// `host_chain_blocks_valid` row at that height with `block_status = 'finalized'`),
 /// so the dry-run window is anchored on a settled block, not one that could still
-/// be reorged out.
+/// be reorged out. This row must never be pruned while a GCS upgrade needs it —
+/// see the `upgrade_state` guard in `prune_finalized_block_history` — otherwise
+/// this hard requirement would deadlock forever once the row ages past the
+/// retention window.
 async fn check_dry_run_ready(
     pool: &Pool<Postgres>,
     chain_id: i64,
     start_block: i64,
 ) -> Result<bool, sqlx::Error> {
+    /*
+       So concretely: if check 1 (watermark) is true and check 2 (start_block finalized) is false,
+       checks 3 and 4 (the scans against computations and pbs_computations) are never executed.
+    */
+
     let from_block = start_block.saturating_sub(READINESS_CONFIRMATIONS);
     let started = std::time::Instant::now();
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          -- 1. Watermark: the host-listener has ingested at least up to start_block.
+          --    Without this, an un-ingested start_block would make the two checks
+          --    below vacuously true (nothing to find yet != nothing wrong).
           COALESCE(
             (SELECT MAX(block_number) FROM public.host_chain_blocks_valid WHERE chain_id = $1),
             -1
           ) >= $3
+          -- 2. start_block itself is finalized — anchors the dry-run window on a
+          --    settled block that cannot be reorged out.
           AND EXISTS (
               SELECT 1 FROM public.host_chain_blocks_valid
-              WHERE chain_id = $1
-                AND block_number = $3
-                AND block_status = 'finalized'
+              WHERE chain_id = $1 AND block_number = $3 AND block_status = 'finalized'
           )
+          -- 3. No unfinished or errored computation anywhere in the readiness
+          --    window [from_block, start_block].
           AND NOT EXISTS (
-              SELECT 1 FROM public.host_chain_blocks_valid hcbv
-              WHERE hcbv.chain_id = $1
-                AND hcbv.block_number BETWEEN $2 AND $3
-                AND hcbv.fhe_event_count > 0
-                AND EXISTS (
-                    SELECT 1 FROM public.computations c
-                    WHERE c.host_chain_id = $1
-                      AND c.block_number = hcbv.block_number
-                      AND (c.is_completed = false OR c.is_error = true)
-                )
+              SELECT 1 FROM public.computations c
+              WHERE c.host_chain_id = $1
+                AND c.block_number BETWEEN $2 AND $3
+                AND (c.is_completed = false OR c.is_error = true)
           )
         "#,
     )
@@ -780,22 +800,55 @@ async fn transition_to_dry_run_started(
     Ok(())
 }
 
-/// True once the GCS gw-listener has reached `gw_start_block` — i.e.
-/// `gcs."gw_listener_last_block".last_block_num >= gw_start_block`. Reads the
-/// GCS schema's watermark explicitly (not `public`), since the green
-/// gw-listener tails the Gateway into the GCS schema from startup. A missing
-/// watermark row reads as `-1`, so the predicate is not vacuously true before
-/// the GCS gw-listener has written any progress.
+/// True once the GCS gw-listener has reached `gw_start_block`, AND blue's own
+/// pre-window proof verification is fully settled.
+///
+/// `verify_proofs.block_number` (like `input_handles.block_number`) is a
+/// **Gateway** block despite what older comments call it — both are stamped
+/// from the Gateway provider in `gw-listener`, not the host chain.
+/// `verify_proofs.chain_id`, by contrast, is the target *host* chain of the
+/// proof's contract, unrelated to which chain a row is windowed by here — so
+/// this check is intentionally proposal-wide, not filtered by chain_id,
+/// mirroring `prune_gcs_verify_proofs_before_start`.
+///
+/// Three conditions, all against the Gateway-block domain:
+///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
+///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
+///      the green gw-listener tails the Gateway into the GCS schema from
+///      startup. A missing watermark row reads as `-1`, so this is not
+///      vacuously true before the GCS gw-listener has written any progress.
+///   2. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
+///      gw_start_block`. Without this, an unobserved-by-blue block would make
+///      check 3 vacuously true (nothing seen yet != nothing pending).
+///   3. No pre-window proof is still pending: no `public.verify_proofs` row
+///      with `block_number < gw_start_block` has `verified IS NULL`. Blue's
+///      zkproof-worker must have resolved every proof below the snapshot
+///      point before the dry run's re-randomization strategy activates at
+///      `gw_start_block` — the Gateway-inputs analogue of `check_dry_run_ready`'s
+///      `computations` completeness check, protecting the same class of
+///      backfill-timing race for the input-ciphertext consensus track.
 async fn check_gw_dry_run_ready(
     pool: &Pool<Postgres>,
     gw_start_block: i64,
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
-                   WHERE dummy_id = true),
-                  -1
-                ) >= $1"
+        "SELECT
+           COALESCE(
+             (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+              WHERE dummy_id = true),
+             -1
+           ) >= $1
+           AND COALESCE(
+             (SELECT last_block_num FROM public.gw_listener_last_block
+              WHERE dummy_id = true),
+             -1
+           ) >= $1
+           AND NOT EXISTS (
+               SELECT 1 FROM public.verify_proofs
+               WHERE block_number IS NOT NULL
+                 AND block_number < $1
+                 AND verified IS NULL
+           )"
     );
     let (ready,): (bool,) = sqlx::query_as(&sql)
         .bind(gw_start_block)
@@ -1551,6 +1604,51 @@ async fn authorized_stack_version(
 /// is exactly what the resubmit loop can act on. A pre-window handle whose digest row was
 /// never created at all is not detected here.
 async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    // Gate on pre-window PBS completion first. A `ciphertext_digest` row is written by the
+    // sns-worker only once it finishes the PBS job, so a still-pending pre-`start_block` PBS
+    // computation has no digest row yet — the upload scan below would pass it over vacuously
+    // and cutover could retire blue before that handle's ct128/digest is ever produced, leaving
+    // a missing `ciphertext_digest` entry. Block cutover until every pre-window PBS computation
+    // is completed. Transient (the sns-worker clears it), so it shares the `PendingBcsUploads`
+    // retry path.
+    let pbs_origins = PBS_COMPUTATION_TABLES
+        .iter()
+        .map(|pbs_table| {
+            format!(
+                "SELECT p.host_chain_id, p.handle
+                   FROM public.{pbs_table} p
+                   JOIN windows w ON w.host_chain_id = p.host_chain_id
+                  WHERE p.block_number < w.start_block
+                    AND p.is_completed = false"
+            )
+        })
+        .collect::<Vec<_>>()
+        // UNION, not UNION ALL: a handle in both the legacy and branch table counts once.
+        .join(" UNION ");
+    let pbs_sql = format!(
+        "WITH windows AS (
+             SELECT host_chain_id, start_block
+               FROM public.upgrade_state
+              WHERE stack_role = 'GCS' AND start_block IS NOT NULL
+         )
+         SELECT host_chain_id, COUNT(*) FROM ({pbs_origins}) o
+          GROUP BY host_chain_id
+          ORDER BY host_chain_id"
+    );
+    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_sql).fetch_all(&mut **tx).await?;
+    if !pbs_pending.is_empty() {
+        let mut pbs_total: i64 = 0;
+        for (chain_id, pending) in &pbs_pending {
+            warn!(
+                host_chain_id = chain_id,
+                pending,
+                "cutover blocked: BCS pre-window PBS computations not yet completed — ct128/ciphertext_digest not yet produced"
+            );
+            pbs_total += pending;
+        }
+        return Err(Error::PendingBcsUploads { pending: pbs_total });
+    }
+
     // Driven from the un-uploaded digests, not from the window. `ciphertext_digest` carries
     // partial indexes on exactly these two NULL predicates
     // (`idx_ciphertext_digest_ciphertext_null` / `..._ciphertext128_null`), and when uploads
@@ -3614,6 +3712,17 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed Gateway watermark");
+        // Blue's Gateway watermark: check_gw_dry_run_ready also requires
+        // public.gw_listener_last_block >= gw_start_block, so seed it too or the
+        // gateway gate never re-arms.
+        sqlx::query(
+            "INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, 1)
+             ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed blue Gateway watermark");
 
         let cancel = CancellationToken::new();
         reconcile(
