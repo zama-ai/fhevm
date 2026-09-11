@@ -1,9 +1,12 @@
-# Transaction sender HTTP rollout — release 0.13.x
+# Transaction sender HTTP rollout — main forward-port
 
 This rollout moves only the sender's Gateway transport to HTTP(S), preserves
 proof work on classified infrastructure failures, schedules retries fairly,
 and sanitizes Gateway diagnostics. The Gateway listener remains on WebSocket.
-Chart version: `0.12.2`. No database migration is required.
+Chart version: `0.13.19`. This forward-port adds no database migration;
+main's normal database migration requirements still apply. See the
+[forward-port record](transaction-sender-http-main-forwardport.md) for integration
+decisions and local validation.
 
 ## Before deployment
 
@@ -77,7 +80,11 @@ DATA frames. Alloy HTTP 1.1.2 normally reads the response body immediately via
 exception visible and remove it after all affected h2 dependencies are migrated
 to a patched version (0.4.16 or later). See the
 [upstream advisory](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h).
-The ruint exception also remains temporary, pending upgrade to 1.20.0 or later.
+On main, ruint is already 1.20.0 and production h2 is 0.4.16. The existing
+main exception covers legacy h2 0.3 in test dependencies; the release branch's
+additional ruint exception was not carried forward. Historical campaign
+results below and in linked documents describe their recorded release binaries,
+not validation of this main forward-port.
 
 Accepted-but-unmined nonce reconciliation, finite-cap ciphertext infrastructure
 retry handling, additional RPC error shapes, production mixed-contract capacity
