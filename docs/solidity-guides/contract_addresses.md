@@ -15,9 +15,9 @@ You do not need to configure these addresses manually. Inheriting from `ZamaEthe
 | INPUT_VERIFIER             | 0xCe0FC2e05CFff1B719EFF7169f7D80Af770c8EA2 |
 | KMS_VERIFIER               | 0x77627828a55156b04Ac0DC0eb30467f1a552BB03 |
 | HCU_LIMIT                  | 0x3b4da65e45Fda2CAa0285A735ab4361a44F171E2 |
+| PROTOCOL_CONFIG            | 0xD8236B57394f90726b26aB25D38CeAC776E1a7C4 |
 
-
-### Gateway 
+### Gateway
 
 | Contract                   | Address                                    |
 | -------------------------- | ------------------------------------------ |
@@ -40,6 +40,7 @@ You do not need to configure these addresses manually. Inheriting from `ZamaEthe
 | INPUT_VERIFIER             | 0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0 |
 | KMS_VERIFIER               | 0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A |
 | HCU_LIMIT                  | 0xa10998783c8CF88D886Bc30307e631D6686F0A22 |
+| PROTOCOL_CONFIG            | 0x51f9AFBc89Ea792e1a21a12AB802ab58D4dbee83 |
 
 ### Gateway
 

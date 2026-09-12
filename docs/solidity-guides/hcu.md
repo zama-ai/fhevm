@@ -84,7 +84,9 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `neg`          | -            | 79,000           |
 | `not`          | -            | 9                |
 | `select`       | -            | 55,000           |
+| `mulDiv`       | 495,000      | 524,000          |
 | `randEuint8`   | -            | 23,000           |
+| `randEuint8(bound)` | -       | 23,000           |
 
 #### **16-bit Encrypted integers (`euint16`)**
 
@@ -113,7 +115,9 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `neg`           | -            | 93,000           |
 | `not`           | -            | 16               |
 | `select`        | -            | 55,000           |
+| `mulDiv`        | 703,000      | 766,000          |
 | `randEuint16`   | -            | 23,000           |
+| `randEuint16(bound)` | -       | 23,000           |
 
 #### **32-bit Encrypted Integers (`euint32`)**
 
@@ -142,7 +146,9 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `neg`           | -            | 131,000          |
 | `not`           | -            | 32               |
 | `select`        | -            | 55,000           |
+| `mulDiv`        | 1,080,000    | 1,311,000        |
 | `randEuint32`   | -            | 24,000           |
+| `randEuint32(bound)` | -       | 24,000           |
 
 #### **64-bit Encrypted integers (`euint64`)**
 
@@ -171,7 +177,9 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `neg`           | -            | 131,000          |
 | `not`           | -            | 63               |
 | `select`        | -            | 55,000           |
+| `mulDiv`        | 1,921,000    | 2,911,000        |
 | `randEuint64`   | -            | 24,000           |
+| `randEuint64(bound)` | -       | 24,000           |
 
 #### **128-bit Encrypted integers (`euint128`)**
 
@@ -201,6 +209,7 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `not`            | -            | 130              |
 | `select`         | -            | 57,000           |
 | `randEuint128`   | -            | 25,000           |
+| `randEuint128(bound)` | -       | 25,000           |
 
 #### **256-bit Encrypted integers (`euint256`)**
 
@@ -219,6 +228,33 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 | `not`            | -            | 130              |
 | `select`         | -            | 108,000          |
 | `randEuint256`   | -            | 30,000           |
+| `randEuint256(bound)` | -       | 30,000           |
+
+#### N-ary operations (`sum`, `isIn`)
+
+`FHE.sum` and `FHE.isIn` are priced by the number of elements they process. The cost is bucketed: an array of `n` elements is charged the price of the smallest bucket that fits `n`. Arrays longer than the last bucket for a type are rejected (`FHECollectionSizeInvalid`).
+
+**`sum(values)`**
+
+| Type       | n ≤ 10  | n ≤ 30  | n ≤ 60  | n ≤ 100 |
+| ---------- | ------- | ------- | ------- | ------- |
+| `euint8`   | 90,900  | 127,000 | 148,000 | 159,000 |
+| `euint16`  | 95,000  | 136,000 | 162,000 | 184,000 |
+| `euint32`  | 116,000 | 164,000 | 205,000 | 281,000 |
+| `euint64`  | 139,000 | 216,000 | 306,000 | -       |
+| `euint128` | 219,000 | 355,000 | 552,000 | -       |
+
+**`isIn(value, set)`** (n is the set size)
+
+| Type       | n ≤ 10  | n ≤ 30  | n ≤ 60  | n ≤ 100 |
+| ---------- | ------- | ------- | ------- | ------- |
+| `euint8`   | 71,300  | 148,000 | 247,000 | 374,000 |
+| `euint16`  | 103,000 | 218,000 | 378,000 | 605,000 |
+| `euint32`  | 137,000 | 300,000 | 531,000 | 827,000 |
+| `euint64`  | 218,000 | 492,000 | 879,000 | -       |
+| `euint128` | 256,000 | 535,000 | 921,000 | -       |
+| `eaddress` | 286,000 | 584,000 | 885,000 | -       |
+| `euint256` | 321,000 | 586,000 | 943,000 | -       |
 
 #### **Encrypted addresses (`euint160`)**
 
@@ -230,9 +266,13 @@ When using `eaddress` (internally represented as `euint160`), the HCU costs for 
 | `ne`          | 115,000      | 124,000          |
 | `select`      | -            | 83,000           |
 
+For `isIn` on `eaddress`, see the n-ary table above.
+
 ## Additional Operations
 
 | Function name    | HCU           |
 | ---------------- | ------------- |
 | `cast`           | 32            |
 | `trivialEncrypt` | 32            |
+
+`mulDiv` is priced as a multiplication plus a division on the doubled width (`mulDiv` on `euint64` costs about a `mul` plus a `div` on 128 bits), which is why it is the most expensive binary operator.
