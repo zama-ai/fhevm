@@ -278,6 +278,15 @@ txSender:
     - {key: karpenter.sh/nodepool, effect: NoSchedule, operator: Equal, value: coprocessor}
 
 #=======================================================
+# Unknown chains default to K=30. Overlay the preview-env Anvil host (12345)
+# and classic Anvil (31337) so a due manifest is every block.
+consensusDetector:
+  config:
+    manifestPublicationCadence:
+      - "12345:1"
+      - "31337:1"
+
+#=======================================================
 chains:
   - name: host
     chainId: "12345"

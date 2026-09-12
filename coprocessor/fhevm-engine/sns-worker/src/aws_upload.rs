@@ -25,8 +25,7 @@ use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
-use sha2::Sha256;
-use sha3::{Digest, Keccak256};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -167,17 +166,22 @@ async fn run_uploader_loop(
                             FROM ciphertext_digest d
                             WHERE d.handle = $1
                               AND (
-                                d.ciphertext IS NULL
+                                d.s3_publication_verified_at IS NULL
+                                OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                                OR d.ciphertext IS NULL
                                 OR (
-                                  d.ciphertext128 IS NULL
-                                  AND EXISTS (
+                                  EXISTS (
                                     SELECT 1
                                     FROM ciphertexts128 c
                                     WHERE c.handle = d.handle
                                       AND c.ciphertext IS NOT NULL
                                   )
+                                  AND (
+                                    d.ciphertext128 IS NULL
+                                    OR d.ciphertext128_format IS NULL
+                                  )
                                 )
-                            )
+                              )
                             FOR UPDATE SKIP LOCKED
                             ",
                             &item.handle,
@@ -916,9 +920,7 @@ async fn upload_ciphertexts(
 }
 
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
-    let mut hasher = Keccak256::new();
-    hasher.update(ct);
-    hasher.finalize().to_vec()
+    crate::compute_ciphertext_digest(ct)
 }
 
 fn sha256_checksum_header(ct: &[u8]) -> String {
@@ -927,8 +929,8 @@ fn sha256_checksum_header(ct: &[u8]) -> String {
 
 /// Fetches incomplete upload tasks from the database.
 ///
-/// An incomplete upload task is defined as a task missing its ct64 digest, or
-/// missing its ct128 digest while ct128 ciphertext material exists.
+/// A pending upload lacks a current S3 postflight witness or has incomplete
+/// local digest metadata.
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
@@ -950,14 +952,19 @@ async fn fetch_pending_uploads(
                    AND c.ciphertext IS NOT NULL
                ) AS \"has_ct128_ciphertext!\"
         FROM ciphertext_digest d
-        WHERE d.ciphertext IS NULL
+        WHERE d.s3_publication_verified_at IS NULL
+           OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+           OR d.ciphertext IS NULL
            OR (
-             d.ciphertext128 IS NULL
-             AND EXISTS (
+             EXISTS (
                SELECT 1
                FROM ciphertexts128 c
                WHERE c.handle = d.handle
                  AND c.ciphertext IS NOT NULL
+             )
+             AND (
+               d.ciphertext128 IS NULL
+               OR d.ciphertext128_format IS NULL
              )
            )
         FOR UPDATE SKIP LOCKED
@@ -976,18 +983,14 @@ async fn fetch_pending_uploads(
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let s3_format_version = row.s3_format_version;
-        let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
         let handle = row.handle;
         let transaction_id = row.transaction_id;
         let has_ct128_ciphertext = row.has_ct128_ciphertext;
-        let row_incomplete =
-            ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
-        // Fetch the ciphertext whenever the row is not fully committed. This
-        // lets recovery revalidate both S3 objects before the single DB update.
-        // Also fetch already-uploaded ciphertext for pre-v1 rows so the retry
-        // can validate/rewrite old S3 objects.
-        if row_incomplete || should_verify_existing_s3 {
+        // Every selected row either lacks a current S3 verification witness or
+        // has incomplete local metadata. Fetch the bytes even when computed
+        // digests and the current format are present: they do not prove upload.
+        {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
                 handle,
@@ -1005,11 +1008,8 @@ async fn fetch_pending_uploads(
             }
         }
 
-        // Fetch ciphertext128 under the same rule: incomplete rows are retried
-        // as a whole handle, and pre-v1 rows need the bytes for validation.
-        // Ct64-only rows have no ciphertext128 material, so they are completed
-        // by writing the zero ct128 digest after ct64 is verified/uploaded.
-        if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
+        // SNS rows have ct128 material; retain it through postflight retry.
+        if has_ct128_ciphertext {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
                 handle,
@@ -1060,7 +1060,7 @@ async fn fetch_pending_uploads(
             );
             ct
         } else {
-            // Already uploaded; retain the stored format for attestation.
+            // No local ct128 bytes; retain the stored format for attestation.
             BigCiphertext::new(Vec::new(), ct128_format)
         };
 
@@ -1098,7 +1098,7 @@ async fn fetch_pending_uploads(
                 "No ciphertext material to resubmit"
             );
         } else {
-            // This should not happen as we are fetching rows with NULL ct64 or ct128
+            // The row needs S3 verification but no local bytes are recoverable.
             error!(
                 handle = hex::encode(&handle),
                 "Both ciphertext and ciphertext128 are empty, skipping"

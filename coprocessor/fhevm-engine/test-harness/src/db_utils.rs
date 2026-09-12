@@ -162,8 +162,12 @@ pub async fn insert_ciphertext_digest(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-        INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, txn_limited_retries_count)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO ciphertext_digest (
+            host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+            txn_limited_retries_count, s3_publication_verified_at,
+            s3_publication_verified_digest
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), $4)
         "#,
         host_chain_id,
         &key_id_gw,

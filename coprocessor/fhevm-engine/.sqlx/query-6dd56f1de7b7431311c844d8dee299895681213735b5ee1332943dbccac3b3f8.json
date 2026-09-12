@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE lineage AS (\n            SELECT generation,\n                   host_chain_id,\n                   block_hash,\n                   parent_block_hash,\n                   block_number\n              FROM block_manifest_state\n             WHERE generation = $1\n               AND host_chain_id = $2\n               AND block_hash = $3\n            UNION ALL\n            SELECT parent.generation,\n                   parent.host_chain_id,\n                   parent.block_hash,\n                   parent.parent_block_hash,\n                   parent.block_number\n              FROM block_manifest_state parent\n              JOIN lineage child\n                ON parent.generation = child.generation\n               AND parent.host_chain_id = child.host_chain_id\n               AND parent.block_hash = child.parent_block_hash\n             WHERE parent.block_number < child.block_number\n        ),\n        nearest AS (\n            SELECT skipped.generation,\n                   skipped.host_chain_id,\n                   skipped.block_hash\n              FROM lineage\n              JOIN block_manifest_state skipped\n                ON skipped.generation = lineage.generation\n               AND skipped.host_chain_id = lineage.host_chain_id\n               AND skipped.block_hash = lineage.block_hash\n             WHERE skipped.block_number < $4\n               AND skipped.manifest_required\n               AND NOT skipped.manifest_published\n               AND skipped.publication_error_count > 0\n               AND skipped.publication_error_count <= $5\n               AND skipped.publication_next_retry_at IS NULL\n               AND skipped.block_content_digest IS NOT NULL\n             ORDER BY skipped.block_number DESC\n             LIMIT 1\n        )\n        UPDATE block_manifest_state skipped\n           SET publication_next_retry_at = NOW(),\n               updated_at = NOW()\n          FROM nearest\n         WHERE skipped.generation = nearest.generation\n           AND skipped.host_chain_id = nearest.host_chain_id\n           AND skipped.block_hash = nearest.block_hash\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6dd56f1de7b7431311c844d8dee299895681213735b5ee1332943dbccac3b3f8"
+}

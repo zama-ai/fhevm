@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT host_chain_id,\n               MIN(block_number) AS \"first_block!\",\n               MAX(block_number) AS \"last_block!\"\n          FROM block_manifest_state\n         WHERE generation = $1\n         GROUP BY host_chain_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "first_block!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_block!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "34a8903da6e8f9f74cfe7325f85e947bd7b157f06c67fd97b66a483ac786916e"
+}

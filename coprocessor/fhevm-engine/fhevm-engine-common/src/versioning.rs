@@ -46,6 +46,14 @@ fn parse_version(s: &str) -> (u64, u64, u64) {
     )
 }
 
+/// True iff two version strings are the same major.minor.patch.
+///
+/// A leading `v`/`V`, a missing patch, and pre-release/build suffixes are
+/// ignored, so `v0.15.0` equals `0.15.0`.
+pub fn versions_equal(left: &str, right: &str) -> bool {
+    parse_version(left) == parse_version(right)
+}
+
 /// True iff this binary's [`STACK_VERSION`] is strictly newer than `live`.
 pub fn binary_is_newer_than(live: &str) -> bool {
     parse_version(STACK_VERSION) > parse_version(live)
@@ -53,7 +61,7 @@ pub fn binary_is_newer_than(live: &str) -> bool {
 
 /// True iff this binary's [`STACK_VERSION`] equals `live` (same major.minor.patch).
 pub fn binary_matches(live: &str) -> bool {
-    parse_version(STACK_VERSION) == parse_version(live)
+    versions_equal(STACK_VERSION, live)
 }
 
 /// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly newer than `live`.
@@ -71,6 +79,43 @@ fn consensus_matches(live: i64) -> bool {
 /// database.
 fn consensus_is_older_than(live: i64) -> bool {
     i64::from(CONSENSUS_PROTOCOL_VERSION) < live
+}
+
+/// Layout of a consensus epoch minted from a finalized upgrade log:
+/// `{version}/block_{block_number}`.
+///
+/// `version` is currently the software version and will become the consensus
+/// protocol version. It must be unique across breaking upgrades; `block_number`
+/// is only a fail-safe if the same version is reused. `block_number` is the
+/// block that contains `CoprocessorUpgradeProposed`, not `gwStartBlock`. The
+/// log is only ingested on `CANONICAL_PROTOCOL_CONFIG_CHAIN_ID`, so the chain
+/// id is not part of the identifier.
+pub const CONSENSUS_EPOCH_MAX_BYTES: usize = 256;
+
+/// Build the consensus-epoch identifier from a finalized
+/// `CoprocessorUpgradeProposed` log. Every coprocessor that ingested that log
+/// derives the same string, with no shared counter.
+pub fn format_consensus_epoch(version: &str, block_number: u64) -> Result<String, String> {
+    if version.is_empty() {
+        return Err("consensus epoch version is empty".to_owned());
+    }
+    if version.contains('\0') {
+        return Err(
+            "consensus epoch version contains NUL, which PostgreSQL text cannot store".to_owned(),
+        );
+    }
+    for segment in version.split('/') {
+        if segment.is_empty() {
+            return Err(format!(
+                "consensus epoch version contains invalid path segment {segment:?}"
+            ));
+        }
+    }
+    let consensus_epoch = format!("{version}/block_{block_number}");
+    if consensus_epoch.len() > CONSENSUS_EPOCH_MAX_BYTES {
+        return Err("consensus epoch exceeds 256 bytes".to_owned());
+    }
+    Ok(consensus_epoch)
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
@@ -553,7 +598,8 @@ pub async fn begin_write_guarded_conn(
 #[cfg(test)]
 mod tests {
     use super::{
-        consensus_is_newer_than, consensus_is_older_than, consensus_matches, parse_version,
+        consensus_is_newer_than, consensus_is_older_than, consensus_matches,
+        format_consensus_epoch, parse_version, versions_equal,
     };
     use crate::STACK_VERSION;
 
@@ -563,6 +609,14 @@ mod tests {
         assert_eq!(parse_version("v0.14.0"), (0, 14, 0));
         assert_eq!(parse_version("0.14.2"), (0, 14, 2));
         assert_eq!(parse_version("v1.2.3-rc1"), (1, 2, 3));
+    }
+
+    #[test]
+    fn versions_equal_ignores_v_prefix_and_missing_patch() {
+        assert!(versions_equal("0.15.0", "v0.15.0"));
+        assert!(versions_equal("V0.14.0", "0.14"));
+        assert!(versions_equal("0.14.0-rc1", "v0.14.0"));
+        assert!(!versions_equal("0.15.0", "0.14.0"));
     }
 
     #[test]
@@ -610,5 +664,37 @@ mod tests {
         assert!(!consensus_is_newer_than(live) && !consensus_is_older_than(live));
         assert!(consensus_is_newer_than(live - 1));
         assert!(consensus_is_older_than(live + 1));
+    }
+
+    #[test]
+    fn consensus_epoch_is_derived_from_the_finalized_log() {
+        assert_eq!(
+            format_consensus_epoch("v0.15.1", 19283746).unwrap(),
+            "v0.15.1/block_19283746",
+        );
+        assert_eq!(
+            format_consensus_epoch("v0.15/extra", 1).unwrap(),
+            "v0.15/extra/block_1"
+        );
+        for version in [
+            ".",
+            "..",
+            "v0.15/../rc1",
+            "v0.15/./rc1",
+            "release candidate",
+            "révision",
+            "~2E",
+            "%2E%2E",
+            " v0.15 ",
+        ] {
+            assert_eq!(
+                format_consensus_epoch(version, 1).unwrap(),
+                format!("{version}/block_1")
+            );
+        }
+        for version in ["/v0.15", "v0.15/", "v0.15//rc1", "v0.15\0rc1"] {
+            assert!(format_consensus_epoch(version, 1).is_err(), "{version}");
+        }
+        assert!(format_consensus_epoch("", 1).is_err());
     }
 }

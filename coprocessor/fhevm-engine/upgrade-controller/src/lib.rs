@@ -197,6 +197,8 @@ pub enum Error {
     /// real failure.
     #[error("{pending} pre-start_block BCS ciphertext(s) are still awaiting S3 upload")]
     PendingBcsUploads { pending: i64 },
+    #[error("invalid upgrade state: {0}")]
+    InvalidState(String),
 }
 
 impl Error {
@@ -436,6 +438,17 @@ async fn create_gcs_tables(tx: &mut Transaction<'_, Postgres>) -> Result<Vec<&'s
             table, trigger, "created GCS notify trigger"
         );
     }
+    // Before an upgrade is allocated, both stacks intentionally use the same
+    // generation. Green advances only its schema-local selector after the
+    // accepted proposal has a pending allocation.
+    let seed_generation = format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.blue_green_generation \
+         (singleton, generation, updated_at) \
+         SELECT singleton, generation, updated_at \
+           FROM public.blue_green_generation \
+         ON CONFLICT (singleton) DO NOTHING"
+    );
+    sqlx::query(&seed_generation).execute(&mut **tx).await?;
 
     Ok(duplicated)
 }
@@ -1373,8 +1386,44 @@ async fn merge_gcs_table(
     Ok(merged.rows_affected())
 }
 
+/// Completes the generation recorded when the host listener accepted an upgrade.
+/// Older in-progress upgrades created before generation tracking keep their
+/// existing cutover and rollback behavior.
+async fn finish_generation(
+    tx: &mut Transaction<'_, Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+    outcome: &str,
+) -> Result<(), Error> {
+    debug_assert!(matches!(outcome, "succeeded" | "failed"));
+
+    let result = sqlx::query(
+        r#"
+        UPDATE generation_history
+           SET outcome = $3,
+               completed_at = NOW()
+         WHERE proposal_id = $1
+           AND proposal_block = $2
+           AND outcome = 'pending'
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(proposal_block)
+    .bind(outcome)
+    .execute(tx.as_mut())
+    .await?;
+
+    if result.rows_affected() == 0 {
+        warn!(
+            proposal_block,
+            outcome, "No pending generation allocation found for completed upgrade"
+        );
+    }
+    Ok(())
+}
+
 /// Read the GCS proposal rows under the cutover transaction and decide whether to
-/// proceed, returning the stack version to promote.
+/// proceed, returning the stack version and proposal identity to promote.
 ///
 /// `Ok(None)` means the proposal is not `UpgradeAuthorized`, so there is nothing to do —
 /// normally because a previous attempt already committed. This is what makes
@@ -1382,41 +1431,68 @@ async fn merge_gcs_table(
 /// and stop, not as an error.
 async fn authorized_stack_version(
     tx: &mut Transaction<'_, Postgres>,
-) -> Result<Option<String>, Error> {
-    let rows = sqlx::query!(
-        "SELECT state, start_block, version
-           FROM public.upgrade_state
+) -> Result<Option<(String, Option<Vec<u8>>, Option<i64>)>, Error> {
+    // Re-read every chain row under a table lock: a concurrent activation or
+    // cutover cannot replace only part of the proposal while it is promoted.
+    sqlx::query("LOCK TABLE upgrade_state IN SHARE ROW EXCLUSIVE MODE")
+        .execute(&mut **tx)
+        .await?;
+    type CutoverRow = (
+        String,
+        Option<i64>,
+        Option<String>,
+        Option<Vec<u8>>,
+        Option<i64>,
+    );
+    let rows: Vec<CutoverRow> = sqlx::query_as(
+        "SELECT state, start_block, version, proposal_id, proposal_block
+           FROM upgrade_state
           WHERE stack_role = 'GCS'
-          ORDER BY host_chain_id",
+          ORDER BY host_chain_id
+          FOR UPDATE",
     )
     .fetch_all(&mut **tx)
     .await?;
-
-    let Some(first) = rows.first() else {
+    let Some((first_state, _, first_version, first_proposal_id, first_proposal_block)) =
+        rows.first()
+    else {
         return Err(Error::Payload(
             "no GCS rows in upgrade_state — cannot run cutover".to_string(),
         ));
     };
-    if rows.iter().any(|row| row.state != first.state) {
+    if rows.iter().any(|(state, _, _, _, _)| state != first_state) {
         return Err(Error::Payload(
             "GCS upgrade_state rows disagree on state".to_string(),
         ));
     }
-    if first.state != "UpgradeAuthorized" {
-        info!(state = %first.state, "cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
+    if first_state != "UpgradeAuthorized" {
+        info!(state = %first_state, "cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(None);
     }
-    if rows.iter().any(|row| row.start_block.is_none()) {
+    if rows.iter().any(|(_, start, _, _, _)| start.is_none()) {
         return Err(Error::Payload(
             "a GCS upgrade_state row is missing start_block".to_string(),
         ));
     }
-    if rows.iter().any(|row| row.version != first.version) {
+    if rows
+        .iter()
+        .any(|(_, _, version, _, _)| version != first_version)
+    {
         return Err(Error::Payload(
             "GCS upgrade_state rows disagree on version".to_string(),
         ));
     }
-    Ok(Some(first.version.clone().unwrap_or_default()))
+    if rows.iter().any(|(_, _, _, proposal_id, proposal_block)| {
+        proposal_id != first_proposal_id || proposal_block != first_proposal_block
+    }) {
+        return Err(Error::Payload(
+            "GCS upgrade_state rows disagree on proposal identity".to_string(),
+        ));
+    }
+    let stack_version = first_version.clone().unwrap_or_default();
+    let proposal_id = first_proposal_id.clone();
+    let proposal_block = *first_proposal_block;
+    Ok(Some((stack_version, proposal_id, proposal_block)))
 }
 
 /// Refuse to cut over while blue still has pre-window ciphertexts waiting to reach S3.
@@ -1427,10 +1503,9 @@ async fn authorized_stack_version(
 /// was going to finish that upload is gone — `assert_not_retired` fails its next write —
 /// and the digest published on-chain would point at an object that was never written.
 ///
-/// "Pending" is the resubmit loop's own predicate (`sns-worker/src/aws_upload.rs`): the ct64
-/// digest is NULL, or the ct128 digest is NULL *while* the ct128 bytes exist. The second
-/// half matters — a handle that never went through SnS has no ct128 and must not be counted
-/// as pending forever.
+/// "Pending" is the resubmit loop's own predicate (`sns-worker/src/aws_upload.rs`):
+/// there is no S3 publication witness matching the current ct64 digest.
+/// Computed digests alone do not prove the objects were uploaded.
 ///
 /// Returns an error rather than skipping, so the caller's retry and `reconcile`'s poll tick
 /// keep re-checking: this is a "not yet" condition that blue itself clears. A permanently
@@ -1441,12 +1516,9 @@ async fn authorized_stack_version(
 /// is exactly what the resubmit loop can act on. A pre-window handle whose digest row was
 /// never created at all is not detected here.
 async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
-    // Driven from the un-uploaded digests, not from the window. `ciphertext_digest` carries
-    // partial indexes on exactly these two NULL predicates
-    // (`idx_ciphertext_digest_ciphertext_null` / `..._ciphertext128_null`), and when uploads
-    // are keeping up the set is near-empty, so it is by far the cheapest starting point.
-    // MATERIALIZED pins that: without it Postgres may inline the CTE and instead drive from
-    // the window's computations, which is the whole history below start_block.
+    // Digests exist before upload. Only a witness matching the current ct64
+    // digest proves that SNS completed S3 postflight. MATERIALIZED keeps this
+    // query driven by pending uploads rather than the full computation history.
     let origins = COMPUTATION_TABLES
         .iter()
         .map(|comp_table| {
@@ -1466,11 +1538,8 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
         "WITH pending AS MATERIALIZED (
              SELECT d.handle
                FROM public.ciphertext_digest d
-              WHERE d.ciphertext IS NULL
-                 OR (d.ciphertext128 IS NULL
-                     AND EXISTS (SELECT 1 FROM public.ciphertexts128 c
-                                  WHERE c.handle = d.handle
-                                    AND c.ciphertext IS NOT NULL))
+              WHERE d.s3_publication_verified_at IS NULL
+                 OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
          ),
          windows AS (
              SELECT host_chain_id, start_block
@@ -1838,7 +1907,9 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 
     // Read the GCS proposal rows under the lock, and return early if they are
     // not `UpgradeAuthorized` (normally because a previous attempt already committed).
-    let Some(stack_version) = authorized_stack_version(&mut tx).await? else {
+    let Some((stack_version, proposal_id, proposal_block)) =
+        authorized_stack_version(&mut tx).await?
+    else {
         warn!("cutover: GCS proposal is not UpgradeAuthorized — skipping (already cut over)");
         return Ok(());
     };
@@ -1878,6 +1949,10 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
     info!(stack_version, consensus_version, "versioning row updated");
+
+    if let (Some(proposal_id), Some(proposal_block)) = (&proposal_id, proposal_block) {
+        finish_generation(&mut tx, proposal_id, proposal_block, "succeeded").await?;
+    }
 
     // 3. Snapshot the handles BCS already committed on-chain: the merge would copy
     //    GCS's `txn_is_sent = false` onto them and the tx-sender would re-broadcast,
@@ -2128,41 +2203,43 @@ async fn rollback_dry_run(
         "rollback acquired exclusive advisory lock"
     );
 
-    let claimed = sqlx::query(
+    let claimed_proposal_block: Option<Option<i64>> = sqlx::query_scalar(
         r#"
-        UPDATE upgrade_state u
-           SET state = 'PAUSED', status = 'failed',
-               last_error = 'unanimity_consensus_timeout',
-               host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
-               gw_dry_run_started = FALSE,
-               -- Cleared with the latches: the rolled-back window's schema is dropped, and the
-               -- next attempt injects at a different block (or fork) and so derives a different
-               -- hash. A stale marker would leave cutover matching nothing while the real rows
-               -- merged through.
-               synthetic_txn_hashes = ''::bytea,
-               updated_at = NOW()
-         WHERE u.stack_role = 'GCS'
-           AND u.state IN ('UpgradeActivated', 'DryRunStarted')
-           AND u.proposal_id = $1
-           AND COALESCE(u.proposal_block, -1) = $2
-           AND $3 = (
-               SELECT MAX(w.end_block)
-                 FROM upgrade_state w
-                WHERE w.stack_role = u.stack_role
-                  AND w.proposal_id = u.proposal_id
-                  AND COALESCE(w.proposal_block, -1) =
-                      COALESCE(u.proposal_block, -1)
-           )
+        WITH claimed AS (
+            UPDATE upgrade_state u
+               SET state = 'PAUSED', status = 'failed',
+                   last_error = 'unanimity_consensus_timeout',
+                   host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
+                   gw_dry_run_started = FALSE,
+                   synthetic_txn_hashes = ''::bytea, updated_at = NOW()
+             WHERE u.stack_role = 'GCS'
+               AND u.state IN ('UpgradeActivated', 'DryRunStarted')
+               AND u.proposal_id = $1
+               AND COALESCE(u.proposal_block, -1) = $2
+               AND $3 = (
+                   SELECT MAX(w.end_block)
+                     FROM upgrade_state w
+                    WHERE w.stack_role = u.stack_role
+                      AND w.proposal_id = u.proposal_id
+                      AND COALESCE(w.proposal_block, -1) =
+                          COALESCE(u.proposal_block, -1)
+               )
+            RETURNING proposal_block
+        )
+        SELECT proposal_block FROM claimed LIMIT 1
         "#,
     )
     .bind(proposal_id)
     .bind(proposal_block)
     .bind(timeout_end_block)
-    .execute(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
-    if claimed.rows_affected() == 0 {
+    let Some(claimed_proposal_block) = claimed_proposal_block else {
         tx.rollback().await?;
         return Ok(false);
+    };
+    if let Some(claimed_proposal_block) = claimed_proposal_block {
+        finish_generation(&mut tx, proposal_id, claimed_proposal_block, "failed").await?;
     }
     reset_gcs_schema(&mut tx).await?;
     sqlx::query("SELECT pg_notify($1, '')")
@@ -2237,6 +2314,9 @@ async fn reconcile(
         *gw_start_block,
         *gw_dry_run_started,
     );
+    if let (Some(proposal_id), true) = (proposal_id.as_deref(), proposal_block >= 0) {
+        select_green_generation(pool, proposal_id, proposal_block).await?;
+    }
     match state.as_str() {
         // Re-arm readiness (no-op if already running).
         "UpgradeActivated" => {
@@ -2325,6 +2405,39 @@ async fn consensus_track_status(
         // the intent and is safe on an empty set.
         gateway: !rows.is_empty() && rows.iter().all(|(_, _, gw_reached)| *gw_reached),
     })
+}
+
+async fn select_green_generation(
+    pool: &Pool<Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+) -> Result<(), Error> {
+    let sql = format!(
+        r#"
+        INSERT INTO {GCS_SCHEMA_QUOTED}.blue_green_generation (
+            singleton, generation, updated_at
+        )
+        SELECT TRUE, history.generation, NOW()
+          FROM public.generation_history history
+         WHERE history.proposal_id = $1
+           AND history.proposal_block = $2
+           AND history.outcome = 'pending'
+        ON CONFLICT (singleton) DO UPDATE
+        SET generation = EXCLUDED.generation,
+            updated_at = EXCLUDED.updated_at
+        "#
+    );
+    let updated = sqlx::query(&sql)
+        .bind(proposal_id)
+        .bind(proposal_block)
+        .execute(pool)
+        .await?;
+    if updated.rows_affected() != 1 {
+        return Err(Error::InvalidState(
+            "active upgrade has no pending generation history row".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// Handle an `event_unanimity_consensus` notification. consensus-detector emits
@@ -2990,23 +3103,40 @@ mod tests {
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
-                start_block, end_block, gw_start_block, host_chain_id, updated_at
+                start_block, end_block, gw_start_block, host_chain_id,
+                proposal_block, updated_at
             )
             VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
-                    100, 200, 1, 1, NOW())
+                    100, 200, 1, 1, 50, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
                 version = EXCLUDED.version, updated_at = NOW()
             "#,
         )
-        .bind(&[0x02u8][..])
+        .bind(&[0x02u8; 32][..])
         .execute(&pool)
         .await
         .expect("seed GCS row");
 
         set_live_versions_behind(&pool).await;
 
+        sqlx::query(
+            r#"
+            INSERT INTO generation_history (
+                generation, proposal_id, proposal_block, stack_version, outcome
+            )
+            VALUES ('1', $1, 50, 'v0.15', 'pending')
+            "#,
+        )
+        .bind(&[0x02u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed generation history");
+
         create_gcs_schema(&pool).await.expect("create gcs schema");
+        select_green_generation(&pool, &[0x02; 32], 50)
+            .await
+            .expect("select Green generation");
 
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
         execute_cutover(&pool).await.expect("cutover succeeds");
@@ -3018,6 +3148,20 @@ mod tests {
                 .await
                 .expect("versioning row");
         assert_eq!(sv, "v0.15", "cutover should bump versioning.stack_version");
+
+        let (generation, outcome, completed): (String, String, bool) = sqlx::query_as(
+            "SELECT selector.generation, history.outcome,
+                    history.completed_at IS NOT NULL
+               FROM blue_green_generation selector
+               JOIN generation_history history USING (generation)
+              WHERE selector.singleton = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("promoted generation");
+        assert_eq!(generation, "1");
+        assert_eq!(outcome, "succeeded");
+        assert!(completed);
 
         // GCS row flipped LIVE and the gcs schema was dropped.
         let row = sqlx::query("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
@@ -3049,7 +3193,7 @@ mod tests {
     }
 
     fn timeout_payload() -> String {
-        serde_json::json!({ "proposal_id": [2], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
+        serde_json::json!({ "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
     }
 
@@ -3095,13 +3239,24 @@ mod tests {
         )
         .bind(state)
         .bind(status)
-        .bind(&[0x02u8][..])
+        .bind(&[0x02u8; 32][..])
         .bind(fhevm_engine_common::STACK_VERSION)
         .execute(pool)
         .await
         .expect("seed GCS row");
 
         set_live_versions_behind(pool).await;
+
+        sqlx::query(
+            "INSERT INTO generation_history (
+                 generation, proposal_id, proposal_block, stack_version, outcome
+             ) VALUES ('1', $1, 10, 'v0.15', 'pending')
+             ON CONFLICT (generation) DO NOTHING",
+        )
+        .bind(&[0x02u8; 32][..])
+        .execute(pool)
+        .await
+        .expect("seed generation history");
     }
 
     /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
@@ -3146,11 +3301,12 @@ mod tests {
 
         let host_pool = pool.clone();
         let host_readiness = tokio::spawn(async move {
-            wait_until_dry_run_ready(host_pool, CancellationToken::new(), &[0x02], 10, 1, 100).await
+            wait_until_dry_run_ready(host_pool, CancellationToken::new(), &[0x02; 32], 10, 1, 100)
+                .await
         });
         let gateway_pool = pool.clone();
         let gateway_readiness = tokio::spawn(async move {
-            wait_until_gw_dry_run_ready(gateway_pool, CancellationToken::new(), &[0x02], 10, 1)
+            wait_until_gw_dry_run_ready(gateway_pool, CancellationToken::new(), &[0x02; 32], 10, 1)
                 .await
         });
         sleep(Duration::from_millis(200)).await;
@@ -3206,6 +3362,16 @@ mod tests {
         assert!(!row.try_get::<bool, _>("host_consensus_reached").unwrap());
         assert!(!row.try_get::<bool, _>("gw_consensus_reached").unwrap());
         assert!(!row.try_get::<bool, _>("gw_dry_run_started").unwrap());
+        let (outcome, completed): (String, bool) = sqlx::query_as(
+            "SELECT outcome, completed_at IS NOT NULL
+               FROM generation_history
+              WHERE generation = '1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("generation outcome");
+        assert_eq!(outcome, "failed");
+        assert!(completed);
 
         // Second timeout is a no-op: the marker survives (no second reset).
         create_marker(&pool).await;
@@ -3360,7 +3526,7 @@ mod tests {
                 updated_at = NOW()
             "#,
         )
-        .bind(&[0x02u8][..])
+        .bind(&[0x02u8; 32][..])
         .bind(chain_id)
         .bind(host_reached)
         .bind(gw_reached)
@@ -3373,7 +3539,7 @@ mod tests {
 
     fn consensus_payload(chain_id: i64, block_height: i64) -> String {
         serde_json::json!({
-            "proposal_id": [2], "proposal_block": 10, "chain_id": chain_id,
+            "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": chain_id,
             "block_height": block_height, "block_hash": "0x00"
         })
         .to_string()
@@ -3602,7 +3768,7 @@ mod tests {
 
         // Timeout for a different window (block_height 999 != end_block 200).
         let payload =
-            serde_json::json!({ "proposal_id": [2], "proposal_block": 10, "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
+            serde_json::json!({ "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": 1_i64, "block_height": 999_i64, "block_hash": "0x00" })
                 .to_string();
         handle_unanimity_consensus_timeout(&pool, true, &payload)
             .await
@@ -3628,7 +3794,7 @@ mod tests {
         create_marker(&pool).await;
 
         let payload = serde_json::json!({
-            "proposal_id": [2],
+            "proposal_id": vec![2; 32],
             "proposal_block": 9,
             "chain_id": 1_i64,
             "block_height": 200_i64,
@@ -4149,8 +4315,8 @@ mod tests {
             .execute(&pool)
             .await
             .expect("seed computation");
-            // ciphertext digest NULL = upload still pending.
-            sqlx::query("INSERT INTO ciphertext_digest (handle, host_chain_id) VALUES ($1, 1)")
+            // Computed digests alone must not release the cutover guard.
+            sqlx::query("INSERT INTO ciphertext_digest (handle, host_chain_id, ciphertext, ciphertext128) VALUES ($1, 1, decode(repeat('01', 32), 'hex'), decode(repeat('02', 32), 'hex'))")
                 .bind(handle)
                 .execute(&pool)
                 .await
@@ -4192,8 +4358,8 @@ mod tests {
             "the deferred cutover must not have advanced the FSM"
         );
 
-        // Blue finishes the pre-window upload. The in-window NULL digest stays NULL.
-        sqlx::query("UPDATE ciphertext_digest SET ciphertext = '\\x01'::bytea WHERE handle = $1")
+        // Blue finishes the pre-window upload. The in-window upload stays pending.
+        sqlx::query("UPDATE ciphertext_digest SET s3_publication_verified_at = NOW(), s3_publication_verified_digest = ciphertext WHERE handle = $1")
             .bind(pre_window)
             .execute(&pool)
             .await
@@ -4209,7 +4375,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn transition_ignores_other_proposal() {
         let (_instance, pool) = test_pool().await;
-        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02; 32]
 
         // Stale proposal: no-op.
         transition_to_dry_run_started(&pool, &[0x99], 10)
@@ -4217,13 +4383,13 @@ mod tests {
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
 
-        transition_to_dry_run_started(&pool, &[0x02], 9)
+        transition_to_dry_run_started(&pool, &[0x02; 32], 9)
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "UpgradeActivated");
 
         // Matching proposal: advances.
-        transition_to_dry_run_started(&pool, &[0x02], 10)
+        transition_to_dry_run_started(&pool, &[0x02; 32], 10)
             .await
             .expect("transition");
         assert_eq!(gcs_state(&pool).await.0, "DryRunStarted");
@@ -4234,13 +4400,13 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn transition_rejects_a_proposal_for_another_release() {
         let (_instance, pool) = test_pool().await;
-        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02; 32]
         sqlx::query("UPDATE upgrade_state SET version = 'v9.9.9' WHERE stack_role = 'GCS'")
             .execute(&pool)
             .await
             .expect("name another release");
 
-        transition_to_dry_run_started(&pool, &[0x02], 10)
+        transition_to_dry_run_started(&pool, &[0x02; 32], 10)
             .await
             .expect("transition");
 
@@ -4265,13 +4431,13 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn transition_rejects_a_proposal_without_a_release() {
         let (_instance, pool) = test_pool().await;
-        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02; 32]
         sqlx::query("UPDATE upgrade_state SET version = NULL WHERE stack_role = 'GCS'")
             .execute(&pool)
             .await
             .expect("clear the release");
 
-        transition_to_dry_run_started(&pool, &[0x02], 10)
+        transition_to_dry_run_started(&pool, &[0x02; 32], 10)
             .await
             .expect("transition");
 
@@ -4286,7 +4452,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn gw_transition_ignores_other_proposal() {
         let (_instance, pool) = test_pool().await;
-        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02]
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // proposal_id = [0x02; 32]
         sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE WHERE stack_role = 'GCS'")
             .execute(&pool)
             .await
@@ -4311,7 +4477,7 @@ mod tests {
             "stale proposal must not release gw"
         );
 
-        transition_to_gw_dry_run_started(&pool, &[0x02], 9)
+        transition_to_gw_dry_run_started(&pool, &[0x02; 32], 9)
             .await
             .expect("gw transition");
         assert!(
@@ -4319,7 +4485,7 @@ mod tests {
             "stale attempt must not release gw"
         );
 
-        transition_to_gw_dry_run_started(&pool, &[0x02], 10)
+        transition_to_gw_dry_run_started(&pool, &[0x02; 32], 10)
             .await
             .expect("gw transition");
         assert!(gw_flag(pool.clone()).await, "matching proposal releases gw");
@@ -4355,25 +4521,25 @@ mod tests {
         .expect("insert proof");
 
         assert_eq!(
-            prune_gcs_computations_before_start(&pool, &[0x02], 9, 1, 100)
+            prune_gcs_computations_before_start(&pool, &[0x02; 32], 9, 1, 100)
                 .await
                 .expect("stale computation prune"),
             0
         );
         assert_eq!(
-            prune_gcs_verify_proofs_before_start(&pool, &[0x02], 9, 100)
+            prune_gcs_verify_proofs_before_start(&pool, &[0x02; 32], 9, 100)
                 .await
                 .expect("stale proof prune"),
             0
         );
         assert_eq!(
-            prune_gcs_computations_before_start(&pool, &[0x02], 10, 1, 100)
+            prune_gcs_computations_before_start(&pool, &[0x02; 32], 10, 1, 100)
                 .await
                 .expect("computation prune"),
             1
         );
         assert_eq!(
-            prune_gcs_verify_proofs_before_start(&pool, &[0x02], 10, 100)
+            prune_gcs_verify_proofs_before_start(&pool, &[0x02; 32], 10, 100)
                 .await
                 .expect("proof prune"),
             1
@@ -4437,7 +4603,9 @@ mod tests {
 
         let rollback_pool = pool.clone();
         let mut rollback =
-            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 10, 200).await });
+            tokio::spawn(
+                async move { rollback_dry_run(&rollback_pool, &[0x02; 32], 10, 200).await },
+            );
 
         assert!(
             timeout(Duration::from_millis(200), &mut rollback)
@@ -4485,7 +4653,7 @@ mod tests {
 
         let prune_pool = pool.clone();
         let mut prune = tokio::spawn(async move {
-            prune_gcs_computations_before_start(&prune_pool, &[0x02], 10, 1, 100).await
+            prune_gcs_computations_before_start(&prune_pool, &[0x02; 32], 10, 1, 100).await
         });
         assert!(
             timeout(Duration::from_millis(200), &mut prune)

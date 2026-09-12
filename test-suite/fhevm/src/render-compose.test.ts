@@ -12,7 +12,7 @@ import {
   loadMergedComposeDoc,
   serviceNameList,
 } from "./generate/compose";
-import { COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import { ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID, COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
   parseBlueGreenScenario,
@@ -258,6 +258,30 @@ describe("render-compose", () => {
       expect(String((doc.services["coprocessor-db-migration"]?.command as string[] | undefined)?.[0] ?? "")).toContain(
         "/initialize_db.sh",
       );
+    });
+  });
+
+  test("passes anvil publication cadence overlays to consensus-detector", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      const coprocessorEnv = [
+        `CHAIN_ID=${DEFAULT_CHAIN_ID}`,
+        `HOST_CHAIN_0_ID=${DEFAULT_CHAIN_ID}`,
+        "HOST_CHAIN_1_ID=67890",
+        "",
+      ].join("\n");
+      await writeFile(envPath("coprocessor"), coprocessorEnv);
+      await writeFile(envPath("coprocessor.1"), coprocessorEnv);
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      const command = doc.services["coprocessor-consensus-detector"]?.command ?? [];
+      expect(command).toContain(`--manifest-publication-cadence=${ANVIL_CHAIN_ID}:1`);
+      expect(command).toContain(`--manifest-publication-cadence=${DEFAULT_CHAIN_ID}:1`);
+      expect(command).toContain("--manifest-publication-cadence=67890:1");
+      const cadenceFlags = command.filter((item) => item.startsWith("--manifest-publication-cadence="));
+      expect(cadenceFlags).toEqual([...new Set(cadenceFlags)]);
     });
   });
 

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH computed AS (\n            SELECT MAX(at) AS last_at\n              FROM (\n                SELECT d.created_at AT TIME ZONE 'UTC' AS at\n                  FROM handle_producer_block producer\n                  JOIN ciphertext_digest d\n                    ON d.host_chain_id = producer.host_chain_id\n                   AND d.handle = producer.handle\n                 WHERE producer.host_chain_id = $1\n                   AND producer.producer_block_number = $2\n                   AND producer.producer_block_hash = $3\n                   AND (d.ciphertext IS NOT NULL OR d.ciphertext128 IS NOT NULL)\n                UNION ALL\n                SELECT c.completed_at AT TIME ZONE 'UTC'\n                  FROM handle_producer_block producer\n                  JOIN computations c\n                    ON c.host_chain_id = producer.host_chain_id\n                   AND c.block_number = producer.producer_block_number\n                   AND c.output_handle = producer.handle\n                 WHERE producer.host_chain_id = $1\n                   AND producer.producer_block_number = $2\n                   AND producer.producer_block_hash = $3\n                   AND c.completed_at IS NOT NULL\n              ) computed_events\n        ), inventory AS (\n            SELECT MAX(producer.created_at) AS last_at\n              FROM handle_producer_block producer\n             WHERE producer.host_chain_id = $1\n               AND producer.producer_block_number = $2\n               AND producer.producer_block_hash = $3\n        ), progress AS (\n            SELECT COALESCE(computed.last_at, inventory.last_at, state.created_at) AS last_at\n              FROM computed\n              CROSS JOIN inventory\n              LEFT JOIN block_manifest_state state\n                ON state.host_chain_id = $1\n               AND state.block_hash = $3\n               AND state.generation = $6\n        ), tip AS (\n            SELECT MAX(block_number) AS tip\n              FROM host_chain_blocks_valid\n             WHERE chain_id = $1\n               AND block_status <> 'orphaned'\n        )\n        SELECT (tip.tip IS NOT NULL\n                AND tip.tip - $2 > $4\n                AND progress.last_at IS NOT NULL\n                AND progress.last_at <= NOW() - ($5::BIGINT * INTERVAL '1 second')\n               ) AS \"uncomputed!\"\n          FROM tip\n          CROSS JOIN progress\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uncomputed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b12c2d1be96853a2e70d2e56a6eec094586cdee7945fa8458f9ea0c19a063190"
+}
