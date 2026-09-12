@@ -154,6 +154,7 @@ privkey = "privkey"       # private key
 # Rust module/variable naming conventions
 consts = "consts"         # common Rust module name for constants
 dbe = "dbe"               # variable name (DbError)
+esource = "esource"       # pingora::Error::esource() API method
 
 # External project/service names
 Hashi = "Hashi"           # HashiCorp (Hashi bridge project)
