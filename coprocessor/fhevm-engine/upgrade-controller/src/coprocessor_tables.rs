@@ -190,6 +190,45 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
+    // On-chain event / block-ingestion state written by the GCS host-listener
+    // during the dry-run. All three are written ONLY by the host-listener
+    // (tfhe_event_propagate), which the always-live blue stack also runs against
+    // the same chain, so blue re-derives the identical rows into public and the
+    // cutover revert never deletes them. Duplicated for write-isolation so green's
+    // dry-run writes stay out of blue's live rows (host_chain_consumer_blocks even
+    // increments a shared counter, which green would inflate under blue), then
+    // dropped at cutover (NOT merged) since public already holds blue's canonical
+    // rows.
+    CoprocessorTable {
+        name: "host_chain_consumer_blocks",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    // Bridge approvals (RFC 008); sibling of handle_bridged_events above.
+    CoprocessorTable {
+        name: "bridge_handle_events",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    // Delegated-user-decrypt records (reorg-aware).
+    CoprocessorTable {
+        name: "delegate_user_decrypt",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    // Auto drift-recovery signal. The gw-listener's drift detector writes a row on
+    // ciphertext drift and every service polls it to coordinate a revert + restart.
+    // Isolated so green's dry-run drift stays in gcs and cannot fire a revert across
+    // the always-live blue fleet (green services poll gcs, blue services poll
+    // public). Dropped at cutover (NOT merged): unlike the tables above blue does
+    // not re-derive these rows, but green's dry-run signals are transient and must
+    // not survive into the live queue/audit trail - a stale 'pending' revert merged
+    // into public would fire on green the instant it goes live.
+    CoprocessorTable {
+        name: "drift_revert_signal",
+        duplicated: true,
+        conflict_cols: &[],
+    },
     // ---------------------------------------------------------------------
     // Deprecated wave1 branch-context state. Nothing in the upgrade-controller
     // reads, writes or deletes these any more: they get no gcs.* duplicate, the
@@ -239,16 +278,16 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     // ---------------------------------------------------------------------
     // Ignored: no gcs.* duplicate. Shared configuration, key material, and
-    // control-plane / listener-progress state that both stacks must agree on
-    // (or that only the always-live blue stack owns). This preserves the
-    // pre-refactor behaviour — none of these were ever duplicated.
+    // control-plane state that both stacks must agree on (or that only the
+    // always-live blue stack owns). This preserves the pre-refactor behavior for
+    // these tables - none were ever duplicated.
     //
-    // NOTE: several of these ARE written by GCS-mode services (host-listener /
-    // tfhe-worker), so "ignored" means those writes land in public during the
-    // dry-run. That is intended for shared config (tenants/host_chains/keys/crs)
-    // and control-plane rows (upgrade_state/versioning), but the event-derived
-    // and poller-progress tables below deserve an isolation review — see the
-    // per-table notes.
+    // NOTE: the listener-progress, event-derived and drift-signal tables that used
+    // to sit here (host_listener_poller_state, host_chain_consumer_blocks,
+    // bridge_handle_events, delegate_user_decrypt, drift_revert_signal) have moved
+    // to the duplicated sections above. What is left is deliberately shared: config
+    // (tenants/host_chains/keys/crs), the control-plane rows
+    // (upgrade_state/versioning), and the deprecated input_blobs.
     // ---------------------------------------------------------------------
     // Control plane — the blue-green FSM's own coordination state; MUST stay
     // shared and single-copy across both stacks.
@@ -284,34 +323,8 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
-    // Listener-progress bookkeeping. Analogous to gw_listener_last_block and
-    // host_listener_poller_state (both now duplicated-and-merged); left
-    // un-duplicated to preserve current behavior, but a candidate for the same
-    // isolation treatment (a green write could rewind blue's cursor).
-    CoprocessorTable {
-        name: "host_chain_consumer_blocks",
-        duplicated: false,
-        conflict_cols: &[],
-    },
-    // Event-derived tables written by GCS-mode services. bridge_handle_events is
-    // the sibling of handle_bridged_events (which IS duplicated-for-isolation);
-    // these are un-duplicated only to preserve current behaviour and are prime
-    // candidates for the same isolation treatment.
-    CoprocessorTable {
-        name: "bridge_handle_events",
-        duplicated: false,
-        conflict_cols: &[],
-    },
-    CoprocessorTable {
-        name: "delegate_user_decrypt",
-        duplicated: false,
-        conflict_cols: &[],
-    },
-    CoprocessorTable {
-        name: "drift_revert_signal",
-        duplicated: false,
-        conflict_cols: &[],
-    },
+    // Deprecated: only test/migration code writes input_blobs, no live service
+    // does, so it needs no gcs.* duplicate. Remove together with the table.
     CoprocessorTable {
         name: "input_blobs",
         duplicated: false,
