@@ -1,8 +1,8 @@
 use alloy::network::TxSigner;
 use alloy::primitives::FixedBytes;
 use alloy::primitives::U256;
-use alloy::providers::{Provider, WsConnect};
-use alloy::{providers::ProviderBuilder, sol};
+use alloy::providers::Provider;
+use alloy::sol;
 use common::SignerType;
 use common::{is_coprocessor_config_error, CiphertextCommits, InputVerification, TestEnvironment};
 use futures_util::StreamExt;
@@ -14,9 +14,7 @@ use sqlx::{Postgres, QueryBuilder};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
-use transaction_sender::{
-    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
-};
+use transaction_sender::{ConfigSettings, NonceManagedProvider, TransactionSender};
 mod common;
 
 sol! {
@@ -35,16 +33,9 @@ sol! {
 #[serial(db)]
 async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -153,16 +144,9 @@ async fn verify_proof_response_empty_handles_success(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -274,16 +258,9 @@ async fn verify_proof_response_concurrent_success(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -393,16 +370,9 @@ async fn verify_proof_response_concurrent_success(
 #[serial(db)]
 async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -504,16 +474,9 @@ async fn verify_proof_response_reversal_already_verified(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = true;
@@ -608,16 +571,9 @@ async fn verify_proof_response_reversal_not_requested(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -712,16 +668,9 @@ async fn reject_proof_response_reversal_not_requested(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -815,16 +764,9 @@ async fn reject_proof_response_reversal_already_rejected(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -917,16 +859,9 @@ async fn verify_proof_response_other_reversal(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1018,16 +953,9 @@ async fn reject_proof_response_other_reversal(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1115,16 +1043,9 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1215,16 +1136,9 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let env = TestEnvironment::new(signer_type).await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1317,16 +1231,9 @@ async fn verify_proof_max_retries_remove_entry(
     let mut env = TestEnvironment::new(signer_type).await?;
     env.conf.verify_proof_remove_after_max_retries = true;
     env.conf.verify_proof_resp_max_retries = 2;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1409,16 +1316,9 @@ async fn verify_proof_max_retries_do_not_remove_entry(
     let mut env = TestEnvironment::new(signer_type).await?;
     env.conf.verify_proof_remove_after_max_retries = false;
     env.conf.verify_proof_resp_max_retries = 2;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1520,16 +1420,9 @@ async fn stop_retrying_verify_proof_on_gw_config_error(
     let env =
         TestEnvironment::new_with_config(signer_type, conf.clone(), force_per_test_localstack)
             .await?;
-    let provider_deploy = ProviderBuilder::new()
-        .wallet(env.wallet.clone())
-        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-        .await?;
+    let provider_deploy = env.http_provider()?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        env.http_sender_inner()?,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1634,5 +1527,202 @@ async fn stop_retrying_verify_proof_on_gw_config_error(
     env.cancel_token.cancel();
     run_handle.await??;
 
+    Ok(())
+}
+
+/// A refused HTTP connection must not consume the proof retry budget. Observe
+/// more failures than the budget permits so an idle sender cannot pass.
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn gateway_outage_preserves_verify_proof_retries(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        verify_proof_resp_max_retries: 3,
+        verify_proof_remove_after_max_retries: true,
+        error_sleep_initial_secs: 1,
+        error_sleep_max_secs: 4,
+        // Allow the existing maximum 4-second operation backoff to finish.
+        graceful_shutdown_timeout: Duration::from_secs(5),
+        ..Default::default()
+    };
+    let mut env = TestEnvironment::new_with_config(signer_type, conf.clone(), false).await?;
+    let provider_deploy = env.http_provider()?;
+    let provider = NonceManagedProvider::new(
+        env.http_sender_inner()?,
+        Some(env.wallet.default_signer().address()),
+    );
+    let input_verification =
+        InputVerification::deploy(&provider_deploy, false, false, false, false).await?;
+    let ciphertext_commits = CiphertextCommits::deploy(&provider_deploy, false).await?;
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        *input_verification.address(),
+        *ciphertext_commits.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let failure_count = || {
+        prometheus::gather()
+            .iter()
+            .filter(|family| family.name() == "coprocessor_txn_sender_verify_proof_fail_counter")
+            .flat_map(|family| family.get_metric())
+            .filter_map(|metric| metric.get_counter().as_ref())
+            .map(|counter| counter.value() as u64)
+            .sum::<u64>()
+    };
+    let initial_failures = failure_count();
+    let proof_id: u32 = random();
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    // Take the Gateway away, then hand the sender a proof it cannot send.
+    env.drop_anvil();
+
+    sqlx::query!(
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
+        proof_id as i64,
+        42,
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
+        &[1u8; 64],
+        env.conf.verify_proof_resp_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let retry_count: Option<i32> =
+            sqlx::query_scalar("SELECT retry_count FROM verify_proofs WHERE zk_proof_id = $1")
+                .bind(proof_id as i64)
+                .fetch_optional(&env.db_pool)
+                .await?;
+        assert_eq!(retry_count, Some(0), "outage must preserve eligibility");
+        assert!(
+            !run_handle.is_finished(),
+            "HTTP retries should stay in the operation loop"
+        );
+        if failure_count() - initial_failures > conf.verify_proof_resp_max_retries as u64 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "sender did not exercise enough failures"
+        );
+        sleep(Duration::from_millis(100)).await;
+    }
+
+    env.cancel_token.cancel();
+    tokio::time::timeout(Duration::from_secs(10), run_handle).await???;
+    Ok(())
+}
+
+/// The same outage over WebSocket, for comparison, on this same code.
+///
+/// `BackendGone` reaches `TransactionSender::run`, which cancels every
+/// operation and returns the error. The proof keeps its remaining budget and
+/// survives for the restart. This is the protection the HTTP move removes.
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[tokio::test]
+#[serial(db)]
+async fn gateway_outage_over_websocket_stops_the_sender_instead(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    use alloy::providers::WsConnect;
+
+    let conf = ConfigSettings {
+        verify_proof_resp_max_retries: 6,
+        verify_proof_remove_after_max_retries: true,
+        error_sleep_initial_secs: 1,
+        error_sleep_max_secs: 4,
+        graceful_shutdown_timeout: Duration::from_secs(2),
+        ..Default::default()
+    };
+    let mut env = TestEnvironment::new_with_config(signer_type, conf.clone(), false).await?;
+    let provider_deploy = env.http_provider()?;
+    let ws = alloy::providers::ProviderBuilder::default()
+        .filler(transaction_sender::FillersWithoutNonceManagement::default())
+        .wallet(env.wallet.clone())
+        .connect_ws(
+            WsConnect::new(env.ws_endpoint_url())
+                .with_max_retries(1)
+                .with_retry_interval(Duration::from_millis(200)),
+        )
+        .await?;
+    let provider = NonceManagedProvider::new(ws, Some(env.wallet.default_signer().address()));
+    let input_verification =
+        InputVerification::deploy(&provider_deploy, false, false, false, false).await?;
+    let ciphertext_commits = CiphertextCommits::deploy(&provider_deploy, false).await?;
+    let txn_sender = TransactionSender::new(
+        env.db_pool.clone(),
+        *input_verification.address(),
+        *ciphertext_commits.address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let proof_id: u32 = random();
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+    env.drop_anvil();
+
+    sqlx::query!(
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
+        proof_id as i64,
+        42,
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
+        &[1u8; 64],
+        env.conf.verify_proof_resp_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    // The sender should give up on the endpoint rather than on the proof.
+    let stopped = tokio::time::timeout(Duration::from_secs(60), run_handle).await;
+    let outcome = stopped.expect("the sender must stop on BackendGone over WebSocket")?;
+    let err = outcome.expect_err("stopping is reported as an error");
+    assert!(
+        transaction_sender::is_backend_gone(&err),
+        "expected BackendGone, got: {err}"
+    );
+
+    let rows = sqlx::query!(
+        "SELECT retry_count, last_error
+             FROM verify_proofs
+             WHERE zk_proof_id = $1",
+        proof_id as i64,
+    )
+    .fetch_all(&env.db_pool)
+    .await?;
+    let retry_count = rows.first().map(|r| r.retry_count);
+    println!(
+        "verify_proof under a dead Gateway over WSS: row present={}, retry_count={:?}",
+        !rows.is_empty(),
+        retry_count
+    );
+    assert!(
+        !rows.is_empty(),
+        "the proof must survive the outage for the restart to retry it"
+    );
     Ok(())
 }
