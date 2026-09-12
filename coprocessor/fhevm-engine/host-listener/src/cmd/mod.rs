@@ -1158,11 +1158,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
     };
 
-    let mut db = Database::new_with_gcs_mode(
+    let stack_mode = StackMode::new(gcs_mode);
+    let mut db = Database::new_with_stack_mode(
         &args.database_url,
         chain_id,
         args.dependence_cache_size,
-        gcs_mode,
+        stack_mode.clone(),
     )
     .await?;
 
@@ -1179,7 +1180,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the ingest loop below into a no-op (no DB writes).
-    let stack_mode = StackMode::new(gcs_mode);
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();

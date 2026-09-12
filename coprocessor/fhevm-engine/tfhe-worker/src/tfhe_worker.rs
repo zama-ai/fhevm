@@ -11,7 +11,9 @@ use fhevm_engine_common::gcs_activation::{
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
-use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
+};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -2205,6 +2207,30 @@ async fn run_tfhe_worker_inner(
 
     info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = gcs_mode, "Starting tfhe-worker service");
 
+    let stack_mode = StackMode::new(gcs_mode);
+    // The listener holds one pooled connection; the reconcile needs a second. The
+    // refresh handle must outlive the spawned task, so it stays in this scope.
+    let (listener_pool, _listener_refresh) = connect_pool_with_options(
+        &db_url,
+        sqlx::postgres::PgPoolOptions::new().max_connections(2),
+        None,
+    )
+    .await?;
+    {
+        let listener_mode = stack_mode.clone();
+        tokio::spawn(async move {
+            if let Err(err) = run_stack_version_listener(
+                listener_pool,
+                listener_mode,
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            {
+                error!(target: "tfhe_worker", error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     // Shared GCS activation state. `GCS_NOT_ACTIVATED` means the worker is
     // paused (BCS mode keeps this value for the lifetime of the process).
     let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
@@ -2235,7 +2261,7 @@ async fn run_tfhe_worker_inner(
         if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
             worker_id,
-            gcs_mode,
+            stack_mode.clone(),
             start_block_state.clone(),
             health_check.clone(),
             &mut readiness,
@@ -2257,7 +2283,7 @@ async fn run_tfhe_worker_inner(
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
-    gcs_mode: bool,
+    stack_mode: Arc<StackMode>,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
     readiness: &mut Readiness,
@@ -2268,7 +2294,7 @@ async fn tfhe_worker_cycle(
     // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
     // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
     // still resolve from `public` via fallback.
-    if gcs_mode {
+    if stack_mode.gcs_mode() {
         fhevm_engine_common::versioning::wait_for_gcs_schema(
             db_url.as_str(),
             fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
@@ -2280,7 +2306,7 @@ async fn tfhe_worker_cycle(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
         None,
-        apply_gcs_mode_search_path(gcs_mode),
+        apply_gcs_mode_search_path(stack_mode.gcs_mode()),
     )
     .await?;
 
@@ -2406,7 +2432,7 @@ async fn tfhe_worker_cycle(
         // writes to `gcs.*` automatically — we no longer need the actual
         // start_block value inside the cycle. In BCS mode this branch is a
         // no-op.
-        if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+        if stack_mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
             info!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
             tokio::time::sleep(GCS_GATE_RECHECK).await;
             continue;
@@ -2463,7 +2489,7 @@ async fn tfhe_worker_cycle(
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = match fhevm_engine_common::versioning::begin_write_guarded_conn(
             &mut conn,
-            gcs_mode,
+            stack_mode.gcs_mode(),
             GcsRollbackPolicy::Skip,
         )
         .instrument(txn_span)
@@ -2498,7 +2524,7 @@ async fn tfhe_worker_cycle(
             &mut dcid_mngr,
             &mut no_progress_cycles,
             &mut deferred_cooldown,
-            gcs_mode,
+            stack_mode.gcs_mode(),
         )
         .instrument(loop_span.clone())
         .await?;
@@ -2610,7 +2636,7 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &dcid_mngr,
-            gcs_mode,
+            stack_mode.gcs_mode(),
             gpu_reservation_timeout,
             args.gpu_streams_per_device,
         )

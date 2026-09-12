@@ -13,7 +13,9 @@ use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::gcs_activation::{EVENT_DRY_RUN_ROLLED_BACK, WORK_AVAILABLE_CHANNEL};
 use fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE;
 use fhevm_engine_common::utils::DatabaseURL;
-use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{
+    begin_write_guarded, run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
+};
 use serde::Deserialize;
 use sqlx::{postgres::PgListener, Pool, Postgres, Transaction};
 use thiserror::Error;
@@ -2605,6 +2607,20 @@ pub async fn run(
         create_gcs_schema(&pool).await?;
     }
 
+    let stack_mode = StackMode::new(config.gcs_mode);
+    {
+        let listener_pool = pool.clone();
+        let listener_mode = stack_mode.clone();
+        let listener_token = cancel.child_token();
+        tokio::spawn(async move {
+            if let Err(err) =
+                run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+            {
+                error!(error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     let mut listener = PgListener::connect_with(&pool).await?;
     let channels = [
         UPGRADE_ACTIVATED_CHANNEL,
@@ -2617,7 +2633,7 @@ pub async fn run(
     let readiness = Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT));
 
     // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
-    if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
+    if let Err(e) = reconcile(&pool, &cancel, &readiness, stack_mode.gcs_mode()).await {
         error!(error = %e, "boot reconcile failed");
     }
 
@@ -2640,16 +2656,16 @@ pub async fn run(
 
                         let result = match channel {
                             UPGRADE_ACTIVATED_CHANNEL => {
-                                handle_upgrade_activated(&pool, &cancel, &readiness, config.gcs_mode, payload).await
+                                handle_upgrade_activated(&pool, &cancel, &readiness, stack_mode.gcs_mode(), payload).await
                             }
                             UNANIMITY_CONSENSUS_CHANNEL => {
                                 // Emitted by consensus-detector when every operator publishes
                                 // the same state commitment at the upgrade's end_block.
-                                handle_unanimity_consensus(&pool, &cancel, config.gcs_mode, payload).await
+                                handle_unanimity_consensus(&pool, &cancel, stack_mode.gcs_mode(), payload).await
                             }
                             UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL => {
                                 // Window never reached unanimity — roll back the dry-run.
-                                handle_unanimity_consensus_timeout(&pool, config.gcs_mode, payload)
+                                handle_unanimity_consensus_timeout(&pool, stack_mode.gcs_mode(), payload)
                                     .await
                             }
                             other => {
@@ -2670,7 +2686,7 @@ pub async fn run(
             }
             _ = poll.tick() => {
                 // Fallback for a missed NOTIFY: re-derive the next step from the row.
-                if let Err(e) = reconcile(&pool, &cancel, &readiness, config.gcs_mode).await {
+                if let Err(e) = reconcile(&pool, &cancel, &readiness, stack_mode.gcs_mode()).await {
                     error!(error = %e, "poll reconcile failed");
                 }
             }

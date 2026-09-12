@@ -10,7 +10,9 @@ use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
-use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
+};
 use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
@@ -58,6 +60,7 @@ pub(crate) struct Ciphertext {
 pub struct ZkProofService {
     pool_mngr: PostgresPoolManager,
     conf: Config,
+    stack_mode: Arc<StackMode>,
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
@@ -130,6 +133,20 @@ impl ZkProofService {
 
         let gw_start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
 
+        let stack_mode = StackMode::new(conf.gcs_mode);
+        {
+            let listener_pool = pool_mngr.pool();
+            let listener_mode = stack_mode.clone();
+            let listener_token = token.child_token();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+                {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
+        }
+
         if conf.gcs_mode {
             // Long-lived task that mirrors `upgrade_state.gw_start_block`
             // (stack_role='GCS') into the atomic once `gw_dry_run_started` is
@@ -156,6 +173,7 @@ impl ZkProofService {
         Some(ZkProofService {
             pool_mngr,
             conf,
+            stack_mode,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
             gw_start_block_state,
         })
@@ -169,6 +187,7 @@ impl ZkProofService {
         execute_verify_proofs_loop(
             self.pool_mngr.clone(),
             self.conf.clone(),
+            self.stack_mode.clone(),
             self.last_active_at.clone(),
             self.gw_start_block_state.clone(),
         )
@@ -181,6 +200,7 @@ impl ZkProofService {
 pub async fn execute_verify_proofs_loop(
     pool_mngr: PostgresPoolManager,
     conf: Config,
+    stack_mode: Arc<StackMode>,
     last_active_at: Arc<RwLock<SystemTime>>,
     gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
@@ -205,6 +225,7 @@ pub async fn execute_verify_proofs_loop(
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
         let gw_start_block_state = gw_start_block_state.clone();
+        let stack_mode = stack_mode.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -213,6 +234,7 @@ pub async fn execute_verify_proofs_loop(
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
             let gw_start_block_state = gw_start_block_state.clone();
+            let stack_mode = stack_mode.clone();
             async move {
                 execute_worker(
                     conf,
@@ -222,6 +244,7 @@ pub async fn execute_verify_proofs_loop(
                     host_chain_cache,
                     last_active_at,
                     gw_start_block_state,
+                    stack_mode,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -253,6 +276,7 @@ pub async fn execute_verify_proofs_loop(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
@@ -261,6 +285,7 @@ async fn execute_worker(
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
     gw_start_block_state: Arc<AtomicI64>,
+    stack_mode: Arc<StackMode>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -304,7 +329,8 @@ async fn execute_worker(
         // proofs would either re-randomize pre-switchover Gateway blocks or
         // diverge across operators — exactly what the gw_start_block alignment
         // prevents.
-        if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+        if stack_mode.gcs_mode() && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED
+        {
             info!("GCS not yet activated; sleeping before re-check");
             tokio::select! {
                 _ = token.cancelled() => return Ok(()),
@@ -320,6 +346,7 @@ async fn execute_worker(
             host_chain_cache.as_ref(),
             &known_chain_ids,
             &conf,
+            stack_mode.gcs_mode(),
         )
         .await?;
         let count = get_remaining_tasks(&pool, &known_chain_ids).await?;
@@ -359,6 +386,7 @@ async fn execute_verify_proof_routine(
     host_chain_cache: &HostChainsCache,
     known_chain_ids: &[i64],
     conf: &Config,
+    gcs_mode: bool,
 ) -> Result<(), ExecutionError> {
     // Pre-filter to known chains: workers only fetch rows whose chain_id is
     // registered in HostChainsCache. If a proof arrives before its chain row
@@ -380,7 +408,7 @@ async fn execute_verify_proof_routine(
     // See versioning::begin_write_guarded.
     let mut txn = match fhevm_engine_common::versioning::begin_write_guarded(
         pool,
-        conf.gcs_mode,
+        gcs_mode,
         GcsRollbackPolicy::Skip,
     )
     .await?
