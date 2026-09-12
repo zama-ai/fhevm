@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # RFC-021 cutover kickoff for preview-env. ACL owner (#9) sends one
-# ProtocolConfig.proposeCoprocessorUpgrade, then asserts each party's
-# upgrade_state / versioning rows. BCS and GCS binaries already run the FSM.
+# ProtocolConfig.proposeCoprocessorUpgrade with a window per host chain, then asserts each
+# party's upgrade_state / versioning rows. BCS and GCS binaries already run the FSM.
+# Env: NAMESPACE, NB_COPROCESSOR, HOST_HTTP, GATEWAY_HTTP, HOST_CHAIN_ID;
+#      with DEPLOY_POLYGON also POLYGON_HTTP, POLYGON_CHAIN_ID, HOST_BLOCK_TIME, POLYGON_BLOCK_TIME.
 set -euo pipefail
 
 : "${NAMESPACE:?}"
@@ -68,6 +70,18 @@ start=$((host_block + WINDOW_START_OFFSET))
 end=$((host_block + WINDOW_END_OFFSET))
 gw_start=$((gw_block + GW_START_OFFSET))
 windows="[(${HOST_CHAIN_ID},${start},${end})]"
+expected_chains=1
+# Second host chain: same wall-clock window, so scale the block offsets by the block-time ratio (Sepolia 12s vs Amoy 2s).
+if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
+  : "${POLYGON_HTTP:?}" "${POLYGON_CHAIN_ID:?}"
+  ratio_num="${HOST_BLOCK_TIME:-1}"
+  ratio_den="${POLYGON_BLOCK_TIME:-1}"
+  polygon_block=$(rpc_block "${POLYGON_HTTP}")
+  polygon_start=$((polygon_block + WINDOW_START_OFFSET * ratio_num / ratio_den))
+  polygon_end=$((polygon_block + WINDOW_END_OFFSET * ratio_num / ratio_den))
+  windows="[(${HOST_CHAIN_ID},${start},${end}),(${POLYGON_CHAIN_ID},${polygon_start},${polygon_end})]"
+  expected_chains=2
+fi
 
 job="preview-propose-upgrade"
 cleanup() {
@@ -86,6 +100,10 @@ if [[ -n "${GITHUB_ENV:-}" ]]; then
     echo "UPGRADE_START_BLOCK=${start}"
     echo "UPGRADE_END_BLOCK=${end}"
     echo "UPGRADE_GW_START=${gw_start}"
+    if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
+      echo "UPGRADE_POLYGON_START_BLOCK=${polygon_start}"
+      echo "UPGRADE_POLYGON_END_BLOCK=${polygon_end}"
+    fi
   } >> "${GITHUB_ENV}"
 fi
 
@@ -154,17 +172,21 @@ psql_party() {
 if [[ "${SKIP_PROPOSE}" != "true" || "${ASSERT_CUTOVER}" != "true" ]]; then
 deadline=$((SECONDS + TIMEOUT_SECS))
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  echo "Waiting for party ${i} GCS DryRunStarted..."
+  echo "Waiting for party ${i} GCS DryRunStarted on ${expected_chains} host chain(s)..."
   while true; do
+    # One GCS row per host chain; every one must be past activation.
     state=$(psql_party "${i}" \
-      "SELECT COALESCE(string_agg(state, ','), '') FROM upgrade_state WHERE stack_role='GCS';" \
+      "SELECT COALESCE(string_agg(host_chain_id || ':' || state, ',' ORDER BY host_chain_id), '') FROM upgrade_state WHERE stack_role='GCS';" \
       || true)
-    if [[ "${state}" == *"DryRunStarted"* ]]; then
+    ready=$(psql_party "${i}" \
+      "SELECT count(*) FROM upgrade_state WHERE stack_role='GCS' AND state IN ('DryRunStarted','UpgradeAuthorized','LIVE');" \
+      || echo 0)
+    if [[ "${ready}" -ge "${expected_chains}" ]]; then
       echo "party ${i}: ${state}"
       break
     fi
     if (( SECONDS >= deadline )); then
-      echo "::error::party ${i} did not reach DryRunStarted (last='${state}')"
+      echo "::error::party ${i} did not reach DryRunStarted on all ${expected_chains} chain(s) (last='${state}')"
       exit 1
     fi
     sleep 5
@@ -188,7 +210,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     fi
     if (( SECONDS >= deadline )); then
       echo "::error::party ${i} versioning='${version}', expected ${LIVE_VERSION} (major.minor)"
-      psql_party "${i}" "SELECT stack_role, state, status, version FROM upgrade_state;" || true
+      psql_party "${i}" "SELECT stack_role, host_chain_id, state, status, version FROM upgrade_state;" || true
       exit 1
     fi
     sleep 5
