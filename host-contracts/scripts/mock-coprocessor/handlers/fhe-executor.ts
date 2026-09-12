@@ -216,7 +216,7 @@ export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Prom
       resultType = resultTypeFromHandle(handle);
       clearLHS = await lookup(db, event.args[1]);
       const rhs = event.args[3] === '0x01' ? BigInt(event.args[2]) : await lookup(db, event.args[2]);
-      clearText = modN(clearLHS << (rhs % NUM_BITS[resultType]), resultType);
+      clearText = rhs >= NUM_BITS[resultType] ? 0n : modN(clearLHS << rhs, resultType);
       await db.insertCiphertext(handle, clearText);
       return 'inserted';
     }
@@ -226,7 +226,7 @@ export async function applyExecutorEvent(event: ExecutorEvent, db: MockDb): Prom
       resultType = resultTypeFromHandle(handle);
       clearLHS = await lookup(db, event.args[1]);
       const rhs = event.args[3] === '0x01' ? BigInt(event.args[2]) : await lookup(db, event.args[2]);
-      clearText = modN(clearLHS >> (rhs % NUM_BITS[resultType]), resultType);
+      clearText = rhs >= NUM_BITS[resultType] ? 0n : modN(clearLHS >> rhs, resultType);
       await db.insertCiphertext(handle, clearText);
       return 'inserted';
     }

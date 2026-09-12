@@ -128,9 +128,10 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
     limit: 'bits',
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
       // Perform a left shift operation by manipulating the bit positions of the binary representation.
+      if (rhsNumber >= BigInt(lhs)) return 0n;
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
-        const newIndex = Number(BigInt(index) + (rhsNumber % BigInt(lhs)));
+        const newIndex = Number(BigInt(index) + rhsNumber);
         return newIndex >= bits.length ? '0' : bits[newIndex];
       });
       return BigInt(`0b${r.join('')}`);
@@ -139,9 +140,10 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   shr: {
     limit: 'bits',
     evalTest: (lhsNumber, rhsNumber, lhs, _rhs) => {
+      if (rhsNumber >= BigInt(lhs)) return 0n;
       const bits = `${new Array(256).fill('0').join('')}${lhsNumber.toString(2)}`.slice(-lhs).split('');
       const r = bits.map((_, index) => {
-        const newIndex = Number(BigInt(index) - (rhsNumber % BigInt(lhs)));
+        const newIndex = Number(BigInt(index) - rhsNumber);
         return newIndex < 0 ? '0' : bits[newIndex];
       });
       return BigInt(`0b${r.join('')}`);
