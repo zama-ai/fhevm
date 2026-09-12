@@ -138,6 +138,19 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &["dummy_id"],
     },
+    // One row per host chain (chain_id PK). Duplicated so the GCS host-listener's
+    // poller cursor is written into gcs during the dry-run instead of the shared
+    // public row: without isolation, the lagging green poller and the always-live
+    // blue poller write the same public row with a blind overwrite (no GREATEST),
+    // so green can rewind blue's live cursor and make blue re-poll already-consumed
+    // blocks. Merged GCS-wins at cutover (like gw_listener_last_block): cutover
+    // deletes blue's in-window rows, so the live stack must resume from green's
+    // cursor, not blue's higher one, or it would skip the deleted blocks.
+    CoprocessorTable {
+        name: "host_listener_poller_state",
+        duplicated: true,
+        conflict_cols: &["chain_id"],
+    },
     // ---------------------------------------------------------------------
     // Duplicated purely for write-isolation, NOT merged: the always-live blue
     // stack re-derives the canonical rows into public deterministically, but
@@ -271,14 +284,10 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
-    // Listener-progress bookkeeping. Analogous to gw_listener_last_block (which
-    // IS duplicated); left un-duplicated to preserve current behaviour, but a
-    // candidate for isolation review (a green write could rewind blue's cursor).
-    CoprocessorTable {
-        name: "host_listener_poller_state",
-        duplicated: false,
-        conflict_cols: &[],
-    },
+    // Listener-progress bookkeeping. Analogous to gw_listener_last_block and
+    // host_listener_poller_state (both now duplicated-and-merged); left
+    // un-duplicated to preserve current behavior, but a candidate for the same
+    // isolation treatment (a green write could rewind blue's cursor).
     CoprocessorTable {
         name: "host_chain_consumer_blocks",
         duplicated: false,
