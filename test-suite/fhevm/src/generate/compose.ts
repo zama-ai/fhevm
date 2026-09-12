@@ -695,6 +695,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           bcsMigration.container_name = bcsMigrationName;
           bcsMigration.image = rewriteImageTag(bcsMigration.image, instance.source.tag);
           delete bcsMigration.build;
+          // Only the pinned release may create the database; the HEAD migration must find it.
+          bcsMigration.environment = { ...normalizeEnvironment(bcsMigration.environment), ALLOW_DB_BOOTSTRAP: "true" };
+          adjusted.environment = { ...normalizeEnvironment(adjusted.environment), ALLOW_DB_BOOTSTRAP: "false" };
           if (instance.index > 0 && bcsMigration.depends_on && typeof bcsMigration.depends_on === "object") {
             bcsMigration.depends_on = rewriteCoprocessorDependsOn(
               bcsMigration.depends_on as Record<string, unknown>,

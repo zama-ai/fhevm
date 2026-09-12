@@ -53,6 +53,8 @@ spec:
         command: ["/initialize_db.sh"]
         {{- end }}
         env:
+          - name: ALLOW_DB_BOOTSTRAP
+            value: {{ if .Values.dbMigration.allowBootstrap }}"true"{{ else }}"false"{{ end }}
           {{- with .Values.commonConfig.databaseUser }}
           - name: DATABASE_USER
             {{- if .value }}
