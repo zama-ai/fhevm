@@ -102,6 +102,9 @@ const rustImageVersion = (toolchainRepoPath: string): string => {
   if (!match) {
     throw new Error(`Could not read Rust toolchain channel from ${toolchainRepoPath}`);
   }
+  if (match[1] === "1.97.1") {
+    return "1.97.0";
+  }
   return match[1];
 };
 
@@ -112,6 +115,7 @@ const rustImageVersion = (toolchainRepoPath: string): string => {
 const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engine/rust-toolchain.toml");
 const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
 const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
+const LISTENER_RUST_IMAGE_VERSION = rustImageVersion("listener/rust-toolchain.toml");
 
 /**
  * Local connector images expose this revision from their health endpoint. It
@@ -193,7 +197,9 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
   },
   "listener-core": {
-    "listener-publisher-for-anvil": buildSpec("../../..", "listener/Dockerfile"),
+    "listener-publisher-for-anvil": buildSpec("../../..", "listener/Dockerfile", {
+      args: { RUST_IMAGE_VERSION: LISTENER_RUST_IMAGE_VERSION },
+    }),
   },
   relayer: {
     "relayer-db-migration": buildSpec("../../..", "relayer/docker/relayer-migrate/Dockerfile", {

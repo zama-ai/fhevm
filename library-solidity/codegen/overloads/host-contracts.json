@@ -2525,15 +2525,15 @@
     }
   ],
   "shl_euint8_euint8": [
-    { "inputs": ["137", "9"], "output": "18" },
-    { "inputs": ["5", "9"], "output": "10" },
-    { "inputs": ["9", "9"], "output": "18" },
+    { "inputs": ["137", "9"], "output": "0" },
+    { "inputs": ["5", "9"], "output": "0" },
+    { "inputs": ["9", "9"], "output": "0" },
     { "inputs": ["9", "5"], "output": "32" }
   ],
   "shl_euint8_uint8": [
-    { "inputs": ["137", "9"], "output": "18" },
-    { "inputs": ["5", "9"], "output": "10" },
-    { "inputs": ["9", "9"], "output": "18" },
+    { "inputs": ["137", "9"], "output": "0" },
+    { "inputs": ["5", "9"], "output": "0" },
+    { "inputs": ["9", "9"], "output": "0" },
     { "inputs": ["9", "5"], "output": "32" }
   ],
   "shl_euint16_euint8": [
@@ -2609,15 +2609,15 @@
     { "inputs": ["11", "7"], "output": "1408" }
   ],
   "shr_euint8_euint8": [
-    { "inputs": ["40", "8"], "output": "40" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
+    { "inputs": ["40", "8"], "output": "0" },
+    { "inputs": ["4", "8"], "output": "0" },
+    { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "shr_euint8_uint8": [
-    { "inputs": ["40", "8"], "output": "40" },
-    { "inputs": ["4", "8"], "output": "4" },
-    { "inputs": ["8", "8"], "output": "8" },
+    { "inputs": ["40", "8"], "output": "0" },
+    { "inputs": ["4", "8"], "output": "0" },
+    { "inputs": ["8", "8"], "output": "0" },
     { "inputs": ["8", "4"], "output": "0" }
   ],
   "shr_euint16_euint8": [

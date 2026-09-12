@@ -342,35 +342,27 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       insertSQL(handle, clearText);
       break;
 
-    case 'FheShl':
+    case 'FheShl': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) << (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      } else {
-        clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) << (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      }
+      const bits = NumBits[resultType as keyof typeof NumBits];
+      const amount = event.args[3] === '0x01' ? BigInt(event.args[2]) : BigInt(await getClearText(event.args[2]));
+      clearText = amount >= bits ? 0n : (BigInt(clearLHS) << amount) % 2n ** bits;
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheShr':
+    case 'FheShr': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
-      if (event.args[3] === '0x01') {
-        clearText = BigInt(clearLHS) >> (BigInt(event.args[2]) % NumBits[resultType as keyof typeof NumBits]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      } else {
-        clearRHS = await getClearText(event.args[2]);
-        clearText = BigInt(clearLHS) >> (BigInt(clearRHS) % NumBits[resultType as keyof typeof NumBits]);
-        clearText = clearText % 2n ** NumBits[resultType as keyof typeof NumBits];
-      }
+      const bits = NumBits[resultType as keyof typeof NumBits];
+      const amount = event.args[3] === '0x01' ? BigInt(event.args[2]) : BigInt(await getClearText(event.args[2]));
+      clearText = amount >= bits ? 0n : (BigInt(clearLHS) >> amount) % 2n ** bits;
       insertSQL(handle, clearText);
       break;
+    }
 
     case 'FheRotl':
       handle = ethers.toBeHex(event.args[4], 32);

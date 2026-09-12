@@ -51,6 +51,7 @@ fn serialize_server_key_without_ns(server_key: tfhe::ServerKey) -> anyhow::Resul
         noise_squashing_compression_key,
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     ) = server_key.into_raw_parts();
 
@@ -73,6 +74,7 @@ fn serialize_server_key_without_ns(server_key: tfhe::ServerKey) -> anyhow::Resul
         None,
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     )))
 }
@@ -92,7 +94,7 @@ async fn prepare_xof_fixture_for_db(
     let (pks, sks, sns_pk) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         let keyset: tfhe::xof_key_set::CompressedXofKeySet = safe_deserialize_key(&keyset_bytes)
             .map_err(|err| anyhow::anyhow!("deserialize CompressedXofKeySet: {err}"))?;
-        let (public_key, server_key) = keyset.decompress()?.into_raw_parts();
+        let (public_key, server_key) = keyset.decompress().into_raw_parts();
         let pks = safe_serialize_key(&public_key);
         let sns_pk = if with_sns_pk {
             Some(safe_serialize_key(&server_key))

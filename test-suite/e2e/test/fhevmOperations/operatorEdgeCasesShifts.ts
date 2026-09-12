@@ -26,12 +26,21 @@ describe('FHEVM manual operations - shift and rotate edge cases', function () {
         await tx.wait();
         const values = await decryptBatch(this.instance, this.edge);
         const expected = [
-          expectedShl(value, amount, bits),
-          expectedShr(value, amount, bits),
-          expectedRotl(value, amount, bits),
-          expectedRotr(value, amount, bits),
-        ];
-        assert.deepEqual(values, [...expected, ...expected]);
+          ['shl', expectedShl(value, amount, bits)],
+          ['shr', expectedShr(value, amount, bits)],
+          ['rotl', expectedRotl(value, amount, bits)],
+          ['rotr', expectedRotr(value, amount, bits)],
+        ] as const;
+        // Report per-operator
+        const mismatches = expected.flatMap(([op, want], i) =>
+          [
+            { rhs: 'scalar', got: values[i] },
+            { rhs: 'encrypted', got: values[i + expected.length] },
+          ]
+            .filter(({ got }) => got !== want)
+            .map(({ rhs, got }) => `${op}(euint${bits}, ${amount}) ${rhs} rhs: got ${got}, want ${want}`),
+        );
+        assert.deepEqual(mismatches, []);
       });
     });
   });

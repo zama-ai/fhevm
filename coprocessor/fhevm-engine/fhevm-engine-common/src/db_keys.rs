@@ -287,14 +287,7 @@ impl DbKeyCache {
                             "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
                         )
                     })?;
-                let (_xof_pks, server_key) = kxs
-                    .decompress()
-                    .map_err(|err| {
-                        anyhow::anyhow!(
-                            "failed to decompress CompressedXofKeySet to ServerKey: {err}"
-                        )
-                    })?
-                    .into_raw_parts();
+                let (_xof_pks, server_key) = kxs.decompress().into_raw_parts();
                 strip_ns_from_server_key(server_key)
             } else {
                 safe_deserialize_key(&server_key_blob)?
@@ -328,12 +321,7 @@ impl DbKeyCache {
                         "failed to deserialize CompressedXofKeySet from compressed_xof_keyset: {err}"
                     )
                 })?;
-            let (_xof_pks, sks) = kxs
-                .decompress()
-                .map_err(|err| {
-                    anyhow::anyhow!("failed to decompress CompressedXofKeySet to ServerKey: {err}")
-                })?
-                .into_raw_parts();
+            let (_xof_pks, sks) = kxs.decompress().into_raw_parts();
 
             let gpu_sks = {
                 let num_gpus = get_number_of_gpus() as u64;
@@ -378,6 +366,7 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
         _noise_squashing_compression_key,
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     ) = server_key.into_raw_parts();
     tfhe::ServerKey::from_raw_parts(
@@ -389,6 +378,7 @@ fn strip_ns_from_server_key(server_key: tfhe::ServerKey) -> tfhe::ServerKey {
         None, // noise squashing compression key excluded
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     )
 }
