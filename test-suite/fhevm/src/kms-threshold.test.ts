@@ -322,6 +322,29 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     }
   });
 
+  test("clones the endpoint per party only when the bundle ships it (or it is built locally)", async () => {
+    const withEndpoint = thresholdSpec([]);
+    withEndpoint.versions = { ...withEndpoint.versions, env: { ...withEndpoint.versions.env, CONNECTOR_ENDPOINT_VERSION: "abcdef0" } };
+    const services = (await buildKmsConnectorOverride(withEndpoint)).services;
+    expect(services["kms-connector-endpoint"]).toBeDefined();
+    expect(services["kms-connector-3-endpoint"]?.container_name).toBe("kms-connector-3-endpoint");
+
+    const withoutEndpoint = thresholdSpec([]);
+    withoutEndpoint.versions = {
+      ...withoutEndpoint.versions,
+      env: Object.fromEntries(Object.entries(withoutEndpoint.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION")),
+    };
+    const gated = (await buildKmsConnectorOverride(withoutEndpoint)).services;
+    expect(Object.keys(gated).some((name) => name.endsWith("-endpoint"))).toBe(false);
+    expect(gated["kms-connector-3-tx-sender"]).toBeDefined();
+
+    const overridden = thresholdSpec([{ group: "kms-connector" }]);
+    overridden.versions = withoutEndpoint.versions;
+    const built = (await buildKmsConnectorOverride(overridden)).services;
+    expect(built["kms-connector-endpoint"]?.build).toBeDefined();
+    expect(built["kms-connector-3-endpoint"]?.image).toBe(built["kms-connector-endpoint"]?.image);
+  });
+
   test("override retags every party to the one locally built image; only party 1 builds it", async () => {
     const services = (await buildKmsConnectorOverride(thresholdSpec([{ group: "kms-connector" }]))).services;
     const base = services["kms-connector-gw-listener"];

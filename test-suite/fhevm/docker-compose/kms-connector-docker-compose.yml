@@ -1,7 +1,7 @@
 # =============================================================================
 # KMS-CONNECTOR BUILD CACHING STRATEGY
 # =============================================================================
-# The 3 Rust services (gw-listener, kms-worker, tx-sender) share a single
+# The 4 Rust services (gw-listener, kms-worker, tx-sender, endpoint) share a single
 # Dockerfile.workspace with multi-stage targets. When docker-compose builds
 # them in parallel, each service is a separate BuildKit invocation.
 #
@@ -45,6 +45,16 @@ services:
   kms-connector-tx-sender:
     container_name: kms-connector-tx-sender
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
+    platform: linux/amd64
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
+    depends_on:
+      kms-connector-db-migration:
+        condition: service_completed_successfully
+
+  kms-connector-endpoint:
+    container_name: kms-connector-endpoint
+    image: ghcr.io/zama-ai/fhevm/kms-connector/endpoint:${CONNECTOR_ENDPOINT_VERSION}
     platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env

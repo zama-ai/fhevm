@@ -1002,7 +1002,7 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "kms-connector":
-      await stepComposeUp("kms-connector", state);
+      await stepComposeUp("kms-connector", state, serviceNameList(state, "kms-connector"));
       await waitForKmsConnector(state);
       await postBootHealthGate(kmsConnectorHealthContainers(state));
       break;
@@ -1632,7 +1632,7 @@ export const kmsConnectorRuntimeReplacementServices = (state: Pick<State, "scena
  *
  * The existing databases, MinIO buckets, generated KMS material, contract
  * discovery and proof cache are deliberately copied through untouched.  This
- * path changes image source for the three long-lived connector services only;
+ * path changes image source for the long-lived connector services only;
  * it must never run a migration or replay the ordinary deployment pipeline.
  */
 export const adoptE2ePublicKmsConnectorOverride = (state: State): State => {
@@ -1668,7 +1668,7 @@ export const adoptE2ePublicKmsConnectorOverride = (state: State): State => {
     }
     // A prior build/recreate attempt may have failed after persisting its
     // intent. Reuse precisely that state so a retry can only replay the same
-    // three runtime services; it can never fall through to db migration.
+    // runtime services; it can never fall through to db migration.
     return state;
   }
 
@@ -2020,15 +2020,18 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
     );
   }
   await ensureRuntimeArtifacts(state, "upgrade");
-  const plan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
-  for (const step of plan.steps) {
+  const initialPlan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
+  for (const step of initialPlan.steps) {
     if (!state.completedSteps.includes(step)) {
       throw new PreflightError(`upgrade requires a stack that has completed the ${step} step`);
     }
   }
   let nextState = options.lockFile
-    ? (await applyRuntimeUpgradeLock(state, plan.group, plan.versionKeys, options.lockFile)).state
+    ? (await applyRuntimeUpgradeLock(state, initialPlan.group, initialPlan.versionKeys, options.lockFile)).state
     : state;
+
+  // Re-plan against the locked versions: the service set can depend on them.
+  const plan = options.lockFile ? resolveUpgradePlan(nextState, groupValue, { lockFile: true }) : initialPlan;
   if (options.bcsTag) {
     if (plan.group !== "coprocessor" || nextState.scenario.kind !== "blue-green") {
       throw new PreflightError("bcsTag is only valid for a Blue-Green coprocessor upgrade");
