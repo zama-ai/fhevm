@@ -48,7 +48,7 @@ launch options:
                             (implies --polygon; RPC URLs + funder key come from AWS
                             Secrets Manager via ExternalSecret)
   --tests                   automated_tests=true
-  --polygon                 second Polygon host (incompatible with blue-green)
+  --polygon                 second Polygon host (with --blue-green: two-chain RFC-021)
   --observability           in-namespace Prometheus/Grafana/Jaeger
   --no-build                build_images=false
   --test-suite-only         build only the e2e test-suite image
@@ -201,16 +201,12 @@ cmd_launch() {
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
-  if [[ "${blue_green}" == "true" && "${polygon}" == "true" ]]; then
-    die "--blue-green is incompatible with --polygon"
-  fi
   if [[ "${chain_mode}" == "blockchain-dev" && "${polygon}" == "true" ]]; then
     die "--blockchain-dev is incompatible with --polygon"
   fi
   if [[ "${chain_mode}" == "testnets" ]]; then
-    # Amoy is the second host chain on this path; blue-green is single-chain today.
+    # Amoy is the second host chain on this path.
     polygon="true"
-    [[ "${blue_green}" != "true" ]] || die "--testnets is incompatible with --blue-green (multi-chain blue-green is not wired yet)"
   fi
 
   local overrides="{}"
