@@ -124,6 +124,39 @@ jobs:
       - name: Configure kubeconfig for the Tailscale cluster
         run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
 
+      # Must run BEFORE the namespace goes: the only copy of the preview mnemonic is
+      # the preview-wallets-mnemonic Secret inside it, so once it is deleted whatever
+      # is left on Sepolia/Amoy is unrecoverable. continue-on-error because reclaiming
+      # test funds must never leave a namespace (and its AWS resources) standing.
+      - name: Checkout the sweep scripts
+        continue-on-error: true
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+          # `closed` runs the base branch's workflow and its merge ref may already be
+          # gone, so pin the default branch there; a dispatch takes the branch the
+          # operator picked, which is what makes this testable before merge.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.repository.default_branch }}
+          sparse-checkout: |
+            ci/preview-env/scripts/sweep-wallets.sh
+            ci/preview-env/scripts/sweep-wallets.cjs
+          sparse-checkout-cone-mode: false
+
+      - name: Install ethers for the wallet sweep
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
+          npm install --silent --no-save ethers@6
+
+      - name: Return leftover testnet funds to the treasury
+        continue-on-error: true
+        # Each refund waits for one confirmation on Sepolia/Amoy; bounded so a stalled
+        # RPC cannot eat the job's 30m and strand the namespace.
+        timeout-minutes: 10
+        env:
+          NODE_PATH: /tmp/wallet-tools/node_modules
+        run: bash ci/preview-env/scripts/sweep-wallets.sh
+
       - name: Destroy preview namespace
         id: destroy
         run: |

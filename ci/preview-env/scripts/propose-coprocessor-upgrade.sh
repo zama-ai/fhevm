@@ -18,11 +18,11 @@ GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
 WINDOW_START_OFFSET="${WINDOW_START_OFFSET:-5}"
-# Continuously-mining blockchain-dev (~6s/block) needs a window that covers
-# the first e2e DAG; Anvil only advances on txs so the historical 80 is enough
-# for unanimity to fire during the suite.
+# Continuously-mining external chains (blockchain-dev ~5s/block, testnets
+# 12s/2s) need a window that covers the first e2e DAG; Anvil only advances on
+# txs so the historical 80 is enough for unanimity to fire during the suite.
 if [[ -z "${WINDOW_END_OFFSET:-}" ]]; then
-  if [[ "${USE_BLOCKCHAIN_DEV:-false}" == "true" ]]; then
+  if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
     WINDOW_END_OFFSET=1500
   else
     WINDOW_END_OFFSET=80
