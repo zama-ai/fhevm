@@ -49,6 +49,9 @@ print("\n".join(out))
 PY
 )
 
+# Role #3 is the relayer's gateway signer (apply-chain-env.sh) and the only heavy gateway spender.
+relayer_address=$(python3 -c 'import json,os; print(json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]["3"]["address"])')
+
 fund_targets="host,gateway"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # HOST_HTTP/POLYGON_HTTP were read from Secret `rpc` by deploy-rpc-secret.sh.
@@ -140,7 +143,9 @@ spec:
             - name: HOST_FLOOR_WEI
               value: "500000000000000000"
             - name: GATEWAY_FLOOR_WEI
-              value: "1000000000000000000"
+              value: "200000000000000000"
+            - name: GATEWAY_FLOOR_OVERRIDES
+              value: "${relayer_address}:1000000000000000000"
             - name: MAX_CLAIMS_PER_ADDR
               value: "12"
           volumeMounts:
