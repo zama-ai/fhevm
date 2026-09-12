@@ -4,6 +4,8 @@ Reads addresses from /fund/addresses (newline-separated). Claims until each
 address meets HOST_FLOOR_WEI / GATEWAY_FLOOR_WEI. Custom amount is requested
 when the faucet allows it; otherwise loops the default drop. FUND_TARGETS
 ("host,gateway") selects the faucets; testnets passes "gateway" (hosts are treasury-funded).
+GATEWAY_FLOOR_OVERRIDES ("addr:wei,...") raises the gateway floor per address; an
+out-of-funds faucet fails the run at once instead of looping.
 """
 from __future__ import annotations
 
@@ -21,6 +23,10 @@ HOST_FAUCET = os.environ.get("HOST_FAUCET", "").rstrip("/")
 GATEWAY_FAUCET = os.environ.get("GATEWAY_FAUCET", "").rstrip("/")
 HOST_FLOOR = int(os.environ.get("HOST_FLOOR_WEI", "500000000000000000"))
 GATEWAY_FLOOR = int(os.environ.get("GATEWAY_FLOOR_WEI", "200000000000000000"))
+GATEWAY_FLOOR_OVERRIDES = {
+    a.strip().lower(): int(w)
+    for a, w in (item.split(":", 1) for item in os.environ.get("GATEWAY_FLOOR_OVERRIDES", "").split(",") if item.strip())
+}
 MAX_CLAIMS = int(os.environ.get("MAX_CLAIMS_PER_ADDR", "8"))
 CLAIM_WEI = os.environ.get("CLAIM_WEI", "")  # empty: faucet default drop (0.1 ETH)
 
@@ -78,6 +84,18 @@ def claim(faucet: str, addr: str, amount_wei: str | None) -> None:
     print(f"claimed from {faucet} -> {addr} session={sid} status={result.get('status')}", flush=True)
 
 
+def require_faucet_funded(faucet: str, label: str) -> None:
+    """PoWFaucet keeps answering 'claiming' when its wallet is empty; its status banner says so."""
+    try:
+        config = http_json(f"{faucet}/api/getFaucetConfig")
+    except RuntimeError as exc:
+        print(f"WARN {label} faucet config unavailable: {exc}", flush=True)
+        return
+    for entry in config.get("faucetStatus") or []:
+        if "out of funds" in str(entry.get("text", "")).lower():
+            raise SystemExit(f"{label} faucet {faucet} is out of funds ({entry.get('text')}); refill its wallet before deploying")
+
+
 def fund_one(rpc_url: str, faucet: str, addr: str, floor: int, label: str) -> None:
     have = balance(rpc_url, addr)
     print(f"{label} {addr} start {have} wei (floor {floor})", flush=True)
@@ -91,10 +109,12 @@ def fund_one(rpc_url: str, faucet: str, addr: str, floor: int, label: str) -> No
             if CLAIM_WEI:
                 claim(faucet, addr, None)
         time.sleep(2)
-        have = balance(rpc_url, addr)
+        before, have = have, balance(rpc_url, addr)
         print(f"{label} {addr} now {have} wei", flush=True)
         if have >= floor:
             return
+        if have == before:
+            require_faucet_funded(faucet, label)
     raise SystemExit(f"{label} {addr} still {have} wei after {MAX_CLAIMS} claims (need {floor})")
 
 
@@ -111,11 +131,16 @@ def main() -> None:
     if "gateway" in FUND_TARGETS and not (GATEWAY_HTTP and GATEWAY_FAUCET):
         raise SystemExit("FUND_TARGETS includes gateway but GATEWAY_HTTP/GATEWAY_FAUCET are unset")
     print(f"funding {len(addrs)} addresses on {sorted(FUND_TARGETS)}", flush=True)
+    if "host" in FUND_TARGETS:
+        require_faucet_funded(HOST_FAUCET, "host")
+    if "gateway" in FUND_TARGETS:
+        require_faucet_funded(GATEWAY_FAUCET, "gateway")
     for addr in addrs:
         if "host" in FUND_TARGETS:
             fund_one(HOST_HTTP, HOST_FAUCET, addr, HOST_FLOOR, "host")
         if "gateway" in FUND_TARGETS:
-            fund_one(GATEWAY_HTTP, GATEWAY_FAUCET, addr, GATEWAY_FLOOR, "gateway")
+            floor = GATEWAY_FLOOR_OVERRIDES.get(addr.lower(), GATEWAY_FLOOR)
+            fund_one(GATEWAY_HTTP, GATEWAY_FAUCET, addr, floor, "gateway")
     print("funding complete", flush=True)
 
 
