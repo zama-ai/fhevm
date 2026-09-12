@@ -62,8 +62,20 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 /// Number of host-chain blocks below `start_block` whose computations must
 /// also be fully settled before GCS can leave `UpgradeActivated`. Hard-coded
 /// for now; expected to become configurable.
-const READINESS_CONFIRMATIONS: i64 = 100;
+// Set equal to the host-listener's `BLOCKS_VALID_RETENTION` (10_000). The readiness
+// window `[start_block - READINESS_CONFIRMATIONS, start_block]` then spans the full
+// retained block history; its low end sits at the prune horizon, so the oldest
+// confirmation blocks may already have been pruned and pass the check vacuously.
+// Keep the two constants in lockstep: if `BLOCKS_VALID_RETENTION` changes, change this.
+const READINESS_CONFIRMATIONS: i64 = 10_000;
 const NO_READINESS_ATTEMPT: i64 = -2;
+
+/// Substring that marks a `computations.error_message` as a RETRYABLE stamp
+/// rather than a terminal one. Must stay in sync with `tfhe-worker`'s
+/// `RETRYABLE_STAMP_MARKER` (the canonical definition; it is `pub(crate)` there
+/// and `upgrade-controller` does not depend on `tfhe-worker`, so the literal is
+/// duplicated here). A terminal error carries no such marker.
+const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 
 /// Retry budget and backoff for [`execute_cutover`]. Cutover is the step that promotes
 /// the green stack, so a *transient* failure must not drop the upgrade on the floor:
@@ -522,46 +534,94 @@ async fn prune_gcs_computations_before_start(
     Ok(result.rows_affected())
 }
 
-/// True iff for every block in `[start_block - READINESS_CONFIRMATIONS, start_block]`
-/// on the given chain, either `fhe_event_count = 0` (block had no FHE events)
-/// or every computation in that block has `is_completed = true` AND
-/// `is_error = false`. An errored computation in the window blocks readiness.
+/// True iff every computation in `[start_block - READINESS_CONFIRMATIONS, start_block]`
+/// on the given chain is SETTLED — completed, or errored *terminally* (a stamp
+/// without the RETRYABLE marker). Still-in-flight rows (pending, or a retryable
+/// stamp that may yet heal) block; a terminal error does not, since it is a
+/// deterministic, inherited outcome that green dead-drains consistently and the
+/// state hash excludes (see the query comment). Checked directly against
+/// `computations`, so a block with no computations trivially satisfies it and,
+/// unlike driving the scan off `host_chain_blocks_valid`, this half of the check
+/// cannot be defeated by `prune_finalized_block_history` pruning an old block's
+/// row out from under it.
+///
+/// Deliberately does *not* also require `pbs_computations` to be settled:
+/// `pbs_computations` feeds the ct128/S3-publication pipeline (`sns-worker`),
+/// entirely separate from the base `ciphertexts` row `query_ciphertexts`'s
+/// pre-snapshot fallback reads — `tfhe-worker` never touches `pbs_computations`.
+/// A pending PBS job doesn't threaten dry-run correctness; it only threatens
+/// cutover if blue is retired mid-upload, which is `assert_bcs_ciphertexts_uploaded`'s
+/// job, not this gate's.
 ///
 /// Also requires the BCS host-listener to have reached at least `start_block`
 /// (via `MAX(block_number)` in `host_chain_blocks_valid`) — otherwise the
 /// predicate would be vacuously true for un-ingested blocks above the watermark.
+/// `MAX(block_number)` is never itself prunable: pruning only removes rows more
+/// than `BLOCKS_VALID_RETENTION` blocks behind the tip, so the current watermark
+/// row is always safe.
+///
+/// Additionally requires `start_block` itself to be `finalized` (a
+/// `host_chain_blocks_valid` row at that height with `block_status = 'finalized'`),
+/// so the dry-run window is anchored on a settled block, not one that could still
+/// be reorged out. This row must never be pruned while a GCS upgrade needs it —
+/// see the `upgrade_state` guard in `prune_finalized_block_history` — otherwise
+/// this hard requirement would deadlock forever once the row ages past the
+/// retention window.
 async fn check_dry_run_ready(
     pool: &Pool<Postgres>,
     chain_id: i64,
     start_block: i64,
 ) -> Result<bool, sqlx::Error> {
+    /*
+       So concretely: if check 1 (watermark) is true and check 2 (start_block finalized) is false,
+       checks 3 and 4 (the scans against computations and pbs_computations) are never executed.
+    */
+
     let from_block = start_block.saturating_sub(READINESS_CONFIRMATIONS);
+    let started = std::time::Instant::now();
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          -- 1. Watermark: the host-listener has ingested at least up to start_block.
+          --    Without this, an un-ingested start_block would make the two checks
+          --    below vacuously true (nothing to find yet != nothing wrong).
           COALESCE(
             (SELECT MAX(block_number) FROM public.host_chain_blocks_valid WHERE chain_id = $1),
             -1
           ) >= $3
+          -- 2. start_block itself is finalized — anchors the dry-run window on a
+          --    settled block that cannot be reorged out.
+          AND EXISTS (
+              SELECT 1 FROM public.host_chain_blocks_valid
+              WHERE chain_id = $1 AND block_number = $3 AND block_status = 'finalized'
+          )
+          -- 3. Every computation in the readiness window [from_block, start_block]
+          --    is SETTLED: it either completed, or errored TERMINALLY. Block only
+          --    on rows that are still in flight (pending, or a retryable stamp
+          --    that may still heal).
           AND NOT EXISTS (
-              SELECT 1 FROM public.host_chain_blocks_valid hcbv
-              WHERE hcbv.chain_id = $1
-                AND hcbv.block_number BETWEEN $2 AND $3
-                AND hcbv.fhe_event_count > 0
-                AND EXISTS (
-                    SELECT 1 FROM public.computations c
-                    WHERE c.host_chain_id = $1
-                      AND c.block_number = hcbv.block_number
-                      AND (c.is_completed = false OR c.is_error = true)
-                )
+              SELECT 1 FROM public.computations c
+              WHERE c.host_chain_id = $1
+                AND c.block_number BETWEEN $2 AND $3
+                AND c.is_completed = false
+                AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')
           )
         "#,
     )
     .bind(chain_id)
     .bind(from_block)
     .bind(start_block)
+    .bind(RETRYABLE_STAMP_MARKER)
     .fetch_one(pool)
     .await?;
+    info!(
+        chain_id,
+        from_block,
+        start_block,
+        ready,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "check_dry_run_ready evaluated"
+    );
     Ok(ready)
 }
 
@@ -810,22 +870,55 @@ async fn transition_to_dry_run_started(
     Ok(())
 }
 
-/// True once the GCS gw-listener has reached `gw_start_block` — i.e.
-/// `gcs."gw_listener_last_block".last_block_num >= gw_start_block`. Reads the
-/// GCS schema's watermark explicitly (not `public`), since the green
-/// gw-listener tails the Gateway into the GCS schema from startup. A missing
-/// watermark row reads as `-1`, so the predicate is not vacuously true before
-/// the GCS gw-listener has written any progress.
+/// True once the GCS gw-listener has reached `gw_start_block`, AND blue's own
+/// pre-window proof verification is fully settled.
+///
+/// `verify_proofs.block_number` (like `input_handles.block_number`) is a
+/// **Gateway** block despite what older comments call it — both are stamped
+/// from the Gateway provider in `gw-listener`, not the host chain.
+/// `verify_proofs.chain_id`, by contrast, is the target *host* chain of the
+/// proof's contract, unrelated to which chain a row is windowed by here — so
+/// this check is intentionally proposal-wide, not filtered by chain_id,
+/// mirroring `prune_gcs_verify_proofs_before_start`.
+///
+/// Three conditions, all against the Gateway-block domain:
+///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
+///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
+///      the green gw-listener tails the Gateway into the GCS schema from
+///      startup. A missing watermark row reads as `-1`, so this is not
+///      vacuously true before the GCS gw-listener has written any progress.
+///   2. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
+///      gw_start_block`. Without this, an unobserved-by-blue block would make
+///      check 3 vacuously true (nothing seen yet != nothing pending).
+///   3. No pre-window proof is still pending: no `public.verify_proofs` row
+///      with `block_number < gw_start_block` has `verified IS NULL`. Blue's
+///      zkproof-worker must have resolved every proof below the snapshot
+///      point before the dry run's re-randomization strategy activates at
+///      `gw_start_block` — the Gateway-inputs analogue of `check_dry_run_ready`'s
+///      `computations` completeness check, protecting the same class of
+///      backfill-timing race for the input-ciphertext consensus track.
 async fn check_gw_dry_run_ready(
     pool: &Pool<Postgres>,
     gw_start_block: i64,
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
-                   WHERE dummy_id = true),
-                  -1
-                ) >= $1"
+        "SELECT
+           COALESCE(
+             (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+              WHERE dummy_id = true),
+             -1
+           ) >= $1
+           AND COALESCE(
+             (SELECT last_block_num FROM public.gw_listener_last_block
+              WHERE dummy_id = true),
+             -1
+           ) >= $1
+           AND NOT EXISTS (
+               SELECT 1 FROM public.verify_proofs
+               WHERE block_number IS NOT NULL
+                 AND block_number < $1
+                 AND verified IS NULL
+           )"
     );
     let (ready,): (bool,) = sqlx::query_as(&sql)
         .bind(gw_start_block)
@@ -1168,15 +1261,150 @@ async fn delete_bcs_chain_leftovers(
     Ok(())
 }
 
+/// Delete every pre-start (below `start_block`) row green wrote into `gcs.*`, so the
+/// green-wins merge cannot overwrite canonical pre-snapshot state in `public`.
+///
+/// Green's listeners tail the chain before activation and its poller lags the realtime
+/// listener, so pre-start blocks keep landing in `gcs` after the controller's one-shot
+/// prune of `gcs.computations` at activation (the ingest gate in the host-listener stops
+/// the FHE rows once the proposal is known, but not the blocks ingested before that).
+/// Green then re-derives those handles with its own byte form. [`merge_gcs_table`] has
+/// no block filter, so any such row left in `gcs` would replace blue's canonical
+/// ciphertext, digest and computation rows at cutover - rows whose digests are already
+/// published on-chain. Mirror image of [`delete_bcs_chain_leftovers`]: blue's in-window
+/// rows go, green's pre-window rows go, and the merge decides the window.
+///
+/// Statement order is load-bearing, as in the BCS delete: the by-handle deletes reach
+/// their rows through `gcs.computations`, so that table is cleared last, and its
+/// dependence chains are handed to `cutover_touched_chains` for
+/// [`cleanup_orphaned_dependence_chains`].
+async fn delete_gcs_pre_start_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT host_chain_id, start_block FROM upgrade_state
+          WHERE stack_role = 'GCS' AND start_block IS NOT NULL
+          ORDER BY host_chain_id",
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.is_empty() {
+        warn!(
+            "delete_gcs_pre_start_leftovers: no host-chain rows found in upgrade_state — skipping"
+        );
+        return Ok(());
+    }
+    for (chain_id, start_block) in rows {
+        // By-handle tables first: reached through the computation rows deleted below.
+        for handle_table in CIPHERTEXT_TABLES.iter().chain(["ciphertext_digest"].iter()) {
+            for comp_table in COMPUTATION_TABLES {
+                let sql = format!(
+                    "DELETE FROM {GCS_SCHEMA_QUOTED}.{handle_table} h
+                      USING {GCS_SCHEMA_QUOTED}.{comp_table} comp
+                      WHERE h.handle = comp.output_handle
+                        AND comp.host_chain_id = $1 AND comp.block_number < $2"
+                );
+                let deleted = sqlx::query(&sql)
+                    .bind(chain_id)
+                    .bind(start_block)
+                    .execute(&mut **tx)
+                    .await?
+                    .rows_affected();
+                info!(
+                    host_chain_id = chain_id,
+                    start_block,
+                    handle_table,
+                    comp_table,
+                    deleted,
+                    "delete_gcs_pre_start_leftovers: deleted pre-start gcs rows by handle"
+                );
+            }
+        }
+        for pbs_table in PBS_COMPUTATION_TABLES {
+            let sql = format!(
+                "DELETE FROM {GCS_SCHEMA_QUOTED}.{pbs_table} p
+                  WHERE p.host_chain_id = $1 AND p.block_number < $2"
+            );
+            let deleted = sqlx::query(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .execute(&mut **tx)
+                .await?
+                .rows_affected();
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                pbs_table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs pbs rows"
+            );
+        }
+        // Block-scoped bookkeeping keyed by (host_chain_id | chain_id, block_number).
+        for (table, chain_col) in [
+            ("allowed_handles", "host_chain_id"),
+            ("host_chain_blocks_valid", "chain_id"),
+            ("transactions", "chain_id"),
+        ] {
+            let sql = format!(
+                "DELETE FROM {GCS_SCHEMA_QUOTED}.{table}
+                  WHERE {chain_col} = $1 AND block_number < $2"
+            );
+            let deleted = sqlx::query(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .execute(&mut **tx)
+                .await?
+                .rows_affected();
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs block-scoped rows"
+            );
+        }
+        for comp_table in COMPUTATION_TABLES {
+            let sql = format!(
+                "WITH deleted AS (
+                     DELETE FROM {GCS_SCHEMA_QUOTED}.{comp_table} c
+                      WHERE c.host_chain_id = $1 AND c.block_number < $2
+                     RETURNING c.dependence_chain_id
+                 ),
+                 touched AS (
+                     INSERT INTO cutover_touched_chains (dependence_chain_id)
+                     SELECT DISTINCT dependence_chain_id FROM deleted
+                      WHERE dependence_chain_id IS NOT NULL
+                     ON CONFLICT DO NOTHING
+                 )
+                 SELECT COUNT(*) FROM deleted"
+            );
+            let deleted: i64 = sqlx::query_scalar(&sql)
+                .bind(chain_id)
+                .bind(start_block)
+                .fetch_one(&mut **tx)
+                .await?;
+            info!(
+                host_chain_id = chain_id,
+                start_block,
+                comp_table,
+                deleted,
+                "delete_gcs_pre_start_leftovers: deleted pre-start gcs computation rows"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Undo everything blue wrote inside the upgrade windows, so the merge decides what
 /// survives instead of blue's head start.
 ///
-/// The complete BCS revert, in one place:
-///   1. create `cutover_touched_chains`, which [`delete_bcs_chain_leftovers`] fills with
-///      the dependence chains of the computations it deletes;
+/// The complete revert, in one place:
+///   1. create `cutover_touched_chains`, which [`delete_bcs_chain_leftovers`] and
+///      [`delete_gcs_pre_start_leftovers`] fill with the dependence chains of the
+///      computations they delete;
 ///   2. delete each host chain's in-window rows;
 ///   3. delete the gateway/input side's leftovers;
-///   4. drop the dependence chains no computation needs any more, blue's or green's.
+///   4. delete green's pre-window rows, so the merge cannot overwrite canonical
+///      pre-snapshot state;
+///   5. drop the dependence chains no computation needs any more, blue's or green's.
 ///
 /// **Must run inside the cutover transaction and before [`merge_gcs_table`].** These
 /// deletes are unguarded, so after the merge they would wipe the rows it just brought
@@ -1192,6 +1420,7 @@ async fn revert_bcs_state(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
 
     delete_bcs_chains_leftovers(tx).await?;
     delete_bcs_gw_leftovers(tx).await?;
+    delete_gcs_pre_start_leftovers(tx).await?;
     cleanup_orphaned_dependence_chains(tx).await?;
     Ok(())
 }
@@ -1252,9 +1481,8 @@ async fn cleanup_orphaned_dependence_chains(
 /// proposal-wide rather than per-chain. Like [`delete_bcs_chains_leftovers`], must run
 /// before the merge and the schema drop, while `gcs.*` still exists.
 ///
-/// Note: `verify_proofs` is left exactly as blue wrote it, so a proof green never
-/// re-verified stays `verified = TRUE` and the zkproof-worker, which only picks up
-/// `verified IS NULL`, will not re-derive the input ciphertexts deleted here.
+/// Note: `verify_proofs` is truncated at cutover so no BCS-era proof row (whose
+/// input ciphertexts are deleted above) is left behind for green to trip over.
 async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT gw_start_block FROM upgrade_state
@@ -1302,6 +1530,11 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
         rows_deleted = deleted_input_handles,
         "delete_bcs_gw_leftovers: deleted BCS-leftover ciphertexts and input_handles"
     );
+
+    // verify_proofs
+    sqlx::query("TRUNCATE TABLE public.verify_proofs")
+        .execute(&mut **tx)
+        .await?;
 
     Ok(())
 }
@@ -1441,6 +1674,51 @@ async fn authorized_stack_version(
 /// is exactly what the resubmit loop can act on. A pre-window handle whose digest row was
 /// never created at all is not detected here.
 async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    // Gate on pre-window PBS completion first. A `ciphertext_digest` row is written by the
+    // sns-worker only once it finishes the PBS job, so a still-pending pre-`start_block` PBS
+    // computation has no digest row yet — the upload scan below would pass it over vacuously
+    // and cutover could retire blue before that handle's ct128/digest is ever produced, leaving
+    // a missing `ciphertext_digest` entry. Block cutover until every pre-window PBS computation
+    // is completed. Transient (the sns-worker clears it), so it shares the `PendingBcsUploads`
+    // retry path.
+    let pbs_origins = PBS_COMPUTATION_TABLES
+        .iter()
+        .map(|pbs_table| {
+            format!(
+                "SELECT p.host_chain_id, p.handle
+                   FROM public.{pbs_table} p
+                   JOIN windows w ON w.host_chain_id = p.host_chain_id
+                  WHERE p.block_number < w.start_block
+                    AND p.is_completed = false"
+            )
+        })
+        .collect::<Vec<_>>()
+        // UNION, not UNION ALL: a handle in both the legacy and branch table counts once.
+        .join(" UNION ");
+    let pbs_sql = format!(
+        "WITH windows AS (
+             SELECT host_chain_id, start_block
+               FROM public.upgrade_state
+              WHERE stack_role = 'GCS' AND start_block IS NOT NULL
+         )
+         SELECT host_chain_id, COUNT(*) FROM ({pbs_origins}) o
+          GROUP BY host_chain_id
+          ORDER BY host_chain_id"
+    );
+    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_sql).fetch_all(&mut **tx).await?;
+    if !pbs_pending.is_empty() {
+        let mut pbs_total: i64 = 0;
+        for (chain_id, pending) in &pbs_pending {
+            warn!(
+                host_chain_id = chain_id,
+                pending,
+                "cutover blocked: BCS pre-window PBS computations not yet completed — ct128/ciphertext_digest not yet produced"
+            );
+            pbs_total += pending;
+        }
+        return Err(Error::PendingBcsUploads { pending: pbs_total });
+    }
+
     // Driven from the un-uploaded digests, not from the window. `ciphertext_digest` carries
     // partial indexes on exactly these two NULL predicates
     // (`idx_ciphertext_digest_ciphertext_null` / `..._ciphertext128_null`), and when uploads
@@ -1933,11 +2211,18 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 7. Drop the gcs schema (and everything in it) now that its data has been
-    //    merged back into public.
-    let drop_sql = format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE");
-    sqlx::query(&drop_sql).execute(&mut *tx).await?;
-    info!(schema = GCS_SCHEMA_QUOTED, "dropped gcs schema");
+    // 7. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
+    //    dry-run data stays inspectable while the versioned name is freed for the
+    //    next upgrade. Drop any prior snapshot first so the rename never collides.
+    sqlx::query("DROP SCHEMA IF EXISTS \"pre-cutover\" CASCADE")
+        .execute(&mut *tx)
+        .await?;
+    let rename_sql = format!("ALTER SCHEMA {GCS_SCHEMA_QUOTED} RENAME TO \"pre-cutover\"");
+    sqlx::query(&rename_sql).execute(&mut *tx).await?;
+    info!(
+        schema = GCS_SCHEMA_QUOTED,
+        "cutover: renamed gcs schema to pre-cutover"
+    );
 
     // 8. Flip every chain's FSM row.
     sqlx::query!(
@@ -2452,11 +2737,28 @@ pub async fn handle_unanimity_consensus(
             .execute(pool)
             .await?;
             if set.rows_affected() > 0 {
+                // Look up the anchored block's state_hash for visibility (e.g. to
+                // spot consensus reached on the empty-block hash). GCS_SCHEMA_QUOTED:
+                // during the dry-run the hash lives in the gcs schema.
+                let anchor_state_hash: String = sqlx::query_scalar::<_, String>(&format!(
+                    "SELECT state_hash FROM {GCS_SCHEMA_QUOTED}.state_hash
+                      WHERE chain_id = $1 AND block_number = $2"
+                ))
+                .bind(payload.chain_id)
+                .bind(payload.block_height)
+                .fetch_optional(pool)
+                .await
+                // Visibility-only: a missing gcs.state_hash (or any lookup
+                // error) must not fail consensus handling.
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "unknown".to_string());
                 info!(
                     chain_id = payload.chain_id,
                     block_height = payload.block_height,
                     start_block = start,
                     end_block = end,
+                    state_hash = %anchor_state_hash,
                     proposal_id = %hex_encode(&payload.proposal_id),
                     "event_unanimity_consensus: host-track unanimity — host_consensus_reached set for chain"
                 );
@@ -3543,6 +3845,17 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed Gateway watermark");
+        // Blue's Gateway watermark: check_gw_dry_run_ready also requires
+        // public.gw_listener_last_block >= gw_start_block, so seed it too or the
+        // gateway gate never re-arms.
+        sqlx::query(
+            "INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num)
+             VALUES (TRUE, 1)
+             ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed blue Gateway watermark");
 
         let cancel = CancellationToken::new();
         reconcile(
@@ -3828,6 +4141,129 @@ mod tests {
         );
     }
 
+    /// Cutover must not let green's *pre-start* rows overwrite canonical state. Green's
+    /// listeners tail the chain before activation, so a pre-snapshot handle (block 90 <
+    /// `start_block` 100) can sit in `gcs.*` with green's own byte form next to blue's
+    /// canonical copy in `public`. The green-wins merge has no block filter, so
+    /// `delete_gcs_pre_start_leftovers` has to clear those rows first: blue's bytes
+    /// survive for the pre-start handle, while an in-window green handle still merges.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_deletes_gcs_pre_start_leftovers() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100, chain=1
+
+        let pre_start = &[0xCCu8; 32][..]; // block 90: canonical in public, backfilled in gcs
+        let in_window = &[0xDDu8; 32][..]; // block 150: green's own dry-run output
+
+        // Blue's canonical pre-start rows (ciphertext byte 0x00).
+        seed_bcs_handle(&pool, pre_start, 90, 0x00).await;
+
+        // Green's copies: the pre-start handle re-derived with different bytes (0x01),
+        // plus a regular in-window handle.
+        for (handle, block) in [(pre_start, 90_i64), (in_window, 150_i64)] {
+            let seed_gcs = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                    (output_handle, dependencies, fhe_operation,
+                     is_scalar, is_completed, host_chain_id, block_number)
+                 VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, $2)"
+            );
+            sqlx::query(&seed_gcs)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs computation");
+            let seed_gcs_ct = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts
+                    (handle, ciphertext, ciphertext_version, ciphertext_type)
+                 VALUES ($1, $2, 0, 0)"
+            );
+            sqlx::query(&seed_gcs_ct)
+                .bind(handle)
+                .bind(&[0x01u8][..])
+                .execute(&pool)
+                .await
+                .expect("seed gcs ciphertext");
+            let seed_gcs_pbs = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.pbs_computations
+                    (handle, is_completed, host_chain_id, block_number)
+                 VALUES ($1, TRUE, 1, $2)"
+            );
+            sqlx::query(&seed_gcs_pbs)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs pbs_computation");
+            let seed_gcs_allowed = format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.allowed_handles
+                    (handle, account_address, event_type, host_chain_id, block_number)
+                 VALUES ($1, '0xabc', 0, 1, $2)"
+            );
+            sqlx::query(&seed_gcs_allowed)
+                .bind(handle)
+                .bind(block)
+                .execute(&pool)
+                .await
+                .expect("seed gcs allowed_handle");
+        }
+
+        execute_cutover(&pool).await.expect("cutover succeeds");
+
+        // Pre-start handle: blue's rows are intact and green's copy did not overwrite them.
+        assert_eq!(
+            leftover_counts(&pool, pre_start).await,
+            [1, 1, 1],
+            "canonical pre-start rows must survive cutover"
+        );
+        let (ct_bytes,): (Vec<u8>,) =
+            sqlx::query_as("SELECT ciphertext FROM ciphertexts WHERE handle = $1")
+                .bind(pre_start)
+                .fetch_one(&pool)
+                .await
+                .expect("pre-start ciphertext");
+        assert_eq!(
+            ct_bytes,
+            vec![0x00],
+            "green's pre-start re-derivation must not replace blue's canonical bytes"
+        );
+
+        // In-window handle: green's rows merge as before.
+        assert_eq!(
+            leftover_counts(&pool, in_window).await,
+            [1, 1, 1],
+            "green's in-window rows must still be merged"
+        );
+
+        // `allowed_handles` is duplicated but never merged (no conflict columns), so the
+        // delete is checked on the green schema itself, kept as "pre-cutover" by cutover:
+        // the pre-start row is gone, the in-window row is untouched.
+        let allowed_in_gcs = |handle: &'static [u8]| {
+            let pool = pool.clone();
+            async move {
+                let (count,): (i64,) = sqlx::query_as(
+                    "SELECT COUNT(*) FROM \"pre-cutover\".allowed_handles WHERE handle = $1",
+                )
+                .bind(handle)
+                .fetch_one(&pool)
+                .await
+                .expect("gcs allowed count");
+                count
+            }
+        };
+        assert_eq!(
+            allowed_in_gcs(pre_start).await,
+            0,
+            "green's pre-start allowed_handles row must be deleted before the merge"
+        );
+        assert_eq!(
+            allowed_in_gcs(in_window).await,
+            1,
+            "green's in-window allowed_handles row must be left alone"
+        );
+    }
+
     /// Gateway/zkproof-side backfill: the input ciphertext of a gw-window proof GCS
     /// never re-verified is deleted along with its `input_handles` row; the handle GCS
     /// did reproduce comes back with the merge.
@@ -3919,16 +4355,15 @@ mod tests {
             "a handle GCS reproduced must be restored by the merge"
         );
 
-        // `delete_bcs_gw_leftovers` deliberately leaves `verify_proofs` alone, so the
-        // proof green never re-verified stays verified and its deleted input
-        // ciphertext is not re-derived. Pinned here so re-arming the zkproof-worker
-        // has to update this expectation.
-        let verified: Option<bool> =
-            sqlx::query_scalar("SELECT verified FROM verify_proofs WHERE zk_proof_id = 100")
+        // `delete_bcs_gw_leftovers` truncates `verify_proofs` at cutover, so the
+        // BCS-era proof row is cleared along with the rest of the table. Pinned
+        // here so a change to that behavior has to update this expectation.
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 100")
                 .fetch_one(&pool)
                 .await
-                .expect("proof 100");
-        assert_eq!(verified, Some(true), "proof 100 is left as BCS wrote it");
+                .expect("verify_proofs count");
+        assert_eq!(remaining, 0, "proof 100 is truncated at cutover");
     }
 
     /// A handle BCS already committed (`txn_is_sent = true`) must stay committed
