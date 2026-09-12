@@ -28,7 +28,7 @@ name: preview-env-deploy
 #     only). With preview-env-e2e-tests (or automated_tests): propose after
 #     relayer, hold consensus-detector so the first e2e stays on blue (assert
 #     GCS computations > 0), enable the detector, wait for versioning=v0.15,
-#     then run e2e again on green. Incompatible with deploy_polygon and N=1.
+#     then run e2e again on green. With deploy_polygon the upgrade spans both host chains. N=1 is rejected.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -66,7 +66,7 @@ on:
           - "3"
           - "5"
       enable_blue_green:
-        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Incompatible with deploy_polygon (and so with chain_mode=testnets). PR label preview-env-blue-green is the other gate."
+        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. With deploy_polygon (so with chain_mode=testnets) the upgrade spans both host chains. PR label preview-env-blue-green is the other gate."
         required: true
         type: choice
         default: "false"
@@ -533,10 +533,6 @@ jobs:
             echo "::error::RFC-021 blue-green requires nb_coprocessor > 1 (unanimity across N operators)."
             exit 1
           fi
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            echo "::error::RFC-021 first-iteration blue-green is single-chain: incompatible with deploy_polygon (and with chain_mode=testnets, which implies it)."
-            exit 1
-          fi
           gcs=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")
           if [[ -z "${gcs}" || "${gcs}" == "null" ]]; then
             echo "::error::blue-green requires GCS images (build_images=true). coprocessor_tfhe_worker tag is empty."
@@ -984,6 +980,13 @@ jobs:
         # listener-polygon-<i>.
         if: env.DEPLOY_POLYGON == 'true'
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer
+
+      - name: Deploy polygon GCS consumer (per-party Polygon consumer, green fleet)
+        # The consumer is per fleet: GCS gets its own Polygon consumer (coprocessor-polygon-<i>-gcs) beside the BCS one above.
+        if: env.DEPLOY_POLYGON == 'true' && env.BLUE_GREEN == 'true'
+        env:
+          GCS_STACK_VERSION: ${{ needs.check-labels.outputs.stack_version }}
+        run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer-gcs
 
       - name: Deploy coprocessor-poller (per-party key/CRS activation)
         # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the

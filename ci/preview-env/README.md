@@ -311,7 +311,8 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Cost and hygiene**: every run spends real testnet gas (~10 upgradeable contracts + the
   keygen ceremony per chain, then e2e FHE txs) and leaves its contracts on Sepolia and Amoy
   for good. Dispatch-only, no PR label.
-- **Not yet**: `enable_blue_green` (the blue-green scripts are single-chain today).
+- **Blue-green**: `enable_blue_green` works here too; the GCS fleet gets its own Polygon consumer and the
+  proposal carries one window per host chain (see "Blue-green (RFC-021)" below).
 
 To run `host-contracts` `task:prepareCoprocessorUpgrade` against this env, use
 `--environment devnet` (same Sepolia + Amoy chain set) with `RPC_URL_GATEWAY_DEVNET` pointed at a
@@ -393,7 +394,7 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 | **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
 | **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
 
-Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` (hence with `chain_mode=testnets`) and with `nb_coprocessor=1`.
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. With `deploy_polygon` (so on `chain_mode=testnets`) each fleet also gets its own Polygon consumer (`coprocessor-polygon-<i>` / `-gcs`), the proposal carries one window per host chain (Polygon offsets scaled by block time so both windows share the same wall-clock span) and the dry-run / cutover asserts read one `upgrade_state` row per chain. Incompatible with `nb_coprocessor=1`.
 
 With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
 driven by in-window e2e traffic: propose **after** the relayer is ready, hold
@@ -463,7 +464,5 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above
   (`chain_mode=testnets`: Sepolia + Amoy with RPC URLs + funder key from AWS Secrets Manager, Nitro gateway).
-- Wire RFC-021 blue-green onto `chain_mode=testnets`: `propose-coprocessor-upgrade.sh` /
-  `assert-gcs-dry-run.sh` are single-chain (scalar `upgrade_state` reads, one-element
-  windows array), which is what keeps `enable_blue_green` rejected there today. This is
-  the multi-chain shape fhevm-internal#1884 asks for.
+- ~~Wire RFC-021 blue-green onto `chain_mode=testnets`~~ — done: GCS Polygon consumer, per-chain
+  proposal windows and per-chain asserts (the multi-chain shape fhevm-internal#1884 asks for).
