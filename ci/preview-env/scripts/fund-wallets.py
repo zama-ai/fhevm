@@ -2,7 +2,8 @@
 
 Reads addresses from /fund/addresses (newline-separated). Claims until each
 address meets HOST_FLOOR_WEI / GATEWAY_FLOOR_WEI. Custom amount is requested
-when the faucet allows it; otherwise loops the default drop.
+when the faucet allows it; otherwise loops the default drop. FUND_TARGETS
+("host,gateway") selects the faucets; testnets passes "gateway" (hosts are treasury-funded).
 """
 from __future__ import annotations
 
@@ -13,10 +14,11 @@ import time
 import urllib.error
 import urllib.request
 
-HOST_HTTP = os.environ["HOST_HTTP"]
-GATEWAY_HTTP = os.environ["GATEWAY_HTTP"]
-HOST_FAUCET = os.environ["HOST_FAUCET"].rstrip("/")
-GATEWAY_FAUCET = os.environ["GATEWAY_FAUCET"].rstrip("/")
+FUND_TARGETS = {t.strip() for t in os.environ.get("FUND_TARGETS", "host,gateway").split(",") if t.strip()}
+HOST_HTTP = os.environ.get("HOST_HTTP", "")
+GATEWAY_HTTP = os.environ.get("GATEWAY_HTTP", "")
+HOST_FAUCET = os.environ.get("HOST_FAUCET", "").rstrip("/")
+GATEWAY_FAUCET = os.environ.get("GATEWAY_FAUCET", "").rstrip("/")
 HOST_FLOOR = int(os.environ.get("HOST_FLOOR_WEI", "500000000000000000"))
 GATEWAY_FLOOR = int(os.environ.get("GATEWAY_FLOOR_WEI", "200000000000000000"))
 MAX_CLAIMS = int(os.environ.get("MAX_CLAIMS_PER_ADDR", "8"))
@@ -101,10 +103,19 @@ def main() -> None:
     addrs = [line.strip() for line in open(path) if line.strip()]
     if not addrs:
         raise SystemExit("no addresses in /fund/addresses")
-    print(f"funding {len(addrs)} addresses", flush=True)
+    unknown = FUND_TARGETS - {"host", "gateway"}
+    if unknown or not FUND_TARGETS:
+        raise SystemExit(f"FUND_TARGETS must be a subset of host,gateway (got {sorted(FUND_TARGETS)})")
+    if "host" in FUND_TARGETS and not (HOST_HTTP and HOST_FAUCET):
+        raise SystemExit("FUND_TARGETS includes host but HOST_HTTP/HOST_FAUCET are unset")
+    if "gateway" in FUND_TARGETS and not (GATEWAY_HTTP and GATEWAY_FAUCET):
+        raise SystemExit("FUND_TARGETS includes gateway but GATEWAY_HTTP/GATEWAY_FAUCET are unset")
+    print(f"funding {len(addrs)} addresses on {sorted(FUND_TARGETS)}", flush=True)
     for addr in addrs:
-        fund_one(HOST_HTTP, HOST_FAUCET, addr, HOST_FLOOR, "host")
-        fund_one(GATEWAY_HTTP, GATEWAY_FAUCET, addr, GATEWAY_FLOOR, "gateway")
+        if "host" in FUND_TARGETS:
+            fund_one(HOST_HTTP, HOST_FAUCET, addr, HOST_FLOOR, "host")
+        if "gateway" in FUND_TARGETS:
+            fund_one(GATEWAY_HTTP, GATEWAY_FAUCET, addr, GATEWAY_FLOOR, "gateway")
     print("funding complete", flush=True)
 
 

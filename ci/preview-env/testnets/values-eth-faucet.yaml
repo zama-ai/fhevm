@@ -1,0 +1,12 @@
+# sync-secrets values: Sepolia treasury key (gitops zws-dev ethereum faucet).
+# Helm release name is the ExternalSecret name (preview-eth-faucet).
+externalSecret:
+  enabled: true
+  targetSecretName: eth-faucet
+  data:
+    - keyReference: "zws-dev/ethereum-faucet"
+      propertyReference: private-key
+      secretKeyName: private_key
+  template:
+    data:
+      private-key: '{{ .private_key }}'
