@@ -70,6 +70,13 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 const READINESS_CONFIRMATIONS: i64 = 10_000;
 const NO_READINESS_ATTEMPT: i64 = -2;
 
+/// Substring that marks a `computations.error_message` as a RETRYABLE stamp
+/// rather than a terminal one. Must stay in sync with `tfhe-worker`'s
+/// `RETRYABLE_STAMP_MARKER` (the canonical definition; it is `pub(crate)` there
+/// and `upgrade-controller` does not depend on `tfhe-worker`, so the literal is
+/// duplicated here). A terminal error carries no such marker.
+const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
+
 /// Retry budget and backoff for [`execute_cutover`]. Cutover is the step that promotes
 /// the green stack, so a *transient* failure must not drop the upgrade on the floor:
 /// the whole thing is one transaction, so a failure rolls back cleanly and leaves the
@@ -528,11 +535,15 @@ async fn prune_gcs_computations_before_start(
 }
 
 /// True iff every computation in `[start_block - READINESS_CONFIRMATIONS, start_block]`
-/// on the given chain has `is_completed = true` AND `is_error = false`. Checked
-/// directly against `computations`, so a block with no computations trivially
-/// satisfies it and — unlike driving the scan off `host_chain_blocks_valid` —
-/// this half of the check cannot be defeated by `prune_finalized_block_history`
-/// pruning an old block's row out from under it.
+/// on the given chain is SETTLED — completed, or errored *terminally* (a stamp
+/// without the RETRYABLE marker). Still-in-flight rows (pending, or a retryable
+/// stamp that may yet heal) block; a terminal error does not, since it is a
+/// deterministic, inherited outcome that green dead-drains consistently and the
+/// state hash excludes (see the query comment). Checked directly against
+/// `computations`, so a block with no computations trivially satisfies it and,
+/// unlike driving the scan off `host_chain_blocks_valid`, this half of the check
+/// cannot be defeated by `prune_finalized_block_history` pruning an old block's
+/// row out from under it.
 ///
 /// Deliberately does *not* also require `pbs_computations` to be settled:
 /// `pbs_computations` feeds the ct128/S3-publication pipeline (`sns-worker`),
@@ -584,19 +595,23 @@ async fn check_dry_run_ready(
               SELECT 1 FROM public.host_chain_blocks_valid
               WHERE chain_id = $1 AND block_number = $3 AND block_status = 'finalized'
           )
-          -- 3. No unfinished or errored computation anywhere in the readiness
-          --    window [from_block, start_block].
+          -- 3. Every computation in the readiness window [from_block, start_block]
+          --    is SETTLED: it either completed, or errored TERMINALLY. Block only
+          --    on rows that are still in flight (pending, or a retryable stamp
+          --    that may still heal).
           AND NOT EXISTS (
               SELECT 1 FROM public.computations c
               WHERE c.host_chain_id = $1
                 AND c.block_number BETWEEN $2 AND $3
-                AND (c.is_completed = false OR c.is_error = true)
+                AND c.is_completed = false
+                AND (c.is_error = false OR c.error_message LIKE '%' || $4 || '%')
           )
         "#,
     )
     .bind(chain_id)
     .bind(from_block)
     .bind(start_block)
+    .bind(RETRYABLE_STAMP_MARKER)
     .fetch_one(pool)
     .await?;
     info!(
