@@ -1,86 +1,171 @@
 # kms_aggregator
 
-Posts one decryption request to every KMS connector endpoint and turns their answers into one relayer response.
-Reading order: this file, `aggregator.rs`, `call.rs`, `client.rs`, `flows/`, `config.rs`.
+Minimal first version. Posts one decryption request to every KMS connector endpoint and turns their answers into one
+result. Reading order: this file, `aggregator.rs`, `call.rs`, `client.rs`, `flows/`, `config.rs`.
 
-## 1. What it does, and what it does not
+## 1. What it is
 
-- Fans out `POST /v1/user-decrypt` or `POST /v1/public-decrypt` (DTOs from the `kms-connector-api` crate) to the `n`
-  configured nodes, collects the answers until every node has finished or the deadline passes, and answers when
-  `counted >= threshold`.
-- **Trust boundary.** The gateway used to recover each KMS signer from the response signature and bind it to the
-  transaction sender. Over HTTP there is no transaction sender, and the relayer holds neither the KMS signer set nor the
-  Decryption EIP-712 domain the KMS core signs under. Stage 1 therefore verifies **no signature**, as the old relayer never
-  did. Consequences, stated plainly: a byzantine node returning the honest public result with a garbage 65-byte signature
-  lands in `signatures` (the SDK verifies public-decrypt signatures against the KMS signer set itself), and a bogus user
-  share counts toward the threshold (the SDK drops it at reconstruction). Next step, when the source-authentication scheme
-  is decided: signer recovery in `Flow::check`, or a connector-side signature over the response.
-- **Two ids.** The relayer's `request_id` is passed to `run` for tracking and logs only. The connector's `decryptionId`
-  is the content hash of the request body, recomputed by every node with the shared api crate; it is logged, never checked.
+- Fans out `POST /v1/user-decrypt` or `POST /v1/public-decrypt` (request and response DTOs from the `kms-connector-api`
+  crate) to the `n` configured nodes.
+- Collects the answers until every node has finished or the deadline (`call.timeout`) passes.
+- Answers `Ok(output)` when `counted >= threshold`, otherwise a typed error that carries the counts and the dominant
+  connector error.
+- Is called by the relayer's request handlers with the relayer's own `request_id` and the connector request DTO. The
+  handlers, and everything before them, are out of the scope of this file.
 
-## 2. Vocabulary
+## 2. Overall scheme
+
+```mermaid
+flowchart TB
+  H[relayer handler: request_id + connector request DTO] --> A[Aggregator::run]
+  A -->|serialise once, one deadline, one cancellation token| S[spawn one Caller::call per node]
+  subgraph CALL[one node call]
+    P[semaphore permit] --> Q[POST /v1/user-decrypt or /v1/public-decrypt] --> D[decode]
+    D -->|200| OK[response]
+    D -->|error| R{retryable, under max_retries,<br/>delay fits before the deadline?}
+    R -->|yes: backoff| P
+    R -->|no| F[failed + connector code]
+  end
+  S --> CALL
+  CALL --> L{loop: next finished call,<br/>or the deadline}
+  L -->|response| C[Flow::check: accepted or rejected]
+  L -->|failed| E[count the error code]
+  C & E --> FF{"counted + pending < threshold?"}
+  FF -->|yes| X[cancel token: fail fast]
+  FF -->|no| L
+  L -->|deadline| X2[cancel token]
+  X & X2 --> DR[pending calls return Cancelled]
+  DR --> V{"counted >= threshold?"}
+  L -->|no call left| V
+  V -->|yes| O[Ok: Flow::output]
+  V -->|no| ERR[Err: Timeout, ThresholdNotReached or Cancelled,<br/>with the dominant error]
+```
+
+One aggregation over time (three nodes, one hangs):
+
+```mermaid
+sequenceDiagram
+  participant Hd as handler
+  participant Ag as Aggregator::run
+  participant N0 as node 0
+  participant N1 as node 1
+  participant N2 as node 2
+  Hd->>Ag: run(request_id, request)
+  Ag->>N0: POST (permit, deadline, token)
+  Ag->>N1: POST
+  Ag->>N2: POST
+  N0-->>Ag: 200 response → accepted (counted 1)
+  N1-->>Ag: 403 acl_denied → failed
+  Note over Ag: threshold 2, pending 1: keep collecting
+  Note over Ag,N2: node 2 never answers
+  Ag->>Ag: deadline → cancel token
+  N2-->>Ag: Cancelled
+  Ag-->>Hd: Err(Timeout { counted: 1, threshold: 2, dominant: acl_denied })
+```
+
+The decision, as a state machine:
+
+```mermaid
+stateDiagram-v2
+  [*] --> collecting: fan out
+  collecting --> collecting: response accepted / rejected, call failed
+  collecting --> deciding: every node finished
+  collecting --> cancelling: threshold unreachable (fail fast)
+  collecting --> cancelling: deadline
+  cancelling --> deciding: pending calls returned Cancelled
+  deciding --> Ok: threshold reached
+  deciding --> ThresholdNotReached: all finished or fail fast
+  deciding --> Timeout: deadline hit
+  deciding --> Cancelled: process shutting down
+```
+
+## 3. Vocabulary
 
 | term | meaning |
 |---|---|
 | node | one KMS connector endpoint (`endpoints[i]`, named in logs) |
 | accepted | a `200` response that passed `Flow::check` |
 | counted | accepted responses that count toward the threshold: all of them for user decrypt, the largest agreeing group for public decrypt |
-| threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`; 9 and 5 at n = 13) |
+| threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`) |
 | deadline | `call.timeout` after the start: the aggregation, and every call in it, ends by then |
 | fail fast | `counted + pending < threshold`: even if every pending node answered we could not make it, so stop now |
-| dominant error | the most frequent connector error code among the failed calls; what a handler maps to a user-facing error |
+| dominant error | the most frequent connector error code among the failed calls; carried by the error for the caller to act on |
+| `request_id` | the relayer's own correlation id, passed to `run`, on every log line; never sent to the nodes |
+| `decryptionId` | the connector's content hash of the request body, recomputed by every node; logged, never checked |
 
-## 3. How an aggregation runs (`Aggregator::run`)
+## 4. How an aggregation runs (`Aggregator::run`)
 
-1. Serialise the request once; spawn one task per node (`Caller::call`) sharing the body, the deadline and a
-   cancellation token (child of the process shutdown token).
-2. Loop on the next finished call or the deadline timer (`select!`, deadline first).
-3. A `200` goes through `Flow::check` → accepted or rejected. A failed call is counted with its error code. A cancelled
-   call is counted.
-4. After every result, fail fast if `counted + pending < threshold`: cancel the token, the pending calls return at once.
-5. At the deadline: cancel the token, drain the pending calls (immediate), decide.
+1. Serialise the request once. Spawn one task per node (`Caller::call`) sharing the body bytes, the deadline and a
+   cancellation token (a child of the process shutdown token).
+2. Loop on the next finished call or the deadline timer (the deadline is checked first).
+3. A `200` goes through `Flow::check` and is accepted or rejected. A failed call is counted with its connector code. A
+   cancelled call is counted.
+4. After every result, fail fast if `counted + pending < threshold`: cancel the token; the pending calls return at once.
+5. At the deadline: cancel the token, drain the pending calls (immediate), then decide.
 6. Decide once, after the loop:
 
-| state | result |
+| state at the end | result |
 |---|---|
 | `counted >= threshold` | `Ok(Flow::output(accepted))` |
-| shutdown token cancelled | `Err(Cancelled)` |
+| process shutdown token cancelled | `Err(Cancelled)` |
 | deadline hit | `Err(Timeout { counted, threshold, dominant })` |
-| otherwise (all nodes finished or fail fast) | `Err(ThresholdNotReached { counted, threshold, dominant })` |
+| otherwise (every node finished, or fail fast) | `Err(ThresholdNotReached { counted, threshold, dominant })` |
 
-One hung node therefore makes a request last the full `call.timeout` (accepted: more shares for the SDK, simplest loop).
+Two consequences to keep in mind: a single hung node makes that request last the full `call.timeout` (accepted: the
+answer then carries every share that arrived), and responses that would have arrived after the answer are cancelled,
+not stored.
 
-## 4. One node call (`Caller::call`)
+## 5. One node call (`Caller::call`)
 
-`permit → POST → decode → retry?` under the cancellation token. The semaphore (`max_concurrent_calls`) bounds HTTP calls
-in flight across all aggregations; a permit is held for one attempt only, never while sleeping. Retries happen only for
-retryable errors, at most `max_retries` times, with delay `min(delay * 2^(k-1), backoff_max)`, and never when the delay
-would end after the deadline. The reqwest client keeps its own `timeout(call.timeout)` as a safety net for a socket that
-stops answering; the aggregator's deadline is the decision.
+`permit → POST → decode → retry?`, under the cancellation token.
+
+- The semaphore (`max_concurrent_calls`) bounds HTTP calls in flight across all aggregations of the process. A permit
+  is held for one attempt only, never while sleeping between attempts.
+- Retries happen only for retryable errors, at most `max_retries` times, with delay `min(delay * 2^(k-1), backoff_max)`
+  before retry `k`, and never when the delay would end after the deadline.
+- An authentication rejection is never retried: our key is wrong for that node.
+- The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
+  answering. The aggregator's deadline is the decision.
 
 | connector answer | `AttemptError` | retried? |
 |---|---|---|
-| 2xx, valid DTO | — | — |
-| 2xx, unreadable or oversized body (> 4 MiB) | `Body` | no |
-| non-2xx with the connector error body | `Api { status, error }` | `error.code.retryable()`: `malformed`, `sender_authentication_failed`, `kms_context_destroyed`, `unprocessable` are final; the other codes (incl. 429 `rate_limited`, 503 `overloaded`) retry with backoff; `unknown` follows the body flag |
-| 401 or `sender_authentication_failed` | `Api` / `Status(401)` | never (our key is wrong for that node) |
-| non-2xx without a JSON body (empty 404, HTML 502, 3xx: never followed) | `Status` | 408 and 5xx only |
-| refused, reset, TLS, client timeout | `Transport` | yes |
+| 2xx with a valid DTO | — | — |
+| 2xx with an unreadable or oversized body (> 4 MiB) | `Body` | no |
+| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed` (400), `sender_authentication_failed` (401), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
+| non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408 and 5xx only |
+| connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
 
-## 5. Response checks (`flows/`)
+For the dominant error, a bare 401 counts as `sender_authentication_failed`, a transport failure or a bare 5xx as
+`upstream_transient`, a bad 2xx body as `unknown`.
 
-What the gateway did, what the old relayer did, what we do:
+## 6. Response checks (`flows/`)
 
-| check | gateway | old relayer | here |
-|---|---|---|---|
-| KMS signer recovery + signer set + tx sender | yes | no | no (section 1) |
-| one response per signer | yes | dedup by share index | byte-identical signature → `Duplicate` |
-| public: count per identical `(decryptedResult, extraData)` | yes (per digest) | took the event | yes; answer = largest group, its signatures only |
-| user: shares differ, counted as they arrive | yes | sorted by share index | yes, acceptance order |
-| signature is 65 bytes | implicit | no | yes → `BadSignature` (the SDK asserts it on every share) |
-| `decryptionId` echo | n/a | matched by id | logged, not checked |
+| check | why | on failure |
+|---|---|---|
+| the signature is 65 bytes | the SDK requires it on every share; one malformed node must not break the whole answer | `RejectReason::BadSignature`, the response is not counted |
+| the signature bytes are not those of an already accepted response | one response per signer | `RejectReason::Duplicate` |
+| public decrypt: only identical `(decryptedResult, extraData)` answers count together | one plaintext is expected; a divergent node lands in its own group | the answer is the largest group's result with that group's signatures only |
+| `decryptionId` | correlation only | logged on the span, never compared |
 
-## 6. Configuration → behaviour
+User-decrypt shares differ by design: every accepted share counts and is returned, in acceptance order.
+
+**Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies
+public-decrypt signatures against the KMS signer set. A byzantine node can therefore place a garbage 65-byte signature
+next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. Signer
+verification inside `Flow::check` is a later module (see section 12).
+
+## 7. Outputs
+
+Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
+
+```jsonc
+// user decrypt: every accepted share, acceptance order
+{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x00" }, … ] }
+// public decrypt: the largest agreeing group
+{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x00" }
+```
+
+## 8. Configuration → behaviour
 
 ```yaml
 kms_aggregator:
@@ -94,62 +179,48 @@ kms_aggregator:
   endpoints:
     - { name: kms_00, url: "https://kms-00.example.net:8443", auth: { type: api_key, value_env: KMS_00_API_KEY } }
 ```
-Rules: endpoints non-empty, unique names and URLs, http(s) with a host, no credentials/query/fragment; plain http or
-`auth: none` only towards loopback unless `allow_insecure_http`. The API key is read from the env var at startup
-(`Caller::new`) and sent as `authorization: Bearer <key>`; it is never in the config or the logs. The container image
-needs CA certificates (rustls uses the platform verifier). `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field;
-durations need a unit.
 
-## 7. Cancellation and shutdown
+- Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty with unique names and
+  URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` or `auth: none` only towards loopback
+  unless `allow_insecure_http`; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`; `max_retries <= 9` and
+  `0 < delay <= backoff_max <= 60s` when retries are on; each `threshold` within `1..=n`. Every message names the field
+  with its dotted path.
+- The API key is read from the named env var at startup and sent as `authorization: Bearer <key>`; it is never in the
+  config, the logs or any error message.
+- `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit.
+- TLS uses the platform trust store: the container image needs CA certificates.
 
-- **Deadline / fail fast**: the aggregation cancels its token; every pending call returns `Cancelled` immediately with its
-  attempt count and elapsed time (logged at debug), so the final log line accounts for every node.
-- **Client gone** (the handler's future is dropped): the `JoinSet` drops, the node tasks are aborted, connections are
-  closed. Nothing outlives the request: there is no sink to feed.
-- **SIGTERM / SIGINT**: `main` cancels the process token; every running aggregation ends with `Cancelled`.
+## 9. Cancellation and shutdown
 
-## 8. Handlers (next iteration)
+- **Deadline or fail fast**: the aggregation cancels its token; every pending call returns `Cancelled` immediately with
+  its attempt count and elapsed time, so the final log line accounts for every node.
+- **Caller gone** (the future returned by `run` is dropped): the node tasks are aborted and their connections closed.
+  Nothing outlives the request.
+- **Process shutdown**: `main` cancels the process token on SIGINT or SIGTERM; every running aggregation ends with
+  `Cancelled`.
 
-```rust
-async fn user_decrypt(State(app): State<App>, Json(request): Json<UserDecryptionRequest>) -> Response {
-    let request_id = uuid::Uuid::now_v7().to_string();
-    match app.user_decrypt.run(&request_id, request).await {
-        Ok(output) => Json(output).into_response(),                    // {"result":[{payload,signature,extraData}]}
-        Err(error) => error_response(&request_id, error),
-    }
-}
-```
+## 10. Logging
 
-| `AggregationError` | `dominant` | suggested HTTP answer |
+Span `aggregation{flow, request_id, decryption_id, handles}` around `run`. Events:
+
+| event | level | fields |
 |---|---|---|
-| `Timeout { .. }` | any | 504, "KMS nodes did not answer in time" |
-| `ThresholdNotReached` | `acl_denied`, `user_signature_rejected` | 403 |
-| `ThresholdNotReached` | `ciphertext_not_found` | 404 (or 503 "not ready" if the relayer retries later) |
-| `ThresholdNotReached` | `malformed`, `unprocessable` | 400 |
-| `ThresholdNotReached` | `sender_authentication_failed` | 502 (our credential) |
-| `ThresholdNotReached` | other / none | 502 |
-| `Cancelled` | — | 503 (shutting down) |
-| `Internal` | — | 500 |
+| `aggregation started` | info | nodes, threshold, timeout_ms |
+| `response accepted` | info | node, attempts, elapsed_ms, counted |
+| `response rejected` | warn | node, elapsed_ms, reason |
+| `call failed` | warn | node, attempts, elapsed_ms, error |
+| `retrying`, `giving up`, `call cancelled`, `deadline reached`, `threshold unreachable` | debug | node, attempts, delay_ms / pending |
+| `node task failed` | error | a panic inside a node task (counted as failed) |
+| `aggregation succeeded` / `aggregation failed` | info / warn | counted, accepted, rejected, failed, cancelled, deadline_hit, dominant, elapsed_ms |
 
-Outputs: user decrypt `{"result":[{"payload":"<hex>","signature":"<hex>","extraData":"0x00"}]}`; public decrypt
-`{"decryptedValue":"<hex>","signatures":["<hex>"],"extraData":"0x00"}` (hex without `0x` for bytes, `0x` for extraData,
-as the current relayer answers).
+Never logged: request or response bodies, shares, signatures, header values, URLs.
 
-## 9. Logging
-
-Span `aggregation{flow, request_id, decryption_id, handles}`. Events: `aggregation started` (info: nodes, threshold,
-timeout_ms), `response accepted` (info: node, attempts, elapsed_ms, counted), `response rejected` (warn: reason),
-`call failed` (warn: attempts, error), `retrying` / `giving up` / `call cancelled` / `deadline reached` /
-`threshold unreachable` (debug), `node task failed` (error: a panic in a node task), `aggregation succeeded` (info) /
-`aggregation failed` (warn) with all counters, `dominant` and `elapsed_ms`. Never logged: bodies, shares, signatures,
-header values, URLs.
-
-## 10. Testing
+## 11. Testing
 
 - Unit tests next to every function (`cargo test -p relayer-http`).
-- Wire tests for the HTTP client against a `wiremock` server (headers, body, statuses, redirects, body cap).
-- Scenarios: `scenarios/*.yaml`, run by `cargo test yaml_scenarios` under paused tokio time (a 5 s scenario runs in
-  microseconds, `elapsed` is exact). Adding one = adding a file:
+- Wire tests of the HTTP client against a `wiremock` server (headers, body, statuses, redirects, body cap).
+- Scenarios in `scenarios/*.yaml`, run by `cargo test -p relayer-http yaml_scenarios` under paused tokio time (a 5 s
+  scenario runs in microseconds and `elapsed` is exact). Adding a scenario is adding a file:
 
 ```yaml
 flow: user_decrypt            # user_decrypt | public_decrypt
@@ -158,7 +229,7 @@ timeout: 5s
 max_retries: 0                # optional
 delay: 10ms                   # optional, per attempt
 nodes:                        # groups in node order
-  - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | <error_code>
+  - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | <connector error code>
   - { count: 2, replies: [rate_limited, ok] }      # one reply per attempt, the last one repeats
 expect:                       # every field except outcome is optional
   outcome: ok                 # ok | timeout | threshold_not_reached
@@ -169,15 +240,24 @@ expect:                       # every field except outcome is optional
   attempts: 13
 ```
 
-Before every commit: `cargo fmt -- --check`, `cargo clippy --workspace --all-targets -- -W clippy::perf
--W clippy::suspicious -W clippy::style -D warnings`, `cargo test --workspace`.
+Before every commit, from `relayer-http/`:
 
-## 11. Later
+```sh
+cargo fmt -- --check
+cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
+cargo test --workspace
+```
 
-- **Response cache.** There is no sink and the pending calls are cancelled when the aggregation answers, so shares that
-  arrive after the answer are lost. A response cache in the handlers would need share registration first (persist every
-  accepted response as it arrives); fine for stage 1 without a cache.
-- Moving the module to its own crate: it only depends on `config.rs` structs and the api crate.
-- A new auth scheme: `Endpoint.auth` becomes an enum, `Endpoint::from_config` builds it.
-- Transciphering: one more `Flow` implementation.
-- Signer verification: `Flow::check` gets the signer set and the EIP-712 domain.
+## 12. Version 1 scope, and later
+
+Version 1 is the fan-out and the aggregation only.
+
+- **No ACL check and no ciphertext-commit (readiness) check** in the relayer: the connector's worker performs them and
+  answers `acl_denied` / `ciphertext_not_found`, which surface as the dominant error. They can come back as optional
+  modules in front of the aggregator.
+- **No storage of responses and no cache**: responses arriving after the answer are cancelled, so a response cache in
+  front of the aggregator would first need every accepted response to be registered as it arrives.
+- A new authentication scheme: `Endpoint.auth` becomes an enum, built by `Endpoint::from_config`.
+- Transciphering: one more `Flow` implementation (request/response DTOs, route, check, counted, output).
+- Signer verification: `Flow::check` gets the KMS signer set and the EIP-712 domain.
+- The module only depends on its `config.rs` structs and the api crate: it can move to its own crate when needed.
