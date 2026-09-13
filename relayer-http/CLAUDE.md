@@ -47,6 +47,10 @@ Every change must pass the first three. Check exit codes strictly (a grep on the
 
 ## Rules
 
+**No gateway interaction.** The relayer never talks to the gateway chain and carries no gateway-specific
+configuration, optional checks included. Every on-chain read goes to a host chain through host contracts, Ethereum
+being the reference.
+
 **No unexpected panic.** Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
 the runtime arithmetic relies on (`call.timeout <= 60s`, `max_retries <= 9`, semaphore size capped) so that no

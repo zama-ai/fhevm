@@ -25,8 +25,8 @@ pub struct KmsAggregatorConfig {
     #[serde(default = "default_max_concurrent_calls")]
     pub max_concurrent_calls: usize,
     pub call: CallConfig,
-    pub user_decrypt: FlowConfig,
-    pub public_decrypt: FlowConfig,
+    pub user_decrypt: UserDecryptConfig,
+    pub public_decrypt: PublicDecryptConfig,
     pub endpoints: Vec<EndpointConfig>,
 }
 
@@ -84,8 +84,27 @@ impl RetryConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct FlowConfig {
-    /// Responses that must count before answering (user: distinct shares, public: identical results).
+pub struct UserDecryptConfig {
+    /// Distinct shares that must be accepted before answering.
+    pub threshold: usize,
+    #[serde(default)]
+    pub checks: UserChecks,
+}
+
+/// Optional checks on user-decrypt responses. All off by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UserChecks {
+    /// Reject a response whose `decryptionId` is not the request's content hash.
+    pub decryption_id_match: bool,
+    /// Count and return only the shares that carry the majority `decryptionId`.
+    pub decryption_id_majority: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PublicDecryptConfig {
+    /// Identical `(decryptedResult, extraData)` answers that must be accepted before answering.
     pub threshold: usize,
 }
 
@@ -186,14 +205,13 @@ impl KmsAggregatorConfig {
                 "kms_aggregator.call.retries must satisfy 0 < delay <= backoff_max <= {MAX_TIMEOUT:?}"
             ));
         }
-        for (name, flow) in [
-            ("user_decrypt", &self.user_decrypt),
-            ("public_decrypt", &self.public_decrypt),
+        for (name, threshold) in [
+            ("user_decrypt", self.user_decrypt.threshold),
+            ("public_decrypt", self.public_decrypt.threshold),
         ] {
-            if flow.threshold == 0 || flow.threshold > n {
+            if threshold == 0 || threshold > n {
                 return fail(format!(
-                    "kms_aggregator.{name}.threshold ({}) must be within 1..={n}",
-                    flow.threshold
+                    "kms_aggregator.{name}.threshold ({threshold}) must be within 1..={n}"
                 ));
             }
         }
@@ -228,8 +246,11 @@ pub(crate) mod tests {
                 timeout: Duration::from_secs(5),
                 retries: RetryConfig::default(),
             },
-            user_decrypt: FlowConfig { threshold: 1 },
-            public_decrypt: FlowConfig { threshold: 1 },
+            user_decrypt: UserDecryptConfig {
+                threshold: 1,
+                checks: UserChecks::default(),
+            },
+            public_decrypt: PublicDecryptConfig { threshold: 1 },
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("kms_{i:02}"),
@@ -384,6 +405,25 @@ pub(crate) mod tests {
         assert!(message(&cfg).contains("public_decrypt.threshold (4) must be within 1..=3"));
         cfg.public_decrypt.threshold = 3;
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn user_checks_are_off_by_default_and_strict() {
+        assert_eq!(
+            UserChecks::default(),
+            UserChecks {
+                decryption_id_match: false,
+                decryption_id_majority: false
+            }
+        );
+        let parsed: UserChecks = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed, UserChecks::default());
+        let parsed: UserChecks =
+            serde_json::from_str(r#"{"decryption_id_majority": true}"#).unwrap();
+        assert!(parsed.decryption_id_majority && !parsed.decryption_id_match);
+        assert!(serde_json::from_str::<UserChecks>(r#"{"decryption_id": true}"#).is_err());
+        let flow: UserDecryptConfig = serde_json::from_str(r#"{"threshold": 9}"#).unwrap();
+        assert_eq!((flow.threshold, flow.checks), (9, UserChecks::default()));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use super::aggregator::{AggregationError, Aggregator};
+use super::config::UserChecks;
 use super::flows::Flow;
 use super::flows::public_decrypt::PublicDecrypt;
 use super::flows::user_decrypt::UserDecrypt;
@@ -30,6 +31,8 @@ struct Scenario {
     delay: Duration,
     /// Node groups in node order; the total is the number of nodes.
     nodes: Vec<Group>,
+    /// Optional user-decrypt checks (`decryption_id_match`, `decryption_id_majority`).
+    checks: Option<UserChecks>,
     expect: Expect,
 }
 
@@ -98,6 +101,7 @@ fn load(path: &Path) -> Result<Scenario, String> {
 async fn run<F: Flow>(
     scenario: &Scenario,
     request: F::Request,
+    checks: F::Checks,
     responses: fn(&F::Output) -> usize,
 ) -> Observed {
     let scripts: Vec<Vec<Reply>> = scenario
@@ -107,7 +111,8 @@ async fn run<F: Flow>(
         .collect();
     let mock = MockClient::new(scripts.clone(), scenario.delay);
     let caller = mock.clone().caller(scenario.timeout, scenario.max_retries);
-    let aggregator = Aggregator::<F>::new(caller, scenario.threshold, CancellationToken::new());
+    let aggregator =
+        Aggregator::<F>::new(caller, scenario.threshold, checks, CancellationToken::new());
     let started = Instant::now();
     let result = aggregator.run("scenario", request).await;
     let elapsed = started.elapsed();
@@ -207,12 +212,16 @@ async fn run_file(path: &Path) -> Result<(), String> {
     let observed = match scenario.flow {
         FlowName::UserDecrypt => {
             let request: UserDecryptionRequest = serde_json::from_str(USER_REQUEST_JSON).unwrap();
-            run::<UserDecrypt>(&scenario, request, |o| o.result.len()).await
+            let checks = scenario.checks.unwrap_or_default();
+            run::<UserDecrypt>(&scenario, request, checks, |o| o.result.len()).await
         }
         FlowName::PublicDecrypt => {
+            if scenario.checks.is_some() {
+                return Err("`checks` applies to user_decrypt only".to_owned());
+            }
             let request: PublicDecryptionRequest =
                 serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap();
-            run::<PublicDecrypt>(&scenario, request, |o| o.signatures.len()).await
+            run::<PublicDecrypt>(&scenario, request, (), |o| o.signatures.len()).await
         }
     };
     let report = compare(&scenario.expect, &observed);
