@@ -1,0 +1,12 @@
+# Without the optional check, a response whose decryptionId differs is still a share like any other.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 1, replies: [wrong_id] }
+  - { count: 12, replies: [ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 10ms

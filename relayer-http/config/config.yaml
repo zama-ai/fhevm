@@ -15,6 +15,9 @@ kms_aggregator:
     threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13)
   user_decrypt:
     threshold: 9               # shares needed; protocol config value (9 at n = 13)
+    checks:                    # optional response checks, all off by default
+      decryption_id_match: false     # reject a response whose decryptionId is not the request's content hash
+      decryption_id_majority: false  # count and return only the shares carrying the majority decryptionId
   endpoints:                   # one entry per KMS node; `auth` is required
     - name: kms_00
       url: "https://kms-00.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly

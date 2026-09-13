@@ -21,6 +21,7 @@ pub enum AggregationError {
     Timeout {
         counted: usize,
         threshold: usize,
+        rejected: usize,
         dominant: Option<ErrorCode>,
     },
     /// Every node finished, or too many failed for the threshold to be reachable.
@@ -28,6 +29,7 @@ pub enum AggregationError {
     ThresholdNotReached {
         counted: usize,
         threshold: usize,
+        rejected: usize,
         dominant: Option<ErrorCode>,
     },
     /// The process is shutting down.
@@ -54,15 +56,23 @@ impl AggregationError {
 pub struct Aggregator<F: Flow> {
     caller: Arc<Caller>,
     threshold: usize,
+    checks: F::Checks,
     shutdown: CancellationToken,
     _flow: PhantomData<F>,
 }
 
 impl<F: Flow> Aggregator<F> {
-    pub fn new(caller: Arc<Caller>, threshold: usize, shutdown: CancellationToken) -> Self {
+    /// `checks`: the flow's optional checks, from the configuration.
+    pub fn new(
+        caller: Arc<Caller>,
+        threshold: usize,
+        checks: F::Checks,
+        shutdown: CancellationToken,
+    ) -> Self {
         Self {
             caller,
             threshold,
+            checks,
             shutdown,
             _flow: PhantomData,
         }
@@ -147,14 +157,14 @@ impl<F: Flow> Aggregator<F> {
             };
             let elapsed_ms = call.elapsed.as_millis() as u64;
             match call.result {
-                Ok(response) => match F::check(&accepted, &response) {
+                Ok(response) => match F::check(&self.checks, &request, &accepted, &response) {
                     Ok(()) => {
                         accepted.push(response);
                         info!(
                             node = %call.node,
                             attempts = call.attempts,
                             elapsed_ms,
-                            counted = F::counted(&accepted),
+                            counted = F::counted(&self.checks, &accepted),
                             "response accepted"
                         );
                     }
@@ -174,13 +184,15 @@ impl<F: Flow> Aggregator<F> {
                 }
             }
             // Fail fast: even if every pending node answered we could not reach the threshold.
-            if !cancel.is_cancelled() && F::counted(&accepted) + pending.len() < threshold {
+            if !cancel.is_cancelled()
+                && F::counted(&self.checks, &accepted) + pending.len() < threshold
+            {
                 cancel.cancel();
                 debug!(pending = pending.len(), "threshold unreachable");
             }
         }
 
-        let counted = F::counted(&accepted);
+        let counted = F::counted(&self.checks, &accepted);
         let dominant = dominant(&codes);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         if counted >= threshold {
@@ -194,7 +206,7 @@ impl<F: Flow> Aggregator<F> {
                 elapsed_ms,
                 "aggregation succeeded"
             );
-            return F::output(accepted).ok_or_else(|| {
+            return F::output(&self.checks, accepted).ok_or_else(|| {
                 AggregationError::Internal("no output from the accepted responses".to_owned())
             });
         }
@@ -216,12 +228,14 @@ impl<F: Flow> Aggregator<F> {
             AggregationError::Timeout {
                 counted,
                 threshold,
+                rejected,
                 dominant,
             }
         } else {
             AggregationError::ThresholdNotReached {
                 counted,
                 threshold,
+                rejected,
                 dominant,
             }
         };
@@ -244,6 +258,7 @@ mod tests {
     use kms_connector_api::{PublicDecryptionRequest, UserDecryptionRequest};
 
     use super::*;
+    use crate::kms_aggregator::config::UserChecks;
     use crate::kms_aggregator::flows::public_decrypt::PublicDecrypt;
     use crate::kms_aggregator::flows::user_decrypt::UserDecrypt;
     use crate::kms_aggregator::mock::{
@@ -280,19 +295,26 @@ mod tests {
     fn aggregator<F: Flow>(
         groups: &[(usize, Reply)],
         threshold: usize,
+        checks: F::Checks,
         shutdown: CancellationToken,
     ) -> (Arc<MockClient>, Aggregator<F>) {
         let mock = MockClient::new(nodes(groups), ms(10));
         let caller = mock.clone().caller(Duration::from_secs(5), 0);
-        (mock, Aggregator::new(caller, threshold, shutdown))
+        (mock, Aggregator::new(caller, threshold, checks, shutdown))
     }
 
     fn user(groups: &[(usize, Reply)], threshold: usize) -> Aggregator<UserDecrypt> {
-        aggregator(groups, threshold, CancellationToken::new()).1
+        aggregator(
+            groups,
+            threshold,
+            UserChecks::default(),
+            CancellationToken::new(),
+        )
+        .1
     }
 
     fn public(groups: &[(usize, Reply)], threshold: usize) -> Aggregator<PublicDecrypt> {
-        aggregator(groups, threshold, CancellationToken::new()).1
+        aggregator(groups, threshold, (), CancellationToken::new()).1
     }
 
     #[tokio::test(start_paused = true)]
@@ -320,14 +342,19 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn threshold_unreachable_fails_fast_and_cancels_the_rest() {
         let started = Instant::now();
-        let (mock, aggregator) =
-            aggregator::<UserDecrypt>(&[(5, ACL), (8, HANG)], 9, CancellationToken::new());
+        let (mock, aggregator) = aggregator::<UserDecrypt>(
+            &[(5, ACL), (8, HANG)],
+            9,
+            UserChecks::default(),
+            CancellationToken::new(),
+        );
         let err = aggregator.run("req-3", user_request()).await.unwrap_err();
         assert_eq!(
             err,
             AggregationError::ThresholdNotReached {
                 counted: 0,
                 threshold: 9,
+                rejected: 0,
                 dominant: Some(ErrorCode::AclDenied),
             }
         );
@@ -347,6 +374,7 @@ mod tests {
             AggregationError::Timeout {
                 counted: 8,
                 threshold: 9,
+                rejected: 0,
                 dominant: None,
             }
         );
@@ -386,6 +414,68 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn rejected_responses_are_counted_in_the_error() {
+        let err = user(
+            &[(4, OK), (1, Reply::Fixed(Fixed::BadSignature)), (8, ACL)],
+            9,
+        )
+        .run("req-6b", user_request())
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                AggregationError::ThresholdNotReached {
+                    counted: 4,
+                    rejected: 1,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn decryption_id_mismatch_is_rejected_only_when_checked() {
+        let groups = [(2, Reply::Fixed(Fixed::WrongId)), (11, OK)];
+        let unchecked = user(&groups, 9)
+            .run("req-6c", user_request())
+            .await
+            .unwrap();
+        assert_eq!(unchecked.result.len(), 13);
+
+        let checks = UserChecks {
+            decryption_id_match: true,
+            decryption_id_majority: false,
+        };
+        let (_, checked) = aggregator::<UserDecrypt>(&groups, 9, checks, CancellationToken::new());
+        assert_eq!(
+            checked
+                .run("req-6d", user_request())
+                .await
+                .unwrap()
+                .result
+                .len(),
+            11
+        );
+
+        let checks = UserChecks {
+            decryption_id_match: false,
+            decryption_id_majority: true,
+        };
+        let (_, majority) = aggregator::<UserDecrypt>(&groups, 9, checks, CancellationToken::new());
+        assert_eq!(
+            majority
+                .run("req-6e", user_request())
+                .await
+                .unwrap()
+                .result
+                .len(),
+            11
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn public_majority_wins_and_only_its_signatures_are_returned() {
         let output = public(&[(8, OK), (3, DIVERGENT), (2, HANG)], 5)
             .run("req-7", public_request())
@@ -409,6 +499,7 @@ mod tests {
             AggregationError::ThresholdNotReached {
                 counted: 4,
                 threshold: 5,
+                rejected: 0,
                 dominant: Some(ErrorCode::AclDenied),
             }
         );
@@ -417,7 +508,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn shutdown_cancels_a_running_aggregation() {
         let shutdown = CancellationToken::new();
-        let (_, aggregator) = aggregator::<UserDecrypt>(&[(13, HANG)], 9, shutdown.clone());
+        let (_, aggregator) =
+            aggregator::<UserDecrypt>(&[(13, HANG)], 9, UserChecks::default(), shutdown.clone());
         let started = Instant::now();
         let (result, ()) = tokio::join!(aggregator.run("req-9", user_request()), async {
             tokio::time::sleep(ms(100)).await;
@@ -429,8 +521,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn dropping_the_run_future_aborts_the_node_tasks() {
-        let (mock, aggregator) =
-            aggregator::<UserDecrypt>(&[(13, HANG)], 9, CancellationToken::new());
+        let (mock, aggregator) = aggregator::<UserDecrypt>(
+            &[(13, HANG)],
+            9,
+            UserChecks::default(),
+            CancellationToken::new(),
+        );
         let run = aggregator.run("req-10", user_request());
         tokio::select! {
             _ = run => panic!("hung nodes cannot finish"),
@@ -463,6 +559,7 @@ mod tests {
             AggregationError::Timeout {
                 counted: 1,
                 threshold: 2,
+                rejected: 0,
                 dominant: some
             }
             .dominant(),
@@ -472,6 +569,7 @@ mod tests {
             AggregationError::ThresholdNotReached {
                 counted: 1,
                 threshold: 2,
+                rejected: 0,
                 dominant: some
             }
             .dominant(),
@@ -483,6 +581,7 @@ mod tests {
             AggregationError::Timeout {
                 counted: 7,
                 threshold: 9,
+                rejected: 0,
                 dominant: None
             }
             .to_string(),
