@@ -125,10 +125,14 @@ impl<F: Flow> Aggregator<F> {
             });
         }
 
-        // Tallies for the final log line.
+        // Tallies for the final log line: the node names behind every outcome, so one line names the culprits.
         let mut accepted: Vec<F::Response> = Vec::with_capacity(nodes);
         let mut codes: Vec<ErrorCode> = Vec::new();
-        let (mut rejected, mut failed, mut cancelled) = (0usize, 0usize, 0usize);
+        let (mut rejected, mut failed, mut cancelled) = (
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+        );
         let mut deadline_hit = false;
 
         // Three ways out of the loop: (a) every node finished, `join_next` returns None; (b) the deadline
@@ -149,7 +153,7 @@ impl<F: Flow> Aggregator<F> {
                     Some(Ok(call)) => call,
                     // A panic inside a node task: counted as failed, never propagated.
                     Some(Err(e)) => {
-                        failed += 1;
+                        failed.push("?".to_owned());
                         error!(error = %e, "node task failed");
                         continue;
                     }
@@ -169,16 +173,22 @@ impl<F: Flow> Aggregator<F> {
                         );
                     }
                     Err(reason) => {
-                        rejected += 1;
+                        rejected.push(call.node.clone());
                         warn!(node = %call.node, elapsed_ms, %reason, "response rejected");
                     }
                 },
                 Err(CallError::Cancelled) => {
-                    cancelled += 1;
-                    debug!(node = %call.node, attempts = call.attempts, elapsed_ms, "call cancelled");
+                    cancelled.push(call.node.clone());
+                    if deadline_hit {
+                        // Still running at the deadline: too slow, or hung. Visible at the default level.
+                        warn!(node = %call.node, attempts = call.attempts, elapsed_ms, "call cancelled at the deadline");
+                    } else {
+                        // Fail fast or shutdown: not the node's fault.
+                        debug!(node = %call.node, attempts = call.attempts, elapsed_ms, "call cancelled");
+                    }
                 }
                 Err(e) => {
-                    failed += 1;
+                    failed.push(call.node.clone());
                     codes.extend(e.code());
                     warn!(node = %call.node, attempts = call.attempts, elapsed_ms, error = %e, "call failed");
                 }
@@ -199,9 +209,12 @@ impl<F: Flow> Aggregator<F> {
             info!(
                 counted,
                 accepted = accepted.len(),
-                rejected,
-                failed,
-                cancelled,
+                rejected = rejected.len(),
+                rejected_nodes = ?rejected,
+                failed = failed.len(),
+                failed_nodes = ?failed,
+                cancelled = cancelled.len(),
+                cancelled_nodes = ?cancelled,
                 deadline_hit,
                 elapsed_ms,
                 "aggregation succeeded"
@@ -214,9 +227,12 @@ impl<F: Flow> Aggregator<F> {
             counted,
             threshold,
             accepted = accepted.len(),
-            rejected,
-            failed,
-            cancelled,
+            rejected = rejected.len(),
+            rejected_nodes = ?rejected,
+            failed = failed.len(),
+            failed_nodes = ?failed,
+            cancelled = cancelled.len(),
+            cancelled_nodes = ?cancelled,
             deadline_hit,
             dominant = dominant.map(ErrorCode::as_str),
             elapsed_ms,
@@ -228,14 +244,14 @@ impl<F: Flow> Aggregator<F> {
             AggregationError::Timeout {
                 counted,
                 threshold,
-                rejected,
+                rejected: rejected.len(),
                 dominant,
             }
         } else {
             AggregationError::ThresholdNotReached {
                 counted,
                 threshold,
-                rejected,
+                rejected: rejected.len(),
                 dominant,
             }
         };
