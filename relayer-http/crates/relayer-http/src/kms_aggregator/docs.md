@@ -222,11 +222,17 @@ Span `aggregation{flow, request_id, decryption_id, handles}` around `run`. Event
 | `response accepted` | info | node, attempts, elapsed_ms, counted |
 | `response rejected` | warn | node, elapsed_ms, reason |
 | `call failed` | warn | node, attempts, elapsed_ms, error |
-| `retrying`, `giving up`, `call cancelled`, `deadline reached`, `threshold unreachable` | debug | node, attempts, delay_ms / pending |
-| `node task failed` | error | a panic inside a node task (counted as failed) |
-| `aggregation succeeded` / `aggregation failed` | info / warn | counted, accepted, rejected, failed, cancelled, deadline_hit, dominant, elapsed_ms |
+| `call cancelled at the deadline` | warn | node, attempts, elapsed_ms: the node was still running when the deadline passed (too slow, or hung) |
+| `retrying`, `giving up`, `call cancelled` (fail fast or shutdown), `deadline reached`, `threshold unreachable` | debug | node, attempts, delay_ms / pending |
+| `node task failed` | error | a panic inside a node task (counted as failed, no node name available) |
+| `aggregation succeeded` / `aggregation failed` | info / warn | counted, accepted, rejected + rejected_nodes, failed + failed_nodes, cancelled + cancelled_nodes, deadline_hit, dominant, elapsed_ms |
 
-Never logged: request or response bodies, shares, signatures, header values, URLs.
+Every line about one node carries its configured name (`node`), and the final line lists the names behind every
+rejection, failure and cancellation, so a node that keeps failing, timing out or being rejected is identifiable from
+the logs of one request. Together with the span fields this identifies a request end to end: `request_id` (the
+relayer's), `decryption_id` (the connector's), `handles`, `node`.
+
+Never logged: request or response bodies, shares, signatures, header values, URLs, API keys.
 
 ## 11. Testing
 
