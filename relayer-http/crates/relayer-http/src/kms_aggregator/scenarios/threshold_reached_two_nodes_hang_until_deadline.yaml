@@ -1,0 +1,14 @@
+# Threshold met early, but two nodes never answer: we keep collecting until the deadline, then answer.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 2, replies: [hang] }
+  - { count: 2, replies: [acl_denied] }
+expect:
+  outcome: ok
+  counted: 9
+  responses: 9
+  elapsed: 5s
+  attempts: 13

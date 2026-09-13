@@ -1,0 +1,13 @@
+# A fresh ciphertext: every node answers ciphertext_not_found once, then succeeds on the retry (500 ms later).
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+max_retries: 2
+nodes:
+  - { count: 13, replies: [ciphertext_not_found, ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 520ms
+  attempts: 26
