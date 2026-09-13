@@ -17,7 +17,8 @@ use url::Url;
 use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
 use super::config::{
-    AuthConfig, CallConfig, EndpointConfig, FlowConfig, KmsAggregatorConfig, RetryConfig,
+    AuthConfig, CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig,
+    UserChecks, UserDecryptConfig,
 };
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
@@ -47,6 +48,8 @@ pub enum Fixed {
     BadSignature,
     /// Node 0's signature (the same partner answering behind two URLs).
     Duplicate,
+    /// A `decryptionId` that is not the request's content hash.
+    WrongId,
     /// Never answers (until cancelled).
     Hang,
     /// Connection refused.
@@ -86,8 +89,11 @@ impl MockClient {
                     ..RetryConfig::default()
                 },
             },
-            user_decrypt: FlowConfig { threshold: 1 },
-            public_decrypt: FlowConfig { threshold: 1 },
+            user_decrypt: UserDecryptConfig {
+                threshold: 1,
+                checks: UserChecks::default(),
+            },
+            public_decrypt: PublicDecryptConfig { threshold: 1 },
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("node-{i}"),
@@ -177,6 +183,11 @@ fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
 /// A `200` reply for `route`, derived from the request body so the id matches what was sent.
 pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpReply {
     let (decryption_id, extra_data) = request_facts(route, body);
+    let decryption_id = if fixed == Fixed::WrongId {
+        B256::repeat_byte(0xEE)
+    } else {
+        decryption_id
+    };
     let mut signature = match fixed {
         Fixed::Duplicate => signature(0),
         _ => signature(node),
