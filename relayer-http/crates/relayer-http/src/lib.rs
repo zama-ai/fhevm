@@ -43,11 +43,13 @@ impl App {
             user_decrypt: Arc::new(Aggregator::new(
                 caller.clone(),
                 cfg.user_decrypt.threshold,
+                cfg.user_decrypt.checks,
                 shutdown.clone(),
             )),
             public_decrypt: Arc::new(Aggregator::new(
                 caller,
                 cfg.public_decrypt.threshold,
+                (),
                 shutdown,
             )),
         })

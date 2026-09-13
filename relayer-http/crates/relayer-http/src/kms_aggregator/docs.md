@@ -140,19 +140,30 @@ For the dominant error, a bare 401 counts as `sender_authentication_failed`, a t
 
 ## 6. Response checks (`flows/`)
 
-| check | why | on failure |
+Always on:
+
+| check | flow | why | on failure |
+|---|---|---|---|
+| the signature is 65 bytes | both | the SDK requires it on every share; one malformed node must not break the whole answer | `RejectReason::BadSignature`, the response is not counted |
+| the signature bytes are not those of an already accepted response | both | one response per signer | `RejectReason::Duplicate` |
+| only identical `(decryptedResult, extraData)` answers count together | public | one plaintext is expected; a divergent node lands in its own group | the answer is the largest group's result with that group's signatures only |
+
+Optional, off by default (`user_decrypt.checks` in the configuration; a flow's checks are its `Flow::Checks` type,
+built once at startup):
+
+| check | config key | effect |
 |---|---|---|
-| the signature is 65 bytes | the SDK requires it on every share; one malformed node must not break the whole answer | `RejectReason::BadSignature`, the response is not counted |
-| the signature bytes are not those of an already accepted response | one response per signer | `RejectReason::Duplicate` |
-| public decrypt: only identical `(decryptedResult, extraData)` answers count together | one plaintext is expected; a divergent node lands in its own group | the answer is the largest group's result with that group's signatures only |
-| `decryptionId` | correlation only | logged on the span, never compared |
+| the response's `decryptionId` is the request's content hash (the relayer computes it from the payload with the connector's crate) | `decryption_id_match` | a response with another id is rejected (`RejectReason::IdMismatch`) |
+| only the shares carrying the majority `decryptionId` count | `decryption_id_majority` | `counted` is the size of the largest id group and only that group is returned |
 
-User-decrypt shares differ by design: every accepted share counts and is returned, in acceptance order.
+Without them the `decryptionId` is correlation only: logged on the span, never compared. User-decrypt shares differ by
+design: every accepted share counts and is returned, in acceptance order. Public decrypt has no optional check in this
+version.
 
-**Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies
-public-decrypt signatures against the KMS signer set. A byzantine node can therefore place a garbage 65-byte signature
-next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. Signer
-verification inside `Flow::check` is a later module (see section 12).
+**Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies the
+signatures against the KMS signer set client-side. A byzantine node can therefore place a garbage 65-byte signature
+next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. See section 12
+for the optional verification that could be added later.
 
 ## 7. Outputs
 
@@ -175,7 +186,9 @@ kms_aggregator:
     timeout: 5000ms            # the deadline (<= 60s)
     retries: { max_retries: 0, delay: 500ms, backoff_max: 4s }   # max_retries <= 9; 0 < delay <= backoff_max
   public_decrypt: { threshold: 5 }
-  user_decrypt: { threshold: 9 }
+  user_decrypt:
+    threshold: 9
+    checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 6
   endpoints:
     - { name: kms_00, url: "https://kms-00.example.net:8443", auth: { type: api_key, value_env: KMS_00_API_KEY } }
 ```
@@ -259,5 +272,13 @@ Version 1 is the fan-out and the aggregation only.
   front of the aggregator would first need every accepted response to be registered as it arrives.
 - A new authentication scheme: `Endpoint.auth` becomes an enum, built by `Endpoint::from_config`.
 - Transciphering: one more `Flow` implementation (request/response DTOs, route, check, counted, output).
-- Signer verification: `Flow::check` gets the KMS signer set and the EIP-712 domain.
 - The module only depends on its `config.rs` structs and the api crate: it can move to its own crate when needed.
+- **Everything the relayer may ever read on chain is read on a host chain (Ethereum), through host contracts. The
+  relayer has no interaction with the gateway chain and no gateway-specific configuration, optional checks included.**
+
+### Appendix: optional KMS signature verification (not implemented)
+
+The KMS signature carried by each response (public-decrypt results and user-decrypt shares alike) could be verified by
+the relayer as an optional, per-flow check plugged into `Flow::Checks`, using host-chain reads only. It is not
+implemented in this version: it costs CPU and latency on every request, and the fhevm SDK performs this verification
+client-side anyway. A detailed design exists outside this repository for a later implementation, if bandwidth allows.
