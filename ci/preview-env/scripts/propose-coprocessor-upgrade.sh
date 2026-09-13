@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# RFC-021 cutover kickoff for preview-env. ACL owner (#9) sends one
-# ProtocolConfig.proposeCoprocessorUpgrade with a window per host chain, then asserts each
-# party's upgrade_state / versioning rows. BCS and GCS binaries already run the FSM.
-# Env: NAMESPACE, NB_COPROCESSOR, HOST_HTTP, GATEWAY_HTTP, HOST_CHAIN_ID;
-#      with DEPLOY_POLYGON also POLYGON_HTTP, POLYGON_CHAIN_ID, HOST_BLOCK_TIME, POLYGON_BLOCK_TIME.
+# RFC-021 cutover kickoff for preview-env. Runs host-contracts' task:proposeCoprocessorUpgrade
+# (the real window-selection tool: samples block times per chain, one window per host chain plus
+# the gateway start) as the ACL owner (#9) from a host-contracts pod, then asserts each party's
+# upgrade_state / versioning rows. BCS and GCS binaries already run the FSM.
+# Env: NAMESPACE, NB_COPROCESSOR, CHAIN_MODE, HOST_HTTP, GATEWAY_HTTP, HOST_CHAIN_ID, TAGS_JSON;
+#      with DEPLOY_POLYGON also POLYGON_HTTP, POLYGON_CHAIN_ID.
 set -euo pipefail
 
 : "${NAMESPACE:?}"
@@ -11,26 +12,27 @@ set -euo pipefail
 : "${HOST_HTTP:?}"
 : "${GATEWAY_HTTP:?}"
 : "${HOST_CHAIN_ID:?}"
+CHAIN_MODE="${CHAIN_MODE:-anvil}"
 
-# Anvil Foundry account #9 (host/ACL owner). blockchain-dev overwrites via
+# Anvil Foundry account #9 (host/ACL owner). External chains overwrite via
 # generate-mnemonic.cjs (DEPLOYER_KEY_9 on GITHUB_ENV).
 DEPLOYER_KEY_9="${DEPLOYER_KEY_9:-0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6}"
 GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 # Caller-supplied; contract does not enforce uniqueness. Default the Actions
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
-WINDOW_START_OFFSET="${WINDOW_START_OFFSET:-5}"
-# Continuously-mining external chains (blockchain-dev ~5s/block, testnets
-# 12s/2s) need a window that covers the first e2e DAG; Anvil only advances on
-# txs so the historical 80 is enough for unanimity to fire during the suite.
-if [[ -z "${WINDOW_END_OFFSET:-}" ]]; then
-  if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
-    WINDOW_END_OFFSET=1500
-  else
-    WINDOW_END_OFFSET=80
-  fi
+# Window = [now + START_LEAD_SECS, + WINDOW_DURATION]. Anvil only mines on txs, so keep the lead
+# tiny (tip+5 at the 1s fallback) and the historical 80-block window; continuously mining chains
+# get a window that covers the first e2e DAG.
+if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
+  START_LEAD_SECS="${START_LEAD_SECS:-60}"
+  WINDOW_DURATION="${WINDOW_DURATION:-5h}"
+else
+  START_LEAD_SECS="${START_LEAD_SECS:-5}"
+  WINDOW_DURATION="${WINDOW_DURATION:-80s}"
 fi
-GW_START_OFFSET="${GW_START_OFFSET:-5}"
+# The tool refuses to broadcast when startBlock is closer to the tip than this; the lead is the guard here.
+BUFFER="${BUFFER:-0}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
 # UC writes the binary stack version (v0.15.0). Compose e2e stored v0.15.
 # Compare major.minor so either form counts as cutover.
@@ -42,7 +44,10 @@ LIVE_VERSION="$(version_major_minor "${GCS_VERSION}")"
 # deploy without automated tests still proves the proposal path.
 ASSERT_CUTOVER="${ASSERT_CUTOVER:-false}"
 SKIP_PROPOSE="${SKIP_PROPOSE:-false}"
-FOUNDRY_IMAGE="${FOUNDRY_IMAGE:-hub.zama.org/ghcr/foundry-rs/foundry:stable}"
+# PROPOSE_DRY_RUN=true runs the calldata-only task (prints the windows report, broadcasts nothing, skips the DB waits).
+PROPOSE_DRY_RUN="${PROPOSE_DRY_RUN:-false}"
+host_contracts_tag=$(jq -r '.host_contracts // "latest"' <<<"${TAGS_JSON:-null}")
+HOST_CONTRACTS_IMAGE="${HOST_CONTRACTS_IMAGE:-hub.zama.org/ghcr/zama-ai/fhevm/host-contracts:${host_contracts_tag}}"
 
 protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" \
   -o jsonpath='{.data.protocol_config\.address}')
@@ -51,37 +56,43 @@ if [[ -z "${protocol_config}" ]]; then
   exit 1
 fi
 
-rpc_block() {
-  local url="$1"
-  local raw hex
-  raw=$(bash "$(dirname "${BASH_SOURCE[0]}")/cluster-rpc.sh" "${url}" \
-    '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}')
-  hex=$(jq -r '.result' <<<"${raw}")
-  if [[ ! "${hex}" =~ ^0x[0-9a-fA-F]+$ ]]; then
-    echo "::error::eth_blockNumber failed on ${url} (raw='${raw}')" >&2
-    exit 1
-  fi
-  echo $((hex))
-}
-
-host_block=$(rpc_block "${HOST_HTTP}")
-gw_block=$(rpc_block "${GATEWAY_HTTP}")
-start=$((host_block + WINDOW_START_OFFSET))
-end=$((host_block + WINDOW_END_OFFSET))
-gw_start=$((gw_block + GW_START_OFFSET))
-windows="[(${HOST_CHAIN_ID},${start},${end})]"
 expected_chains=1
-# Second host chain: same wall-clock window, so scale the block offsets by the block-time ratio (Sepolia 12s vs Amoy 2s).
-if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
-  : "${POLYGON_HTTP:?}" "${POLYGON_CHAIN_ID:?}"
-  ratio_num="${HOST_BLOCK_TIME:-1}"
-  ratio_den="${POLYGON_BLOCK_TIME:-1}"
-  polygon_block=$(rpc_block "${POLYGON_HTTP}")
-  polygon_start=$((polygon_block + WINDOW_START_OFFSET * ratio_num / ratio_den))
-  polygon_end=$((polygon_block + WINDOW_END_OFFSET * ratio_num / ratio_den))
-  windows="[(${HOST_CHAIN_ID},${start},${end}),(${POLYGON_CHAIN_ID},${polygon_start},${polygon_end})]"
-  expected_chains=2
-fi
+[[ "${DEPLOY_POLYGON:-false}" == "true" ]] && expected_chains=2
+
+# Map the preview's chains onto the tool's environment registry (tasks/utils/environments.ts):
+# testnets is exactly `devnet` (Sepolia + Amoy); anvil / blockchain-dev use `local` with the chain list passed as JSON.
+tool_env_args=()
+case "${CHAIN_MODE}" in
+  testnets)
+    tool_env="devnet"
+    hardhat_network="sepolia"
+    : "${POLYGON_HTTP:?}"
+    tool_env_args=(
+      --from-literal=SEPOLIA_RPC_URL="${HOST_HTTP}"
+      --from-literal=POLYGON_AMOY_RPC_URL="${POLYGON_HTTP}"
+      --from-literal=GATEWAY_DEVNET_RPC_URL="${GATEWAY_HTTP}"
+    )
+    ;;
+  anvil|blockchain-dev)
+    tool_env="local"
+    if [[ "${CHAIN_MODE}" == "anvil" ]]; then hardhat_network="staging"; fallback=1; else hardhat_network="zwsDev"; fallback=5; fi
+    local_chains=$(jq -cn --argjson id "${HOST_CHAIN_ID}" --arg url "${HOST_HTTP}" --argjson fb "${fallback}" \
+      '[{chainId: $id, rpcUrl: $url, fallbackBlockTimeSeconds: $fb}]')
+    if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
+      : "${POLYGON_HTTP:?}" "${POLYGON_CHAIN_ID:?}"
+      local_chains=$(jq -c --argjson id "${POLYGON_CHAIN_ID}" --arg url "${POLYGON_HTTP}" --argjson fb "${fallback}" \
+        '. + [{chainId: $id, rpcUrl: $url, fallbackBlockTimeSeconds: $fb}]' <<<"${local_chains}")
+    fi
+    tool_env_args=(
+      --from-literal=LOCAL_HOST_CHAINS="${local_chains}"
+      --from-literal=LOCAL_GATEWAY_RPC_URL="${GATEWAY_HTTP}"
+    )
+    ;;
+  *)
+    echo "::error::unknown CHAIN_MODE '${CHAIN_MODE}'"
+    exit 1
+    ;;
+esac
 
 job="preview-propose-upgrade"
 cleanup() {
@@ -92,29 +103,18 @@ trap cleanup EXIT
 if [[ "${SKIP_PROPOSE}" == "true" ]]; then
   echo "Skipping on-chain propose (SKIP_PROPOSE=true)"
 else
-echo "proposeCoprocessorUpgrade id=${PROPOSAL_ID} version=${GCS_VERSION} windows=${windows} gw_start=${gw_start}"
+task="task:proposeCoprocessorUpgrade"
+[[ "${PROPOSE_DRY_RUN}" != "true" ]] || task="task:buildProposeCoprocessorUpgradeCalldata"
+start_time=$(python3 -c 'import datetime,sys; print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))' "${START_LEAD_SECS}")
+echo "${task} id=${PROPOSAL_ID} version=${GCS_VERSION} environment=${tool_env} network=${hardhat_network} start=${start_time} duration=${WINDOW_DURATION} buffer=${BUFFER}"
 
-if [[ -n "${GITHUB_ENV:-}" ]]; then
-  {
-    echo "UPGRADE_PROPOSAL_ID=${PROPOSAL_ID}"
-    echo "UPGRADE_START_BLOCK=${start}"
-    echo "UPGRADE_END_BLOCK=${end}"
-    echo "UPGRADE_GW_START=${gw_start}"
-    if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
-      echo "UPGRADE_POLYGON_START_BLOCK=${polygon_start}"
-      echo "UPGRADE_POLYGON_END_BLOCK=${polygon_end}"
-    fi
-  } >> "${GITHUB_ENV}"
-fi
-
+# Secrets and RPC URLs (QuickNode keys) travel as env vars; the window parameters are plain args.
 kubectl create secret generic "${job}" -n "${NAMESPACE}" \
-  --from-literal=protocol_config="${protocol_config}" \
-  --from-literal=host_http="${HOST_HTTP}" \
-  --from-literal=pk="${DEPLOYER_KEY_9}" \
-  --from-literal=version="${GCS_VERSION}" \
-  --from-literal=windows="${windows}" \
-  --from-literal=gw_start="${gw_start}" \
-  --from-literal=proposal_id="${PROPOSAL_ID}" \
+  --from-literal=DEPLOYER_PRIVATE_KEY="${DEPLOYER_KEY_9}" \
+  --from-literal=PROTOCOL_CONFIG_CONTRACT_ADDRESS="${protocol_config}" \
+  --from-literal=RPC_URL="${HOST_HTTP}" \
+  --from-literal=CHAIN_ID="${HOST_CHAIN_ID}" \
+  "${tool_env_args[@]}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl delete pod -n "${NAMESPACE}" "${job}" --ignore-not-found >/dev/null
@@ -125,39 +125,40 @@ metadata:
   name: ${job}
 spec:
   restartPolicy: Never
-  activeDeadlineSeconds: 120
+  activeDeadlineSeconds: 600
   imagePullSecrets:
     - name: registry-credentials
   containers:
-    - name: cast
-      image: ${FOUNDRY_IMAGE}
-      command: ["sh", "-c"]
+    - name: hardhat
+      image: ${HOST_CONTRACTS_IMAGE}
+      command: ["/bin/bash", "-c"]
       args:
-        - |
-          exec cast send "\$PROTOCOL_CONFIG" \
-            --rpc-url "\$HOST_HTTP" \
-            --private-key "\$DEPLOYER_KEY" \
-            "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)" \
-            "\$PROPOSAL_ID" "\$GCS_VERSION" "\$WINDOWS" "\$GW_START"
-      env:
-        - name: PROTOCOL_CONFIG
-          valueFrom: {secretKeyRef: {name: ${job}, key: protocol_config}}
-        - name: HOST_HTTP
-          valueFrom: {secretKeyRef: {name: ${job}, key: host_http}}
-        - name: DEPLOYER_KEY
-          valueFrom: {secretKeyRef: {name: ${job}, key: pk}}
-        - name: GCS_VERSION
-          valueFrom: {secretKeyRef: {name: ${job}, key: version}}
-        - name: WINDOWS
-          valueFrom: {secretKeyRef: {name: ${job}, key: windows}}
-        - name: GW_START
-          valueFrom: {secretKeyRef: {name: ${job}, key: gw_start}}
-        - name: PROPOSAL_ID
-          valueFrom: {secretKeyRef: {name: ${job}, key: proposal_id}}
+        - >-
+          npx hardhat --network ${hardhat_network} ${task}
+          --environment ${tool_env}
+          --start-time ${start_time}
+          --duration ${WINDOW_DURATION}
+          --buffer ${BUFFER}
+          --proposal-id ${PROPOSAL_ID}
+          --software-version ${GCS_VERSION}
+      envFrom:
+        - secretRef:
+            name: ${job}
+      resources:
+        requests: {cpu: "1", memory: 2Gi}
+        limits: {cpu: "2", memory: 4Gi}
 EOF
 
-kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/"${job}" -n "${NAMESPACE}" --timeout=90s
+if ! kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/"${job}" -n "${NAMESPACE}" --timeout=600s; then
+  kubectl logs -n "${NAMESPACE}" "${job}" || true
+  echo "::error::${task} did not succeed (see report above)"
+  exit 1
+fi
 kubectl logs -n "${NAMESPACE}" "${job}"
+if [[ "${PROPOSE_DRY_RUN}" == "true" ]]; then
+  echo "Dry run only (PROPOSE_DRY_RUN=true): nothing broadcast."
+  exit 0
+fi
 fi
 
 psql_party() {
@@ -187,6 +188,8 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     fi
     if (( SECONDS >= deadline )); then
       echo "::error::party ${i} did not reach DryRunStarted on all ${expected_chains} chain(s) (last='${state}')"
+      # The dry run starts once every chain's consumer has processed start_block; on Amoy the consumer can trail head by hours.
+      psql_party "${i}" "SELECT 'chain '||u.host_chain_id||': consumer at '||COALESCE(MAX(c.block_number),0)||', start_block '||u.start_block FROM upgrade_state u LEFT JOIN host_chain_consumer_blocks c ON c.chain_id = u.host_chain_id WHERE u.stack_role='GCS' GROUP BY u.host_chain_id, u.start_block;" || true
       exit 1
     fi
     sleep 5

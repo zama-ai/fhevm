@@ -79,8 +79,6 @@ case "${CHAIN_MODE}" in
       echo "GATEWAY_WS=${NITRO_WS}"
       echo "HOST_CHAIN_ID=11155111"
       echo "POLYGON_CHAIN_ID=80002"
-      echo "HOST_BLOCK_TIME=12"
-      echo "POLYGON_BLOCK_TIME=2"
       echo "GATEWAY_CHAIN_ID=${NITRO_CHAIN_ID}"
       echo "HOST_FAUCET="
       echo "GATEWAY_FAUCET=${NITRO_FAUCET}"
