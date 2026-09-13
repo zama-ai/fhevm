@@ -397,7 +397,9 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. With `deploy_polygon` (so on `chain_mode=testnets`) each fleet also gets its own Polygon consumer (`coprocessor-polygon-<i>` / `-gcs`), the proposal carries one window per host chain (Polygon offsets scaled by block time so both windows share the same wall-clock span) and the dry-run / cutover asserts read one `upgrade_state` row per chain. Incompatible with `nb_coprocessor=1`.
 
 With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
-driven by in-window e2e traffic: propose **after** the relayer is ready, hold
+driven by in-window e2e traffic: propose **after** the relayer is ready (the workflow runs
+host-contracts' `task:proposeCoprocessorUpgrade` from a host-contracts pod, so block times are
+measured per chain and the windows come out wall-clock aligned), hold
 `consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
 while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
 on every party), scale the detector back up, wait for
