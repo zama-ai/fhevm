@@ -45,6 +45,8 @@ pub enum Fixed {
     Divergent,
     /// A 64-byte signature.
     BadSignature,
+    /// Node 0's signature (the same partner answering behind two URLs).
+    Duplicate,
     /// Never answers (until cancelled).
     Hang,
     /// Connection refused.
@@ -175,7 +177,10 @@ fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
 /// A `200` reply for `route`, derived from the request body so the id matches what was sent.
 pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpReply {
     let (decryption_id, extra_data) = request_facts(route, body);
-    let mut signature = signature(node);
+    let mut signature = match fixed {
+        Fixed::Duplicate => signature(0),
+        _ => signature(node),
+    };
     if fixed == Fixed::BadSignature {
         signature = AlloyBytes::copy_from_slice(&signature[..64]);
     }
