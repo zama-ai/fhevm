@@ -7,7 +7,7 @@
 
 use std::process::ExitCode;
 
-use relayer_http::{logging, settings::Settings};
+use relayer_http::{App, logging, settings::Settings};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -26,6 +26,13 @@ async fn main() -> ExitCode {
     };
     logging::init(&settings.log);
     let shutdown = CancellationToken::new();
+    let _app = match App::new(&settings, shutdown.clone()) {
+        Ok(app) => app,
+        Err(e) => {
+            error!(error = %e, "startup failed");
+            return ExitCode::FAILURE;
+        }
+    };
     info!(
         name = %settings.name,
         nodes = settings.kms_aggregator.endpoints.len(),
