@@ -7,6 +7,8 @@ pub mod config;
 mod flows;
 #[cfg(test)]
 pub(crate) mod mock;
+#[cfg(test)]
+mod scenarios;
 
 pub use aggregator::{AggregationError, Aggregator};
 pub use call::{CallError, CallResult, Caller};
