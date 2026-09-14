@@ -66,6 +66,10 @@ commonConfig:
 # (or `latest` when this component didn't change in the PR).
 dbMigration:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration, tag: latest}
+  # The coprocessor-<i> release runs first on each party's empty database, so it
+  # is allowed to create it. values-coprocessor-gcs-e2e.yaml sets this to false
+  # for the coprocessor-<i>-gcs release: it must find the database, not create it.
+  allowBootstrap: true
 
 #=======================================================
 hostListenerShared:

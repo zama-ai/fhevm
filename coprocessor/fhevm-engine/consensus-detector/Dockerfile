@@ -4,8 +4,6 @@ ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
-# Compiled stack version; unset => baseline (0.14.0), GCS build passes a newer one.
-ARG BUILD_STACK_VERSION
 
 USER root
 
@@ -28,8 +26,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
-    FEATURES=""; if [ -n "${BUILD_STACK_VERSION}" ]; then FEATURES="--features fhevm-engine-common/stack-version-override"; export BUILD_STACK_VERSION="${BUILD_STACK_VERSION}"; fi && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p consensus-detector ${FEATURES} && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p consensus-detector && \
     cp target/${CARGO_PROFILE}/consensus-detector /tmp/consensus-detector
 
 # Stage 2: Runtime image

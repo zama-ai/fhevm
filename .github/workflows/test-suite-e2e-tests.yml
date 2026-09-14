@@ -65,21 +65,11 @@ on:
         description: "Host version"
         default: ""
         type: string
-      connector-db-migration-version:
-        description: "KMS Connector DB Migration Image Version"
-        default: ""
-        type: string
-      connector-gw-listener-version:
-        description: "KMS Connector Gateway Listener Image Version"
-        default: ""
-        type: string
-      connector-kms-worker-version:
-        description: "KMS Connector KMS Worker Image Version"
-        default: ""
-        type: string
-      connector-tx-sender-version:
-        description: "KMS Connector Transaction Sender Image Version"
-        default: ""
+      connector-versions:
+        description:
+          'KMS Connector image versions as a JSON object. Keys: db-migration, gw-listener, kms-worker, tx-sender,
+          endpoint. Example: {"gw-listener":"01cf0ff","endpoint":"01cf0ff"}'
+        default: "{}"
         type: string
       test-suite-version:
         description: "Test suite version"
@@ -165,10 +155,11 @@ jobs:
       LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}
-      CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector-db-migration-version }}
-      CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector-gw-listener-version }}
-      CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector-kms-worker-version }}
-      CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector-tx-sender-version }}
+      CONNECTOR_DB_MIGRATION_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['db-migration'] }}
+      CONNECTOR_GW_LISTENER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['gw-listener'] }}
+      CONNECTOR_KMS_WORKER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['kms-worker'] }}
+      CONNECTOR_TX_SENDER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['tx-sender'] }}
+      CONNECTOR_ENDPOINT_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['endpoint'] }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
@@ -372,6 +363,7 @@ jobs:
           snapshot_logs "KMS Connector Gateway Listener" kms-connector-gw-listener
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
           snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
+          snapshot_logs "KMS Connector Endpoint" kms-connector-endpoint
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           snapshot_logs "KMS Core" kms-core
@@ -402,6 +394,7 @@ jobs:
             snapshot_logs "${prefix} - Gateway Listener" "${prefix}-gw-listener"
             snapshot_logs "${prefix} - KMS Worker" "${prefix}-kms-worker"
             snapshot_logs "${prefix} - Transaction Sender" "${prefix}-tx-sender"
+            snapshot_logs "${prefix} - Endpoint" "${prefix}-endpoint"
           done
 
       - name: Cleanup

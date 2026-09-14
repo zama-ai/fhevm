@@ -418,6 +418,16 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved kms-connector bundle includes the HTTP `endpoint` service. */
+export const supportsConnectorEndpoint = (state: Pick<CompatState, "versions" | "overrides">) => {
+  const overridden = state.overrides.some(
+    (override) =>
+      override.group === "kms-connector" &&
+      (!override.services?.length || override.services.includes("kms-connector-endpoint")),
+  );
+  return overridden || Boolean(state.versions.env.CONNECTOR_ENDPOINT_VERSION);
+};
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });

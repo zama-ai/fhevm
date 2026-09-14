@@ -250,6 +250,7 @@ CONNECTOR_DB_MIGRATION_VERSION
 CONNECTOR_GW_LISTENER_VERSION
 CONNECTOR_KMS_WORKER_VERSION
 CONNECTOR_TX_SENDER_VERSION
+CONNECTOR_ENDPOINT_VERSION   # optional: omitted when the resolved images predate the connector HTTP endpoint
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
@@ -346,6 +347,8 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test erc1271-user-decryption
 ./fhevm-cli test unified-user-decryption
 ./fhevm-cli test decryption-signature-invalidation
+./fhevm-cli test connector-http-public-decrypt
+./fhevm-cli test connector-http
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
@@ -475,7 +478,7 @@ Available runtime suffixes:
 | Group           | Suffixes                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`                                                                                    |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`                                                                        |
 | `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides

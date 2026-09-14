@@ -24,6 +24,7 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
     environment:
       - KEY_ID=${FHE_KEY_ID}
+      - ALLOW_DB_BOOTSTRAP=true
     command:
       - /initialize_db.sh
     volumes:

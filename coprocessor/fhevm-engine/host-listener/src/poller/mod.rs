@@ -203,6 +203,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         crate::protocol_config::resolve_protocol_config_listener(
             config.canonical_protocol_config_chain_id,
             chain_id.as_u64(),
+            config.protocol_config_address,
         )?;
     blockchain_timeout_tick.update();
 

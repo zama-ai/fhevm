@@ -270,7 +270,7 @@ export function concatSignatureParts(parts: readonly SignaturePart[], trailingHe
   return `0x${parts.map((p) => p.signature.slice(2)).join('')}${trailingHex}`;
 }
 
-async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {
+export async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest, mode: SignMode): Promise<string> {
   if (mode.kind === 'empty') {
     return '0x';
   }

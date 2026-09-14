@@ -215,6 +215,11 @@ polygonContractConfigMap:
 # Sets up the database schema and initial data
 dbMigration:
   enabled: true
+  # Whether this release may create the database (the database itself and its
+  # first setup). Off by default: the database must be created by the release
+  # that is live, and a green (new release) fleet finds it later. Set true only
+  # for the first install of an operator; keep it false for a green release.
+  allowBootstrap: false
 
   # Optional Helm hook annotations for Infra-owned deployment ordering.
   #
@@ -225,9 +230,13 @@ dbMigration:
   #
   # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
   # reads or writes them) but are only dropped by a v0.16 migration; see
-  # coprocessor/fhevm-engine/db-migration/DEPRECATIONS.md. This release
-  # therefore needs no ordering between the migration Job and the service
-  # Deployments. Infra may opt into a hook only if every Job dependency is
+  # coprocessor/fhevm-engine/db-migration/DEPRECATIONS.md.
+  #
+  # Services pick their role from versioning.consensus_version at startup, a
+  # column this release's migration adds. A green (new release) fleet must start
+  # after its migration Job has run: a service that starts earlier exits with an
+  # error and restarts. For the green release, enable the hook below so Helm runs
+  # the Job before the Deployments. Every Job dependency must then be
   # pre-existing or rendered as an earlier hook with a lower hook weight.
   annotations: {}
   # annotations:

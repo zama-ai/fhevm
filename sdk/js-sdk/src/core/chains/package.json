@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "types": "../../_types/chains/index.d.ts",
-  "module": "../../_esm/chains/index.js",
-  "main": "../../_cjs/chains/index.js"
+  "types": "../../_types/core/chains/index.d.ts",
+  "module": "../../_esm/core/chains/index.js",
+  "main": "../../_cjs/core/chains/index.js"
 }
