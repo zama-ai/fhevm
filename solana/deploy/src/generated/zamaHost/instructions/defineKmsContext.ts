@@ -14,6 +14,7 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -39,7 +40,7 @@ import {
   getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findHostConfigPda, findKmsContextPda } from '../pdas/index.js';
+import { findKmsContextPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getKmsThresholdsDecoder,
@@ -193,7 +194,10 @@ export async function getDefineKmsContextInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda();
+    accounts.hostConfig.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
   }
   if (!accounts.kmsContext.value) {
     accounts.kmsContext.value = await findKmsContextPda({

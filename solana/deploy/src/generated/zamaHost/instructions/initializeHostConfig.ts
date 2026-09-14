@@ -16,6 +16,7 @@ import {
   getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -42,7 +43,7 @@ import {
   type WritableSignerAccount,
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
-import { findHostConfigPda, findRandNoncePda } from '../pdas/index.js';
+import { findRandNoncePda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_HOST_CONFIG_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -267,7 +268,10 @@ export async function getInitializeHostConfigInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda();
+    accounts.hostConfig.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
   }
   if (!accounts.randNonce.value) {
     accounts.randNonce.value = await findRandNoncePda();

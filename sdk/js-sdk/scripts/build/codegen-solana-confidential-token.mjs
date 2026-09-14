@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { rootNodeFromAnchor } from '@codama/nodes-from-anchor';
 import { renderVisitor } from '@codama/renderers-js';
-import { createFromRoot, deleteNodesVisitor } from 'codama';
+import { createFromRoot, deleteNodesVisitor, pdaValueNode, updateInstructionsVisitor } from 'codama';
 import { format, resolveConfig } from 'prettier';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -76,11 +76,7 @@ const targets = [
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
-      definedTypes: new Set([
-        'coprocessorInputAttestation',
-        'disclosedValueKind',
-        'mmrInclusionProof',
-      ]),
+      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof']),
       // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
       // initializeTokenAccount → tokenAccount).
       pdas: new Set(['vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
@@ -323,6 +319,24 @@ for (const target of targets) {
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];
   codama.update(deleteNodesVisitor(selectors));
+  // Codama's linked PDA resolver drops the instruction's programAddress override.
+  // Inline the same-program hostConfig PDA so its seeds use the selected deployment.
+  if (target.idlPath === idlUrl('zama_host.json')) {
+    const hostConfig = program.pdas.find(({ name }) => name === 'hostConfig');
+    const updates = Object.fromEntries(
+      codama
+        .getRoot()
+        .program.instructions.filter(({ accounts }) =>
+          accounts.some(
+            ({ name, defaultValue }) =>
+              name === 'hostConfig' && defaultValue?.kind === 'pdaValueNode' && defaultValue.pda.name === 'hostConfig',
+          ),
+        )
+        .map(({ name }) => [name, { accounts: { hostConfig: { defaultValue: pdaValueNode(hostConfig) } } }]),
+    );
+    codama.update(updateInstructionsVisitor(updates));
+  }
+
   await codama.accept(
     renderVisitor(temporaryRoot, {
       generatedFolder: 'generated',
