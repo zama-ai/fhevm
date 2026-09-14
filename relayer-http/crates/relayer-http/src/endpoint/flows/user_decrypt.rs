@@ -2,9 +2,19 @@
 //! DTO and aggregated.
 
 use alloy::primitives::{Address, B256, Bytes};
-use kms_connector_api::{HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity};
+use axum::Json;
+use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
+use axum::response::{IntoResponse, Response};
+use kms_connector_api::{
+    HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionRequest,
+};
 use serde::{Deserialize, Deserializer};
+use tracing::info;
 
+use super::Reply;
+use crate::App;
+use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
@@ -120,8 +130,33 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
     validate::extra_data("attestedPayload.extraData", &payload.extra_data)
 }
 
+/// One request: mint the id, parse (axum did it: `body` is `Err` for invalid JSON, an unknown field, a wrong
+/// content type or an oversized body), validate, convert to the connector DTO, aggregate, answer.
+pub async fn handle(
+    app: State<App>,
+    body: Result<Json<UserDecryptRequest>, JsonRejection>,
+) -> Result<Response, ApiError> {
+    let request_id = super::request_id();
+    let Json(request) = body.map_err(|e| ApiError::malformed(&request_id, e.body_text()))?;
+    validate(&request, &app.http.supported_chain_ids, super::now())
+        .map_err(|e| ApiError::malformed(&request_id, e.to_string()))?;
+    let request = UserDecryptionRequest::from(request);
+    info!(
+        request_id,
+        decryption_id = %request.id(),
+        handles = request.handles.len(),
+        "user decrypt request"
+    );
+    let output = app
+        .user_decrypt
+        .run(&request_id, request)
+        .await
+        .map_err(|e| ApiError::aggregation(&request_id, e))?;
+    Ok(Reply::succeeded(request_id, output).into_response())
+}
+
 /// The body the connector receives (RFC-033), field by field.
-impl From<UserDecryptRequest> for kms_connector_api::UserDecryptionRequest {
+impl From<UserDecryptRequest> for UserDecryptionRequest {
     fn from(request: UserDecryptRequest) -> Self {
         let payload = request.attested_payload;
         Self {
@@ -275,7 +310,7 @@ pub(crate) mod tests {
     #[test]
     fn conversion_keeps_every_field() {
         let request = valid();
-        let connector = kms_connector_api::UserDecryptionRequest::from(request.clone());
+        let connector = UserDecryptionRequest::from(request.clone());
         assert_eq!(connector.handles.len(), 1);
         assert_eq!(connector.handles[0].handle, handle(1, 4));
         assert_eq!(

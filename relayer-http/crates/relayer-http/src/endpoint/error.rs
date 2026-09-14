@@ -100,12 +100,32 @@ impl IntoResponse for ApiError {
         if self.status.is_server_error() {
             warn!(request_id, status, code, "request failed");
         } else {
-            info!(request_id, status, code, message = %self.body.message, "request rejected");
+            info!(request_id, status, code, reason = %self.body.message, "request rejected");
         }
         let mut response = (self.status, Json(&self.body)).into_response();
         tag(&mut response, &self.body.request_id);
         response
     }
+}
+
+/// Router fallback: no such route.
+pub async fn not_found() -> ApiError {
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        &super::flows::request_id(),
+        "no such route",
+    )
+}
+
+/// Router fallback: the route exists, the method does not.
+pub async fn method_not_allowed() -> ApiError {
+    ApiError::new(
+        StatusCode::METHOD_NOT_ALLOWED,
+        "method_not_allowed",
+        &super::flows::request_id(),
+        "method not allowed on this route",
+    )
 }
 
 /// `x-request-id: <request_id>` on every response. A UUID is always a valid header value; the `if let` keeps the

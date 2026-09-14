@@ -10,8 +10,8 @@ result. Reading order: this file, `aggregator.rs`, `call.rs`, `client.rs`, `flow
 - Collects the answers until every node has finished or the deadline (`call.timeout`) passes.
 - Answers `Ok(output)` when `counted >= threshold`, otherwise a typed error that carries the counts and the dominant
   connector error.
-- Is called by the relayer's request handlers with the relayer's own `request_id` and the connector request DTO. The
-  handlers, and everything before them, are out of the scope of this file.
+- Is called by the handlers in `endpoint/` (see `endpoint/docs.md`) with the relayer's own `request_id` and the
+  connector request DTO. The handlers, and everything before them, are out of the scope of this file.
 
 ## 2. Overall scheme
 
