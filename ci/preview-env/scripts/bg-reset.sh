@@ -12,16 +12,21 @@
 #
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-reset.sh
 # Env: NAMESPACE (required), NB_COPROCESSOR (2), DEPLOY_POLYGON (true),
-#      BCS_STACK_VERSION (0.14.0: what `host_listener --stack-version` prints on
-#      the Blue image; the v0.14 migration job bootstraps the same string),
+#      BCS_STACK_VERSION (default: what the running Blue binary prints for
+#      --stack-version, which is also what the Blue migration job bootstrapped),
 #      QUIET_SECS (120: refuse if any party received work in the last N seconds),
 #      FORCE (false: skip the traffic checks), DRY_RUN (false: checks only).
 set -euo pipefail
 
 : "${NAMESPACE:?}"
 NB_COPROCESSOR="${NB_COPROCESSOR:-2}"
-DEPLOY_POLYGON="${DEPLOY_POLYGON:-true}"
-BCS_STACK_VERSION="${BCS_STACK_VERSION:-0.14.0}"
+if [[ -z "${DEPLOY_POLYGON:-}" ]]; then
+  DEPLOY_POLYGON=false
+  helm status coprocessor-polygon-1 -n "${NAMESPACE}" >/dev/null 2>&1 && DEPLOY_POLYGON=true
+fi
+# Read the version string from the Blue binary (a 0.14.1 image still prints 0.14.0),
+# not from a pin: the retired Blue pods are still there at this point.
+BCS_STACK_VERSION="${BCS_STACK_VERSION:-$(kubectl exec -n "${NAMESPACE}" deploy/coprocessor-1-host-listener-consumer -- host_listener --stack-version)}"
 QUIET_SECS="${QUIET_SECS:-120}"
 FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
