@@ -1,11 +1,11 @@
 import { type Address, type Instruction, type TransactionSigner, generateKeyPairSigner } from '@solana/kit';
 import { describe, expect, test } from 'bun:test';
-import { createHash } from 'node:crypto';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
 import { PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/program-profile';
 import { getHostConfigEncoder } from '../../../../solana/deploy/src/generated/zamaHost/accounts/hostConfig';
+import { KMS_CONTEXT_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/kmsContext';
 import {
   getDefineKmsContextInstructionDataDecoder,
   getDefineKmsContextInstructionDataEncoder,
@@ -66,7 +66,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                           }),
                         ).toString('base64')
                       : Buffer.concat([
-                          createHash('sha256').update('account:KmsContext').digest().subarray(0, 8),
+                          Buffer.from(KMS_CONTEXT_DISCRIMINATOR),
                           Buffer.from(
                             getDefineKmsContextInstructionDataEncoder().encode({
                               contextId: BRINGUP_KMS_CONTEXT_ID,

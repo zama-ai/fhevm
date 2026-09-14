@@ -14,6 +14,8 @@ zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
 
 # Durable preview-env host on public Solana **devnet**. Compile with
 # `--features preview-env`. Not local e2e, not official Zama protocol 0.15.
+# Reference only: builds use --ignore-keys and deploys go through solana/deploy,
+# so nothing but program-profile.test.ts reads this table.
 [programs.devnet]
 demo_vault = "gjgLTv4tB3QBP4RCnHgZvL7GZWP198HuesTA4oM9EdE"
 confidential_batcher = "A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da"

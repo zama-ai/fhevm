@@ -7,11 +7,11 @@ SOLANA="$ROOT/solana"
 VALIDATOR_RPC="http://127.0.0.1:8899"
 DEPLOYER_KEYPAIR="${SOLANA_DEPLOYER_KEYPAIR:-$HOME/.config/solana/id.json}"
 
-echo "==> [demo-deploy] build + deploy demo_vault, confidential_batcher"
+echo "==> [demo-deploy] build + deploy confidential_token, demo_vault, confidential_batcher"
 mkdir -p "$SOLANA/target/deploy"
 # Seed the committed program keypairs so the built program ids match each declare_id!. Always
 # overwrite target artifacts left by older branches, as src/solana/validator.ts does for host programs.
-for p in demo_vault confidential_batcher; do
+for p in confidential_token demo_vault confidential_batcher; do
   cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json"
 done
 

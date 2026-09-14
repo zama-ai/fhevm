@@ -1,5 +1,6 @@
 // Initializes HostConfig and defines the bring-up KMS context from live gateway values.
-// A re-run validates the existing host binding before skipping account initialization. `define_kms_context` is `init` on the context PDA, so a second call would fail closed
+// A re-run validates the existing host binding before skipping account initialization:
+// `define_kms_context` is `init` on the context PDA, so a second call would fail closed
 // without the skip.
 import {
   type Address,

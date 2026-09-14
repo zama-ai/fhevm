@@ -64,6 +64,14 @@ export const requiredEnv = (name: string): string => {
   return value;
 };
 
+export const integerEnv = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
+  return value;
+};
+
 /** Helm/Job path: contract addresses and RPC come from env (ConfigMap `valueFrom` + anvil service). */
 export const readGatewayBootstrapInputsFromEnv = async (): Promise<GatewayBootstrapInputs> =>
   readGatewayBootstrapInputs({

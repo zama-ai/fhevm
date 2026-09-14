@@ -8,17 +8,9 @@ import { SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
 import { registerSolanaCoprocessorSql } from './coprocessor';
 import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
-import { readGatewayBootstrapInputsFromEnv, requiredEnv } from './gateway';
+import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './gateway';
 import { resolveKeypairPath } from './keypair';
 import { programIdsFor, readSolanaProgramProfile } from './program-profile';
-
-const integerEnv = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
-  return value;
-};
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 
@@ -74,7 +66,7 @@ const main = async () => {
     await writeSolanaAddressArtifact(ADDRESSES_DIR, { zama_host: programIds.zamaHost });
   } else {
     if ((target !== 'host' && target !== 'demos') || (action !== 'deploy' && action !== 'upgrade')) {
-      throw new Error('usage: host deploy|upgrade OR demos deploy|upgrade');
+      throw new Error('usage: host deploy|upgrade; demos deploy|upgrade; coprocessor register');
     }
     const programs =
       target === 'host' ? (['zama_host'] as const) : SOLANA_DEPLOY_PROGRAMS.filter((p) => p !== 'zama_host');
@@ -108,8 +100,8 @@ const main = async () => {
   }
 };
 main().catch((error: unknown) => {
-  // Transport error objects can contain credential-bearing URLs in nested context.
+  // Transport and psql errors can carry credential-bearing RPC or database URLs.
   const message = error instanceof Error ? error.message : 'deployment failed';
-  console.error(message.replace(/https?:\/\/[^\s"'<>]+/g, '<RPC URL>'));
+  console.error(message.replace(/[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, '<URL>'));
   process.exitCode = 1;
 });

@@ -15,6 +15,7 @@ import path from 'node:path';
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
+import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from '../generate/solana';
 import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
 import { readEnvFile } from '../utils/fs';
@@ -46,8 +47,8 @@ const buildAndDeployPrograms = async (
     deployerKeypairPath,
     artifactsDir,
     gateway,
-    coprocessorThreshold: readIntegerEnv('COPROCESSOR_THRESHOLD', 1),
-    kmsCorruptionThreshold: readIntegerEnv('KMS_THRESHOLD', 0),
+    coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
+    kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD', 0),
     programKeypairPath: path.join(artifactsDir, 'zama_host-keypair.json'),
   });
   const specimens = SOLANA_E2E_PROGRAMS.filter((program) => program !== 'zama_host');
@@ -248,14 +249,6 @@ export const startHostListener = async (parameters: {
   }
 };
 
-const readIntegerEnv = (name: string, fallback: number): number => {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
-  return value;
-};
-
 /** Validates the lifecycle Compose project shape `demo/lifecycle.ts` allocates. */
 export const lifecycleComposeProject = (lifecycleDir: string | undefined): string => {
   if (!lifecycleDir) return 'fhevm';
@@ -295,7 +288,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   // The gateway reads come first: a missing .env.gateway or a down gateway RPC should fail here,
   // not after the multi-minute program build. The resolved values go to the log — on a bootstrap
   // failure or a wrong-signer-set incident this is the record of what was registered.
-  console.log('==> [1/5] gather live gateway inputs');
+  console.log('==> [1/4] gather live gateway inputs');
   const gateway = await readGatewayBootstrapInputs({
     gatewayRpcUrl: process.env.GW_RPC ?? 'http://127.0.0.1:8546',
   });
@@ -305,7 +298,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   console.log(`    coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}`);
   console.log(`    kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`);
 
-  console.log('==> [2/5] fresh validator (Yellowstone geyser) + program deploy');
+  console.log('==> [2/4] fresh validator (Yellowstone geyser) + program deploy and host bootstrap');
   await seedProgramKeypairs();
   await ensureDeployerWallet(deployerKeypairPath);
   await startGeyserValidator({
@@ -317,10 +310,10 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   await airdropDeployFees(deployerKeypairPath);
   const zamaHostId = await buildAndDeployPrograms(deployerKeypairPath, gateway);
 
-  console.log('==> [4/5] register Solana host chain (coprocessor DB + gateway)');
+  console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });
 
-  console.log('==> [5/5] run Solana host-listener');
+  console.log('==> [4/4] run Solana host-listener');
   await startHostListener({
     zamaHostId,
     databaseUrl: await readCoprocessorDatabaseUrl(),
