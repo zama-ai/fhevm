@@ -43,6 +43,7 @@ import {
   QA_CASES,
   checkCaseRequirements,
   selectCases,
+  type ExtraDataCheckRunner,
   type QaCase,
 } from "../kms-qa/registry";
 import type { ProtocolConfigTarget } from "../kms-qa/protocol-config";
@@ -142,7 +143,7 @@ const printRunBanner = (cases: readonly QaCase[], state: State): void => {
 /**
  * Runs the selected QA cases against a live stack.
  *
- * `runDecryption` and `runSmoke` are injected by `test()` rather than imported, matching how
+ * The container-facing runners are injected by `test()` rather than imported, matching how
  * `kms-context-switch` receives them: this module decides *when* to probe, `test.ts` owns *how* the
  * probe reaches the test-suite container.
  */
@@ -150,6 +151,7 @@ export const runKmsContextQaTestsProfile = async (
   state: State,
   runDecryption: DecryptionRunner,
   runSmoke: SmokeRunner,
+  runExtraDataCheck: ExtraDataCheckRunner,
 ): Promise<void> => {
   assertProfilePreconditions(state);
 
@@ -181,7 +183,7 @@ export const runKmsContextQaTestsProfile = async (
     for (const item of cases) {
       const evidence = recorder.forCase(item.id);
       console.log(`[kms-context-qa] ---- ${item.id}: ${item.title} ----`);
-      await item.run({ state, target, owner, nodes, evidence, runDecryption, runSmoke });
+      await item.run({ state, target, owner, nodes, evidence, runDecryption, runSmoke, runExtraDataCheck });
       completed.push(item);
       console.log(
         `[kms-context-qa] ---- ${item.id} PASSED (${Math.round(recorder.durationForCase(item.id) / 1000)}s) ----`,
