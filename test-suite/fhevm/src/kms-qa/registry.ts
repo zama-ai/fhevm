@@ -23,6 +23,18 @@ import { epochRotationCase } from "./cases/case-epoch-rotation";
 export type KmsTopology = State["scenario"]["kms"];
 
 /**
+ * Runs an in-container check of the KMS-context extraData, given the pair the orchestrator observed
+ * on chain. Throws when the spec fails or matches no tests.
+ *
+ * The spec reads the active pair itself, so it can run standalone; the injected values let it also
+ * assert that the chain did not move between the orchestrator's read and its own.
+ */
+export type ExtraDataCheckRunner = (
+  label: string,
+  expected: { readonly contextId: bigint; readonly epochId: bigint },
+) => Promise<void>;
+
+/**
  * Everything a case is allowed to touch.
  *
  * Injected rather than imported, so cases hold no module state, can run in any order, and are
@@ -38,6 +50,8 @@ export type QaCaseContext = {
   readonly runDecryption: DecryptionRunner;
   /** Runs the e2e input-proof smoke inside the test-suite container. */
   readonly runSmoke: SmokeRunner;
+  /** Runs the KMS-context extraData spec inside the test-suite container. */
+  readonly runExtraDataCheck: ExtraDataCheckRunner;
 };
 
 /**
@@ -59,7 +73,7 @@ export type QaCaseRequirements = {
 
 /** One QA scenario, implemented host-side. */
 export type QaCase = {
-  /** Stable selector used by `KMS_QA_CASES`; never rename without updating the changelog. */
+  /** Stable selector used by `KMS_QA_CASES`; never rename without updating qa-kms-context-scenario-1-epoch.md. */
   readonly id: string;
   /** One-line human title, printed in the run banner. */
   readonly title: string;
