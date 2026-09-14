@@ -50,6 +50,9 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+├── solana-host/
+│   ├── values-solana-programs-e2e.yaml # contracts overlay, host deployment + HostConfig/KMS context
+│   └── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
@@ -467,3 +470,5 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   `assert-gcs-dry-run.sh` are single-chain (scalar `upgrade_state` reads, one-element
   windows array), which is what keeps `enable_blue_green` rejected there today. This is
   the multi-chain shape fhevm-internal#1884 asks for.
+
+See [Solana deployment](../../solana/deploy/README.md) for the separate host/demo Jobs, listener, internal proof API and upgrade flow.

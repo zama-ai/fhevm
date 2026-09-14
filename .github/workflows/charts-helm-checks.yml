@@ -29,6 +29,7 @@ jobs:
             charts:
               - '.github/workflows/charts-helm-checks.yml'
               - 'charts/**'
+              - 'ci/preview-env/solana-host/**'
   lint:
     name: charts-helm-checks/lint
     needs: check-changes
@@ -72,6 +73,9 @@ jobs:
         uses: helm/chart-testing-action@0d28d3144d3a25ea2cc349d6e59901c4ff469b3b #v2.7.0
         with:
           yamale_version: '6.0.0'
+
+      - name: Verify Solana chart integration
+        run: python3 ci/preview-env/solana-host/test_charts.py
 
       - name: Run chart-testing (list-changed)
         id: list-changed
