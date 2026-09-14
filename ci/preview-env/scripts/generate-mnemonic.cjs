@@ -19,6 +19,10 @@ for (const index of roleIndices) {
   roles[index] = { index, address: w.address, privateKey: w.privateKey };
 }
 
+// Mask first: Actions prints step env (incl. $GITHUB_ENV values) unmasked in the log otherwise.
+console.log(`::add-mask::${phrase}`);
+for (const i of roleIndices) console.log(`::add-mask::${roles[i].privateKey}`);
+
 console.log(
   'Generated preview mnemonic; role addresses:',
   roleIndices.map((i) => `#${i}=${roles[i].address}`).join(', '),
