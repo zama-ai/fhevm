@@ -63,7 +63,7 @@ blue_deployments() {
 deploy_logs() {
   local name="$1" pod
   pod=$(kubectl get pods -n "${NAMESPACE}" --no-headers -o custom-columns=N:.metadata.name \
-    | grep -E "^${name}-[a-z0-9]+-[a-z0-9]{5}$" | head -1 || true)
+    | grep -E "^${name}-[a-z0-9-]+$" | head -1 || true)
   [[ -n "${pod}" ]] && kubectl logs -n "${NAMESPACE}" "${pod}" 2>/dev/null || true
 }
 
