@@ -471,6 +471,46 @@ export function isSignatureRejection(post: PostResult): boolean {
 }
 
 /**
+ * Describe a failed unified request for an assertion message.
+ *
+ * The signature pre-check keeps its reason server-side — the body says only
+ * `{"field":"signature","issue":"Signature is invalid"}` whatever the cause —
+ * so the message carries the requestId that keys into the relayer log.
+ */
+export function describeUnifiedFailure(post: PostResult, poll?: PollResult): string {
+  const body = post.raw as {
+    requestId?: string;
+    request_id?: string;
+    error?: { label?: string; message?: string; details?: Array<{ field?: string; issue?: string }> };
+  };
+  const parts = [`POST ${post.httpStatus}`, `requestId=${body.requestId ?? body.request_id ?? '<none>'}`];
+  if (post.jobId) {
+    parts.push(`jobId=${post.jobId}`);
+  }
+  if (body.error?.label) {
+    parts.push(`label=${body.error.label}`);
+  }
+  if (body.error?.message) {
+    parts.push(`message=${body.error.message}`);
+  }
+  const details = (body.error?.details ?? []).map((d) => `${d.field}: ${d.issue}`).join('; ');
+  if (details) {
+    parts.push(`details=[${details}]`);
+  }
+  if (poll) {
+    parts.push(`job=${poll.status}`);
+    if (poll.errorLabel) {
+      parts.push(`jobError=${poll.errorLabel}`);
+    }
+  }
+  if (isSignatureRejection(post)) {
+    parts.push('(the signature pre-check keeps its reason in the relayer log, under this requestId)');
+  }
+  parts.push(`raw=${JSON.stringify(poll?.raw ?? post.raw)}`);
+  return parts.join(' ');
+}
+
+/**
  * Assert an async rejection surfaced by the RELAYER's per-job host-ACL check:
  * terminal `failed` with `error.label == "not_allowed_on_host_acl"`. Used for
  * negatives whose cause is a per-handle ownership/delegation ACL failure —
@@ -512,14 +552,21 @@ export function expectStuckAtKms(poll: PollResult | undefined): void {
  * Assert an async rejection surfaced by the relayer's transaction simulation:
  * the Gateway reverts the request on-chain, so the job goes terminal `failed`
  * before any transaction is sent (and before the decryption fee is charged).
- * The message pattern pins the exact revert so the test cannot pass on an
- * unrelated simulation failure.
+ * The relayer forwards the RPC error's `message` and drops `data`, where a custom
+ * error's selector lives — anvil inlines it into `message`, geth-family nodes do
+ * not. So pin the selector only when the node exposed one; a wrong-reason revert
+ * still fails.
  */
-export function expectGatewayRevert(poll: PollResult | undefined, messagePattern: RegExp): void {
+export function expectGatewayRevert(poll: PollResult | undefined, selector: string): void {
   assertReachedTerminalState(poll);
   expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('failed');
   const message = ((poll?.raw as { error?: { message?: string } })?.error?.message ?? '') as string;
-  expect(message, JSON.stringify(poll?.raw)).to.match(messagePattern);
+  expect(message, JSON.stringify(poll?.raw)).to.match(/execution reverted/i);
+
+  const exposed = message.match(/0x[0-9a-fA-F]{8,}/)?.[0];
+  if (exposed !== undefined) {
+    expect(exposed.toLowerCase(), JSON.stringify(poll?.raw)).to.have.string(selector.toLowerCase());
+  }
 }
 
 /** Build a direct-access handle entry (`ownerAddress == userAddress`). */
