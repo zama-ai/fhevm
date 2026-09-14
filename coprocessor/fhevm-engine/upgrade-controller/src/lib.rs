@@ -2992,7 +2992,7 @@ mod tests {
                 stack_role, state, status, proposal_id, version,
                 start_block, end_block, gw_start_block, host_chain_id, updated_at
             )
-            VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, 'v0.15',
+            VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, $2,
                     100, 200, 1, 1, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state, status = EXCLUDED.status,
@@ -3000,6 +3000,7 @@ mod tests {
             "#,
         )
         .bind(&[0x02u8][..])
+        .bind(fhevm_engine_common::STACK_VERSION)
         .execute(&pool)
         .await
         .expect("seed GCS row");
@@ -3012,12 +3013,17 @@ mod tests {
         execute_cutover(&pool).await.expect("cutover succeeds");
 
         // versioning bumped to the new stack version inside the cutover tx.
-        let (sv,): (String,) =
-            sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
-                .fetch_one(&pool)
-                .await
-                .expect("versioning row");
-        assert_eq!(sv, "v0.15", "cutover should bump versioning.stack_version");
+        let (sv, consensus): (String, i64) = sqlx::query_as(
+            "SELECT stack_version, consensus_version FROM versioning WHERE singleton = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("versioning row");
+        assert_eq!(sv, fhevm_engine_common::STACK_VERSION);
+        assert_eq!(
+            consensus,
+            i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION)
+        );
 
         // GCS row flipped LIVE and the gcs schema was dropped.
         let row = sqlx::query("SELECT state FROM upgrade_state WHERE stack_role = 'GCS'")
@@ -3346,7 +3352,7 @@ mod tests {
                 host_consensus_reached, gw_consensus_reached, gw_dry_run_started,
                 proposal_block, updated_at
             )
-            VALUES ('GCS', 'DryRunStarted', 'in_progress', $1, 'v0.15',
+            VALUES ('GCS', 'DryRunStarted', 'in_progress', $1, $5,
                     100, 200, 1, $2, $3, $4, TRUE, 10, NOW())
             ON CONFLICT (stack_role, host_chain_id) DO UPDATE
             SET state = EXCLUDED.state,
@@ -3364,6 +3370,7 @@ mod tests {
         .bind(chain_id)
         .bind(host_reached)
         .bind(gw_reached)
+        .bind(fhevm_engine_common::STACK_VERSION)
         .execute(pool)
         .await
         .expect("seed GCS chain row");

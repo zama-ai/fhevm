@@ -32,7 +32,7 @@ pub mod common {
 #[cfg(not(feature = "stack-version-override"))]
 macro_rules! stack_version {
     () => {
-        "0.15.0"
+        "0.15.1"
     };
 }
 
@@ -69,7 +69,7 @@ pub const HANDLE_VERSION: i16 = 0;
 //   - the scheduling logic changes
 // Leave it as is for every other release, which then rolls out without a cutover.
 #[cfg(not(feature = "consensus-version-override"))]
-pub const CONSENSUS_PROTOCOL_VERSION: u32 = 2;
+pub const CONSENSUS_PROTOCOL_VERSION: u32 = 3;
 
 /// Local runs only: the value comes from `BUILD_CONSENSUS_VERSION`.
 #[cfg(feature = "consensus-version-override")]
