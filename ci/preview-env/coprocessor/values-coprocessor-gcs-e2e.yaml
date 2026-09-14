@@ -13,6 +13,11 @@ commonConfig:
     fhevm.zama.ai/fleet: gcs
   canonicalProtocolConfigChainId: "12345"
 
+# The GCS migrator runs on the database the BCS release created; it must never
+# create one itself.
+dbMigration:
+  allowBootstrap: false
+
 upgradeController:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/upgrade-controller, tag: latest}

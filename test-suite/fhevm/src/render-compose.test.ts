@@ -723,6 +723,11 @@ gcs:
       expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
         "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
       });
+      // Only the pinned BCS migration may create the database; the HEAD one must find it.
+      const env = (name: string) =>
+        (doc.services[name] as { environment?: Record<string, string> } | undefined)?.environment;
+      expect(env("coprocessor-bcs-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "true" });
+      expect(env("coprocessor-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "false" });
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment
