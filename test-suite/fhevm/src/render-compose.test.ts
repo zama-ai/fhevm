@@ -302,6 +302,39 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
+  test("requests the kms-connector endpoint only when the bundle pins its image", () => {
+    const withoutEndpoint: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: Object.fromEntries(
+          Object.entries(state.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION"),
+        ),
+      },
+    };
+    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual([
+      "kms-connector-db-migration",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+    ]);
+
+    const withEndpoint: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+    };
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-endpoint");
+
+    const threshold: State = {
+      ...withEndpoint,
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+    };
+    const services = serviceNameList(threshold, "kms-connector");
+    expect(services).toContain("kms-connector-endpoint");
+    expect(services).toContain("kms-connector-3-endpoint");
+    expect(services).toContain("kms-connector-3-tx-sender");
+  });
+
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

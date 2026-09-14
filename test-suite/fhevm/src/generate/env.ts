@@ -8,6 +8,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
+  supportsConnectorEndpoint,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
@@ -20,7 +21,17 @@ import {
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import {
+  kmsConnectorDbName,
+  kmsConnectorEnvName,
+  kmsConnectorPrefix,
+  kmsCoreName,
+  kmsMpcPort,
+  kmsPartyIds,
+  kmsPublicPrefix,
+  kmsServicePort,
+  reconstructionThreshold,
+} from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -215,6 +226,7 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
+    KMS_CONNECTOR_SUPPORTED_CHAIN_IDS: chains.map((chain) => String(chain.chainId)).join(","),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
@@ -489,6 +501,17 @@ const validateEnvMaps = (
   }
 };
 
+const applyConnectorEndpointTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const bind = envs["kms-connector"].KMS_CONNECTOR_HTTP_ENDPOINT ?? "";
+  const port = bind.split(":").pop() || "8080";
+  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supportsConnectorEndpoint(plan)
+    ? kmsPartyIds(plan.kms.committeeSize)
+        .map((party) => `http://${kmsConnectorPrefix(party)}-endpoint:${port}`)
+        .join(",")
+    : "";
+  envs["test-suite"].KMS_THRESHOLD = plan.kms.mode === "threshold" ? String(plan.kms.threshold) : "0";
+};
+
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
   state: Pick<State, "discovery">,
@@ -530,6 +553,7 @@ export const renderEnvMaps = async (
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+  applyConnectorEndpointTestSuiteEnv(envs, plan);
 
   // Multi-chain seeding for the coprocessor dbMigration container.
   // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive
