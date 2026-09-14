@@ -743,6 +743,21 @@ const doctorEnvironmentSnapshot =
         run(["docker", "buildx", "version"], { allowFailure: true }),
         run(["docker", "manifest", "inspect", "--verbose", CORE_IMAGE], {
           allowFailure: true,
+        }).then(async (manifest) => {
+          if (manifest.code === 0) return manifest;
+          // The configured image may be cached even when registry inspection fails.
+          const local = await run(
+            [
+              "docker",
+              "image",
+              "inspect",
+              CORE_IMAGE,
+              "--format",
+              '{{if eq .Os "linux"}}{"architecture":{{json .Architecture}}}{{else}}{}{{end}}',
+            ],
+            { allowFailure: true },
+          );
+          return local.code === 0 ? local : manifest;
         }),
         Promise.all(
           REQUIRED_KEYPAIRS.map(
