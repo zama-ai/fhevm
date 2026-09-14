@@ -192,7 +192,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     elif [[ "${d}" != *tx-sender* ]]; then
       [[ "${mode}" == "false" ]] || { echo "::error::${d}: expected gcs_mode=false, got '${mode}'"; failed=1; }
     fi
-    if deploy_logs "${d}" | grep -q "retired stack"; then
+    if deploy_logs "${d}" | grep "retired stack" >/dev/null; then
       echo "::error::${d}: still sees itself as retired"; failed=1
     fi
     echo "${d}: gcs_mode=${mode:-n/a}"

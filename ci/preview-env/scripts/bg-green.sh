@@ -197,12 +197,12 @@ start)
     blue=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version||' upgrade_state='||(SELECT count(*) FROM upgrade_state) FROM versioning;")
     [[ "${blue}" == "${BCS_STACK_VERSION}/1 upgrade_state=0" ]] || { echo "::error::party ${i}: Blue state changed: ${blue}"; failed=1; }
     for d in upgrade-controller consensus-detector; do
-      if kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-gcs-${d}" --tail=200 2>/dev/null | grep -q '"level":"ERROR"'; then
+      if kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-gcs-${d}" --tail=200 2>/dev/null | grep '"level":"ERROR"' >/dev/null; then
         echo "::warning::party ${i}: ${d} logged errors, check: kubectl logs -n ${NAMESPACE} deploy/coprocessor-${i}-gcs-${d}"
       fi
     done
     for p in "coprocessor-poller-${i}-host-listener-poller" "coprocessor-poller-polygon-${i}-host-listener-poller"; do
-      if kubectl logs -n "${NAMESPACE}" "deploy/${p}" --tail=3 2>/dev/null | grep -q "waiting for the upgrade-controller to create the GCS schema"; then
+      if kubectl logs -n "${NAMESPACE}" "deploy/${p}" --tail=3 2>/dev/null | grep "waiting for the upgrade-controller to create the GCS schema" >/dev/null; then
         echo "::warning::${p} still waiting for the Green schema"
       fi
     done
