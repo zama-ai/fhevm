@@ -56,7 +56,7 @@ blue_version() {
 # Deployments of a fleet: Blue = coprocessor-<i>-* without -gcs- (+ Polygon consumer), Green = *-gcs-*.
 fleet_ready() { # fleet_ready <blue|green> <party>
   local fleet="$1" party="$2" pattern
-  if [[ "${fleet}" == green ]]; then pattern="^coprocessor-(${party}|polygon-${party})-gcs-"; else pattern="^coprocessor-(${party}|polygon-${party})-(gw|host|sns|tfhe|tx|zk)"; fi
+  if [[ "${fleet}" == green ]]; then pattern="^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-gcs-"; else pattern="^coprocessor-(${party}|polygon-${party})-(gw|host|sns|tfhe|tx|zk)|^coprocessor-poller-(polygon-)?${party}-host"; fi
   kubectl get deploy -n "${NAMESPACE}" -o json \
     | jq -r --arg re "${pattern}" '[.items[] | select(.metadata.name | test($re))] | "\(map(select(.status.readyReplicas == .spec.replicas and .spec.replicas > 0)) | length)/\(length)"'
 }
@@ -109,8 +109,8 @@ case "${phase}" in
 baseline)
   bv=$(blue_version)
   for i in ${parties}; do
-    v=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version FROM versioning;")
-    check "party ${i}: versioning ${v} (Blue binary ${bv}, consensus 1)" "${v}" = "${bv}/1"
+    v=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")
+    check "party ${i}: versioning ${v} (Blue binary ${bv}, consensus 1)" "$(version_mm "${v%/*}")" = "$(version_mm "${bv}")" -a "${v#*/}" = "1"
     n=$(psql_party "${i}" "SELECT count(*) FROM upgrade_state;")
     check "party ${i}: upgrade_state rows = ${n}" "${n}" = "0"
     g=$(psql_party "${i}" "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%';")
@@ -192,7 +192,7 @@ window-timing)
 
 cutover)
   for i in ${parties}; do
-    v=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version FROM versioning;")
+    v=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")
     check "party ${i}: versioning ${v} (Green ${GCS_STACK_VERSION}, consensus >= 2)" "$(version_mm "${v%/*}")" = "$(version_mm "${GCS_STACK_VERSION}")" -a "${v#*/}" -ge 2
     rows=$(psql_party "${i}" "SELECT host_chain_id||'|'||state||'|'||status FROM upgrade_state WHERE stack_role='GCS' ORDER BY host_chain_id;")
     n=$(grep -c . <<<"${rows}" || true)
@@ -217,7 +217,7 @@ cutover)
 
 post)
   for i in ${parties}; do
-    v=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version FROM versioning;")
+    v=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")
     check "party ${i}: versioning still ${v}" "$(version_mm "${v%/*}")" = "$(version_mm "${GCS_STACK_VERSION}")"
     c=$(psql_party "${i}" "SELECT count(DISTINCT chain_id) FROM host_chain_blocks_valid WHERE created_at > now() - interval '120 seconds';")
     check "party ${i}: chains ingested by Green in the last 2 min = ${c}/${nb_chains}" "${c}" -ge "${nb_chains}"

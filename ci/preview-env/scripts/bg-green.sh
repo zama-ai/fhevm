@@ -18,7 +18,7 @@
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-green.sh migrate|start
 # Env: NAMESPACE (required), NB_COPROCESSOR (2),
 #      DEPLOY_POLYGON (default: true when the Blue Polygon consumer release exists),
-#      GCS_IMAGE_TAG (default: tag of the running HEAD poller image),
+#      GCS_IMAGE_TAG (default: the tag of the env's test-suite image, i.e. the deployed branch SHA),
 #      GCS_STACK_VERSION (default: commonConfig.stackVersion of the gcs overlay),
 #      COPROCESSOR_CHART (charts/coprocessor of this checkout),
 #      BCS_STACK_VERSION (default: what the running Blue binary prints for --stack-version).
@@ -39,8 +39,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 values_dir="${root}/ci/preview-env/coprocessor"
 COPROCESSOR_CHART="${COPROCESSOR_CHART:-${root}/charts/coprocessor}"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${values_dir}/values-coprocessor-gcs-e2e.yaml")}"
-GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get deploy -n "${NAMESPACE}" coprocessor-poller-1-host-listener-poller \
-  -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')}"
+# Green image tag: the short SHA the branch was deployed from (every coprocessor image carries it),
+# taken from the test-suite Job image of this env; override with GCS_IMAGE_TAG.
+GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get job -n "${NAMESPACE}" test-suite -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')}"
 # Newest migration the Green migrator applies: from the commit the image tag names
 # when this checkout has it (tags are short SHAs), else from the checkout itself.
 migrations_dir="coprocessor/fhevm-engine/db-migration/migrations"
@@ -53,6 +54,7 @@ work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 
 fail() { echo "::error::$*" >&2; exit 1; }
+version_mm() { sed -E 's/^v//; s/^([0-9]+\.[0-9]+).*/\1/' <<<"$1"; }
 
 psql_party() {
   local party="$1" sql="$2"
@@ -109,8 +111,9 @@ green_helm_args() {
 
 blue_live() {
   local party="$1" v
-  v=$(psql_party "${party}" "SELECT stack_version||'/'||consensus_version||' upgrade_state='||(SELECT count(*) FROM upgrade_state)||' gcs_schemas='||(SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%') FROM versioning;")
-  [[ "${v}" == "${BCS_STACK_VERSION}/1 upgrade_state=0 gcs_schemas=0" ]] \
+  # Pre-migration the row is 'v0.14' with no consensus_version column; compare major.minor and default to 1.
+  v=$(psql_party "${party}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1')||' upgrade_state='||(SELECT count(*) FROM upgrade_state)||' gcs_schemas='||(SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%') FROM versioning v;")
+  [[ "$(version_mm "${v%%/*}")" == "$(version_mm "${BCS_STACK_VERSION}")" && "${v#*/}" == "1 upgrade_state=0 gcs_schemas=0" ]] \
     || fail "party ${party} is not in the Blue-only state (${v}); run bg-reset.sh first"
   helm status "coprocessor-${party}-gcs" -n "${NAMESPACE}" >/dev/null 2>&1 \
     && fail "party ${party}: Green release already installed"
@@ -141,7 +144,7 @@ migrate)
     fi
     after=$(psql_party "${i}" "SELECT max(version)||' ('||count(*)||')' FROM _sqlx_migrations;")
     [[ "${after}" == "${head_migration} ("* ]] || fail "party ${i}: DB at ${after}, expected ${head_migration}"
-    echo "party ${i}: migrations ${before} -> ${after}; Blue still $(psql_party "${i}" "SELECT stack_version||'/'||consensus_version FROM versioning;")"
+    echo "party ${i}: migrations ${before} -> ${after}; Blue still $(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")"
   done
   echo "== migrate done: schema at ${head_migration} on every party, Blue untouched. Next: bg-green.sh start"
   ;;
@@ -159,6 +162,18 @@ start)
     helm upgrade --install "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" "${GREEN_ARGS[@]}" \
       --set-json 'dbMigration.annotations={"helm.sh/hook":"pre-install,pre-upgrade","helm.sh/hook-delete-policy":"before-hook-creation"}' \
       >/dev/null
+    # Green pollers: twins of the Blue poller releases (HEAD image, Green fleet). They inject the
+    # synthetic host anchors and, in gcs mode, wait for the Green schema the controller creates.
+    for rel in "coprocessor-poller-${i}" $([[ "${DEPLOY_POLYGON}" == "true" ]] && echo "coprocessor-poller-polygon-${i}"); do
+      helm get values "${rel}" -n "${NAMESPACE}" -o yaml > "${work}/${rel}.yaml"
+      echo "party ${i}: installing ${rel}-gcs"
+      helm upgrade --install "${rel}-gcs" "${COPROCESSOR_CHART}" -n "${NAMESPACE}" \
+        -f "${work}/${rel}.yaml" \
+        --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-gcs\"}" \
+        --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}" \
+        --set-string "hostListenerPollerShared.image.tag=${GCS_IMAGE_TAG}" \
+        >/dev/null
+    done
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
       # Twin of the Blue Polygon consumer: its values, Green image/version/fleet and an
       # own consumer name (the Redis group is <service-name>.<chain-id>).
@@ -194,14 +209,15 @@ start)
     else
       echo "::error::party ${i}: Green ingests on ${chains}/${expected_chains} chain(s) in ${schema} after 3 min"; failed=1
     fi
-    blue=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version||' upgrade_state='||(SELECT count(*) FROM upgrade_state) FROM versioning;")
-    [[ "${blue}" == "${BCS_STACK_VERSION}/1 upgrade_state=0" ]] || { echo "::error::party ${i}: Blue state changed: ${blue}"; failed=1; }
+    blue=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1')||' upgrade_state='||(SELECT count(*) FROM upgrade_state) FROM versioning v;")
+    [[ "$(version_mm "${blue%%/*}")" == "$(version_mm "${BCS_STACK_VERSION}")" && "${blue#*/}" == "1 upgrade_state=0" ]] || { echo "::error::party ${i}: Blue state changed: ${blue}"; failed=1; }
     for d in upgrade-controller consensus-detector; do
       if kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-gcs-${d}" --tail=200 2>/dev/null | grep '"level":"ERROR"' >/dev/null; then
         echo "::warning::party ${i}: ${d} logged errors, check: kubectl logs -n ${NAMESPACE} deploy/coprocessor-${i}-gcs-${d}"
       fi
     done
-    for p in "coprocessor-poller-${i}-host-listener-poller" "coprocessor-poller-polygon-${i}-host-listener-poller"; do
+    for p in "coprocessor-poller-${i}-gcs-host-listener-poller" "coprocessor-poller-polygon-${i}-gcs-host-listener-poller"; do
+      kubectl get deploy -n "${NAMESPACE}" "${p}" >/dev/null 2>&1 || continue
       if kubectl logs -n "${NAMESPACE}" "deploy/${p}" --tail=3 2>/dev/null | grep "waiting for the upgrade-controller to create the GCS schema" >/dev/null; then
         echo "::warning::${p} still waiting for the Green schema"
       fi
