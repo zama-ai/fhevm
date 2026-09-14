@@ -5,17 +5,10 @@ import type { EncryptedERC20 } from '../../types/contracts';
 import { createInstance as createHardhatInstance } from '../instance';
 import { isLiveNetwork } from '../network';
 import { getSigners as getHardhatSigners, initSigners } from '../signers';
+import { createFundedDeployers } from './freshDeployers';
 import { deployChainFixture } from './multiChain.fixture';
 import type { ChainConfig } from './multiChainHelper';
-import {
-  HOST_CHAINS,
-  createInstance,
-  evmRevert,
-  evmSnapshot,
-  getProvider,
-  getSigners,
-  getWallet,
-} from './multiChainHelper';
+import { HOST_CHAINS, createInstance, evmRevert, evmSnapshot, getProvider, getSigners } from './multiChainHelper';
 
 async function getVersion(chain: ChainConfig, address: string): Promise<string | undefined> {
   const contract = new ethers.Contract(address, ['function getVersion() view returns (string)'], getProvider(chain));
@@ -41,8 +34,7 @@ describe('Multi-Chain State Isolation', function () {
     this.signersA = getSigners(this.chains[0]);
     this.signersB = getSigners(this.chains[1]);
 
-    this.deployerA = getWallet(this.chains[0], 50);
-    this.deployerB = getWallet(this.chains[1], 50);
+    [this.deployerA, this.deployerB] = await createFundedDeployers([this.signersA.alice, this.signersB.alice]);
 
     this.chainA = await deployChainFixture(this.deployerA);
     this.chainB = await deployChainFixture(this.deployerB);
