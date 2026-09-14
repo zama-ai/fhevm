@@ -54,14 +54,20 @@ psql_party() {
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -v ON_ERROR_STOP=1 -tAqc "${sql}"
 }
 
-# Blue deployment names of one party: main release + Polygon consumer + both pollers, never Green.
-blue_deployments() {
-  local party="$1"
-  kubectl get deploy -n "${NAMESPACE}" -o name \
-    | sed 's#^deployment.apps/##' \
+# Blue deployment names of one party: main release + Polygon consumer + both pollers, never
+# Green. Listed once, up front, into ${work}/blue-<party>: a transient kubectl failure here
+# must abort, not silently skip a party half-way through.
+work=$(mktemp -d)
+trap 'rm -rf "${work}"' EXIT
+list_blue_deployments() {
+  local party="$1" all
+  all=$(kubectl get deploy -n "${NAMESPACE}" -o name) || fail "kubectl get deploy failed"
+  sed 's#^deployment.apps/##' <<<"${all}" \
     | grep -E "^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-" \
-    | grep -v -- "-gcs-" || true
+    | grep -v -- "-gcs-" > "${work}/blue-${party}" || true
+  [[ -s "${work}/blue-${party}" ]] || fail "party ${party}: no Blue deployments found in ${NAMESPACE}"
 }
+blue_deployments() { cat "${work}/blue-$1"; }
 
 # Logs of the (single, fresh) pod behind a deployment, matched by pod-name prefix:
 # `kubectl logs deploy/` picks by selector and the Polygon/ETH consumers share labels.
@@ -73,6 +79,7 @@ deploy_logs() {
 }
 
 echo "== bg-reset: ${NAMESPACE}, ${NB_COPROCESSOR} parties, polygon=${DEPLOY_POLYGON}, target versioning ${BCS_STACK_VERSION}/1"
+for i in $(seq 1 "${NB_COPROCESSOR}"); do list_blue_deployments "${i}"; done
 
 # ---- 0. preconditions: no traffic -------------------------------------------
 running_wf=$(kubectl get workflows -n "${NAMESPACE}" --no-headers -o custom-columns=N:.metadata.name,P:.status.phase 2>/dev/null \

@@ -497,8 +497,8 @@ jobs:
       KMS_REPO_REF: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_repo_ref }}
       KMS_CORE_TAG: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_core_version }}
       REDIS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).redis_chart_version }}
-      # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
-      BCS_IMAGE_TAG: "v0.14.0-7"
+      # Previous-release pin for the BCS fleet.
+      BCS_IMAGE_TAG: "v0.14.1-1"
       # Release the GCS fleet is compiled at; names the proposal and the
       # gcs-<release> schema the assertions read.
       GCS_VERSION: v${{ needs.check-labels.outputs.stack_version }}
