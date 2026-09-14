@@ -1,0 +1,5 @@
+pkg/_cjs
+pkg/_types
+
+# Byte-identical upstream copies — see pkg/src/internal/vendored/README.md.
+pkg/src/internal/vendored

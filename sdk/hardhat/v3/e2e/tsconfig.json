@@ -1,0 +1,16 @@
+{
+  "//": "The lint project: the config, the tests and the typechain output `hardhat build` generates; no emit.",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["node", "mocha"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // typechain's generated hardhat.d.ts augments the hardhat-ethers helpers interface by extending
+    // itself, which only typechecks with library checks off (hardhat's own templates do the same).
+    "skipLibCheck": true
+  },
+  "include": ["hardhat.config.ts", "test/**/*.ts", "types/**/*.ts"]
+}

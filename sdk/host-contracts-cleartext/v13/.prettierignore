@@ -1,0 +1,23 @@
+dependencies
+pkg/src
+pkg/ts/types/ethereumLibTypes.ts
+pkg/ts/cleartext-config.ts
+pkg/abi
+internal/placeholders
+pkg/templates
+pkg/forge
+*.t.sol
+*.md
+
+# Solidity is formatted by `forge fmt`, never prettier (foundry.toml -> extends ../../foundry.base.toml).
+*.sol
+
+# tsc output: compile:pkg:ts:cjs, compile:pkg:ts:esm, compile:pkg:ts:types and compile:pkg:ts:types:cjs. Excluded explicitly rather than by
+# luck — the ESM declaration emit happens to be prettier-clean, the CommonJS one is not.
+pkg/ts/_cjs
+pkg/ts/_esm
+pkg/ts/_types
+pkg/ts/_types-cjs
+
+# vitest cache (test/ts, upgrade-e2e); also gitignored, listed here so prettier never depends on that.
+.vitest-cache

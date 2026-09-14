@@ -1,0 +1,236 @@
+import { deploy, precomputeAddresses, type BootstrapConfig } from '../../pkg/ts/index.ts';
+import { createPublicClient, createWalletClient, getAddress, http, type Address, type Hex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { foundry } from 'viem/chains';
+import { expect, test } from 'vitest';
+import {
+  DEPLOYER_ADDRESS_INDEX,
+  startAnvil,
+  stopAnvil,
+  waitForAnvil,
+  MNEMONIC,
+  ERC_1967_IMPL_SLOT,
+  type AnvilNode,
+} from '@fhevm/sdk-common-dev';
+import { privateKeyFromMnemonic, privateKeyToAddress } from '@fhevm/sdk-common-dev';
+import { expectedHcuLimit } from './utils/expectedBootstrap.ts';
+import { createViemEthereumAdapters } from '@fhevm/sdk-vendored-dev/viemEthereumLib.ts';
+
+// Minimal, fully-typed ABI fragments (avoids importing untyped JSON artifacts).
+// ACL real-implementation read surface (`getPauserSetAddress` only exists post-materialization).
+const ACL_ABI = [
+  { type: 'function', name: 'owner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { type: 'function', name: 'pendingOwner', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  {
+    type: 'function',
+    name: 'getPauserSetAddress',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+] as const;
+
+// ACLOwner write surface.
+const ACL_OWNER_ABI = [
+  {
+    type: 'function',
+    name: 'upgrade',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'ops',
+        type: 'tuple[]',
+        components: [
+          { name: 'proxy', type: 'address' },
+          { name: 'implementation', type: 'address' },
+          { name: 'initData', type: 'bytes' },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'transferACLOwnership',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'newOwner', type: 'address' }],
+    outputs: [],
+  },
+] as const;
+
+/** A concretely-typed wallet client for a mnemonic account (so viem's writeContract needs no chain/account). */
+function walletFor(rpcUrl: string, addressIndex: number) {
+  const privateKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex });
+  return createWalletClient({ account: privateKeyToAccount(privateKey), chain: foundry, transport: http(rpcUrl) });
+}
+
+/** Valid bootstrap config for a fresh v13 stack (one KMS node, all thresholds = 1). */
+function bootstrapConfig(parameters: {
+  readonly verifyingContractSource: string;
+  readonly coprocessorSigner: string;
+  readonly kmsTxSender: string;
+  readonly kmsSigner: string;
+}): BootstrapConfig {
+  return {
+    kmsVerifier: {
+      verifyingContractSource: parameters.verifyingContractSource,
+      chainIDSource: 1n,
+      initialSigners: [parameters.kmsSigner],
+      initialThreshold: 1n,
+    },
+    inputVerifier: {
+      verifyingContractSource: parameters.verifyingContractSource,
+      chainIDSource: 1n,
+      initialSigners: [parameters.coprocessorSigner],
+      initialThreshold: 1n,
+    },
+    hcuLimit: expectedHcuLimit(),
+  };
+}
+
+type DeployedStack = {
+  readonly anvil: AnvilNode;
+  readonly rpcUrl: string;
+  readonly publicClient: ReturnType<typeof createPublicClient>;
+  readonly aclOwnerAddress: Address;
+  readonly aclAddress: Address;
+  readonly pauserSetAddress: Address;
+  readonly proxies: readonly Address[];
+};
+
+/** Starts anvil and deploys a fresh v13 stack via the public `deploy(...)` (deployer = admin). */
+async function deployStack(port: number): Promise<DeployedStack> {
+  const deployerKey = privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: DEPLOYER_ADDRESS_INDEX });
+  const deployerAddress = privateKeyToAddress({ privateKey: deployerKey });
+  const kmsSigner = privateKeyToAddress({
+    privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 8 }),
+  });
+
+  const anvil = startAnvil({ port, mnemonic: MNEMONIC });
+  await waitForAnvil(anvil.rpcUrl);
+
+  const adapters = createViemEthereumAdapters({ rpcUrl: anvil.rpcUrl, privateKey: deployerKey });
+  const publicClient = createPublicClient({ chain: foundry, transport: http(anvil.rpcUrl) });
+
+  const { fhevmAddresses, cleartextAddresses, pauserSetAddress } = precomputeAddresses({
+    ethUtils: adapters.utils,
+    from: deployerAddress,
+    startNonce: 0n,
+  });
+
+  const deployed = await deploy({
+    ethProvider: adapters.provider,
+    ethUtils: adapters.utils,
+    deployer: adapters.signer,
+    admin: adapters.signer,
+    precomputed: { fhevmAddresses, cleartextAddresses, pauserSetAddress },
+    config: bootstrapConfig({
+      verifyingContractSource: deployerAddress,
+      coprocessorSigner: deployerAddress,
+      kmsTxSender: deployerAddress,
+      kmsSigner,
+    }),
+  });
+
+  const addr = deployed.fhevmAddresses;
+  const proxies: readonly Address[] = [
+    addr.aclAddress,
+    addr.fhevmExecutorAddress,
+    addr.kmsVerifierAddress,
+    addr.inputVerifierAddress,
+    addr.hcuLimitAddress,
+    deployed.cleartextAddresses.cleartextArithmeticAddress,
+    deployed.cleartextAddresses.cleartextDbAddress,
+  ].map((a) => a as Address);
+
+  return {
+    anvil,
+    rpcUrl: anvil.rpcUrl,
+    publicClient,
+    aclOwnerAddress: deployed.aclOwnerAddress as Address,
+    aclAddress: addr.aclAddress as Address,
+    pauserSetAddress: deployed.pauserSetAddress as Address,
+    proxies,
+  };
+}
+
+function readImplSlot(publicClient: DeployedStack['publicClient'], address: Address): Promise<Hex | undefined> {
+  return publicClient.getStorageAt({ address, slot: ERC_1967_IMPL_SLOT });
+}
+
+test('deploy materializes a fresh v13 stack owned by ACLOwner', async () => {
+  const stack = await deployStack(8600);
+  try {
+    // `deploy` completing means the single atomic ACLOwner.upgrade materialized all 7 proxies
+    // (any failing initializeFromEmptyProxy would have reverted the whole transaction).
+    for (const proxy of stack.proxies) {
+      const impl = await readImplSlot(stack.publicClient, proxy);
+      expect(impl, `impl slot for proxy ${proxy}`).toBeDefined();
+      expect(BigInt(impl ?? '0x0')).not.toBe(0n);
+    }
+
+    // ACL is a real, materialized contract: owned by ACLOwner and pointing at the deployed PauserSet.
+    const owner = await stack.publicClient.readContract({
+      address: stack.aclAddress,
+      abi: ACL_ABI,
+      functionName: 'owner',
+    });
+    expect(getAddress(owner)).toBe(getAddress(stack.aclOwnerAddress));
+
+    const pauserSet = await stack.publicClient.readContract({
+      address: stack.aclAddress,
+      abi: ACL_ABI,
+      functionName: 'getPauserSetAddress',
+    });
+    expect(getAddress(pauserSet)).toBe(getAddress(stack.pauserSetAddress));
+  } finally {
+    await stopAnvil(stack.anvil.process);
+  }
+}, 120_000);
+
+test('a non-owner cannot call ACLOwner.upgrade', async () => {
+  const stack = await deployStack(8601);
+  try {
+    const stranger = walletFor(stack.rpcUrl, 6);
+    await expect(
+      stranger.writeContract({
+        address: stack.aclOwnerAddress,
+        abi: ACL_OWNER_ABI,
+        functionName: 'upgrade',
+        args: [[]],
+      }),
+    ).rejects.toThrow();
+  } finally {
+    await stopAnvil(stack.anvil.process);
+  }
+}, 120_000);
+
+test('transferACLOwnership hands the ACL owner role onward', async () => {
+  const stack = await deployStack(8602);
+  try {
+    const owner = walletFor(stack.rpcUrl, 5);
+    const successor = privateKeyToAddress({
+      privateKey: privateKeyFromMnemonic({ mnemonic: MNEMONIC, addressIndex: 7 }),
+    });
+
+    const hash = await owner.writeContract({
+      address: stack.aclOwnerAddress,
+      abi: ACL_OWNER_ABI,
+      functionName: 'transferACLOwnership',
+      args: [successor],
+    });
+    // `owner` is a raw viem walletClient (walletFor), NOT the SDK adapter — its writeContract resolves
+    // on submission, not mining (unlike adapters.signer.writeContract, which awaits the receipt). Wait
+    // for the receipt before reading `pendingOwner`, or the eth_call races block inclusion (flaky under load).
+    await stack.publicClient.waitForTransactionReceipt({ hash });
+
+    const pending = await stack.publicClient.readContract({
+      address: stack.aclAddress,
+      abi: ACL_ABI,
+      functionName: 'pendingOwner',
+    });
+    expect(getAddress(pending)).toBe(getAddress(successor));
+  } finally {
+    await stopAnvil(stack.anvil.process);
+  }
+}, 120_000);

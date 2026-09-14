@@ -1,0 +1,9 @@
+{
+  "//": "Solution file: `npm run lint` typechecks every project through it. Emits nothing itself.",
+  "files": [],
+  "references": [
+    { "path": "./pkg/tsconfig.json" },
+    { "path": "./internal/tsconfig.json" },
+    { "path": "./test/tsconfig.json" }
+  ]
+}
