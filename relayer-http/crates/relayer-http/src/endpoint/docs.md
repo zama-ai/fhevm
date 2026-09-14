@@ -167,7 +167,7 @@ Per request: `user decrypt request` / `public decrypt request` (info: request_id
 body is validated, then the aggregator's lines (its span carries `request_id`, `decryption_id`, `handles`, and
 `node` on every per-node line), then `request succeeded` (info: request_id, status) or `request rejected` (info,
 4xx: request_id, status, code, message) / `request failed` (warn, 5xx: request_id, status, code). Bodies, keys,
-signatures and shares are never logged. JSON output with `log.json: true`.
+signatures and shares are never logged. JSON output is the default (`log.format`); `RUST_LOG` sets the level.
 
 ## 10. Testing
 

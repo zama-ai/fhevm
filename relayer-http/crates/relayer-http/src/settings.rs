@@ -59,26 +59,30 @@ impl HttpConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The current relayer's log configuration, same keys and meaning. Optional: without a `log:` block the process
+/// logs JSON lines (production). Overrides: `APP_LOG__FORMAT`, `APP_LOG__SHOW_FILE_LINE`, ...; the level filter is
+/// `RUST_LOG` (default `warn,relayer_http=info`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct LogConfig {
-    /// tracing filter directive, e.g. `info` or `info,relayer_http=debug`; `RUST_LOG` wins when set.
-    #[serde(default = "default_level")]
-    pub level: String,
-    /// JSON lines instead of human-readable text.
-    #[serde(default)]
-    pub json: bool,
-}
-
-fn default_level() -> String {
-    "info".to_owned()
+    /// `json` (default), `pretty` or `compact`.
+    pub format: String,
+    /// File and line of the log call.
+    pub show_file_line: bool,
+    pub show_thread_ids: bool,
+    pub show_timestamp: bool,
+    /// The module path of the log call.
+    pub show_target: bool,
 }
 
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
-            level: default_level(),
-            json: false,
+            format: "json".to_owned(),
+            show_file_line: false,
+            show_thread_ids: false,
+            show_timestamp: true,
+            show_target: true,
         }
     }
 }
@@ -123,7 +127,8 @@ mod tests {
     fn example_config_loads_and_validates() {
         let settings = Settings::load(EXAMPLE).unwrap();
         assert_eq!(settings.name, "zama-relayer-http");
-        assert_eq!(settings.log.level, "info");
+        assert_eq!(settings.log.format, "pretty");
+        assert!(settings.log.show_timestamp && settings.log.show_target);
         assert_eq!(settings.kms_aggregator.endpoints.len(), 13);
         assert_eq!(settings.kms_aggregator.user_decrypt.threshold, 9);
         assert_eq!(settings.kms_aggregator.public_decrypt.threshold, 5);
@@ -140,13 +145,15 @@ mod tests {
             env(&[
                 ("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "7s"),
                 ("APP_KMS_AGGREGATOR__MAX_CONCURRENT_CALLS", "128"),
-                ("APP_LOG__JSON", "true"),
+                ("APP_LOG__FORMAT", "compact"),
+                ("APP_LOG__SHOW_FILE_LINE", "true"),
             ]),
         )
         .unwrap();
         assert_eq!(settings.kms_aggregator.call.timeout, Duration::from_secs(7));
         assert_eq!(settings.kms_aggregator.max_concurrent_calls, 128);
-        assert!(settings.log.json);
+        assert_eq!(settings.log.format, "compact");
+        assert!(settings.log.show_file_line);
     }
 
     #[test]
@@ -217,9 +224,39 @@ mod tests {
     }
 
     #[test]
-    fn log_config_default() {
+    fn log_config_defaults_to_production_json() {
         let log = LogConfig::default();
-        assert_eq!(log.level, "info");
-        assert!(!log.json);
+        assert_eq!(log.format, "json");
+        assert!(log.show_timestamp && log.show_target);
+        assert!(!log.show_file_line && !log.show_thread_ids);
+        // A file without a `log:` block, or with a partial one, gets the same defaults.
+        let parsed: LogConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed, LogConfig::default());
+        let partial: LogConfig = serde_json::from_str(r#"{"format": "pretty"}"#).unwrap();
+        assert_eq!(partial.format, "pretty");
+        assert!(partial.show_timestamp);
+        assert!(serde_json::from_str::<LogConfig>(r#"{"level": "info"}"#).is_err());
+    }
+
+    #[test]
+    fn config_without_log_block_loads_and_logs_json() {
+        let dir =
+            std::env::temp_dir().join(format!("relayer-http-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("no-log.yaml");
+        let without_log: String = std::fs::read_to_string(EXAMPLE)
+            .unwrap()
+            .lines()
+            .filter(|line| {
+                !line.starts_with("log:")
+                    && !line.starts_with("  format:")
+                    && !line.starts_with("  show_")
+            })
+            .map(|line| format!("{line}\n"))
+            .collect();
+        std::fs::write(&path, without_log).unwrap();
+        let settings = Settings::load(path.to_str().unwrap()).unwrap();
+        assert_eq!(settings.log, LogConfig::default());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

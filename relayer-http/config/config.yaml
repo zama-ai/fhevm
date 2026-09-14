@@ -1,7 +1,10 @@
 name: zama-relayer-http
-log:
-  level: info          # tracing filter; RUST_LOG overrides it, e.g. "info,relayer_http=debug"
-  json: false          # true in Kubernetes (JSON lines)
+log:                        # optional: without this block the process logs JSON lines (production defaults)
+  format: "pretty"          # json (default), pretty, or compact; the level filter is RUST_LOG (default "warn,relayer_http=info")
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
 http:
   endpoint: "0.0.0.0:8080"     # the API and the probes (/liveness, /healthz) on one port
   max_body_bytes: 2097152      # 2 MiB; bigger request bodies are answered 400 malformed
