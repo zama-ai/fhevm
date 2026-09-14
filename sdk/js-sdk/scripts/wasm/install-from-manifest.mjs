@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { BUILD_PROFILES, KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManifest.js';
+import { KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManifest.js';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const sdkRoot = resolve(scriptDir, '../..');
@@ -34,7 +34,6 @@ const usage = [
   'Manifest entries may set source to any npm install spec, including file: URLs.',
   '',
   'Options:',
-  '  --profile <dev|prod|all>  Manifest profile to install. Defaults to BUILD_PROFILE or dev.',
   '  --lib <tfhe|tkms|kms|all>  Library to install. Defaults to all.',
   '  --force, -y               Reinstall versions even when destination directories exist.',
   '  --no-compress             Forward to TKMS wasm base64 generation.',
@@ -54,7 +53,6 @@ function parseArgs(argv) {
     lib: 'all',
     noCodegen: false,
     noCompress: false,
-    profile: process.env.BUILD_PROFILE ?? 'dev',
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -85,12 +83,6 @@ function parseArgs(argv) {
       continue;
     }
 
-    if (arg === '--profile') {
-      args.profile = argv[++i];
-      if (!args.profile) fail(`Missing value for ${arg}.\n\n${usage}`);
-      continue;
-    }
-
     if (arg === '--lib') {
       args.lib = argv[++i];
       if (!args.lib) fail(`Missing value for ${arg}.\n\n${usage}`);
@@ -98,10 +90,6 @@ function parseArgs(argv) {
     }
 
     fail(`Unknown argument: ${arg}\n\n${usage}`);
-  }
-
-  if (![...BUILD_PROFILES, 'all'].includes(args.profile)) {
-    fail(`Unknown profile '${args.profile}'. Expected one of: ${[...BUILD_PROFILES, 'all'].join(', ')}`);
   }
 
   if (args.lib === 'kms') {
@@ -115,12 +103,11 @@ function parseArgs(argv) {
   return args;
 }
 
-function manifestEntries(manifest, profile) {
-  const entries = profile === 'all' ? manifest : manifest.filter((entry) => entry.tags.includes(profile));
+function manifestEntries(manifest) {
   const seen = new Set();
   const unique = [];
 
-  for (const entry of entries) {
+  for (const entry of manifest) {
     if (seen.has(entry.version)) {
       continue;
     }
@@ -195,7 +182,7 @@ function plannedInstalls(args) {
 
   for (const lib of libs) {
     const installer = INSTALLERS[lib];
-    const entries = manifestEntries(installer.manifest, args.profile);
+    const entries = manifestEntries(installer.manifest);
 
     for (const entry of entries) {
       const destination = resolve(installer.destinationRoot, `v${entry.version}`);
@@ -248,20 +235,17 @@ function runCodegen(args) {
   }
 
   const codegenArgs = ['scripts/build/codegen-loaders.mjs'];
-  const renderedCommand = `BUILD_PROFILE=dev ${commandLine(process.execPath, codegenArgs)}`;
+  const renderedCommand = commandLine(process.execPath, codegenArgs);
 
   if (args.dryRun) {
     console.log(`[wasm-install] ${renderedCommand}`);
     return;
   }
 
-  console.log('[wasm-install] regenerating source WASM loaders/API declarations (profile=dev)');
+  console.log('[wasm-install] regenerating source WASM loaders/API declarations');
   const result = spawnSync(process.execPath, codegenArgs, {
     cwd: sdkRoot,
-    env: {
-      ...process.env,
-      BUILD_PROFILE: 'dev',
-    },
+    env: process.env,
     stdio: 'inherit',
   });
 
@@ -278,7 +262,7 @@ const args = parseArgs(process.argv.slice(2));
 const installs = plannedInstalls(args);
 
 if (installs.length === 0) {
-  console.log(`[wasm-install] nothing to install for profile=${args.profile} lib=${args.lib}`);
+  console.log(`[wasm-install] nothing to install for lib=${args.lib}`);
 } else {
   for (const install of installs) {
     runInstaller(install, args);

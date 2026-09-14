@@ -71,7 +71,6 @@ jobs:
       matrix:
         name:
           - quality
-          - build-dev
           - browser
           - cleartext-v12
           - cleartext-v13
@@ -97,9 +96,9 @@ jobs:
   # sibling jobs on failure unless a job-level matrix opts in).
   # ===========================================================================
 
-  # --- Standard gate: prod build (clean/codegen/prettier/lint/builds) + unit ---
+  # --- Standard gate: build (clean/codegen/prettier/lint/builds) + unit ---
   quality:
-    name: dod quality (build:prod + unit)
+    name: dod quality (build + unit)
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 30
@@ -123,36 +122,8 @@ jobs:
         with:
           max-attempts: "2"
           command: cd sdk/js-sdk && npm ci
-      - run: npm run build:prod # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
+      - run: npm run build # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
       - run: npm run test:unit
-
-  # --- Dev-profile build check (dod step: BUILD_PROFILE=dev build) ---
-  build-dev:
-    name: dod build:dev
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
-    timeout-minutes: 30
-    permissions:
-      contents: "read" # checkout the repository
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: "false"
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: 22.x
-      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-        with:
-          version: stable
-      - name: Install safe-chain
-        shell: bash
-        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-      - name: Install npm dependencies
-        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
-        with:
-          max-attempts: "2"
-          command: cd sdk/js-sdk && npm ci
-      - run: npm run build:dev
 
   # --- Browser WASM test (Playwright) ---
   browser:
@@ -180,7 +151,7 @@ jobs:
         with:
           max-attempts: "2"
           command: cd sdk/js-sdk && npm ci
-      - run: npm run build:prod
+      - run: npm run build
       - run: npx playwright install --with-deps
       - run: npm run test:browser-smoke
 
@@ -223,8 +194,8 @@ jobs:
         run: |
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
-      - run: npm run build:prod
-      - run: ./test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip
+      - run: npm run build
+      - run: ./test/scripts/rebuild_sdk_and_pack.sh --skip-build
       - name: Run cleartext suite (${{ matrix.profile }})
         env:
           CLEARTEXT_FLAGS: ${{ matrix.flags }}
@@ -305,7 +276,7 @@ jobs:
           max-attempts: "2"
           command: cd sdk/js-sdk && npm ci
       - run: cd contracts && forge soldeer install
-      - run: npm run codegen:loaders:prod
+      - run: npm run codegen:loaders
       - name: Write test .env
         run: |
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env

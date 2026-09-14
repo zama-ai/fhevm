@@ -244,7 +244,7 @@ migrate it onto the core, but that is out of scope here.
 --wasm-load=embedded-base64|...|auto    loading strategy
 --coexist=single|multi|multi+cleartext  coexistence scenario
 --all                                   run the pruned matrix
---rebuild --build-profile=dev|prod      forwarded to scripts/run.mjs (rebuild+pack SDK)
+--rebuild                               forwarded to scripts/run.mjs (rebuild+pack SDK)
 ```
 
 Env is set by the script and inherited by `next dev`, so both the client page
