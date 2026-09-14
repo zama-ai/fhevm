@@ -1,5 +1,7 @@
 //! Process configuration: one YAML file, `APP_<SECTION>__<FIELD>` environment overrides.
 
+use std::net::SocketAddr;
+
 use config::{Config, Environment, File};
 use serde::Deserialize;
 
@@ -14,7 +16,47 @@ pub struct Settings {
     pub name: String,
     #[serde(default)]
     pub log: LogConfig,
+    pub http: HttpConfig,
     pub kms_aggregator: KmsAggregatorConfig,
+}
+
+/// The HTTP server: the API and the Kubernetes probes share one port.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HttpConfig {
+    /// Bind address, e.g. `0.0.0.0:8080`.
+    pub endpoint: SocketAddr,
+    /// Largest accepted request body; bigger ones are answered `400 malformed`.
+    #[serde(default = "default_max_body_bytes")]
+    pub max_body_bytes: usize,
+    /// Host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
+    pub supported_chain_ids: Vec<u64>,
+}
+
+fn default_max_body_bytes() -> usize {
+    2 << 20
+}
+
+impl HttpConfig {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.max_body_bytes < 1024 {
+            return Err(ConfigError(
+                "http.max_body_bytes must be >= 1024".to_owned(),
+            ));
+        }
+        if self.supported_chain_ids.is_empty() {
+            return Err(ConfigError(
+                "http.supported_chain_ids must not be empty".to_owned(),
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if let Some(dup) = self.supported_chain_ids.iter().find(|id| !seen.insert(*id)) {
+            return Err(ConfigError(format!(
+                "http.supported_chain_ids contains {dup} twice"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +96,7 @@ impl Settings {
             .build()
             .and_then(Config::try_deserialize)
             .map_err(|e| ConfigError(format!("{path}: {e}")))?;
+        settings.http.validate()?;
         settings.kms_aggregator.validate()?;
         Ok(settings)
     }
@@ -140,6 +183,37 @@ mod tests {
     fn missing_file_names_the_path() {
         let e = Settings::load("config/does-not-exist.yaml").err().unwrap();
         assert!(e.0.starts_with("config/does-not-exist.yaml"), "{e}");
+    }
+
+    #[test]
+    fn http_config_is_loaded_and_validated() {
+        let settings = Settings::load(EXAMPLE).unwrap();
+        assert_eq!(settings.http.endpoint.port(), 8080);
+        assert_eq!(settings.http.max_body_bytes, 2 << 20);
+        assert_eq!(settings.http.supported_chain_ids, vec![1, 137]);
+
+        let e = Settings::load_with(EXAMPLE, env(&[("APP_HTTP__MAX_BODY_BYTES", "10")]))
+            .err()
+            .unwrap();
+        assert!(e.0.contains("http.max_body_bytes"), "{e}");
+        let e = Settings::load_with(EXAMPLE, env(&[("APP_HTTP__ENDPOINT", "not-an-address")]))
+            .err()
+            .unwrap();
+        assert!(e.0.contains("endpoint"), "{e}");
+    }
+
+    #[test]
+    fn http_config_rules() {
+        let mut http = HttpConfig {
+            endpoint: "127.0.0.1:8080".parse().unwrap(),
+            max_body_bytes: 4096,
+            supported_chain_ids: vec![1, 137],
+        };
+        http.validate().unwrap();
+        http.supported_chain_ids = vec![1, 1];
+        assert!(http.validate().unwrap_err().0.contains("twice"));
+        http.supported_chain_ids = vec![];
+        assert!(http.validate().unwrap_err().0.contains("must not be empty"));
     }
 
     #[test]
