@@ -102,6 +102,12 @@ plan_release() {
   echo "== ${rel} (${chain}): deployed ${current} -> target ${TARGET_TAG}"
   for line in "${PLAN[@]+"${PLAN[@]}"}"; do read -r c _ _ from to proxy <<<"${line}"; echo "   upgrade ${c} ${proxy} (reinitializer ${from} -> ${to}) impl=$(impl_of "$(rpc_for "${rel}")" "${proxy}")"; done
   for line in "${SKIPPED[@]+"${SKIPPED[@]}"}"; do echo "   skip    ${line}"; done
+  local claim; claim=$(helm get values "${rel}" -n "${NAMESPACE}" -o json | jq -r '.persistence.volumeClaim.name // ""')
+  if [[ -n "${claim}" ]] && kubectl get pvc -n "${NAMESPACE}" "${claim}" >/dev/null 2>&1; then
+    echo "   workdir PVC ${claim} present (holds the generated addresses both implementations compile against)"
+  else
+    echo "   [WARN] workdir PVC '${claim:-<unset>}' missing: the upgrade would compile against placeholder addresses"
+  fi
 }
 
 upgrade_release() {
@@ -121,15 +127,24 @@ upgrade_release() {
   done
   # Deploy env (owner key, RPC, HARDHAT_NETWORK, reinitializer inputs) + the proxy addresses the tasks read.
   ENV_ADD="$(cat "${env_json}")" yq -i '.scDeploy.env = (.scDeploy.env // []) + (strenv(ENV_ADD) | fromjson)' "${base}"
-  local image_name
+  local image_name claim
   image_name=$(yq -r '.scDeploy.image.name' "${base}")
+  claim=$(yq -r '.persistence.volumeClaim.name // ""' "${base}")
+  [[ -n "${claim}" ]] || fail "${rel}: no persistence.volumeClaim.name in its values; the upgrade needs the deploy workdir"
+  kubectl get pvc -n "${NAMESPACE}" "${claim}" >/dev/null 2>&1 || fail "${rel}: PVC ${claim} not found"
   local helm_args=(-n "${NAMESPACE}" -f "${base}"
     --set scUpgrade.enabled=true
     --set-string "scUpgrade.oldContracts.image.name=${image_name}"
     --set-string "scUpgrade.oldContracts.image.tag=${current}"
     --set-string "scDeploy.image.tag=${TARGET_TAG}"
     --set-json "scUpgrade.upgradeCommands=$(cat "${cmds}")"
-    --set persistence.enabled=false)
+    # Mount the deploy release's workdir (do not create a new one): it holds the generated
+    # addresses/<Chain>Addresses.sol this env deployed with, which BOTH implementations compile
+    # against, plus the OpenZeppelin upgrades manifest. A fresh volume would embed placeholder
+    # addresses into the new implementation.
+    --set persistence.enabled=true
+    --set persistence.volumeClaim.create=false
+    --set-string "persistence.volumeClaim.name=${claim}")
   if [[ "${DRY_RUN}" == "true" ]]; then
     echo "   DRY_RUN: rendering ${name}"
     helm template "${name}" "${CONTRACTS_CHART}" "${helm_args[@]}" > "${work}/${rel}-render.yaml"
