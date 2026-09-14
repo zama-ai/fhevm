@@ -11,9 +11,10 @@ solanaHostListener:
     - name: SOLANA_GRPC_URL
       valueFrom:
         secretKeyRef: {name: solana-rpc, key: grpc-url}
+    # Providers without stream authentication have no token; the binary treats it as optional.
     - name: SOLANA_GRPC_X_TOKEN
       valueFrom:
-        secretKeyRef: {name: solana-rpc, key: grpc-x-token}
+        secretKeyRef: {name: solana-rpc, key: grpc-x-token, optional: true}
     - name: SOLANA_PROOF_API_KEY
       valueFrom:
         secretKeyRef: {name: solana-proof-api, key: api-key}

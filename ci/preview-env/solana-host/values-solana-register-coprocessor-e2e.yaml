@@ -1,5 +1,5 @@
 # Install once per coprocessor DB after canonical key generation, before starting its workers.
-# Set the DATABASE_URL entry to the existing coprocessor database URL (or use valueFrom).
+# deploy-preview.sh appends DATABASE_URL for each coprocessor release.
 scDeploy:
   enabled: true
   image:
@@ -8,9 +8,8 @@ scDeploy:
   configmap:
     name: solana-coprocessor-registration
   env:
-    - name: DATABASE_URL
-      value: ""
     - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
+    # The canonical EVM host chain whose keys the Solana chain shares (Anvil host, see deploy-preview.sh).
     - {name: SOLANA_KEY_SOURCE_CHAIN_ID, value: "12345"}
   deployCommands:
     - node /app/cli.mjs coprocessor register

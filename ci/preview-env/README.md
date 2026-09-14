@@ -50,9 +50,16 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
-├── solana-host/
-│   ├── values-solana-programs-e2e.yaml # contracts overlay, host deployment + HostConfig/KMS context
-│   └── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
+├── solana-host/                          # opt-in via solana_secrets_namespace; runs after the relayer, before e2e
+│   ├── deploy-preview.sh                 # orchestrates every step below against the existing releases
+│   ├── test_charts.py                    # renders the chart + overlays (charts-helm-checks)
+│   ├── values-solana-programs-e2e.yaml   # contracts overlay, host deployment + HostConfig/KMS context
+│   ├── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
+│   ├── values-solana-register-coprocessor-e2e.yaml # contracts overlay, per-coprocessor DB registration
+│   ├── values-solana-coprocessor-e2e.yaml # coprocessor overlay, one solana_host_listener per release
+│   ├── values-solana-connector-e2e.yaml  # kms-connector overlay, Solana env; hostChains entry below
+│   ├── connector-host-chain.yaml         # the Solana hostChains entry appended to each connector
+│   └── values-solana-demos-e2e.yaml      # contracts overlay, example programs (deploy_example_programs)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
