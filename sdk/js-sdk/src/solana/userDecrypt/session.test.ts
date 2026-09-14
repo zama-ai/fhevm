@@ -278,3 +278,18 @@ describe('a request refused before the network', () => {
     expect(delay).not.toHaveBeenCalled();
   });
 });
+
+describe('invalid attempt budgets', () => {
+  it.each([NaN, Infinity, -Infinity, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects %s before submitting',
+    async (attempts) => {
+      const { submit, transport } = scriptedTransport([answered]);
+      const { clock, delay } = recordingClock();
+      await expect(
+        runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock, attempts }),
+      ).rejects.toThrow('attempts must be a positive safe integer');
+      expect(submit).not.toHaveBeenCalled();
+      expect(delay).not.toHaveBeenCalled();
+    },
+  );
+});

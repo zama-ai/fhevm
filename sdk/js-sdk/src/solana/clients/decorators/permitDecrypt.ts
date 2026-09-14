@@ -37,6 +37,7 @@ import {
   executeSolanaUserDecrypt,
   generateSolanaTransportKeyPair,
 } from '../../userDecrypt/index.js';
+import { abortableSleep } from '../../../core/base/timeout.js';
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue } from '../../../core/handle/ClearValue.js';
@@ -177,7 +178,7 @@ export function solanaPermitDecryptActions(
           relayerUrl: chain.fhevm.relayerUrl,
           options: { auth: runtime.config.auth, ...parameters.options },
         }),
-        clock: { delay: (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)) },
+        clock: { delay: (seconds) => abortableSleep(seconds * 1000, parameters.options?.signal) },
         attempts: parameters.attempts,
         verification: {
           signers: trust.kmsSigners,

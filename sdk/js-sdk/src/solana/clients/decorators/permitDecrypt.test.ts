@@ -213,7 +213,7 @@ describe('running a user decryption through the client', () => {
   function jsonResponse(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
       status,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'Retry-After': '0' },
     });
   }
 
@@ -266,5 +266,30 @@ describe('running a user decryption through the client', () => {
       hex(ENCRYPTED_VALUE_ACCOUNT),
       hex(ENCRYPTED_VALUE_ACCOUNT),
     ]);
+  });
+  it('aborts during retry backoff without another submission or wallet prompt', async () => {
+    const { wallet, signOffchainMessage } = conformingWallet();
+    const decryptClient = client();
+    const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+    vi.useFakeTimers();
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
+      .mockResolvedValueOnce(jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: [] } }));
+    vi.stubGlobal('fetch', fetch);
+    const controller = new AbortController();
+    const result = decryptClient.userDecrypt({
+      session,
+      entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
+      options: { signal: controller.signal },
+    });
+    const rejection = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(1_001);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    controller.abort();
+    await rejection;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(signOffchainMessage).toHaveBeenCalledTimes(1);
   });
 });
