@@ -7,6 +7,11 @@ set -euo pipefail
 
 kind="${1:?kind}"
 head_tag="$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")"
+# Pollers: HEAD in the automated path (they serve Green and ingest the key into the shared table).
+# In the manual QA mode (blue-green without automated tests) Blue gets its own 0.14 pollers, the
+# HEAD ones would crash on the un-migrated schema; Green's pollers come with bg-green.sh start.
+poller_tag="${head_tag}"
+if [[ "${BLUE_GREEN:-false}" == "true" && "${AUTOMATED_TESTS:-false}" != "true" ]]; then poller_tag="${BCS_IMAGE_TAG:?}"; fi
 
 # polygon_consumer <release-suffix> <image-tag> <fleet|""> [extra helm args...]
 polygon_consumer() {
@@ -54,7 +59,7 @@ case "${kind}" in
         -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
         --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-        --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" \
+        --set-string "hostListenerPollerShared.image.tag=${poller_tag}" \
         "${tracing[@]}" &
     done
     wait
@@ -65,7 +70,7 @@ case "${kind}" in
         -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml \
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
         --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-        --set-string "hostListenerPollerShared.image.tag=$(jq -r .coprocessor_host_listener <<<"${TAGS_JSON}")" &
+        --set-string "hostListenerPollerShared.image.tag=${poller_tag}" &
     done
     wait
     ;;

@@ -92,7 +92,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   if [[ "${recent}" != "0" && "${FORCE}" != "true" ]]; then
     fail "party ${i} received ${recent} op(s)/input(s) in the last ${QUIET_SECS}s. Stop traffic first (FORCE=true to override)."
   fi
-  echo "party ${i}: versioning=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version FROM versioning;")" \
+  echo "party ${i}: versioning=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")" \
        "upgrade_state=$(psql_party "${i}" "SELECT count(*)||' row(s), proposal id(s): '||coalesce(string_agg(DISTINCT proposal_id::text, ','), '-') FROM upgrade_state;")"
 done
 echo "The next round needs a proposal id above every id listed (the on-chain proposals stay completed)."
@@ -105,7 +105,7 @@ fi
 
 # ---- 1. Green releases off ----------------------------------------------------
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  for rel in "coprocessor-${i}-gcs" "coprocessor-polygon-${i}-gcs"; do
+  for rel in "coprocessor-${i}-gcs" "coprocessor-polygon-${i}-gcs" "coprocessor-poller-${i}-gcs" "coprocessor-poller-polygon-${i}-gcs"; do
     if helm status "${rel}" -n "${NAMESPACE}" >/dev/null 2>&1; then
       helm uninstall "${rel}" -n "${NAMESPACE}" --wait --timeout 5m
     else
