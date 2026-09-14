@@ -122,9 +122,6 @@ export function createSolanaUserDecryptRelayerTransport(config: {
           })),
         };
       } catch (error) {
-        if (error instanceof RelayerTimeoutError) {
-          throw error;
-        }
         return { ok: false, rejection: rejectionFrom(error, queued) };
       }
     },
@@ -141,11 +138,6 @@ function rejectionFrom(error: unknown, queued: boolean): SolanaUserDecryptReject
   if (error instanceof RelayerResponseApiError) {
     const { label, message } = error.relayerApiError;
     return queued ? { kind: 'failed', label, message } : { kind: 'refused', label, message };
-  }
-  // A job that existed and was never answered within the submission's own time budget: the same
-  // observable fact as a completed-but-empty job, and the same repair.
-  if (error instanceof RelayerTimeoutError && queued) {
-    return { kind: 'unanswered' };
   }
   throw error;
 }
