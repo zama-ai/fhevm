@@ -66,6 +66,17 @@ pub fn init_json_subscriber(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
+    init_json_subscriber_with_filter(log_level, service_name, tracer_name, |_| true)
+}
+
+/// An additional global metadata filter applies to both JSON logging and OTLP
+/// spans. Callers can suppress dependencies that log credential-bearing URLs.
+pub fn init_json_subscriber_with_filter(
+    log_level: tracing::Level,
+    service_name: &str,
+    tracer_name: &'static str,
+    metadata_filter: fn(&tracing::Metadata<'_>) -> bool,
+) -> Result<Option<TracerProviderGuard>, Box<dyn std::error::Error + Send + Sync + 'static>> {
     let level_filter = tracing_subscriber::filter::LevelFilter::from_level(log_level);
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
@@ -75,6 +86,7 @@ pub fn init_json_subscriber(
         .with_level(true);
     let base = tracing_subscriber::registry()
         .with(level_filter)
+        .with(tracing_subscriber::filter::filter_fn(metadata_filter))
         .with(fmt_layer);
 
     if service_name.is_empty() {
@@ -107,7 +119,21 @@ pub fn init_tracing_otel_with_logs_only_fallback(
     service_name: &str,
     tracer_name: &'static str,
 ) -> Option<TracerProviderGuard> {
-    match init_json_subscriber(log_level, service_name, tracer_name) {
+    init_tracing_otel_with_logs_only_fallback_and_filter(
+        log_level,
+        service_name,
+        tracer_name,
+        |_| true,
+    )
+}
+
+pub fn init_tracing_otel_with_logs_only_fallback_and_filter(
+    log_level: tracing::Level,
+    service_name: &str,
+    tracer_name: &'static str,
+    metadata_filter: fn(&tracing::Metadata<'_>) -> bool,
+) -> Option<TracerProviderGuard> {
+    match init_json_subscriber_with_filter(log_level, service_name, tracer_name, metadata_filter) {
         Ok(guard) => guard,
         Err(err) => {
             error!(error = %err, "Failed to setup OTLP");

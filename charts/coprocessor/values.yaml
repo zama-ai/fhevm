@@ -1153,6 +1153,11 @@ txSender:
 
   # Component-specific configuration
   config:
+    # Sender-specific Gateway URL; accepts value or valueFrom. HTTP sender
+    # builds require http(s) here while commonConfig.gatewayUrl can remain
+    # ws(s) for gwListener. Unset falls back to commonConfig.gatewayUrl.
+    gatewayUrl: {}
+
     # Host chain RPC URL for v0.11 delegation management. Rendered as
     # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
     # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).

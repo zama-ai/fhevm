@@ -3,7 +3,16 @@
 
 [advisories]
 # The ignored vulnerability RUSTSEC-2024-0388 is due to sqlx-mysql which is not used
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111"]
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2025-0111",
+    # Temporary 0.13.x release exception: ruint shift overflow/truncation.
+    # Remove after upgrading ruint to >=1.20.0.
+    "RUSTSEC-2026-0220",
+    # Temporary 0.13.x release exception: h2 unbounded empty DATA frames.
+    # Covers both locked h2 versions; remove after migrating both to >=0.4.16.
+    "RUSTSEC-2026-0258",
+]
 # RUSTSEC-2025-0111 impacts only testcontainers
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
