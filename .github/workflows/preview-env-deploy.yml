@@ -28,7 +28,10 @@ name: preview-env-deploy
 #     only). With preview-env-e2e-tests (or automated_tests): propose after
 #     relayer, hold consensus-detector so the first e2e stays on blue (assert
 #     GCS computations > 0), enable the detector, wait for versioning=v0.15,
-#     then run e2e again on green. With deploy_polygon the upgrade spans both host chains. N=1 is rejected.
+#     then run e2e again on green. Without automated_tests: manual QA mode,
+#     Blue only and no proposal; Green, the proposal and the checks come from
+#     ci/preview-env/scripts/bg-*.sh. With deploy_polygon the upgrade spans
+#     both host chains. N=1 is rejected.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -66,7 +69,7 @@ on:
           - "3"
           - "5"
       enable_blue_green:
-        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. With deploy_polygon (so with chain_mode=testnets) the upgrade spans both host chains. PR label preview-env-blue-green is the other gate."
+        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Without automated_tests deploys Blue only (manual QA mode). With deploy_polygon (so with chain_mode=testnets) the upgrade spans both host chains. PR label preview-env-blue-green is the other gate."
         required: true
         type: choice
         default: "false"
@@ -992,7 +995,8 @@ jobs:
 
       - name: Deploy polygon GCS consumer (per-party Polygon consumer, green fleet)
         # The consumer is per fleet: GCS gets its own Polygon consumer (coprocessor-polygon-<i>-gcs) beside the BCS one above.
-        if: env.DEPLOY_POLYGON == 'true' && env.BLUE_GREEN == 'true'
+        # Automated path only: the manual QA mode starts Green later with bg-green.sh.
+        if: env.DEPLOY_POLYGON == 'true' && env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         env:
           GCS_STACK_VERSION: ${{ needs.check-labels.outputs.stack_version }}
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer-gcs
@@ -1075,7 +1079,8 @@ jobs:
       # Propose only after the relayer can serve traffic, so the upgrade
       # window covers in-window e2e instead of helm install time.
       - name: Propose coprocessor upgrade (RFC-021)
-        if: env.BLUE_GREEN == 'true'
+        # Automated path only: in the manual QA mode the operator proposes by hand.
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         env:
           PROPOSAL_ID: ${{ github.run_id }}
         run: |
