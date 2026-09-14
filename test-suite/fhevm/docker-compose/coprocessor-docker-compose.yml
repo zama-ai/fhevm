@@ -246,6 +246,9 @@ services:
       - --manifest-publication-cadence=${CHAIN_ID}:1
       - --manifest-publication-retry-delay=1s
       - --manifest-publication-retry-count=30
+      - --manifest-verification-delay=1s
+      - --manifest-verification-retry-delay=1s
+      - --manifest-verification-retry-count=5
       - --signer-type=private-key
       - --private-key=${TX_SENDER_PRIVATE_KEY}
     depends_on:

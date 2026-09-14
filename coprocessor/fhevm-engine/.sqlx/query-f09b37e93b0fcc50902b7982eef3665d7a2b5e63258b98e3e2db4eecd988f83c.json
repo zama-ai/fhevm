@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch,\n               GREATEST(\n                   0,\n                   EXTRACT(EPOCH FROM NOW() - MIN(\n                       CASE state\n                           WHEN 'pending' THEN next_attempt_at\n                           WHEN 'claimed' THEN claim_expires_at\n                       END\n                   ))::BIGINT\n               ) AS \"oldest_due_age!\"\n          FROM block_manifest_verification_task\n         WHERE (state = 'pending' AND next_attempt_at <= NOW())\n            OR (state = 'claimed' AND claim_expires_at <= NOW())\n         GROUP BY consensus_epoch\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "oldest_due_age!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "f09b37e93b0fcc50902b7982eef3665d7a2b5e63258b98e3e2db4eecd988f83c"
+}
