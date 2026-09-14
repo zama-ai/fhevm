@@ -16,6 +16,34 @@
     "!vitest.config.ts",
     "!tsconfig.json"
   ],
+  "typesVersions": {
+    "*": {
+      "base": [
+        "./_types/core/base/index.d.ts"
+      ],
+      "chains": [
+        "./_types/core/chains/index.d.ts"
+      ],
+      "types": [
+        "./_types/core/types/index.d.ts"
+      ],
+      "actions/base": [
+        "./_types/core/actions/base/index.d.ts"
+      ],
+      "actions/chain": [
+        "./_types/core/actions/chain/index.d.ts"
+      ],
+      "actions/decrypt": [
+        "./_types/core/actions/decrypt/index.d.ts"
+      ],
+      "actions/encrypt": [
+        "./_types/core/actions/encrypt/index.d.ts"
+      ],
+      "actions/host": [
+        "./_types/core/actions/host/index.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "types": "./_types/index.d.ts",
