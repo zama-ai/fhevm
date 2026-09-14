@@ -24,15 +24,15 @@
  * independent sources. It then proves the rotated pair actually serves, by running the existing
  * user-decryption and input-proof probes.
  *
- * Those probes are **blind**: `runDecryption` reports only success or failure and never inspects
- * `extraData`. So the `Then` clauses about the extraData version, the embedded context and epoch,
- * and the request/response echo are **NOT covered here**. They require a mocha spec inside the
- * test-suite container, which is the next increment. This case exists to make that increment
- * possible and trustworthy: without the activation wait, a container-side assertion would run
- * against the old pair and pass while verifying nothing.
+ * It then drives the container-side spec (`KMS context extraData`, in
+ * `test-suite/e2e/test/kmsContextExtraData/`), which signs a decryption permit through the SDK and
+ * asserts the embedded `extraData` decodes as v2 with the pair that is now active — closing the
+ * scenario's `Then` clauses about the request extraData.
  *
- * The values the container half will assert against — `(C, E, E_prev)` — are emitted as evidence
- * and returned in the summary line.
+ * **One clause remains uncovered**: *"the response extraData must be identical to the request
+ * extraData"*. The SDK neither verifies nor exposes the response value — the comparison code exists
+ * but is commented out, and `equalsKmsExtraData` has no production call sites. The evidence and the
+ * decision to defer are recorded in `test-suite/fhevm/qa-extradata-check.md`.
  *
  * ## Why the wait is the real test
  *
@@ -73,7 +73,7 @@ import {
  * -> confirm every committee node reshared -> prove the new pair serves.
  */
 const run = async (ctx: QaCaseContext): Promise<void> => {
-  const { target, owner, evidence, runDecryption, runSmoke } = ctx;
+  const { target, owner, evidence, runDecryption, runSmoke, runExtraDataCheck } = ctx;
 
   evidence.note("note", "target", {
     protocolConfig: target.address,
@@ -163,18 +163,35 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     );
   }
 
-  // The handoff to the container-side increment: these are the values it must find in extraData.
-  evidence.note("note", "handoff values for the container-side extraData assertions", {
+  evidence.note("note", "values handed to the container-side extraData check", {
     context: activated.contextId.toString(),
     epoch: activated.epochId.toString(),
     previousEpoch: baseline.epochId.toString(),
     expectedExtraDataVersion: "0x02",
   });
 
+  // The client-side half of the scenario: the SDK must embed the pair that is now active in the
+  // extraData of the permit it signs. The spec reads the active pair itself and also cross-checks
+  // it against the values injected here, so a rotation landing between the two reads is caught.
+  await evidence.step(
+    "probe",
+    "SDK embeds the active (context, epoch) in the permit extraData",
+    {
+      contextId: activated.contextId.toString(),
+      epochId: activated.epochId.toString(),
+      previousEpochId: baseline.epochId.toString(),
+    },
+    () =>
+      runExtraDataCheck(
+        `kms-context-qa/epoch-rotation: extraData carries epochId=${activated.epochId}`,
+        { contextId: activated.contextId, epochId: activated.epochId },
+      ),
+  );
+
   console.log(
-    `[kms-context-qa] epoch-rotation established the scenario precondition: ` +
-      `context=${activated.contextId} epoch=${activated.epochId} previousEpoch=${baseline.epochId}. ` +
-      `extraData assertions remain uncovered until the container-side spec lands.`,
+    `[kms-context-qa] epoch-rotation complete: context=${activated.contextId} epoch=${activated.epochId} ` +
+      `previousEpoch=${baseline.epochId}. The response-extraData echo remains uncovered — the SDK neither ` +
+      `verifies nor exposes it (see test-suite/fhevm/qa-extradata-check.md).`,
   );
 };
 

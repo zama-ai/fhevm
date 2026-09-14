@@ -288,6 +288,10 @@ export const TEST_GREP: Record<string, string> = {
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
+  // Container half of the kms-context-qa-tests `epoch-rotation` case: asserts the SDK embeds the
+  // active (context, epoch) pair in the permit extraData. Driven by the profile, which injects the
+  // pair it observed on chain; also runnable standalone.
+  "kms-context-extradata": "KMS context extraData",
   "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
