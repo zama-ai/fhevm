@@ -4,6 +4,7 @@
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { runKmsContextQaTestsProfile } from "./kms-context-qa-tests";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -61,6 +62,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-context-qa-tests",
   "kms-context-switch",
   "kms-generation",
   "light",
@@ -118,6 +120,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-context-qa-tests":
+    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Currently implements epoch-rotation: a same-context rotation activates on chain, every committee node completes the reshare, and the rotated pair serves; the extraData assertions of that scenario await the container-side spec. Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
   "kms-context-switch":
     "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
@@ -1002,6 +1006,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "kms-context-switch") {
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+    }
+    if (name === "kms-context-qa-tests") {
+      return runKmsContextQaTestsProfile(state, runUserDecryption, runInputProofSmoke);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
