@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -30,15 +30,17 @@ const usage = [
   'Usage:',
   '  node scripts/wasm/install-from-manifest.mjs [options]',
   '',
-  'Installs missing WASM package versions listed in versionsManifest.js.',
+  'Installs missing WASM package versions listed in versionsManifest.js, and',
+  'removes installed version directories that are no longer listed there.',
   'Manifest entries may set source to any npm install spec, including file: URLs.',
   '',
   'Options:',
-  '  --lib <tfhe|tkms|kms|all>  Library to install. Defaults to all.',
+  '  --lib <tfhe|tkms|kms|all>  Library to install/prune. Defaults to all.',
   '  --force, -y               Reinstall versions even when destination directories exist.',
+  '  --no-prune                Do not remove version directories missing from versionsManifest.js.',
   '  --no-compress             Forward to TKMS wasm base64 generation.',
   '  --no-codegen              Do not regenerate source WASM loaders/API declarations after install.',
-  '  --dry-run                 Print installer commands without running them.',
+  '  --dry-run                 Print installer/removal commands without running them.',
   '  --help, -h                Show this help.',
 ].join('\n');
 
@@ -53,6 +55,7 @@ function parseArgs(argv) {
     lib: 'all',
     noCodegen: false,
     noCompress: false,
+    noPrune: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -80,6 +83,11 @@ function parseArgs(argv) {
 
     if (arg === '--no-codegen') {
       args.noCodegen = true;
+      continue;
+    }
+
+    if (arg === '--no-prune') {
+      args.noPrune = true;
       continue;
     }
 
@@ -117,6 +125,50 @@ function manifestEntries(manifest) {
   }
 
   return unique;
+}
+
+function installedVersionDirNames(installer) {
+  if (!existsSync(installer.destinationRoot)) {
+    return [];
+  }
+
+  return readdirSync(installer.destinationRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^v[^/]+$/.test(entry.name))
+    .map((entry) => entry.name);
+}
+
+function staleVersionDirNames(installer) {
+  const manifestDirNames = new Set(manifestEntries(installer.manifest).map((entry) => `v${entry.version}`));
+  return installedVersionDirNames(installer).filter((name) => !manifestDirNames.has(name));
+}
+
+function selectedLibs(args) {
+  return args.lib === 'all' ? ['tfhe', 'tkms'] : [args.lib];
+}
+
+function pruneStaleVersions(args) {
+  if (args.noPrune) {
+    return;
+  }
+
+  for (const lib of selectedLibs(args)) {
+    const installer = INSTALLERS[lib];
+
+    for (const name of staleVersionDirNames(installer)) {
+      const destination = resolve(installer.destinationRoot, name);
+      const renderedCommand = commandLine('rm', ['-rf', destination]);
+
+      if (args.dryRun) {
+        console.log(`[wasm-install] ${renderedCommand}`);
+        continue;
+      }
+
+      console.log(
+        `[wasm-install] ${installer.displayName} ${name}: not listed in versionsManifest.js, removing (${destination})`,
+      );
+      rmSync(destination, { recursive: true, force: true });
+    }
+  }
 }
 
 function quoteShellArg(value) {
@@ -177,10 +229,9 @@ function installerArgs(lib, installer, entry, args) {
 }
 
 function plannedInstalls(args) {
-  const libs = args.lib === 'all' ? ['tfhe', 'tkms'] : [args.lib];
   const installs = [];
 
-  for (const lib of libs) {
+  for (const lib of selectedLibs(args)) {
     const installer = INSTALLERS[lib];
     const entries = manifestEntries(installer.manifest);
 
@@ -259,6 +310,9 @@ function runCodegen(args) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+pruneStaleVersions(args);
+
 const installs = plannedInstalls(args);
 
 if (installs.length === 0) {
