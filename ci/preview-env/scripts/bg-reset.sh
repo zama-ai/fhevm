@@ -113,7 +113,7 @@ done
 left=""
 for _ in $(seq 1 60); do
   left=$(kubectl get pods -n "${NAMESPACE}" --no-headers 2>/dev/null \
-    | grep -E "^coprocessor-(poller-polygon-|poller-|polygon-)?[0-9]+-" | grep -v "db-migration" | wc -l | tr -d ' ')
+    | grep -E "^coprocessor-(poller-polygon-|poller-|polygon-)?[0-9]+-" | grep -v "db-migration" | wc -l | tr -d ' ' || true)
   [[ "${left}" == "0" ]] && break
   sleep 5
 done
