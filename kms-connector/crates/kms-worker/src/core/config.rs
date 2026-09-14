@@ -240,7 +240,7 @@ fn default_s3_max_ciphertext_size() -> NonZeroUsize {
 }
 
 fn default_erc1271_gas_limit() -> u64 {
-    100_000
+    250_000
 }
 
 impl DeserializeConfig for Config {}
