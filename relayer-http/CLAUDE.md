@@ -18,18 +18,39 @@ t-of-n answers.
 
 ```
 relayer-http/
-├── Cargo.toml, rust-toolchain.toml        # workspace, pinned deps, toolchain 1.97.1
-├── config/config.yaml                     # example configuration
+├── Cargo.toml, Cargo.lock, rust-toolchain.toml   # workspace, exact dependency pins (=x.y.z), toolchain 1.97.1
+├── Dockerfile                                     # container image, built from the repository root (see Container image)
+├── .gitignore                                     # target/, config/*.local.yaml (local variants of the configuration)
+├── config/config.yaml                             # example configuration: name, log, http, kms_aggregator
 └── crates/relayer-http/src/
-    ├── main.rs                            # load settings → init logging → build App → wait for SIGINT/SIGTERM → cancel
-    ├── lib.rs                             # App: everything a handler needs
-    ├── settings.rs                        # Settings: YAML + APP_<SECTION>__<FIELD> env overrides
-    ├── logging.rs                         # tracing subscriber (text or JSON)
-    └── kms_aggregator/                    # fan-out and aggregation; start with its docs.md
+    ├── main.rs                # load settings → init logging → App → serve until SIGINT/SIGTERM → drain → exit
+    ├── lib.rs                 # App: the one shared state (both aggregators, http settings, shutdown token)
+    ├── settings.rs            # Settings, LogConfig, HttpConfig: YAML + APP_<SECTION>__<FIELD> overrides
+    ├── logging.rs             # tracing subscriber: json | pretty | compact, RUST_LOG filter
+    ├── endpoint/              # the HTTP layer; start with its docs.md
+    │   ├── mod.rs             # router() and serve()
+    │   ├── error.rs           # ApiError: the one error body and its mapping
+    │   ├── validate.rs        # rules shared by the routes (handles, extraData)
+    │   ├── ops.rs             # GET /liveness, GET /healthz
+    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler
+    └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
+        ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs
+        ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
+        ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
+        └── scenarios/*.yaml                            # behaviour scenarios, run by cargo test
 ```
 
-Every module ships a `docs.md` next to its code. The `kms_aggregator` one is the reference for what a module doc
-contains: what it does, an overall scheme, how it runs, configuration → behaviour, testing, scope.
+Two modules, each with its `docs.md` next to the code: `endpoint/docs.md` (routes, payloads, responses, every
+error code and its mapping) and `kms_aggregator/docs.md` (how an aggregation runs, one node call, checks,
+configuration → behaviour). The implementation plans live outside the repository (`relayer_specs_plans/`).
+
+## Configuration
+
+One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
+lines), `http` (bind address, body limit, supported chain ids) and `kms_aggregator` (deadline, retries, thresholds,
+optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
+unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
+holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
 
 ## Commands
 
@@ -44,6 +65,24 @@ cargo run -p relayer-http -- config/config.yaml    # needs the KMS_<i>_API_KEY e
 ```
 
 Every change must pass the first three. Check exit codes strictly (a grep on the output hides a failing build).
+
+## Container image
+
+`Dockerfile` follows the relayer's and the kms-connector's model: the golden `rust-glibc` builder pinned by
+`RUST_IMAGE_VERSION` (single source of truth: `rust-toolchain.toml`, read by the CI template), `cargo build --locked
+--release`, a `glibc-dynamic` runtime running as the `fhevm` user, no configuration baked in. The build context is the
+**repository root**: the crate depends on `kms-connector/crates/api` by path and that workspace references its
+siblings, which the Dockerfile copies at the same relative places.
+
+```sh
+# from the repository root
+docker build -f relayer-http/Dockerfile --build-arg RUST_IMAGE_VERSION=1.97.1 -t relayer-http .
+docker run --rm -p 8080:8080 -v "$PWD/relayer-http/config/config.yaml:/app/config/config.yaml:ro" \
+  -e KMS_00_API_KEY=... relayer-http            # the config is mounted at /app/config/config.yaml
+```
+
+The CI workflow for this image (the reusable docker template, change filters on `relayer-http/**` and
+`kms-connector/crates/api/**`) is not wired yet.
 
 ## Rules
 
