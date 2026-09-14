@@ -1,4 +1,9 @@
-import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "../compat/compat";
+import {
+  supportsConnectorEndpoint,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
 import { GCS_ONLY_SUFFIXES } from "../generate/compose";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -34,6 +39,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_GW_LISTENER_VERSION",
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
+    "CONNECTOR_ENDPOINT_VERSION",
   ],
   "kms-core": ["CORE_VERSION"],
   "kms": [
@@ -42,6 +48,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_GW_LISTENER_VERSION",
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
+    "CONNECTOR_ENDPOINT_VERSION",
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -60,6 +67,12 @@ const supportsConsensusDetectorForState = (state: { versions?: State["versions"]
   !state.versions || supportsConsensusDetector({ versions: state.versions });
 const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsUpgradeController({ versions: state.versions });
+const supportsConnectorEndpointForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
+  !state.versions || supportsConnectorEndpoint({ versions: state.versions, overrides: state.overrides });
+const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
+  GROUP_BUILD_SERVICES["kms-connector"].filter(
+    (service) => service !== "kms-connector-endpoint" || supportsConnectorEndpointForState(state),
+  );
 const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (service) =>
@@ -100,11 +113,7 @@ export const resumeSteadyStateServices = (state: State) => {
         }).flat(),
       ),
     ],
-    "kms-connector": [
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-    ],
+    "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
@@ -179,7 +188,7 @@ export const resolveUpgradePlan = (
       throw new Error("upgrade kms requires --lock-file");
     }
     const core = splitServices("core", ["kms-core"]);
-    const connector = splitServices("kms-connector", GROUP_BUILD_SERVICES["kms-connector"]);
+    const connector = splitServices("kms-connector", kmsConnectorServices(state));
     return upgradePlan(group, [core, connector], ["base", "kms-connector"]);
   }
   if (group === "kms-core") {
@@ -205,13 +214,14 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
+  const groupServices = group === "kms-connector" ? kmsConnectorServices(state) : GROUP_BUILD_SERVICES[group];
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)
-      : GROUP_BUILD_SERVICES[group]
+      : groupServices
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
-  const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
+  const releaseServices = lockFileMode ? groupServices : overrideServices;
   const scenario = state.scenario;
   const coprocessorInstances: ResolvedCoprocessorScenarioInstance[] = scenario.kind === "blue-green"
     ? Array.from({ length: scenario.topology.count }, (_, index) => ({
@@ -246,8 +256,8 @@ export const resolveUpgradePlan = (
           );
         })
       : selectedServices.length
-          ? [...new Set(selectedServices)]
-          : GROUP_BUILD_SERVICES[group];
+        ? [...new Set(selectedServices)]
+        : groupServices;
   return upgradePlan(group, [splitServices(component, plannedServices)], [group === "coprocessor" ? "coprocessor" : group]);
 };
 

@@ -185,10 +185,13 @@ jobs:
       coprocessor-consensus-detector-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ steps.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ steps.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: >-
+        ${{ format('{{"db-migration":"{0}","gw-listener":"{1}","kms-worker":"{2}","tx-sender":"{3}","endpoint":"{4}"}}',
+        steps.create-e2e-tests-input.outputs.connector-db-migration-version,
+        steps.create-e2e-tests-input.outputs.connector-gw-listener-version,
+        steps.create-e2e-tests-input.outputs.connector-kms-worker-version,
+        steps.create-e2e-tests-input.outputs.connector-tx-sender-version,
+        steps.create-e2e-tests-input.outputs.connector-endpoint-version) }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
@@ -219,6 +222,7 @@ jobs:
               ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version"],
               ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version"],
               ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version"],
+              ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version"],
               ["gateway-contracts-docker-build", "build_result", "gateway-version"],
               ["host-contracts-docker-build", "build_result", "host-version"],
               ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version"],
@@ -273,10 +277,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
@@ -305,10 +306,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
@@ -337,10 +335,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
@@ -382,10 +377,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
@@ -421,10 +413,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
@@ -461,10 +450,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
-      connector-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.connector-db-migration-version }}
-      connector-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.connector-gw-listener-version }}
-      connector-kms-worker-version: ${{ needs.create-e2e-tests-input.outputs.connector-kms-worker-version }}
-      connector-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.connector-tx-sender-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
