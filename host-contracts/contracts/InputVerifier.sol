@@ -230,6 +230,16 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /**
      * @notice              Verifies the ciphertext.
+     * @dev                 The inputProof is the concatenation of, in this order: numHandles (1 byte),
+     *                      numSigners (1 byte), the handles (32 bytes each), the coprocessor signatures
+     *                      (65 bytes each) and extraData (all the remaining bytes). Counting from the first
+     *                      byte of the inputProof, handle i starts at 2 + 32 * i, signature i starts at
+     *                      2 + 32 * numHandles + 65 * i and extraData starts at 2 + 32 * numHandles + 65 * numSigners.
+     *                      In memory a bytes value starts with its 32-byte length, which is why the assembly
+     *                      blocks below read handle i at inputProof + 34 + 32 * i.
+     *                      Each handle is keccak256(keccak256(bundleCiphertext) || index)[0:20] || index[21] ||
+     *                      chainId[22:29] || type[30] || version[31], where bundleCiphertext is
+     *                      compressedPackedCT + ZKPOK.
      * @param context       Context user inputs.
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
@@ -256,10 +266,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         uint256 indexHandle = (result & 0x0000000000000000000000000000000000000000ff00000000000000000000) >> 80;
 
         if (!isProofCached) {
-            /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
-            ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
-            ///      and inputProof is numHandles + numSigners + handles + coprocessorSignatures (1 + 1 + 32*numHandles + 65*numSigners + extraData bytes)
-
             uint256 inputProofLen = inputProof.length;
             if (inputProofLen == 0) revert EmptyInputProof();
             uint256 numHandles = uint256(uint8(inputProof[0]));
