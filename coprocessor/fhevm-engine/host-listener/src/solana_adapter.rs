@@ -715,9 +715,7 @@ mod tests {
     #[test]
     fn preserves_native_solana_signature() {
         let signature = [7_u8; 64];
-        let id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from(signature),
-        );
+        let id = TransactionId::from(signature);
         assert_eq!(id.as_slice(), signature);
         assert_eq!(id.to_string(), bs58::encode(signature).into_string());
     }
@@ -742,9 +740,7 @@ mod tests {
 
     #[test]
     fn builds_existing_db_log_shape() {
-        let tx_id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from([1_u8; 64]),
-        );
+        let tx_id = TransactionId::from([1_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -785,9 +781,7 @@ mod tests {
         // materializable when an allow for its result landed in the same tx.
         // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
         // KMS independently gates plaintext release against Solana ACL state.
-        let tx_id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from([7_u8; 64]),
-        );
+        let tx_id = TransactionId::from([7_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -824,9 +818,7 @@ mod tests {
 
     #[test]
     fn material_requests_keep_distinct_handles_in_one_batch() {
-        let tx_id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from([9_u8; 64]),
-        );
+        let tx_id = TransactionId::from([9_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -860,9 +852,7 @@ mod tests {
     fn unrelated_allow_handle_does_not_affect_eager_compute_result() {
         // An allow for a DIFFERENT handle is irrelevant either way under eager
         // compute: this compute is schedulable regardless.
-        let tx_id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from([8_u8; 64]),
-        );
+        let tx_id = TransactionId::from([8_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
@@ -897,9 +887,7 @@ mod tests {
 
     #[test]
     fn normalizes_interleaved_batch_events_for_worker_replay() {
-        let tx_id = TransactionId::SolanaSignature(
-            solana_sdk::signature::Signature::from([5_u8; 64]),
-        );
+        let tx_id = TransactionId::from([5_u8; 64]);
         let block_timestamp = PrimitiveDateTime::new(
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,

@@ -2,9 +2,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::SupportedFheOperations as O;
 use host_listener::database::computation::{Computation, Operand};
 use host_listener::database::tfhe_event_propagate::{
-    Database, Handle, LogTfhe,
+    Database, Handle, LogTfhe, TransactionId,
 };
-use host_listener::database::transaction_id::TransactionId;
 use sqlx::Row;
 use test_harness::instance::{setup_test_db, ImportMode};
 use time::PrimitiveDateTime;
@@ -182,9 +181,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         Database::new(&instance.db_url, ChainId::try_from(12345_u64)?, 100)
             .await?;
     let pool = db.pool.read().await.clone();
-    let transaction_id = TransactionId::SolanaSignature(
-        solana_sdk::signature::Signature::from([7; 64]),
-    );
+    let transaction_id = TransactionId::from([7; 64]);
     let block = SolanaBlockMeta {
         block_number: 4,
         block_timestamp: PrimitiveDateTime::new(
@@ -297,11 +294,7 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
             handle: Handle::repeat_byte(value),
         })
     };
-    let ids = [1, 2, 3].map(|n| {
-        TransactionId::SolanaSignature(solana_sdk::signature::Signature::from(
-            [n; 64],
-        ))
-    });
+    let ids = [1, 2, 3].map(|n| TransactionId::from([n; 64]));
     let records = vec![
         (ids[0], vec![trivial(1), material(1), material(1)]),
         (ids[1], vec![add(1, 2)]),
@@ -377,18 +370,8 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         &db,
         &mut tx,
         [
-            (
-                TransactionId::SolanaSignature(
-                    solana_sdk::signature::Signature::from([4; 64]),
-                ),
-                vec![add(2, 4)],
-            ),
-            (
-                TransactionId::SolanaSignature(
-                    solana_sdk::signature::Signature::from([5; 64]),
-                ),
-                vec![add(2, 5)],
-            ),
+            (TransactionId::from([4; 64]), vec![add(2, 4)]),
+            (TransactionId::from([5; 64]), vec![add(2, 5)]),
         ],
         next,
         10,

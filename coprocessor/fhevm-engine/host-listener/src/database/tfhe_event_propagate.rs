@@ -845,10 +845,11 @@ impl Database {
     ) -> Result<usize, SqlxError> {
         let computation = &log.computation;
         let outputs = computation.outputs();
-        if let Some(id) = log.transaction_hash {
-            tracing::Span::current()
-                .record("txn_id", tracing::field::display(id));
-        }
+        telemetry::record_short_hex_if_some(
+            &tracing::Span::current(),
+            "txn_id",
+            log.transaction_hash.as_ref(),
+        );
         self.record_transaction_begin(
             &log.transaction_hash.map(|h| h.to_vec()),
             log.block_number,

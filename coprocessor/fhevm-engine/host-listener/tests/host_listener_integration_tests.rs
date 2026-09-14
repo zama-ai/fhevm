@@ -16,7 +16,7 @@ use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
-use host_listener::database::transaction_id::TransactionId;
+use host_listener::database::tfhe_event_propagate::TransactionId;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
@@ -2166,9 +2166,7 @@ async fn test_sealed_chain_survives_restart(
     let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
     let pool = db.pool.read().await.clone();
 
-    let parent = TransactionId::SolanaSignature(
-        solana_sdk::signature::Signature::from([0xD1; 64]),
-    );
+    let parent = TransactionId::from([0xD1; 64]);
     let gated_child = TransactionId::from([0xD2; 32]);
     let discharged_child = TransactionId::from([0xD3; 32]);
     let quiet_parent = TransactionId::from([0xD4; 32]);

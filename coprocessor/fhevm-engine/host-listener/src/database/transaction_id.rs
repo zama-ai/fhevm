@@ -3,7 +3,10 @@ use solana_sdk::signature::Signature;
 use std::fmt;
 
 /// Native transaction identity; synthetic computation batches use a hash.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+///
+/// The database stores the raw bytes, so the variant is recovered from the
+/// length alone: 32 bytes is a hash, 64 bytes is a Solana signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TransactionId {
     Hash(B256),
     /// Solana identifies a transaction by its first 64-byte signature.
@@ -31,6 +34,12 @@ impl Default for TransactionId {
     }
 }
 
+impl AsRef<[u8]> for TransactionId {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
 impl From<B256> for TransactionId {
     fn from(hash: B256) -> Self {
         Self::Hash(hash)
@@ -40,6 +49,18 @@ impl From<B256> for TransactionId {
 impl From<[u8; 32]> for TransactionId {
     fn from(hash: [u8; 32]) -> Self {
         Self::Hash(hash.into())
+    }
+}
+
+impl From<Signature> for TransactionId {
+    fn from(signature: Signature) -> Self {
+        Self::SolanaSignature(signature)
+    }
+}
+
+impl From<[u8; 64]> for TransactionId {
+    fn from(signature: [u8; 64]) -> Self {
+        Self::SolanaSignature(Signature::from(signature))
     }
 }
 
@@ -73,11 +94,11 @@ mod tests {
 
     #[test]
     fn native_ids_round_trip_and_display_without_losing_bytes() {
-        let hash = TransactionId::Hash(B256::repeat_byte(7));
+        let hash = TransactionId::from([7; 32]);
         let mut signature = [7; 64];
-        let first = TransactionId::SolanaSignature(Signature::from(signature));
+        let first = TransactionId::from(signature);
         signature[63] = 8;
-        let second = TransactionId::SolanaSignature(Signature::from(signature));
+        let second = TransactionId::from(signature);
         let ids = [hash, first, second];
         assert_eq!(ids.into_iter().collect::<HashSet<_>>().len(), 3);
         for id in ids {
