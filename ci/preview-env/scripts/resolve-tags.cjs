@@ -5,8 +5,8 @@
 // Env: NEEDS, EVENT_NAME, INPUTS (parsed overrides_json from check-labels),
 // ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER, GHCR_READ_TOKEN.
 //
-// Per image: built this run -> this run's short SHA; else a non-empty
-// <component>_version dispatch input; else the short SHA of the newest ancestor
+// Per image: a non-empty <component>_version dispatch input; else built this
+// run -> this run's short SHA; else the short SHA of the newest ancestor
 // of the change-detection base commit with an image published in GHCR. Every
 // main/release/* push tags every image with its short SHA (built or re-tagged,
 // see re-tag-docker-image.yml), so that is normally the base commit itself;
@@ -112,11 +112,14 @@ module.exports = async ({ core, context, github }) => {
   const decisions = new Map();
   for (const image of IMAGES) {
     const value = override(`${image.component}_version`);
-    if (wasBuilt(image)) {
+    // An explicit <component>_version wins over an image built in this run: the caller asked for
+    // that exact release. Pinning e.g. the contracts to the previous release while everything else
+    // builds from the branch is how an upgrade path is tested, and it must not be silently ignored.
+    if (value) {
+      decisions.set(image.key, { tag: value, source: 'dispatch-override', detail: 'explicit dispatch input' });
+    } else if (wasBuilt(image)) {
       const tag = shortSha;
       decisions.set(image.key, { tag, source: 'built', detail: `built this run (${tag})` });
-    } else if (value) {
-      decisions.set(image.key, { tag: value, source: 'dispatch-override', detail: 'explicit dispatch input' });
     }
   }
 
