@@ -75,7 +75,9 @@ jobs:
           yamale_version: '6.0.0'
 
       - name: Verify Solana chart integration
-        run: python3 ci/preview-env/solana-host/test_charts.py
+        run: |
+          pip install pyyaml
+          python3 ci/preview-env/solana-host/test_charts.py
 
       - name: Run chart-testing (list-changed)
         id: list-changed

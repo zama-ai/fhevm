@@ -68,7 +68,16 @@ class SolanaCharts(unittest.TestCase):
         self.assertIn("DATABASE_SSL_ROOT_CERT_PATH", env)
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
-        documents = render("kms-connector-1", "kms-connector", [VALUES / "values-solana-connector-e2e.yaml"])
+        # Same composition as deploy-preview.sh: the party's values plus the appended Solana entry.
+        base = yaml.safe_load((ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml").read_text())
+        chain = yaml.safe_load((VALUES / "connector-host-chain.yaml").read_text())
+        chain[0]["solanaProofEndpoints"] = ["http://coprocessor-1-solana-host-listener:8080"]
+        base["kmsConnectorKmsWorker"]["config"]["hostChains"] += chain
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as merged:
+            yaml.safe_dump(base, merged)
+            merged.flush()
+            documents = render("kms-connector-1", "kms-connector",
+                               [pathlib.Path(merged.name), VALUES / "values-solana-connector-e2e.yaml"])
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         names = [e["name"] for e in env]
@@ -88,6 +97,35 @@ class SolanaCharts(unittest.TestCase):
                 ref = entry.get("valueFrom", {}).get("secretKeyRef", {})
                 if ref.get("name") == "solana-deployer":
                     self.assertEqual(ref.get("optional", False), ref["key"] != "deployer.json")
+
+    def test_script_appended_env_reaches_each_job(self):
+        # deploy-preview.sh appends these entries; a renamed key would otherwise be a silent no-op.
+        for filename, release, appended in [
+            ("values-solana-programs-e2e.yaml", "solana-host",
+             {"KMS_THRESHOLD": "1", "COPROCESSOR_THRESHOLD": "1"}),
+            ("values-solana-register-coprocessor-e2e.yaml", "solana-register-coprocessor-1",
+             {"DATABASE_URL": "postgresql://zama:zama@postgres-coprocessor-1:5432/fhevm_e2e"}),
+        ]:
+            values = yaml.safe_load((VALUES / filename).read_text())
+            names = [e["name"] for e in values["scDeploy"]["env"]]
+            self.assertFalse(set(appended) & set(names), "overlay must not predefine appended env")
+            values["scDeploy"]["env"] += [{"name": k, "value": v} for k, v in appended.items()]
+            with tempfile.NamedTemporaryFile("w", suffix=".yaml") as merged:
+                yaml.safe_dump(values, merged)
+                merged.flush()
+                documents = render(release, "contracts", [pathlib.Path(merged.name)])
+            job = next(d for d in documents if d and d["kind"] == "Job")
+            env = {e["name"]: e.get("value") for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
+            for name, value in appended.items():
+                self.assertEqual(env[name], value)
+            if "register" in filename:
+                self.assertEqual(env["SOLANA_KEY_SOURCE_CHAIN_ID"], "12345")
+
+    def test_gateway_registration_overlay_renders(self):
+        documents = render("gateway-add-host-chains-solana", "contracts",
+                           [VALUES / "values-gateway-add-host-chains-solana-e2e.yaml"])
+        job = next(d for d in documents if d and d["kind"] == "Job")
+        self.assertTrue(job["spec"]["template"]["spec"]["containers"])
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/parse-overrides.cjs"

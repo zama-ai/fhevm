@@ -113,7 +113,8 @@ on:
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
-  # Solana dispatches serialize because the devnet program addresses are shared.
+  # Solana dispatches share the devnet program addresses, so they queue on one group
+  # (GitHub keeps one running and one pending run; a third dispatch replaces the pending one).
   group: pr-preview-deploy-${{ inputs.solana_secrets_namespace && 'solana-devnet' || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ !inputs.solana_secrets_namespace }}
 
@@ -235,9 +236,16 @@ jobs:
       - name: Validate Solana topology
         env:
           ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
+          BUILD_IMAGES: ${{ inputs.build_images || 'false' }}
+          OVERRIDES_JSON: ${{ steps.parse_overrides.outputs.overrides_json }}
         run: |
           if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$USE_BLOCKCHAIN_DEV" == true || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
             echo '::error::Solana preview currently requires Anvil host/gateway and one coprocessor fleet'; exit 1
+          fi
+          # No workflow publishes fhevm/solana-programs under a base-commit tag, so
+          # without a build the tag can only come from an explicit override.
+          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && "$BUILD_IMAGES" != true && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
+            echo '::error::Solana preview needs build_images=true or overrides.solana_programs_version'; exit 1
           fi
       - id: check
         env:

@@ -49,9 +49,7 @@ scDeploy:
           name: solana-deployer
           key: zama_host.json
           optional: true
-    # Preview-env default is a 4-party KMS (t=1). Override if the dispatch used nb_kms_core=13.
-    - {name: KMS_THRESHOLD, value: "1"}
-    - {name: COPROCESSOR_THRESHOLD, value: "1"}
+    # deploy-preview.sh appends KMS_THRESHOLD and COPROCESSOR_THRESHOLD from the party counts.
   deployCommands:
     - node /app/cli.mjs host deploy
   verifyContracts: false

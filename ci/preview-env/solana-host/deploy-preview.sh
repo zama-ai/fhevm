@@ -2,10 +2,15 @@
 # Extend an already bootstrapped preview through its existing Helm releases.
 set -euo pipefail
 umask 077
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci/preview-env/scripts/lib.sh
+source "${script_dir}/../scripts/lib.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 values=ci/preview-env/solana-host
 tag=$(jq -er .solana_programs <<< "$TAGS_JSON")
+# The canonical EVM host chain (per-namespace Anvil) whose key material the Solana chain shares.
+key_source_chain_id=12345
 
 # Credentials are provisioned by the existing secret sync outside the throwaway namespace.
 for name in solana-rpc solana-deployer solana-proof-api; do
@@ -18,17 +23,19 @@ done
 for i in $(seq 1 "$NB_COPROCESSOR"); do
   ready=false
   for ((attempt=0; attempt<120; attempt++)); do
-    if [[ $(kubectl exec -n "$NAMESPACE" "postgres-coprocessor-$i-0" -- psql -U zama -d fhevm_e2e -Atc 'SELECT EXISTS(SELECT 1 FROM keys WHERE chain_id=12345)') == t ]]; then
+    if [[ $(kubectl exec -n "$NAMESPACE" "postgres-coprocessor-$i-0" -- psql -U zama -d fhevm_e2e -Atc "SELECT EXISTS(SELECT 1 FROM keys WHERE chain_id=$key_source_chain_id)") == t ]]; then
       ready=true; break
     fi
     sleep 5
   done
   [[ "$ready" == true ]] || { echo "::error::Canonical keys missing in coprocessor $i"; exit 1; }
 done
+
+# HostConfig thresholds follow the same formulas as the Gateway registration (lib.sh).
 cp "$values/values-solana-programs-e2e.yaml" "$work/host.yaml"
-KMS_T=$(( (NB_KMS_CORE - 1) / 3 )) COPRO_T=1 yq -i '
-  (.scDeploy.env[] | select(.name == "KMS_THRESHOLD").value) = strenv(KMS_T) |
-  (.scDeploy.env[] | select(.name == "COPROCESSOR_THRESHOLD").value) = strenv(COPRO_T)' "$work/host.yaml"
+KMS_T=$(kms_t "$NB_KMS_CORE") COPRO_T=$(coproc_threshold "$NB_COPROCESSOR") yq -i '.scDeploy.env += [
+  {"name": "KMS_THRESHOLD", "value": strenv(KMS_T)},
+  {"name": "COPROCESSOR_THRESHOLD", "value": strenv(COPRO_T)}]' "$work/host.yaml"
 helm upgrade --install solana-host "$CONTRACTS_CHART" -n "$NAMESPACE" -f "$work/host.yaml" \
   --set-string "scDeploy.image.tag=$tag" \
   --wait --wait-for-jobs --timeout=20m
@@ -38,8 +45,8 @@ helm upgrade --install gateway-add-host-chains-solana "$CONTRACTS_CHART" -n "$NA
 
 for i in $(seq 1 "$NB_COPROCESSOR"); do
   cp "$values/values-solana-register-coprocessor-e2e.yaml" "$work/register.yaml"
-  DATABASE_URL="postgresql://zama:zama@postgres-coprocessor-$i:5432/fhevm_e2e" yq -i '
-    (.scDeploy.env[] | select(.name == "DATABASE_URL").value) = strenv(DATABASE_URL)' "$work/register.yaml"
+  DATABASE_URL="postgresql://zama:zama@postgres-coprocessor-$i:5432/fhevm_e2e" yq -i '.scDeploy.env += [
+    {"name": "DATABASE_URL", "value": strenv(DATABASE_URL)}]' "$work/register.yaml"
   helm upgrade --install "solana-register-coprocessor-$i" "$CONTRACTS_CHART" -n "$NAMESPACE" \
     -f "$work/register.yaml" \
     --set-string "scDeploy.configmap.name=solana-coprocessor-registration-$i" \
@@ -53,16 +60,18 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   # zkproof loads host_chains only at startup.
   kubectl rollout restart "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE"
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
-  kubectl rollout status "deployment/coprocessor-$i-solana-host-listener" -n "$NAMESPACE" --timeout=10m
 done
 
-cp "$values/values-solana-connector-e2e.yaml" "$work/connector-solana.yaml"
+# hostChains is a list, so append the Solana entry to each connector's existing entries.
 endpoints=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-host-listener:8080")')
-ENDPOINTS="$endpoints" yq -i '(.kmsConnectorKmsWorker.config.hostChains[] | select(.chainKind == "solana").solanaProofEndpoints) = (strenv(ENDPOINTS) | from_json)' "$work/connector-solana.yaml"
+ENDPOINTS="$endpoints" yq '.[0].solanaProofEndpoints = (strenv(ENDPOINTS) | from_json)' \
+  "$values/connector-host-chain.yaml" > "$work/connector-host-chain.yaml"
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
+  SOLANA_CHAIN="$work/connector-host-chain.yaml" yq -i '.kmsConnectorKmsWorker.config.hostChains = ((.kmsConnectorKmsWorker.config.hostChains // [])
+    | map(select(.chainKind != "solana"))) + load(strenv(SOLANA_CHAIN))' "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
-    -f "$work/connector.yaml" -f "$work/connector-solana.yaml" \
+    -f "$work/connector.yaml" -f "$values/values-solana-connector-e2e.yaml" \
     --wait --wait-for-jobs --timeout=10m
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.
