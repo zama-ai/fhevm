@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO consensus_epoch_block_window (\n                consensus_epoch, host_chain_id, start_block, consensus_deadline_block\n            )\n            VALUES ($1, $2, $3, $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c902868060c1afb5a5a21c09ce6bb1e7a0c34bafcb8b1beb92b2406099060fe5"
+}

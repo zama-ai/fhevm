@@ -221,7 +221,8 @@ async fn associate_batch(
     //   consumed as observed (no finality wait), skipped only when its block
     //   is already known orphaned
     // - the source ciphertext is fully materialized: its ct64 blob exists and
-    //   both digests (ct64 and ct128) are computed
+    //   both digests (ct64 and ct128) are computed and the source S3 object
+    //   has a current postflight verification witness
     // - it has not been associated yet
     let ready = sqlx::query!(
         r#"
@@ -260,7 +261,10 @@ async fn associate_batch(
                 SELECT 1 FROM ciphertext_digest src_digest
                 WHERE src_digest.handle = dst_event.src_handle
                   AND src_digest.ciphertext IS NOT NULL
-                  AND src_digest.ciphertext128 IS NOT NULL)
+                  AND src_digest.ciphertext128 IS NOT NULL
+                  AND src_digest.s3_publication_verified_at IS NOT NULL
+                  AND src_digest.s3_publication_verified_digest
+                       IS NOT DISTINCT FROM src_digest.ciphertext)
         ORDER BY dst_event.id
         FOR UPDATE OF dst_event SKIP LOCKED
         LIMIT $1
@@ -341,10 +345,16 @@ pub(crate) async fn associate_pair(
         sqlx::query!(
             r#"
             INSERT INTO ciphertext_digest
-                (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw, s3_format_version)
-            SELECT $1, ciphertext, ciphertext128, ciphertext128_format, $2, key_id_gw, s3_format_version
+                (handle, ciphertext, ciphertext128, ciphertext128_format,
+                 host_chain_id, key_id_gw, s3_format_version,
+                 s3_publication_verified_at, s3_publication_verified_digest)
+            SELECT $1, ciphertext, ciphertext128, ciphertext128_format,
+                   $2, key_id_gw, s3_format_version,
+                   s3_publication_verified_at, s3_publication_verified_digest
             FROM ciphertext_digest
             WHERE handle = $3
+              AND s3_publication_verified_at IS NOT NULL
+              AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext
             ON CONFLICT (handle) DO NOTHING
             "#,
             dst_handle,

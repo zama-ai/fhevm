@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n                   SELECT 1 FROM ciphertexts\n                    WHERE handle = $1\n                    LIMIT 1\n                    FOR KEY SHARE\n               ) AS \"present!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "present!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5a6385420bbdccc9722741946dece8f63de1747b69520a538a200b2fdac5ebdf"
+}

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT producer.handle AS \"handle!\",\n               d.key_id_gw AS \"key_id_gw?\",\n               d.ciphertext AS \"ct64_digest?\",\n               d.ciphertext128 AS \"ct128_digest?\",\n               d.ciphertext128_format AS \"ct128_format?\",\n               EXISTS (\n                   SELECT 1\n                     FROM computations c\n                    WHERE c.host_chain_id = producer.host_chain_id\n                      AND c.block_number = producer.producer_block_number\n                      AND c.output_handle = producer.handle\n                      AND c.is_error\n               ) AS \"is_error!\",\n               (\n                   SELECT c.error_message\n                     FROM computations c\n                    WHERE c.host_chain_id = producer.host_chain_id\n                      AND c.block_number = producer.producer_block_number\n                      AND c.output_handle = producer.handle\n                      AND c.is_error\n                    ORDER BY c.error_message NULLS LAST\n                    LIMIT 1\n               ) AS \"error_message?\"\n          FROM handle_producer_block producer\n          LEFT JOIN ciphertext_digest d\n            ON d.host_chain_id = producer.host_chain_id\n           AND d.handle = producer.handle\n         WHERE producer.host_chain_id = $1\n           AND producer.producer_block_number = $2\n           AND producer.producer_block_hash = $3\n         ORDER BY producer.handle\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle!",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "key_id_gw?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ct64_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ct128_digest?",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ct128_format?",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_error!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "error_message?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0a4861cf0c5bf8391e33f7c0e4cede6f2ee180140e468dfddfae4b62e2b7324b"
+}

@@ -57,6 +57,8 @@ pub(crate) use stack_version;
 /// Change it every release. It never decides blue/green mode.
 pub const STACK_VERSION: &str = stack_version!();
 
+pub use versioning::{format_consensus_epoch, versions_equal};
+
 pub const CIPHERTEXT_VERSION: i16 = 0;
 
 pub const HANDLE_VERSION: i16 = 0;
