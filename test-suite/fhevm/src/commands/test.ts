@@ -4,6 +4,7 @@
 import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { runKmsContextQaTestsProfile } from "./kms-context-qa-tests";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, driftDatabaseName, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 import { PreflightError, formatCliError } from "../errors";
 import { dockerInspect } from "../flow/readiness";
@@ -61,6 +62,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "kms-context-qa-tests",
   "kms-context-switch",
   "kms-generation",
   "light",
@@ -118,6 +120,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
+  "kms-context-qa-tests":
+    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Implements epoch-rotation (a same-context rotation activates, every committee node reshares, and the SDK follows it into the permit extraData), context-switch (the same, for a switch whose context is pre-registered on the gateway first), epoch-rotation-pending (one committee confirmation is withheld so the rotation sits Pending, and the previous epoch must keep serving — and keep appearing in the extraData — throughout), context-switch-pending (the same for a switch held at its second Pending stage, where the context is Created and its first epoch is Pending, so neither pending id may appear), and extradata-rejection (an SDK-built request corrupted in its extraData version byte must be refused as invalid extraData rather than as a bad signature; the only case that changes no state and can be rerun freely), extradata-gateway-rejection (the same corruption submitted as ABI calldata straight to the Gateway's Decryption contract, bypassing the Relayer: the transaction must revert with UnsupportedExtraDataVersion and emit no decryption request), and context-switch-abort-and-retry (two merged scenarios: a switch held before its creation quorum is aborted with destroyKmsContext without moving the active pair or disturbing service, the Gateway is left still holding the orphaned context, and a retry then reshares and activates). Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
   "kms-context-switch":
     "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
@@ -996,12 +1000,136 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     await runNamedE2e(options, grep, label);
   };
 
+  // Container half of the kms-context-qa-tests cases. Unlike the probes above it injects environment
+  // into the container: the spec reads the active pair itself, and the injected values let it also
+  // assert the chain did not move between the orchestrator's read and its own.
+  const runKmsContextExtraDataCheck = async (
+    label: string,
+    expected: {
+      readonly contextId: bigint;
+      readonly epochId: bigint;
+      readonly previousContextId?: bigint;
+      readonly previousEpochId?: bigint;
+      readonly forbiddenContextId?: bigint;
+      readonly forbiddenEpochId?: bigint;
+    },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+        ...(expected.previousContextId === undefined
+          ? []
+          : ["-e", `KMS_QA_PREVIOUS_CONTEXT_ID=${expected.previousContextId}`]),
+        ...(expected.previousEpochId === undefined
+          ? []
+          : ["-e", `KMS_QA_PREVIOUS_EPOCH_ID=${expected.previousEpochId}`]),
+        ...(expected.forbiddenContextId === undefined
+          ? []
+          : ["-e", `KMS_QA_FORBIDDEN_CONTEXT_ID=${expected.forbiddenContextId}`]),
+        ...(expected.forbiddenEpochId === undefined
+          ? []
+          : ["-e", `KMS_QA_FORBIDDEN_EPOCH_ID=${expected.forbiddenEpochId}`]),
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
+  // Container half of the kms-context-qa-tests `extradata-rejection` case. Same injection mechanism
+  // as the check above, different spec: this one captures a real SDK request, corrupts its extraData
+  // and asserts the refusal names that field.
+  const runKmsContextExtraDataRejection = async (
+    label: string,
+    expected: { readonly contextId: bigint; readonly epochId: bigint },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata-rejection"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata-rejection grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
+  // Container half of the kms-context-qa-tests `extradata-gateway-rejection` case. Same injection as
+  // the two checks above; the spec reaches the Gateway itself, through GATEWAY_RPC_URL.
+  const runKmsContextExtraDataGatewayRejection = async (
+    label: string,
+    expected: { readonly contextId: bigint; readonly epochId: bigint },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata-gateway"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata-gateway grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
+  // Container half of the kms-context-qa-tests `extradata-echo` case: three decryptions, one per
+  // extraData version. The echo assertion itself is host-side, against the relayer's database.
+  const runKmsContextExtraDataEcho = async (
+    label: string,
+    expected: { readonly contextId: bigint; readonly epochId: bigint },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata-echo"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata-echo grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
     if (name === "kms-context-switch") {
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+    }
+    if (name === "kms-context-qa-tests") {
+      return runKmsContextQaTestsProfile(
+        state,
+        runUserDecryption,
+        runInputProofSmoke,
+        runKmsContextExtraDataCheck,
+        runKmsContextExtraDataRejection,
+        runKmsContextExtraDataGatewayRejection,
+        runKmsContextExtraDataEcho,
+      );
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
