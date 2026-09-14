@@ -34,7 +34,7 @@ runs:
         archive="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
         dest="${RUNNER_TEMP}/${archive}"
         url="https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${archive}"
-        curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
+        curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
         echo "${PROTOC_SHA256}  ${dest}" | sha256sum --check --strict
         mkdir -p "${HOME}/.local"
         unzip -o "${dest}" -d "${HOME}/.local"
@@ -54,7 +54,7 @@ runs:
         archive="mold-${MOLD_VERSION}-x86_64-linux.tar.gz"
         dest="${RUNNER_TEMP}/${archive}"
         url="https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/${archive}"
-        curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
+        curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
         echo "${MOLD_SHA256}  ${dest}" | sha256sum --check --strict
         tar -xzf "${dest}" -C "${RUNNER_TEMP}"
         mkdir -p "${HOME}/.local/bin"
