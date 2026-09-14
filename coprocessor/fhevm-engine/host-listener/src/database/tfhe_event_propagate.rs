@@ -2366,7 +2366,7 @@ impl Database {
                     dst_chain_id = e.dstChainId,
                     "BridgeHandle event"
                 );
-                sqlx::query!(
+                let recorded = sqlx::query!(
                     "INSERT INTO bridge_handle_events
                         (src_handle, dst_chain_id, src_chain_id, sender_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -2379,12 +2379,35 @@ impl Database {
                     e.guid.as_slice(),
                     block_number as i64,
                     block_hash.as_slice(),
-                    transaction_id,
+                    transaction_id.clone(),
                 )
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0
+                    > 0;
+
+                // `send` accepts a transient-only allowance (no ACL event), so
+                // enqueue SnS here or the bridged handle gets no ciphertext.
+                let src_handle = e.srcHandle.to_vec();
+                let producer_block = self
+                    .resolve_handle_producer_block(
+                        tx,
+                        &src_handle,
+                        block_hash.as_slice(),
+                        prev_block_hash.as_slice(),
+                        block_number,
+                    )
+                    .await?;
+                self.insert_pbs_computations_resolved(
+                    tx,
+                    &[(src_handle, producer_block)],
+                    transaction_id,
+                    block_number,
+                    block_hash.as_slice(),
+                )
+                .await?;
+
+                recorded
             }
             BridgeContractEvents::HandleBridged(e) => {
                 // Verify the destination handle was correctly derived and ignore the
