@@ -7,7 +7,7 @@
 
 use std::process::ExitCode;
 
-use relayer_http::{App, logging, settings::Settings};
+use relayer_http::{App, endpoint, logging, settings::Settings};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -26,7 +26,7 @@ async fn main() -> ExitCode {
     };
     logging::init(&settings.log);
     let shutdown = CancellationToken::new();
-    let _app = match App::new(&settings, shutdown.clone()) {
+    let app = match App::new(&settings, shutdown.clone()) {
         Ok(app) => app,
         Err(e) => {
             error!(error = %e, "startup failed");
@@ -35,24 +35,42 @@ async fn main() -> ExitCode {
     };
     info!(
         name = %settings.name,
+        endpoint = %settings.http.endpoint,
         nodes = settings.kms_aggregator.endpoints.len(),
         "relayer-http started"
     );
 
-    // HTTP handlers come in the next iteration; until then the process only waits for SIGINT or SIGTERM.
+    // Serves until `shutdown` is cancelled, then drains the in-flight requests (bounded by call.timeout).
+    let mut server = tokio::spawn(endpoint::serve(app));
+    tokio::select! {
+        result = &mut server => {
+            error!(result = ?result, "server stopped unexpectedly");
+            return ExitCode::FAILURE;
+        }
+        () = wait_for_signal() => {
+            shutdown.cancel();
+            if let Err(e) = server.await {
+                error!(error = %e, "server task failed");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    info!("relayer-http stopped");
+    ExitCode::SUCCESS
+}
+
+/// SIGINT (Ctrl-C) or SIGTERM (Kubernetes). A failure to install the handler is logged and treated as a signal,
+/// so the process never runs without a way to stop.
+async fn wait_for_signal() {
     let mut sigterm = match signal(SignalKind::terminate()) {
         Ok(sigterm) => sigterm,
         Err(e) => {
             error!(error = %e, "signal handler failed");
-            return ExitCode::FAILURE;
+            return;
         }
     };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = sigterm.recv() => {}
     }
-    // Every in-flight aggregation ends with `AggregationError::Cancelled`.
-    shutdown.cancel();
-    info!("relayer-http stopped");
-    ExitCode::SUCCESS
 }

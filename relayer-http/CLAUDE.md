@@ -84,5 +84,7 @@ are exact and tests are instant. Behaviour is described in YAML scenarios run by
 a file.
 
 **Documentation.** Every module has a `docs.md` produced with the module and updated in the same change as any
-behaviour change, plus a one-line doc comment on every item. This `CLAUDE.md` is updated the same way: new rules and
+behaviour change, plus a one-line doc comment on every item. The error code table in `endpoint/docs.md` (every code,
+its status, when it happens, how aggregation errors map to it) is updated in the same change as any change to that
+mapping. This `CLAUDE.md` is updated the same way: new rules and
 changed descriptions land with the feature that motivates them.
