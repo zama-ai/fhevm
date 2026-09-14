@@ -76,7 +76,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "=1.6.3", features = [
+tfhe = { version = "=1.8.0", features = [
     "boolean",
     "shortint",
     "integer",
