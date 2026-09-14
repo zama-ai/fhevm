@@ -97,19 +97,30 @@ scDeploy:
       echo "Waiting for KMS keygen ceremony to reach on-chain consensus..."
       node -e "
       const { ethers } = require('ethers');
-      const ABI = ['event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)'];
+      // ActivateKey gained existingKeyId in 0.15 (RFC 029). A launch that pins
+      // host_contracts_version to a 0.14 tag emits the old shape; match either
+      // topic so the wait does not time out on a key that was in fact activated.
+      const ABIS = [
+        'event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)',
+        'event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, tuple(uint8 keyType, bytes digest)[] keyDigests)',
+      ];
+      const ifaces = ABIS.map((abi) => new ethers.Interface([abi]));
+      const topics = [ifaces.map((iface) => iface.getEvent('ActivateKey').topicHash)];
       const WINDOW = Number(process.env.LOG_QUERY_WINDOW || 1000);
       const LOOKBACK = Number(process.env.LOG_QUERY_LOOKBACK || 5000);
       const TIMEOUT_MS = Number(process.env.KEYGEN_WAIT_TIMEOUT_MS || 15 * 60 * 1000);
-      async function waitForEvent(provider, contract, eventName, timeoutMs) {
+      async function waitForEvent(provider, address, eventName, timeoutMs) {
         const deadline = Date.now() + timeoutMs;
         let cursor = Math.max(0, (await provider.getBlockNumber()) - LOOKBACK);
         while (Date.now() < deadline) {
           const latest = await provider.getBlockNumber();
           while (cursor <= latest) {
             const to = Math.min(cursor + WINDOW - 1, latest);
-            const events = await contract.queryFilter(eventName, cursor, to);
-            if (events.length > 0) return events[events.length - 1];
+            const logs = await provider.getLogs({ address, topics, fromBlock: cursor, toBlock: to });
+            if (logs.length > 0) {
+              const log = logs[logs.length - 1];
+              return ifaces.find((iface) => iface.getEvent(eventName).topicHash === log.topics[0]).parseLog(log);
+            }
             cursor = to + 1;
           }
           console.log('  still waiting for ' + eventName + ' (scanned to block ' + latest + ')...');
@@ -119,8 +130,7 @@ scDeploy:
       }
       (async () => {
         const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-        const contract = new ethers.Contract(process.env.KMS_GENERATION_CONTRACT_ADDRESS, ABI, provider);
-        const keyEvent = await waitForEvent(provider, contract, 'ActivateKey', TIMEOUT_MS);
+        const keyEvent = await waitForEvent(provider, process.env.KMS_GENERATION_CONTRACT_ADDRESS, 'ActivateKey', TIMEOUT_MS);
         // KMS_ACTIVE_KEY_ID must be the 64-hex-char zero-padded form (NOT decimal) - the
         // KMS nodes publish key/CRS blobs to S3 under their raw uint256 request ID
         // rendered as hex with no 0x prefix (confirmed by listing the actual bucket:
