@@ -167,13 +167,16 @@ jobs:
         startsWith(github.head_ref, 'mergify/merge-queue/') ||
         startsWith(github.base_ref, 'release/')
       )
+    # github-script + GHCR wait — a GitHub-hosted runner starts in seconds, while a
+    # provisioned runner adds minutes of spin-up variance on the merge-queue
+    # critical path for a short job.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read' # Required to checkout wait-built-ghcr-tags.cjs
     env:
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
-    # github-script only — a GitHub-hosted runner starts in seconds, while a
-    # provisioned runner adds minutes of spin-up variance on the merge-queue
-    # critical path for a 10-second job.
-    runs-on: ubuntu-latest
+      GHCR_USER: ${{ github.actor }}
     outputs:
       coprocessor-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
       coprocessor-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
@@ -200,49 +203,66 @@ jobs:
       relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         with:
           script: |
+            const waitBuiltGhcrTags = require(`${process.env.GITHUB_WORKSPACE}/ci/preview-env/scripts/wait-built-ghcr-tags.cjs`);
             const headTag = process.env.NEW_COMMIT_HASH.slice(0, 7);
             const buildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
             core.setOutput("kms-core-version", "");
             const mappings = [
-              ["coprocessor-docker-build", "db_migration_build_result", "coprocessor-db-migration-version"],
-              ["coprocessor-docker-build", "gw_listener_build_result", "coprocessor-gw-listener-version"],
-              ["coprocessor-docker-build", "host_listener_build_result", "coprocessor-host-listener-version"],
-              ["coprocessor-docker-build", "sns_worker_build_result", "coprocessor-sns-worker-version"],
-              ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version"],
-              ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version"],
-              ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version"],
-              ["coprocessor-docker-build", "consensus_detector_build_result", "coprocessor-consensus-detector-version"],
-              ["coprocessor-docker-build", "upgrade_controller_build_result", "coprocessor-upgrade-controller-version"],
-              ["listener-docker-build", "build_result", "listener-core-version"],
-              ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version"],
-              ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version"],
-              ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version"],
-              ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version"],
-              ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version"],
-              ["gateway-contracts-docker-build", "build_result", "gateway-version"],
-              ["host-contracts-docker-build", "build_result", "host-version"],
-              ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version"],
-              ["relayer-docker-build", "relayer_build_result", "relayer-version"],
-              ["test-suite-docker-build", "build_result", "test-suite-version"],
+              ["coprocessor-docker-build", "db_migration_build_result", "coprocessor-db-migration-version", "fhevm/coprocessor/db-migration"],
+              ["coprocessor-docker-build", "gw_listener_build_result", "coprocessor-gw-listener-version", "fhevm/coprocessor/gw-listener"],
+              ["coprocessor-docker-build", "host_listener_build_result", "coprocessor-host-listener-version", "fhevm/coprocessor/host-listener"],
+              ["coprocessor-docker-build", "sns_worker_build_result", "coprocessor-sns-worker-version", "fhevm/coprocessor/sns-worker"],
+              ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version", "fhevm/coprocessor/tfhe-worker"],
+              ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version", "fhevm/coprocessor/tx-sender"],
+              ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version", "fhevm/coprocessor/zkproof-worker"],
+              ["coprocessor-docker-build", "consensus_detector_build_result", "coprocessor-consensus-detector-version", "fhevm/coprocessor/consensus-detector"],
+              ["coprocessor-docker-build", "upgrade_controller_build_result", "coprocessor-upgrade-controller-version", "fhevm/coprocessor/upgrade-controller"],
+              ["listener-docker-build", "build_result", "listener-core-version", "fhevm/listener/listener-core"],
+              ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version", "fhevm/kms-connector/db-migration"],
+              ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version", "fhevm/kms-connector/gw-listener"],
+              ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version", "fhevm/kms-connector/kms-worker"],
+              ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version", "fhevm/kms-connector/tx-sender"],
+              ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version", "fhevm/kms-connector/endpoint"],
+              ["gateway-contracts-docker-build", "build_result", "gateway-version", "fhevm/gateway-contracts"],
+              ["host-contracts-docker-build", "build_result", "host-version", "fhevm/host-contracts"],
+              ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version", "fhevm/relayer-migrate"],
+              ["relayer-docker-build", "relayer_build_result", "relayer-version", "fhevm/relayer"],
+              ["test-suite-docker-build", "build_result", "test-suite-version", "fhevm/test-suite/e2e"],
             ];
 
-            for (const [job, resultKey, outputName] of mappings) {
+            const built = [];
+            for (const [job, resultKey, outputName, repo] of mappings) {
               const result =
                 buildResults[job] && buildResults[job].outputs && buildResults[job].outputs[resultKey]
                   ? buildResults[job].outputs[resultKey]
                   : "missing";
               if (result === "success") {
                 core.setOutput(outputName, headTag);
+                built.push({ repo, tag: headTag });
               } else if (result === "skipped") {
                 core.setOutput(outputName, "");
               } else {
                 throw new Error(`Required repo-owned build output failed: ${job}.${resultKey}=${result}`);
               }
             }
+
+            await waitBuiltGhcrTags({
+              core,
+              user: process.env.GHCR_USER,
+              token: process.env.GHCR_READ_TOKEN,
+              images: built,
+            });
 
   # The standard suite is sharded into three parallel legs (compute / decryption /
   # stateful), each booting its own stack — wall-clock is bounded by the slowest

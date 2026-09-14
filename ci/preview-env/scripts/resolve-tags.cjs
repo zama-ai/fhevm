@@ -17,8 +17,7 @@
 
 // CI pushes to ghcr.io/zama-ai/*; the cluster pulls the same artifacts through
 // the hub.zama.org/ghcr proxy-cache, so GHCR is where existence is checked.
-const GHCR_HOST = 'ghcr.io';
-const GHCR_OWNER = 'zama-ai';
+const { registryClient } = require('./ghcr-registry.cjs');
 
 // `key` is what the deploy job's `helm --set-string` calls read out of
 // tags_json, `repo` must match the `image-name:` in the matching
@@ -42,77 +41,6 @@ const IMAGES = [
   { key: 'relayer', repo: 'fhevm/relayer', job: 'build-relayer', output: 'relayer_build_result', component: 'relayer', label: 'relayer' },
   { key: 'test_suite', repo: 'fhevm/test-suite/e2e', job: 'build-test-suite', output: 'build_result', component: 'test_suite', label: 'test-suite' },
 ];
-
-// Accept indexes as well as manifests, or the registry can 404 a multi-arch
-// tag that exists.
-const MANIFEST_ACCEPT = [
-  'application/vnd.oci.image.index.v1+json',
-  'application/vnd.docker.distribution.manifest.list.v2+json',
-  'application/vnd.oci.image.manifest.v1+json',
-  'application/vnd.docker.distribution.manifest.v2+json',
-].join(', ');
-
-const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// GHCR read client (tokens are per-repository, so cache one each). A transient
-// error must never read as "tag missing" - that would silently downgrade the
-// deploy to older artifacts - so only 404 is an answer; anything else retries
-// and eventually throws.
-const registryClient = ({ core, user, token }) => {
-  const bearers = new Map();
-
-  const request = async (label, doFetch) => {
-    let last = '';
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
-      let response;
-      try {
-        response = await doFetch();
-      } catch (error) {
-        last = error.message;
-        if (attempt === 4) break;
-        await sleep(500 * 2 ** (attempt - 1));
-        continue;
-      }
-      if (response.ok || response.status === 404) return response;
-      last = `HTTP ${response.status}`;
-      if (!RETRYABLE_STATUS.has(response.status)) break;
-      core.info(`${label}: ${last}, retrying (attempt ${attempt}/4)`);
-      await sleep(500 * 2 ** (attempt - 1));
-    }
-    throw new Error(`${label} failed: ${last}`);
-  };
-
-  const bearerFor = async (repo) => {
-    if (bearers.has(repo)) return bearers.get(repo);
-    const scope = encodeURIComponent(`repository:${GHCR_OWNER}/${repo}:pull`);
-    const response = await request(`ghcr token for ${repo}`, () =>
-      fetch(`https://${GHCR_HOST}/token?service=${GHCR_HOST}&scope=${scope}`, {
-        headers: { authorization: `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}` },
-      }),
-    );
-    if (!response.ok) throw new Error(`ghcr token for ${repo} failed: HTTP ${response.status}`);
-    const body = await response.json();
-    if (!body.token) throw new Error(`ghcr token for ${repo} returned no token`);
-    bearers.set(repo, body.token);
-    return body.token;
-  };
-
-  // GET, not HEAD: HEAD on /manifests/ is optional in the registry spec, and a
-  // 405 would be indistinguishable from a real failure. Manifests are a few KB.
-  const manifestExists = async (repo, tag) => {
-    const bearer = await bearerFor(repo);
-    const response = await request(`manifest ${repo}:${tag}`, () =>
-      fetch(`https://${GHCR_HOST}/v2/${GHCR_OWNER}/${repo}/manifests/${tag}`, {
-        headers: { authorization: `Bearer ${bearer}`, accept: MANIFEST_ACCEPT },
-      }),
-    );
-    return response.status !== 404;
-  };
-
-  return { manifestExists };
-};
 
 /** Newest-first SHAs reachable from `sha`, capped at `max`. */
 const listAncestors = async ({ github, owner, repo, sha, max }) => {
