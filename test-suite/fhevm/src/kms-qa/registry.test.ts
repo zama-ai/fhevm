@@ -100,8 +100,15 @@ describe("kms-qa registry QA_CASES", () => {
     }
   });
 
-  test("registers the epoch-rotation case", () => {
+  test("registers both implemented cases", () => {
     expect(QA_CASES.map((item) => item.id)).toContain("epoch-rotation");
+    expect(QA_CASES.map((item) => item.id)).toContain("context-switch");
+  });
+
+  test("the context-switch case requires a threshold KMS and declares itself disruptive", () => {
+    const contextSwitch = QA_CASES.find((item) => item.id === "context-switch")!;
+    expect(contextSwitch.requirements.mode).toBe("threshold");
+    expect(contextSwitch.mutatesLifecycle).toBe(true);
   });
 
   test("the epoch-rotation case requires a threshold KMS and declares itself disruptive", () => {

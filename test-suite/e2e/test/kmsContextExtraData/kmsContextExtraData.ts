@@ -1,9 +1,14 @@
-// Container half of the QA scenario "The SDK uses the currently active epoch".
+// Container half of the KMS context/epoch QA scenarios.
 //
-// The host half (the `kms-context-qa-tests` CLI profile, case `epoch-rotation`) establishes and
-// verifies the precondition: it rotates the epoch and waits until the new one is genuinely active
-// on chain. This suite then checks the consequence on the client side — that the SDK embeds the
-// ACTIVE (context, epoch) pair in the extraData of the decryption permit it signs.
+// One suite serves both, because the client-side claim is the same in each: the SDK must embed the
+// pair that is ACTIVE ON CHAIN in the extraData of the decryption permit it signs. What differs is
+// only what the host half did first —
+//
+//   - case `epoch-rotation`  : the epoch advanced under the same context;
+//   - case `context-switch`  : both the context and the epoch advanced.
+//
+// The host half establishes and verifies the precondition, waiting until the transition is genuinely
+// active on chain, then drives this suite.
 //
 // Scope: the REQUEST extraData only. The response extraData is neither verified nor exposed by the
 // SDK — see test/qa-extradata-check.md for the evidence and the decision to defer that clause.
@@ -167,6 +172,24 @@ describe('KMS context extraData', function () {
 
     // Byte-exact, so a future change to the word order or padding cannot pass the field checks.
     expect(extraData).to.equal(`0x${EXTRA_DATA_V2_VERSION}${hex32(chainContextId)}${hex32(chainEpochId)}`);
+
+    // The scenarios' negative clause, made explicit rather than left implied by the equalities
+    // above: the superseded ids must not appear. Injected by the profile, absent when standalone.
+    const previousContextId = expectedFromEnv('KMS_QA_PREVIOUS_CONTEXT_ID');
+    const previousEpochId = expectedFromEnv('KMS_QA_PREVIOUS_EPOCH_ID');
+    if (previousEpochId !== undefined) {
+      expect(previousEpochId, 'the superseded epoch equals the active one — the transition did not advance').to.not.equal(
+        chainEpochId,
+      );
+      expect(decoded.epochId, 'the permit still carries the superseded epoch').to.not.equal(previousEpochId);
+    }
+    if (previousContextId !== undefined) {
+      expect(
+        previousContextId,
+        'the superseded context equals the active one — the switch did not advance the context',
+      ).to.not.equal(chainContextId);
+      expect(decoded.contextId, 'the permit still carries the superseded context').to.not.equal(previousContextId);
+    }
 
     // The permit must not merely look right — it must work. This closes the scenario's
     // "the decryption must complete successfully" clause under the rotated pair.

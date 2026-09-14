@@ -16,7 +16,10 @@
 import { PreflightError } from "../errors";
 import { castCall } from "../flow/readiness";
 import { castSend, getEventTopic, keccakTopic, type Owner, type Receipt } from "../kms-onchain";
+import { stepComposeTask } from "../flow/runtime-compose";
+import { waitForContainer } from "../flow/readiness";
 import { parseContextAndEpoch, type ContextAndEpoch } from "../commands/kms-context-switch";
+import type { State } from "../types";
 import type { CaseEvidence } from "./evidence";
 import { txEvidenceFields } from "./evidence";
 
@@ -217,6 +220,65 @@ export const sendDefineNewEpoch = async (
     materialBlockNumber: event.materialBlockNumber.toString(),
   });
   return { receipt, event };
+};
+
+/**
+ * Broadcasts `defineNewKmsContextAndEpoch` through the `host-sc-context-switch` contracts task.
+ *
+ * Unlike an epoch rotation, a context switch carries the full committee definition — node params,
+ * thresholds, software version, PCR values — which the contracts task reads from its env file. It
+ * is therefore run as a compose task rather than a `cast send`, and no receipt is available. The
+ * new context id is not returned by the task either; it is `previous + 1`, because
+ * `_storeNextKmsContext` allocates sequentially, and the caller verifies that against the id the
+ * chain eventually activates.
+ *
+ * @param envOverrides Extra env for the task, e.g. `HOST_SC_CONTEXT_ENV=host-sc-swap.env` to point
+ *        it at a swap committee. Omit for a same-committee switch.
+ */
+export const broadcastContextSwitch = async (
+  state: State,
+  evidence: CaseEvidence,
+  envOverrides: Record<string, string> = {},
+): Promise<void> => {
+  await evidence.step(
+    "tx",
+    "defineNewKmsContextAndEpoch (host-sc-context-switch)",
+    { service: "host-sc-context-switch", env: JSON.stringify(envOverrides) },
+    async () => {
+      await stepComposeTask("host-sc", state, ["host-sc-context-switch"], {
+        noDeps: true,
+        ...(Object.keys(envOverrides).length ? { env: envOverrides } : {}),
+      });
+      await waitForContainer("host-sc-context-switch", "complete");
+    },
+  );
+};
+
+/**
+ * Registers a pending context on the Gateway, before it activates on the host chain.
+ *
+ * Ordering matters and is not an optimisation: a fresh SDK client must never observe a context as
+ * active on the host that the Gateway has not yet accepted, or its decryption requests would be
+ * rejected. `kms-context-switch` pre-registers for the same reason.
+ */
+export const preRegisterContextOnGateway = async (
+  state: State,
+  evidence: CaseEvidence,
+  contextId: bigint,
+  envOverrides: Record<string, string> = {},
+): Promise<void> => {
+  await evidence.step(
+    "tx",
+    "pre-register the pending context on the gateway",
+    { service: "gateway-sc-context-switch", contextId: contextId.toString() },
+    async () => {
+      await stepComposeTask("gateway-sc", state, ["gateway-sc-context-switch"], {
+        noDeps: true,
+        env: { KMS_CONTEXT_ID: contextId.toString(), ...envOverrides },
+      });
+      await waitForContainer("gateway-sc-context-switch", "complete");
+    },
+  );
 };
 
 /**
