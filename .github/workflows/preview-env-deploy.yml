@@ -466,7 +466,9 @@ jobs:
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success' &&
-      (needs.check-labels.outputs.blue_green != 'true' || needs.build-coprocessor.result == 'success')
+      (needs.check-labels.outputs.blue_green != 'true' ||
+       needs.build-coprocessor.result == 'success' ||
+       needs.build-coprocessor.result == 'skipped')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
     # (8 tests, each recompiling contracts). Blue-green + tests runs that DAG

@@ -18,7 +18,7 @@
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-green.sh migrate|start
 # Env: NAMESPACE (required), NB_COPROCESSOR (2),
 #      DEPLOY_POLYGON (default: true when the Blue Polygon consumer release exists),
-#      GCS_IMAGE_TAG (default: the tag of the env's test-suite image, i.e. the deployed branch SHA),
+#      GCS_IMAGE_TAG (default: the listener image tag of this env, else the checkout's HEAD SHA),
 #      GCS_STACK_VERSION (default: commonConfig.stackVersion of the gcs overlay),
 #      COPROCESSOR_CHART (charts/coprocessor of this checkout),
 #      BCS_STACK_VERSION (default: what the running Blue binary prints for --stack-version).
@@ -39,9 +39,13 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 values_dir="${root}/ci/preview-env/coprocessor"
 COPROCESSOR_CHART="${COPROCESSOR_CHART:-${root}/charts/coprocessor}"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${values_dir}/values-coprocessor-gcs-e2e.yaml")}"
-# Green image tag: the short SHA the branch was deployed from (every coprocessor image carries it),
-# taken from the test-suite Job image of this env; override with GCS_IMAGE_TAG.
-GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get job -n "${NAMESPACE}" test-suite -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')}"
+# Green image tag = the tag the branch's coprocessor images were published under. Blue is pinned to
+# the previous release and, on the production path, so are the contracts/relayer/test-suite, so the
+# listener (never pinned) is the one deployed component that carries it; the checkout's HEAD is the
+# fallback. Override with GCS_IMAGE_TAG whenever the deploy resolved a different tag.
+GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
+  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
+GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(git -C "${root}" rev-parse --short=7 HEAD)}"
 # Newest migration the Green migrator applies: from the commit the image tag names
 # when this checkout has it (tags are short SHAs), else from the checkout itself.
 migrations_dir="coprocessor/fhevm-engine/db-migration/migrations"

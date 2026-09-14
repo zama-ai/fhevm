@@ -13,7 +13,7 @@
 #
 # The loop itself is test-suite/e2e/scripts/erc20-traffic.ts (copied into the pod at setup until
 # it ships in the image). Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-traffic.sh <verb>
-# Env: NAMESPACE (required), DEPLOY_POLYGON (default: true when the Polygon test workflow exists),
+# Env: NAMESPACE (required), DEPLOY_POLYGON (default: true when the env has a Polygon host chain),
 #      TRAFFIC_INTERVAL_SECS (60), TRAFFIC_DECRYPT_EVERY (2), TRAFFIC_MINT_EVERY (10),
 #      TRAFFIC_MAX_TRANSFER (1000), TRAFFIC_MAX_ITERATIONS (0 = until stop),
 #      GATEWAY_RPC_URL (optional, for the gateway balances in `status`).
@@ -28,8 +28,10 @@ trap 'rm -rf "${work}"' EXIT
 fail() { echo "::error::$*" >&2; exit 1; }
 
 if [[ -z "${DEPLOY_POLYGON:-}" ]]; then
+  # The Polygon e2e workflow only exists in automated envs; the Polygon address ConfigMap is the
+  # reliable marker that this env has a second host chain.
   DEPLOY_POLYGON=false
-  helm status test-suite-workflow-polygon -n "${NAMESPACE}" >/dev/null 2>&1 && DEPLOY_POLYGON=true
+  kubectl get configmap -n "${NAMESPACE}" polygon-sc-addresses >/dev/null 2>&1 && DEPLOY_POLYGON=true
 fi
 # chain key -> hardhat network / Argo workflow release carrying the per-chain env
 chains=(sepolia)
@@ -55,42 +57,71 @@ run_traffic() {
     sh -c 'cd /app/test-suite/e2e && npx hardhat run --no-compile scripts/erc20-traffic.ts --network "$0"' "$(hh_network "${chain}")"
 }
 
-# Pod spec = the Argo run-test template of that chain (image, env, resources, the contract-address
-# patch + compile preamble) with the test command replaced by an idle `sleep infinity`.
+# Normalized pod source for a chain: image, env, resources, workingDir, pod-level scheduling and the
+# preamble (the contract-address patch + compile the e2e image needs before any hardhat run).
+# Automated envs have the Argo e2e workflow releases; the manual QA mode does not, so fall back to
+# the idle test-suite Job, which carries the same env for the ETH host chain.
+pod_source() {
+  local chain="$1" rel
+  local out="${work}/src-${chain}.json"
+  rel=$(wf_release "${chain}")
+  if helm status "${rel}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    helm get manifest "${rel}" -n "${NAMESPACE}" | yq 'select(.kind == "Workflow")' -o=json > "${work}/wf-${chain}.json"
+    jq '(.spec.templates[] | select(.name == "run-test") | .script) as $s
+        | {image: $s.image, env: $s.env, resources: $s.resources, workingDir: ($s.workingDir // null),
+           serviceAccountName: .spec.serviceAccountName, imagePullSecrets: .spec.imagePullSecrets,
+           tolerations: .spec.tolerations, nodeSelector: null, preamble: $s.source}' \
+      "${work}/wf-${chain}.json" > "${out}"
+  else
+    kubectl get job -n "${NAMESPACE}" test-suite -o json > "${work}/job.json" \
+      || fail "${chain}: neither the ${rel} release nor the idle test-suite Job exists in ${NAMESPACE}"
+    jq '.spec.template.spec as $s | $s.containers[0] as $c
+        | {image: $c.image, env: $c.env, resources: $c.resources, workingDir: ($c.workingDir // null),
+           serviceAccountName: ($s.serviceAccountName // null), imagePullSecrets: $s.imagePullSecrets,
+           tolerations: $s.tolerations, nodeSelector: ($s.nodeSelector // null), preamble: $c.command[-1]}' \
+      "${work}/job.json" > "${out}"
+    if [[ "${chain}" == amoy ]]; then
+      # The idle Job is wired to the ETH host chain: point the RPC, chain id and the HOST-chain
+      # contract addresses at Polygon (gateway addresses stay as they are).
+      local rpc
+      rpc=$(kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.polygon-rpc-url}' | base64 -d)
+      [[ -n "${rpc}" ]] || fail "amoy: the rpc Secret has no polygon-rpc-url"
+      jq --arg rpc "${rpc}" '
+        .env = (.env | map(
+          if .name == "RPC_URL" then {name: .name, value: $rpc}
+          elif .name == "CHAIN_ID_HOST" then {name: .name, value: "80002"}
+          elif (.name | test("^(ACL|FHEVM_EXECUTOR|HCU_LIMIT|INPUT_VERIFIER|KMS_VERIFIER|PROTOCOL_CONFIG)_CONTRACT_ADDRESS$"))
+            then (.valueFrom.configMapKeyRef.name = "polygon-sc-addresses")
+          else . end))
+        | .env += [{name: "POLYGON_AMOY_RPC_URL", value: $rpc}]' "${out}" > "${out}.tmp" && mv "${out}.tmp" "${out}"
+    fi
+  fi
+  echo "${out}"
+}
+
+# Pod = that source with the test run replaced by an idle wait loop (PID 1 reaps finished loops).
 render_pod() {
-  local chain="$1" out="$2"
-  local manifest="${work}/wf-${chain}.yaml"
-  helm get manifest "$(wf_release "${chain}")" -n "${NAMESPACE}" > "${manifest}.all" \
-    || fail "${chain}: release $(wf_release "${chain}") not found; the e2e workflow must have been deployed once"
-  # Keep only the Workflow document: a select() inside the object builder below would still emit
-  # an empty Pod for every other document of the multi-doc manifest.
-  yq 'select(.kind == "Workflow")' "${manifest}.all" > "${manifest}"
-  # Preamble: everything before the test run (patches E2ECoprocessorConfigLocal.sol, compiles).
-  yq '.spec.templates[] | select(.name == "run-test") | .script.source' "${manifest}" \
-    | sed -n '1,/^npx hardhat compile/p' > "${work}/preamble-${chain}.sh"
-  grep -q "npx hardhat compile" "${work}/preamble-${chain}.sh" || fail "${chain}: could not extract the compile preamble from the workflow"
-  # Idle as PID 1 in a wait loop so finished background loops are reaped instead of left as zombies.
+  local chain="$1" out="$2" src
+  src=$(pod_source "${chain}")
+  jq -r '.preamble' "${src}" | sed -n '1,/^npx hardhat compile/p' > "${work}/preamble-${chain}.sh"
+  grep "npx hardhat compile" "${work}/preamble-${chain}.sh" >/dev/null \
+    || fail "${chain}: could not extract the contract-patch/compile preamble"
   printf '\necho "traffic pod ready"\nmkdir -p /data/erc20-traffic\nwhile true; do sleep 30; done\n' >> "${work}/preamble-${chain}.sh"
   POD="$(pod_name "${chain}")" NS="${NAMESPACE}" CHAIN="${chain}" PREAMBLE="$(cat "${work}/preamble-${chain}.sh")" \
-  yq '. as $wf
-    | ($wf.spec.templates[] | select(.name == "run-test") | .script) as $s
-    | {
-        "apiVersion": "v1", "kind": "Pod",
-        "metadata": {"name": strenv(POD), "namespace": strenv(NS),
-                     "labels": {"app.kubernetes.io/name": "bg-traffic", "fhevm.zama.ai/chain": strenv(CHAIN)}},
-        "spec": {
-          "restartPolicy": "Never",
-          "serviceAccountName": $wf.spec.serviceAccountName,
-          "imagePullSecrets": $wf.spec.imagePullSecrets,
-          "tolerations": $wf.spec.tolerations,
-          "volumes": [{"name": "data", "emptyDir": {}}],
-          "containers": [{
-            "name": "traffic", "image": $s.image, "command": ["/bin/bash", "-c", strenv(PREAMBLE)],
-            "env": $s.env, "resources": $s.resources,
-            "volumeMounts": [{"name": "data", "mountPath": "/data"}]
-          }]
-        }
-      }' "${manifest}" > "${out}"
+  jq '{apiVersion: "v1", kind: "Pod",
+       metadata: {name: env.POD, namespace: env.NS,
+                  labels: {"app.kubernetes.io/name": "bg-traffic", "fhevm.zama.ai/chain": env.CHAIN}},
+       spec: ({restartPolicy: "Never",
+               volumes: [{name: "data", emptyDir: {}}],
+               containers: [({name: "traffic", image: .image, command: ["/bin/bash", "-c", env.PREAMBLE],
+                              env: .env, resources: .resources,
+                              volumeMounts: [{name: "data", mountPath: "/data"}]}
+                             + (if .workingDir then {workingDir: .workingDir} else {} end))]}
+              + (if .serviceAccountName then {serviceAccountName: .serviceAccountName} else {} end)
+              + (if .imagePullSecrets then {imagePullSecrets: .imagePullSecrets} else {} end)
+              + (if .tolerations then {tolerations: .tolerations} else {} end)
+              + (if .nodeSelector then {nodeSelector: .nodeSelector} else {} end))}' \
+    "${src}" > "${out}"
 }
 
 ensure_pod() {
