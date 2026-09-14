@@ -26,6 +26,8 @@ decode = []
 encode = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
+# Public Solana **devnet** IDs for the persistent preview-env host (not local e2e).
+preview-env = []
 
 [dependencies]
 anchor-lang = { version = "1.1.2", features = ["event-cpi"] }

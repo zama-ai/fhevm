@@ -25,7 +25,7 @@ import {
 } from "./internal/generated/confidentialToken/programAddress.js";
 import type { CoprocessorInputAttestationArgs } from "./internal/generated/confidentialToken/types/index.js";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
-import { findKmsContextPda } from "./internal/generated/zamaHost/pdas/index.js";
+import { findKmsContextPda } from "../../../../solana/deploy/src/generated/zamaHost/pdas/index.js";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";

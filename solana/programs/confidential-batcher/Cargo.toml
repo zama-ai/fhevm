@@ -12,6 +12,7 @@ name = "confidential_batcher"
 
 [features]
 default = []
+preview-env = ["zama-host/preview-env", "confidential-token/preview-env", "demo-vault/preview-env"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []

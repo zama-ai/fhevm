@@ -436,7 +436,7 @@ const destroyContextAndEpoch = async (
   );
   console.log(`[kms-context-switch] retired context ${oldContextId} destroyed across contract, connector, and KMS Core`);
 
-  // Destroy the retired epoch (still under the current context, superseded by the rotation).
+  // Destroy the retired epoch (still under the current context, replaced by the rotation).
   const isOldEpochValid = await castBool(
     rpcUrl, protocolConfig, "isValidEpochForContext(uint256,uint256)(bool)",
     current.contextId.toString(), oldEpochId.toString(),
@@ -669,7 +669,7 @@ export const runKmsContextSwitchProfile = async (
   }
   await runSmoke(`kms-context-switch: input-proof after the epoch rotation (epochId=${afterEpoch.epochId})`);
 
-  // 3) Destruction: retire the baseline context and the superseded epoch across every layer.
+  // 3) Destruction: retire the baseline context and the replaced epoch across every layer.
   const owner = await loadHostOwner();
   await destroyContextAndEpoch(
     state,

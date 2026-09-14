@@ -50,7 +50,7 @@ struct Args {
     start_slot: Option<u64>,
 
     /// Optional `x-token` auth metadata for the gRPC endpoint.
-    #[arg(long)]
+    #[arg(long, env = "SOLANA_GRPC_X_TOKEN")]
     grpc_x_token: Option<String>,
 
     /// `zama-host` program id whose instructions are reconstructed.

@@ -146,6 +146,10 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      - name: Install Solana deployer dependencies
+        working-directory: solana/deploy
+        run: bun install --frozen-lockfile
+
       - name: Install CLI deps
         working-directory: test-suite/fhevm
         run: |

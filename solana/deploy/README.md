@@ -1,0 +1,114 @@
+# Solana preview deployment
+
+One image contains the compiled Solana programs and a deployment CLI. The CLI uses
+`solana program deploy` for installation/upgrades and initializes the FHEVM host from
+the live Gateway configuration. The local test harness imports the same implementation.
+
+## Launch a preview
+
+Use the existing preview workflow on a branch containing the Solana runtime:
+
+```sh
+gh workflow run preview-env-deploy.yml --ref <branch> \
+  -f solana_secrets_namespace=<preview-secrets-namespace>
+```
+
+This creates the usual preview namespace, Gateway, KMS and coprocessors, then adds:
+
+1. The Solana host, using the existing `contracts` chart and the `host deploy` command.
+2. Gateway registration and coprocessor host/key registration.
+3. One Yellowstone listener per coprocessor database, with an internal proof Service.
+4. Solana configuration for the existing KMS connectors and relayer.
+
+Set `deploy_example_programs=true` to also deploy confidential-token, demo-vault and
+confidential-batcher. They use the same image's `demos deploy` command; deploying
+programs does not create test users, balances or application fixtures.
+
+The first integration supports the preview's Anvil Gateway and canonical EVM host.
+Solana uses public devnet. Polygon, blockchain-dev and blue-green combinations are
+outside this integration. The namespace can remain running; the creation workflow
+retains its normal destroy-and-recreate behavior when invoked again.
+
+### Provisioning
+
+Fred's existing secret synchronization must expose these secrets in the selected
+source namespace. The workflow copies them into the new preview without printing them.
+
+| Secret | Keys |
+| --- | --- |
+| `solana-rpc` | `rpc-url`, `grpc-url`, `grpc-x-token` |
+| `solana-deployer` | `deployer.json`; first-deploy program keys `zama_host.json`, and optional demo program keys `<program>.json` |
+| `solana-proof-api` | `api-key`, shared by the listeners and KMS connectors |
+
+The deployer must hold devnet SOL. Cluster networking must reach the RPC/Yellowstone
+provider and allow connectors to reach `coprocessor-<party>-solana-host-listener:8080`.
+The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.
+The listener stores computations, MMR leaves and checkpoints in its coprocessor's database.
+
+Keep one active experiment per set of devnet program addresses, and run only one
+deployer at a time. CI serializes Solana launches; manual deployments are the operator's
+responsibility. No separate coordination database is required.
+
+## Program commands
+
+```sh
+bun install --cwd solana/deploy --frozen-lockfile
+bash solana/scripts/build-programs.sh localnet zama_host confidential_token
+docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host upgrade
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> demos deploy
+```
+
+`SOLANA_RPC_URL` selects the cluster. `SOLANA_DEPLOYER_KEYPAIR` accepts a standard
+Solana keypair path; `SOLANA_DEPLOYER_KEYPAIR_JSON` supports Secret injection. Program
+keys use `SOLANA_<PROGRAM>_KEYPAIR` or its `_JSON` form and are needed only for first
+deployment. Mount paths into the container when using keypair files. Host bootstrap
+also requires the Gateway RPC and contract addresses; the complete environment is in
+`ci/preview-env/solana-host/values-solana-programs-e2e.yaml`.
+
+The image defaults to the `preview-env` program IDs. The `localnet` build profile uses
+the repository's test identities. Profiles select compiled addresses, not RPC networks:
+changing an address requires rebuilding. Private keys are never build inputs.
+
+| State | Behavior |
+| --- | --- |
+| Program absent | Deploy and initialize the host |
+| Same bytecode and matching host configuration | Return existing addresses without uploading |
+| Different bytecode with `deploy` | Fail; require explicit `upgrade` |
+| Existing program with `upgrade` | Validate bindings and authority, then upgrade at the same address |
+| Incompatible host configuration | Fail before modifying bytecode |
+
+`coprocessor register` is an internal deployment command that associates the Solana
+host with the canonical host's key material in PostgreSQL. It shares registration SQL
+with the local harness; it is not a new top-level fhevm-cli command.
+
+## Operating the experiment
+
+1. Stop traffic before upgrading; stop the listener too if its decoder must change.
+2. For a compatible change, upgrade the program, then update the affected infrastructure.
+3. For a breaking change, run `gh workflow run preview-env-destroy.yml -f namespace=<namespace>`.
+4. Upgrade the program and recreate the preview with fresh application state and matching host bindings; Kubernetes teardown does not erase Solana accounts.
+5. Resume traffic when the listener is ingesting and a computation/decryption smoke test passes.
+
+An existing HostConfig/KMS context cannot be silently rebound to a new Gateway or
+committee. A breaking experiment that changes those bindings needs explicit on-chain
+reconfiguration or fresh identities. Discarded values are not expected to remain usable.
+Listener downtime requires provider replay, including transactions and Clock/SlotHashes
+updates; verify the provider's retention rather than assuming archive recovery.
+
+## Validation
+
+```sh
+bun test --cwd test-suite/fhevm src
+python3 ci/preview-env/solana-host/test_charts.py
+bash solana/scripts/build-programs.sh localnet zama_host
+bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts
+```
+
+The deployment acceptance test uses a real validator, checks initialization, verified
+no-op, explicit compatible upgrade and retained HostConfig, and tests coprocessor
+registration against PostgreSQL. CI also runs it through the packaged image. The full-stack
+upgrade scenario also checks old-value decryption after host upgrade and listener restart.
+The preview launch checks listener checkpoint progress; a live computation/decryption
+smoke test is still required to validate provider delivery and internal routing together.
