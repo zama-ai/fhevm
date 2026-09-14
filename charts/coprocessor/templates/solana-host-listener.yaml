@@ -1,0 +1,143 @@
+{{- if .Values.solanaHostListener.enabled }}
+{{- $listener := .Values.solanaHostListener }}
+{{- $name := printf "%s-solana-host-listener" .Release.Name | trunc 63 | trimSuffix "-" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  # The durable Solana checkpoint is a singleton in this coprocessor database.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        {{- merge (dict "app.kubernetes.io/name" $name) ($listener.podLabels | default dict) (.Values.podLabels | default dict) | toYaml | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      {{- with $listener.serviceAccountName }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      {{- with $listener.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $listener.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $listener.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: solana-host-listener
+          image: {{ $listener.image.name }}:{{ $listener.image.tag }}
+          command: ["solana_host_listener"]
+          args:
+            - --database-url=$(DATABASE_URL)
+            - --url=$(SOLANA_RPC_URL)
+            - --grpc-url=$(SOLANA_GRPC_URL)
+            - --program-id=$(SOLANA_HOST_PROGRAM_ID)
+            - --http-port={{ $listener.httpPort }}
+            {{- with $listener.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- with .Values.commonConfig.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
+            {{- with .Values.commonConfig.databasePassword }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" $) "true" }}
+            {{- include "coprocessor.databaseSslRootCertEnv" $ | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $listener.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $listener.httpPort }}
+          # Database/HTTP health only. The rollout must also prove an ingested transaction.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml $listener.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $listener.securityContext | nindent 12 }}
+          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
+          {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $listener.httpPort }}
+      targetPort: http
+{{- end }}
