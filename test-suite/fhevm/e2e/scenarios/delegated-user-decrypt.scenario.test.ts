@@ -61,8 +61,6 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 /** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
 
-// The literal specifier stays opaque to tsc (the suite-wide pattern): CI type-checks against
-// the same public package that the runtime imports.
 type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
 const sdkSolana = async (): Promise<SdkSolanaModule> => {
   const solanaModule = "@fhevm/sdk/solana";

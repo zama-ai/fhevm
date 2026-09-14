@@ -390,7 +390,12 @@ describe('running a user decryption through the client', () => {
       expect(fetch).toHaveBeenCalledTimes(2);
       await vi.advanceTimersByTimeAsync(500);
       await rejection;
-      expect(onProgress.mock.calls.filter(([event]) => event.type === 'timeout')).toHaveLength(1);
+      const timeoutEvents = onProgress.mock.calls.filter(([event]) => event.type === 'timeout');
+      expect(timeoutEvents).toHaveLength(1);
+      if (phase === 'backoff') {
+        expect(timeoutEvents[0]![0]).not.toHaveProperty('jobId');
+        expect(timeoutEvents[0]![0]).not.toHaveProperty('method');
+      }
       expect(onProgress.mock.calls.some(([event]) => event.type === 'abort')).toBe(false);
       await vi.advanceTimersByTimeAsync(10_000);
       expect(fetch).toHaveBeenCalledTimes(2);

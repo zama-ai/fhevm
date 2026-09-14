@@ -48,7 +48,6 @@ export function createSolanaUserDecryptRelayerTransport(config: {
     throw new RangeError('timeout must be an integer from 1 to 2147483647 milliseconds');
   }
   const deadline = Date.now() + timeout;
-  let lastProgress: RelayerUserDecryptProgressArgs | undefined;
   const expire = (): never => {
     const progress = {
       url,
@@ -56,7 +55,6 @@ export function createSolanaUserDecryptRelayerTransport(config: {
       retryCount: 0,
       step: 0,
       totalSteps: 0,
-      ...lastProgress,
       type: 'timeout' as const,
     };
     const onProgress = config.options?.onProgress;
@@ -97,7 +95,6 @@ export function createSolanaUserDecryptRelayerTransport(config: {
           ...config.options,
           timeout: remaining(),
           onProgress: (progress: RelayerUserDecryptProgressArgs) => {
-            lastProgress = progress;
             if (progress.type === 'queued') {
               queued = true;
             }

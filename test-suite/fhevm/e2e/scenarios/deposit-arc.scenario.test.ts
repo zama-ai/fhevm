@@ -2,54 +2,9 @@ import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import { encryptedStoreHandle } from "@fhevm/sdk/solana";
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
-// Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
-// decrypt, the live-cluster exercise of the confidential vault's forward path via
-// `@fhevm/sdk/solana/vault`. Run as `demo:smoke` and hard-gated by the solana-e2e
-// workflow's demo phase: every phase is expected to pass live.
-//
-// The arc: fund a persona, initialize her confidential token accounts, wrap mock USDC into a
-// confidential cUSDC balance (a PUBLIC-amount escrow that needs no input proof), JOIN the pending
-// deposit batch with a coprocessor-attested amount (a real input proof built by the SDK's local
-// TFHE prover and verified by the relayer), have the keeper DISPATCH the aged batch (burning its
-// encrypted balance to a created-public handle) and SETTLE it (MMR inclusion proof rebuilt from
-// the burned value's account history + KMS burn certificate from the relayer + the on-chain settle
-// in one `settleBatch` call), then have alice CLAIM her confidential cShares payout (permissionless pull:
-// one MulDiv execution + a confidential transfer) and DECRYPT her claimed amount through the KMS
-// user-decrypt path (`userDecrypt`: ed25519-signed request -> relayer -> signcrypted shares ->
-// in-SDK de-signcryption).
-//
-// STATUS: live-only, UNVERIFIED here. It requires a running demo stack with the two demo programs
-// deployed, `demo:seed` completed, and the `demo:faucet` running (all classifier-gated / blocked in
-// this environment — see solana/scripts/demo/demo-keypairs/README and demo/seed.ts). The vault is
-// the demo dapp's own module (`solana/demo-dapp/src/vault`, fhevm-internal#1859 §6d), imported
-// statically and fully typed. The SDK proper is still reached through the runtime dynamic-import
-// seam (string module specifier), untyped by construction (same reason as
-// `src/solana/current-user-decrypt.ts`): the SDK's generated `_types` are not built at tsc time.
-//
-// Assertion map — full deposit arc (deposit direction: join mint = cUSDC, payout mint = cShares):
-//   1. alice funded with SOL + mock USDC through the demo faucet         [live, wired below].
-//   2. alice's cUSDC + cShares confidential token accounts initialized   [live, SDK, wired below].
-//   3. wrap mock USDC → cUSDC confidential balance (public amount)       [live, SDK, wired below].
-//   4. on-chain assertion: alice's cUSDC token account exists and is owned by confidential-token.
-//   5. precondition: the seeded deposit batcher's current batch is still Pending (joinable).
-//   6. input proof for the join amount built locally and verified by the relayer [live, SDK].
-//   7. joinBatch: alice joins the pending batch with the attested amount [live, SDK, wired below].
-//   8. on-chain assertions: the (batch, alice) join record exists under the batcher program, and
-//      the batch's join count incremented by exactly one.
-//   9. the batch reaches its minimum dispatch age (openedSlot + minBatchAgeSlots) [slot wait].
-//  10. dispatch: the keeper dispatches the aged batch                    [live, SDK, wired below].
-//  11. on-chain assertions: batch status Dispatched and a nonzero created-public burned total handle.
-//  12. the SNS commit of the burned total handle landed — waited on explicitly here so the KMS
-//      certificate request inside `settleBatch` finds the ciphertext materialized.
-//  13. settleBatch: MMR proof + KMS burn certificate + on-chain settle, keeper-signed [live, SDK].
-//  14. on-chain assertions: batch status Settled, certified totalJoined equals the joined amount
-//      (a single-join batch's total is public by construction), payoutReceived recorded.
-//  15. claim: alice pulls her payout from the settled batch              [live, SDK, wired below].
-//  16. on-chain assertions: the join record's claimed flag is set, and the claim-amount encrypted value account
-//      account exists with a nonzero current handle (the claim execution's created output). The payout
-//      VALUE is encrypted on-chain by design; reading it is the decrypt phase's job.
-//  17. userDecrypt: alice user-decrypts her claimed amount; the cleartext equals the batch's
-//      payoutReceived exactly (sole joiner: floor(joined x payout / total) = payout) [live, SDK].
+// Live vault deposit: fund → wrap → join → dispatch → public decrypt → settle → claim → user decrypt.
+// Run through `demo:smoke` against a seeded demo with its faucet running. On-chain assertions
+// check each transition; the final KMS/WASM decrypt checks the encrypted payout amount.
 
 import fs from "node:fs/promises";
 
