@@ -180,6 +180,65 @@ describe('Confidential Bridge', function () {
     return { dstHandles, ctx, compose };
   }
 
+  /** Mints and bridges in a SINGLE transaction with only the executor's transient allowance (no
+   *  FHE.allow) - the RFC-008 gas-saving path. `send` passes on `isAllowed` (transient OR
+   *  persistent) but emits no ACL event, so bridging itself must make the ciphertext durable. */
+  async function bridgeTransientFromApp(src: BridgeEnd, dst: BridgeEnd, value: number) {
+    const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
+    const fromBlock = await getProvider(dst.cfg).getBlockNumber();
+    const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
+    const enc = await src.instance.encryptUint64({
+      value,
+      contractAddress: src.appAddr,
+      userAddress: src.alice.address,
+    });
+    // The handle only exists once the tx runs, so quote with a placeholder: the fee depends on
+    // message size (handle count + payload length), not on the handle values.
+    const bridgeContract = new ethers.Contract(src.bridge, BRIDGE_SEND_ABI, src.alice);
+    const { nativeFee } = await bridgeContract.quote(
+      dst.eid,
+      src.appAddr,
+      dstApp,
+      '0x',
+      [ethers.ZeroHash],
+      LZ_COMPOSE_GAS,
+    );
+    const receipt = await sendWithNonceRetry(src.alice, () =>
+      src.app
+        .connect(src.alice)
+        .getFunction('mintAndBridgeTransient')(
+          src.bridge,
+          enc.handles[0],
+          enc.inputProof,
+          dst.eid,
+          dstApp,
+          '0x',
+          LZ_COMPOSE_GAS,
+          { value: nativeFee, gasLimit: 5_000_000 },
+        ),
+    );
+
+    if (USE_REAL_LZ) {
+      const dstHandles = await waitForBridgedHandles(
+        getProvider(dst.cfg),
+        dst.bridge,
+        extractBridgeGuid(receipt, src.endpoint),
+        fromBlock,
+        DECRYPT_TIMEOUT_MS,
+      );
+      await waitForComposeApplied(
+        getProvider(dst.cfg),
+        dst.cfg.aclAddress,
+        dstHandles,
+        { kind: 'public' },
+        DECRYPT_TIMEOUT_MS,
+      );
+      return { dstHandles };
+    }
+    const { dstHandles } = await relayBridgeMessage(receipt, ctx);
+    return { dstHandles };
+  }
+
   before(async function () {
     if (HOST_CHAINS.length < 2) {
       this.skip();
@@ -218,6 +277,14 @@ describe('Confidential Bridge', function () {
     // The derived handle carries the destination chain id in bytes 22-29.
     expect(dstHandles[0].slice(46, 62)).to.equal(chainB.cfg.chainId.toString(16).padStart(16, '0'));
     expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(7n);
+  });
+
+  it('bridges a handle allowed only transiently (no persistent ACL grant) and decrypts it', async function () {
+    // Without a durability trigger on BridgeHandle the source ciphertext never gets its ct128, the
+    // association worker can never copy it, and this decrypt hangs until the timeout.
+    const { dstHandles } = await bridgeTransientFromApp(host, chainB, 23);
+    expect(dstHandles.length, 'one destination handle').to.equal(1);
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(23n);
   });
 
   it('bridges a handle host->chain-b and lets a user decrypt it on the destination', async function () {

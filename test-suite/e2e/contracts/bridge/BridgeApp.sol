@@ -17,6 +17,17 @@ interface IDstApp {
     ) external;
 }
 
+/// @notice Minimal source-side bridge interface (inlined, like {IDstApp}).
+interface IConfidentialBridgeSend {
+    function send(
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes calldata payload,
+        bytes32[] calldata handleList,
+        uint64 lzComposeGas
+    ) external payable;
+}
+
 /// @notice Test dapp exercising the confidential bridge end-to-end (deployed on each chain).
 /// @dev Source: {makeHandle}/{makeComputedHandle} produce a handle ACL-allowed to the caller for
 ///      `ConfidentialBridge.send`. Destination: {onConfidentialBridgeReceived} (called by the bridge's lzCompose, which
@@ -48,6 +59,27 @@ contract BridgeApp is E2ECoprocessorConfig, IDstApp {
     ///         handle is delivered with a user payload.
     function addToHandle(bytes32 existing, uint64 addend) external returns (bytes32) {
         return _register(FHE.add(euint64.wrap(existing), FHE.asEuint64(addend)));
+    }
+
+    /// @notice Mints and bridges in a SINGLE transaction with no persistent ACL grant, relying only
+    ///         on the transient allowance the executor grants on an op result (the RFC-008
+    ///         gas-saving pattern). Regression cover: bridging must itself make the source
+    ///         ciphertext durable, otherwise the destination handle is stranded with no ciphertext.
+    function mintAndBridgeTransient(
+        address bridge,
+        externalEuint64 encryptedAmount,
+        bytes calldata inputProof,
+        uint32 dstEid,
+        bytes32 dstApp,
+        bytes calldata payload,
+        uint64 lzComposeGas
+    ) external payable returns (bytes32 handle) {
+        // Deliberately no FHE.allow/allowThis: `send` must pass on the transient allowance alone.
+        handle = euint64.unwrap(FHE.fromExternal(encryptedAmount, inputProof));
+        bytes32[] memory handleList = new bytes32[](1);
+        handleList[0] = handle;
+        IConfidentialBridgeSend(bridge).send{value: msg.value}(dstEid, dstApp, payload, handleList, lzComposeGas);
+        emit HandleMinted(handle);
     }
 
     /// @dev Allow `value` for the caller (the future send sender) and this contract, and return its handle.
