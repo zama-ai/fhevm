@@ -10,6 +10,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {HANDLE_VERSION} from "./shared/Constants.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {BytesOps} from "./shared/BytesOps.sol";
 
 /**
  * @title    InputVerifier.
@@ -295,7 +296,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             /// @dev The length check above guarantees the signature and extraData copies stay within inputProof.
             bytes[] memory signatures = new bytes[](numSigners);
             for (uint256 i = 0; i < numSigners; i++) {
-                signatures[i] = _sliceBytes(inputProof, 2 + 32 * numHandles + 65 * i, 65);
+                signatures[i] = BytesOps.slice(inputProof, 2 + 32 * numHandles + 65 * i, 65);
             }
 
             CiphertextVerification memory ctVerif;
@@ -305,7 +306,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             ctVerif.contractChainId = block.chainid;
 
             /// @dev Extract the extraData from the inputProof.
-            ctVerif.extraData = _sliceBytes(inputProof, extraDataOffset, inputProofLen - extraDataOffset);
+            ctVerif.extraData = BytesOps.slice(inputProof, extraDataOffset, inputProofLen - extraDataOffset);
 
             _verifyEIP712(ctVerif, signatures);
 
@@ -381,19 +382,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    /// @dev Returns a copy of the size bytes of data starting at offset.
-    ///      The caller must have checked that the range lies within data.
-    function _sliceBytes(
-        bytes memory data,
-        uint256 offset,
-        uint256 size
-    ) internal pure virtual returns (bytes memory slice) {
-        slice = new bytes(size);
-        assembly {
-            mcopy(add(slice, 32), add(add(data, 32), offset), size)
-        }
     }
 
     function _cacheProof(bytes32 proofKey) internal virtual {

@@ -10,6 +10,7 @@ pub mod address;
 pub mod bit_maps;
 pub mod bridge_events;
 pub mod bytes_lib;
+pub mod bytes_ops;
 pub mod calldata_bytes_lib;
 pub mod confidential_bridge;
 pub mod context_upgradeable;

@@ -6,6 +6,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {BytesOps} from "./shared/BytesOps.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
@@ -162,11 +163,11 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         /// @dev The length check above guarantees both copies below stay within the decryptionProof bytes.
         bytes[] memory signatures = new bytes[](numSigners);
         for (uint256 i = 0; i < numSigners; i++) {
-            signatures[i] = _sliceBytes(decryptionProof, 1 + 65 * i, 65);
+            signatures[i] = BytesOps.slice(decryptionProof, 1 + 65 * i, 65);
         }
 
         /// @dev Extract the extraData from the decryptionProof.
-        bytes memory extraData = _sliceBytes(
+        bytes memory extraData = BytesOps.slice(
             decryptionProof,
             extraDataOffset,
             decryptionProof.length - extraDataOffset
@@ -296,19 +297,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     function _tstore(address location, uint256 value) internal virtual {
         assembly {
             tstore(location, value)
-        }
-    }
-
-    /// @dev Returns a copy of the size bytes of data starting at offset.
-    ///      The caller must have checked that the range lies within data.
-    function _sliceBytes(
-        bytes memory data,
-        uint256 offset,
-        uint256 size
-    ) internal pure virtual returns (bytes memory slice) {
-        slice = new bytes(size);
-        assembly {
-            mcopy(add(slice, 32), add(add(data, 32), offset), size)
         }
     }
 
