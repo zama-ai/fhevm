@@ -107,7 +107,7 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
         -l app=coprocessor-db-migration,app.kubernetes.io/name="coprocessor-${i}-db-migration" \
         job -n "${NAMESPACE}" --timeout=180s
   done
-  # BCS zkproof (v0.14.0-7) snapshots host_chains once at process start.
+  # BCS zkproof (0.14.x) snapshots host_chains once at process start.
   # helm applies the Deployment in parallel with db-migration, so a party
   # whose seed finishes a second later keeps chain_id = ANY('{}') forever.
   # Restart after seed so both parties see the host chain.
