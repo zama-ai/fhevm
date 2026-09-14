@@ -1,5 +1,3 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
 // This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
@@ -243,6 +241,7 @@ export const createConfidentialMint = async (
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.authority });
   await context.sendTransaction(params.authority, fhe.wrap([
     await vault.buildInitializeMintInstruction({
@@ -269,6 +268,7 @@ export const initializeConfidentialTokenAccount = async (
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
 ): Promise<void> => {
   const vault = await vaultModule();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.payer });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
     fhe: fhe.accounts,
@@ -291,6 +291,7 @@ export const wrapUnderlying = async (
   },
 ): Promise<void> => {
   const vault = await vaultModule();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.owner });
   await context.sendTransaction(params.owner, fhe.wrap([
     await vault.buildWrapUsdcInstruction({
@@ -363,7 +364,7 @@ export const readTokenBalanceStore = async (
   params: { readonly mint: Address; readonly owner: Address },
 ): Promise<BalanceStore> => {
   const vault = await vaultModule();
-  const { bytes32HexToHandle } = await sdkVerifyModule();
+  const { bytes32HexToHandle, encryptedStoreHandle } = await sdkVerifyModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
