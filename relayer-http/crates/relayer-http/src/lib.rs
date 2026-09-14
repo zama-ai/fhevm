@@ -25,13 +25,18 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use kms_aggregator::{Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, UserDecrypt};
-use settings::Settings;
+use settings::{HttpConfig, Settings};
 
-/// Everything a request handler needs. Built once, shared by clone (all fields are `Arc`).
+/// Everything a request handler needs: the one shared state of the process. Built once in `main`, cloned per
+/// request (Arcs only). Both aggregators share one `Caller`: one HTTP client, one call semaphore.
 #[derive(Clone)]
 pub struct App {
     pub user_decrypt: Arc<Aggregator<UserDecrypt>>,
     pub public_decrypt: Arc<Aggregator<PublicDecrypt>>,
+    /// Bind address, body limit, supported chain ids.
+    pub http: Arc<HttpConfig>,
+    /// Cancelled on SIGINT/SIGTERM: `/healthz` answers 503 and every running aggregation ends.
+    pub shutdown: CancellationToken,
 }
 
 impl App {
@@ -51,8 +56,10 @@ impl App {
                 caller,
                 cfg.public_decrypt.threshold,
                 (),
-                shutdown,
+                shutdown.clone(),
             )),
+            http: Arc::new(settings.http.clone()),
+            shutdown,
         })
     }
 }
