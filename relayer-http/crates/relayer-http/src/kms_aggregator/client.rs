@@ -177,9 +177,21 @@ impl HttpClient {
             .tcp_keepalive(Duration::from_secs(15))
             .user_agent(concat!("zama-relayer-http/", env!("CARGO_PKG_VERSION")))
             .build()
-            .map_err(|e| ConfigError(format!("http client: {e}")))?;
+            .map_err(|e| ConfigError(format!("http client: {}", with_causes(&e))))?;
         Ok(Self { inner })
     }
+}
+
+/// An error and its chain of causes, joined with `: ` (reqwest's own message is only "builder error").
+fn with_causes(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = error.source();
+    while let Some(inner) = cause {
+        text.push_str(": ");
+        text.push_str(&inner.to_string());
+        cause = inner.source();
+    }
+    text
 }
 
 #[async_trait]
@@ -451,6 +463,25 @@ mod tests {
             format!("{reply:?}"),
             "HttpReply { status: 200, body_len: 18 }"
         );
+    }
+
+    #[test]
+    fn with_causes_joins_the_chain() {
+        #[derive(Debug)]
+        struct Outer(std::io::Error);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("builder error")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        let outer = Outer(std::io::Error::other("no CA certificates"));
+        assert_eq!(with_causes(&outer), "builder error: no CA certificates");
+        assert_eq!(with_causes(&std::io::Error::other("alone")), "alone");
     }
 
     #[test]
