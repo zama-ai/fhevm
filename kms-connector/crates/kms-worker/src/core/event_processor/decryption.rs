@@ -26,7 +26,9 @@ use futures::{
     stream::{FuturesUnordered, StreamExt},
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{Eip712DomainMsg, PublicDecryptionRequest, UserDecryptionRequest};
+use kms_grpc::kms::v1::{
+    Eip712DomainMsg, PublicDecryptionRequest, SigningSchemeType, UserDecryptionRequest,
+};
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
@@ -577,6 +579,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
 
             Ok(user_decryption_request.into())
@@ -589,6 +592,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
             Ok(public_decryption_request.into())
         }
