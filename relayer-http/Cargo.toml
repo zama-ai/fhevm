@@ -26,7 +26,10 @@ tokio-util = { version = "=0.7.18", default-features = false }
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["env-filter", "fmt", "json", "std", "ansi"] }
 url = { version = "=2.5.8", default-features = false, features = ["serde", "std"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+uuid = { version = "=1.26.0", default-features = false, features = ["std", "v7"] }
 # tests
+tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 wiremock = "=0.6.5"
 
 [profile.release]
