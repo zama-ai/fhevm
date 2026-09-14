@@ -38,8 +38,8 @@ runs:
         echo "${PROTOC_SHA256}  ${dest}" | sha256sum --check --strict
         mkdir -p "${HOME}/.local"
         unzip -o "${dest}" -d "${HOME}/.local"
-        echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-        export PATH="${HOME}/.local/bin:${PATH}"
+        # ~/.local/bin is on the RunsOn image PATH (same layout as kms).
+        # Do not write GITHUB_PATH: zizmor github-env flags it.
         command -v protoc
         protoc --version
 
@@ -60,8 +60,6 @@ runs:
         mkdir -p "${HOME}/.local/bin"
         install -m 0755 "${RUNNER_TEMP}/mold-${MOLD_VERSION}-x86_64-linux/bin/mold" "${HOME}/.local/bin/mold"
         ln -sfn mold "${HOME}/.local/bin/ld.mold"
-        echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-        export PATH="${HOME}/.local/bin:${PATH}"
         command -v mold
         mold --version
 
@@ -74,7 +72,5 @@ runs:
           echo "clang is not on PATH. Coprocessor jobs expect the RunsOn image compiler; do not apt-install clang (fhevm-internal#2014)." >&2
           exit 1
         fi
-        clang_bin="$(command -v clang)"
-        echo "Using ${clang_bin}"
-        "${clang_bin}" --version
-        echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=${clang_bin}" >> "${GITHUB_ENV}"
+        command -v clang
+        clang --version
