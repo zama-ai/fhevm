@@ -42,7 +42,8 @@ preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
 launch options:
   --ref <branch>            required (must be pushed to origin)
   --parties 1|2|3|5         identities (default 1). 2 is two-party, not blue-green
-  --blue-green              enable_blue_green=true and nb_coprocessor=2
+  --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
+                            automated RFC-021 round, without it Blue only (manual QA mode)
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
                             (implies --polygon; RPC URLs + funder key come from AWS
