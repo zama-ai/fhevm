@@ -421,6 +421,17 @@ pub async fn ingest_block_logs(
                         )
                         .await?;
                 } else {
+                    // `send` needs only a transient allowance (no ACL event), so force
+                    // the source handle allowed or its ciphertext is never computed.
+                    if let BridgeContract::BridgeContractEvents::BridgeHandle(e) =
+                        &event.data
+                    {
+                        if chain_id_from_handle(&e.srcHandle.0)
+                            == chain_id.as_u64()
+                        {
+                            is_allowed.insert(e.srcHandle.to_vec());
+                        }
+                    }
                     at_least_one_insertion |= db
                         .handle_bridge_event(
                             &mut tx,
