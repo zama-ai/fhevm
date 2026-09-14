@@ -1,8 +1,8 @@
-import type { EncryptionBits } from '@sdk-src/core/types/fheType.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import { toSolanaZkProof } from '@sdk-src/core/coprocessor/SolanaZkProof-p.js';
-import { asBytes32Hex, asBytes65Hex, asBytesHex, bytesToHex } from '@sdk-src/core/base/bytes.js';
+import type { EncryptionBits } from '@fhevm/sdk/types';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaZkProof } from '@fhevm/sdk/solana';
+import { toSolanaZkProof } from '@fhevm/sdk/solana';
+import { asBytes32Hex, asBytes65Hex, asBytesHex, bytesToHex } from '@fhevm/sdk/base';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());

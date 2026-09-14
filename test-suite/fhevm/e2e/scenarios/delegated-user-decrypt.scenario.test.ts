@@ -26,7 +26,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
 import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
-import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
+import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
@@ -62,8 +62,8 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
 
 // The literal specifier stays opaque to tsc (the suite-wide pattern): CI type-checks against
-// the SDK *sources* via the `@sdk-src` alias and never builds the package this resolves to.
-type SdkSolanaModule = typeof import("@sdk-src/solana/index.js");
+// the same public package that the runtime imports.
+type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
 const sdkSolana = async (): Promise<SdkSolanaModule> => {
   const solanaModule = "@fhevm/sdk/solana";
   return (await import(solanaModule)) as SdkSolanaModule;

@@ -37,7 +37,6 @@ import {
   executeSolanaUserDecrypt,
   generateSolanaTransportKeyPair,
 } from '../../userDecrypt/index.js';
-import { abortableSleep } from '../../../core/base/timeout.js';
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue } from '../../../core/handle/ClearValue.js';
@@ -62,8 +61,8 @@ export interface SolanaDecryptTrust {
   readonly kmsEpochId: Bytes32Hex;
   /** The FHE parameter choice this deployment runs, e.g. `default` or `test`. */
   readonly fheParameter: string;
-  /** The gateway EIP-712 domain; absent, every real response is refused fail-closed. */
-  readonly gatewayEip712Domain?: SolanaGatewayEip712Domain | undefined;
+  /** The gateway EIP-712 domain used to authenticate KMS response signatures. */
+  readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
 }
 
 /** One `(program, scope)` pair a permit may be restricted to. */
@@ -106,7 +105,7 @@ export interface SolanaUserDecryptParameters {
   readonly entries: readonly SolanaUserDecryptEntry[];
   /** Submission budget; the session default applies when absent. */
   readonly attempts?: number | undefined;
-  /** Core relayer options (auth, timeout, abort signal, progress callback). */
+  /** Relayer options; timeout bounds the whole operation, including retries and backoff. */
   readonly options?: RelayerUserDecryptOptions | undefined;
 }
 
@@ -135,6 +134,7 @@ export function solanaPermitDecryptActions(
   // Fail at construction, not mid-session: a chain missing the deployment identity would otherwise
   // surface as a failure of whichever request first needed it.
   const verifyingProgramId = requiredChainField(chain.fhevm.verifyingProgramId, 'verifyingProgramId');
+  const gatewayEip712Domain = requiredChainField(trust.gatewayEip712Domain, 'gatewayEip712Domain');
 
   return {
     async signPermit(parameters: SolanaSignPermitParameters): Promise<SolanaPermitSession> {
@@ -171,22 +171,23 @@ export function solanaPermitDecryptActions(
         encryptedStore: entry.encryptedStore,
       }));
 
+      const transport = createSolanaUserDecryptRelayerTransport({
+        relayerUrl: chain.fhevm.relayerUrl,
+        options: { auth: runtime.config.auth, ...parameters.options },
+      });
       const plaintexts = await executeSolanaUserDecrypt({
         session: parameters.session,
         entries,
-        transport: createSolanaUserDecryptRelayerTransport({
-          relayerUrl: chain.fhevm.relayerUrl,
-          options: { auth: runtime.config.auth, ...parameters.options },
-        }),
-        clock: { delay: (seconds) => abortableSleep(seconds * 1000, parameters.options?.signal) },
+        transport,
+        clock: transport,
         attempts: parameters.attempts,
         verification: {
           signers: trust.kmsSigners,
           fheParameter: trust.fheParameter,
-          gatewayEip712Domain: trust.gatewayEip712Domain,
+          gatewayEip712Domain,
         },
       });
-
+      transport.throwIfAbortedOrExpired();
       return toClearValues(
         plaintexts,
         entries.map((entry) => entry.handle),

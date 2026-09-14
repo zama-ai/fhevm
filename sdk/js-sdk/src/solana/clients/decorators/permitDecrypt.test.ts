@@ -8,6 +8,7 @@
 // not name the identity the path stands on.
 
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
+import { RelayerTimeoutError } from '../../../core/errors/RelayerTimeoutError.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -20,6 +21,7 @@ import {
   SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE,
 } from '../../permit/index.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
+import * as responseVerification from '../../userDecrypt/response.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,6 +46,12 @@ const trust = {
   kmsContextId: CONTEXT_ID,
   kmsEpochId: EPOCH_ID,
   fheParameter: 'test',
+  gatewayEip712Domain: {
+    name: 'Decryption',
+    version: '1',
+    chainId: 31337n,
+    verifyingContract: '0x0000000000000000000000000000000000000042',
+  },
 };
 
 const USER_SEED = new Uint8Array(32).fill(0x07);
@@ -101,11 +109,25 @@ const scopeBytes = (program: string, scope: string): Uint8Array => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('assembling the permit-path client', () => {
+  it('rejects a missing verification domain before signing or submitting', () => {
+    setFhevmRuntimeConfig({});
+    expect(() =>
+      // @ts-expect-error Exercise an untyped caller's incomplete deployment configuration.
+      createFhevmDecryptClient({
+        chain,
+        trust: {
+          ...trust,
+          gatewayEip712Domain: undefined,
+        },
+      }),
+    ).toThrow('gatewayEip712Domain');
+  });
   it('refuses at construction a chain without verifyingProgramId', () => {
     setFhevmRuntimeConfig({});
     const { verifyingProgramId: _omitted, ...fhevm } = chain.fhevm;
@@ -267,6 +289,55 @@ describe('running a user decryption through the client', () => {
       hex(ENCRYPTED_VALUE_ACCOUNT),
     ]);
   });
+  it.each(['timeout', 'abort'])('does not return plaintext after %s during verification', async (cause) => {
+    const { wallet } = conformingWallet();
+    const decryptClient = client();
+    const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const verify = vi.spyOn(responseVerification, 'verifySolanaUserDecryptResponse').mockImplementation(async () => {
+      await pending;
+      return [];
+    });
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
+        .mockResolvedValueOnce(
+          jsonResponse({
+            status: 'succeeded',
+            requestId: 'req-1',
+            result: {
+              result: [{ payload: 'deadbeef', signature: 'ab'.repeat(65), extraData: '0x01' }],
+            },
+          }),
+        ),
+    );
+    const controller = new AbortController();
+    const result = decryptClient.userDecrypt({
+      session,
+      entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
+      options: { timeout: 1500, signal: controller.signal },
+    });
+    const rejection =
+      cause === 'timeout'
+        ? expect(result).rejects.toBeInstanceOf(RelayerTimeoutError)
+        : expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(verify).toHaveBeenCalledOnce();
+    if (cause === 'timeout') {
+      await vi.advanceTimersByTimeAsync(500);
+    } else {
+      controller.abort();
+    }
+    release();
+    await rejection;
+  });
+
   it('aborts during retry backoff without another submission or wallet prompt', async () => {
     const { wallet, signOffchainMessage } = conformingWallet();
     const decryptClient = client();
@@ -292,4 +363,38 @@ describe('running a user decryption through the client', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(signOffchainMessage).toHaveBeenCalledTimes(1);
   });
+  it.each(['backoff', 'polling'])(
+    'expires the operation deadline during %s with consistent progress',
+    async (phase) => {
+      const { wallet, signOffchainMessage } = conformingWallet();
+      const decryptClient = client();
+      const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+      vi.useFakeTimers();
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
+        .mockResolvedValueOnce(
+          phase === 'backoff'
+            ? jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: [] } })
+            : jsonResponse({ status: 'queued', requestId: 'req-1' }, 202),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const onProgress = vi.fn();
+      const result = decryptClient.userDecrypt({
+        session,
+        entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
+        options: { timeout: 1500, onProgress },
+      });
+      const rejection = expect(result).rejects.toBeInstanceOf(RelayerTimeoutError);
+      await vi.advanceTimersByTimeAsync(1_001);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(500);
+      await rejection;
+      expect(onProgress.mock.calls.filter(([event]) => event.type === 'timeout')).toHaveLength(1);
+      expect(onProgress.mock.calls.some(([event]) => event.type === 'abort')).toBe(false);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(signOffchainMessage).toHaveBeenCalledTimes(1);
+    },
+  );
 });

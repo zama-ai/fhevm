@@ -1,7 +1,7 @@
 import { type Address, type Rpc, type SolanaRpcApi } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { fetchSolanaEncryptedStore } from '@sdk-src/solana/encryptedStore.js';
-import { bytesToHex, hexToBytes, verifyPublicDecryptProof, type MmrProof } from '@sdk-src/solana/proof.js';
+import { fetchSolanaEncryptedStore } from '@fhevm/sdk/solana';
+import { solanaProofBytesToHex as bytesToHex, solanaProofHexToBytes as hexToBytes, verifyPublicDecryptProof, type MmrProof } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
 
 export type ProofService = { readonly url: string; readonly apiKey: string };

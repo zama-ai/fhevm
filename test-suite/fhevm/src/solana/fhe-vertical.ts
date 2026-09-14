@@ -17,8 +17,8 @@ import {
   fetchSolanaEncryptedStore,
   encryptedStoreHandle,
   type SolanaEncryptedStore,
-} from '@sdk-src/solana/encryptedStore.js';
-import type { MmrProof } from '@sdk-src/solana/proof.js';
+} from '@fhevm/sdk/solana';
+import type { MmrProof } from '@fhevm/sdk/solana';
 import { publicProof } from '@demo-dapp/vault/internal/publicProof.js';
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 

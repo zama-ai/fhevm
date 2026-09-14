@@ -1,8 +1,8 @@
-import type { EncryptionBits } from '@sdk-src/core/types/fheType.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import { toSolanaZkProof } from '@sdk-src/core/coprocessor/SolanaZkProof-p.js';
-import { bytesToHex } from '@sdk-src/core/base/bytes.js';
+import type { EncryptionBits } from '@fhevm/sdk/types';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaZkProof } from '@fhevm/sdk/solana';
+import { toSolanaZkProof } from '@fhevm/sdk/solana';
+import { bytesToHex } from '@fhevm/sdk/base';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
@@ -31,8 +31,8 @@ import { getJoinInstructionDataDecoder } from './internal/generated/confidential
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstructionDataDecoder,
-} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
+} from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;

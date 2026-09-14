@@ -27,12 +27,12 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { hexToBytes } from '@sdk-src/core/base/bytes.js';
-import { assertHandleArrayEquals } from '@sdk-src/core/handle/FhevmHandle.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaSubmitInputProofResult } from '@sdk-src/solana/actions/submitInputProof.js';
+import { hexToBytes } from '@fhevm/sdk/base';
+import { assertHandleArrayEquals } from '@fhevm/sdk/solana';
+import type { SolanaZkProof } from '@fhevm/sdk/solana';
+import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaSubmitInputProofResult } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';

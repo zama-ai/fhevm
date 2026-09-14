@@ -117,7 +117,12 @@
       "import": "./_esm/core/actions/host/index.js",
       "default": "./_cjs/core/actions/host/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./solana/host": {
+      "types": "./_types/solana/host.d.ts",
+      "import": "./_esm/solana/host.js",
+      "default": "./_cjs/solana/host.js"
+    }
   },
   "peerDependencies": {
     "ethers": ">=6.8.0",

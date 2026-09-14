@@ -1,11 +1,11 @@
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmOptions } from '../../core/types/coreFhevmClient.js';
-import type { SolanaDecryptActions } from './decorators/decrypt.js';
+import type { SolanaPublicDecryptActions } from './decorators/publicDecrypt.js';
 import type { SolanaDecryptTrust, SolanaPermitDecryptActions } from './decorators/permitDecrypt.js';
 import type { Fhevm } from '../../core/types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { createFhevmBaseClient } from './createFhevmBaseClient.js';
-import { solanaDecryptActions } from './decorators/decrypt.js';
+import { solanaPublicDecryptActions } from './decorators/publicDecrypt.js';
 import { solanaPermitDecryptActions } from './decorators/permitDecrypt.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,7 +14,7 @@ export type FhevmSolanaDecryptClient<chain extends FhevmSolanaChain = FhevmSolan
   undefined,
   FhevmRuntime,
   undefined
-> & { readonly solanaChain: chain } & SolanaDecryptActions;
+> & { readonly solanaChain: chain } & SolanaPublicDecryptActions;
 
 export type FhevmSolanaPermitDecryptClient<chain extends FhevmSolanaChain = FhevmSolanaChain> =
   FhevmSolanaDecryptClient<chain> & SolanaPermitDecryptActions;
@@ -51,7 +51,7 @@ export function createFhevmDecryptClient<chain extends FhevmSolanaChain>(paramet
   readonly trust?: SolanaDecryptTrust | undefined;
 }): FhevmSolanaDecryptClient<chain> | FhevmSolanaPermitDecryptClient<chain> {
   const c = createFhevmBaseClient({ chain: parameters.chain, options: parameters.options }).extend(
-    solanaDecryptActions,
+    solanaPublicDecryptActions,
   );
   const trust = parameters.trust;
   if (trust === undefined) {

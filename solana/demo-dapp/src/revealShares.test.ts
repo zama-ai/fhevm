@@ -10,11 +10,13 @@ const mocks = vi.hoisted(() => ({
   tokenAccountAddress: vi.fn(),
 }));
 
-vi.mock('@solana/kit', () => ({
+vi.mock('@solana/kit', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@solana/kit')>()),
   createSolanaRpc: vi.fn(() => ({ getAccountInfo: mocks.getAccountInfo })),
   getAddressEncoder: vi.fn(() => ({ encode: () => new Uint8Array(32) })),
 }));
-vi.mock('@fhevm/sdk/solana', () => ({
+vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/sdk/solana')>()),
   createFhevmDecryptClient: mocks.createFhevmDecryptClient,
   defineFhevmSolanaChain: vi.fn((chain) => chain),
   setFhevmRuntimeConfig: vi.fn(),

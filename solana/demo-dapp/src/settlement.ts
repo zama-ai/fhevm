@@ -161,11 +161,10 @@ export const settleVaultBatch = async (
     fhevm: { relayerUrl: session.config.relayerUrl },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain });
-  const signature = await settleBatch(chain, session.keeper, {
+  const signature = await settleBatch(publicDecryptClient, session.keeper, {
     rpc,
     rpcSubscriptions,
     proofService: session.proofService,
-    runtime: publicDecryptClient.runtime,
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),

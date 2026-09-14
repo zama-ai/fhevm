@@ -3,7 +3,7 @@ import type { Address, FetchAccountConfig, Rpc, SolanaRpcApi } from '@solana/kit
 import {
   fetchSolanaEncryptedStore,
   type SolanaEncryptedStore,
-} from '@sdk-src/solana/encryptedStore.js';
+} from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';

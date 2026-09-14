@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
-import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/openTransientStore.js';
-import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
+import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
+import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
 
 const mocks = vi.hoisted(() => ({
   buildInputProof: vi.fn(),

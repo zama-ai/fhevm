@@ -1,10 +1,13 @@
+import type { SolanaProofContext } from '../types/zkProofBuilder-p.js';
 import type { ChecksummedAddress } from '../types/primitives.js';
 import { describe, it, expect, vi } from 'vitest';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { AddressError } from '../base/errors/AddressError.js';
 import { ChecksummedAddressError } from '../base/errors/ChecksummedAddressError.js';
-import { asBytesHex } from '../base/bytes.js';
+import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
+import { DEFAULT_TFHE_VERSION } from '../../wasm/tfhe/loadTfheLib.js';
+import { asBytes32Hex, asBytesHex } from '../base/bytes.js';
 import { createZkProofBuilder } from './ZkProofBuilder-p.js';
 import {
   isZkProof,
@@ -557,4 +560,31 @@ describe('ZkProof', () => {
       ).rejects.toThrow(ChecksummedAddressError);
     });
   });
+});
+
+it('builds a Solana proof without EVM contracts and preserves its exact chain identity', async () => {
+  const chainId = 0x8000000000000001n;
+  const buildWithProofPacked = vi.fn().mockResolvedValue({
+    ciphertextWithZKProofBytes: new Uint8Array([1, 2, 3]),
+    extraData: '0x00',
+  });
+  const context: SolanaProofContext = {
+    chain: { id: chainId, fhevm: { relayerUrl: 'http://solana-relayer' } },
+    aclProgramAddress: asBytes32Hex(`0x${'33'.repeat(32)}`),
+    runtime: { encrypt: { buildWithProofPacked } } as unknown as SolanaProofContext['runtime'],
+    tfheVersion: DEFAULT_TFHE_VERSION,
+  };
+  const proof = await createZkProofBuilder()
+    .addUint64(42n)
+    .buildSolana(context, {
+      contractAddress: `0x${'11'.repeat(32)}`,
+      userAddress: `0x${'22'.repeat(32)}`,
+    });
+  expect(proof.chainId).toBe(chainId);
+  expect(proof.aclContractAddress).toBe(context.aclProgramAddress);
+  expect(fetchFheEncryptionKeyWasm).toHaveBeenLastCalledWith(context, expect.anything());
+  const metadata = buildWithProofPacked.mock.calls[0]![0].metaData as Uint8Array;
+  expect(Buffer.from(metadata).toString('hex')).toBe(
+    '11'.repeat(32) + '22'.repeat(32) + '33'.repeat(32) + '00'.repeat(24) + '8000000000000001',
+  );
 });

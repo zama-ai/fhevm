@@ -1,5 +1,6 @@
+import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStoreHandle } from "@sdk-src/solana/encryptedStore.js";
+import { encryptedStoreHandle } from "@fhevm/sdk/solana";
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Scenario: deposit arc — FULL ARC (#1760): wrap -> join -> dispatch -> settle -> claim ->
 // decrypt, the live-cluster exercise of the confidential vault's forward path via
@@ -116,51 +117,11 @@ const BATCH_STATUS_PENDING = 0;
 const BATCH_STATUS_DISPATCHED = 1;
 const BATCH_STATUS_SETTLED = 2;
 
-/** Opaque coprocessor proof artifacts: built/submitted by the SDK encrypt client, consumed whole by `joinBatch`. */
-type SolanaInputProof = unknown;
-type SolanaInputProofSubmission = unknown;
-
 import * as vault from "@demo-dapp/vault/index.js";
-// Type-only imports (erased at runtime): the vault module is fully typed, so the untyped values
-// produced by the SDK's dynamic-import seam are cast to the vault's expected brands at the
-// seam/vault boundary below.
-import type { FhevmSolanaChain } from "@sdk-src/core/types/fhevmSolanaChain.js";
-import type { Bytes32Hex } from "@sdk-src/core/types/primitives.js";
+import type { FhevmSolanaChain } from "@fhevm/sdk/solana";
+import type { Bytes32Hex } from "@fhevm/sdk/types";
 
-/** The SDK protocol surface the scenario drives (untyped: runtime dynamic-import seam). */
-type SolanaSdkSurface = {
-  setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: {
-    id: bigint;
-    fhevm: { relayerUrl: string; verifyingProgramId?: `0x${string}` };
-  }): unknown;
-  createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
-    buildInputProof(parameters: {
-      contractAddress: `0x${string}`;
-      userAddress: `0x${string}`;
-      values: readonly { type: "uint64"; value: bigint }[];
-    }): Promise<SolanaInputProof>;
-    submitInputProof(parameters: { inputProof: SolanaInputProof }): Promise<SolanaInputProofSubmission>;
-  };
-  /** Settle's certificate phase consumes exactly `runtime.config.auth` (set via setFhevmRuntimeConfig). */
-  createFhevmPublicDecryptClient(parameters: { chain: unknown }): { runtime: unknown };
-  /** Wraps a raw ed25519 secret key into the conforming sRFC-38 permit wallet. */
-  solanaPermitWalletFromSecretKey(secretKey: Uint8Array): unknown;
-  /**
-   * The permit-path client: `signPermit` takes the permit to the wallet once, `userDecrypt` runs
-   * requests under that one signature; `userDecrypt` aliases the latter.
-   */
-  createFhevmDecryptClient(parameters: { chain: unknown; trust: unknown }): {
-    ready: Promise<unknown>;
-    signPermit(parameters: { wallet: unknown; durationSeconds: bigint }): Promise<unknown>;
-    userDecrypt(parameters: unknown): Promise<readonly { value: unknown }[]>;
-  };
-};
-
-const loadSolanaSdkModule = async (): Promise<SolanaSdkSurface> => {
-  const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as unknown as SolanaSdkSurface;
-};
+const loadSolanaSdkModule = () => import('@fhevm/sdk/solana');
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
 const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
@@ -169,8 +130,8 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
 };
 
 /** A base58 address as the bytes32 hex identity the RFC-021 proof binding uses. */
-const asBytes32Hex = (value: Address): `0x${string}` =>
-  `0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}` as `0x${string}`;
+const addressToBytes32Hex = (value: Address): Bytes32Hex =>
+  asBytes32Hex(`0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}`);
 const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 
 /** An unsigned decimal string as big-endian bytes32 — the shape the settle certificate's and the user-decrypt request's contextId take. */
@@ -355,7 +316,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         id: BigInt(config.chainId),
         fhevm: { relayerUrl: env.relayerUrl },
       }) as FhevmSolanaChain;
-      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: config.aclProgram });
+      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: asBytes32Hex(config.aclProgram) });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
 
@@ -369,8 +330,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // seeded config. Verification is purely cryptographic — no allowlist.
         console.log("deposit-arc join: building input proof (local TFHE prover)...");
         const inputProof = await encryptClient.buildInputProof({
-          contractAddress: asBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
-          userAddress: asBytes32Hex(alice.address),
+          contractAddress: addressToBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+          userAddress: addressToBytes32Hex(alice.address),
           values: [{ type: "uint64", value: wrapBaseUnits }],
         });
         console.log("deposit-arc join: submitting input proof to the relayer...");
@@ -381,7 +342,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // address dump. Alice pays her own join rent.
         console.log(`deposit-arc join: calling joinBatch on batch ${batchBeforeJoin.index} (${batch})...`);
         await vault.joinBatch(
-          { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
+          { solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) },
           {
             rpc,
             rpcSubscriptions,
@@ -492,10 +453,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // batch's authority — the seed recorded the open_batch value as a known-good amount.
       console.log("deposit-arc settle: calling settleBatch (MMR proof + KMS certificate + on-chain settle)...");
       const publicDecryptClient = solanaSdk.createFhevmPublicDecryptClient({ chain });
-      await vault.settleBatch(chain, keeper, {
+      await vault.settleBatch(publicDecryptClient, keeper, {
         rpc,
         rpcSubscriptions,
-        runtime: publicDecryptClient.runtime as never,
         proofService: { url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`, apiKey: SOLANA_LEAF_PROOF_API_KEY },
         roots,
         contextId: asBytes32BigEndian(config.userDecryptContextId),
@@ -568,15 +528,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: config.aclProgram },
+        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: asBytes32Hex(config.aclProgram) },
       });
       const decryptClient = solanaSdk.createFhevmDecryptClient({
         chain: decryptChain,
         trust: {
           // Party ids follow the registry order — the same assumption the EVM SDK path makes.
           kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
-          kmsContextId: `0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`,
-          kmsEpochId: config.kmsEpochId,
+          kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`),
+          kmsEpochId: asBytes32Hex(config.kmsEpochId),
           fheParameter: config.fheParameter,
           gatewayEip712Domain: {
             name: "Decryption",
@@ -592,7 +552,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         session: permitSession,
         entries: [{ handle: encryptedStoreHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedStore: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
-      } as never);
+      });
 
       // Alice is the batch's sole joiner, so totalJoined == her joined amount and the claim's
       // floor(joined x payoutReceived / totalJoined) is EXACTLY payoutReceived: assert equality,
@@ -601,7 +561,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(clearValues.length).toBe(1);
       const payout = clearValues[0]!.value;
       expect(typeof payout).toBe("bigint");
-      expect(payout).toBe(batchAfterSettle.state.payoutReceived);
+      expect(payout === batchAfterSettle.state.payoutReceived).toBe(true);
 
       // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
       // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either

@@ -1,5 +1,5 @@
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStoreHandle } from '@sdk-src/solana/encryptedStore.js';
+import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
 // This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
@@ -33,7 +33,7 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/index.js';
 
@@ -51,7 +51,7 @@ import {
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
-import { vaultModule, sdkHandleModule } from './lazy-modules';
+import { vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
 // imports (the offline `bun test src` run has no SDK dependency graph to resolve).
@@ -363,7 +363,7 @@ export const readTokenBalanceStore = async (
   params: { readonly mint: Address; readonly owner: Address },
 ): Promise<BalanceStore> => {
   const vault = await vaultModule();
-  const { bytes32HexToHandle } = await sdkHandleModule();
+  const { bytes32HexToHandle } = await sdkVerifyModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);

@@ -121,6 +121,39 @@ verification.
 Because reconstruction is local, the plaintext never crosses the network in the
 clear.
 
+## Solana integration
+
+`@fhevm/sdk/solana` exposes Solana clients and transaction helpers. It reuses the
+core runtime, encryption-key cache, TFHE proof builder, relayer HTTP lifecycle,
+and typed clear values. Proof construction carries the Solana chain's exact
+`bigint` identifier and bytes32 program identity; it does not fabricate an EVM
+chain or contract address. Input-proof submission encodes identities as base58
+at the HTTP boundary.
+
+The encrypt client separates `buildInputProof` from `submitInputProof`. Applications
+compose instructions through Solana Kit and their own program clients, then sign
+and send through their wallet transport. `createSolanaFheTransaction` supplies the
+shared transient-store accounts and wraps the application instructions with the
+required open and close instructions. The SDK does not send that transaction.
+
+The decrypt client exposes public decryption. Adding `SolanaDecryptTrust` enables
+`signPermit` and `userDecrypt`: sign once, then reuse the permit across requests.
+The trust configuration includes the KMS signer set, routing identifiers, FHE
+parameter and response-signature domain. These are trusted deployment inputs,
+not values inferred from the response. A missing domain is rejected when the
+private-decrypt client is constructed. The Solana KMS WASM verifies shares and
+recovers plaintext; TypeScript checks the result count and handle types.
+
+A user-decrypt operation has one timeout budget for submissions and retry delays.
+The relayer transport gives each request its remaining time and bounds backoff
+by the same deadline. Cancellation or expiry during response verification is
+checked before returning plaintext. Retries preserve the signed permit and
+request; they never prompt the wallet again.
+
+`@fhevm/sdk/solana/host` separately exposes the selected generated host instruction
+builders, codecs and PDA finder. Applications and the demo consume package
+exports rather than SDK source paths or internal runtime actions.
+
 ## Design principles
 
 The internals follow a consistent set of rules:

@@ -8,6 +8,7 @@
 
 import type { SolanaUserDecryptRequestJson, SolanaUserDecryptTransportOutcome } from './index.js';
 import type { SolanaSigncryptedShare } from './index.js';
+import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSolanaUserDecryptRelayerTransport } from './index.js';
 
@@ -145,4 +146,38 @@ describe('the relayer transport', () => {
 
     await expect(transport.submit(REQUEST)).rejects.toThrow();
   });
+});
+
+describe('operation timeout validation', () => {
+  it.each([0, -1, NaN, Infinity, 1.5, 2_147_483_648])('rejects invalid timeout %s before submitting', (timeout) => {
+    expect(() =>
+      createSolanaUserDecryptRelayerTransport({
+        relayerUrl: 'https://relayer.example.com',
+        options: { timeout },
+      }),
+    ).toThrow(RangeError);
+  });
+});
+
+it('keeps a throwing progress callback separate from the timeout outcome', async () => {
+  vi.useFakeTimers();
+  const callbacks: (() => void)[] = [];
+  vi.stubGlobal('queueMicrotask', (callback: () => void) => {
+    callbacks.push(callback);
+  });
+  const transport = createSolanaUserDecryptRelayerTransport({
+    relayerUrl: 'https://relayer.example.com',
+    options: {
+      timeout: 10,
+      onProgress: () => {
+        throw new Error('observer failed');
+      },
+    },
+  });
+  const result = transport.delay(1);
+  const rejection = expect(result).rejects.toBeInstanceOf(RelayerTimeoutError);
+  await vi.advanceTimersByTimeAsync(10);
+  await rejection;
+  expect(callbacks).toHaveLength(1);
+  expect(callbacks[0]).toThrow('observer failed');
 });

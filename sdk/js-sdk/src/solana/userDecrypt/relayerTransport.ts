@@ -18,14 +18,16 @@ import type { FetchUserDecryptResult } from '../../core/types/relayer.js';
 import type { SolanaSigncryptedShare } from './response.js';
 import type { SolanaUserDecryptRejection } from './failure.js';
 import type { SolanaUserDecryptRequestJson } from './request.js';
-import type { SolanaUserDecryptTransport } from './session.js';
+import type { SolanaUserDecryptTransport, SolanaUserDecryptClock } from './session.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { RelayerResponseApiError } from '../../core/errors/RelayerResponseApiError.js';
+import { abortableSleep } from '../../core/base/timeout.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 
 /**
- * Builds the transport a user-decrypt session submits through.
+ * Builds the transport and retry clock for one user-decrypt operation.
+ * One deadline bounds all its requests and backoff; create a new transport for the next operation.
  *
  * One `RelayerAsyncRequest` per submission: the class is single-run by design, and the session's
  * retry loop decides whether there is another submission at all.
@@ -37,11 +39,50 @@ import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 export function createSolanaUserDecryptRelayerTransport(config: {
   readonly relayerUrl: string;
   readonly options?: RelayerUserDecryptOptions | undefined;
-}): SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]> {
+}): SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]> &
+  SolanaUserDecryptClock & { throwIfAbortedOrExpired(): void } {
   const baseUrl = validateRelayerBaseUrl(config.relayerUrl, config.options?.auth !== undefined);
   const url = buildRelayerUrlString(baseUrl, 'v3/user-decrypt');
+  const timeout = config.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
+  if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 2_147_483_647) {
+    throw new RangeError('timeout must be an integer from 1 to 2147483647 milliseconds');
+  }
+  const deadline = Date.now() + timeout;
+  let lastProgress: RelayerUserDecryptProgressArgs | undefined;
+  const expire = (): never => {
+    const progress = {
+      url,
+      operation: 'USER_DECRYPT' as const,
+      retryCount: 0,
+      step: 0,
+      totalSteps: 0,
+      ...lastProgress,
+      type: 'timeout' as const,
+    };
+    const onProgress = config.options?.onProgress;
+    if (onProgress) {
+      queueMicrotask(() => {
+        onProgress(progress);
+      });
+    }
+
+    throw new RelayerTimeoutError({ operation: 'USER_DECRYPT', url, timeoutMs: timeout });
+  };
+  const remaining = (): number => {
+    config.options?.signal?.throwIfAborted();
+    const milliseconds = deadline - Date.now();
+    return milliseconds > 0 ? milliseconds : expire();
+  };
 
   return {
+    throwIfAbortedOrExpired(): void {
+      remaining();
+    },
+    async delay(seconds: number): Promise<void> {
+      const milliseconds = remaining();
+      await abortableSleep(Math.min(seconds * 1000, milliseconds), config.options?.signal);
+      remaining();
+    },
     async submit(request: SolanaUserDecryptRequestJson) {
       // Whether the request became a job: the one fact that splits a refusal (the relayer never
       // accepted it) from a failure (the job it became did not produce an answer). The class keeps
@@ -54,7 +95,9 @@ export function createSolanaUserDecryptRelayerTransport(config: {
         payload: request as unknown as Record<string, unknown>,
         options: {
           ...config.options,
+          timeout: remaining(),
           onProgress: (progress: RelayerUserDecryptProgressArgs) => {
+            lastProgress = progress;
             if (progress.type === 'queued') {
               queued = true;
             }
@@ -79,6 +122,9 @@ export function createSolanaUserDecryptRelayerTransport(config: {
           })),
         };
       } catch (error) {
+        if (error instanceof RelayerTimeoutError) {
+          throw error;
+        }
         return { ok: false, rejection: rejectionFrom(error, queued) };
       }
     },

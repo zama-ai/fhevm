@@ -1,6 +1,5 @@
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
-import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
@@ -8,7 +7,7 @@ import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: {
-    readonly chain: FhevmChain;
+    readonly chain: { readonly id: number | bigint; readonly fhevm: { readonly relayerUrl: string } };
     readonly runtime: WithEncrypt;
   },
   parameters: {

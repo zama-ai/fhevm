@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { address } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { buildPublicLeafProof, bytesToHex, reconstructSolanaStoreHistory } from '@sdk-src/solana/proof.js';
+import { buildPublicLeafProof, solanaProofBytesToHex as bytesToHex, reconstructSolanaStoreHistory } from '@fhevm/sdk/solana';
 import { publicProof } from './publicProof.js';
 
 const fetchState = vi.hoisted(() => vi.fn());
-vi.mock('@sdk-src/solana/encryptedStore.js', () => ({ fetchSolanaEncryptedStore: fetchState }));
+vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/sdk/solana')>()),
+  fetchSolanaEncryptedStore: fetchState,
+}));
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

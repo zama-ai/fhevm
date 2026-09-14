@@ -1,4 +1,4 @@
-import { encryptedStoreHandle } from '@sdk-src/solana/encryptedStore.js';
+import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 import { BALANCE_KEY } from './vault/internal/tokenAccounts.js';
 import { createSolanaRpc, getAddressEncoder, type Address } from '@solana/kit';
 import {

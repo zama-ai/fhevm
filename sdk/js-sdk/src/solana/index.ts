@@ -18,6 +18,7 @@ export * from './userDecrypt/index.js';
 export {
   SOLANA_ENCRYPTED_STORE_SEED,
   decodeSolanaEncryptedStore,
+  encryptedStoreHandle,
   fetchSolanaEncryptedStore,
   solanaEncryptedStoreAddress,
 } from './encryptedStore.js';
@@ -80,7 +81,6 @@ export {
   buildRevokePermitsInstruction,
   solanaPermitInvalidationAddress,
 } from './actions/revokePermits.js';
-export type { SolanaDecryptActions } from './clients/decorators/decrypt.js';
 export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 
 export type {
@@ -97,3 +97,7 @@ export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';
 
 export { createSolanaFheTransaction } from './fheTransaction.js';
 export type { SolanaFheTransaction, SolanaFheTransactionAccounts } from './fheTransaction.js';
+
+export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';
+
+export { assertHandleArrayEquals, bytes32HexToHandle } from '../core/handle/FhevmHandle.js';

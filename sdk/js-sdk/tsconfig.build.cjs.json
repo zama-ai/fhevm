@@ -5,6 +5,7 @@
   },
   "include": ["src/**/*.ts"],
   "exclude": [
+    "src/_types/**",
     "src/**/*.bench.ts",
     "src/**/*.bench-d.ts",
     "src/**/*.test.ts",

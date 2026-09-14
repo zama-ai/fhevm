@@ -1,8 +1,8 @@
 import { getProgramDerivedAddress, type Address, type Instruction } from '@solana/kit';
 
-import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
-import type { MmrProof } from '@sdk-src/solana/proof.js';
-import { verifyPublicDecryptArgsFromClaim } from '@sdk-src/solana/actions/verifyPublicDecrypt.js';
+import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
+import type { MmrProof } from '@fhevm/sdk/solana';
+import { verifyPublicDecryptArgsFromClaim } from '@fhevm/sdk/solana';
 import { getDiscloseSecpInstruction } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 

@@ -28,6 +28,12 @@ const trust = {
   kmsContextId: asBytes32Hex(`0x${'33'.repeat(32)}`),
   kmsEpochId: asBytes32Hex(`0x${'44'.repeat(32)}`),
   fheParameter: 'test',
+  gatewayEip712Domain: {
+    name: 'Decryption',
+    version: '1',
+    chainId: 31337n,
+    verifyingContract: '0x0000000000000000000000000000000000000042',
+  },
 };
 
 /** Just enough session for `userDecrypt` to reach the transport; nothing here is ever signed. */

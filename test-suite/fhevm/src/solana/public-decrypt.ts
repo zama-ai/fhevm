@@ -1,4 +1,4 @@
-import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
+import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 
 import { PreflightError } from '../errors';
 
@@ -57,8 +57,7 @@ const bytes32Hex = (environment: Environment, name: string): string => {
 // Keep the dynamic import seam narrow: clean CLI checkouts do not contain the SDK's generated
 // `_types`, while the full vertical exercises this public package entry at runtime.
 const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
-  const solanaModule = '@fhevm/sdk/solana';
-  const solana = await import(solanaModule) as typeof import("@sdk-src/solana/index.js");
+  const solana = await import('@fhevm/sdk/solana');
   const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: { relayerUrl: input.relayerUrl } });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
   return solana.createFhevmPublicDecryptClient({ chain }).publicDecryptCertificate(input.request);

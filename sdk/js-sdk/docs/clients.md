@@ -4,9 +4,11 @@ A client is the object you call to encrypt and decrypt. It binds a
 [chain definition](chains.md) to a read connection and lazily loads the
 WebAssembly cryptography it needs.
 
-Every client comes from one of two adapter entry points — `@fhevm/sdk/ethers` or
+An EVM client comes from one of two adapter entry points — `@fhevm/sdk/ethers` or
 `@fhevm/sdk/viem`. The API is identical across both; only the native connection
 object differs (`provider` for ethers, `publicClient` for viem).
+
+Solana clients use `@fhevm/sdk/solana`; see [Solana integration](architecture.md#solana-integration) for their factories and flow.
 
 ## Choosing a client
 

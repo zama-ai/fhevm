@@ -1,5 +1,5 @@
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaDecryptTrust } from '@sdk-src/solana/index.js';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaDecryptTrust } from '@fhevm/sdk/solana';
 import { PreflightError } from '../errors';
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = 'solana-current-user-decrypt';
@@ -68,11 +68,8 @@ const evmAddress = (value: string, name: string): `0x${string}` => {
   return value as `0x${string}`;
 };
 
-// The source-file SDK dependency exports types from generated `_types`, which is absent in clean
-// CLI checkouts. Keep this structural seam narrow; the real vertical checks the public SDK call.
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
-  const solanaModule = '@fhevm/sdk/solana';
-  const solana = (await import(solanaModule)) as typeof import('@sdk-src/solana/index.js');
+  const solana = await import('@fhevm/sdk/solana');
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
     fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
