@@ -1,5 +1,5 @@
 /**
- * QA case `epoch-rotation` — the host half of:
+ * QA case `epoch-rotation` — both halves of:
  *
  *   Feature: Normal decryption after a new epoch becomes active
  *
@@ -184,7 +184,11 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     () =>
       runExtraDataCheck(
         `kms-context-qa/epoch-rotation: extraData carries epochId=${activated.epochId}`,
-        { contextId: activated.contextId, epochId: activated.epochId },
+        {
+          contextId: activated.contextId,
+          epochId: activated.epochId,
+          previousEpochId: baseline.epochId,
+        },
       ),
   );
 
@@ -198,10 +202,11 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
 /** Registry entry for the `epoch-rotation` case. */
 export const epochRotationCase: QaCase = {
   id: "epoch-rotation",
-  title: "SDK uses the currently active epoch after a same-context rotation (host half)",
+  title: "SDK uses the currently active epoch after a same-context rotation (both halves)",
   proves:
     "a same-context epoch rotation activates on chain, every committee node completes the reshare, " +
-    "and the rotated (context, epoch) pair serves both an input-proof flow and a user decryption",
+    "the rotated (context, epoch) pair serves both an input-proof flow and a user decryption, and " +
+    "the SDK embeds the rotated epoch — not the superseded one — in the permit extraData",
   requirements: {
     mode: "threshold",
     // A same-context rotation needs the committee only; no spare is involved. The profile-level

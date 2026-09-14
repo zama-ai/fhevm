@@ -15,6 +15,8 @@
  * Party naming is never spelled inline — it comes from `src/kms-party.ts`, which encodes the rule
  * that party 1 keeps the bare container names and parties 2..N get a suffix.
  */
+import { PreflightError } from "../errors";
+import { dockerInspect } from "../flow/readiness";
 import {
   partyContainers,
   setRunning,
@@ -24,6 +26,51 @@ import {
 } from "../commands/kms-generation";
 import { kmsTxSenderName } from "../kms-party";
 import type { CaseEvidence } from "./evidence";
+
+/**
+ * Fails fast when any listed party's tx-sender is not running.
+ *
+ * A context switch reaches its creation quorum only when **every** node of the new context has
+ * confirmed on chain (`_hasContextCreationQuorum` in ProtocolConfig requires
+ * `newTxSenderConfirmationCount == kmsNodesForContext.length`). A party whose tx-sender is down can
+ * never confirm, so the context stays Pending forever and the activation wait burns its whole
+ * budget before reporting a timeout that says nothing about the cause.
+ *
+ * This happens in practice: `kms-context-switch`'s node-swap step stops the dropped party's
+ * tx-sender and deliberately leaves it down, so any stack that has run that profile is in exactly
+ * this state.
+ *
+ * @throws PreflightError naming the stopped containers and what they block.
+ */
+export const assertTxSendersRunning = async (
+  parties: readonly number[],
+  evidence: CaseEvidence,
+  why: string,
+): Promise<void> => {
+  await evidence.step(
+    "node",
+    "every party's tx-sender is running",
+    { parties: parties.join(",") },
+    async () => {
+      const stopped: string[] = [];
+      for (const party of parties) {
+        const container = kmsTxSenderName(party);
+        const [inspected] = await dockerInspect(container);
+        if (inspected?.State.Status !== "running") {
+          stopped.push(`${container} (${inspected?.State.Status ?? "missing"})`);
+        }
+      }
+      if (stopped.length) {
+        throw new PreflightError(
+          `kms-context-qa: ${stopped.length} tx-sender(s) are not running: ${stopped.join(", ")}. ${why} ` +
+            `A party that cannot transact never confirms, so the operation would stay Pending until the activation ` +
+            `wait times out. Note that kms-context-switch's node-swap step stops the dropped party's tx-sender and ` +
+            `leaves it down — start it with \`docker start <container>\`, or re-up the stack.`,
+        );
+      }
+    },
+  );
+};
 
 /**
  * Tracks and restores every container this profile takes offline.

@@ -1005,7 +1005,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   // values let it also assert the chain did not move between the orchestrator's read and its own.
   const runKmsContextExtraDataCheck = async (
     label: string,
-    expected: { readonly contextId: bigint; readonly epochId: bigint },
+    expected: {
+      readonly contextId: bigint;
+      readonly epochId: bigint;
+      readonly previousContextId?: bigint;
+      readonly previousEpochId?: bigint;
+    },
   ) => {
     const grep = TEST_GREP["kms-context-extradata"];
     if (!grep) {
@@ -1018,6 +1023,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
         "-e",
         `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+        ...(expected.previousContextId === undefined
+          ? []
+          : ["-e", `KMS_QA_PREVIOUS_CONTEXT_ID=${expected.previousContextId}`]),
+        ...(expected.previousEpochId === undefined
+          ? []
+          : ["-e", `KMS_QA_PREVIOUS_EPOCH_ID=${expected.previousEpochId}`]),
       ]),
       label,
     );
