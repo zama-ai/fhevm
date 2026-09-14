@@ -195,11 +195,14 @@ jobs:
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to Chainguard Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+          CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
         with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }}
-          password: ${{ secrets.CGR_PASSWORD }}
+          command: |
+            echo "Logging into cgr.dev..."
+            echo "$CGR_PASSWORD" | docker login cgr.dev -u "$CGR_USERNAME" --password-stdin
 
       - name: Install safe-chain
         shell: bash

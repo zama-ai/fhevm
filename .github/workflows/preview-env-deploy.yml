@@ -614,6 +614,14 @@ jobs:
             charts/kms-core
           path: .kms-deploy
 
+      - name: Pull KMS enclave image
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
+        with:
+          command: |
+            docker pull "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
+
       - name: Fetch enclave PCR values for KMS_CORE_TAG
         # kms's enclave images are labeled with zama.kms.eif_pcr{0,1,2} (wired
         # into kms-core's trustedReleases). deploy.sh reads them as PCR0/1/2.
@@ -621,7 +629,6 @@ jobs:
           IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
         run: |
           image="${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
-          docker pull "${image}"
           inspect=$(docker inspect "${image}")
           for n in 0 1 2; do
             pcr=$(jq -r ".[0].Config.Labels[\"zama.kms.eif_pcr${n}\"]" <<<"${inspect}")
