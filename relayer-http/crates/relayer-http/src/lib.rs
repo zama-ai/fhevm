@@ -15,6 +15,7 @@
     )
 )]
 
+pub mod endpoint;
 pub mod kms_aggregator;
 pub mod logging;
 pub mod settings;
