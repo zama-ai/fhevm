@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::stream::StreamExt;
+use solana_sdk::signature::Signature;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
@@ -47,10 +48,9 @@ use crate::database::solana_leaves::{
     store_checkpoint, EncryptedStoreWrite, StoredCheckpoint,
     TransactionStoreWrites,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{Database, TransactionId};
 use crate::solana_adapter::{
-    insert_solana_block_records, solana_transaction_id, SolanaBlockMeta,
-    SolanaIngestStats,
+    insert_solana_block_records, SolanaBlockMeta, SolanaIngestStats,
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
@@ -946,7 +946,13 @@ async fn apply_block(
     let mut leaf_sources = Vec::new();
     for (transaction, records) in reconstructed {
         records_by_transaction.push((
-            solana_transaction_id(&transaction.info.signature),
+            TransactionId::from(
+                Signature::try_from(transaction.info.signature.as_slice())
+                    .map_err(|err| {
+                        IngestFailure::fatal(err)
+                            .context("invalid Solana signature")
+                    })?,
+            ),
             records.records,
         ));
         if !records.leaf_sources.is_empty() {

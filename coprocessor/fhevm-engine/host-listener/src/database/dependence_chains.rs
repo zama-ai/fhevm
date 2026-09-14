@@ -7,20 +7,20 @@ use union_find::{QuickUnionUf, UnionBySize, UnionFind};
 use crate::database::tfhe_event_propagate::ChainHash;
 use crate::database::tfhe_event_propagate::{
     Chain, ChainCache, ConsumedBoundaryGuard, Handle, LogTfhe, OrderedChains,
-    SealedChainGuard, TransactionHash,
+    SealedChainGuard, TransactionId,
 };
 
 #[derive(Clone, Debug)]
 struct Transaction {
-    tx_hash: TransactionHash,
+    tx_hash: TransactionId,
     input_handle: Vec<Handle>,
     output_handle: Vec<Handle>,
     allowed_handle: Vec<Handle>,
     /// (allowed output, group id) of multi-output ops.
     output_group: Vec<(Handle, Handle)>,
-    input_tx: HashSet<TransactionHash>,
-    output_tx: HashSet<TransactionHash>,
-    linear_chain: TransactionHash,
+    input_tx: HashSet<TransactionId>,
+    output_tx: HashSet<TransactionId>,
+    linear_chain: TransactionId,
     size: u64,
     depth_size: u64,
     /// A cross-block input of this tx was already consumed by an earlier
@@ -34,7 +34,7 @@ struct Transaction {
 }
 
 impl Transaction {
-    fn new(tx_hash: TransactionHash) -> Self {
+    fn new(tx_hash: TransactionId) -> Self {
         Self {
             tx_hash,
             input_handle: Vec::with_capacity(5),
@@ -64,7 +64,7 @@ fn ensure_logs_order(logs: &mut [LogTfhe]) {
 const AVG_LOGS_PER_TX: usize = 8;
 fn scan_transactions(
     logs: &[LogTfhe],
-) -> (Vec<TransactionHash>, HashMap<TransactionHash, Transaction>) {
+) -> (Vec<TransactionId>, HashMap<TransactionId, Transaction>) {
     // TODO: OPT no need for hashmap if contiguous tx
     let mut txs = HashMap::new();
     let mut ordered_txs_hash = Vec::with_capacity(logs.len() / AVG_LOGS_PER_TX);
@@ -104,14 +104,13 @@ fn scan_transactions(
 }
 
 async fn fill_tx_dependence_maps(
-    ordered_txs_hash: &[TransactionHash],
-    txs: &mut HashMap<TransactionHash, Transaction>,
-    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
+    ordered_txs_hash: &[TransactionId],
+    txs: &mut HashMap<TransactionId, Transaction>,
+    used_txs_chains: &mut HashMap<TransactionId, HashSet<TransactionId>>,
     past_chains: &ChainCache,
     consumed_boundaries: &ConsumedBoundaryGuard,
 ) {
-    let mut allowed_handle_tx: HashMap<Handle, TransactionHash> =
-        HashMap::new();
+    let mut allowed_handle_tx: HashMap<Handle, TransactionId> = HashMap::new();
     for tx_hash in ordered_txs_hash {
         let Some(tx) = txs.get_mut(tx_hash) else {
             error!("Tx hash {:?} not found in txs map", tx_hash);
@@ -229,7 +228,7 @@ async fn grouping_to_chains_connex(
         txs_component.push(uf.find(key));
     }
     // list components past chains dependencies
-    let mut past_chains_deps: HashMap<usize, HashSet<TransactionHash>> =
+    let mut past_chains_deps: HashMap<usize, HashSet<TransactionId>> =
         HashMap::new();
     for (key, tx) in ordered_txs.iter_mut().enumerate() {
         for dep_hash in &tx.input_tx {
@@ -299,11 +298,11 @@ async fn grouping_to_chains_connex(
 
 async fn grouping_to_chains_no_fork(
     ordered_txs: &mut [Transaction],
-    used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
+    used_txs_chains: &mut HashMap<TransactionId, HashSet<TransactionId>>,
     across_blocks: bool,
     sealed_chains: &SealedChainGuard,
 ) -> OrderedChains {
-    let mut used_tx: HashMap<TransactionHash, &Transaction> =
+    let mut used_tx: HashMap<TransactionId, &Transaction> =
         HashMap::with_capacity(ordered_txs.len());
     let mut chains: HashMap<ChainHash, Chain> =
         HashMap::with_capacity(ordered_txs.len());
@@ -491,10 +490,8 @@ pub async fn dependence_chains(
 ) -> OrderedChains {
     ensure_logs_order(logs);
     let (ordered_hash, mut txs) = scan_transactions(logs);
-    let mut used_txs_chains: HashMap<
-        TransactionHash,
-        HashSet<TransactionHash>,
-    > = HashMap::with_capacity(txs.len());
+    let mut used_txs_chains: HashMap<TransactionId, HashSet<TransactionId>> =
+        HashMap::with_capacity(txs.len());
     fill_tx_dependence_maps(
         &ordered_hash,
         &mut txs,
@@ -556,8 +553,12 @@ mod tests {
     use crate::database::dependence_chains::dependence_chains;
     use crate::database::tfhe_event_propagate::{Chain, ChainCache, LogTfhe};
     use crate::database::tfhe_event_propagate::{
-        ClearConst, Handle, TransactionHash,
+        ClearConst, Handle, TransactionId,
     };
+
+    fn transaction_id(byte: u8) -> TransactionId {
+        Handle::with_last_byte(byte).into()
+    }
 
     fn caller() -> Address {
         Address::from_slice(&[0x11u8; 20])
@@ -567,7 +568,7 @@ mod tests {
         e: E,
         logs: &mut Vec<LogTfhe>,
         is_allowed: bool,
-        tx: TransactionHash,
+        tx: TransactionId,
     ) {
         static COUNTER: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
@@ -582,10 +583,10 @@ mod tests {
             },
             computation,
             block_number: 0,
-            block_hash: TransactionHash::ZERO,
+            block_hash: Handle::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
             transaction_hash: Some(tx),
-            dependence_chain: TransactionHash::ZERO,
+            dependence_chain: TransactionId::ZERO,
             tx_depth_size: 0,
             log_index: Some(
                 COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
@@ -601,7 +602,7 @@ mod tests {
         let first = Handle::repeat_byte(1);
         let second = Handle::repeat_byte(2);
         let input = Handle::repeat_byte(3);
-        let transaction = Handle::repeat_byte(4);
+        let transaction = TransactionId::from([4; 32]);
         push_event(
             E::FheNeg(C::FheNeg {
                 caller: caller(),
@@ -671,7 +672,7 @@ mod tests {
         ])
     }
 
-    fn input_handle(logs: &mut Vec<LogTfhe>, tx: TransactionHash) -> Handle {
+    fn input_handle(logs: &mut Vec<LogTfhe>, tx: TransactionId) -> Handle {
         let result = new_handle();
         push_event(
             E::TrivialEncrypt(C::TrivialEncrypt {
@@ -690,7 +691,7 @@ mod tests {
     fn input_shared_handle(
         logs: &mut Vec<LogTfhe>,
         handle: Handle,
-        tx: TransactionHash,
+        tx: TransactionId,
     ) -> Handle {
         push_event(
             E::TrivialEncrypt(C::TrivialEncrypt {
@@ -709,7 +710,7 @@ mod tests {
     fn op1(
         handle: Handle,
         logs: &mut Vec<LogTfhe>,
-        tx: TransactionHash,
+        tx: TransactionId,
     ) -> Handle {
         let result = new_handle();
         push_event(
@@ -731,7 +732,7 @@ mod tests {
         handle1: Handle,
         handle2: Handle,
         logs: &mut Vec<LogTfhe>,
-        tx: TransactionHash,
+        tx: TransactionId,
     ) -> Handle {
         let result = new_handle();
         push_event(
@@ -768,8 +769,7 @@ mod tests {
         block_number: u64,
     ) {
         use crate::cmd::block_history::BlockSummary;
-        let block_hash_early =
-            TransactionHash::with_last_byte(block_number as u8);
+        let block_hash_early = Handle::with_last_byte(block_number as u8);
         let now = time::OffsetDateTime::now_utc();
         let block_timestamp =
             sqlx::types::time::PrimitiveDateTime::new(now.date(), now.time());
@@ -798,8 +798,8 @@ mod tests {
         let summary = BlockSummary {
             number: block_number,
             hash: block_hash,
-            parent_hash: TransactionHash::with_last_byte(
-                block_number.saturating_sub(1) as u8,
+            parent_hash: Handle::with_last_byte(
+                block_number.saturating_sub(1) as u8
             ),
             timestamp: 1_700_000_000 + block_number,
         };
@@ -830,7 +830,7 @@ mod tests {
     pub(super) type ListenerFixture = (
         Vec<(u64, Vec<LogTfhe>)>,
         Vec<(u64, Vec<LogTfhe>)>,
-        TransactionHash,
+        TransactionId,
     );
 
     /// A test-local copy of a log. `LogTfhe` is deliberately not `Clone` in
@@ -868,8 +868,8 @@ mod tests {
     /// chain of its own -- and `ON CONFLICT DO NOTHING` leaves the first
     /// operation where the primary put it. One transaction, two chains.
     pub(super) fn primary_and_catchup_logs() -> ListenerFixture {
-        let tx1 = TransactionHash::with_last_byte(0x21);
-        let split_tx = TransactionHash::with_last_byte(0x22);
+        let tx1 = transaction_id(0x21);
+        let split_tx = transaction_id(0x22);
 
         let mut block1 = vec![];
         let root = input_handle(&mut block1, tx1);
@@ -905,7 +905,7 @@ mod tests {
     async fn test_dependence_chains_1_local_chain() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
+        let tx1 = transaction_id(0);
         let v0 = input_handle(&mut logs, tx1);
         let _v1 = op1(v0, &mut logs, tx1);
         let chains = dependence_chains(
@@ -926,8 +926,8 @@ mod tests {
     async fn test_dependence_chains_2_local_chain() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(0);
+        let tx2 = transaction_id(1);
 
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
@@ -952,9 +952,9 @@ mod tests {
     async fn test_dependence_chains_2_local_chain_mixed() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
-        let tx3 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(0);
+        let tx2 = transaction_id(1);
+        let tx3 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_handle(&mut logs, tx2);
@@ -981,9 +981,9 @@ mod tests {
     async fn test_dependence_chains_2_local_chain_mixed_bis() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
-        let tx3 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(0);
+        let tx2 = transaction_id(1);
+        let tx3 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let va_2 = input_handle(&mut logs, tx2);
         let vb_2 = op1(va_2, &mut logs, tx2);
@@ -1023,7 +1023,7 @@ mod tests {
 
     fn past_chain(last_byte: u8) -> Chain {
         Chain {
-            hash: TransactionHash::with_last_byte(last_byte),
+            hash: transaction_id(last_byte),
             dependencies: vec![],
             split_dependencies: vec![],
             outer_boundary_handles: vec![],
@@ -1043,7 +1043,7 @@ mod tests {
         let past_chain = past_chain(0);
         let past_chain_hash = past_chain.hash;
         cache.write().await.put(past_handle, past_chain_hash);
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
         let chains = dependence_chains(
             &mut logs,
@@ -1067,7 +1067,7 @@ mod tests {
         let cache = new_cache();
         let mut logs = vec![];
         let past_handle = new_handle();
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let _va_1 = op1(past_handle, &mut logs, tx1);
         let chains = dependence_chains(
             &mut logs,
@@ -1091,7 +1091,7 @@ mod tests {
         let past_chain = past_chain(0);
         let past_chain_hash = past_chain.hash;
         cache.write().await.put(past_handle, past_chain_hash);
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let mut logs = vec![];
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op2(past_handle, va_1, &mut logs, tx1);
@@ -1116,8 +1116,8 @@ mod tests {
     async fn test_dependence_chains_2_local_duplicated_handle() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(1);
+        let tx2 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
         let _va_2 = input_shared_handle(&mut logs, va_1, tx2);
@@ -1139,8 +1139,8 @@ mod tests {
     async fn test_dependence_chains_duplicated_trivial_encrypt() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(1);
+        let tx2 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_shared_handle(&mut logs, va_1, tx2);
@@ -1161,8 +1161,8 @@ mod tests {
     async fn test_dependence_chains_dep_with_bad_order() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(1);
+        let tx2 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let _va_1 = op1(vb_1, &mut logs, tx2);
@@ -1187,8 +1187,8 @@ mod tests {
     async fn test_dependence_chains_2_local_non_allowed_handle() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(1);
+        let tx2 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
         logs[1].allowed_outputs.clear();
@@ -1216,8 +1216,7 @@ mod tests {
         let shared_handle = new_handle();
         for tx_id in 0..1 {
             for chain in 1..=6 {
-                let tx_hash =
-                    TransactionHash::with_last_byte(chain * 10 + tx_id);
+                let tx_hash = transaction_id(chain * 10 + tx_id);
                 if tx_id == 0 {
                     let past_chain = past_chain(chain);
                     let past_chain_hash = past_chain.hash;
@@ -1260,8 +1259,8 @@ mod tests {
     async fn test_dependence_chains_2_local_chain_connex() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(0);
+        let tx2 = transaction_id(1);
 
         let va_1 = input_handle(&mut logs, tx1);
         let _vb_1 = op1(va_1, &mut logs, tx1);
@@ -1286,9 +1285,9 @@ mod tests {
     async fn test_dependence_chains_2_local_chain_mixed_connex() {
         let cache = new_cache();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(0);
-        let tx2 = TransactionHash::with_last_byte(1);
-        let tx3 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(0);
+        let tx2 = transaction_id(1);
+        let tx3 = transaction_id(2);
         let va_1 = input_handle(&mut logs, tx1);
         let vb_1 = op1(va_1, &mut logs, tx1);
         let va_2 = input_handle(&mut logs, tx2);
@@ -1318,10 +1317,14 @@ mod tests {
             .await
             .put(Handle::with_last_byte(0), past_chain_hash);
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
-        let tx2 = TransactionHash::with_last_byte(2);
-        let tx3 = TransactionHash::with_last_byte(3);
-        let vb_1 = op1(past_chain_hash, &mut logs, tx1);
+        let tx1 = transaction_id(1);
+        let tx2 = transaction_id(2);
+        let tx3 = transaction_id(3);
+        let vb_1 = op1(
+            Handle::from_slice(past_chain_hash.as_slice()),
+            &mut logs,
+            tx1,
+        );
         let va_2 = input_handle(&mut logs, tx2);
         let vb_2 = op1(va_2, &mut logs, tx2);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
@@ -1353,9 +1356,9 @@ mod tests {
         cache.write().await.put(past_handle1, past_chain_hash1);
         cache.write().await.put(past_handle2, past_chain_hash2);
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(2);
-        let tx2 = TransactionHash::with_last_byte(3);
-        let tx3 = TransactionHash::with_last_byte(4);
+        let tx1 = transaction_id(2);
+        let tx2 = transaction_id(3);
+        let tx3 = transaction_id(4);
         let vb_1 = op1(past_handle1, &mut logs, tx1);
         let vb_2 = op1(past_handle2, &mut logs, tx2);
         let _vc_1 = op2(vb_1, vb_2, &mut logs, tx3);
@@ -1381,8 +1384,8 @@ mod tests {
         let past_handle1 = new_handle();
         cache.write().await.put(past_handle1, past_chain_hash1);
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(2);
-        let tx2 = TransactionHash::with_last_byte(3);
+        let tx1 = transaction_id(2);
+        let tx2 = transaction_id(3);
         let _h1 = op1(past_handle1, &mut logs, tx1);
         let _h2 = op1(past_handle1, &mut logs, tx2);
         let chains = dependence_chains(
@@ -1405,9 +1408,9 @@ mod tests {
         let cache = new_cache();
         let past_handle1 = new_handle();
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(2);
-        let tx2 = TransactionHash::with_last_byte(3);
-        let tx3 = TransactionHash::with_last_byte(4);
+        let tx1 = transaction_id(2);
+        let tx2 = transaction_id(3);
+        let tx3 = transaction_id(4);
         let h1 = op1(past_handle1, &mut logs, tx1);
         let _h2 = op1(h1, &mut logs, tx2);
         let _h3 = op1(h1, &mut logs, tx3);
@@ -1456,7 +1459,7 @@ mod tests {
         cache.write().await.put(past_handle, past_chain_hash);
 
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let _v = op1(past_handle, &mut logs, tx1);
 
         let chains = dependence_chains(
@@ -1489,7 +1492,7 @@ mod tests {
         cache.write().await.put(past_handle2, past_chain_hash2);
 
         let mut logs = vec![];
-        let tx1 = TransactionHash::with_last_byte(2);
+        let tx1 = transaction_id(2);
         let _v = op2(past_handle1, past_handle2, &mut logs, tx1);
 
         let chains = dependence_chains(
@@ -1520,7 +1523,7 @@ mod tests {
         let guard = new_guard();
         let sealed = new_sealed();
 
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let mut logs = vec![];
         let v0 = input_handle(&mut logs, tx1);
         let v1 = op1(v0, &mut logs, tx1);
@@ -1532,7 +1535,7 @@ mod tests {
 
         // Unsealed, the next batch extends the producer — the baseline the
         // seal has to change.
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx2 = transaction_id(2);
         let mut logs = vec![];
         let v2 = op1(v1, &mut logs, tx2);
         let chains =
@@ -1544,7 +1547,7 @@ mod tests {
         // Seal it, as arming a gate on an un-materialized handle would.
         sealed.write().await.put(producer, ());
 
-        let tx3 = TransactionHash::with_last_byte(3);
+        let tx3 = transaction_id(3);
         let mut logs = vec![];
         let _v3 = op1(v2, &mut logs, tx3);
         let chains =
@@ -1571,7 +1574,7 @@ mod tests {
         let cache = new_cache();
         let guard = new_guard();
         let sealed = new_sealed();
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let mut logs = vec![];
         let v0 = input_handle(&mut logs, tx1);
         let v1 = op1(v0, &mut logs, tx1);
@@ -1582,7 +1585,7 @@ mod tests {
 
         let mut tail = v1;
         for batch in 2..5u8 {
-            let txn = TransactionHash::with_last_byte(batch);
+            let txn = transaction_id(batch);
             let mut logs = vec![];
             tail = op1(tail, &mut logs, txn);
             let chains = dependence_chains(
@@ -1609,7 +1612,7 @@ mod tests {
         let cache = new_cache();
         let guard = new_guard();
         let sealed = new_sealed();
-        let tx1 = TransactionHash::with_last_byte(1);
+        let tx1 = transaction_id(1);
         let mut logs = vec![];
         let v0 = input_handle(&mut logs, tx1);
         let v1 = op1(v0, &mut logs, tx1);
@@ -1619,7 +1622,7 @@ mod tests {
         assert_eq!(chains.len(), 1);
 
         // First cross-batch consumer of v1: linear continuation.
-        let tx2 = TransactionHash::with_last_byte(2);
+        let tx2 = transaction_id(2);
         let mut logs = vec![];
         let _v2 = op1(v1, &mut logs, tx2);
         let chains =
@@ -1630,7 +1633,7 @@ mod tests {
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
 
         // Second cross-batch consumer of the SAME boundary handle: fork.
-        let tx3 = TransactionHash::with_last_byte(3);
+        let tx3 = transaction_id(3);
         let mut logs = vec![];
         let _v3 = op1(v1, &mut logs, tx3);
         let chains =
@@ -1657,7 +1660,7 @@ mod tests {
         let cache = new_cache();
         let guard = new_guard();
         let sealed = new_sealed();
-        let head_tx = TransactionHash::with_last_byte(1);
+        let head_tx = transaction_id(1);
         let mut logs = vec![];
         let from0 = input_handle(&mut logs, head_tx);
         let new_from = op1(from0, &mut logs, head_tx);
@@ -1671,7 +1674,7 @@ mod tests {
 
         let mut tail = new_from;
         for batch in 2..4u8 {
-            let txn = TransactionHash::with_last_byte(batch);
+            let txn = transaction_id(batch);
             let mut logs = vec![];
             // Same 2-op shape as a transfer: consume tail + fresh input.
             let amount = input_handle(&mut logs, txn);
