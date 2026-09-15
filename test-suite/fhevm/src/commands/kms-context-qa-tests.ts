@@ -44,6 +44,7 @@ import {
   checkCaseRequirements,
   selectCases,
   type ExtraDataCheckRunner,
+  type ExtraDataGatewayRejectionRunner,
   type ExtraDataRejectionRunner,
   type QaCase,
 } from "../kms-qa/registry";
@@ -154,6 +155,7 @@ export const runKmsContextQaTestsProfile = async (
   runSmoke: SmokeRunner,
   runExtraDataCheck: ExtraDataCheckRunner,
   runExtraDataRejection: ExtraDataRejectionRunner,
+  runExtraDataGatewayRejection: ExtraDataGatewayRejectionRunner,
 ): Promise<void> => {
   assertProfilePreconditions(state);
 
@@ -195,6 +197,7 @@ export const runKmsContextQaTestsProfile = async (
         runSmoke,
         runExtraDataCheck,
         runExtraDataRejection,
+        runExtraDataGatewayRejection,
       });
       completed.push(item);
       console.log(
