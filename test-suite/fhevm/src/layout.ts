@@ -288,6 +288,18 @@ export const TEST_GREP: Record<string, string> = {
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
+  // Container half of the kms-context-qa-tests `epoch-rotation` case: asserts the SDK embeds the
+  // active (context, epoch) pair in the permit extraData. Driven by the profile, which injects the
+  // pair it observed on chain; also runnable standalone.
+  "kms-context-extradata": "KMS context extraData",
+  // The negative half of the KMS-context extraData story: an SDK-built request corrupted after
+  // signing, plus the malformed shapes the relayer refuses synchronously with HTTP 400. Driven by
+  // the kms-context-qa-tests `extradata-rejection` case; also runnable standalone.
+  "kms-context-extradata-rejection": "KMS context extraData rejection",
+  // The same corruption, one layer deeper: ABI calldata submitted straight to the Gateway's
+  // Decryption contract, bypassing the Relayer. Driven by the kms-context-qa-tests
+  // `extradata-gateway-rejection` case; also runnable standalone.
+  "kms-context-extradata-gateway": "KMS context extraData gateway rejection",
   "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
