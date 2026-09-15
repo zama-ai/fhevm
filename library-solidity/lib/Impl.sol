@@ -469,6 +469,19 @@ interface IACL {
         address contractAddress,
         bytes32 handle
     ) external view returns (bool);
+
+    /**
+     * @notice              Invalidates every decryption signature signed by the caller before `timestamp`.
+     * @param timestamp     Oldest timestamp that remains valid. Passing 0 resolves to the current block timestamp.
+     */
+    function invalidateDecryptionSignaturesBefore(uint256 timestamp) external;
+
+    /**
+     * @notice              Returns the timestamp before which an account's decryption signatures are invalidated.
+     * @param account       Address of the account.
+     * @return beforeTimestamp The invalidation cutoff timestamp (0 if never invalidated).
+     */
+    function decryptionSignatureInvalidatedBefore(address account) external view returns (uint256 beforeTimestamp);
 }
 
 /**
