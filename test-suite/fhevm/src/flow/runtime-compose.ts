@@ -95,13 +95,11 @@ const refsAlreadyBuilt = async (state: State, refs: string[]) =>
 
 /** Starts one compose component, optionally limiting it to selected services. */
 export const isDockerRegistryTransient = (message: string) => {
-  if (!/(ghcr\.io|quay\.io|cgr\.dev|registry|manifest|token|\/v2\/)/i.test(message)) {
+  if (!/(ghcr\.io|quay\.io|cgr\.dev|registry|token|\/v2\/)/i.test(message)) {
     return false;
   }
-  return (
-    /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
-      message,
-    ) || /(manifest unknown|manifest not found|not found|\b404\b)/i.test(message)
+  return /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
+    message,
   );
 };
 

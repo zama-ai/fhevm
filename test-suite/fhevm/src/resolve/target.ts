@@ -124,6 +124,12 @@ const SHA_FALLBACK_COMMIT_WINDOW = 500;
 // fallback must not paper over.
 export const MAX_FALLBACK_COMMIT_DEPTH = 50;
 
+/** Orchestrated baseline resolution must not emit an unverified lock when package
+ * metadata is unavailable. Local `fhevm-cli resolve --target sha` still skips the
+ * check so an offline laptop can pin the requested sha. */
+export const mustVerifyPublishedImages = (env: NodeJS.Dict<string | undefined> = process.env) =>
+  env.REQUIRE_PUBLISHED_IMAGE_CHECK === "true";
+
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
@@ -448,6 +454,12 @@ export const resolveTarget = async (
       // GitHub metadata is unavailable (offline, missing scopes): keep the historical unverified
       // pin so `--target sha` still resolves, and record that the check was skipped.
       const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      if (mustVerifyPublishedImages()) {
+        throw new GitHubApiError(
+          `published-image check failed (${reason}). Baseline resolution requires package-read ` +
+            `credentials; refusing an unverified lock that would pull missing image:${tag} at stack start.`,
+        );
+      }
       console.log(`[resolve] sha ${tag}: skipping published-image check (${reason})`);
       return presetBundle(target, tag, lockName, [...baseSources, "published-image-check=skipped"], new Set());
     }

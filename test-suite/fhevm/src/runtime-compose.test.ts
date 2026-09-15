@@ -14,11 +14,11 @@ describe("runtime compose", () => {
       isDockerRegistryTransient(
         "Error response from daemon: unknown: ghcr.io/zama-ai/fhevm/relayer:abc1234: manifest unknown",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isDockerRegistryTransient(
         'failed to resolve reference "ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:abc1234": not found',
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
