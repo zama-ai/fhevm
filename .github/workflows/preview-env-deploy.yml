@@ -90,7 +90,7 @@ on:
           - "4"
           - "13"
       overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: solana_programs_version, host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
         required: false
         default: ""
       deploy_polygon:
@@ -235,6 +235,7 @@ jobs:
         run: node ci/preview-env/scripts/parse-overrides.cjs
       - name: Validate Solana topology
         env:
+          BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only || 'false' }}
           ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
           BUILD_IMAGES: ${{ inputs.build_images || 'false' }}
           OVERRIDES_JSON: ${{ steps.parse_overrides.outputs.overrides_json }}
@@ -244,8 +245,8 @@ jobs:
           fi
           # No workflow publishes fhevm/solana-programs under a base-commit tag, so
           # without a build the tag can only come from an explicit override.
-          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && "$BUILD_IMAGES" != true && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
-            echo '::error::Solana preview needs build_images=true or overrides.solana_programs_version'; exit 1
+          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$BUILD_IMAGES" != true || "$BUILD_TEST_SUITE_ONLY" == true ) && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
+            echo '::error::Solana preview needs build_images=true with build_test_suite_only=false, or overrides.solana_programs_version'; exit 1
           fi
       - id: check
         env:

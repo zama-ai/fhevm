@@ -17,3 +17,10 @@ require_nonempty() {
     exit 1
   fi
 }
+
+# The per-party preview Postgres instances use the shared ephemeral credentials.
+psql_party() {
+  local party="$1" sql="$2"
+  kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
+    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
+}

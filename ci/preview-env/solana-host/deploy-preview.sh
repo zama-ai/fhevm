@@ -23,7 +23,7 @@ done
 for i in $(seq 1 "$NB_COPROCESSOR"); do
   ready=false
   for ((attempt=0; attempt<120; attempt++)); do
-    if [[ $(kubectl exec -n "$NAMESPACE" "postgres-coprocessor-$i-0" -- psql -U zama -d fhevm_e2e -Atc "SELECT EXISTS(SELECT 1 FROM keys WHERE chain_id=$key_source_chain_id)") == t ]]; then
+    if [[ $(psql_party "$i" "SELECT EXISTS(SELECT 1 FROM keys WHERE chain_id=$key_source_chain_id)") == t ]]; then
       ready=true; break
     fi
     sleep 5
@@ -86,10 +86,10 @@ helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAME
 
 # HTTP readiness alone does not prove that Yellowstone is delivering sealed blocks.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
-  initial=$(kubectl exec -n "$NAMESPACE" "postgres-coprocessor-$i-0" -- psql -U zama -d fhevm_e2e -Atc 'SELECT COALESCE(MAX(slot),0) FROM solana_listener_checkpoint')
+  initial=$(psql_party "$i" 'SELECT COALESCE(MAX(slot),0) FROM solana_listener_checkpoint')
   progressed=false
   for ((attempt=0; attempt<60; attempt++)); do
-    current=$(kubectl exec -n "$NAMESPACE" "postgres-coprocessor-$i-0" -- psql -U zama -d fhevm_e2e -Atc 'SELECT COALESCE(MAX(slot),0) FROM solana_listener_checkpoint')
+    current=$(psql_party "$i" 'SELECT COALESCE(MAX(slot),0) FROM solana_listener_checkpoint')
     if (( current > initial )); then progressed=true; break; fi
     sleep 5
   done
