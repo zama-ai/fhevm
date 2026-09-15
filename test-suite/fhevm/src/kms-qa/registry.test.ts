@@ -109,6 +109,7 @@ describe("kms-qa registry QA_CASES", () => {
       "epoch-rotation-pending",
       "context-switch-pending",
       "extradata-rejection",
+      "extradata-gateway-rejection",
     ]);
   });
 
@@ -124,12 +125,14 @@ describe("kms-qa registry QA_CASES", () => {
     expect(rotation.mutatesLifecycle).toBe(true);
   });
 
-  test("the extradata-rejection case changes nothing and constrains no topology", () => {
-    const rejection = QA_CASES.find((item) => item.id === "extradata-rejection")!;
-    // The only non-mutating case: it can be rerun against the same stack, and the run banner's
-    // "re-up before rerunning" warning must not be triggered by it alone.
-    expect(rejection.mutatesLifecycle).toBe(false);
-    expect(rejection.requirements).toEqual({});
+  test("both extradata cases change nothing and constrain no topology", () => {
+    // The non-mutating cases: they can be rerun against the same stack, and the run banner's
+    // "re-up before rerunning" warning must not be triggered by them alone.
+    for (const id of ["extradata-rejection", "extradata-gateway-rejection"]) {
+      const rejection = QA_CASES.find((item) => item.id === id)!;
+      expect(rejection.mutatesLifecycle).toBe(false);
+      expect(rejection.requirements).toEqual({});
+    }
   });
 
   test("both pending cases demand a committee that survives one stalled member", () => {
