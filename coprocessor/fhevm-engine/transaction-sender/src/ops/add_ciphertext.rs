@@ -87,13 +87,13 @@ where
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
-                        error = %e,
+                        error = %crate::diagnostics::safe_rpc_error(&e),
                         handle = h,
                         "Transaction sending failed with unlimited retry error"
                     );
                     self.increment_txn_unlimited_retries_count(
                         handle,
-                        &e.to_string(),
+                        &crate::diagnostics::safe_rpc_error(&e),
                         current_unlimited_retries_count,
                     )
                     .await?;
@@ -116,13 +116,13 @@ where
                 }
                 ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
-                    error = %e,
+                    error = %crate::diagnostics::safe_rpc_error(&e),
                     handle = h,
                     "Transaction sending failed"
                 );
                 self.increment_txn_limited_retries_count(
                     handle,
-                    &e.to_string(),
+                    &crate::diagnostics::safe_rpc_error(&e),
                     current_limited_retries_count,
                 )
                 .await?;

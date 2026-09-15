@@ -875,3 +875,47 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
 
     setup.shutdown().await;
 }
+
+/// Campaign control: client retries before server expiry are deduplicated;
+/// the same input after expiry must dispatch a fresh job and complete.
+#[tokio::test]
+async fn test_campaign_retry_across_server_expiry_completes_same_input() {
+    let temp = TempDir::new().unwrap();
+    let config = create_timeout_test_config(&temp, 2, 1).unwrap();
+    let setup = TestSetup::new_with_config_path(Some(config)).await.unwrap();
+    let (payload, user, data) = helpers::create_input_proof_payload(&setup);
+    setup
+        .fhevm_mock
+        .on_input_proof_request_only(user, data.clone());
+    let original = helpers::submit_request(&setup, &payload).await;
+    let duplicate = helpers::submit_request(&setup, &payload).await;
+    assert_eq!(
+        original, duplicate,
+        "retry before server expiry bypassed deduplication"
+    );
+    let (status, expired) = helpers::poll_until_terminal(&setup, &original).await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(expired.status, ApiResponseStatus::Failed);
+    setup.fhevm_mock.on_input_proof_success(
+        user,
+        data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+    let replacement = helpers::submit_request(&setup, &payload).await;
+    assert_ne!(
+        original, replacement,
+        "server expiry did not allow fresh work"
+    );
+    let (status, result) = helpers::poll_until_terminal(&setup, &replacement).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(result.status, ApiResponseStatus::Succeeded);
+    assert!(result.result.is_some());
+    let (_, original_result) = helpers::poll_until_terminal(&setup, &original).await;
+    assert_eq!(
+        original_result.status,
+        ApiResponseStatus::Failed,
+        "replacement changed the old job's result"
+    );
+    setup.shutdown().await;
+}
