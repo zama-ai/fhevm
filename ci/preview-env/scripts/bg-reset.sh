@@ -178,6 +178,8 @@ done
 # ---- 5. verify: Blue live, pollers parked, consumers ingesting ----------------
 failed=0
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
+  blue_tag=$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-${i}-host-listener-consumer" \
+    -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
   for d in $(blue_deployments "${i}"); do
     mode=""
     for _ in $(seq 1 12); do
@@ -186,9 +188,17 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       sleep 5
     done
     # tx-sender does not log the resolution; every other Blue service must be live (false).
-    # The HEAD pollers resolve true and wait for the Green schema: that is the CI state too.
+    # Pollers depend on the mode: the automated flow runs them on the HEAD image, where they
+    # resolve true and wait for the Green schema; manual blue-green runs them on the Blue image,
+    # where they are live like the rest. Tell the two apart by the image, not by assumption.
     if [[ "${d}" == *poller* ]]; then
-      [[ "${mode}" == "true" || -z "${mode}" ]] || { echo "::error::${d}: expected gcs_mode=true, got ${mode}"; failed=1; }
+      poller_tag=$(kubectl get deploy -n "${NAMESPACE}" "${d}" \
+        -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
+      if [[ "${poller_tag}" == "${blue_tag}" ]]; then
+        [[ "${mode}" == "false" ]] || { echo "::error::${d}: Blue-image poller, expected gcs_mode=false, got '${mode}'"; failed=1; }
+      else
+        [[ "${mode}" == "true" || -z "${mode}" ]] || { echo "::error::${d}: HEAD-image poller, expected gcs_mode=true, got ${mode}"; failed=1; }
+      fi
     elif [[ "${d}" != *tx-sender* ]]; then
       [[ "${mode}" == "false" ]] || { echo "::error::${d}: expected gcs_mode=false, got '${mode}'"; failed=1; }
     fi
