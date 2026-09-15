@@ -1452,10 +1452,8 @@ export async function verifySha256(
 }
 
 /**
- * Convert a hex string prefixed by 0x or not to a Uint8Array
- * Any invalid byte string is converted to 0
- * "0xzzff" = [0, 255]
- * "0xzfff" = [0, 255]
+ * Converts hexadecimal bytes with an optional 0x or 0X prefix.
+ * Rejects odd-length input and non-hexadecimal characters.
  */
 export function hexToBytes(hexString: string): Uint8Array {
   const hex = hexString.replace(/^0x/i, '');

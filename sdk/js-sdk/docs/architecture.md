@@ -191,7 +191,3 @@ The internals follow a consistent set of rules:
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
-
-```
-
-```
