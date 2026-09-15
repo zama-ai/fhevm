@@ -1025,18 +1025,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      tests catch. Scalar operands must not go through here: they are
     ///      not ACL-checked and contribute a zero bit.
     ///
-    ///      Callers MUST ensure position < 256: a bit past the preimage word
-    ///      would be dropped silently (EVM SHL with a shift >= 256 yields 0).
-    ///      Collection callers enforce this through size checks against the
-    ///      uint8 FHE_COLLECTION_*_MAX_SIZE constants; other callers use fixed
-    ///      positions 0, 1 or 2.
-    ///
     ///      Positions are caller-supplied and MUST be distinct per derivation
     ///      (a duplicated position merges two operands' bits and reopens the
     ///      alias for that op); any new op must join the boundary-bit rotation
     ///      tests in fhevmExecutor.t.sol, which pin each operand's position by
     ///      rotating a single minted operand through every slot.
-    function _consumeOperand(bytes32 ct, uint256 position) internal view virtual returns (uint256 shiftedBit) {
+    function _consumeOperand(bytes32 ct, uint8 position) internal view virtual returns (uint256 shiftedBit) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
         shiftedBit = _oneOperandBoundaryBit(ct) << position;
     }
@@ -1167,7 +1161,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType resultType
     ) internal virtual returns (bytes32 result) {
         uint256 boundaryBits;
-        for (uint256 i = 0; i < values.length; i++) {
+        for (uint8 i = 0; i < values.length; i++) {
             boundaryBits |= _consumeOperand(values[i], i);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
@@ -1195,7 +1189,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ) internal virtual returns (bytes32 result) {
         uint256 boundaryBits = _consumeOperand(value, 0);
         FheType valueType = _typeOf(value);
-        for (uint256 i = 0; i < values.length; i++) {
+        for (uint8 i = 0; i < values.length; i++) {
             boundaryBits |= _consumeOperand(values[i], i + 1);
             if (_typeOf(values[i]) != valueType) revert IncompatibleTypes();
         }
