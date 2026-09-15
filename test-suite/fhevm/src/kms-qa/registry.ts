@@ -23,6 +23,7 @@ import { epochRotationPendingCase } from "./cases/case-epoch-rotation-pending";
 import { contextSwitchPendingCase } from "./cases/case-context-switch-pending";
 import { extraDataRejectionCase } from "./cases/case-extradata-rejection";
 import { extraDataGatewayRejectionCase } from "./cases/case-extradata-gateway-rejection";
+import { contextSwitchAbortCase } from "./cases/case-context-switch-abort";
 
 /** The KMS topology fields a case may predicate on. Mirrors `state.scenario.kms`. */
 export type KmsTopology = State["scenario"]["kms"];
@@ -149,6 +150,7 @@ export const QA_CASES: readonly QaCase[] = [
   contextSwitchPendingCase,
   extraDataRejectionCase,
   extraDataGatewayRejectionCase,
+  contextSwitchAbortCase,
 ];
 
 /** Environment variable selecting which cases run. Unset or `all` runs everything. */

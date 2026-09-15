@@ -421,3 +421,126 @@ export const assertContextValidity = async (
     );
   }
 };
+
+/* -------------------------------------------------------------------------------------------- *
+ * Aborting: the inverse readings
+ * -------------------------------------------------------------------------------------------- */
+
+/**
+ * Asserts the creation quorum has NOT allocated an epoch for `contextId`.
+ *
+ * This is what separates a switch held at **stage 1** — context Pending, no epoch — from one held at
+ * stage 2. A one-shot query, not a wait: the claim is that nothing is there *now*, and the caller has
+ * already established why (a node of the new context cannot confirm).
+ *
+ * Without it, "the confirmations required to create C2 have been withheld" would be an assumption
+ * about container state rather than an observation about the chain.
+ */
+export const assertNoNewKmsEpochEvent = async (
+  target: ProtocolConfigTarget,
+  evidence: CaseEvidence,
+  contextId: bigint,
+  fromBlock: bigint,
+  why: string,
+): Promise<void> => {
+  const topic0 = await keccakTopic(NEW_KMS_EPOCH_SIGNATURE);
+  await evidence.step(
+    "assert",
+    "no epoch was allocated for the pending context (the creation quorum never formed)",
+    { contract: target.address, contextId: formatKmsId(contextId), fromBlock: fromBlock.toString(), why },
+    async () => {
+      const receipt = await castLogsAsReceipt(target.rpcUrl, target.address, topic0, fromBlock);
+      const found = selectNewKmsEpochLog(receipt.logs, topic0, contextId);
+      if (found) {
+        throw new PreflightError(
+          `kms-context-qa: a NewKmsEpoch was emitted for context ${contextId}, so its creation quorum DID form and ` +
+            `the switch is at stage 2, not stage 1. ${why} Either the withheld node confirmed anyway, or the new ` +
+            `context does not include it — check which parties the contracts task's env file defines.`,
+        );
+      }
+    },
+  );
+};
+
+/**
+ * Asserts a lifecycle operation is NO LONGER in flight — the inverse of
+ * {@link assertLifecycleOperationInFlight}.
+ *
+ * This is the observable meaning of "the switch was aborted". `_checkNoKmsLifecycleOperationInFlight`
+ * treats a destroyed entry as `None`, so destroying a Pending context reopens the gate
+ * (`ProtocolConfig.sol:1083`, and the comment on the destroy paths). Probed with an `eth_call`, which
+ * asks what *would* happen without opening an operation of its own.
+ */
+export const assertLifecycleGateOpen = async (
+  target: ProtocolConfigTarget,
+  owner: Owner,
+  evidence: CaseEvidence,
+  why: string,
+): Promise<void> => {
+  await evidence.step(
+    "assert",
+    "a new lifecycle operation is allowed again (the in-flight gate reopened)",
+    { contract: target.address, why },
+    async () => {
+      const result = await run(
+        [
+          "cast",
+          "call",
+          target.address,
+          "defineNewEpochForCurrentKmsContext()",
+          "--from",
+          owner.address,
+          "--rpc-url",
+          target.rpcUrl,
+        ],
+        { allowFailure: true },
+      );
+      if (result.code !== 0) {
+        const output = `${result.stdout}\n${result.stderr}`.trim();
+        throw new PreflightError(
+          `kms-context-qa: a new lifecycle operation is still refused after the abort — ${why} The destroy should ` +
+            `have cleared the in-flight state (destroyed entries count as None), so the switch was not actually ` +
+            `aborted: ${output.slice(0, 300)}`,
+        );
+      }
+    },
+  );
+};
+
+/**
+ * Asserts the GATEWAY's view of a context's validity.
+ *
+ * The Gateway keeps its own registry and its own `destroyKmsContext`, owner-gated and independent of
+ * the host's (`gateway-contracts/contracts/GatewayConfig.sol:327`). Aborting a switch on the host
+ * therefore does not clean up the Gateway, and this is the only place that observes it.
+ *
+ * @param rpcUrl Host-reachable Gateway RPC.
+ * @param address GatewayConfig address.
+ */
+export const assertGatewayContextValidity = async (
+  rpcUrl: string,
+  address: string,
+  evidence: CaseEvidence,
+  contextId: bigint,
+  expected: boolean,
+  why: string,
+): Promise<void> => {
+  const actual = await evidence.step(
+    "call",
+    `gateway isValidKmsContext is ${expected} (${why})`,
+    { contract: address, contextId: formatKmsId(contextId) },
+    () => castBool(rpcUrl, address, "isValidKmsContext(uint256)(bool)", contextId.toString()),
+  );
+  evidence.note("note", "gateway isValidKmsContext: result", {
+    contextId: formatKmsId(contextId),
+    valid: String(actual),
+    expected: String(expected),
+  });
+  if (actual !== expected) {
+    throw new PreflightError(
+      `kms-context-qa: expected the GATEWAY to report isValidKmsContext(${contextId}) as ${expected} — ${why} — ` +
+        `but it reports ${actual}. The Gateway has its own destroyKmsContext, independent of the host's; if this ` +
+        `changed, cross-chain cleanup was added and this case's divergence note needs updating.`,
+    );
+  }
+};

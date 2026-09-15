@@ -110,6 +110,7 @@ describe("kms-qa registry QA_CASES", () => {
       "context-switch-pending",
       "extradata-rejection",
       "extradata-gateway-rejection",
+      "context-switch-abort",
     ]);
   });
 
