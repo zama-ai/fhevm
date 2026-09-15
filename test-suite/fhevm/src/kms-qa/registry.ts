@@ -19,6 +19,7 @@ import type { NodeSupervisor } from "./nodes";
 import type { ProtocolConfigTarget } from "./protocol-config";
 import { contextSwitchCase } from "./cases/case-context-switch";
 import { epochRotationCase } from "./cases/case-epoch-rotation";
+import { epochRotationPendingCase } from "./cases/case-epoch-rotation-pending";
 
 /** The KMS topology fields a case may predicate on. Mirrors `state.scenario.kms`. */
 export type KmsTopology = State["scenario"]["kms"];
@@ -38,6 +39,12 @@ export type ExtraDataCheckRunner = (
     /** The superseded pair, when the scenario asserts it must NOT appear in the extraData. */
     readonly previousContextId?: bigint;
     readonly previousEpochId?: bigint;
+    /**
+     * An epoch that exists on chain but must NOT appear in the extraData because it is not active
+     * yet — a Pending rotation's target. The mirror of `previousEpochId`: that one is behind the
+     * active epoch, this one is ahead of it.
+     */
+    readonly forbiddenEpochId?: bigint;
   },
 ) => Promise<void>;
 
@@ -101,7 +108,7 @@ export type QaCase = {
  * Order is fixed here and never taken from user input: these cases mutate shared on-chain state, so
  * a run must be reproducible regardless of how the selector was typed.
  */
-export const QA_CASES: readonly QaCase[] = [epochRotationCase, contextSwitchCase];
+export const QA_CASES: readonly QaCase[] = [epochRotationCase, contextSwitchCase, epochRotationPendingCase];
 
 /** Environment variable selecting which cases run. Unset or `all` runs everything. */
 export const CASE_SELECTOR_ENV = "KMS_QA_CASES";
