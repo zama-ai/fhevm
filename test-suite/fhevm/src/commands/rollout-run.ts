@@ -1,4 +1,3 @@
-import { resolveSenderTransports } from "../resolve/sender-transport";
 /**
  * Executes release-specific rollout runbooks against the local fhevm stack.
  */
@@ -64,7 +63,6 @@ type RolloutContractTaskOptions = {
   env?: Record<string, string>;
 };
 type RolloutLockOptions = {
-  senderGatewayTransports?: VersionBundle["senderGatewayTransports"];
   sha?: string;
   versions: Record<string, string>;
   sources?: string[];
@@ -155,9 +153,8 @@ const writeRolloutVersionLock = async (name: string, options: RolloutLockOptions
     lockName: path.basename(file),
     env: options.versions,
     sources: options.sources ?? ["rollout-runbook"],
-    senderGatewayTransports: options.senderGatewayTransports,
   } satisfies VersionBundle;
-  await writeJson(file, await resolveSenderTransports(bundle));
+  await writeJson(file, bundle);
   return file;
 };
 
@@ -443,7 +440,6 @@ export const createRolloutContext = (
       return writeRolloutVersionLock(name, {
         target,
         versions: { ...base.env, ...options.versions },
-        senderGatewayTransports: base.senderGatewayTransports,
         sources: [...base.sources, ...(options.sources ?? ["rollout-runbook"])],
       });
     },

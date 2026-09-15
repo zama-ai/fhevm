@@ -47,9 +47,7 @@ const state: State = {
   target: "latest-main",
   lockPath: "/tmp/latest-main.json",
   requiresGitHub: true,
-  versions: { ...presetBundle("latest-main", "abcdef0", "latest-main.json"), senderGatewayTransports: {
-    abcdef0: "http", "target-sha": "http", "921b69113": "http", "921b69113-cuda12.8-sm90": "http", "04fb072": "ws", "15abcde": "http", "v0.13.0": "ws", "v0.14.0-7": "ws", "v0.14.0-10": "ws", "v0.15.0": "http",
-  } },
+  versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
   overrides: [],
   scenario,
   completedSteps: [],
@@ -1349,8 +1347,6 @@ describe("test-suite docker socket runtime", () => {
 
 test.each([
   ["v0.13.0-2", false, "ws://gateway:8546"],
-  ["b8406d0", false, "ws://gateway:8546"],
-  ["d5f946e", false, "http://gateway:8545"],
   ["c2f416b", false, "http://gateway:8545"],
   ["c2f416b", true, "http://gateway:8545"],
 ] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
@@ -1359,7 +1355,7 @@ test.each([
     await writeFile(envPath("coprocessor"), "GATEWAY_URL=http://gateway:8545\nGATEWAY_WS_URL=ws://gateway:8546\n");
     const input: State = {
       ...state,
-      versions: { ...presetBundle("latest-main", tag, "test.json"), senderGatewayTransports: { [tag]: expected.startsWith("ws:") ? "ws" : "http" } },
+      versions: presetBundle("latest-main", tag, "test.json"),
       overrides: local ? [{ group: "coprocessor" }] : [],
       scenario: testDefaultScenario(),
     };

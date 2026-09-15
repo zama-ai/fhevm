@@ -1,4 +1,3 @@
-import { resolveScenarioForOptions } from "./stack-spec/stack-spec";
 /**
  * Defines the fhevm CLI surface and maps user commands onto stack and test operations.
  */
@@ -286,7 +285,6 @@ const root = defineCommand({
     resolve: defineCommand({
       meta: { name: "resolve", description: "Resolve a version target and print the resulting lock path." },
       args: {
-        scenario: { type: "string", description: "Include registry-pinned fleets in the offline lock." },
         target: { type: "string", description: "Bundle source to resolve." },
         sha: { type: "string", description: "Commit SHA to resolve when --target sha is used." },
         "lock-file": {
@@ -297,10 +295,10 @@ const root = defineCommand({
       },
       async run({ args }) {
         const parsed = parseUpInput(args);
-        if (parsed.resume || parsed.dryRun || parsed.fromStep || parsed.overrides.length) {
-          throw new PreflightError("resolve only supports --target, --sha, --lock-file, --scenario, and --reset");
+        if (parsed.resume || parsed.dryRun || parsed.fromStep || parsed.overrides.length || parsed.scenarioPath) {
+          throw new PreflightError("resolve only supports --target, --sha, --lock-file, and --reset");
         }
-        const { lockPath } = await resolveBundle(parsed, process.env, await resolveScenarioForOptions(parsed));
+        const { lockPath } = await resolveBundle(parsed, process.env);
         console.log(lockPath);
       },
     }),

@@ -133,8 +133,7 @@ Runtime resolution is intentionally fixed:
 1. Resolve the base bundle from `--target`, `--sha`, or `--lock-file`
 2. Apply matching `*_VERSION` environment overrides
 3. Apply either `--scenario <name-or-file>` or the `--override coprocessor` shorthand
-4. Resolve each selected registry sender’s Gateway transport from its source revision and save it in the lock
-5. Materialize generated env/config/compose state under `.fhevm/`
+4. Materialize generated env/config/compose state under `.fhevm/`
 
 ## Targets
 
@@ -147,7 +146,7 @@ Runtime resolution is intentionally fixed:
 
 Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network targets do not.
 `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
-`sha` requires `--sha <git-sha>` and resolves every repo-owned image to that 7-character SHA tag. The resolver checks published images and may select a published ancestor for a missing component image. Transport resolution uses that selected sender revision.
+`sha` requires `--sha <git-sha>` and resolves every repo-owned image to that 7-character SHA tag. The CLI does not query GitHub or prove branch ancestry for this target; Docker pull or boot-time validation reports missing images or incompatible stacks.
 
 ## Pinning an Exact Version Bundle
 
@@ -187,16 +186,6 @@ The lock file must contain every version key. Example:
   }
 }
 ```
-
-Locks also contain `senderGatewayTransports`, mapping each selected sender image tag to `"http"` or `"ws"`. The resolver reads the sender source at that revision, including release backports and `feature-solana-<SHA>` images. `compatTag` continues to select legacy flags; it does not determine transport. Local builds use the working tree’s compose configuration.
-
-Prepare or refresh a lock online after changing image pins, or include independently pinned fleets:
-
-```sh
-./fhevm-cli resolve --lock-file ./my-bundle.json --reset --scenario blue-green
-```
-
-Use the printed lock path for subsequent `up --lock-file ... --scenario blue-green` runs. Without `--reset`, lock loading and rendering require the saved transport facts and perform no source lookup. An old lock or a new unresolved pin fails with refresh instructions. An upgrade with an explicit new `--bcs-tag` resolves and persists its transport before restarting services.
 
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.

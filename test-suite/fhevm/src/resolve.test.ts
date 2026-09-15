@@ -233,7 +233,7 @@ describe("resolve", () => {
       expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in env).toBe(false);
       await writeFile(
         lockFile,
-        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env, senderGatewayTransports: { abcdef0: "http" } }),
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
       );
       const { bundle } = await resolveBundle(
         { target: "latest-main", requestedTarget: undefined, sha: undefined, lockFile, reset: false },
@@ -251,7 +251,7 @@ describe("resolve", () => {
       delete env.COPROCESSOR_HOST_LISTENER_VERSION;
       await writeFile(
         lockFile,
-        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env, senderGatewayTransports: { abcdef0: "http" } }),
+        JSON.stringify({ target: "latest-main", lockName: "latest-main.json", sources: ["test"], env }),
       );
       await expect(
         resolveBundle(

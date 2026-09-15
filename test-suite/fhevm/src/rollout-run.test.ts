@@ -184,7 +184,7 @@ describe("rollout runbook", () => {
       const context = createRolloutContext(undefined, {
         async previewBundle(options) {
           requestedSha = options.sha;
-          return { ...presetBundle("sha", sha.slice(0, 7), `sha-${sha.slice(0, 7)}.json`), senderGatewayTransports: { [sha.slice(0, 7)]: "ws" } };
+          return presetBundle("sha", sha.slice(0, 7), `sha-${sha.slice(0, 7)}.json`);
         },
       });
       const file = await context.resolveVersionLock("target", {
@@ -196,13 +196,12 @@ describe("rollout runbook", () => {
 
       expect(requestedSha).toBe(sha);
       expect(lock.target).toBe("sha");
-      expect(lock.senderGatewayTransports?.[sha.slice(0, 7)]).toBe("ws");
     });
   });
 
   test("derives extracted rollout locks from one resolved target snapshot", async () => {
     await withTempStateDir(async () => {
-      const first = { ...presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json"), senderGatewayTransports: { abcdef0: "http" as const } };
+      const first = presetBundle("latest-main", "abcdef0", "latest-main-abcdef0.json");
       const second = presetBundle("latest-main", "1234567", "latest-main-1234567.json");
       let resolveCalls = 0;
       const context = createRolloutContext(undefined, {

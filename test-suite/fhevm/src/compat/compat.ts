@@ -655,6 +655,14 @@ const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
  * Only `COPROCESSOR_*` shims are consulted: a pinned coprocessor image tag says
  * nothing about the connector or the contracts.
  */
+// HTTP was backported in 0.13.5 and after 0.14.1 (#3916, #3923).
+// Unversioned images retain the existing current/main compatibility policy.
+const transactionSenderGatewayArg = (version: string): readonly [string, CompatArgValue] => {
+  const http = compatVersionGte(version, [0, 14, 2], { unparsed: "modern" }) ||
+    (compatVersionGte(version, [0, 13, 5]) && versionBeforeReleaseFamily(version, [0, 14, 0]));
+  return ["--gateway-url", { env: http ? "GATEWAY_URL" : "GATEWAY_WS_URL" }];
+};
+
 export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy => {
   const policy: CoprocessorArgPolicy = { coprocessorArgs: {}, coprocessorDropFlags: {} };
   for (const shim of COMPAT_MATRIX.legacyShims) {
@@ -666,6 +674,10 @@ export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy =
     }
     mergeShimArgs(policy, SHIM_PROFILES[shim.profile]);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(tag),
+  ];
   return policy;
 };
 
@@ -685,6 +697,10 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     mergeShimArgs(policy, profile);
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? ""),
+  ];
   // Local overrides build the current working tree, which always uses the
   // modern --use-internal-proxy-address flag regardless of the version label.
   const overrides = effectiveCompatOverrides(state);

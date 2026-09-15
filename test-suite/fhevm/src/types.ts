@@ -226,7 +226,6 @@ export type Discovery = {
 };
 
 export type VersionBundle = {
-  senderGatewayTransports?: Record<string, "http" | "ws">;
   target: VersionTarget;
   lockName: string;
   env: Record<string, string>;

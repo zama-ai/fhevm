@@ -23,8 +23,5 @@
     "RELAYER_VERSION": "v0.11.0-rc.1",
     "RELAYER_MIGRATE_VERSION": "v0.11.0-rc.1",
     "TEST_SUITE_VERSION": "v0.11.0"
-  },
-  "senderGatewayTransports": {
-    "v0.11.0": "ws"
   }
 }

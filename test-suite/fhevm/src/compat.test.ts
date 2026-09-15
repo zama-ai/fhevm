@@ -262,7 +262,7 @@ describe("compat", () => {
 
   test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
     const policy = compatArgPolicyForPinnedTag("v0.15.0");
-    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorArgs).toEqual({ "transaction-sender": [["--gateway-url", { env: "GATEWAY_URL" }]] });
     expect(policy.coprocessorDropFlags).toEqual({});
   });
 
@@ -884,8 +884,11 @@ describe("compat", () => {
   });
 });
 
-test("release shims do not infer sender transport", () => {
-  for (const tag of ["v0.14.0-7", "v0.15.0", "b8406d0", "c2f416b"]) {
-    expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"]).toBeUndefined();
-  }
+test.each(["v0.11.0", "v0.12.0", "v0.13.0-2", "v0.13.4", "v0.14.0-7", "v0.14.1", "v0.14.1-1"])("keeps WS for pinned sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_WS_URL" }]);
+});
+test.each(["v0.13.5", "v0.13.6", "v0.14.2-0", "v0.14.2", "v0.15.0", "main", "c2f416b"])("uses HTTP for current sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_URL" }]);
 });

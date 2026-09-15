@@ -2,11 +2,10 @@
  * Caches resolved bundles and persists the lock snapshot used by the current local stack state.
  */
 import path from "node:path";
-import { selectedSenderTags, resolveSenderTransports } from "./sender-transport";
 
 import { validateBundleCompatibility } from "../compat/compat";
 import { LOCK_DIR } from "../layout";
-import type { ResolvedScenario, UpOptions, VersionBundle, VersionTarget } from "../types";
+import type { UpOptions, VersionBundle, VersionTarget } from "../types";
 import { exists, readJson, writeJson } from "../utils/fs";
 import { GitHubApiError } from "../errors";
 import {
@@ -64,11 +63,6 @@ const validateLockBundleShape = (bundle: unknown): VersionBundle => {
   if (malformedOptional.length) {
     throw new GitHubApiError(`Lock file has malformed optional version keys: ${malformedOptional.join(", ")}`);
   }
-  const transports = candidate.senderGatewayTransports;
-  if (transports !== undefined && (typeof transports !== "object" || transports === null || Array.isArray(transports) ||
-    Object.values(transports).some((value) => value !== "http" && value !== "ws"))) {
-    throw new GitHubApiError("Lock senderGatewayTransports must map image tags to http or ws");
-  }
   return candidate as VersionBundle;
 };
 
@@ -125,7 +119,7 @@ const bundleFromFile = async (target: VersionTarget | undefined, lockFile: strin
   });
 };
 
-type CachedResolveOptions = Pick<UpOptions, "target" | "requestedTarget" | "sha" | "lockFile" | "reset"> & Partial<Pick<UpOptions, "overrides">>;
+type CachedResolveOptions = Pick<UpOptions, "target" | "requestedTarget" | "sha" | "lockFile" | "reset">;
 
 /** Emits periodic progress logs while a long resolve task runs. */
 const withProgressLogs = async <T>(task: Promise<T>, label: string) => {
@@ -178,14 +172,9 @@ const cachedResolve = async (options: CachedResolveOptions) => {
 export const resolveBundle = async (
   options: CachedResolveOptions,
   env: Record<string, string | undefined>,
-  scenario?: ResolvedScenario,
 ) => {
   const bundle = await cachedResolve(options);
-  const selected = applyVersionEnvOverrides(bundle, env);
-  const resolved = await resolveSenderTransports(
-    selected, selectedSenderTags(selected, scenario, options.overrides),
-    { offline: Boolean(options.lockFile) && !options.reset },
-  );
+  const resolved = applyVersionEnvOverrides(bundle, env);
   await validateBundleCompat(resolved);
   const lockPath = await writeLock(resolved);
   return { bundle: resolved, lockPath };
@@ -195,12 +184,7 @@ export const resolveBundle = async (
 export const previewBundle = async (
   options: CachedResolveOptions,
   env: Record<string, string | undefined>,
-  scenario?: ResolvedScenario,
 ) => {
-  const selected = applyVersionEnvOverrides(await cachedResolve(options), env);
-  const bundle = await resolveSenderTransports(
-    selected, selectedSenderTags(selected, scenario, options.overrides),
-    { offline: Boolean(options.lockFile) && !options.reset },
-  );
+  const bundle = applyVersionEnvOverrides(await cachedResolve(options), env);
   return validateBundleCompat(bundle);
 };

@@ -15,6 +15,7 @@ cd "$ROOT"
 # Such artifacts may execute with corrupted CPI arguments; never run tests on them.
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
+bash "$ROOT/scripts/install-sbf-tools.sh"
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee "$build_log"
 if rg -n 'Error:.*[Ss]tack offset' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
