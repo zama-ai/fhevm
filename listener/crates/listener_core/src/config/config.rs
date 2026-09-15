@@ -174,7 +174,7 @@ pub struct StrategyConfig {
 
     /// Active only if compute_block is active, other wise, computation is fully skipped.
     /// When true, block verification will skip computation.
-    /// (e.g. Polygon type 0x7F for transaction root) with an ERROR log instead of failing.
+    /// (e.g. Polygon type 0x7F for transaction root) with a WARN log instead of failing.
     /// When false, unsupported types cause a hard verification failure.
     /// Defaults to true.
     #[serde(default = "default_compute_block_allow_skipping")]
