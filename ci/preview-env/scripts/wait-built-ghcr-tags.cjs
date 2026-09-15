@@ -78,7 +78,7 @@ const assertLockGhcrTags = async ({ core, user, token, images }) => {
   throw new Error(
     `lock-selected image(s) missing from GHCR:\n` +
       missing.map((ref) => `  - ${ref}`).join('\n') +
-      `\nThis is not registry delay: the baseline tag was never published. Re-run the ` +
+      `\nThis is not registry delay: the baseline tag is unavailable. Re-run the ` +
       `component's docker-build / retag job, or resolve to a permitted ancestor tag.`,
   );
 };

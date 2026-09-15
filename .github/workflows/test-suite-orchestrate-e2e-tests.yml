@@ -80,7 +80,10 @@ jobs:
           REQUIRE_PUBLISHED_IMAGE_CHECK: "true"
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
+          # Keep resolve diagnostics in the job log; only the last line is the lock path.
+          resolve_out="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset)"
+          printf '%s\n' "$resolve_out"
+          lock_path="$(printf '%s\n' "$resolve_out" | tail -n 1)"
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -166,6 +169,7 @@ jobs:
       - relayer-docker-build
       - test-suite-docker-build
     if: |
+      needs.resolve-baseline.result == 'success' &&
       (success() || failure()) &&
       (
         github.event_name == 'workflow_dispatch' ||
@@ -267,6 +271,17 @@ jobs:
             if (Array.isArray(lock.sources)) {
               for (const source of lock.sources) {
                 core.info(`[baseline-lock] ${source}`);
+              }
+              const unverified = lock.sources.filter(
+                (source) =>
+                  source.includes("published-image-check=skipped") ||
+                  source.includes("unverified:"),
+              );
+              if (unverified.length) {
+                throw new Error(
+                  `baseline lock is unverified; refusing to start e2e:\n` +
+                    unverified.map((source) => `  - ${source}`).join("\n"),
+                );
               }
             }
 

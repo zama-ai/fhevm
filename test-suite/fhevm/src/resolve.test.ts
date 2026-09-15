@@ -170,6 +170,18 @@ describe("resolve", () => {
     ]);
   });
 
+  test("strict mode rejects an empty package-tag set instead of an unverified pin", () => {
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: "d77a041",
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set<string>() },
+        strict: true,
+      }),
+    ).toThrow("ancestor fallback for d77a041 cannot be verified");
+  });
+
   test("fails resolution when a published package has no tag anywhere on the ancestry", () => {
     expect(() =>
       resolveMissingRepoTagFallbacks({
