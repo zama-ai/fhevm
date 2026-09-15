@@ -575,16 +575,35 @@ bash ci/preview-env/scripts/bg-propose.sh calldata
 This is safe and read-only. It takes a few minutes because it starts a pod that compiles the
 contracts. Use it if you want to check the timing before committing.
 
-### Changing the timing
+### Overriding the task parameters
 
-Only if you are asked to. For example, to start later and allow a longer window:
+`bg-propose.sh` wraps two hardhat tasks in `host-contracts`
+(`task:buildProposeCoprocessorUpgradeCalldata` for `calldata`,
+`task:proposeCoprocessorUpgrade` for `send`), filling in the RPCs, addresses and signing key from
+the namespace. For the task itself — the DAO path, failure modes, chain set — see
+[`host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md`](../../host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md).
+
+A normal round needs no overrides. To test something else:
+
+| Env var | Task parameter | Default |
+| --- | --- | --- |
+| `PROPOSAL_ID` | `--proposal-id` | current unix time |
+| `GCS_VERSION` | `--software-version` | the Green stack version |
+| `START_LEAD_SECS` | `--start-time` | `300` |
+| `WINDOW_DURATION` | `--duration` | `5h` |
+| `BUFFER` | `--buffer` | `0` |
+| `TIMEOUT_SECS` | wrapper wait | `900` |
 
 ```bash
-START_LEAD_SECS=900 WINDOW_DURATION=2h bash ci/preview-env/scripts/bg-propose.sh send
+# override a parameter
+WINDOW_DURATION=2m bash ci/preview-env/scripts/bg-propose.sh send
+
+# pass anything else straight to the task
+bash ci/preview-env/scripts/bg-propose.sh send -- --use-internal-proxy-address true
 ```
 
-Note that a longer window does **not** give you more time before the cutover. The cutover fires as
-soon as the operators agree. A longer window only means a later deadline.
+A longer `WINDOW_DURATION` does **not** delay the cutover, which fires as soon as the operators
+agree. Raise `START_LEAD_SECS` if you want more time to get the dry-run check ready.
 
 ---
 

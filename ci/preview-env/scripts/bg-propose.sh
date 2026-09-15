@@ -15,10 +15,17 @@
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-propose.sh calldata|send|wait-cutover
 # Env: NAMESPACE (required); PROPOSAL_ID (default: unix seconds - unique and above any previous id);
 #      GCS_VERSION (default: v + the gcs overlay's stackVersion); START_LEAD_SECS (300);
-#      WINDOW_DURATION (5h); BUFFER (0); TIMEOUT_SECS (900, DryRunStarted / cutover wait).
+#      WINDOW_DURATION (5h); BUFFER (0); TIMEOUT_SECS (900, DryRunStarted / cutover wait);
+#      PROPOSE_EXTRA_ARGS (appended to the hardhat task, same as trailing CLI args).
 set -euo pipefail
 
-verb="${1:?usage: bg-propose.sh calldata|send|wait-cutover}"
+verb="${1:?usage: bg-propose.sh calldata|send|wait-cutover [-- <extra hardhat args>]}"
+shift
+# Anything after the verb goes to the hardhat task verbatim, so a round can test a parameter this
+# wrapper does not model (PROPOSE_EXTRA_ARGS does the same from the environment).
+extra_args="${PROPOSE_EXTRA_ARGS:-}"
+[[ "${1:-}" == "--" ]] && shift
+[[ $# -gt 0 ]] && extra_args="${extra_args:+${extra_args} }$*"
 : "${NAMESPACE:?}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fail() { echo "::error::$*" >&2; exit 1; }
@@ -61,6 +68,7 @@ common=(
   PROPOSAL_ID="${proposal_id}" GCS_VERSION="${gcs_version}"
   START_LEAD_SECS="${START_LEAD_SECS:-300}" WINDOW_DURATION="${WINDOW_DURATION:-5h}"
   BUFFER="${BUFFER:-0}" TIMEOUT_SECS="${TIMEOUT_SECS:-900}"
+  PROPOSE_EXTRA_ARGS="${extra_args}"
 )
 echo "== bg-propose ${verb}: ${NAMESPACE}, ${nb} operators, chains ${chains}, proposal ${proposal_id}, version ${gcs_version}"
 echo "   host ${host_http%%\?*} | polygon ${polygon_http%%\?*} | gateway ${gateway_http} | tool ${host_image##*/}"
