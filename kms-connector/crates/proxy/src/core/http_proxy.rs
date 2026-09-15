@@ -187,8 +187,8 @@ impl ProxyHttp for Proxy {
             .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
         else {
             return abort_with(ErrorResponse::new(
-                ErrorCode::Overloaded,
-                "no endpoint available",
+                ErrorCode::UpstreamTransient,
+                "endpoint unavailable",
                 None,
             ));
         };
@@ -350,10 +350,10 @@ mod tests {
 
     #[test]
     fn error_response_is_recovered_from_the_pingora_error() {
-        let error = ErrorResponse::new(ErrorCode::Overloaded, "no endpoint available", None);
+        let error = ErrorResponse::new(ErrorCode::UpstreamTransient, "endpoint unavailable", None);
         let e: Box<Error> = abort_with::<()>(error.clone()).unwrap_err();
-        assert_eq!(e.etype(), &ErrorType::HTTPStatus(503));
-        assert_eq!(default_error_code(&e), 503);
+        assert_eq!(e.etype(), &ErrorType::HTTPStatus(502));
+        assert_eq!(default_error_code(&e), 502);
         assert_eq!(e.root_cause().downcast_ref::<ErrorResponse>(), Some(&error));
     }
 

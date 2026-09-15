@@ -1,6 +1,9 @@
 #[cfg(test)]
 use crate::core::TlsConfig;
-use crate::core::{ApiKeyVerifier, Config};
+use crate::{
+    core::{ApiKeyVerifier, Config},
+    monitoring::health::{State, endpoint_health_check},
+};
 use anyhow::{Context, anyhow};
 use http::uri::Authority;
 use pingora::{
@@ -10,13 +13,14 @@ use pingora::{
     proxy::http_proxy_service_with_name,
     server::{RunArgs, UnixShutdownSignalWatch, configuration::ServerConf},
 };
+use std::sync::Arc;
 use tracing::info;
 
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
 pub struct Proxy {
     pub(super) config: Config,
     pub(super) verifier: ApiKeyVerifier,
-    pub(super) endpoint_balancer: LoadBalancer<RoundRobin>,
+    pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
 }
 
 /// How long in-flight connections are given to finish once the graceful shutdown deadline (
@@ -24,8 +28,9 @@ pub struct Proxy {
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
 impl Proxy {
-    pub fn from_config(config: Config) -> anyhow::Result<Self> {
-        let endpoint_balancer =
+    /// Creates the `Proxy` from its configuration, and the `State` used to monitor it.
+    pub fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        let mut endpoint_balancer =
             LoadBalancer::try_from_iter(config.endpoint_addresses.iter().map(Authority::as_str))
                 .context("Failed to resolve endpoint addresses")?;
         info!(
@@ -37,12 +42,20 @@ impl Proxy {
                 .map(|b| b.addr.to_string())
                 .collect::<Vec<_>>()
         );
+        endpoint_balancer.set_health_check(Box::new(endpoint_health_check(&config)?));
+        let endpoint_balancer = Arc::new(endpoint_balancer);
 
-        Ok(Self {
+        let state = State::new(
+            config.bind_address,
+            Arc::clone(&endpoint_balancer),
+            config.healthcheck_timeout,
+        )?;
+        let proxy = Self {
             verifier: ApiKeyVerifier::new(config.api_key_digest),
             config,
             endpoint_balancer,
-        })
+        };
+        Ok((proxy, state))
     }
 
     /// Runs the proxy until it receives `SIGTERM`, `SIGINT` or `SIGQUIT`.
@@ -142,7 +155,8 @@ mod tests {
             ..Config::default()
         };
 
-        let error = match Proxy::from_config(config).unwrap().build_server() {
+        let (proxy, _state) = Proxy::from_config(config).unwrap();
+        let error = match proxy.build_server() {
             Ok(_) => panic!("invalid TLS material was accepted"),
             Err(e) => e.to_string(),
         };
