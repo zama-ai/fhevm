@@ -3,7 +3,7 @@ import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { assertBridgeEndpointImmutable, buildProtocolConfigReinitializeArgs } from './taskDeploy';
-import { getRequiredCountEnvVar, getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
 const REINITIALIZE_FUNCTION_PREFIX = 'reinitializeV'; // Prefix for reinitialize functions
@@ -605,17 +605,7 @@ task('task:upgradeInputVerifier')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const initialSigners: string[] = [];
-    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < numSigners; idx++) {
-      initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
-    }
-    const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
-
-    await upgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
-      initialSigners,
-      coprocessorThreshold,
-    ]);
+    await upgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:prepareUpgradeInputVerifier')
@@ -640,17 +630,7 @@ task('task:prepareUpgradeInputVerifier')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    const initialSigners: string[] = [];
-    const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < numSigners; idx++) {
-      initialSigners.push(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
-    }
-    const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
-
-    await prepareUpgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre, [
-      initialSigners,
-      coprocessorThreshold,
-    ]);
+    await prepareUpgradeContract('InputVerifier', 'INPUT_VERIFIER_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
 task('task:upgradeHCULimit')
