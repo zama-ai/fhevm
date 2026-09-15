@@ -655,12 +655,13 @@ const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
  * Only `COPROCESSOR_*` shims are consulted: a pinned coprocessor image tag says
  * nothing about the connector or the contracts.
  */
-// #3922 changes the current (0.15) sender to HTTP. Older release families
-// use WebSocket; unversioned main images follow the existing modern-image policy.
-const transactionSenderGatewayArg = (version: string): readonly [string, CompatArgValue] => [
-  "--gateway-url",
-  { env: versionBeforeReleaseFamily(version, [0, 15, 0], { unparsed: "modern" }) ? "GATEWAY_WS_URL" : "GATEWAY_URL" },
-];
+// HTTP was backported in 0.13.5 and after 0.14.1 (#3916, #3923).
+// Unversioned images retain the existing current/main compatibility policy.
+const transactionSenderGatewayArg = (version: string): readonly [string, CompatArgValue] => {
+  const http = compatVersionGte(version, [0, 14, 2], { unparsed: "modern" }) ||
+    (compatVersionGte(version, [0, 13, 5]) && versionBeforeReleaseFamily(version, [0, 14, 0]));
+  return ["--gateway-url", { env: http ? "GATEWAY_URL" : "GATEWAY_WS_URL" }];
+};
 
 export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy => {
   const policy: CoprocessorArgPolicy = { coprocessorArgs: {}, coprocessorDropFlags: {} };
