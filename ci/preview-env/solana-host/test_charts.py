@@ -36,15 +36,19 @@ class SolanaCharts(unittest.TestCase):
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
     def test_listener_shares_database_and_keeps_proofs_private(self):
-        documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
-                           "--set-string", "commonConfig.databaseUrl=postgresql://db/coprocessor")
+        documents = render("coprocessor-1", "coprocessor", [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
+                            VALUES / "values-solana-coprocessor-e2e.yaml"])
         name = "coprocessor-1-solana-host-listener"
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
         self.assertEqual(deployment["spec"]["replicas"], 1)
         self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
         container = deployment["spec"]["template"]["spec"]["containers"][0]
         env = {e["name"]: e for e in container["env"]}
-        self.assertEqual(env["DATABASE_URL"]["value"], "postgresql://db/coprocessor")
+        self.assertEqual(env["DATABASE_URL"]["value"],
+                         "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e")
+        names = [e["name"] for e in container["env"]]
+        for variable in ["DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_ENDPOINT"]:
+            self.assertLess(names.index(variable), names.index("DATABASE_URL"))
         self.assertEqual(env["SOLANA_PROOF_API_KEY"]["valueFrom"]["secretKeyRef"]["name"], "solana-proof-api")
         service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == name)
         self.assertEqual(service["spec"]["type"], "ClusterIP")

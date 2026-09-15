@@ -142,11 +142,8 @@ kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/"${job}" -n "${NAMES
 kubectl logs -n "${NAMESPACE}" "${job}"
 fi
 
-psql_party() {
-  local party="$1" sql="$2"
-  kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
-    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
-}
+# shellcheck source=ci/preview-env/scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # After in-window e2e, cutover may already have flipped the row to
 # UpgradeAuthorized/LIVE. Skip the DryRunStarted gate when we only want
