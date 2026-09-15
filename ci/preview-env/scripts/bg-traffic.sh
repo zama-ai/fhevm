@@ -253,6 +253,10 @@ teardown)
   for c in "${chains[@]}"; do
     [[ -n "$(loop_pid "${c}")" ]] && fail "${c}: loop still running; stop first"
     kubectl delete pod -n "${NAMESPACE}" "$(pod_name "${c}")" --ignore-not-found
+    # The snapshot too, or `setup` restores it and reuses a token whose ciphertexts
+    # a bg-reset.sh in between has already truncated. Keep it with KEEP_STATE=true.
+    [[ "${KEEP_STATE:-false}" == "true" ]] ||
+      kubectl delete configmap -n "${NAMESPACE}" "bg-traffic-state-${c}" --ignore-not-found
   done
   ;;
 *)
