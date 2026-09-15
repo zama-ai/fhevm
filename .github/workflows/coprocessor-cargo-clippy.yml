@@ -29,6 +29,7 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/coprocessor-cargo-clippy.yml
+              - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
   cargo-clippy:
@@ -55,10 +56,8 @@ jobs:
       with:
         toolchain-dir: coprocessor/fhevm-engine
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
+    - name: Install pinned protoc
+      uses: ./.github/actions/setup-rust-and-protoc
 
     - name: Install foundry
       uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c
