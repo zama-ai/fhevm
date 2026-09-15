@@ -88,7 +88,10 @@ export async function runSolanaUserDecrypt<TResponse>(run: {
 }): Promise<{ readonly response: TResponse; readonly attempts: number }> {
   const body = buildSolanaUserDecryptRequest({ signedPermit: run.signedPermit, entries: run.entries });
 
-  const budget = Math.max(1, run.attempts ?? SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS);
+  const budget = run.attempts ?? SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS;
+  if (!Number.isSafeInteger(budget) || budget < 1) {
+    throw new RangeError('attempts must be a positive safe integer');
+  }
   let attempts = 0;
 
   for (;;) {

@@ -5,6 +5,7 @@ import { runSolanaCurrentUserDecrypt, type CurrentUserDecryptDependencies } from
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
 const validEnvironment = (): Record<string, string> => ({
   UD_RELAYER_URL: "http://127.0.0.1:3000",
+  UD_RPC_URL: 'http://127.0.0.1:8899',
   UD_CONTRACTS_CHAIN_ID: "9223372036854788153",
   UD_HANDLE: hex32("1"),
   UD_SECRET_KEY: hex32("2"),

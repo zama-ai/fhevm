@@ -203,6 +203,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       ]);
       const hex20 = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
       return runSolanaCurrentUserDecrypt({
+        UD_RPC_URL: cfg.rpcUrl,
         UD_RELAYER_URL: cfg.relayerUrl,
         UD_CONTRACTS_CHAIN_ID: state.chainId,
         UD_HANDLE: state.currentHandle,

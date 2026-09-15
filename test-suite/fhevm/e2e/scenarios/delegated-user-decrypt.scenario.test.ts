@@ -26,7 +26,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
 import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
-import type { SolanaDecryptTrust } from "@sdk-src/solana/index.js";
+import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
@@ -61,9 +61,7 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 /** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
 
-// The literal specifier stays opaque to tsc (the suite-wide pattern): CI type-checks against
-// the SDK *sources* via the `@sdk-src` alias and never builds the package this resolves to.
-type SdkSolanaModule = typeof import("@sdk-src/solana/index.js");
+type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
 const sdkSolana = async (): Promise<SdkSolanaModule> => {
   const solanaModule = "@fhevm/sdk/solana";
   return (await import(solanaModule)) as SdkSolanaModule;
@@ -159,7 +157,7 @@ describe("solana delegated user-decrypt", () => {
           verifyingContract: config.gatewayDecryptionContract,
         } as SolanaDecryptTrust["gatewayEip712Domain"],
       };
-      const client = solana.createFhevmDecryptClient({ chain, trust });
+      const client = solana.createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
       const session = await client.signPermit({
         wallet: solana.solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
         durationSeconds: 3_600n,
@@ -179,8 +177,8 @@ describe("solana delegated user-decrypt", () => {
         const entries = [
           { handle, encryptedStore: addressBytes(value.encryptedStore), allowedKey: addressBytes(value.owner) },
         ];
-        const first = await client.userDecrypt({ session, entries });
-        const second = await client.userDecrypt({ session, entries });
+        const first = await client.decryptValues({ session, entries });
+        const second = await client.decryptValues({ session, entries });
         expect(BigInt(first[0]!.value as bigint)).toBe(42n);
         expect(BigInt(second[0]!.value as bigint)).toBe(42n);
       } finally {

@@ -12,7 +12,7 @@ import { createSolanaFheTransaction, type SolanaFheTransactionAccounts } from "@
 
 import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import { solanaEncryptedStoreAddress } from "@sdk-src/solana/encryptedStore.js";
+import { solanaEncryptedStoreAddress } from "@fhevm/sdk/solana";
 
 import { getExtendInstructionAsync, getInitializeInstructionAsync as getInitializeChainInstructionAsync } from "./internal/generated/depChain/instructions/index.js";
 import { findChainAuthorityPda, findChainPda } from "./internal/generated/depChain/pdas/index.js";

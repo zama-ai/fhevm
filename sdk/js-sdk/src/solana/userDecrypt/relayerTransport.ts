@@ -18,14 +18,18 @@ import type { FetchUserDecryptResult } from '../../core/types/relayer.js';
 import type { SolanaSigncryptedShare } from './response.js';
 import type { SolanaUserDecryptRejection } from './failure.js';
 import type { SolanaUserDecryptRequestJson } from './request.js';
-import type { SolanaUserDecryptTransport } from './session.js';
+import type { SolanaUserDecryptTransport, SolanaUserDecryptClock } from './session.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { RelayerResponseApiError } from '../../core/errors/RelayerResponseApiError.js';
+import { abortableSleep } from '../../core/base/timeout.js';
+import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
+import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 
 /**
- * Builds the transport a user-decrypt session submits through.
+ * Builds the transport and retry clock for one user-decrypt operation.
+ * One deadline bounds all its requests and backoff; create a new transport for the next operation.
  *
  * One `RelayerAsyncRequest` per submission: the class is single-run by design, and the session's
  * retry loop decides whether there is another submission at all.
@@ -37,11 +41,74 @@ import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 export function createSolanaUserDecryptRelayerTransport(config: {
   readonly relayerUrl: string;
   readonly options?: RelayerUserDecryptOptions | undefined;
-}): SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]> {
+  readonly logger?: FhevmRuntimeConfig['logger'] | undefined;
+}): SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]> &
+  SolanaUserDecryptClock & { throwIfAbortedOrExpired(): void } {
   const baseUrl = validateRelayerBaseUrl(config.relayerUrl, config.options?.auth !== undefined);
   const url = buildRelayerUrlString(baseUrl, 'v3/user-decrypt');
+  const timeout = config.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
+  if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 2_147_483_647) {
+    throw new RangeError('timeout must be an integer from 1 to 2147483647 milliseconds');
+  }
+  const deadline = Date.now() + timeout;
+  const expire = (): never => {
+    const progress = {
+      url,
+      operation: 'USER_DECRYPT' as const,
+      retryCount: 0,
+      step: 0,
+      totalSteps: 0,
+      type: 'timeout' as const,
+    };
+    const onProgress = config.options?.onProgress;
+    if (onProgress) {
+      queueMicrotask(() => {
+        onProgress(progress);
+      });
+    }
+
+    throw new RelayerTimeoutError({ operation: 'USER_DECRYPT', url, timeoutMs: timeout });
+  };
+  let abortReported = false;
+  const abort = (): never => {
+    if (!abortReported) {
+      abortReported = true;
+      const onProgress = config.options?.onProgress;
+      if (onProgress) {
+        queueMicrotask(() => {
+          onProgress({
+            type: 'abort',
+            operation: 'USER_DECRYPT',
+            url,
+            retryCount: 0,
+            step: 0,
+            totalSteps: 0,
+          });
+        });
+      }
+    }
+    throw new RelayerAbortError({ operation: 'USER_DECRYPT', url });
+  };
+  const remaining = (): number => {
+    if (config.options?.signal?.aborted === true) abort();
+    const milliseconds = deadline - Date.now();
+    return milliseconds > 0 ? milliseconds : expire();
+  };
 
   return {
+    throwIfAbortedOrExpired(): void {
+      remaining();
+    },
+    async delay(seconds: number): Promise<void> {
+      const milliseconds = remaining();
+      try {
+        await abortableSleep(Math.min(seconds * 1000, milliseconds), config.options?.signal);
+      } catch (error) {
+        if (config.options?.signal?.aborted === true) abort();
+        throw error;
+      }
+      remaining();
+    },
     async submit(request: SolanaUserDecryptRequestJson) {
       // Whether the request became a job: the one fact that splits a refusal (the relayer never
       // accepted it) from a failure (the job it became did not produce an answer). The class keeps
@@ -50,11 +117,14 @@ export function createSolanaUserDecryptRelayerTransport(config: {
 
       const relayerRequest = new RelayerAsyncRequest({
         relayerOperation: 'USER_DECRYPT',
+        logger: config.logger,
         url,
         payload: request as unknown as Record<string, unknown>,
         options: {
           ...config.options,
+          timeout: remaining(),
           onProgress: (progress: RelayerUserDecryptProgressArgs) => {
+            if (progress.type === 'abort') abortReported = true;
             if (progress.type === 'queued') {
               queued = true;
             }
@@ -95,11 +165,6 @@ function rejectionFrom(error: unknown, queued: boolean): SolanaUserDecryptReject
   if (error instanceof RelayerResponseApiError) {
     const { label, message } = error.relayerApiError;
     return queued ? { kind: 'failed', label, message } : { kind: 'refused', label, message };
-  }
-  // A job that existed and was never answered within the submission's own time budget: the same
-  // observable fact as a completed-but-empty job, and the same repair.
-  if (error instanceof RelayerTimeoutError && queued) {
-    return { kind: 'unanswered' };
   }
   throw error;
 }

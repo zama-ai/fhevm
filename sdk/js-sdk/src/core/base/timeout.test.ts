@@ -166,4 +166,13 @@ describe('abortableSleep', () => {
 
     await expect(promise).resolves.toBeUndefined();
   });
+  it('removes the abort listener when the wait completes', async () => {
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, 'addEventListener');
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    const promise = abortableSleep(100, controller.signal);
+    vi.advanceTimersByTime(100);
+    await promise;
+    expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0]?.[1]);
+  });
 });

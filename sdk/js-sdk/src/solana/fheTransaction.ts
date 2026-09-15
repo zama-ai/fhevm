@@ -35,8 +35,9 @@ export type SolanaFheTransaction = {
  */
 export async function createSolanaFheTransaction(parameters: {
   readonly payer: TransactionSigner;
+  readonly programAddress?: Address | undefined;
 }): Promise<SolanaFheTransaction> {
-  const programAddress = ZAMA_HOST_PROGRAM_ADDRESS;
+  const programAddress = parameters.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
   const [transientStore] = await getProgramDerivedAddress({
     programAddress,
     seeds: [new TextEncoder().encode('transient'), getAddressEncoder().encode(parameters.payer.address)],

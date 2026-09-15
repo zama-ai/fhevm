@@ -79,6 +79,7 @@ describe("solana confidential-token consume vertical", () => {
       // for transfer/burn amounts.
       const contractAddress = asBytes32Hex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
       const submission = await submitUint64InputProof({
+        rpcUrl: env.rpcUrl,
         chainId: config.chainId,
         relayerUrl: config.relayerUrl,
         aclProgramAddress: env.aclProgram,

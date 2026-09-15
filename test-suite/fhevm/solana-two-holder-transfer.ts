@@ -47,28 +47,26 @@ const chainId = BigInt(required('TRANSFER_CHAIN_ID'));
 if ((chainId & (1n << 63n)) === 0n) throw new Error('transfer chain id is not a Solana high-bit chain id');
 const aclProgramAddress = bytes32(required('TRANSFER_ACL_PROGRAM'));
 if (addressHex(HOST_PROGRAM) !== aclProgramAddress) throw new Error('configured ACL program is not the fixed Zama host program');
-const chain = defineFhevmSolanaChain({ id: chainId, fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL') } });
+const rpc = createSolanaRpc(required('TRANSFER_RPC_URL'));
+const chain = defineFhevmSolanaChain({ id: chainId, fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL'), verifyingProgramId: aclProgramAddress } });
 setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
-const client = createFhevmEncryptClient({ chain, aclProgramAddress });
+const client = createFhevmEncryptClient({ chain, rpc });
 // The attestation binds the amount to (user = owner, contract = the confidential-token program),
 // the contract identity the token requires for a transfer amount.
-const inputProof = await client.buildInputProof({
+const { inputProof } = await client.encryptValues({
   contractAddress: addressHex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
   userAddress: addressHex(owner.address),
   values: [{ type: 'uint64', value: 400n }],
 });
-const inputProofResult = await client.submitInputProof({ inputProof });
 const [hostConfig] = await getProgramDerivedAddress({
   programAddress: HOST_PROGRAM,
   seeds: [HOST_CONFIG_SEED],
 });
-const rpc = createSolanaRpc(required('TRANSFER_RPC_URL'));
 const rpcSubscriptions = createSolanaRpcSubscriptions(required('TRANSFER_WS_URL'));
 const signature = await confidentialTransfer({ solanaChain: chain, aclProgramAddress }, {
   rpc,
   rpcSubscriptions,
   inputProof,
-  inputProofResult,
   inputIndex: 0,
   owner,
   feePayer: owner,
@@ -82,7 +80,7 @@ const signature = await confidentialTransfer({ solanaChain: chain, aclProgramAdd
   toStore: address(required('TRANSFER_TO_STATE')),
   hostConfig,
 });
-const inputHandle = inputProof.getInputHandles()[0]?.bytes32Hex;
+const inputHandle = inputProof.handles[0]?.bytes32Hex;
 if (inputHandle === undefined) throw new Error('SDK transfer proof did not contain its euint64 handle');
 process.stdout.write(
   `${JSON.stringify({ version: 1, signature, inputHandle })}\n`,

@@ -1,3 +1,5 @@
+import { bytesToHex, concatBytes } from '../core/base/bytes.js';
+export { bytesToHex, hexToBytes } from '../core/base/bytes.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
 /**
@@ -31,17 +33,6 @@ function utf8(s: string): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
-  }
-  return out;
-}
-
 function assertLen(bytes: Uint8Array, len: number, name: string): void {
   if (bytes.length !== len) {
     throw new Error(`${name} must be exactly ${len} bytes, got ${bytes.length}`);
@@ -62,25 +53,6 @@ export function u64BE(value: bigint): Uint8Array {
 /** keccak256 of the concatenation of `parts`. Matches the Rust crate's `keccak256(&[...])` helper. */
 function keccak256Parts(...parts: readonly Uint8Array[]): Uint8Array {
   return keccak_256(concatBytes(...parts));
-}
-
-export function bytesToHex(bytes: Uint8Array): string {
-  return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
-export function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.startsWith('0x') || hex.startsWith('0X') ? hex.slice(2) : hex;
-  if (clean.length % 2 !== 0) {
-    throw new Error(`hexToBytes: odd-length hex string: ${hex}`);
-  }
-  if (!/^[0-9a-fA-F]*$/.test(clean)) {
-    throw new Error(`hexToBytes: invalid hex string: ${hex}`);
-  }
-  const out = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
 }
 
 /** Matches `zama_solana_acl::mmr::mmr_leaf_node`. */

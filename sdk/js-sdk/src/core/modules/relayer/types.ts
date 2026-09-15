@@ -29,7 +29,7 @@ import type { Auth } from '../../types/auth.js';
 
 export type RelayerClient = {
   readonly relayerUrl: string;
-  readonly chainId: number;
+  readonly chainId: number | bigint;
 };
 
 export type RelayerClientWithRuntime = {

@@ -87,8 +87,8 @@ describe('an overloaded relayer', () => {
     });
   });
 
-  it('falls back to the default delay when it asks for none', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'overloaded', retryAfterSeconds: 0 })).toEqual({
+  it.each([0, -1, NaN, Infinity])('falls back to the default delay for invalid delay %s', (retryAfterSeconds) => {
+    expect(classifySolanaUserDecryptRejection({ kind: 'overloaded', retryAfterSeconds })).toEqual({
       action: 'retry-unchanged',
       afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
     });
@@ -96,10 +96,7 @@ describe('an overloaded relayer', () => {
 });
 
 describe('a job that produced nothing', () => {
-  // What a Connector refusal looks like from here. Its two repairable causes — a proof an append moved
-  // past, and a handle an update replaced while the request was in flight — are both fixed by
-  // resolving the evidence again, so they need not be told apart to be acted on.
-  it('resolves the evidence again rather than resubmitting the same bytes', () => {
+  it('retries an unanswered request unchanged', () => {
     expect(classifySolanaUserDecryptRejection({ kind: 'unanswered' })).toEqual({
       action: 'retry-unchanged',
       afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,

@@ -8,8 +8,9 @@ import type { Bytes32Hex } from './primitives.js';
  *   `Number.MAX_SAFE_INTEGER`, so a `number` would silently lose precision.
  * - `relayerUrl` — the relayer base URL requests are POSTed to.
  * - `verifyingProgramId` — the 32-byte host program id permits are signed for: the deployment
- *   identity, the Solana analogue of a `verifyingContract`. Required by the permit-path decrypt
- *   actions, unused elsewhere.
+ *   identity, the Solana analogue of a `verifyingContract`. Used for account ownership, PDA
+ *   derivation and input proofs; required explicitly for permit signing. Other actions default
+ *   to the program address in the bundled host IDL.
  *
  * Everything here describes *where* a deployment is, never *whom to trust* — the trust
  * configuration (KMS signer set, routing, gateway domain) travels separately, as a client

@@ -2,9 +2,9 @@ import { getProgramDerivedAddress, getU64Encoder, type Address } from '@solana/k
 import { base58 } from '@scure/base';
 import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinRecord.js';
 
-import { solanaEncryptedStoreAddress } from '@sdk-src/solana/encryptedStore.js';
+import { solanaEncryptedStoreAddress } from '@fhevm/sdk/solana';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
 
 const encoder = new TextEncoder();

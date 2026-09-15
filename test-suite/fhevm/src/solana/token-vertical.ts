@@ -10,7 +10,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 
 import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import type { MmrProof } from "@sdk-src/solana/proof.js";
+import type { MmrProof } from "@fhevm/sdk/solana";
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import {

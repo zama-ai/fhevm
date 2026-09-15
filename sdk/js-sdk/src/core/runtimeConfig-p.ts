@@ -1,3 +1,4 @@
+import type { FhevmRuntimeConfig } from './types/coreFhevmRuntime.js';
 import type { Auth } from './types/auth.js';
 import type { FhevmModuleVersions } from './types/moduleVersions.js';
 
@@ -39,4 +40,8 @@ export function authsAreEqual(a: Auth | undefined, b: Auth | undefined): boolean
     case 'ApiKeyCookie':
       return b.type === 'ApiKeyCookie' && a.value === b.value && a.cookie === b.cookie;
   }
+}
+
+export function loggersAreEqual(a: FhevmRuntimeConfig['logger'], b: FhevmRuntimeConfig['logger']): boolean {
+  return a === b || (a?.debug === b?.debug && a?.warn === b?.warn && a?.error === b?.error);
 }

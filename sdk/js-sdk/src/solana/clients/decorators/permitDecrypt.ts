@@ -1,3 +1,5 @@
+import type { Address } from '@solana/kit';
+import { getAddressDecoder } from '@solana/kit';
 // The permit-path decrypt actions: sign a permit once, run requests under it.
 //
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
@@ -12,7 +14,7 @@
 // from a canonical source.
 
 import type { Bytes32Hex } from '../../../core/types/primitives.js';
-import type { ClearValue } from '../../../core/types/encryptedTypes-p.js';
+import type { TypedValue } from '../../../core/types/primitives.js';
 import type { FhevmRuntime } from '../../../core/types/coreFhevmRuntime.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { RelayerUserDecryptOptions } from '../../../core/types/relayer.js';
@@ -39,7 +41,7 @@ import {
 } from '../../userDecrypt/index.js';
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
-import { createClearValue } from '../../../core/handle/ClearValue.js';
+import { createClearValue, clearValueToTypedValue } from '../../../core/handle/ClearValue.js';
 import { hexToBytes32, isBytes32 } from '../../../core/base/bytes.js';
 
 /** The origin of every clear value this path produces; nothing outside this module can mint one. */
@@ -61,8 +63,8 @@ export interface SolanaDecryptTrust {
   readonly kmsEpochId: Bytes32Hex;
   /** The FHE parameter choice this deployment runs, e.g. `default` or `test`. */
   readonly fheParameter: string;
-  /** The gateway EIP-712 domain; absent, every real response is refused fail-closed. */
-  readonly gatewayEip712Domain?: SolanaGatewayEip712Domain | undefined;
+  /** The gateway EIP-712 domain used to authenticate KMS response signatures. */
+  readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
 }
 
 /** One `(program, scope)` pair a permit may be restricted to. */
@@ -83,8 +85,6 @@ export interface SolanaSignPermitParameters {
    * bytes. Absent or empty is the permissive permit.
    */
   readonly allowedScopes?: readonly SolanaPermitScope[] | undefined;
-  /** The signer's revocation watermark; `0n` (the default) when none was ever recorded. */
-  readonly invalidationWatermark?: bigint | undefined;
 }
 
 /** One handle to decrypt, and the caller's knowledge of where its value lives. */
@@ -105,7 +105,7 @@ export interface SolanaUserDecryptParameters {
   readonly entries: readonly SolanaUserDecryptEntry[];
   /** Submission budget; the session default applies when absent. */
   readonly attempts?: number | undefined;
-  /** Core relayer options (auth, timeout, abort signal, progress callback). */
+  /** Relayer options; timeout bounds the whole operation, including retries and backoff. */
   readonly options?: RelayerUserDecryptOptions | undefined;
 }
 
@@ -113,7 +113,7 @@ export type SolanaPermitDecryptActions = {
   /** Creates a permit and takes it to the wallet once; the session it returns is reusable. */
   readonly signPermit: (parameters: SolanaSignPermitParameters) => Promise<SolanaPermitSession>;
   /** Runs one user decryption under a signed permit, to typed clear values. */
-  readonly userDecrypt: (parameters: SolanaUserDecryptParameters) => Promise<readonly ClearValue[]>;
+  readonly decryptValues: (parameters: SolanaUserDecryptParameters) => Promise<readonly TypedValue[]>;
 };
 
 /**
@@ -130,18 +130,23 @@ export function solanaPermitDecryptActions(
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
   runtime: FhevmRuntime,
+  fetchPermitInvalidation: (user: Address) => Promise<bigint>,
 ): SolanaPermitDecryptActions {
   // Fail at construction, not mid-session: a chain missing the deployment identity would otherwise
   // surface as a failure of whichever request first needed it.
-  const verifyingProgramId = requiredChainField(chain.fhevm.verifyingProgramId, 'verifyingProgramId');
+  const verifyingProgramId = requiredField(chain.fhevm.verifyingProgramId, 'chain.fhevm.verifyingProgramId');
+  const gatewayEip712Domain = requiredField(trust.gatewayEip712Domain, 'trust.gatewayEip712Domain');
 
   return {
     async signPermit(parameters: SolanaSignPermitParameters): Promise<SolanaPermitSession> {
+      const invalidationWatermark = await fetchPermitInvalidation(
+        getAddressDecoder().decode(parameters.wallet.account.publicKey),
+      );
       const keyPair = await generateSolanaTransportKeyPair();
       const now = BigInt(Math.floor(Date.now() / 1000));
       const startTimestamp = normalizeSolanaPermitStart({
         now,
-        invalidationWatermark: parameters.invalidationWatermark ?? 0n,
+        invalidationWatermark,
       });
       const fields = decodeSolanaPermitFields({
         userPubkey: Uint8Array.from(parameters.wallet.account.publicKey),
@@ -162,7 +167,7 @@ export function solanaPermitDecryptActions(
       return { signedPermit, keyPair, warnings };
     },
 
-    async userDecrypt(parameters: SolanaUserDecryptParameters): Promise<readonly ClearValue[]> {
+    async decryptValues(parameters: SolanaUserDecryptParameters): Promise<readonly TypedValue[]> {
       const userPubkey = parameters.session.signedPermit.fields.userPubkey;
       const entries: readonly SolanaUserDecryptHandleEntry[] = parameters.entries.map((entry) => ({
         handle: entry.handle,
@@ -170,22 +175,24 @@ export function solanaPermitDecryptActions(
         encryptedStore: entry.encryptedStore,
       }));
 
+      const transport = createSolanaUserDecryptRelayerTransport({
+        relayerUrl: chain.fhevm.relayerUrl,
+        logger: runtime.config.logger,
+        options: { auth: runtime.config.auth, ...parameters.options },
+      });
       const plaintexts = await executeSolanaUserDecrypt({
         session: parameters.session,
         entries,
-        transport: createSolanaUserDecryptRelayerTransport({
-          relayerUrl: chain.fhevm.relayerUrl,
-          options: { auth: runtime.config.auth, ...parameters.options },
-        }),
-        clock: { delay: (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)) },
+        transport,
+        clock: transport,
         attempts: parameters.attempts,
         verification: {
           signers: trust.kmsSigners,
           fheParameter: trust.fheParameter,
-          gatewayEip712Domain: trust.gatewayEip712Domain,
+          gatewayEip712Domain,
         },
       });
-
+      transport.throwIfAbortedOrExpired();
       return toClearValues(
         plaintexts,
         entries.map((entry) => entry.handle),
@@ -232,7 +239,7 @@ function sortedScopes(scopes: readonly SolanaPermitScope[]): readonly Uint8Array
 function toClearValues(
   plaintexts: readonly SolanaUserDecryptPlaintext[],
   handles: readonly Uint8Array[],
-): readonly ClearValue[] {
+): readonly TypedValue[] {
   return plaintexts.map((plaintext, index) => {
     const handle = handles[index];
     // The response layer verified one plaintext per handle; the narrowings re-state that for the
@@ -241,25 +248,18 @@ function toClearValues(
       throw new Error(`no 32-byte handle stands at position ${index} of a verified response`);
     }
     const fhevmHandle = bytes32ToHandle(handle);
-    return createClearValue({
-      value: bytesToClearValueType(fhevmHandle.fheType, plaintext.bytes),
-      handle: fhevmHandle,
-      originToken: SOLANA_PERMIT_USER_DECRYPT_TOKEN,
-    });
+    return clearValueToTypedValue(
+      createClearValue({
+        value: bytesToClearValueType(fhevmHandle.fheType, plaintext.bytes),
+        handle: fhevmHandle,
+        originToken: SOLANA_PERMIT_USER_DECRYPT_TOKEN,
+      }),
+      SOLANA_PERMIT_USER_DECRYPT_TOKEN,
+    );
   });
 }
 
-/**
- * A chain field the permit path stands on, or a refusal naming it.
- *
- * @param value - The configured value, possibly absent.
- * @param name - The field's name in the chain definition.
- */
-function requiredChainField<T>(value: T | undefined, name: string): T {
-  if (value === undefined) {
-    throw new Error(
-      `the permit-path decrypt actions need \`chain.fhevm.${name}\`, and this chain definition does not set it`,
-    );
-  }
+function requiredField<T>(value: T | undefined, path: string): T {
+  if (value === undefined) throw new Error(`Missing required field: ${path}`);
   return value;
 }

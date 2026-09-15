@@ -1,11 +1,11 @@
+import { bytesToHex } from '@fhevm/sdk/base';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { address } from '@solana/kit';
 import { base58 } from '@scure/base';
-import { buildPublicLeafProof, bytesToHex, reconstructSolanaStoreHistory } from '@sdk-src/solana/proof.js';
+import { buildPublicLeafProof, reconstructSolanaStoreHistory } from '@fhevm/sdk/solana';
 import { publicProof } from './publicProof.js';
 
 const fetchState = vi.hoisted(() => vi.fn());
-vi.mock('@sdk-src/solana/encryptedStore.js', () => ({ fetchSolanaEncryptedStore: fetchState }));
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -45,7 +45,7 @@ describe('publicProof', () => {
       ),
     );
     vi.stubGlobal('fetch', request);
-    expect(await publicProof({} as never, service, state, handle)).toEqual(proof);
+    expect(await publicProof({ fetchEncryptedStore: fetchState }, service, state, handle)).toEqual(proof);
     expect(JSON.parse(request.mock.calls[0]![1].body).leaves[0]).toEqual({
       encryptedStore: bytesToHex(base58.decode(state)),
       handle: bytesToHex(handle),
@@ -73,7 +73,7 @@ describe('publicProof', () => {
       ),
     );
     vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValue(15_001);
-    await expect(publicProof({} as never, service, state, handle)).rejects.toThrow('did not catch up');
+    await expect(publicProof({ fetchEncryptedStore: fetchState }, service, state, handle)).rejects.toThrow('did not catch up');
   });
 
   it('fails immediately on incomplete retained history', async () => {
@@ -82,7 +82,7 @@ describe('publicProof', () => {
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ proofs: [{ status: 'historyIncomplete' }] })));
     vi.stubGlobal('fetch', request);
-    await expect(publicProof({} as never, service, state, handle)).rejects.toThrow('historyIncomplete');
+    await expect(publicProof({ fetchEncryptedStore: fetchState }, service, state, handle)).rejects.toThrow('historyIncomplete');
     expect(request).toHaveBeenCalledTimes(1);
   });
 });

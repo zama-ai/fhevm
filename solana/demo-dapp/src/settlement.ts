@@ -1,3 +1,4 @@
+import type { Bytes32Hex } from '@fhevm/sdk/types';
 import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import type { ProofService } from './vault/internal/publicProof.js';
 import {
@@ -158,14 +159,13 @@ export const settleVaultBatch = async (
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'local' } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl },
+    fhevm: { relayerUrl: session.config.relayerUrl, verifyingProgramId: session.config.aclProgram as Bytes32Hex },
   });
-  const publicDecryptClient = createFhevmPublicDecryptClient({ chain });
-  const signature = await settleBatch(chain, session.keeper, {
+  const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
+  const signature = await settleBatch(publicDecryptClient, session.keeper, {
     rpc,
     rpcSubscriptions,
     proofService: session.proofService,
-    runtime: publicDecryptClient.runtime,
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),

@@ -1,8 +1,8 @@
-import type { EncryptionBits } from '@sdk-src/core/types/fheType.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import { toSolanaZkProof } from '@sdk-src/core/coprocessor/SolanaZkProof-p.js';
-import { bytesToHex } from '@sdk-src/core/base/bytes.js';
+import type { EncryptionBits } from '@fhevm/sdk/types';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaInputProof } from '@fhevm/sdk/solana';
+import { toSolanaZkProof } from '@fhevm/sdk/solana';
+import { bytesToHex } from '@fhevm/sdk/base';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
@@ -31,8 +31,8 @@ import { getJoinInstructionDataDecoder } from './internal/generated/confidential
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstructionDataDecoder,
-} from '@sdk-src/solana/internal/generated/zamaHost/instructions/closeTransientStore.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
+} from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
 const CHAIN_ID = (1n << 63n) | 12345n;
@@ -54,8 +54,8 @@ function proof(
   owner: Address,
   contract: Address,
   overrides: { acl?: Bytes32Hex; chainId?: bigint; bits?: readonly EncryptionBits[] } = {},
-): SolanaZkProof {
-  return toSolanaZkProof({
+): SolanaInputProof {
+  const local = toSolanaZkProof({
     chainId: overrides.chainId ?? CHAIN_ID,
     aclContractAddress: overrides.acl ?? CANONICAL_ACL,
     contractAddress: bytesToHex(base58.decode(contract)),
@@ -63,6 +63,15 @@ function proof(
     ciphertextWithZkProof: new Uint8Array([1]),
     encryptionBits: overrides.bits ?? [64],
   });
+  return {
+    handles: local.getInputHandles(),
+    chainId: local.chainId,
+    aclContractAddress: local.aclContractAddress,
+    contractAddress: local.contractAddress,
+    userAddress: local.userAddress,
+    signatures: [SIGNATURE as never],
+    extraData: '0x00' as never,
+  };
 }
 
 async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): Promise<SolanaVaultJoinParameters> {
@@ -73,11 +82,6 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
     rpc: {} as SolanaVaultJoinParameters['rpc'],
     rpcSubscriptions: {} as SolanaVaultJoinParameters['rpcSubscriptions'],
     inputProof,
-    inputProofResult: {
-      handles: inputProof.getInputHandles(),
-      signatures: [SIGNATURE] as never,
-      extraData: '0x00' as never,
-    },
     inputIndex: 0,
     user,
     payer: signer(key(3)),
@@ -103,11 +107,6 @@ async function sendableParameters(onTransactionSigned: NonNullable<SolanaVaultJo
     payer: user,
     joinConfidentialMint,
     inputProof,
-    inputProofResult: {
-      handles: inputProof.getInputHandles(),
-      signatures: [SIGNATURE] as never,
-      extraData: '0x00' as never,
-    },
     rpc: {
       getLatestBlockhash: vi.fn().mockReturnValue({
         send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
@@ -170,7 +169,7 @@ describe('joinBatch (attested arm)', () => {
     const data = getJoinInstructionDataDecoder().decode(message.instructions[2]!.data!);
     expect(data.handleIndex).toBe(0);
     expect(data.contractChainId).toBe(CHAIN_ID);
-    expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.getInputHandles()[0]!.bytes32));
+    expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.handles[0]!.bytes32));
     expect(data.signatures).toHaveLength(1);
   });
 
@@ -236,7 +235,7 @@ describe('joinBatch (attested arm)', () => {
         const bad = proof(p.user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
           bits: [8],
         });
-        return { ...p, inputProof: bad, inputProofResult: { ...p.inputProofResult, handles: bad.getInputHandles() } };
+        return { ...p, inputProof: bad };
       },
       'must be euint64',
     ],
@@ -249,7 +248,7 @@ describe('joinBatch (attested arm)', () => {
       'a malformed attestation signature',
       async () => {
         const p = await parameters();
-        return { ...p, inputProofResult: { ...p.inputProofResult, signatures: [`0x44` as never] } };
+        return { ...p, inputProof: { ...p.inputProof, signatures: [`0x44` as never] } };
       },
       'must be 65 bytes',
     ],
