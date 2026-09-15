@@ -221,3 +221,9 @@ export const gitopsFile = async (file: string) => {
   );
   return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8");
 };
+
+/** Reads the source associated with a repository image tag. */
+export const fhevmFileAt = async (file: string, ref: string): Promise<string> => {
+  const payload = await runGhApi<{ content: string }>(`repos/${FHEVM_REPO}/contents/${file}?ref=${encodeURIComponent(ref)}`);
+  return Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString("utf8");
+};

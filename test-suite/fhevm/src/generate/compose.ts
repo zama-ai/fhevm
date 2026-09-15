@@ -1,3 +1,5 @@
+import { localServicesForInstance, coprocessorBuildServices } from "../stack-spec/stack-spec";
+import { senderTransportForTag } from "../resolve/sender-transport";
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
@@ -584,22 +586,6 @@ export const loadMergedComposeDoc = async (component: string) => {
   return mergeComposeDocs(base, await loadGeneratedComposeDoc(component));
 };
 
-/** Returns the locally built service set owned by one coprocessor instance. */
-const localServicesForInstance = (instance: ResolvedCoprocessorScenarioInstance) =>
-  new Set(instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor);
-
-/** Computes the inherited coprocessor services that should be built locally. */
-const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
-  const overrides = plan.overrides.filter((override) => override.group === "coprocessor");
-  if (!overrides.length) {
-    return new Set<string>();
-  }
-  if (overrides.some((override) => !override.services?.length)) {
-    return new Set(GROUP_BUILD_SERVICES.coprocessor);
-  }
-  return new Set(overrides.flatMap((override) => override.services ?? []));
-};
-
 /**
  * Applies scenario image sourcing rules to one coprocessor service clone, then
  * the GPU runtime the chosen image needs.
@@ -649,10 +635,25 @@ const applyCoprocessorSource = (
 const argPolicyForInstance = (
   compat: CoprocessorArgPolicy,
   instance: ResolvedCoprocessorScenarioInstance,
-): CoprocessorArgPolicy =>
-  instance.source.mode === "registry"
+  senderVersions?: StackSpec["versions"],
+): CoprocessorArgPolicy => {
+  const policy = instance.source.mode === "registry"
     ? compatArgPolicyForPinnedTag(instance.source.compatTag ?? instance.source.tag)
     : compat;
+  if (!senderVersions) return policy;
+  const tag = instance.source.mode === "registry" ? instance.source.tag : senderVersions.env.COPROCESSOR_TX_SENDER_VERSION!;
+  const transport = senderTransportForTag(senderVersions, tag);
+  return {
+    ...policy,
+    coprocessorArgs: {
+      ...policy.coprocessorArgs,
+      "transaction-sender": [
+        ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+        ["--gateway-url", { env: transport === "http" ? "GATEWAY_URL" : "GATEWAY_WS_URL" }],
+      ],
+    },
+  };
+};
 
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
@@ -709,7 +710,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       const locallyBuilt = greenDbMigration
         ? sourceInstance.source.mode === "local"
         : localServices.has(name);
-      const argPolicy = argPolicyForInstance(compat, sourceInstance);
+      const argPolicy = argPolicyForInstance(compat, sourceInstance,
+        name === "coprocessor-transaction-sender" && !locallyBuilt ? plan.versions : undefined);
       const adjusted = applyInstanceAdjustments(
         name,
         service,
@@ -781,7 +783,6 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         env: gcs.env,
         args: gcs.args,
       };
-      const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
       for (const [baseName, service] of Object.entries(doc.services)) {
         if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
           continue;
@@ -796,6 +797,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         // would feed it flags it does not accept — same guard as the BCS loop.
         const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
         const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
+        const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance,
+          baseName === "coprocessor-transaction-sender" && !locallyBuilt ? plan.versions : undefined);
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
@@ -1119,6 +1122,7 @@ const buildExtraCoprocessorListenerOverride = async (
         // an older one.
         const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
         const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
+
         const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
         const adjusted = applyInstanceAdjustments(
           baseName,

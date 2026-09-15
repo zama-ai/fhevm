@@ -1,8 +1,10 @@
+import { GROUP_BUILD_SERVICES } from "../layout";
 /**
  * Combines resolved versions, overrides, and scenario topology into the stack spec used for generation and orchestration.
  */
 import type {
   HostChainScenario,
+  ResolvedCoprocessorScenarioInstance,
   ResolvedBlueGreenScenario,
   ResolvedCoprocessorScenario,
   ResolvedKmsTopology,
@@ -186,3 +188,19 @@ export const stackSpecForState = (
     e2ePublicRuntime: state.e2ePublicRuntime,
     scenario: state.scenario,
   });
+
+/** Returns the locally built service set owned by one coprocessor instance. */
+export const localServicesForInstance = (instance: ResolvedCoprocessorScenarioInstance) =>
+  new Set(instance.localServices ?? GROUP_BUILD_SERVICES.coprocessor);
+
+/** Computes the inherited coprocessor services that should be built locally. */
+export const coprocessorBuildServices = (plan: Pick<StackSpec, "overrides">) => {
+  const overrides = plan.overrides.filter((override) => override.group === "coprocessor");
+  if (!overrides.length) {
+    return new Set<string>();
+  }
+  if (overrides.some((override) => !override.services?.length)) {
+    return new Set(GROUP_BUILD_SERVICES.coprocessor);
+  }
+  return new Set(overrides.flatMap((override) => override.services ?? []));
+};

@@ -313,6 +313,9 @@ for pin in sys.argv[2:]:
 json.dump(d, open(p, "w"), indent=2)
 PY
 
+# Refresh transport facts after the branch image pins change.
+( cd "$FHEVM" && ./fhevm-cli resolve --lock-file "$LOCK" --reset --scenario "$SOLANA_E2E_SCENARIO" )
+
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config (the Solana host-process step

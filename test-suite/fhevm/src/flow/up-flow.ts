@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 
+import { selectedSenderTags, resolveSenderTransports } from "../resolve/sender-transport";
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
   assertSupportedBundleScenario,
@@ -1250,7 +1251,7 @@ const bootstrapState = async (options: UpOptions) => {
   const scenario = await resolveScenarioForOptions(options);
   await assertDockerMemory(scenario);
   const resolveStarted = Date.now();
-  const resolved = await resolveBundle(options, process.env);
+  const resolved = await resolveBundle(options, process.env, scenario);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
   assertSupportedTargetScenario(resolved.bundle.target, scenario);
   assertSupportedBundleScenario({ versions: resolved.bundle, overrides: options.overrides, scenario });
@@ -1405,7 +1406,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   console.log(`[up] target=${options.target}`);
   const scenario = await resolveScenarioForOptions(options);
   await assertDockerMemory(scenario);
-  const bundle = await previewBundle(options, process.env);
+  const bundle = await previewBundle(options, process.env, scenario);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
   await preflight(state, false, state.requiresGitHub);
@@ -2087,7 +2088,9 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
       },
     };
   }
+  nextState.versions = await resolveSenderTransports(nextState.versions, selectedSenderTags(nextState.versions, nextState.scenario, nextState.overrides), { offline: Boolean(options.lockFile) && !options.bcsTag });
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
+  await writeJson(nextState.lockPath, nextState.versions);
   console.log(`[upgrade] ${plan.group}`);
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
