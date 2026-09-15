@@ -63,7 +63,8 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # Compilation and the isolated Postgres health-check container exhausted the default disk.
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/volume=80gb
     defaults:
       run:
         shell: bash
