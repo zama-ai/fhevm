@@ -1,20 +1,32 @@
+import {
+  decryptPublicValue,
+  decryptPublicValues,
+  type SolanaDecryptPublicValueParameters,
+} from '../actions/decryptPublicValue.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import type { FhevmOptions, Fhevm } from '../../core/types/coreFhevmClient.js';
-import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
+import type { FhevmSolanaBaseClient, SolanaClientParameters } from './createFhevmBaseClient.js';
 import type { SolanaPublicDecryptActions } from './decorators/publicDecrypt.js';
-import { createFhevmBaseClient } from './createFhevmBaseClient.js';
+import { createSolanaCore, solanaClientSurface } from './createFhevmBaseClient.js';
 import { solanaPublicDecryptActions } from './decorators/publicDecrypt.js';
 
-export type FhevmSolanaPublicDecryptClient<chain extends FhevmSolanaChain = FhevmSolanaChain> = Fhevm<
-  undefined,
-  FhevmRuntime,
-  undefined
-> & { readonly solanaChain: chain } & SolanaPublicDecryptActions;
+export type FhevmSolanaPublicDecryptClient<C extends FhevmSolanaChain = FhevmSolanaChain> = FhevmSolanaBaseClient<C> &
+  SolanaPublicDecryptActions & {
+    readonly decryptPublicValues: (
+      parameters: Parameters<typeof decryptPublicValues>[1],
+    ) => ReturnType<typeof decryptPublicValues>;
+    readonly decryptPublicValue: (
+      parameters: SolanaDecryptPublicValueParameters,
+    ) => ReturnType<typeof decryptPublicValue>;
+  };
 
-/** Creates a signer-free client for requesting witness-bound public-decrypt certificate claims. */
-export function createFhevmPublicDecryptClient<chain extends FhevmSolanaChain>(parameters: {
-  readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
-}): FhevmSolanaPublicDecryptClient<chain> {
-  return createFhevmBaseClient(parameters).extend(solanaPublicDecryptActions);
+/** Creates a signer-free public decrypt client. */
+export function createFhevmPublicDecryptClient<C extends FhevmSolanaChain>(
+  parameters: SolanaClientParameters<C>,
+): FhevmSolanaPublicDecryptClient<C> {
+  const core = createSolanaCore(parameters).extend(solanaPublicDecryptActions);
+  return Object.assign(solanaClientSurface(core, parameters), {
+    publicDecryptCertificate: core.publicDecryptCertificate,
+    decryptPublicValues: (input: Parameters<typeof decryptPublicValues>[1]) => decryptPublicValues(parameters, input),
+    decryptPublicValue: (input: SolanaDecryptPublicValueParameters) => decryptPublicValue(parameters, input),
+  });
 }

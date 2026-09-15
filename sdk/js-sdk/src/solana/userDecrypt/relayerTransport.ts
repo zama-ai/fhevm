@@ -23,6 +23,8 @@ import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/module
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { RelayerResponseApiError } from '../../core/errors/RelayerResponseApiError.js';
 import { abortableSleep } from '../../core/base/timeout.js';
+import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
+import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 
 /**
@@ -39,6 +41,7 @@ import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 export function createSolanaUserDecryptRelayerTransport(config: {
   readonly relayerUrl: string;
   readonly options?: RelayerUserDecryptOptions | undefined;
+  readonly logger?: FhevmRuntimeConfig['logger'] | undefined;
 }): SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]> &
   SolanaUserDecryptClock & { throwIfAbortedOrExpired(): void } {
   const baseUrl = validateRelayerBaseUrl(config.relayerUrl, config.options?.auth !== undefined);
@@ -66,8 +69,28 @@ export function createSolanaUserDecryptRelayerTransport(config: {
 
     throw new RelayerTimeoutError({ operation: 'USER_DECRYPT', url, timeoutMs: timeout });
   };
+  let abortReported = false;
+  const abort = (): never => {
+    if (!abortReported) {
+      abortReported = true;
+      const onProgress = config.options?.onProgress;
+      if (onProgress) {
+        queueMicrotask(() => {
+          onProgress({
+            type: 'abort',
+            operation: 'USER_DECRYPT',
+            url,
+            retryCount: 0,
+            step: 0,
+            totalSteps: 0,
+          });
+        });
+      }
+    }
+    throw new RelayerAbortError({ operation: 'USER_DECRYPT', url });
+  };
   const remaining = (): number => {
-    config.options?.signal?.throwIfAborted();
+    if (config.options?.signal?.aborted === true) abort();
     const milliseconds = deadline - Date.now();
     return milliseconds > 0 ? milliseconds : expire();
   };
@@ -78,7 +101,12 @@ export function createSolanaUserDecryptRelayerTransport(config: {
     },
     async delay(seconds: number): Promise<void> {
       const milliseconds = remaining();
-      await abortableSleep(Math.min(seconds * 1000, milliseconds), config.options?.signal);
+      try {
+        await abortableSleep(Math.min(seconds * 1000, milliseconds), config.options?.signal);
+      } catch (error) {
+        if (config.options?.signal?.aborted === true) abort();
+        throw error;
+      }
       remaining();
     },
     async submit(request: SolanaUserDecryptRequestJson) {
@@ -89,12 +117,14 @@ export function createSolanaUserDecryptRelayerTransport(config: {
 
       const relayerRequest = new RelayerAsyncRequest({
         relayerOperation: 'USER_DECRYPT',
+        logger: config.logger,
         url,
         payload: request as unknown as Record<string, unknown>,
         options: {
           ...config.options,
           timeout: remaining(),
           onProgress: (progress: RelayerUserDecryptProgressArgs) => {
+            if (progress.type === 'abort') abortReported = true;
             if (progress.type === 'queued') {
               queued = true;
             }

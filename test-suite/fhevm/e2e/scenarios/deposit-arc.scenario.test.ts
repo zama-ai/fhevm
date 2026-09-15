@@ -269,9 +269,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       const chain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl },
+        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: asBytes32Hex(config.aclProgram) },
       }) as FhevmSolanaChain;
-      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, aclProgramAddress: asBytes32Hex(config.aclProgram) });
+      const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, rpc });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
 
@@ -284,13 +284,11 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // batcher), user identity = alice, value = euint64 amount, chain id + ACL program from the
         // seeded config. Verification is purely cryptographic — no allowlist.
         console.log("deposit-arc join: building input proof (local TFHE prover)...");
-        const inputProof = await encryptClient.buildInputProof({
+        const { inputProof } = await encryptClient.encryptValues({
           contractAddress: addressToBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
           userAddress: addressToBytes32Hex(alice.address),
           values: [{ type: "uint64", value: wrapBaseUnits }],
         });
-        console.log("deposit-arc join: submitting input proof to the relayer...");
-        const inputProofResult = await encryptClient.submitInputProof({ inputProof });
 
         // Step 7: join. joinBatch simulates, sends, and confirms; it derives every encrypted value account and
         // authority account internally from the semantic roots passed here — nothing comes from an
@@ -302,7 +300,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             rpc,
             rpcSubscriptions,
             inputProof: inputProof as never,
-            inputProofResult: inputProofResult as never,
             inputIndex: 0,
             user: alice,
             payer: alice,
@@ -407,7 +404,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // authorityFundingLamports must suffice to cover the rent settle's CPIs charge to this
       // batch's authority — the seed recorded the open_batch value as a known-good amount.
       console.log("deposit-arc settle: calling settleBatch (MMR proof + KMS certificate + on-chain settle)...");
-      const publicDecryptClient = solanaSdk.createFhevmPublicDecryptClient({ chain });
+      const publicDecryptClient = solanaSdk.createFhevmPublicDecryptClient({ chain, rpc });
       await vault.settleBatch(publicDecryptClient, keeper, {
         rpc,
         rpcSubscriptions,
@@ -433,6 +430,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(batchAfterSettle.addresses.batch).toBe(batch);
       expect(batchAfterSettle.state.totalJoined).toBe(wrapBaseUnits);
       expect(batchAfterSettle.state.payoutReceived > 0n).toBe(true);
+      const settleAccounts = await vault.deriveSettleAccounts(roots, batchAfterSettle.addresses);
+      const verifiedTotal = await publicDecryptClient.decryptPublicValue({
+        handle: burnedHandleHex,
+        encryptedStore: addressBytes(settleAccounts.batchBurnedAmountStore),
+        options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
+      });
+      expect(verifiedTotal.type).toBe("uint64");
+      expect(verifiedTotal.value as bigint).toBe(wrapBaseUnits);
+
 
       // Claim into Alice's initially empty payout balance, then decrypt that balance to verify
       // the transfer credited the full proportional payout. No separate claim output is stored.
@@ -472,7 +478,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
       const claimValueState = await until(
         async () => {
-          const state = await vault.getEncryptedStore(rpc, claimValueAccount);
+          const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount);
           return encryptedStoreHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
@@ -487,6 +493,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       const decryptClient = solanaSdk.createFhevmDecryptClient({
         chain: decryptChain,
+        rpc,
         trust: {
           // Party ids follow the registry order — the same assumption the EVM SDK path makes.
           kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
@@ -503,7 +510,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       await decryptClient.ready;
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
-      const clearValues = await decryptClient.userDecrypt({
+      const clearValues = await decryptClient.decryptValues({
         session: permitSession,
         entries: [{ handle: encryptedStoreHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedStore: addressBytes(claimValueAccount) }],
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },

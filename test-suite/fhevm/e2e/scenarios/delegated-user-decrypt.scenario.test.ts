@@ -157,7 +157,7 @@ describe("solana delegated user-decrypt", () => {
           verifyingContract: config.gatewayDecryptionContract,
         } as SolanaDecryptTrust["gatewayEip712Domain"],
       };
-      const client = solana.createFhevmDecryptClient({ chain, trust });
+      const client = solana.createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
       const session = await client.signPermit({
         wallet: solana.solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
         durationSeconds: 3_600n,
@@ -177,8 +177,8 @@ describe("solana delegated user-decrypt", () => {
         const entries = [
           { handle, encryptedStore: addressBytes(value.encryptedStore), allowedKey: addressBytes(value.owner) },
         ];
-        const first = await client.userDecrypt({ session, entries });
-        const second = await client.userDecrypt({ session, entries });
+        const first = await client.decryptValues({ session, entries });
+        const second = await client.decryptValues({ session, entries });
         expect(BigInt(first[0]!.value as bigint)).toBe(42n);
         expect(BigInt(second[0]!.value as bigint)).toBe(42n);
       } finally {

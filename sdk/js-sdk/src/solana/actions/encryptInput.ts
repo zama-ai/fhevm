@@ -1,5 +1,7 @@
+import type { Bytes32Hex } from '../../core/types/primitives.js';
 import type { SolanaProofContext } from '../../core/types/zkProofBuilder-p.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
+import { resolveRawValueTypeName } from '../../core/handle/FheType.js';
 import { createTypedValue } from '../../core/base/typedValue.js';
 import { createZkProofBuilder } from '../../core/coprocessor/ZkProofBuilder-p.js';
 
@@ -12,9 +14,9 @@ export type SolanaEncryptInputValue = {
 
 export type SolanaEncryptInputParameters = {
   /** The bound contract identity, a 32-byte (bytes32) Solana host identity (RFC-021). */
-  readonly contractAddress: string;
+  readonly contractAddress: Bytes32Hex;
   /** The bound user identity, a 32-byte (bytes32) Solana host identity (RFC-021). */
-  readonly userAddress: string;
+  readonly userAddress: Bytes32Hex;
   readonly values: readonly SolanaEncryptInputValue[];
 };
 
@@ -35,7 +37,7 @@ export async function encryptInput(
   const { values, contractAddress, userAddress } = parameters;
   const builder = createZkProofBuilder();
   for (const value of values) {
-    builder.addTypedValue(createTypedValue(value));
+    builder.addTypedValue(createTypedValue({ type: resolveRawValueTypeName(value.type), value: value.value }));
   }
   return builder.buildSolana(context, { contractAddress, userAddress });
 }

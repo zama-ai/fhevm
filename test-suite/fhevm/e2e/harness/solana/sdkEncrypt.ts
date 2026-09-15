@@ -1,3 +1,4 @@
+import { createSolanaRpc, type Rpc, type SolanaRpcApi } from "@solana/kit";
 // sdkEncrypt — the scenarios' shared seam to the public `@fhevm/sdk/solana` encrypt client.
 //
 // Every input-proof phase does the same dance: dynamically import the SDK (kept out of the static
@@ -11,9 +12,9 @@ import { hostReachableMaterialUrl } from "../../../src/utils/fs";
 /** The SDK encrypt surface the scenarios drive (untyped: runtime dynamic-import seam). */
 export type SolanaSdkEncryptSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: { id: bigint; fhevm: { relayerUrl: string } }): unknown;
-  createFhevmEncryptClient(parameters: { chain: unknown; aclProgramAddress: `0x${string}` }): {
-    buildInputProof(parameters: {
+  defineFhevmSolanaChain(definition: { id: bigint; fhevm: { relayerUrl: string; verifyingProgramId: `0x${string}` } }): unknown;
+  createFhevmEncryptClient(parameters: { chain: unknown; rpc: Rpc<SolanaRpcApi> }): {
+    generateZkProof(parameters: {
       contractAddress: `0x${string}`;
       userAddress: `0x${string}`;
       values: readonly { type: "uint64"; value: bigint }[];
@@ -57,6 +58,7 @@ export const withHostReachableFetch = async <T>(body: () => Promise<T>): Promise
 export const submitUint64InputProof = async (parameters: {
   readonly chainId: bigint;
   readonly relayerUrl: string;
+  readonly rpcUrl: string;
   readonly aclProgramAddress: `0x${string}`;
   readonly contractAddress: `0x${string}`;
   readonly userAddress: `0x${string}`;
@@ -66,13 +68,13 @@ export const submitUint64InputProof = async (parameters: {
   solanaSdk.setFhevmRuntimeConfig({
     auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
   });
-  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl } });
+  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, verifyingProgramId: parameters.aclProgramAddress } });
   const encryptClient = solanaSdk.createFhevmEncryptClient({
     chain,
-    aclProgramAddress: parameters.aclProgramAddress,
+    rpc: createSolanaRpc(parameters.rpcUrl),
   });
   return withHostReachableFetch(async () => {
-    const inputProof = await encryptClient.buildInputProof({
+    const inputProof = await encryptClient.generateZkProof({
       contractAddress: parameters.contractAddress,
       userAddress: parameters.userAddress,
       values: [{ type: "uint64", value: parameters.value }],

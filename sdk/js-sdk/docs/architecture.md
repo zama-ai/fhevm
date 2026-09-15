@@ -34,19 +34,19 @@ tree-shakable surface.
 
 ## Directory map
 
-| Path                          | Responsibility                                              |
-| ----------------------------- | ---------------------------------------------------------- |
-| `src/ethers/`, `src/viem/`    | Thin adapters: factories, runtime config, native signing.  |
-| `src/core/clients/`           | Client construction and the decorator groups.              |
-| `src/core/actions/`           | Standalone action functions (base/encrypt/decrypt/chain/host). |
-| `src/core/runtime/`           | The composable runtime and its lazy init.                  |
-| `src/core/modules/`           | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`. |
-| `src/core/chains/`            | Built-in chain definitions and `defineFhevmChain`.         |
-| `src/core/kms/`               | Transport key pair, permits, KMS share flow.               |
-| `src/core/coprocessor/`       | ZK proof building.                                          |
-| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.        |
-| `src/core/host-contracts/`    | Reads against ACL / verifier host contracts.               |
-| `src/wasm/`                   | The TFHE and TKMS WASM libraries and loaders.              |
+| Path                                  | Responsibility                                                 |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `src/ethers/`, `src/viem/`            | Thin adapters: factories, runtime config, native signing.      |
+| `src/core/clients/`                   | Client construction and the decorator groups.                  |
+| `src/core/actions/`                   | Standalone action functions (base/encrypt/decrypt/chain/host). |
+| `src/core/runtime/`                   | The composable runtime and its lazy init.                      |
+| `src/core/modules/`                   | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`.  |
+| `src/core/chains/`                    | Built-in chain definitions and `defineFhevmChain`.             |
+| `src/core/kms/`                       | Transport key pair, permits, KMS share flow.                   |
+| `src/core/coprocessor/`               | ZK proof building.                                             |
+| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.                   |
+| `src/core/host-contracts/`            | Reads against ACL / verifier host contracts.                   |
+| `src/wasm/`                           | The TFHE and TKMS WASM libraries and loaders.                  |
 
 The `ethers` and `viem` adapters are deliberately tiny. Everything real lives in
 `core`; an adapter only knows how to read a contract, sign typed data, and derive
@@ -130,14 +130,25 @@ and typed clear values. Proof construction carries the Solana chain's exact
 chain or contract address. Input-proof submission encodes identities as base58
 at the HTTP boundary.
 
-The encrypt client separates `buildInputProof` from `submitInputProof`. Applications
+Clients receive one native Solana Kit `rpc` at construction and reuse it for account reads.
+The SDK reads permit invalidation state before signing. The public client exposes its Solana
+`chain` and `rpc`; EVM-only runtime members and unsupported options stay out of its API.
+
+The encrypt client provides `encryptValue` and `encryptValues` to build and submit a proof together.
+They return shared typed encrypted values and an `inputProof` containing the submitted
+attestation fields needed by Solana instructions. The local proving object is not retained.
+`generateZkProof` and `submitInputProof` remain available separately. Applications
 compose instructions through Solana Kit and their own program clients, then sign
 and send through their wallet transport. `createSolanaFheTransaction` supplies the
 shared transient-store accounts and wraps the application instructions with the
 required open and close instructions. The SDK does not send that transaction.
 
-The decrypt client exposes public decryption. Adding `SolanaDecryptTrust` enables
-`signPermit` and `userDecrypt`: sign once, then reuse the permit across requests.
+The private-decrypt client requires `SolanaDecryptTrust` and exposes `signPermit` and
+`decryptValues`: sign once, then reuse the permit across requests. The public-only
+factory requires no private-decrypt trust. Its `decryptPublicValue(s)` actions read
+HostConfig and KmsContext through RPC, authenticate distinct KMS signatures, and return
+shared `TypedValue` results. The lower-level `publicDecryptCertificate` returns the raw
+claim for on-chain consumers, which must still verify the public MMR inclusion proof.
 The trust configuration includes the KMS signer set, routing identifiers, FHE
 parameter and response-signature domain. These are trusted deployment inputs,
 not values inferred from the response. A missing domain is rejected when the
@@ -148,7 +159,9 @@ A user-decrypt operation has one timeout budget for submissions and retry delays
 The relayer transport gives each request its remaining time and bounds backoff
 by the same deadline. Cancellation or expiry during response verification is
 checked before returning plaintext. Retries preserve the signed permit and
-request; they never prompt the wallet again.
+request; they never prompt the wallet again. Public decryption follows the EVM relayer
+HTTP/poll timeout budget. Its signal also cancels account reads; RPC timeouts remain
+the native transport's policy.
 
 `@fhevm/sdk/solana/host` separately exposes the selected generated host instruction
 builders, codecs and PDA finder. Applications and the demo consume package
@@ -178,5 +191,7 @@ The internals follow a consistent set of rules:
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
+
 ```
 
+```

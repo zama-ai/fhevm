@@ -28,6 +28,7 @@ export const certificateCleartext = (certificate: Pick<PublicDecryptCertificate,
   BigInt(`0x${certificate.abiEncodedCleartext.replace(/^0x/, '')}`);
 
 type PublicDecryptSdkInput = {
+  rpcUrl: string;
   chainId: bigint;
   relayerUrl: string;
   apiKey: string;
@@ -58,9 +59,11 @@ const bytes32Hex = (environment: Environment, name: string): string => {
 // `_types`, while the full vertical exercises this public package entry at runtime.
 const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
   const solana = await import('@fhevm/sdk/solana');
+  const { createSolanaRpc } = await import('@solana/kit');
+  const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: { relayerUrl: input.relayerUrl } });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
-  return solana.createFhevmPublicDecryptClient({ chain }).publicDecryptCertificate(input.request);
+  return solana.createFhevmPublicDecryptClient({ chain, rpc }).publicDecryptCertificate(input.request);
 };
 
 /** Runs the public-decrypt SDK action and prints the legacy JSON envelope used by consume steps. */
@@ -77,6 +80,7 @@ export const runSolanaPublicDecrypt = async (
   const certificate = await call({
     chainId: BigInt(required(environment, 'PD_CONTRACTS_CHAIN_ID')),
     relayerUrl: required(environment, 'PD_RELAYER_URL'),
+    rpcUrl: required(environment, 'PD_RPC_URL'),
     apiKey: environment.ZAMA_FHEVM_API_KEY ?? 'local',
     request,
   });

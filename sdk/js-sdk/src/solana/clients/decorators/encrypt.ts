@@ -1,3 +1,6 @@
+import type { EncryptedValue } from '../../../core/types/encryptedTypes.js';
+import { asEncryptedValue } from '../../../core/handle/EncryptedValue.js';
+import type { RelayerInputProofOptions } from '../../../core/types/relayer.js';
 import type { Bytes32Hex } from '../../../core/types/primitives.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { FhevmBase, FhevmExtension, OptionalNativeClient } from '../../../core/types/coreFhevmClient.js';
@@ -19,9 +22,25 @@ import { submitInputProof } from '../../actions/submitInputProof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/** Submitted coprocessor attestation, ready to encode in a Solana instruction. */
+export type SolanaInputProof = SolanaSubmitInputProofResult & {
+  readonly chainId: bigint;
+  readonly aclContractAddress: Bytes32Hex;
+  readonly contractAddress: Bytes32Hex;
+  readonly userAddress: Bytes32Hex;
+};
+
+export type SolanaEncryptValuesResult = {
+  readonly encryptedValues: readonly EncryptedValue[];
+  readonly inputProof: SolanaInputProof;
+};
+
 export type SolanaEncryptActions = {
+  readonly encryptValues: (
+    parameters: SolanaEncryptInputParameters & { readonly options?: RelayerInputProofOptions | undefined },
+  ) => Promise<SolanaEncryptValuesResult>;
   /** Builds a Solana input ZK proof (RFC-021 bytes32 identities + 128-byte aux). */
-  readonly buildInputProof: (parameters: SolanaEncryptInputParameters) => Promise<SolanaEncryptInputResult>;
+  readonly generateZkProof: (parameters: SolanaEncryptInputParameters) => Promise<SolanaEncryptInputResult>;
   /** Submits a built Solana input proof and verifies the returned handles. */
   readonly submitInputProof: (parameters: SolanaSubmitInputProofParameters) => Promise<SolanaSubmitInputProofResult>;
 };
@@ -49,7 +68,7 @@ async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
 }
 
 /**
- * Attaches the Solana `buildInputProof` action to a base Solana client, extending the runtime
+ * Attaches the Solana `generateZkProof` action to a base Solana client, extending the runtime
  * with the TFHE encrypt module (the ZK prover). Mirrors the EVM encrypt decorator.
  *
  * @param aclProgramAddress - The zama-host program id as bytes32 (the Solana ACL identity).
@@ -61,19 +80,35 @@ export function solanaEncryptActions(
     const runtime = fhevm.runtime.extend(encryptModule);
     const solanaChain = (fhevm as SolanaClientBase & { readonly solanaChain: FhevmSolanaChain }).solanaChain;
 
+    const generateZkProof: SolanaEncryptActions['generateZkProof'] = async (parameters) => {
+      const fhevmContext = await initPublicAction(fhevm);
+      return encryptInput(
+        {
+          chain: solanaChain,
+          aclProgramAddress,
+          runtime,
+          tfheVersion: fhevmContext.tfheVersion,
+        },
+        parameters,
+      );
+    };
+
     return {
       actions: {
-        buildInputProof: async (parameters) => {
-          const fhevmContext = await initPublicAction(fhevm);
-          return encryptInput(
-            {
-              chain: solanaChain,
-              aclProgramAddress,
-              runtime,
-              tfheVersion: fhevmContext.tfheVersion,
+        generateZkProof,
+        encryptValues: async (parameters) => {
+          const inputProof = await generateZkProof(parameters);
+          const result = await submitInputProof({ runtime, solanaChain }, { inputProof, options: parameters.options });
+          return {
+            encryptedValues: result.handles.map(asEncryptedValue),
+            inputProof: {
+              ...result,
+              chainId: inputProof.chainId,
+              aclContractAddress: inputProof.aclContractAddress,
+              contractAddress: inputProof.contractAddress,
+              userAddress: inputProof.userAddress,
             },
-            parameters,
-          );
+          };
         },
         submitInputProof: async (parameters) => {
           await initPublicAction(fhevm);

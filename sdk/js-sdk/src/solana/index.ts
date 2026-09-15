@@ -1,8 +1,9 @@
+export type { SolanaRuntimeConfig } from './internal/config.js';
 export { setFhevmRuntimeConfig, hasFhevmRuntimeConfig } from './internal/config.js';
 
 export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';
-export type { FhevmSolanaDecryptClient, FhevmSolanaPermitDecryptClient } from './clients/createFhevmDecryptClient.js';
+export type { FhevmSolanaDecryptClient, SolanaDecryptValueParameters } from './clients/createFhevmDecryptClient.js';
 export type {
   SolanaDecryptTrust,
   SolanaPermitDecryptActions,
@@ -11,9 +12,23 @@ export type {
   SolanaUserDecryptParameters,
 } from './clients/decorators/permitDecrypt.js';
 
-// The permit and user-decrypt modules are curated surfaces of their own; they travel whole.
-export * from './permit/index.js';
-export * from './userDecrypt/index.js';
+export {
+  solanaPermitWalletFromSecretKey,
+  SolanaPermitError,
+  SolanaPermitChannelError,
+  SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE,
+} from './permit/index.js';
+export type { SolanaPermitWallet, SolanaSignedPermit, SolanaPermitWarning } from './permit/index.js';
+export type { SolanaPermitSession } from './userDecrypt/execute.js';
+export type { SolanaKmsSigner, SolanaGatewayEip712Domain } from './userDecrypt/response.js';
+export { SolanaUserDecryptRunError } from './userDecrypt/session.js';
+export { SolanaUserDecryptRequestError } from './userDecrypt/request.js';
+export type {
+  FhevmSolanaBaseClient,
+  SolanaClientParameters,
+  SolanaEncryptOptions,
+} from './clients/createFhevmBaseClient.js';
+export type { SolanaDecryptPublicValueParameters } from './actions/decryptPublicValue.js';
 
 export {
   SOLANA_ENCRYPTED_STORE_SEED,
@@ -30,8 +45,6 @@ export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClien
 export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 
 export {
-  bytesToHex as solanaProofBytesToHex,
-  hexToBytes as solanaProofHexToBytes,
   buildPublicLeafProof,
   mmrBuildProof,
   mmrPeaksFromLeaves,
@@ -101,3 +114,7 @@ export type { SolanaFheTransaction, SolanaFheTransactionAccounts } from './fheTr
 export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';
 
 export { assertHandleArrayEquals, bytes32HexToHandle } from '../core/handle/FhevmHandle.js';
+
+export type { SolanaInputProof, SolanaEncryptValuesResult } from './clients/decorators/encrypt.js';
+
+export type { SolanaEncryptValueParameters } from './clients/createFhevmEncryptClient.js';

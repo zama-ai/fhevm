@@ -346,23 +346,21 @@ export const joinRedeemBatch = async (
   });
   const chain = defineFhevmSolanaChain({
     id: BigInt(config.chainId),
-    fhevm: { relayerUrl: config.relayerUrl },
+    fhevm: { relayerUrl: config.relayerUrl, verifyingProgramId: config.aclProgram as Bytes32Hex },
   });
-  const aclProgramAddress = config.aclProgram as Bytes32Hex;
   const encryptClient = createFhevmEncryptClient({
     chain,
-    aclProgramAddress,
+    rpc,
     options: { fheEncryptionKey: await loadDemoEncryptionKey(config) },
   });
 
   onStage('proving');
   session.assertActive();
-  const inputProof = await encryptClient.buildInputProof({
+  const { inputProof } = await encryptClient.encryptValues({
     contractAddress: asBytes32Hex(roots.tokenProgram),
     userAddress: asBytes32Hex(signer.address),
     values: [{ type: 'uint64', value: intent.amountBaseUnits }],
   });
-  const inputProofResult = await encryptClient.submitInputProof({ inputProof });
 
   const handleBeforeJoin = await readClaimedSharesHandle(session);
   const recoveredBeforeJoin = await recoverHandleChange(rpc, session, intent, joinRecord, handleBeforeJoin);
@@ -372,12 +370,11 @@ export const joinRedeemBatch = async (
   session.assertActive();
   let joinSignature: Signature | undefined;
   await joinBatch(
-    { solanaChain: chain, aclProgramAddress },
+    { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
     {
       rpc,
       rpcSubscriptions,
       inputProof,
-      inputProofResult,
       inputIndex: 0,
       user: signer,
       payer: signer,

@@ -1,3 +1,4 @@
+import { createSolanaRpc } from '@solana/kit';
 // Runtime relayer auth on the permit path.
 //
 // This lives in its own file because the runtime config is set-once per module instance, and these
@@ -14,6 +15,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { asBytes32Hex } from '../../../core/base/bytes.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
+
+const rpc = createSolanaRpc('http://localhost:8899');
 
 const chain = {
   id: 9223372036854788153n,
@@ -47,19 +50,19 @@ beforeAll(() => {
 
 describe('relayer authentication on the permit path', () => {
   it('carries the runtime-configured auth into the user-decrypt transport', async () => {
-    const client = createFhevmDecryptClient({ chain, trust });
+    const client = createFhevmDecryptClient({ rpc, chain, trust });
 
-    await expect(client.userDecrypt({ session, entries: [] })).rejects.toThrow(
+    await expect(client.decryptValues({ session, entries: [] })).rejects.toThrow(
       'HTTPS is required when auth credentials are provided',
     );
   });
 
   it('lets a per-call option override the runtime auth', async () => {
-    const client = createFhevmDecryptClient({ chain, trust });
+    const client = createFhevmDecryptClient({ rpc, chain, trust });
 
     // With auth overridden away, the http URL is admissible again and the run proceeds past the
     // transport to the next refusal — the empty handle list.
-    await expect(client.userDecrypt({ session, entries: [], options: { auth: undefined } })).rejects.toThrow(
+    await expect(client.decryptValues({ session, entries: [], options: { auth: undefined } })).rejects.toThrow(
       'at least one handle',
     );
   });

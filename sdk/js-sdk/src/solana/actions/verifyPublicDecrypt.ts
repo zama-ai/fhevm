@@ -57,6 +57,7 @@ export function verifyPublicDecryptArgsFromClaim(
 export type SolanaVerifyPublicDecryptAccounts = {
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address | undefined;
+  readonly programAddress?: Address | undefined;
   /** KMS context PDA for the id the certificate commits to (any live, non-destroyed context). */
   readonly kmsContext: Address;
   /** The encrypted store account the inclusion proof is checked against. */
@@ -77,15 +78,18 @@ export async function buildVerifyPublicDecryptInstruction(
   inclusionProof: MmrProof,
 ): Promise<Instruction> {
   const args = verifyPublicDecryptArgsFromClaim(claim, inclusionProof);
-  return getVerifyPublicDecryptInstructionAsync({
-    ...(accounts.hostConfig !== undefined ? { hostConfig: accounts.hostConfig } : {}),
-    kmsContext: accounts.kmsContext,
-    encryptedStore: accounts.encryptedStore,
-    handle: args.handle,
-    cleartext: args.cleartext,
-    signatures: [...args.signatures],
-    extraData: args.extraData,
-    leafIndex: args.leafIndex,
-    siblings: [...args.siblings],
-  });
+  return getVerifyPublicDecryptInstructionAsync(
+    {
+      ...(accounts.hostConfig !== undefined ? { hostConfig: accounts.hostConfig } : {}),
+      kmsContext: accounts.kmsContext,
+      encryptedStore: accounts.encryptedStore,
+      handle: args.handle,
+      cleartext: args.cleartext,
+      signatures: [...args.signatures],
+      extraData: args.extraData,
+      leafIndex: args.leafIndex,
+      siblings: [...args.siblings],
+    },
+    accounts.programAddress === undefined ? undefined : { programAddress: accounts.programAddress },
+  );
 }

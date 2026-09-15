@@ -33,6 +33,7 @@ const addressHex = (value: Address): string => hex(addressBytes(value));
 
 /** The environment facts every vertical decrypt binds to. */
 export type FheVerticalConfig = {
+  readonly rpcUrl: string;
   readonly relayerUrl: string;
   /** The Solana host chain id (`HostConfig.chain_id`, high bit set). */
   readonly chainId: bigint;
@@ -85,6 +86,7 @@ export const certifiedPublicDecrypt = async (
   params: { readonly encryptedStore: Address; readonly handle: Uint8Array },
 ): Promise<PublicDecryptOutcome> => {
   const certificate = await runSolanaPublicDecrypt({
+    PD_RPC_URL: config.rpcUrl,
     PD_RELAYER_URL: config.relayerUrl,
     PD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     PD_HANDLE: hex(params.handle),
@@ -111,6 +113,7 @@ export const userDecryptExpect = (
   },
 ): Promise<bigint> =>
   runSolanaCurrentUserDecrypt({
+    UD_RPC_URL: config.rpcUrl,
     UD_RELAYER_URL: config.relayerUrl,
     UD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     UD_HANDLE: hex(params.handle),
@@ -134,7 +137,7 @@ export const livePublicLeafProof = async (
   handle: Uint8Array,
 ): Promise<MmrProof> =>
   publicProof(
-    context.rpc,
+    { fetchEncryptedStore: (store, config) => fetchSolanaEncryptedStore(context.rpc, store, config, ZAMA_HOST_PROGRAM_ADDRESS) },
     {
       url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
       apiKey: SOLANA_LEAF_PROOF_API_KEY,

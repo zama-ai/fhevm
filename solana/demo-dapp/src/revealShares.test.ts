@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   tokenStateAddress: vi.fn(),
   createFhevmDecryptClient: vi.fn(),
-  userDecrypt: vi.fn(),
+  decryptValues: vi.fn(),
   getAccountInfo: vi.fn(),
   getEncryptedStore: vi.fn(),
   signPermit: vi.fn(),
@@ -85,7 +85,7 @@ describe('confidential balance reveal evidence', () => {
     mocks.createFhevmDecryptClient.mockReturnValue({
       ready: Promise.resolve(),
       signPermit: mocks.signPermit,
-      userDecrypt: mocks.userDecrypt,
+      decryptValues: mocks.decryptValues,
     });
     mocks.tokenAccountAddress.mockResolvedValue('token-account');
     mocks.tokenStateAddress.mockResolvedValue('encrypted-value-account');
@@ -97,7 +97,7 @@ describe('confidential balance reveal evidence', () => {
   });
 
   test('records successful SDK correlation without persisting the clear value', async () => {
-    mocks.userDecrypt.mockImplementation(async (parameters) => {
+    mocks.decryptValues.mockImplementation(async (parameters) => {
       parameters.options.onProgress({
         type: 'queued',
         method: 'POST',
@@ -143,7 +143,7 @@ describe('confidential balance reveal evidence', () => {
       durationSeconds: 3_600n,
       allowedScopes: [{ program: `0x${'00'.repeat(32)}`, scope: `0x${'00'.repeat(32)}` }],
     });
-    const [parameters] = mocks.userDecrypt.mock.calls[0] ?? [];
+    const [parameters] = mocks.decryptValues.mock.calls[0] ?? [];
     expect(parameters).toMatchObject({
       session: PERMIT_SESSION,
       entries: [{ handle: new Uint8Array(32).fill(0x12), encryptedStore: new Uint8Array(32) }],
@@ -153,13 +153,13 @@ describe('confidential balance reveal evidence', () => {
   // One wallet confirmation answers repeated views of the same balance: the permit is cached per
   // (wallet, domain, KMS route) and reused for its whole validity window.
   test('reuses one signed permit across two reveals of the same balance', async () => {
-    mocks.userDecrypt.mockResolvedValue([{ value: 72n }]);
+    mocks.decryptValues.mockResolvedValue([{ value: 72n }]);
     vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
 
     await expect(revealClaimedShares(session)).resolves.toEqual({ handle: `0x${'12'.repeat(32)}`, value: 72n });
     await expect(revealClaimedShares(session)).resolves.toEqual({ handle: `0x${'12'.repeat(32)}`, value: 72n });
 
-    expect(mocks.userDecrypt).toHaveBeenCalledTimes(2);
+    expect(mocks.decryptValues).toHaveBeenCalledTimes(2);
     expect(mocks.signPermit).toHaveBeenCalledTimes(1);
   });
 
@@ -173,7 +173,7 @@ describe('confidential balance reveal evidence', () => {
     } as unknown as DemoSession;
 
     await expect(revealClaimedShares(walletStandard)).rejects.toThrow('solana:signOffchainMessage');
-    expect(mocks.userDecrypt).not.toHaveBeenCalled();
+    expect(mocks.decryptValues).not.toHaveBeenCalled();
   });
 });
 

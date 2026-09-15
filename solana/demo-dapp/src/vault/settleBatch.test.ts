@@ -123,7 +123,7 @@ describe('settleBatch', () => {
   it('resolves the current batch and builds an ALT-aware v0 settle with pending_burn in the table', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).resolves.toEqual(expect.any(String));
+    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).resolves.toEqual(expect.any(String));
 
     // The batch was resolved from chain state, not supplied.
     expect(getCurrentBatch).toHaveBeenCalledTimes(1);
@@ -211,7 +211,7 @@ describe('settleBatch', () => {
       signatures: Array.from({ length: threshold }, () => hex(new Uint8Array(65).fill(0x11))),
     });
     publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: depth }, () => new Uint8Array(32)) });
-    await settleBatch({ publicDecryptCertificate: certificate }, keeper, opts);
+    await settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts);
     const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
     const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
     expect(bytes.length).toBeLessThanOrEqual(1232);
@@ -224,7 +224,7 @@ describe('settleBatch', () => {
       signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
     });
     publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: 6 }, () => new Uint8Array(32)) });
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
+    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
     expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe('settleBatch', () => {
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { keeper, opts } = await options({ burnedHandle: new Uint8Array(32) });
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('no burned total handle');
+    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('no burned total handle');
     expect(certificate).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -240,7 +240,7 @@ describe('settleBatch', () => {
   it('rejects a certified total that does not fit u64 before touching the RPC or sending', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(1n, 0x01))); // a high byte set
     const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds u64');
+    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('exceeds u64');
     expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -248,7 +248,7 @@ describe('settleBatch', () => {
   it('fetches the proof after the certificate and rejects invalid evidence before sending', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { keeper, opts } = await options({ extraLeaves: 1 });
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('does not match');
+    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('does not match');
     expect(certificate).toHaveBeenCalledTimes(1);
     expect(publicProof.mock.invocationCallOrder[0]).toBeGreaterThan(certificate.mock.invocationCallOrder[0]!);
     expect(opts.rpc.getLatestBlockhash).not.toHaveBeenCalled();

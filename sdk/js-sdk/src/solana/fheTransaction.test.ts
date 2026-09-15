@@ -32,6 +32,17 @@ describe('createSolanaFheTransaction', () => {
     ]);
   });
 
+  it('keeps a custom host consistent across derivation and lifecycle validation', async () => {
+    const programAddress = payer.address;
+    const fhe = await createSolanaFheTransaction({ payer, programAddress });
+    expect(fhe.accounts.transientStore).not.toBe(transientStore);
+    const wrapped = fhe.wrap([]);
+    expect(wrapped.map((ix) => ix.programAddress)).toEqual([programAddress, programAddress]);
+    for (const ix of wrapped)
+      expect(ix.accounts?.some((account) => account.address === fhe.accounts.transientStore)).toBe(true);
+    expect(() => fhe.wrap(wrapped)).toThrow('must not open or close');
+  });
+
   it('preserves arbitrary application order and rejects nested lifecycle instructions', async () => {
     const fhe = await createSolanaFheTransaction({ payer });
     const first: Instruction = {

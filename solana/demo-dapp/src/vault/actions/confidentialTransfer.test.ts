@@ -1,8 +1,8 @@
 import type { EncryptionBits } from '@fhevm/sdk/types';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import type { SolanaZkProof } from '@fhevm/sdk/solana';
+import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { toSolanaZkProof } from '@fhevm/sdk/solana';
-import { asBytes32Hex, asBytes65Hex, asBytesHex, bytesToHex } from '@fhevm/sdk/base';
+import { asBytes32Hex, asBytes65Hex, bytesToHex } from '@fhevm/sdk/base';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
@@ -49,8 +49,8 @@ function proof(
     readonly chainId?: bigint;
     readonly bits?: readonly EncryptionBits[];
   } = {},
-): SolanaZkProof {
-  return toSolanaZkProof({
+): SolanaInputProof {
+  const local = toSolanaZkProof({
     chainId: overrides.chainId ?? CHAIN_ID,
     aclContractAddress: overrides.acl ?? CANONICAL_ACL,
     contractAddress: bytesToHex(base58.decode(contract)),
@@ -58,6 +58,15 @@ function proof(
     ciphertextWithZkProof: new Uint8Array([1]),
     encryptionBits: overrides.bits ?? [64],
   });
+  return {
+    handles: local.getInputHandles(),
+    chainId: local.chainId,
+    aclContractAddress: local.aclContractAddress,
+    contractAddress: local.contractAddress,
+    userAddress: local.userAddress,
+    signatures: [SIGNATURE],
+    extraData: '0x00' as never,
+  };
 }
 
 async function parameters(overrides: Partial<SolanaConfidentialTransferParameters> = {}) {
@@ -68,11 +77,6 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     rpc: {} as SolanaConfidentialTransferParameters['rpc'],
     rpcSubscriptions: {} as SolanaConfidentialTransferParameters['rpcSubscriptions'],
     inputProof,
-    inputProofResult: {
-      handles: inputProof.getInputHandles(),
-      signatures: [SIGNATURE],
-      extraData: asBytesHex('0x00'),
-    },
     inputIndex: 0,
     owner,
     feePayer: signer(key(3)),
@@ -94,17 +98,12 @@ const context = { solanaChain: { id: CHAIN_ID } as never, aclProgramAddress: CAN
 describe('confidentialTransfer attestation binding', () => {
   beforeEach(() => sendAndConfirm.mockReset().mockResolvedValue(undefined));
 
-  it('rejects a result that is not bound to the original proof', async () => {
+  it('rejects malformed submitted handles before RPC', async () => {
     const params = await parameters();
-    const other = proof(params.owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
-      bits: [8],
-    });
-    await expect(
-      confidentialTransfer(context, {
-        ...params,
-        inputProofResult: { ...params.inputProofResult, handles: other.getInputHandles() },
-      }),
-    ).rejects.toThrow('Unexpected handle[0]');
+    await expect(confidentialTransfer(context, {
+      ...params,
+      inputProof: { ...params.inputProof, handles: ['0x44' as never] },
+    })).rejects.toThrow();
   });
 
   it.each([
@@ -122,7 +121,6 @@ describe('confidentialTransfer attestation binding', () => {
         return {
           ...params,
           inputProof,
-          inputProofResult: { ...params.inputProofResult, handles: inputProof.getInputHandles() },
         };
       },
       'must be euint64',
@@ -136,7 +134,6 @@ describe('confidentialTransfer attestation binding', () => {
         return {
           ...params,
           inputProof,
-          inputProofResult: { ...params.inputProofResult, handles: inputProof.getInputHandles() },
         };
       },
       'requires a Solana chain id',
@@ -155,7 +152,6 @@ describe('confidentialTransfer attestation binding', () => {
         return {
           ...params,
           inputProof,
-          inputProofResult: { ...params.inputProofResult, handles: inputProof.getInputHandles() },
         };
       },
       'does not match the configured Zama host program',
@@ -172,7 +168,6 @@ describe('confidentialTransfer attestation binding', () => {
         return {
           ...params,
           inputProof,
-          inputProofResult: { ...params.inputProofResult, handles: inputProof.getInputHandles() },
         };
       },
       'does not match the confidential-token program',
@@ -204,11 +199,6 @@ describe('confidentialTransfer attestation binding', () => {
       hcuTrustedAppRecord: key(9),
       ...(mode === 'same' ? {} : { denyRecords: [key(10), key(11)] }),
       inputProof,
-      inputProofResult: {
-        handles: inputProof.getInputHandles(),
-        signatures: [SIGNATURE],
-        extraData: asBytesHex('0x00'),
-      },
       rpc: {
         getLatestBlockhash: vi.fn().mockReturnValue({
           send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
@@ -274,8 +264,8 @@ describe('confidentialTransfer attestation binding', () => {
       });
       const params = {
         ...defaults,
-        inputProofResult: {
-          ...defaults.inputProofResult,
+        inputProof: {
+          ...defaults.inputProof,
           signatures: [signature as never],
         },
       };
@@ -296,11 +286,6 @@ describe('confidentialTransfer attestation binding', () => {
       feePayer: owner,
       mint,
       inputProof,
-      inputProofResult: {
-        handles: inputProof.getInputHandles(),
-        signatures: [SIGNATURE],
-        extraData: asBytesHex('0x00'),
-      },
       rpc: {
         getLatestBlockhash: vi.fn().mockReturnValue({
           send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),

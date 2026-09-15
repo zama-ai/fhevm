@@ -111,11 +111,12 @@ const targets = [
         'revokeDelegationForUserDecryption',
         'revokePermits',
       ]),
-      definedTypes: new Set(),
+      accounts: new Set(['hostConfig', 'kmsContext']),
+      definedTypes: new Set(['kmsThresholds']),
       // verifyPublicDecrypt and the delegation pair default their host_config account to the
       // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
       // that PDA node so the import resolves.
-      pdas: new Set(['hostConfig']),
+      pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {
       return (

@@ -364,7 +364,7 @@ export const readTokenBalanceStore = async (
   params: { readonly mint: Address; readonly owner: Address },
 ): Promise<BalanceStore> => {
   const vault = await vaultModule();
-  const { bytes32HexToHandle, encryptedStoreHandle } = await sdkVerifyModule();
+  const { bytes32HexToHandle, encryptedStoreHandle, fetchSolanaEncryptedStore } = await sdkVerifyModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
@@ -374,7 +374,7 @@ export const readTokenBalanceStore = async (
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await vault.getEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' });
+  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||

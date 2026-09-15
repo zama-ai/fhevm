@@ -6,5 +6,4 @@
  * @see https://github.com/codama-idl/codama
  */
 
-export * from './hostConfig.js';
-export * from './kmsContext.js';
+export * from './kmsThresholds.js';

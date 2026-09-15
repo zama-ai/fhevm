@@ -15,7 +15,7 @@ import {
 import { base58 } from '@scure/base';
 
 import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
-import type { SolanaPublicDecryptActions } from '@fhevm/sdk/solana';
+import type { FhevmSolanaPublicDecryptClient } from '@fhevm/sdk/solana';
 import type { RelayerPublicDecryptOptions } from '@fhevm/sdk/types';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
@@ -63,7 +63,7 @@ export type SolanaVaultSettleOptions = {
  * The resulting settle instruction uses the batch's lookup table to fit the transaction packet.
  */
 export async function settleBatch(
-  client: SolanaPublicDecryptActions,
+  client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate' | 'fetchEncryptedStore'>,
   keeper: TransactionSigner,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
@@ -97,7 +97,7 @@ export async function settleBatch(
 
   const cleartextTotal = settleTotalFromCleartext(hexToBytes(claim.abiEncodedCleartext));
   const inclusionProof = await publicProof(
-    rpc,
+    client,
     options.proofService,
     accounts.batchBurnedAmountStore,
     burnedTotalHandle,

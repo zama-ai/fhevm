@@ -4,13 +4,12 @@ import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
 import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
 
 const mocks = vi.hoisted(() => ({
-  buildInputProof: vi.fn(),
+  encryptValues: vi.fn(),
   buildWrap: vi.fn(),
   buildInitialize: vi.fn(),
   send: vi.fn(),
   joinBatch: vi.fn(),
   readHandle: vi.fn(),
-  submitInputProof: vi.fn(),
 }));
 
 const rpc = {
@@ -28,8 +27,7 @@ vi.mock('@solana/kit', async (importOriginal) => ({
 vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
   ...await importOriginal<typeof import('@fhevm/sdk/solana')>(),
   createFhevmEncryptClient: () => ({
-    buildInputProof: mocks.buildInputProof,
-    submitInputProof: mocks.submitInputProof,
+    encryptValues: mocks.encryptValues,
   }),
   defineFhevmSolanaChain: (chain: unknown) => chain,
   setFhevmRuntimeConfig: vi.fn(),
@@ -97,8 +95,7 @@ beforeEach(() => {
       setItem: vi.fn(),
     },
   });
-  mocks.buildInputProof.mockResolvedValue({ proof: true });
-  mocks.submitInputProof.mockResolvedValue({ result: true });
+  mocks.encryptValues.mockResolvedValue({ inputProof: { proof: true }, result: true });
   mocks.joinBatch.mockResolvedValue(undefined);
 });
 
@@ -110,7 +107,7 @@ describe('direct cUSDC deposit', () => {
       'Reveal it again',
     );
 
-    expect(mocks.buildInputProof).not.toHaveBeenCalled();
+    expect(mocks.encryptValues).not.toHaveBeenCalled();
     expect(mocks.joinBatch).not.toHaveBeenCalled();
   });
 
@@ -121,8 +118,7 @@ describe('direct cUSDC deposit', () => {
       'Reveal it again',
     );
 
-    expect(mocks.buildInputProof).toHaveBeenCalledOnce();
-    expect(mocks.submitInputProof).toHaveBeenCalledOnce();
+    expect(mocks.encryptValues).toHaveBeenCalledOnce();
     expect(mocks.joinBatch).not.toHaveBeenCalled();
   });
 

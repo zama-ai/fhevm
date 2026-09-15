@@ -1,3 +1,6 @@
+import { getProgramDerivedAddress } from '@solana/kit';
+import type { SolanaRpc } from '../../encryptedStore.js';
+import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // The permit-path actions, assembled onto the client.
 //
 // `signPermit` is the piece worth pinning end to end: it is the only writer of the permit's
@@ -94,9 +97,11 @@ function conformingWallet() {
   };
 }
 
+const rpc = { getAccountInfo: vi.fn(() => ({ send: async () => ({ value: null }) })) } as unknown as SolanaRpc;
+
 function client() {
   setFhevmRuntimeConfig({});
-  return createFhevmDecryptClient({ chain, trust });
+  return createFhevmDecryptClient({ rpc, chain, trust });
 }
 
 const scopeBytes = (program: string, scope: string): Uint8Array => {
@@ -118,11 +123,12 @@ describe('assembling the permit-path client', () => {
   it('rejects a missing verification domain before signing or submitting', () => {
     setFhevmRuntimeConfig({});
     expect(() =>
-      // @ts-expect-error Exercise an untyped caller's incomplete deployment configuration.
       createFhevmDecryptClient({
+        rpc,
         chain,
         trust: {
           ...trust,
+          // @ts-expect-error Exercise an untyped caller's incomplete deployment configuration.
           gatewayEip712Domain: undefined,
         },
       }),
@@ -131,7 +137,7 @@ describe('assembling the permit-path client', () => {
   it('refuses at construction a chain without verifyingProgramId', () => {
     setFhevmRuntimeConfig({});
     const { verifyingProgramId: _omitted, ...fhevm } = chain.fhevm;
-    expect(() => createFhevmDecryptClient({ chain: { ...chain, fhevm }, trust })).toThrow('verifyingProgramId');
+    expect(() => createFhevmDecryptClient({ rpc, chain: { ...chain, fhevm }, trust })).toThrow('verifyingProgramId');
   });
 });
 
@@ -185,17 +191,56 @@ describe('signing a permit through the client', () => {
     ]);
   });
 
+  it.each([
+    ['a donated PDA', '11111111111111111111111111111111', 0, true],
+    ['a System account with data', '11111111111111111111111111111111', 1, false],
+    ['an empty initialized host account', base58.encode(hexToBytes32(PROGRAM_ID)), 0, false],
+  ] as const)('handles %s according to host initialization rules', async (_label, owner, size, valid) => {
+    const { wallet } = conformingWallet();
+    vi.spyOn(rpc, 'getAccountInfo').mockReturnValueOnce({
+      send: async () => ({
+        value: {
+          data: [Buffer.alloc(size).toString('base64'), 'base64'],
+          owner,
+          executable: false,
+          lamports: 1n,
+          space: BigInt(size),
+        },
+      }),
+    } as never);
+    const result = client().signPermit({ wallet, durationSeconds: 3_600n });
+    if (valid) await expect(result).resolves.toHaveProperty('signedPermit');
+    else await expect(result).rejects.toThrow('Invalid permit invalidation');
+  });
+
   it('starts no earlier than the watermark', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-18T12:34:56Z'));
     const watermark = BigInt(Math.floor(Date.parse('2026-08-18T13:00:00Z') / 1000));
     const { wallet } = conformingWallet();
 
-    const session = await client().signPermit({
-      wallet,
-      durationSeconds: 3_600n,
-      invalidationWatermark: watermark,
+    const [pda, bump] = await getProgramDerivedAddress({
+      programAddress: base58.encode(hexToBytes32(PROGRAM_ID)) as never,
+      seeds: [new TextEncoder().encode('permit-invalidation'), USER_PUBKEY],
     });
+    const data = new Uint8Array(49);
+    data.set([0xec, 0x8b, 0xdb, 0xa9, 0xb9, 0x22, 0xe9, 0x88]);
+    data.set(USER_PUBKEY, 8);
+    new DataView(data.buffer).setBigUint64(40, watermark, true);
+    data[48] = bump;
+    const read = vi.spyOn(rpc, 'getAccountInfo').mockReturnValueOnce({
+      send: async () => ({
+        value: {
+          data: [Buffer.from(data).toString('base64'), 'base64'],
+          owner: base58.encode(hexToBytes32(PROGRAM_ID)),
+          executable: false,
+          lamports: 1n,
+          space: 49n,
+        },
+      }),
+    } as never);
+    const session = await client().signPermit({ wallet, durationSeconds: 3_600n });
+    expect(read).toHaveBeenCalledWith(pda, expect.anything());
 
     expect(session.signedPermit.fields.startTimestamp).toBe(watermark);
   });
@@ -270,7 +315,7 @@ describe('running a user decryption through the client', () => {
     );
 
     await expect(
-      decryptClient.userDecrypt({
+      decryptClient.decryptValues({
         session,
         entries: [
           { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT, allowedKey: DELEGATOR },
@@ -318,15 +363,16 @@ describe('running a user decryption through the client', () => {
         ),
     );
     const controller = new AbortController();
-    const result = decryptClient.userDecrypt({
+    const onProgress = vi.fn();
+    const result = decryptClient.decryptValues({
       session,
       entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
-      options: { timeout: 1500, signal: controller.signal },
+      options: { timeout: 1500, signal: controller.signal, onProgress },
     });
     const rejection =
       cause === 'timeout'
         ? expect(result).rejects.toBeInstanceOf(RelayerTimeoutError)
-        : expect(result).rejects.toMatchObject({ name: 'AbortError' });
+        : expect(result).rejects.toBeInstanceOf(RelayerAbortError);
     await vi.advanceTimersByTimeAsync(1001);
     expect(verify).toHaveBeenCalledOnce();
     if (cause === 'timeout') {
@@ -336,6 +382,8 @@ describe('running a user decryption through the client', () => {
     }
     release();
     await rejection;
+    await vi.runAllTicks();
+    if (cause === 'abort') expect(onProgress.mock.calls.filter(([event]) => event.type === 'abort')).toHaveLength(1);
   });
 
   it('aborts during retry backoff without another submission or wallet prompt', async () => {
@@ -349,17 +397,19 @@ describe('running a user decryption through the client', () => {
       .mockResolvedValueOnce(jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: [] } }));
     vi.stubGlobal('fetch', fetch);
     const controller = new AbortController();
-    const result = decryptClient.userDecrypt({
+    const onProgress = vi.fn();
+    const result = decryptClient.decryptValues({
       session,
       entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
-      options: { signal: controller.signal },
+      options: { signal: controller.signal, onProgress },
     });
-    const rejection = expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    const rejection = expect(result).rejects.toBeInstanceOf(RelayerAbortError);
     await vi.advanceTimersByTimeAsync(1_001);
     expect(fetch).toHaveBeenCalledTimes(2);
     controller.abort();
     await rejection;
     await vi.advanceTimersByTimeAsync(10_000);
+    expect(onProgress.mock.calls.filter(([event]) => event.type === 'abort')).toHaveLength(1);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(signOffchainMessage).toHaveBeenCalledTimes(1);
   });
@@ -380,7 +430,7 @@ describe('running a user decryption through the client', () => {
         );
       vi.stubGlobal('fetch', fetch);
       const onProgress = vi.fn();
-      const result = decryptClient.userDecrypt({
+      const result = decryptClient.decryptValues({
         session,
         entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
         options: { timeout: 1500, onProgress },
