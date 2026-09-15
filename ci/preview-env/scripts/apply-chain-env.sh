@@ -152,6 +152,13 @@ for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
 done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
+# The tx-sender needs HTTP from 0.15 on - it fails fast on a ws:// URL ("Gateway URL is not usable
+# by this build") - while commonConfig stays ws:// for the gw-listener. The BCS overlay pins the
+# previous release's sender back to ws://, since that build speaks WebSocket.
+GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP)' \
+  "${root}/coprocessor/values-coprocessor-e2e.yaml"
+GATEWAY_WS="${GATEWAY_WS}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_WS)' \
+  "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml"
 if rpc_from_secret; then
   for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
     set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url

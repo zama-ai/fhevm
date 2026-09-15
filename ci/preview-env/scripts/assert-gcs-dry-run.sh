@@ -17,49 +17,58 @@ psql_party() {
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
 }
 
+# One GCS row per host chain in the proposal (ETH, plus Polygon under deploy_polygon).
+expected_chains=1
+[[ "${DEPLOY_POLYGON:-false}" == "true" ]] && expected_chains=2
+
 failed=0
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  state=$(psql_party "${i}" \
-    "SELECT COALESCE(state, '') FROM upgrade_state WHERE stack_role='GCS';" || true)
-  status=$(psql_party "${i}" \
-    "SELECT COALESCE(status, '') FROM upgrade_state WHERE stack_role='GCS';" || true)
-  last_error=$(psql_party "${i}" \
-    "SELECT COALESCE(last_error, '') FROM upgrade_state WHERE stack_role='GCS';" || true)
   live_version=$(psql_party "${i}" \
     "SELECT COALESCE(stack_version, '') FROM versioning;" || true)
-
-  echo "party ${i}: state=${state} status=${status} versioning=${live_version} last_error='${last_error}'"
-
-  if [[ "${state}" == "PAUSED" || "${status}" == "failed" ]]; then
-    echo "::error::party ${i} GCS rolled back before in-window work could be asserted (state=${state} status=${status} last_error='${last_error}')"
+  rows=$(psql_party "${i}" \
+    "SELECT host_chain_id || '|' || COALESCE(state, '') || '|' || COALESCE(status, '') || '|' || COALESCE(last_error, '') FROM upgrade_state WHERE stack_role='GCS' ORDER BY host_chain_id;" || true)
+  nrows=$(printf '%s\n' "${rows}" | grep -c . || true)
+  if [[ "${nrows}" -ne "${expected_chains}" ]]; then
+    echo "::error::party ${i} has ${nrows} GCS upgrade_state row(s), expected ${expected_chains} (one per host chain); versioning=${live_version}"
     failed=1
     continue
   fi
-  case "${state}" in
-    LIVE)
-      # Schema is dropped at cutover. LIVE + completed is the proof GCS
-      # shadowed and merged; do not query gcs-*.computations.
-      if [[ "${status}" != "completed" ]]; then
-        echo "::error::party ${i} GCS LIVE but status='${status}', expected completed"
-        failed=1
-      fi
-      continue
-      ;;
-    DryRunStarted|UpgradeAuthorized) ;;
-    *)
-      echo "::error::party ${i} GCS state='${state}', expected DryRunStarted (or UpgradeAuthorized/LIVE if cutover already raced)"
+
+  while IFS='|' read -r chain_id state status last_error; do
+    [[ -n "${chain_id}" ]] || continue
+    echo "party ${i} chain ${chain_id}: state=${state} status=${status} versioning=${live_version} last_error='${last_error}'"
+
+    if [[ "${state}" == "PAUSED" || "${status}" == "failed" ]]; then
+      echo "::error::party ${i} chain ${chain_id} GCS rolled back before in-window work could be asserted (state=${state} status=${status} last_error='${last_error}')"
       failed=1
       continue
-      ;;
-  esac
+    fi
+    case "${state}" in
+      LIVE)
+        # Schema is dropped at cutover. LIVE + completed is the proof GCS
+        # shadowed and merged; do not query gcs-*.computations.
+        if [[ "${status}" != "completed" ]]; then
+          echo "::error::party ${i} chain ${chain_id} GCS LIVE but status='${status}', expected completed"
+          failed=1
+        fi
+        continue
+        ;;
+      DryRunStarted|UpgradeAuthorized) ;;
+      *)
+        echo "::error::party ${i} chain ${chain_id} GCS state='${state}', expected DryRunStarted (or UpgradeAuthorized/LIVE if cutover already raced)"
+        failed=1
+        continue
+        ;;
+    esac
 
-  count=$(psql_party "${i}" \
-    "SELECT count(*) FROM \"${schema}\".computations;" || echo "0")
-  echo "party ${i}: ${schema}.computations=${count}"
-  if [[ "${count}" -lt 1 ]]; then
-    echo "::error::party ${i} ${schema}.computations=${count}, expected > 0 during ${state}"
-    failed=1
-  fi
+    count=$(psql_party "${i}" \
+      "SELECT count(*) FROM \"${schema}\".computations WHERE host_chain_id = ${chain_id};" || echo "0")
+    echo "party ${i} chain ${chain_id}: ${schema}.computations=${count}"
+    if [[ "${count}" -lt 1 ]]; then
+      echo "::error::party ${i} chain ${chain_id} ${schema}.computations=${count}, expected > 0 during ${state}"
+      failed=1
+    fi
+  done <<<"${rows}"
 done
 
 if [[ "${failed}" -ne 0 ]]; then

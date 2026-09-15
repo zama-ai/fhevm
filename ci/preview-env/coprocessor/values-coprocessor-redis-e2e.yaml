@@ -15,13 +15,14 @@
 #     -n <namespace> -f this-file --set-string fullnameOverride=coprocessor-redis-<i>
 #
 # fullnameOverride is set per-party at deploy time so the Service name is
-# deterministic (standalone architecture exposes the "<fullname>-master"
-# Service, e.g. coprocessor-redis-<i>-master:6379). The default below is the
-# single-party (N=1) shape for standalone use. auth is disabled: an ephemeral,
-# namespace-local broker with no secret data, torn down with the namespace.
+# deterministic ("<fullname>-master", e.g. coprocessor-redis-<i>-master:6379).
+# auth is disabled: an ephemeral, namespace-local broker with no secret data,
+# torn down with the namespace.
 fullnameOverride: coprocessor-redis
 
-architecture: standalone
+# One replica: the listener waits for a replica ack after every publish
+# (ensure_publish); with no replica that wait times out and slows it down.
+architecture: replication
 
 auth:
   enabled: false
@@ -42,6 +43,26 @@ master:
     size: 2Gi
   # Pin onto the zws-pool Karpenter node pool - same convention as the
   # in-cluster Postgres releases (../coprocessor-infra/values-postgres-coprocessor-e2e.yaml).
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values:
+                  - zws-pool
+  tolerations:
+    - key: karpenter.sh/nodepool
+      operator: Equal
+      value: zws-pool
+      effect: NoSchedule
+replica:
+  replicaCount: 1
+  # Same size and scheduling as the master.
+  persistence:
+    enabled: true
+    size: 2Gi
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
