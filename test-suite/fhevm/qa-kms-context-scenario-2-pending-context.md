@@ -329,6 +329,24 @@ hold mechanism does exactly what it claims. And the failure was diagnosable from
 the step label named what was being read, the fields named the context, and the raw `cast` error
 carried the selector.
 
+### Container-side specs need a rebuilt image
+
+The `fhevm-test-suite-e2e-debug` container runs the published image
+`ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}` with no bind mount of the repository
+(`docker-compose/test-suite-docker-compose.yml:5`), so an edited spec under `test-suite/e2e/test/`
+does not reach it. The `KMS_QA_FORBIDDEN_*` assertions added to
+`test/kmsContextExtraData/kmsContextExtraData.ts` were therefore **not executed** by the live runs
+recorded above: the env vars were injected and silently ignored by the image's older copy of the
+spec. The `2 passing` those runs report are the two pre-existing tests — the permit matching the
+chain's active pair, and the `KMS_QA_EXPECTED_*` cross-check — both of which did run and did pass.
+
+The scenario's negative clause still holds transitively: the host proved the active pair never moved
+while the pending id was different, and the spec proved the permit carries the active pair. But the
+explicit in-container assertion has not run yet. To run it, copy the spec in
+(`docker cp test-suite/e2e/test/kmsContextExtraData/kmsContextExtraData.ts
+fhevm-test-suite-e2e-debug:/app/test-suite/e2e/test/kmsContextExtraData/`) and rerun the case, or
+rebuild the test-suite image as CI does.
+
 ---
 
 ## 8. The one uncovered clause
