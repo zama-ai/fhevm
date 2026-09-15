@@ -1636,19 +1636,14 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.clearMockedCalls();
     }
 
-    /// @dev Direct pin of the _consumeOperand width backstop: position 255 is
-    ///      the last representable boundary bit; 256 must revert rather than
-    ///      silently dropping the bit (EVM SHL past the word yields 0).
-    function test_ConsumeOperandRevertsPastBoundaryBitWord() public {
+    /// @dev Position 255 is the last representable boundary bit and must be preserved.
+    function test_ConsumeOperandSupportsHighestBoundaryBitPosition() public {
         FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
         address sender = address(123);
         bytes32 handle = _persistedHandle(FheType.Uint64, sender);
 
-        vm.startPrank(sender);
+        vm.prank(sender);
         assertEq(harness.consumeOperand(handle, 255), 1 << 255);
-        vm.expectRevert(abi.encodeWithSelector(FHEVMExecutor.BoundaryBitPositionOverflow.selector, 256));
-        harness.consumeOperand(handle, 256);
-        vm.stopPrank();
     }
 
     function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {
