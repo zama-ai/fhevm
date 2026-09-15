@@ -100,9 +100,14 @@ describe("kms-qa registry QA_CASES", () => {
     }
   });
 
-  test("registers both implemented cases", () => {
-    expect(QA_CASES.map((item) => item.id)).toContain("epoch-rotation");
-    expect(QA_CASES.map((item) => item.id)).toContain("context-switch");
+  test("registers every implemented case, in its documented execution order", () => {
+    // Order is part of the contract: these cases mutate shared on-chain state, so a run must be
+    // reproducible. New cases are appended, never inserted.
+    expect(QA_CASES.map((item) => item.id)).toEqual([
+      "epoch-rotation",
+      "context-switch",
+      "epoch-rotation-pending",
+    ]);
   });
 
   test("the context-switch case requires a threshold KMS and declares itself disruptive", () => {
@@ -115,5 +120,15 @@ describe("kms-qa registry QA_CASES", () => {
     const rotation = QA_CASES.find((item) => item.id === "epoch-rotation")!;
     expect(rotation.requirements.mode).toBe("threshold");
     expect(rotation.mutatesLifecycle).toBe(true);
+  });
+
+  test("the epoch-rotation-pending case demands a committee that survives one stalled member", () => {
+    const pending = QA_CASES.find((item) => item.id === "epoch-rotation-pending")!;
+    expect(pending.requirements.mode).toBe("threshold");
+    // It withholds one committee confirmation while still requiring a decryption to succeed. The
+    // live run measured the user-decryption threshold at 3 on a 4-member committee, so anything
+    // smaller leaves too few responders.
+    expect(pending.requirements.minCommitteeSize).toBeGreaterThanOrEqual(4);
+    expect(pending.mutatesLifecycle).toBe(true);
   });
 });

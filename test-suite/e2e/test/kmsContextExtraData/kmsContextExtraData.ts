@@ -4,8 +4,10 @@
 // pair that is ACTIVE ON CHAIN in the extraData of the decryption permit it signs. What differs is
 // only what the host half did first —
 //
-//   - case `epoch-rotation`  : the epoch advanced under the same context;
-//   - case `context-switch`  : both the context and the epoch advanced.
+//   - case `epoch-rotation`         : the epoch advanced under the same context;
+//   - case `context-switch`         : both the context and the epoch advanced;
+//   - case `epoch-rotation-pending` : a rotation was requested but is being held Pending, so nothing
+//                                     advanced and the SDK must not anticipate the epoch to come.
 //
 // The host half establishes and verifies the precondition, waiting until the transition is genuinely
 // active on chain, then drives this suite.
@@ -191,8 +193,25 @@ describe('KMS context extraData', function () {
       expect(decoded.contextId, 'the permit still carries the superseded context').to.not.equal(previousContextId);
     }
 
+    // The mirror of the clause above, for the `epoch-rotation-pending` case: an epoch that exists on
+    // chain but is NOT active yet, because its rotation is still Pending. Where KMS_QA_PREVIOUS_*
+    // forbids an id the protocol has left behind, this forbids one it has not reached — the SDK must
+    // not read ahead of activation. Injected by the profile, absent when standalone.
+    const forbiddenEpochId = expectedFromEnv('KMS_QA_FORBIDDEN_EPOCH_ID');
+    if (forbiddenEpochId !== undefined) {
+      expect(
+        forbiddenEpochId,
+        'the pending epoch is already the active one — the rotation activated before this suite ran, so the ' +
+          'scenario never observed the pending window',
+      ).to.not.equal(chainEpochId);
+      expect(
+        decoded.epochId,
+        'the permit already carries the pending epoch — the SDK anticipated an activation that has not happened',
+      ).to.not.equal(forbiddenEpochId);
+    }
+
     // The permit must not merely look right — it must work. This closes the scenario's
-    // "the decryption must complete successfully" clause under the rotated pair.
+    // "the decryption must complete successfully" clause under the pair that is active.
     const handle = await contract.xUint64();
     const result = await client.decryptValue({
       contractAddress: contractAddress as `0x${string}`,
