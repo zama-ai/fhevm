@@ -96,6 +96,13 @@ async fn main() {
         "otlp-layer",
     );
 
+    #[cfg(feature = "gpu")]
+    if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
+        error!(error = %err, "GPU runtime architecture does not match image target");
+        telemetry::flush();
+        std::process::exit(1);
+    }
+
     let database_url = match resolve_database_url_from_option(args.database_url.clone()) {
         Ok(database_url) => database_url,
         Err(err) => {
