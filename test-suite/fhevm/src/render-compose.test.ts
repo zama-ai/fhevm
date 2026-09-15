@@ -1348,7 +1348,7 @@ describe("test-suite docker socket runtime", () => {
 test.each([
   ["v0.13.0-2", false, "ws://gateway:8546"],
   ["c2f416b", false, "http://gateway:8545"],
-  ["c2f416b", true, "ws://gateway:8546"],
+  ["c2f416b", true, "http://gateway:8545"],
 ] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
   await withTempStateDir(async () => {
     await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
