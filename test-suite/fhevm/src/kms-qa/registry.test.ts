@@ -108,6 +108,7 @@ describe("kms-qa registry QA_CASES", () => {
       "context-switch",
       "epoch-rotation-pending",
       "context-switch-pending",
+      "extradata-rejection",
     ]);
   });
 
@@ -121,6 +122,14 @@ describe("kms-qa registry QA_CASES", () => {
     const rotation = QA_CASES.find((item) => item.id === "epoch-rotation")!;
     expect(rotation.requirements.mode).toBe("threshold");
     expect(rotation.mutatesLifecycle).toBe(true);
+  });
+
+  test("the extradata-rejection case changes nothing and constrains no topology", () => {
+    const rejection = QA_CASES.find((item) => item.id === "extradata-rejection")!;
+    // The only non-mutating case: it can be rerun against the same stack, and the run banner's
+    // "re-up before rerunning" warning must not be triggered by it alone.
+    expect(rejection.mutatesLifecycle).toBe(false);
+    expect(rejection.requirements).toEqual({});
   });
 
   test("both pending cases demand a committee that survives one stalled member", () => {
