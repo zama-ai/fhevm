@@ -27,6 +27,7 @@ const signingMessage = {
     extraData: message.message.extraData as `0x${string}`,
   },
 };
+const { domain: signingDomain } = message;
 const registered = [alice, bob].map(({ address }) => hexToBytes(address));
 
 describe('Solana public decryption authentication', () => {
@@ -50,7 +51,7 @@ describe('Solana public decryption authentication', () => {
       const changed = createKmsPublicDecryptEip712({
         chainId: field === 'chain' ? 31338n : 31337n,
         verifyingContractAddressDecryption:
-          field === 'contract' ? '0x0000000000000000000000000000000000000043' : message.domain.verifyingContract,
+          field === 'contract' ? '0x0000000000000000000000000000000000000043' : signingDomain.verifyingContract,
         handles: field === 'handle' ? [toFhevmHandle(`0x${'cd'.repeat(22)}80000000000030390500`)] : [handle],
         decryptedResult: field === 'cleartext' ? `0x${'00'.repeat(31)}2b` : message.message.decryptedResult,
         extraData:
@@ -107,7 +108,7 @@ async function accountFixture() {
     coprocessorSigners: Array.from({ length: 8 }, () => new Uint8Array(20)),
     coprocessorSignerCount: 1,
     coprocessorThreshold: 1,
-    decryptionContract: hexToBytes(message.domain.verifyingContract),
+    decryptionContract: hexToBytes(signingDomain.verifyingContract),
     currentKmsContextId: contextId,
     paused: false,
     grantDenyListEnabled: false,
