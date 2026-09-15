@@ -148,7 +148,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-qa-tests":
-    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Implements epoch-rotation (a same-context rotation activates, every committee node reshares, and the SDK follows it into the permit extraData), context-switch (the same, for a switch whose context is pre-registered on the gateway first), and epoch-rotation-pending (one committee confirmation is withheld so the rotation sits Pending, and the previous epoch must keep serving — and keep appearing in the extraData — throughout). Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
+    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Implements epoch-rotation (a same-context rotation activates, every committee node reshares, and the SDK follows it into the permit extraData), context-switch (the same, for a switch whose context is pre-registered on the gateway first), epoch-rotation-pending (one committee confirmation is withheld so the rotation sits Pending, and the previous epoch must keep serving — and keep appearing in the extraData — throughout), and context-switch-pending (the same for a switch held at its second Pending stage, where the context is Created and its first epoch is Pending, so neither pending id may appear). Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
   "kms-context-switch":
     "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
 };
@@ -1717,6 +1717,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       readonly epochId: bigint;
       readonly previousContextId?: bigint;
       readonly previousEpochId?: bigint;
+      readonly forbiddenContextId?: bigint;
       readonly forbiddenEpochId?: bigint;
     },
   ) => {
@@ -1737,6 +1738,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         ...(expected.previousEpochId === undefined
           ? []
           : ["-e", `KMS_QA_PREVIOUS_EPOCH_ID=${expected.previousEpochId}`]),
+        ...(expected.forbiddenContextId === undefined
+          ? []
+          : ["-e", `KMS_QA_FORBIDDEN_CONTEXT_ID=${expected.forbiddenContextId}`]),
         ...(expected.forbiddenEpochId === undefined
           ? []
           : ["-e", `KMS_QA_FORBIDDEN_EPOCH_ID=${expected.forbiddenEpochId}`]),

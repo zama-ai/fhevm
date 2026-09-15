@@ -7,7 +7,8 @@
 //   - case `epoch-rotation`         : the epoch advanced under the same context;
 //   - case `context-switch`         : both the context and the epoch advanced;
 //   - case `epoch-rotation-pending` : a rotation was requested but is being held Pending, so nothing
-//                                     advanced and the SDK must not anticipate the epoch to come.
+//                                     advanced and the SDK must not anticipate the epoch to come;
+//   - case `context-switch-pending` : the same for a switch, where both ids are pending at once.
 //
 // The host half establishes and verifies the precondition, waiting until the transition is genuinely
 // active on chain, then drives this suite.
@@ -201,13 +202,25 @@ describe('KMS context extraData', function () {
     if (forbiddenEpochId !== undefined) {
       expect(
         forbiddenEpochId,
-        'the pending epoch is already the active one — the rotation activated before this suite ran, so the ' +
+        'the pending epoch is already the active one — the transition activated before this suite ran, so the ' +
           'scenario never observed the pending window',
       ).to.not.equal(chainEpochId);
       expect(
         decoded.epochId,
         'the permit already carries the pending epoch — the SDK anticipated an activation that has not happened',
       ).to.not.equal(forbiddenEpochId);
+    }
+    const forbiddenContextId = expectedFromEnv('KMS_QA_FORBIDDEN_CONTEXT_ID');
+    if (forbiddenContextId !== undefined) {
+      expect(
+        forbiddenContextId,
+        'the pending context is already the active one — the switch activated before this suite ran, so the ' +
+          'scenario never observed the pending window',
+      ).to.not.equal(chainContextId);
+      expect(
+        decoded.contextId,
+        'the permit already carries the pending context — the SDK anticipated an activation that has not happened',
+      ).to.not.equal(forbiddenContextId);
     }
 
     // The permit must not merely look right — it must work. This closes the scenario's
