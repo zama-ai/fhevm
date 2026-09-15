@@ -144,7 +144,8 @@ dry-run)
     while IFS='|' read -r chain state status pid pblock sb eb gwsb gwdry hcons gcons nsyn; do
       [[ -n "${chain}" ]] || continue
       check "party ${i} chain ${chain}: state ${state}/${status} proposal ${pid} @${pblock} window ${sb}-${eb} gw ${gwsb}" "${state}" = "DryRunStarted" -o "${state}" = "UpgradeActivated"
-      [[ "${state}" == "DryRunStarted" ]] && check "party ${i} chain ${chain}: gateway dry run started = ${gwdry}" "${gwdry}" = "t"
+      # `||` in the query renders booleans as true/false, not psql's bare t/f.
+      [[ "${state}" == "DryRunStarted" ]] && check "party ${i} chain ${chain}: gateway dry run started = ${gwdry}" "${gwdry}" = "true"
       check "party ${i} chain ${chain}: synthetic host anchors injected = ${nsyn} (consensus latches host=${hcons} gw=${gcons})" "${nsyn}" -ge 1
       key="${chain}:${pid}:${pblock}:${sb}:${eb}:${gwsb}"
       if [[ -z "${ref}" ]]; then ref="${key}"; else
