@@ -132,12 +132,14 @@ describe('assembling the permit-path client', () => {
           gatewayEip712Domain: undefined,
         },
       }),
-    ).toThrow('gatewayEip712Domain');
+    ).toThrow('Missing required field: trust.gatewayEip712Domain');
   });
   it('refuses at construction a chain without verifyingProgramId', () => {
     setFhevmRuntimeConfig({});
     const { verifyingProgramId: _omitted, ...fhevm } = chain.fhevm;
-    expect(() => createFhevmDecryptClient({ rpc, chain: { ...chain, fhevm }, trust })).toThrow('verifyingProgramId');
+    expect(() => createFhevmDecryptClient({ rpc, chain: { ...chain, fhevm }, trust })).toThrow(
+      'Missing required field: chain.fhevm.verifyingProgramId',
+    );
   });
 });
 

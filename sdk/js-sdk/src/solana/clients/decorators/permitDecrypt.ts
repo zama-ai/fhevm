@@ -134,8 +134,8 @@ export function solanaPermitDecryptActions(
 ): SolanaPermitDecryptActions {
   // Fail at construction, not mid-session: a chain missing the deployment identity would otherwise
   // surface as a failure of whichever request first needed it.
-  const verifyingProgramId = requiredChainField(chain.fhevm.verifyingProgramId, 'verifyingProgramId');
-  const gatewayEip712Domain = requiredChainField(trust.gatewayEip712Domain, 'gatewayEip712Domain');
+  const verifyingProgramId = requiredField(chain.fhevm.verifyingProgramId, 'chain.fhevm.verifyingProgramId');
+  const gatewayEip712Domain = requiredField(trust.gatewayEip712Domain, 'trust.gatewayEip712Domain');
 
   return {
     async signPermit(parameters: SolanaSignPermitParameters): Promise<SolanaPermitSession> {
@@ -259,17 +259,7 @@ function toClearValues(
   });
 }
 
-/**
- * A chain field the permit path stands on, or a refusal naming it.
- *
- * @param value - The configured value, possibly absent.
- * @param name - The field's name in the chain definition.
- */
-function requiredChainField<T>(value: T | undefined, name: string): T {
-  if (value === undefined) {
-    throw new Error(
-      `the permit-path decrypt actions need \`chain.fhevm.${name}\`, and this chain definition does not set it`,
-    );
-  }
+function requiredField<T>(value: T | undefined, path: string): T {
+  if (value === undefined) throw new Error(`Missing required field: ${path}`);
   return value;
 }

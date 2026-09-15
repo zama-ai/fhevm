@@ -1,5 +1,4 @@
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
-import type { FhevmBase, FhevmExtension } from '../../../core/types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../../core/types/coreFhevmRuntime.js';
 import type {
   SolanaPublicDecryptCertificateClaim,
@@ -14,15 +13,9 @@ export type SolanaPublicDecryptActions = {
   ) => Promise<SolanaPublicDecryptCertificateClaim>;
 };
 
-type SolanaClientBase = FhevmBase<undefined, FhevmRuntime, undefined>;
-
-/** Attaches the signer-free Solana public-decrypt certificate action. */
-export function solanaPublicDecryptActions(fhevm: SolanaClientBase): FhevmExtension<SolanaPublicDecryptActions> {
-  const chain = (fhevm as SolanaClientBase & { readonly solanaChain: FhevmSolanaChain }).solanaChain;
+/** Binds raw certificate requests to their deployment and shared runtime. */
+export function solanaPublicDecryptActions(chain: FhevmSolanaChain, runtime: FhevmRuntime): SolanaPublicDecryptActions {
   return {
-    actions: {
-      publicDecryptCertificate: (parameters) => publicDecryptCertificate({ chain, runtime: fhevm.runtime }, parameters),
-    },
-    runtime: fhevm.runtime,
+    publicDecryptCertificate: (parameters) => publicDecryptCertificate({ chain, runtime }, parameters),
   };
 }

@@ -26,6 +26,7 @@ export function createFhevmEncryptClient<C extends FhevmSolanaChain>(
   const core = createSolanaCore(parameters).extend(
     solanaEncryptActions(
       asBytes32Hex(bytesToHex(new Uint8Array(getAddressEncoder().encode(solanaHostProgram(parameters.chain))))),
+      parameters.chain,
     ),
   );
   return Object.assign(solanaClientSurface(core, parameters), {

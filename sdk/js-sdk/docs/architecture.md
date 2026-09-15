@@ -165,7 +165,9 @@ the native transport's policy.
 
 `@fhevm/sdk/solana/host` separately exposes the selected generated host instruction
 builders, codecs and PDA finder. Applications and the demo consume package
-exports rather than SDK source paths or internal runtime actions.
+exports rather than SDK source paths or internal runtime actions. This PoC cleanup
+intentionally removes the formerly exported low-level permit and user-decrypt
+helpers. No compatibility aliases are retained; consumers use the client actions.
 
 ## Design principles
 

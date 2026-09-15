@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { rootNodeFromAnchor } from '@codama/nodes-from-anchor';
 import { renderVisitor } from '@codama/renderers-js';
-import { createFromRoot, deleteNodesVisitor, pdaValueNode, updateInstructionsVisitor } from 'codama';
+import { createFromRoot, deleteNodesVisitor, updateInstructionsVisitor } from 'codama';
 import { format, resolveConfig } from 'prettier';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -321,19 +321,21 @@ for (const target of targets) {
   ];
   codama.update(deleteNodesVisitor(selectors));
   // Codama's linked PDA resolver drops the instruction's programAddress override.
-  // Inline the same-program hostConfig PDA so its seeds use the selected deployment.
+  // Inline same-program PDA definitions while preserving their argument seed bindings.
   if (target.idlPath === idlUrl('zama_host.json')) {
-    const hostConfig = program.pdas.find(({ name }) => name === 'hostConfig');
     const updates = Object.fromEntries(
-      codama
-        .getRoot()
-        .program.instructions.filter(({ accounts }) =>
-          accounts.some(
-            ({ name, defaultValue }) =>
-              name === 'hostConfig' && defaultValue?.kind === 'pdaValueNode' && defaultValue.pda.name === 'hostConfig',
+      codama.getRoot().program.instructions.map(({ name, accounts }) => [
+        name,
+        {
+          accounts: Object.fromEntries(
+            accounts.flatMap(({ name, defaultValue }) => {
+              if (defaultValue?.kind !== 'pdaValueNode') return [];
+              const pda = program.pdas.find(({ name }) => name === defaultValue.pda.name);
+              return pda === undefined ? [] : [[name, { defaultValue: { ...defaultValue, pda } }]];
+            }),
           ),
-        )
-        .map(({ name }) => [name, { accounts: { hostConfig: { defaultValue: pdaValueNode(hostConfig) } } }]),
+        },
+      ]),
     );
     codama.update(updateInstructionsVisitor(updates));
   }

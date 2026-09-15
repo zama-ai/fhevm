@@ -3,6 +3,7 @@ import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/module
 import { executeWithBatching } from '../../core/base/promise.js';
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
 import {
+  getEncodedSize,
   fetchEncodedAccount,
   fetchEncodedAccounts,
   type MaybeEncodedAccount,
@@ -16,7 +17,11 @@ import { getSolanaRuntime } from '../internal/runtime.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
 import { getHostConfigDecoder, HOST_CONFIG_DISCRIMINATOR } from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import { getKmsContextDecoder, KMS_CONTEXT_DISCRIMINATOR } from '../internal/generated/zamaHost/accounts/kmsContext.js';
+import {
+  getKmsContextDecoder,
+  getKmsContextEncoder,
+  KMS_CONTEXT_DISCRIMINATOR,
+} from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { bytesToHex, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { recoverAddress } from '../../core/base/sign.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
@@ -128,8 +133,10 @@ export async function decryptPublicValue(
   const kms = getKmsContextDecoder().decode(contextBytes);
   if (kms.bump !== contextBump || kms.destroyed || !unsafeBytesEquals(new Uint8Array(kms.contextId), contextId))
     throw new Error('Invalid or destroyed KMS context');
-  // Borsh bool admits only 0/1; the generic Kit decoder otherwise interprets any nonzero byte.
-  if (contextBytes[48 + kms.signers.length * 20] !== 0) throw new Error('Invalid or destroyed KMS context');
+  // Kit decodes only 1 as true, so reject other nonzero encodings explicitly.
+  // Use the schema size, not the allocated account length: trailing bytes may exist.
+  const destroyedOffset = getEncodedSize(kms, getKmsContextEncoder()) - 2;
+  if (contextBytes[destroyedOffset] !== 0) throw new Error('Invalid or destroyed KMS context');
   const cleartext = hexToBytes(claim.abiEncodedCleartext);
   if (cleartext.length !== 32) throw new Error('Public decrypt cleartext must be 32 bytes');
   const eip712 = createKmsPublicDecryptEip712({

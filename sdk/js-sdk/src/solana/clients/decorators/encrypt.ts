@@ -75,10 +75,10 @@ async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
  */
 export function solanaEncryptActions(
   aclProgramAddress: Bytes32Hex,
+  solanaChain: FhevmSolanaChain,
 ): (fhevm: SolanaClientBase) => FhevmExtension<SolanaEncryptActions, WithEncrypt> {
   return (fhevm: SolanaClientBase): FhevmExtension<SolanaEncryptActions, WithEncrypt> => {
     const runtime = fhevm.runtime.extend(encryptModule);
-    const solanaChain = (fhevm as SolanaClientBase & { readonly solanaChain: FhevmSolanaChain }).solanaChain;
 
     const generateZkProof: SolanaEncryptActions['generateZkProof'] = async (parameters) => {
       const fhevmContext = await initPublicAction(fhevm);

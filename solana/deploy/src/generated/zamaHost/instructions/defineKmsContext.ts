@@ -40,7 +40,6 @@ import {
   getNonNullResolvedInstructionInput,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findKmsContextPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getKmsThresholdsDecoder,
@@ -200,8 +199,12 @@ export async function getDefineKmsContextInstructionAsync<
     });
   }
   if (!accounts.kmsContext.value) {
-    accounts.kmsContext.value = await findKmsContextPda({
-      contextId: getNonNullResolvedInstructionInput('contextId', args.contextId),
+    accounts.kmsContext.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([107, 109, 115, 45, 99, 111, 110, 116, 101, 120, 116])),
+        fixEncoderSize(getBytesEncoder(), 32).encode(getNonNullResolvedInstructionInput('contextId', args.contextId)),
+      ],
     });
   }
   if (!accounts.systemProgram.value) {

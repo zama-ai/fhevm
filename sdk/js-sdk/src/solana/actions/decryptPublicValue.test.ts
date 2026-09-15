@@ -235,6 +235,19 @@ describe('public decrypt client account-to-plaintext flow', () => {
       'Invalid host account',
     );
   });
+  it.each([0, 1, 2, 255])('validates raw destroyed byte %s with trailing account bytes', async (flag) => {
+    const f = await accountFixture();
+    const row = f.contextAccount();
+    const encoded = Buffer.from(row.data[0]!, 'base64');
+    encoded[encoded.length - 2] = flag;
+    row.data[0] = Buffer.concat([encoded, Buffer.alloc(8)]).toString('base64');
+    vi.spyOn(f.rpc, 'getMultipleAccounts').mockReturnValueOnce({
+      send: async () => ({ value: [f.configAccount(), row] }),
+    } as never);
+    const result = f.client.decryptPublicValue({ handle, encryptedStore: store });
+    if (flag === 0) await expect(result).resolves.toMatchObject({ value: 42n });
+    else await expect(result).rejects.toThrow('Invalid or destroyed KMS context');
+  });
   it.each([31, 33])('rejects a %s-byte ABI result', async (size) => {
     const f = await accountFixture();
     f.claim.abiEncodedCleartext = '00'.repeat(size);

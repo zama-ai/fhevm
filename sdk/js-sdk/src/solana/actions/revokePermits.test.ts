@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
 import { AccountRole, address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { buildRevokePermitsInstruction, solanaPermitInvalidationAddress } from './revokePermits.js';
+import {
+  buildRevokePermitsInstruction,
+  solanaPermitInvalidationAddress,
+  fetchSolanaPermitInvalidation,
+} from './revokePermits.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
@@ -44,4 +49,30 @@ describe('buildRevokePermitsInstruction', () => {
       [SYSTEM_PROGRAM, AccountRole.READONLY],
     ]);
   });
+});
+
+it('reads the account fixture produced by the Rust host', async () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL('../../../../../solana/test-fixtures/permit/permit_invalidation_account_v1.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const fixtureUser = address(fixture.fields.find((field: { name: string }) => field.name === 'user').value_base58);
+  const send = vi.fn().mockResolvedValue({
+    value: {
+      owner: fixture.account.owner_base58,
+      data: [Buffer.from(fixture.account.data_hex, 'hex').toString('base64'), 'base64'],
+      executable: false,
+      lamports: 1n,
+      space: BigInt(fixture.account.data_len),
+    },
+  });
+  const getAccountInfo = vi.fn().mockReturnValue({ send });
+  const rpc = { getAccountInfo } as unknown as Parameters<typeof fetchSolanaPermitInvalidation>[0];
+  const watermark = await fetchSolanaPermitInvalidation(rpc, fixtureUser, {
+    programAddress: address(fixture.program.id_base58),
+  });
+  expect(watermark).toBe(BigInt(fixture.produced_by.clock_unix_timestamp));
+  expect(getAccountInfo).toHaveBeenCalledWith(address(fixture.address.address_base58), expect.anything());
 });

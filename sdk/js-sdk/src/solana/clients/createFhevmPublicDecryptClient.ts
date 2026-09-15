@@ -23,9 +23,9 @@ export type FhevmSolanaPublicDecryptClient<C extends FhevmSolanaChain = FhevmSol
 export function createFhevmPublicDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C>,
 ): FhevmSolanaPublicDecryptClient<C> {
-  const core = createSolanaCore(parameters).extend(solanaPublicDecryptActions);
+  const core = createSolanaCore(parameters);
   return Object.assign(solanaClientSurface(core, parameters), {
-    publicDecryptCertificate: core.publicDecryptCertificate,
+    ...solanaPublicDecryptActions(parameters.chain, core.runtime),
     decryptPublicValues: (input: Parameters<typeof decryptPublicValues>[1]) => decryptPublicValues(parameters, input),
     decryptPublicValue: (input: SolanaDecryptPublicValueParameters) => decryptPublicValue(parameters, input),
   });

@@ -29,7 +29,7 @@ export type SolanaEncryptOptions = {
 // Core initialization and WASM ownership remain shared; EVM-only members stay private.
 export function createSolanaCore<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & { readonly options?: SolanaEncryptOptions | undefined },
-): Fhevm<undefined, FhevmRuntime, undefined> & { readonly solanaChain: C } {
+): Fhevm<undefined, FhevmRuntime, undefined> {
   assertValidSolanaChainId(parameters.chain.id);
   if (parameters.options !== undefined && Object.keys(parameters.options).some((key) => key !== 'fheEncryptionKey')) {
     throw new Error('Unsupported Solana client option');
@@ -38,11 +38,10 @@ export function createSolanaCore<C extends FhevmSolanaChain>(
   if (key !== undefined && key.metadata.relayerUrl !== parameters.chain.fhevm.relayerUrl) {
     throw new Error('Encryption key relayer URL does not match the Solana chain');
   }
-  const core = createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
+  return createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
     runtime: getSolanaRuntime(),
     options: parameters.options,
   });
-  return Object.assign(core, { solanaChain: parameters.chain });
 }
 
 export function solanaHostProgram(chain: FhevmSolanaChain): Address {
