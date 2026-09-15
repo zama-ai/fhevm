@@ -1,7 +1,15 @@
 /**
- * QA case `context-switch-abort` — governance aborts a switch that never reached its creation quorum:
+ * QA case `context-switch-abort-and-retry` — **two QA scenarios, merged into one case.**
  *
- *   Scenario: Governance aborts a context switch that does not reach quorum
+ * They were proposed separately, and the second turned out to be the literal continuation of the
+ * first: everything it lists as `Given` is what the first one *leaves behind*, and its `When`/`Then`
+ * were already the first one's recovery step. Implementing them apart would have meant a second case
+ * that re-created, from a clean stack, exactly the state the first case ends in — paying six minutes
+ * to reach a starting line the other one crosses on its way past.
+ *
+ * So they are one case. The seam is the state itself, not any setup code.
+ *
+ *   Scenario A: Governance aborts a context switch that does not reach quorum
  *     Given the active pair is "C1, E1"
  *     And governance has requested a switch to "C2, E2"
  *     And context "C2" was pre-registered in the Gateway
@@ -11,6 +19,29 @@
  *     When governance executes destroyKmsContext for "C2"
  *     Then the status must indicate that the switch was aborted
  *     And ProtocolConfig must continue returning "C1, E1" as the active pair
+ *
+ *   Scenario B: Governance retries a switch after cancelling a context pre-registered in the Gateway
+ *     Given the active pair is "C1, E1"
+ *     And the switch to "C2, E2" was aborted by destroyKmsContext
+ *     And "C2" remains registered in the Gateway
+ *     And ProtocolConfig still returns "C1, E1" as the active pair
+ *     And the status indicates no pending transition
+ *     When governance requests a new switch to "C3, E3"
+ *     And context "C3" is registered in the Gateway
+ *     And all required confirmations for "C3, E3" complete with compatible results
+ *     Then "C3, E3" must become the active pair
+ *
+ * Scenario B's five `Given` clauses map one-to-one onto assertions scenario A already makes — the
+ * abort, the orphaned Gateway registration, the unchanged pair, and the reopened gate. Nothing has to
+ * be set up for B; it starts where A stops.
+ *
+ * ## What the merge added, beyond concatenation
+ *
+ * Scenario B asks for confirmations that complete *"with compatible results"*. Activation alone does
+ * not say that: it proves every signer voted, not that the work behind the votes agreed. The recovery
+ * step therefore also requires `new_kms_epoch.status = completed` on every serving node — the
+ * connector's independent record of each reshare. That assertion exists because B was merged in; A
+ * did not need it.
  *
  * ## What is already covered, and what this case is actually for
  *
@@ -66,6 +97,7 @@
  * run's output (ctx#3/epoch#2 -> aborted ctx#4 -> recovered to ctx#5) passed.
  */
 import { PreflightError } from "../../errors";
+import { checkConnectorsDbColumn, columnQuery } from "../../kms-connector-db";
 import { castSend, keccakTopic, getEventTopic } from "../../kms-onchain";
 import type { QaCase, QaCaseContext } from "../registry";
 import { assertTxSendersRunning } from "../nodes";
@@ -289,6 +321,25 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     (current) => current.contextId === recoveryContextId && current.epochId > baseline.epochId,
   );
 
+  // "All required confirmations complete with compatible results": activation already implies every
+  // signer confirmed — `confirmEpochActivation` needs full quorum — but that is the on-chain vote,
+  // not the work behind it. The connector DB records each node's reshare result independently, so
+  // requiring `completed` on every serving node states the "compatible results" clause outright
+  // instead of leaving it implied by the pointer having moved.
+  const recoveryParties = await readCommitteeParties(target, evidence, activated.contextId, kmsSigners);
+  await evidence.step(
+    "assert",
+    "every node of the recovered context completed the reshare",
+    { parties: recoveryParties.join(","), epochId: formatKmsId(activated.epochId) },
+    async () =>
+      checkConnectorsDbColumn(
+        recoveryParties,
+        `epoch ${activated.epochId} reshare completed (recovery after the abort)`,
+        columnQuery("new_kms_epoch", "epoch_id", "status", activated.epochId),
+        ["completed"],
+      ),
+  );
+
   console.log(
     `[kms-context-qa] context-switch-abort complete: the switch to ${pendingContextId} was held before its ` +
       `creation quorum, never allocated an epoch, and was destroyed by governance — leaving ` +
@@ -300,13 +351,14 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
 
 /** Registry entry for the `context-switch-abort` case. */
 export const contextSwitchAbortCase: QaCase = {
-  id: "context-switch-abort",
-  title: "Governance aborts a switch that never reached its creation quorum (live cluster + gateway)",
+  id: "context-switch-abort-and-retry",
+  title: "Governance aborts a switch that never reached quorum, then retries it successfully (two merged scenarios)",
   proves:
     "a context switch whose creation confirmation is withheld never allocates an epoch, destroyKmsContext aborts " +
-    "it without moving the active pair, the in-flight gate reopens and a later switch activates through it, the " +
-    "previous pair keeps serving a real user decryption throughout, and the Gateway is left still holding the " +
-    "context the host destroyed — its registry being independent",
+    "it without moving the active pair, the previous pair keeps serving a real user decryption throughout, the " +
+    "Gateway is left still holding the context the host destroyed — its registry being independent — and a fresh " +
+    "switch requested afterwards registers on the Gateway, reshares on every node and becomes the active pair, " +
+    "proving the in-flight gate reopened",
   requirements: {
     mode: "threshold",
     // One node of the new context is stalled while the old committee must still serve a decryption.
