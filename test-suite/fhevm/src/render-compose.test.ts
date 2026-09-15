@@ -142,6 +142,9 @@ instances:
 };
 
 /** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
+/** The template's mount of the kms-connector proxies' test certificate into the e2e runner. */
+const PROXY_TLS_CERT_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`;
+
 const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
   const previous = process.env.DOCKER_HOST;
   if (value === undefined) {
@@ -302,13 +305,15 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
-  test("requests the kms-connector endpoint only when the bundle pins its image", () => {
+  test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const withoutEndpoint: State = {
       ...state,
       versions: {
         ...state.versions,
         env: Object.fromEntries(
-          Object.entries(state.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION"),
+          Object.entries(state.versions.env).filter(
+            ([key]) => key !== "CONNECTOR_ENDPOINT_VERSION" && key !== "CONNECTOR_PROXY_VERSION",
+          ),
         ),
       },
     };
@@ -321,9 +326,13 @@ describe("render-compose", () => {
 
     const withEndpoint: State = {
       ...state,
-      versions: { ...state.versions, env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+      versions: {
+        ...state.versions,
+        env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
     };
     expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-endpoint");
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-proxy");
 
     const threshold: State = {
       ...withEndpoint,
@@ -332,6 +341,7 @@ describe("render-compose", () => {
     const services = serviceNameList(threshold, "kms-connector");
     expect(services).toContain("kms-connector-endpoint");
     expect(services).toContain("kms-connector-3-endpoint");
+    expect(services).toContain("kms-connector-3-proxy");
     expect(services).toContain("kms-connector-3-tx-sender");
   });
 
@@ -478,7 +488,8 @@ describe("render-compose", () => {
         const testSuite = doc.services["test-suite-e2e-debug"];
         expect(testSuite?.image).toContain(":fhevm-local");
         expect(testSuite?.build).toBeTruthy();
-        expect(testSuite?.volumes).toBeUndefined();
+        // Only the template's proxy test-certificate mount: no docker socket.
+        expect(testSuite?.volumes).toEqual([PROXY_TLS_CERT_MOUNT]);
         expect(testSuite?.group_add).toBeUndefined();
       });
     });
@@ -1104,6 +1115,8 @@ describe("test-suite docker socket runtime", () => {
             services: Record<string, { volumes?: string[]; group_add?: string[] }>;
           };
           const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
           expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
           const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
@@ -1130,7 +1143,9 @@ describe("test-suite docker socket runtime", () => {
           const runner = doc.services["test-suite-e2e-debug"];
           expect(runner?.image).toContain(":fhevm-local");
           expect(runner?.build).toBeTruthy();
-          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
         });
       });
@@ -1213,6 +1228,8 @@ describe("test-suite docker socket runtime", () => {
             services: Record<string, { volumes?: string[]; group_add?: string[] }>;
           };
           const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
           expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
           const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
@@ -1239,7 +1256,9 @@ describe("test-suite docker socket runtime", () => {
           const runner = doc.services["test-suite-e2e-debug"];
           expect(runner?.image).toContain(":fhevm-local");
           expect(runner?.build).toBeTruthy();
-          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
         });
       });
