@@ -240,7 +240,7 @@ jobs:
           BUILD_IMAGES: ${{ inputs.build_images || 'false' }}
           OVERRIDES_JSON: ${{ steps.parse_overrides.outputs.overrides_json }}
         run: |
-          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$USE_BLOCKCHAIN_DEV" == true || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
+          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$CHAIN_MODE" != anvil || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
             echo '::error::Solana preview currently requires Anvil host/gateway and one coprocessor fleet'; exit 1
           fi
           # No workflow publishes fhevm/solana-programs under a base-commit tag, so
