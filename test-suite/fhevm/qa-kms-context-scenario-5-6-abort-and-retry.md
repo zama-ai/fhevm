@@ -1,15 +1,54 @@
-# QA KMS context — scenario 5: governance aborts a switch that does not reach quorum
+# QA KMS context — scenarios 5 and 6: aborting a switch, and retrying it
 
-Implementation report for the fifth scenario of the `kms-context-qa-tests` profile, implemented as
-the `context-switch-abort` case.
+Implementation report for the fifth **and sixth** scenarios of the `kms-context-qa-tests` profile,
+implemented together as the single `context-switch-abort-and-retry` case.
+
+> **Two scenarios were proposed; one case was built.** §0 explains why, and which clauses came from
+> which. Both were also altered from their proposed form — §3.3 and §4 record what changed and why.
 
 **Status:** delivered and green against a live stack, first run.
 **Scope:** the cross-layer and live-cluster behaviour of aborting a context switch held at **stage
-1** — before its creation quorum.
+1** — before its creation quorum — and of the retry that follows it.
 
-> **Read §1 first.** The scenario's contract-level claims are already proven twice, in
-> `host-contracts`. This case exists for what those tests cannot reach, and the scenario was
-> rewritten accordingly. Taking it at face value would credit it with coverage it did not add.
+> **Read §1 first.** The contract-level claims are already proven twice, in `host-contracts`. This
+> case exists for what those tests cannot reach, and the scenarios were rewritten accordingly. Taking
+> them at face value would credit this case with coverage it did not add.
+
+---
+
+## 0. Why two scenarios became one case
+
+The two were proposed separately:
+
+```gherkin
+Scenario A: Governance aborts a context switch that does not reach quorum
+Scenario B: Governance retries a switch after cancelling a context pre-registered in the Gateway
+```
+
+B's `Given` block is, clause for clause, the state A **ends in**:
+
+| Scenario B `Given` | Where scenario A establishes it |
+|---|---|
+| the active pair is `C1, E1` | never moved — asserted twice, before and after the destroy |
+| the switch to `C2` was aborted by `destroyKmsContext` | the `When` of A |
+| `C2` remains registered in the Gateway | the Gateway canary, `valid=true` |
+| ProtocolConfig still returns `C1, E1` | `assertPairUnchanged` after the destroy |
+| the status indicates no pending transition | the in-flight gate, reopened |
+
+And B's `When`/`Then` — request a new switch, register it on the Gateway, watch `C3, E3` activate —
+were already A's recovery step, which existed to prove the gate had genuinely reopened rather than
+merely reporting itself open.
+
+Implementing B separately would have meant a second case spending six minutes rebuilding, from a
+clean stack, precisely the state A leaves behind — to then run three steps A already runs. The seam
+between them is the on-chain state, not setup code, so merging costs nothing and duplicates nothing.
+
+**What the merge changed:** B asks for confirmations completing *"with compatible results"*.
+Activation alone does not say that — it proves every signer voted, not that the work behind the votes
+agreed. So the recovery step gained a per-node `new_kms_epoch.status = completed` check against the
+connector DB. That assertion exists **because** B was merged in; A did not need it.
+
+The case id reflects both: `context-switch-abort-and-retry`.
 
 ---
 
@@ -150,7 +189,7 @@ Together they cover both halves of a switch's lifecycle stall, and both directio
 
 ```bash
 cd test-suite/fhevm
-KMS_QA_CASES=context-switch-abort ./fhevm-cli test kms-context-qa-tests
+KMS_QA_CASES=context-switch-abort-and-retry ./fhevm-cli test kms-context-qa-tests
 ```
 
 No `down`/`up` is required first — see the disruptiveness note below.
@@ -195,6 +234,8 @@ Verified rather than assumed: a second run was started on the stack the first on
 30  ok       -  note    gateway isValidKmsContext  ctx#2  valid=true  expected=true
 32  ok   119.1s probe   user-decryption under the original pair after the abort
 37  ok    15.2s wait    recovery context switch to ctx#3 after the abort   (polls=4)
+39  ok    917ms assert  every node of the recovered context completed the reshare
+                        parties=1,2,3,4  -> completed, completed, completed, completed
 ```
 
 Four results are worth keeping.
@@ -212,8 +253,14 @@ the chain offers.
 `false`) and simultaneously valid on the Gateway (`true`). The divergence had been reasoned about
 from the source; this is the first time both registries were read with both chains live.
 
-**Step 37 closes the loop.** A fresh switch to `ctx#3` activated in 15.2s over 4 polls — the gate did
-not merely report itself open, a real switch went through it.
+**Steps 37 and 39 close the loop, and are scenario B.** A fresh switch activated in 15.2s over 4
+polls — the gate did not merely report itself open, a real switch went through it — and every node of
+the recovered context reported its reshare `completed`, which is B's *"with compatible results"*
+stated outright rather than inferred from the pointer having moved.
+
+The reshare assertion was added by the merge and passed on its first live run (917ms, four nodes
+`completed`), on a stack that started at `ctx#7 / epoch#4`, aborted `ctx#8` and recovered to
+`ctx#9 / epoch#5` — the third consecutive run with no `down`/`up`.
 
 The whole run is 395s, of which 119s is the decryption probe and ~93s the two compose tasks of the
 recovery switch; every assertion itself runs in milliseconds.
@@ -222,7 +269,7 @@ recovery switch; every assertion itself runs in milliseconds.
 
 | Path | Role |
 |---|---|
-| `src/kms-qa/cases/case-context-switch-abort.ts` | the case |
+| `src/kms-qa/cases/case-context-switch-abort.ts` | the case, covering both scenarios |
 | `src/kms-qa/pending.ts` | `assertNoNewKmsEpochEvent`, `assertLifecycleGateOpen`, `assertGatewayContextValidity` |
 | `qa-kms-context-scenario-2-pending-context.md` | the stage-2 sibling |
 | `host-contracts/test/protocolConfig/protocolConfig.t.sol` | the Foundry coverage this case does not duplicate |
