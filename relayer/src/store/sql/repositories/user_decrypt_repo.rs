@@ -4,7 +4,9 @@ use serde_json::Value;
 use crate::core::event::UserDecryptResponse;
 use crate::metrics;
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
-use crate::store::sql::models::user_decrypt_req_model::{ConsensusReqState, UserDecryptReqData};
+use crate::store::sql::models::user_decrypt_req_model::{
+    ConsensusReqState, UserDecryptReqData, UserDecryptReqType,
+};
 use crate::store::sql::{
     client::PgClient,
     error::{SqlError, SqlResult},
@@ -1108,10 +1110,10 @@ impl UserDecryptRepository {
     /// Find incomplete requests for startup recovery (queued, processing, tx_in_flight).
     pub async fn find_incomplete_requests(
         &self,
-    ) -> SqlResult<Vec<(Vec<u8>, Value, ReqStatus, DateTime<Utc>)>> {
+    ) -> SqlResult<Vec<(Vec<u8>, Value, UserDecryptReqType, ReqStatus, DateTime<Utc>)>> {
         let result = sqlx::query!(
             r#"
-            SELECT int_job_id, req, req_status as "req_status!: ReqStatus", updated_at
+            SELECT int_job_id, req, req_type as "req_type!: UserDecryptReqType", req_status as "req_status!: ReqStatus", updated_at
             FROM user_decrypt_req
             WHERE req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)
             ORDER BY created_at ASC
@@ -1122,7 +1124,15 @@ impl UserDecryptRepository {
 
         Ok(result
             .into_iter()
-            .map(|row| (row.int_job_id, row.req, row.req_status, row.updated_at))
+            .map(|row| {
+                (
+                    row.int_job_id,
+                    row.req,
+                    row.req_type,
+                    row.req_status,
+                    row.updated_at,
+                )
+            })
             .collect())
     }
 
