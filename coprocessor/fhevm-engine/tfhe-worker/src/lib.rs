@@ -94,6 +94,13 @@ async fn async_main_inner(
         let _ = OTEL_GUARD.set(otel_guard);
     });
 
+    #[cfg(feature = "gpu")]
+    if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
+        error!(error = %err, "GPU runtime architecture does not match image target");
+        telemetry::flush();
+        std::process::exit(1);
+    }
+
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
