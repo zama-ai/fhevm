@@ -158,6 +158,7 @@ const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
     args: {
+      CARGO_FEATURES: "${FHEVM_CONSENSUS_TEST_FEATURES:-}",
       RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION,
       ...(e2ePublicRuntime
         ? {

@@ -2636,6 +2636,13 @@ async fn tfhe_worker_cycle(
             .iter()
             .map(|t| t.transaction_id.clone())
             .collect();
+        #[cfg(feature = "test-failpoints")]
+        let batch_dependence_chain_ids: Vec<Vec<u8>> = sqlx::query_scalar(
+            "SELECT DISTINCT dependence_chain_id FROM computations WHERE transaction_id = ANY($1) AND dependence_chain_id IS NOT NULL",
+        )
+        .bind(&batch_transaction_ids)
+        .fetch_all(&mut *trx)
+        .await?;
         let mut tx_graph = match build_transaction_graph_and_execute(
             &mut transactions,
             db_key_cache.clone(),
@@ -2765,8 +2772,13 @@ async fn tfhe_worker_cycle(
                 deferred_cooldown.quarantine(transaction_id);
             }
         }
+        #[cfg(feature = "test-failpoints")]
+        crate::test_failpoints::hit(&pool, "before-commit", batch_dependence_chain_ids.clone())
+            .await?;
         trx.commit().await?;
         WORK_BATCH_TRANSACTIONS.observe(batch_transactions as f64);
+        #[cfg(feature = "test-failpoints")]
+        crate::test_failpoints::hit(&pool, "after-commit", batch_dependence_chain_ids).await?;
 
         // Releasing after commit makes terminal work visible before another
         // worker can acquire a dependent DCID. Keep unfinished DCIDs leased;

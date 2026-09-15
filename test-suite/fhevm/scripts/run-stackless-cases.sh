@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The cases that need no stack, recorded as results.
 #
-#   harness          HAR-02, HAR-03, MAT-05-CANARY-CLASSES
+#   harness          HAR-01, HAR-02, HAR-03, MAT-05-CANARY-CLASSES
 #   comparator       MAT-05-CANARY-CLASSES
 #   rust-regression  REG-01, REG-02
 #
@@ -90,6 +90,26 @@ record_case() {
 }
 
 harness_leg() {
+  # The fault-control contracts print their own count.
+  local started status=0 out
+  cr_skip_wrong_scenario HAR-01-FAULT-CONTRACTS || {
+    started="$(cr_now)"
+    log "HAR-01-FAULT-CONTRACTS: the fault layer fails closed"
+    out="$("$SCRIPT_DIR/test-fault-contracts.sh" 2>&1)" || status=$?
+    echo "$out" | tail -20 | sed 's/^/    /'
+    local contracts; contracts="$(sed -n 's/^HAR-01-FAULT-CONTRACTS: PASS (\([0-9]\+\) contract(s))$/\1/p' <<<"$out")"
+    if [[ "$status" -ne 0 || -z "$contracts" ]]; then
+      cr_record HAR-01-FAULT-CONTRACTS FAIL started_at="$started" cleanup=not_required \
+        detail="$(cr_failure_reason "$out")"
+      echo "[HAR-01-FAULT-CONTRACTS] FAIL"
+      FAILURES=$((FAILURES + 1))
+    else
+      cr_record_checked_pass HAR-01-FAULT-CONTRACTS started_at="$started" cleanup=not_required \
+        assert="safety=pass:$contracts fault-control contracts held" artifact="contracts=$contracts"
+      echo "[HAR-01-FAULT-CONTRACTS] PASS ($contracts contract(s))"
+    fi
+  }
+
   record_case HAR-02-INVENTORY-AGGREGATE 30 bun_test_count \
     "the inventory and aggregate reject what they claim to reject" "safety" \
     -- bun_test src/consensus
@@ -104,11 +124,17 @@ harness_leg() {
 
 comparator_leg() {
   record_case MAT-05-CANARY-CLASSES 15 mocha_test_count \
-    "standalone consensus oracles reject invalid evidence" "safety" \
+    "standalone consensus oracles and fault controls reject invalid evidence" "safety" \
     -- mocha_test 'test/consensus/*.test.ts'
 }
 
 rust_regression_leg() {
+  if ! cargo_test -p tfhe-worker --features test-failpoints --lib test_failpoints::tests; then
+    FAILURES=$((FAILURES + 1))
+  fi
+  record_case FM-UPGRADE-CONTROLLER 42 cargo_test_count \
+    "controller cutover, write fences, and recovery after a real process kill" "safety liveness" \
+    -- cargo_test -p upgrade-controller --lib -- --test-threads=2
   # Both need a database through testcontainers, which needs docker.
   record_case REG-01-LISTENER-POOL-REBIND 4 cargo_test_count \
     "the stack-version listener rebinds and reconciles" "liveness safety sensitivity" \
