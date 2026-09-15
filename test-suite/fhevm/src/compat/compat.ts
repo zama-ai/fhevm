@@ -418,6 +418,16 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved kms-connector bundle includes the HTTP `endpoint` service. */
+export const supportsConnectorEndpoint = (state: Pick<CompatState, "versions" | "overrides">) => {
+  const overridden = state.overrides.some(
+    (override) =>
+      override.group === "kms-connector" &&
+      (!override.services?.length || override.services.includes("kms-connector-endpoint")),
+  );
+  return overridden || Boolean(state.versions.env.CONNECTOR_ENDPOINT_VERSION);
+};
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
@@ -645,6 +655,13 @@ const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
  * Only `COPROCESSOR_*` shims are consulted: a pinned coprocessor image tag says
  * nothing about the connector or the contracts.
  */
+// #3922 changes the current (0.15) sender to HTTP. Older release families
+// use WebSocket; unversioned main images follow the existing modern-image policy.
+const transactionSenderGatewayArg = (version: string): readonly [string, CompatArgValue] => [
+  "--gateway-url",
+  { env: versionBeforeReleaseFamily(version, [0, 15, 0], { unparsed: "modern" }) ? "GATEWAY_WS_URL" : "GATEWAY_URL" },
+];
+
 export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy => {
   const policy: CoprocessorArgPolicy = { coprocessorArgs: {}, coprocessorDropFlags: {} };
   for (const shim of COMPAT_MATRIX.legacyShims) {
@@ -656,6 +673,10 @@ export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy =
     }
     mergeShimArgs(policy, SHIM_PROFILES[shim.profile]);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(tag),
+  ];
   return policy;
 };
 
@@ -675,6 +696,10 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     mergeShimArgs(policy, profile);
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? ""),
+  ];
   // Local overrides build the current working tree, which always uses the
   // modern --use-internal-proxy-address flag regardless of the version label.
   const overrides = effectiveCompatOverrides(state);

@@ -351,8 +351,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Remove the old coprocessors
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
         for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
-            $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
-            $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+            delete $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]];
+            delete $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]];
             delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
         }
 
@@ -374,8 +374,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // Remove the old custodians
         uint256 oldCustodianTxSenderAddressesLength = $.custodianTxSenderAddresses.length;
         for (uint256 i = 0; i < oldCustodianTxSenderAddressesLength; i++) {
-            $.isCustodianTxSender[$.custodianTxSenderAddresses[i]] = false;
-            $.isCustodianSigner[$.custodianSignerAddresses[i]] = false;
+            delete $.isCustodianTxSender[$.custodianTxSenderAddresses[i]];
+            delete $.isCustodianSigner[$.custodianSignerAddresses[i]];
             delete $.custodians[$.custodianTxSenderAddresses[i]];
         }
 
@@ -466,7 +466,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         $.hostChains.push(hostChain);
         $.isHostChainRegistered[hostChain.chainId] = true;
-        emit AddHostChain(hostChain);
+        emit AddHostChain(hostChain.chainId, hostChain);
     }
 
     /**
@@ -525,9 +525,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             }
         }
 
-        // Clear the boolean state so a fresh `addHostChain(chainId)` later starts from a clean slate.
-        $.isHostChainRegistered[chainId] = false;
-        $.disabledHostChains[chainId] = false;
+        // Reset the registration state so a fresh `addHostChain(chainId)` later starts from a clean slate.
+        delete $.isHostChainRegistered[chainId];
+        delete $.disabledHostChains[chainId];
 
         emit RemoveHostChain(chainId);
     }

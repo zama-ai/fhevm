@@ -16,6 +16,7 @@ import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifie
 import {
   backdatedStartTimestamp,
   delegatedHandle,
+  describeUnifiedFailure,
   directHandle,
   expectGatewayRevert,
   expectRelayerAclRejection,
@@ -158,8 +159,8 @@ describe('Unified user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     // Assert the ciphertext really decrypts to the known plaintext. NOTE the
     // route: this helper uses the SDK's LEGACY permit (relayer `/v2`), so it
     // proves the value, NOT that the unified envelope works through the SDK —
@@ -222,8 +223,8 @@ describe('Unified user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
       handle: handle,
       contractAddress: aliceContractAddress,
@@ -256,8 +257,8 @@ describe('Unified user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     const clear = await instances.alice.userDecryptSingleHandle({
       handle: handle,
       contractAddress: aliceContractAddress,
@@ -290,8 +291,8 @@ describe('Unified user decryption', function () {
         timeoutMs: POSITIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-    expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+    expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     const clear32 = await instances.bob.userDecryptSingleHandle({
       handle: handle32,
       contractAddress: bobContractAddress,
@@ -366,7 +367,7 @@ describe('Unified user decryption', function () {
     // Signature is valid, so the relayer accepts; the contract-allowance check
     // is enforced only by the KMS Connector, which rejects without responding —
     // the job stays queued.
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     expectStuckAtKms(poll);
   });
 
@@ -390,7 +391,7 @@ describe('Unified user decryption', function () {
         timeoutMs: negativeWindowMs,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     expectStuckAtKms(poll);
   });
 
@@ -417,7 +418,7 @@ describe('Unified user decryption', function () {
     // bob's signature is valid, so the POST is accepted; the per-job host-ACL
     // check then fails (isAllowed(handle, bob) == false) and the job terminates
     // as failed with not_allowed_on_host_acl.
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     expectRelayerAclRejection(poll);
   });
 
@@ -445,7 +446,7 @@ describe('Unified user decryption', function () {
         timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     expectRelayerAclRejection(poll);
   });
 
@@ -476,7 +477,7 @@ describe('Unified user decryption', function () {
         timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
       },
     );
-    expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+    expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
     expectRelayerAclRejection(poll);
   });
 
@@ -570,8 +571,8 @@ describe('Unified user decryption', function () {
           timeoutMs: POSITIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
         handle: handle,
         contractAddress: aliceContractAddress,
@@ -605,8 +606,8 @@ describe('Unified user decryption', function () {
           timeoutMs: POSITIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
         handle: handle,
         contractAddress: aliceContractAddress,
@@ -641,8 +642,8 @@ describe('Unified user decryption', function () {
           timeoutMs: POSITIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
       const clear = await instances.alice.userDecryptSingleHandle({
         handle: handle,
         contractAddress: aliceContractAddress,
@@ -676,7 +677,7 @@ describe('Unified user decryption', function () {
           timeoutMs: negativeWindowMs,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
       expectStuckAtKms(poll);
     });
 
@@ -749,10 +750,9 @@ describe('Unified user decryption', function () {
           timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      // InvalidKmsContext(<unknownContextId>) — selector 0x77ddbe81. The id is
-      // random per run, so this cannot pass or fail because of leftover state.
-      expectGatewayRevert(poll, /0x77ddbe81/i);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      // InvalidKmsContext.
+      expectGatewayRevert(poll, '0x77ddbe81');
     });
 
     it('test unified user decrypt rejects a malformed extraData version', async function () {
@@ -893,8 +893,8 @@ describe('Unified user decryption', function () {
           timeoutMs: POSITIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
       // Assert the known plaintexts of both legs through the public SDK: the
       // direct handle via the standard decrypt, the delegated handle via the
       // delegated decrypt (same pattern as the legacy delegated suite).
@@ -939,8 +939,8 @@ describe('Unified user decryption', function () {
           timeoutMs: POSITIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     });
 
     it('test unified user decrypt rejects a delegated handle with a fabricated contractAddress', async function () {
@@ -966,7 +966,7 @@ describe('Unified user decryption', function () {
           timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
 
@@ -997,7 +997,7 @@ describe('Unified user decryption', function () {
           timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
 
@@ -1039,7 +1039,7 @@ describe('Unified user decryption', function () {
           timeoutMs: TERMINAL_NEGATIVE_TIMEOUT_MS,
         },
       );
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
 
@@ -1077,8 +1077,8 @@ describe('Unified user decryption', function () {
         waitForTerminal: true,
         timeoutMs: POSITIVE_TIMEOUT_MS,
       });
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
-      expect(poll?.status, JSON.stringify(poll?.raw)).to.equal('succeeded');
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
+      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
     });
 
     it('test unified user decrypt revoking a contract delegate closes access for its current signer', async function () {
@@ -1114,7 +1114,7 @@ describe('Unified user decryption', function () {
         waitForTerminal: true,
         timeoutMs: negativeWindowMs,
       });
-      expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
+      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
       expectRelayerAclRejection(poll);
     });
   });

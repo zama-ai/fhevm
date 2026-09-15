@@ -25,6 +25,7 @@ done
 
 # Per-crate anchor build (--ignore-keys: keep the committed keypairs, do not regenerate ids).
 ( cd "$SOLANA" \
+    && bash scripts/install-sbf-tools.sh \
     && anchor build --ignore-keys --no-idl -p demo_vault \
     && anchor build --ignore-keys --no-idl -p confidential_batcher ) \
   || { echo "[demo-deploy] anchor build failed" >&2; exit 1; }

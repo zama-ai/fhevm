@@ -6,7 +6,7 @@ import { assertRecordStringProperty } from '../../../../../base/string.js';
  * Asserts that `value` matches the {@link RelayerApiError500} schema:
  * ```json
  * {
- *   "label": "internal_server_error",
+ *   "label": "internal_server_error" | "host_acl_failed" | "no_attestation_consensus",
  *   "message": "string"
  * }
  * ```
@@ -18,7 +18,11 @@ export function assertIsRelayerApiError500(
 ): asserts value is RelayerApiError500 {
   type T = RelayerApiError500;
   assertRecordStringProperty(value, 'label' satisfies keyof T, name, {
-    expectedValue: ['internal_server_error' satisfies T['label'], 'host_acl_failed' satisfies T['label']],
+    expectedValue: [
+      'internal_server_error' satisfies T['label'],
+      'host_acl_failed' satisfies T['label'],
+      'no_attestation_consensus' satisfies T['label'],
+    ],
     ...options,
   });
   assertRecordStringProperty(value, 'message' satisfies keyof T, name, options);

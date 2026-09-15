@@ -12,6 +12,7 @@ import {
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
+  replaceRegistrySourceTag,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
@@ -20,7 +21,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
-  replaceRegistrySourceTag,
+  supportsConnectorEndpoint,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -261,7 +262,7 @@ describe("compat", () => {
 
   test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
     const policy = compatArgPolicyForPinnedTag("v0.15.0");
-    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorArgs).toEqual({ "transaction-sender": [["--gateway-url", { env: "GATEWAY_URL" }]] });
     expect(policy.coprocessorDropFlags).toEqual({});
   });
 
@@ -458,6 +459,22 @@ describe("compat", () => {
     // Unparsed main sha tags are published by CI and count as modern.
     expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
+  test("enables the kms-connector endpoint only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // Pinned profiles and shas that predate the endpoint image omit the (optional) key.
+    expect(supportsConnectorEndpoint(stateFor({}))).toBe(false);
+    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0" }))).toBe(true);
+    // A local kms-connector override builds the endpoint from the working tree.
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector" }]))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]))).toBe(true);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }]))).toBe(false);
+    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "coprocessor" }]))).toBe(false);
   });
 
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {
@@ -865,4 +882,13 @@ describe("compat", () => {
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("65cf86e"))).toBe(true);
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-8", [{ group: "host-contracts" }]))).toBe(true);
   });
+});
+
+test.each(["v0.11.0", "v0.12.0", "v0.13.0-2", "v0.14.0-7"])("keeps WS for pinned sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_WS_URL" }]);
+});
+test.each(["v0.15.0", "c2f416b"])("uses HTTP for current sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_URL" }]);
 });

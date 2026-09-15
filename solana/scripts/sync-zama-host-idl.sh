@@ -20,6 +20,7 @@ cd "$ROOT"
 EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
 . "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 
+bash "$ROOT/scripts/install-sbf-tools.sh"
 NO_DNA=1 anchor build --ignore-keys
 # Writes every vendored IDL, including the demo and specimen programs whose copies
 # live with their consumers. The list they come from is check_solana_abi.py's, the

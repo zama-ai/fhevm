@@ -17,7 +17,12 @@ import {
   dockerArgs,
   envPath,
 } from "../layout";
-import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "./compat";
+import {
+  supportsConnectorEndpoint,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -174,7 +179,10 @@ const main = async () => {
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
           (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)),
       ),
-      "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
+      "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
+        (name) =>
+          !name.endsWith("db-migration") && (name !== "kms-connector-endpoint" || supportsConnectorEndpoint(state)),
+      ),
     } as const;
     for (const component of COMPAT_COMPONENTS) {
       try {

@@ -357,6 +357,39 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
+  test("requests the kms-connector endpoint only when the bundle pins its image", () => {
+    const withoutEndpoint: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: Object.fromEntries(
+          Object.entries(state.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION"),
+        ),
+      },
+    };
+    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual([
+      "kms-connector-db-migration",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+    ]);
+
+    const withEndpoint: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+    };
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-endpoint");
+
+    const threshold: State = {
+      ...withEndpoint,
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+    };
+    const services = serviceNameList(threshold, "kms-connector");
+    expect(services).toContain("kms-connector-endpoint");
+    expect(services).toContain("kms-connector-3-endpoint");
+    expect(services).toContain("kms-connector-3-tx-sender");
+  });
+
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -784,6 +817,11 @@ gcs:
       expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
         "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
       });
+      // Only the pinned BCS migration may create the database; the HEAD one must find it.
+      const env = (name: string) =>
+        (doc.services[name] as { environment?: Record<string, string> } | undefined)?.environment;
+      expect(env("coprocessor-bcs-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "true" });
+      expect(env("coprocessor-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "false" });
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment
@@ -1304,5 +1342,25 @@ describe("test-suite docker socket runtime", () => {
     expect(raw).not.toContain("docker.sock");
     expect(raw).not.toContain("group_add");
     expect(raw).not.toContain("DOCKER_GID");
+  });
+});
+
+test.each([
+  ["v0.13.0-2", false, "ws://gateway:8546"],
+  ["c2f416b", false, "http://gateway:8545"],
+  ["c2f416b", true, "http://gateway:8545"],
+] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "GATEWAY_URL=http://gateway:8545\nGATEWAY_WS_URL=ws://gateway:8546\n");
+    const input: State = {
+      ...state,
+      versions: presetBundle("latest-main", tag, "test.json"),
+      overrides: local ? [{ group: "coprocessor" }] : [],
+      scenario: testDefaultScenario(),
+    };
+    await generateComposeOverrides(input, stackSpecForState(input));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
   });
 });

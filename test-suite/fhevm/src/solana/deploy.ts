@@ -158,6 +158,7 @@ const ENGINE_DIR = path.join(REPO_ROOT, "coprocessor", "fhevm-engine");
  */
 const buildAndDeployPrograms = async (deployerKeypairPath: string): Promise<string> => {
   console.log(`    building ${SOLANA_E2E_PROGRAMS.join(" + ")}`);
+  await runStreaming(["bash", path.join(SOLANA_DIR, "scripts", "install-sbf-tools.sh")], { cwd: SOLANA_DIR });
   for (const program of SOLANA_E2E_PROGRAMS) {
     await runStreaming(["anchor", "build", "--ignore-keys", "--no-idl", "-p", program], { cwd: SOLANA_DIR });
   }

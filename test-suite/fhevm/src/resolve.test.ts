@@ -92,10 +92,13 @@ describe("resolve", () => {
     expect(pinned.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
     expect(pinned.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
 
+    expect(pinned.env.CONNECTOR_ENDPOINT_VERSION).toBe("abcdef0");
+
     // Empty published-key set (what `--target sha` passes): optional images are omitted.
     const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
     expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
     expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
+    expect("CONNECTOR_ENDPOINT_VERSION" in shaBundle.env).toBe(false);
     expect(shaBundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
 
     // latest-main with only consensus-detector published at the resolved sha: pin it, drop the

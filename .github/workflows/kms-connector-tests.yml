@@ -36,6 +36,7 @@ jobs:
         filters: |
           connector:
             - .github/workflows/kms-connector-tests.yml
+            - .github/actions/setup-rust-and-protoc/**
             - kms-connector/connector-db/**
             - kms-connector/crates/**
             - kms-connector/Cargo.*
@@ -62,7 +63,8 @@ jobs:
       contents: 'read' # Required to checkout repository code
       packages: 'read' # Required to read GitHub packages/container registry
       pull-requests: 'read' # Required to read pull request information
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    # Compilation and the isolated Postgres health-check container exhausted the default disk.
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/volume=80gb
     defaults:
       run:
         shell: bash
@@ -99,10 +101,8 @@ jobs:
         with:
           toolchain-dir: kms-connector
 
-      - name: Install Protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          version: "26.x"
+      - name: Install pinned protoc
+        uses: ./.github/actions/setup-rust-and-protoc
 
       - name: Install Docker
         uses: docker/setup-docker-action@efe9e3891a4f7307e689f2100b33a155b900a608 # v4.5.0

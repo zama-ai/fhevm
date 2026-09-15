@@ -29,6 +29,7 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/coprocessor-cargo-tests.yml
+              - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
@@ -58,7 +59,8 @@ jobs:
       matrix:
         include:
           # Split across three machines because this job is by far the slowest.
-          # Coverage builds and restored caches exceed the default runner disk.
+          # Leave room for coverage artifacts, the cargo cache, and concurrent
+          # PostgreSQL test databases containing FHE keys on every shard.
           - service: tfhe-worker-1
             use_nextest: true
             package: tfhe-worker
@@ -97,7 +99,8 @@ jobs:
             package: transaction-sender
             needs_localstack: true
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            # Coverage compilation exhausted the default runner disk.
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: gw-listener
             package: gw-listener
             needs_localstack: false
@@ -154,10 +157,11 @@ jobs:
       with:
         tool: cargo-nextest
 
-    - name: Install cargo dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler mold clang
+    - name: Install pinned protoc, mold, and require clang
+      uses: ./.github/actions/setup-rust-and-protoc
+      with:
+        setup-mold: "true"
+        require-clang: "true"
     - name: Install foundry
       if: ${{ matrix.needs_foundry }}
       uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c

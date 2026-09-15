@@ -129,9 +129,10 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when a new host chain has been registered.
+     * @param chainId The new host chain's chain ID.
      * @param hostChain The new host chain metadata.
      */
-    event AddHostChain(HostChain hostChain);
+    event AddHostChain(uint256 indexed chainId, HostChain hostChain);
 
     /**
      * @notice Emitted when a registered host chain has been disabled.

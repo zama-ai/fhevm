@@ -1,0 +1,12 @@
+# sync-secrets values: Amoy treasury key (gitops zws-dev polygon faucet).
+# Helm release name is the ExternalSecret name (preview-polygon-faucet).
+externalSecret:
+  enabled: true
+  targetSecretName: polygon-faucet
+  data:
+    - keyReference: "zws-dev/polygon-faucet"
+      propertyReference: private-key
+      secretKeyName: private_key
+  template:
+    data:
+      private-key: '{{ .private_key }}'

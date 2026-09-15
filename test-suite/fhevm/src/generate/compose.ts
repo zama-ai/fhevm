@@ -12,6 +12,7 @@ import {
   type CoprocessorArgPolicy,
   compatArgPolicyForPinnedTag,
   compatPolicyForState,
+  supportsConnectorEndpoint,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -179,7 +180,7 @@ const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   });
 
 // The connector DB migration has its own Dockerfile and does not use the
-// connector workspace runtime base. Only the three long-lived connector
+// connector workspace runtime base. Only the long-lived connector
 // services receive the E2E-only public-runtime switch.
 const kmsConnectorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
@@ -195,6 +196,7 @@ const KMS_CONNECTOR_RUNTIME_BUILD_TARGETS: Record<string, string> = {
   "kms-connector-gw-listener": "gw-listener",
   "kms-connector-kms-worker": "kms-worker",
   "kms-connector-tx-sender": "tx-sender",
+  "kms-connector-endpoint": "endpoint",
 };
 
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
@@ -504,8 +506,33 @@ export const blueGreenServiceNames = (
   return names;
 };
 
+/** kms-connector service suffixes for one party, minus services the resolved bundle lacks. */
+export const kmsConnectorServiceSuffixes = (state: Pick<State, "versions" | "overrides">) =>
+  GROUP_SERVICE_SUFFIXES["kms-connector"].filter(
+    (suffix) => suffix !== "endpoint" || supportsConnectorEndpoint(state),
+  );
+
+/** Lists kms-connector service names across every KMS party (party 1 keeps the bare names). */
+export const kmsConnectorServiceNameList = (state: Pick<State, "scenario" | "versions" | "overrides">) => {
+  const suffixes = kmsConnectorServiceSuffixes(state);
+  const names: string[] = [];
+  for (let party = 1; party <= state.scenario.kms.parties; party += 1) {
+    const prefix = kmsConnectorPrefix(party);
+    for (const suffix of suffixes) {
+      names.push(`${prefix}-${suffix}`);
+    }
+  }
+  return names;
+};
+
 /** Lists runtime service names for the requested component and topology. */
-export const serviceNameList = (state: Pick<State, "scenario" | "versions">, component: string) => {
+export const serviceNameList = (
+  state: Pick<State, "scenario" | "versions" | "overrides">,
+  component: string,
+) => {
+  if (component === "kms-connector") {
+    return kmsConnectorServiceNameList(state);
+  }
   if (component !== "coprocessor") {
     return [];
   }
@@ -710,6 +737,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           bcsMigration.container_name = bcsMigrationName;
           bcsMigration.image = rewriteImageTag(bcsMigration.image, instance.source.tag);
           delete bcsMigration.build;
+          // Only the pinned release may create the database; the HEAD migration must find it.
+          bcsMigration.environment = { ...normalizeEnvironment(bcsMigration.environment), ALLOW_DB_BOOTSTRAP: "true" };
+          adjusted.environment = { ...normalizeEnvironment(adjusted.environment), ALLOW_DB_BOOTSTRAP: "false" };
           if (instance.index > 0 && bcsMigration.depends_on && typeof bcsMigration.depends_on === "object") {
             bcsMigration.depends_on = rewriteCoprocessorDependsOn(
               bcsMigration.depends_on as Record<string, unknown>,
@@ -814,6 +844,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
 export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const overridden = overriddenServicesForComponent(plan, "kms-connector");
+  const includeEndpoint = supportsConnectorEndpoint(plan);
   const services: Record<string, Record<string, unknown>> = {};
   const buildOwners = new Set<string>();
   for (let party = 1; party <= plan.kms.parties; party += 1) {
@@ -821,6 +852,9 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
     const envFileValue = envPath(kmsConnectorEnvName(party));
     const deployment = plan.kmsConnectorDeploymentByNodeId?.[party];
     for (const [name, service] of Object.entries(doc.services)) {
+      if (name === "kms-connector-endpoint" && !includeEndpoint) {
+        continue;
+      }
       const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
       const next = structuredClone(service);
