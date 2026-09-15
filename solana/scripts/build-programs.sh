@@ -18,6 +18,7 @@ for program in "$@"; do
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
+bash scripts/install-sbf-tools.sh
 for program in "$@"; do
   args=(build --ignore-keys --no-idl -p "$program")
   if [[ "$profile" == preview-env ]]; then args+=(-- --features preview-env); fi

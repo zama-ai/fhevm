@@ -40,7 +40,7 @@ COPY solana/programs/ programs/
 COPY solana/crates/ crates/
 COPY solana/runtime-tests/ runtime-tests/
 COPY solana/test-kit/ test-kit/
-COPY solana/scripts/build-programs.sh scripts/build-programs.sh
+COPY solana/scripts/build-programs.sh solana/scripts/install-sbf-tools.sh scripts/
 # Preview-env profile: compile `declare_id!` behind `--features preview-env`.
 # Program private keys are first-deploy runtime secrets (k8s / AWS), not a build input.
 RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_PROFILE" \
