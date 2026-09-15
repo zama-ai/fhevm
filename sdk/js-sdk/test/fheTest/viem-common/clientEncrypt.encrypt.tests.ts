@@ -1,13 +1,7 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
-import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import {
-  getViemEncryptClientOptions,
-  getViemTestConfig,
-  type CreateViemEncryptClientFn,
-  type FheTestViemConfig,
-} from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemEncryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import {
   chainIdFromHandle,
   clearTypeFromHandle,
@@ -29,7 +23,6 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 export function defineClientEncryptEncryptTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmEncryptClient: CreateViemEncryptClientFn;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 }): void {
   describe.runIf(parameters.runIf)('Encrypt', () => {
     let config: FheTestViemConfig;
@@ -54,7 +47,6 @@ export function defineClientEncryptEncryptTests(parameters: {
       const client = parameters.createFhevmEncryptClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
-        options: getViemEncryptClientOptions(config, parameters.moduleVersions),
       });
       await client.ready;
 
@@ -90,7 +82,6 @@ export function defineClientEncryptEncryptTests(parameters: {
         const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
-          options: getViemEncryptClientOptions(config, parameters.moduleVersions),
         });
         await client.ready;
 

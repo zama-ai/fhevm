@@ -28,8 +28,6 @@ import {
   GATEWAY_CHAIN_ID,
   GATEWAY_CHEAT_ADDRESSES,
   GATEWAY_MOUNT_PREFIX,
-  LEGACY_SLOT,
-  OLD_MODULE_NEW_KEY_SLOT,
   SLOT_INFO,
   type FoundryProfile,
   type SlotId,
@@ -157,21 +155,6 @@ export function gatewayConfig(): GatewayConfig {
       keyFilePath: resolve(dir, t.keyFile),
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
       chainConfig: slotChainConfig(t.chainId, slotMnemonic(t), t.foundryProfile),
-    };
-  }
-
-  // Alias slot for the expected-fail leg (see OLD_MODULE_NEW_KEY_SLOT in config):
-  // the current key over the legacy anvil. Its chain config is the legacy slot's (it
-  // proxies the legacy RPC, so init reads the older ACL → older module), letting that
-  // older module fail to deserialize the newer key. Derived from TOPOLOGY so it
-  // tracks any port/key change.
-  const legacy = TOPOLOGY.find((t) => t.slot === LEGACY_SLOT);
-  const current = TOPOLOGY.find((t) => t.slot === CURRENT_SLOT);
-  if (legacy !== undefined && current !== undefined) {
-    slots[OLD_MODULE_NEW_KEY_SLOT] = {
-      keyFilePath: resolve(dir, current.keyFile),
-      rpcUrl: `http://127.0.0.1:${String(legacy.port)}`,
-      chainConfig: slotChainConfig(legacy.chainId, slotMnemonic(legacy), legacy.foundryProfile),
     };
   }
 

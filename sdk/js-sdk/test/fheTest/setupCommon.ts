@@ -1,7 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
-import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -57,7 +56,6 @@ export type FheTestBaseEnv = {
   readonly fheTestVersion: FheTestVersion;
   readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -113,57 +111,21 @@ export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
 // Protocol version per chain
 // ---------------------------------------------------------------------------
 
-const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersion>> = {
-  sepolia: '0.13.0',
-  testnet: '0.13.0',
-  mainnet: '0.11.0',
-  localcleartext: '0.13.0',
-  localcleartext_legacy: '0.12.0',
-  localcleartext_v12: '0.12.0',
-  localcleartext_v13: '0.13.0',
-  localstack: '0.14.0',
-  localstack_v11: '0.11.0',
-  localstack_v12: '0.12.0',
-  localstack_v13: '0.13.0',
-  localstack_v14: '0.14.0',
-  devnet: '0.14.0',
-  polygon_devnet: '0.13.0',
-  ingen_trex_cleartext: '0.12.0',
-  hoodi_cleartext: '0.11.0',
-};
-
-export function getExpectedProtocolVersion(chainName: FheTestChainName): ProtocolVersion {
-  return PROTOCOL_VERSION_BY_CHAIN[chainName];
+// The SDK targets a single protocol line per release and reports it for every
+// chain, so the expected protocol version no longer depends on the chain.
+export function getExpectedProtocolVersion(_chainName: FheTestChainName): ProtocolVersion {
+  return '0.15.0';
 }
 
 // ---------------------------------------------------------------------------
 // TFHE wasm version per chain
 // ---------------------------------------------------------------------------
 
-export type TfheVersion = '1.5.3' | '1.6.2';
-
-const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
-  sepolia: '1.5.3',
-  testnet: '1.5.3', // alias for sepolia
-  mainnet: '1.5.3',
-  localcleartext: undefined,
-  localcleartext_legacy: undefined,
-  localcleartext_v12: undefined,
-  localcleartext_v13: undefined,
-  localstack_v11: '1.5.3',
-  localstack_v12: '1.5.3',
-  devnet: '1.6.2',
-  polygon_devnet: '1.6.2',
-  ingen_trex_cleartext: undefined,
-  hoodi_cleartext: undefined,
-  localstack: '1.6.2',
-  localstack_v13: '1.6.2',
-  localstack_v14: '1.6.2',
-};
+export type TfheVersion = '1.6.2';
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
 export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undefined {
-  return TFHE_VERSION_BY_CHAIN[chainName];
+  return isCleartext(chainName) ? undefined : '1.6.2';
 }
 
 const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestChainName, string>>> = {
@@ -599,7 +561,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
 
-  const tfheVersion = getTfheVersion(chainName);
   _baseEnv = {
     chainName,
     fhevmChain,
@@ -610,7 +571,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     fheTestVersion,
     protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
-    moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };
 
   return _baseEnv;
