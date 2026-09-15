@@ -78,7 +78,8 @@ pod_source() {
     jq '.spec.template.spec as $s | $s.containers[0] as $c
         | {image: $c.image, env: $c.env, resources: $c.resources, workingDir: ($c.workingDir // null),
            serviceAccountName: ($s.serviceAccountName // null), imagePullSecrets: $s.imagePullSecrets,
-           tolerations: $s.tolerations, nodeSelector: ($s.nodeSelector // null), preamble: $c.command[-1]}' \
+           tolerations: $s.tolerations, nodeSelector: ($s.nodeSelector // null),
+           preamble: (if (($c.args // []) | length) > 0 then $c.args[-1] else $c.command[-1] end)}' \
       "${work}/job.json" > "${out}"
     if [[ "${chain}" == amoy ]]; then
       # The idle Job is wired to the ETH host chain: point the RPC, chain id and the HOST-chain
