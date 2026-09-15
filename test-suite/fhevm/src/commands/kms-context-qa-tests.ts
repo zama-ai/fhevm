@@ -44,6 +44,7 @@ import {
   checkCaseRequirements,
   selectCases,
   type ExtraDataCheckRunner,
+  type ExtraDataRejectionRunner,
   type QaCase,
 } from "../kms-qa/registry";
 import type { ProtocolConfigTarget } from "../kms-qa/protocol-config";
@@ -152,6 +153,7 @@ export const runKmsContextQaTestsProfile = async (
   runDecryption: DecryptionRunner,
   runSmoke: SmokeRunner,
   runExtraDataCheck: ExtraDataCheckRunner,
+  runExtraDataRejection: ExtraDataRejectionRunner,
 ): Promise<void> => {
   assertProfilePreconditions(state);
 
@@ -183,7 +185,17 @@ export const runKmsContextQaTestsProfile = async (
     for (const item of cases) {
       const evidence = recorder.forCase(item.id);
       console.log(`[kms-context-qa] ---- ${item.id}: ${item.title} ----`);
-      await item.run({ state, target, owner, nodes, evidence, runDecryption, runSmoke, runExtraDataCheck });
+      await item.run({
+        state,
+        target,
+        owner,
+        nodes,
+        evidence,
+        runDecryption,
+        runSmoke,
+        runExtraDataCheck,
+        runExtraDataRejection,
+      });
       completed.push(item);
       console.log(
         `[kms-context-qa] ---- ${item.id} PASSED (${Math.round(recorder.durationForCase(item.id) / 1000)}s) ----`,

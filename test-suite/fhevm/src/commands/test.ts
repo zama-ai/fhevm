@@ -121,7 +121,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-context-qa-tests":
-    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Implements epoch-rotation (a same-context rotation activates, every committee node reshares, and the SDK follows it into the permit extraData), context-switch (the same, for a switch whose context is pre-registered on the gateway first), epoch-rotation-pending (one committee confirmation is withheld so the rotation sits Pending, and the previous epoch must keep serving — and keep appearing in the extraData — throughout), and context-switch-pending (the same for a switch held at its second Pending stage, where the context is Created and its first epoch is Pending, so neither pending id may appear). Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
+    "QA acceptance cases for the KMS context/epoch lifecycle, built one scenario at a time (requires --scenario five-party-swap-threshold-kms; set KMS_QA_ALLOW_ANY_SCENARIO=1 to relax). Each case drives one QA scenario on the host ProtocolConfig and emits a structured evidence record — transaction hashes, block numbers, decoded event ids, per-step timings — then proves the resulting state serves real traffic via the input-proof and user-decryption probes. Select cases with KMS_QA_CASES=<id,...> (default: all). Implements epoch-rotation (a same-context rotation activates, every committee node reshares, and the SDK follows it into the permit extraData), context-switch (the same, for a switch whose context is pre-registered on the gateway first), epoch-rotation-pending (one committee confirmation is withheld so the rotation sits Pending, and the previous epoch must keep serving — and keep appearing in the extraData — throughout), context-switch-pending (the same for a switch held at its second Pending stage, where the context is Created and its first epoch is Pending, so neither pending id may appear), and extradata-rejection (an SDK-built request corrupted in its extraData version byte must be refused as invalid extraData rather than as a bad signature; the only case that changes no state and can be rerun freely). Disruptive and single-run: it advances the context/epoch, so re-up between runs.",
   "kms-context-switch":
     "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
 };
@@ -1043,6 +1043,30 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     assertMatchedTests(result.stdout + result.stderr, label);
   };
 
+  // Container half of the kms-context-qa-tests `extradata-rejection` case. Same injection mechanism
+  // as the check above, different spec: this one captures a real SDK request, corrupts its extraData
+  // and asserts the refusal names that field.
+  const runKmsContextExtraDataRejection = async (
+    label: string,
+    expected: { readonly contextId: bigint; readonly epochId: bigint },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata-rejection"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata-rejection grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
@@ -1051,7 +1075,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
     }
     if (name === "kms-context-qa-tests") {
-      return runKmsContextQaTestsProfile(state, runUserDecryption, runInputProofSmoke, runKmsContextExtraDataCheck);
+      return runKmsContextQaTestsProfile(
+        state,
+        runUserDecryption,
+        runInputProofSmoke,
+        runKmsContextExtraDataCheck,
+        runKmsContextExtraDataRejection,
+      );
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);

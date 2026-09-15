@@ -285,6 +285,10 @@ export const TEST_GREP: Record<string, string> = {
   // active (context, epoch) pair in the permit extraData. Driven by the profile, which injects the
   // pair it observed on chain; also runnable standalone.
   "kms-context-extradata": "KMS context extraData",
+  // The negative half of the KMS-context extraData story: an SDK-built request corrupted after
+  // signing, plus the malformed shapes the relayer refuses synchronously with HTTP 400. Driven by
+  // the kms-context-qa-tests `extradata-rejection` case; also runnable standalone.
+  "kms-context-extradata-rejection": "KMS context extraData rejection",
   "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption":
     "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",

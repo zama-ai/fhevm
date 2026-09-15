@@ -21,6 +21,7 @@ import { contextSwitchCase } from "./cases/case-context-switch";
 import { epochRotationCase } from "./cases/case-epoch-rotation";
 import { epochRotationPendingCase } from "./cases/case-epoch-rotation-pending";
 import { contextSwitchPendingCase } from "./cases/case-context-switch-pending";
+import { extraDataRejectionCase } from "./cases/case-extradata-rejection";
 
 /** The KMS topology fields a case may predicate on. Mirrors `state.scenario.kms`. */
 export type KmsTopology = State["scenario"]["kms"];
@@ -51,6 +52,19 @@ export type ExtraDataCheckRunner = (
 ) => Promise<void>;
 
 /**
+ * Runs the in-container check that a CORRUPTED KMS-context extraData is refused.
+ *
+ * The mirror of {@link ExtraDataCheckRunner}: that one asserts the SDK embeds the right pair, this
+ * one asserts a wrong one is rejected. The injected pair lets the spec cross-check that the chain did
+ * not move between the orchestrator's read and its own; the spec captures and corrupts the request
+ * itself, so nothing else needs passing in.
+ */
+export type ExtraDataRejectionRunner = (
+  label: string,
+  expected: { readonly contextId: bigint; readonly epochId: bigint },
+) => Promise<void>;
+
+/**
  * Everything a case is allowed to touch.
  *
  * Injected rather than imported, so cases hold no module state, can run in any order, and are
@@ -68,6 +82,8 @@ export type QaCaseContext = {
   readonly runSmoke: SmokeRunner;
   /** Runs the KMS-context extraData spec inside the test-suite container. */
   readonly runExtraDataCheck: ExtraDataCheckRunner;
+  /** Runs the KMS-context extraData REJECTION spec inside the test-suite container. */
+  readonly runExtraDataRejection: ExtraDataRejectionRunner;
 };
 
 /**
@@ -115,6 +131,7 @@ export const QA_CASES: readonly QaCase[] = [
   contextSwitchCase,
   epochRotationPendingCase,
   contextSwitchPendingCase,
+  extraDataRejectionCase,
 ];
 
 /** Environment variable selecting which cases run. Unset or `all` runs everything. */
