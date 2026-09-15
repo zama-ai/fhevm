@@ -124,6 +124,12 @@ const SHA_FALLBACK_COMMIT_WINDOW = 500;
 // fallback must not paper over.
 export const MAX_FALLBACK_COMMIT_DEPTH = 50;
 
+/** Orchestrated baseline resolution must not emit an unverified lock when package
+ * metadata is unavailable. Local `fhevm-cli resolve --target sha` still skips the
+ * check so an offline laptop can pin the requested sha. */
+export const mustVerifyPublishedImages = (env: NodeJS.Dict<string | undefined> = process.env) =>
+  env.REQUIRE_PUBLISHED_IMAGE_CHECK === "true";
+
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
@@ -209,16 +215,24 @@ export const resolveMissingRepoTagFallbacks = (options: {
   missingKeys: string[];
   commitShas: string[];
   packageTagsMap: Record<string, Set<string>>;
+  strict?: boolean;
 }): { overrides: Record<string, string>; sources: string[] } => {
   const overrides: Record<string, string> = {};
   const sources: string[] = [];
   for (const key of options.missingKeys) {
     const ancestorIndex = findPublishedAncestorIndex(options.commitShas, options.packageTagsMap[key] ?? new Set());
     if (ancestorIndex < 0) {
-      // An empty tag set can mean the GitHub token simply cannot see the package (the versions
-      // API 404s on inaccessible packages), so the registry pull may still succeed with the
-      // runtime's own credentials; keep the pin and record that it is unverified.
+      // An empty tag set can mean the GitHub token cannot see the package (the versions API
+      // 404s on inaccessible packages). Local CLI keeps the pin unverified so a later pull
+      // with different credentials can still succeed. Strict/CI mode must not: ancestor
+      // fallback cannot be verified from an empty set.
       if (!options.packageTagsMap[key]?.size) {
+        if (options.strict) {
+          throw new GitHubApiError(
+            `${key} has no visible published tags, so ancestor fallback for ${options.requestedTag} ` +
+              `cannot be verified. Check package-read credentials or publishing for this image.`,
+          );
+        }
         sources.push(`${key}=${options.requestedTag} (unverified: package has no visible published tags)`);
         continue;
       }
@@ -448,6 +462,12 @@ export const resolveTarget = async (
       // GitHub metadata is unavailable (offline, missing scopes): keep the historical unverified
       // pin so `--target sha` still resolves, and record that the check was skipped.
       const reason = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      if (mustVerifyPublishedImages()) {
+        throw new GitHubApiError(
+          `published-image check failed (${reason}). Baseline resolution requires package-read ` +
+            `credentials; refusing an unverified lock that would pull missing image:${tag} at stack start.`,
+        );
+      }
       console.log(`[resolve] sha ${tag}: skipping published-image check (${reason})`);
       return presetBundle(target, tag, lockName, [...baseSources, "published-image-check=skipped"], new Set());
     }
@@ -478,6 +498,7 @@ export const resolveTarget = async (
       missingKeys,
       commitShas,
       packageTagsMap,
+      strict: mustVerifyPublishedImages(),
     });
     for (const source of sources) {
       console.log(`[resolve] ${source}`);

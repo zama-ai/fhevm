@@ -423,13 +423,15 @@ jobs:
       tags_json: ${{ steps.resolve.outputs.tags_json }}
       namespace: ${{ steps.resolve.outputs.namespace }}
     steps:
-      # Sparse-checkout just the resolve-tags script so the github-script step
-      # can require() it (this job otherwise has no working tree).
+      # Sparse-checkout resolve-tags and its GHCR helper so the github-script
+      # step can require() them (this job otherwise has no working tree).
       - name: Checkout resolve-tags script
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-          sparse-checkout: ci/preview-env/scripts/resolve-tags.cjs
+          sparse-checkout: |
+            ci/preview-env/scripts/resolve-tags.cjs
+            ci/preview-env/scripts/ghcr-registry.cjs
           sparse-checkout-cone-mode: false
       - id: resolve
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
