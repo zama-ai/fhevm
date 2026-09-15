@@ -141,7 +141,7 @@ export const readCommitteeParties = async (
   const raw = await evidence.step(
     "call",
     "read live committee signers for the active context",
-    { contract: target.address, contextId: contextId.toString() },
+    { contract: target.address, contextId: formatKmsId(contextId) },
     () =>
       castCall(target.rpcUrl, target.address, "getKmsSignersForContext(uint256)(address[])", contextId.toString()),
   );
@@ -159,16 +159,44 @@ export const readCommitteeParties = async (
   const parties = [...live].map((address) => byAddress.get(address)!).sort((a, b) => a - b);
   const dropped = kmsSigners.map((_, index) => index + 1).filter((party) => !parties.includes(party));
   evidence.note("note", "live committee resolved from the chain", {
-    contextId: contextId.toString(),
+    contextId: formatKmsId(contextId),
     committee: parties.join(","),
     notInCommittee: dropped.join(",") || "(none)",
   });
   return parties;
 };
 
+/**
+ * Domain tags the protocol stamps into the high byte of its lifecycle ids
+ * (`host-contracts/contracts/shared/Constants.sol`).
+ */
+const KMS_ID_TAGS: Readonly<Record<number, string>> = { 0x07: "ctx", 0x08: "epoch" };
+
+/**
+ * Renders a KMS context or epoch id in its short, human form — `ctx#7`, `epoch#16`.
+ *
+ * The raw ids are domain-tagged uint256 values: a one-byte tag in the high byte and a small
+ * sequential counter in the remaining 31. Printed in full they are 76-digit numbers that differ only
+ * in their last digits, which makes an evidence table genuinely hard to read and easy to misread —
+ * two different epochs look identical at a glance.
+ *
+ * An id whose tag is not recognised falls back to the full decimal value rather than being rendered
+ * as something misleadingly short. Error messages and the per-case handoff note keep the full value,
+ * because that is what `cast` and a bug report need.
+ *
+ * Pure; exported for unit testing.
+ */
+export const formatKmsId = (id: bigint): string => {
+  if (id < 0n) return id.toString();
+  const tag = Number(id >> 248n);
+  const name = KMS_ID_TAGS[tag];
+  if (!name) return id.toString();
+  return `${name}#${id & ((1n << 248n) - 1n)}`;
+};
+
 /** Formats a context/epoch pair for logs and error messages. */
 export const formatPair = (pair: ContextAndEpoch): string =>
-  `contextId=${pair.contextId} epochId=${pair.epochId}`;
+  `contextId=${formatKmsId(pair.contextId)} epochId=${formatKmsId(pair.epochId)}`;
 
 /** Reads the currently active `(context, epoch)` pair. */
 export const readCurrentPair = async (
@@ -182,8 +210,8 @@ export const readCurrentPair = async (
     ),
   );
   evidence.note("note", `${label}: result`, {
-    contextId: pair.contextId.toString(),
-    epochId: pair.epochId.toString(),
+    contextId: formatKmsId(pair.contextId),
+    epochId: formatKmsId(pair.epochId),
   });
   return pair;
 };
@@ -213,10 +241,10 @@ export const sendDefineNewEpoch = async (
   const event = decodeNewKmsEpoch(receipt, topic0);
   evidence.note("event", "NewKmsEpoch", {
     topic0,
-    contextId: event.contextId.toString(),
-    epochId: event.epochId.toString(),
-    previousContextId: event.previousContextId.toString(),
-    previousEpochId: event.previousEpochId.toString(),
+    contextId: formatKmsId(event.contextId),
+    epochId: formatKmsId(event.epochId),
+    previousContextId: formatKmsId(event.previousContextId),
+    previousEpochId: formatKmsId(event.previousEpochId),
     materialBlockNumber: event.materialBlockNumber.toString(),
   });
   return { receipt, event };
@@ -270,7 +298,7 @@ export const preRegisterContextOnGateway = async (
   await evidence.step(
     "tx",
     "pre-register the pending context on the gateway",
-    { service: "gateway-sc-context-switch", contextId: contextId.toString() },
+    { service: "gateway-sc-context-switch", contextId: formatKmsId(contextId) },
     async () => {
       await stepComposeTask("gateway-sc", state, ["gateway-sc-context-switch"], {
         noDeps: true,
@@ -325,8 +353,8 @@ export const waitForActivation = async (
       }
       evidence.note("note", `${label}: activated`, {
         polls: String(polls),
-        contextId: current.contextId.toString(),
-        epochId: current.epochId.toString(),
+        contextId: formatKmsId(current.contextId),
+        epochId: formatKmsId(current.epochId),
       });
       return current;
     },

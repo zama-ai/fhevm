@@ -54,6 +54,7 @@ import type { QaCase, QaCaseContext } from "../registry";
 import { assertTxSendersRunning } from "../nodes";
 import {
   broadcastContextSwitch,
+  formatKmsId,
   preRegisterContextOnGateway,
   readCommitteeParties,
   readCurrentPair,
@@ -107,8 +108,8 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   // knowable before the chain reports it. This is a prediction, verified below — never trusted.
   const pendingContextId = baseline.contextId + 1n;
   evidence.note("note", "pending context id predicted from sequential allocation", {
-    baselineContextId: baseline.contextId.toString(),
-    pendingContextId: pendingContextId.toString(),
+    baselineContextId: formatKmsId(baseline.contextId),
+    pendingContextId: formatKmsId(pendingContextId),
   });
 
   // When: governance defines the new context. The committee comes from the contracts task's env
@@ -133,8 +134,8 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     "assert",
     "the activated context is the one pre-registered on the gateway",
     {
-      activatedContextId: activated.contextId.toString(),
-      preRegisteredContextId: pendingContextId.toString(),
+      activatedContextId: formatKmsId(activated.contextId),
+      preRegisteredContextId: formatKmsId(pendingContextId),
     },
     async () => {
       if (activated.contextId !== pendingContextId) {
@@ -164,7 +165,7 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   await evidence.step(
     "assert",
     "every serving node completed the new epoch reshare",
-    { parties: committeeAfter.join(","), epochId: activated.epochId.toString() },
+    { parties: committeeAfter.join(","), epochId: formatKmsId(activated.epochId) },
     async () =>
       checkConnectorsDbColumn(
         committeeAfter,
@@ -181,7 +182,7 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   const decrypted = await evidence.step(
     "probe",
     "user-decryption under the new context",
-    { contextId: activated.contextId.toString(), epochId: activated.epochId.toString() },
+    { contextId: formatKmsId(activated.contextId), epochId: formatKmsId(activated.epochId) },
     () =>
       runDecryption(
         `kms-context-qa/context-switch: decrypt after the switch (contextId=${activated.contextId})`,
@@ -196,7 +197,9 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     );
   }
 
-  evidence.note("note", "values handed to the container-side extraData check", {
+  // The one place the full uint256 ids are printed: these are what the container asserts and
+  // what you paste into `cast`. Everywhere else the evidence uses the short `ctx#n` form.
+  evidence.note("note", "raw ids handed to the container-side extraData check", {
     context: activated.contextId.toString(),
     epoch: activated.epochId.toString(),
     previousContext: baseline.contextId.toString(),
@@ -209,10 +212,10 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     "probe",
     "SDK embeds the new (context, epoch) in the permit extraData",
     {
-      contextId: activated.contextId.toString(),
-      epochId: activated.epochId.toString(),
-      previousContextId: baseline.contextId.toString(),
-      previousEpochId: baseline.epochId.toString(),
+      contextId: formatKmsId(activated.contextId),
+      epochId: formatKmsId(activated.epochId),
+      previousContextId: formatKmsId(baseline.contextId),
+      previousEpochId: formatKmsId(baseline.epochId),
     },
     () =>
       runExtraDataCheck(
