@@ -75,10 +75,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @param limit    The violated bound: the maximum allowed.
     error FHECollectionSizeInvalid(uint256 size, uint256 limit);
 
-    /// @notice Returned when an operand's boundary-bit position would fall
-    ///         outside the result-handle preimage word (position >= 256).
-    error BoundaryBitPositionOverflow(uint256 position);
-
     /**
      * @param userAddress       Address of the user.
      * @param contractAddress   Contract address.
@@ -166,10 +162,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// Wide types (Uint64 and above) use a smaller limit because each element costs more HCU.
     /// Both caps must stay <= 255 so that every operand's boundary bit fits the
     /// result-handle preimage word even in the value+set _naryOp overload, where
-    /// positions run 1..length; _boundaryBitCapGuard fails the build past that
-    /// width, and _consumeOperand reverts at runtime as a backstop.
-    uint256 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
-    uint256 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
+    /// positions run 1..length. The uint8 types enforce this cap at compile time.
+    uint8 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
+    uint8 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVM_EXECUTOR_STORAGE_LOCATION =
@@ -691,7 +686,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
 
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128)
-            ? FHE_COLLECTION_WIDE_MAX_SIZE
+            ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
             : FHE_COLLECTION_NARROW_MAX_SIZE;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
@@ -725,7 +720,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             valueType == FheType.Uint128 ||
             valueType == FheType.Uint160 ||
             valueType == FheType.Uint256)
-            ? FHE_COLLECTION_WIDE_MAX_SIZE
+            ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
             : FHE_COLLECTION_NARROW_MAX_SIZE;
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
         if (_typeOf(value) != valueType) revert IncompatibleTypes();
@@ -1030,11 +1025,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      tests catch. Scalar operands must not go through here: they are
     ///      not ACL-checked and contribute a zero bit.
     ///
-    ///      A bit past the preimage word would be dropped silently (EVM SHL
-    ///      with a shift >= 256 yields 0), so positions past 255 revert. This
-    ///      is unreachable today — operand counts are capped far below by
-    ///      FHE_COLLECTION_*_MAX_SIZE — but keeps a future cap raise or new
-    ///      collection op from reopening the representation-mixing alias.
+    ///      Callers MUST ensure position < 256: a bit past the preimage word
+    ///      would be dropped silently (EVM SHL with a shift >= 256 yields 0).
+    ///      Collection callers enforce this through size checks against the
+    ///      uint8 FHE_COLLECTION_*_MAX_SIZE constants; other callers use fixed
+    ///      positions 0, 1 or 2.
     ///
     ///      Positions are caller-supplied and MUST be distinct per derivation
     ///      (a duplicated position merges two operands' bits and reopens the
@@ -1043,19 +1038,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      rotating a single minted operand through every slot.
     function _consumeOperand(bytes32 ct, uint256 position) internal view virtual returns (uint256 shiftedBit) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
-        if (position >= 256) revert BoundaryBitPositionOverflow(position);
         shiftedBit = _oneOperandBoundaryBit(ct) << position;
-    }
-
-    /// @dev Compile-time cap guard: fixed array lengths must be constant-
-    ///      evaluable, so these declarations fail the build ("arithmetic error
-    ///      when computing constant value") if a collection cap is ever raised
-    ///      past 255 — the largest boundary-bit position the preimage word can
-    ///      hold in the value+set _naryOp overload. Never called.
-    function _boundaryBitCapGuard() private pure {
-        uint256[255 - FHE_COLLECTION_NARROW_MAX_SIZE] memory narrowHeadroom;
-        uint256[255 - FHE_COLLECTION_WIDE_MAX_SIZE] memory wideHeadroom;
-        (narrowHeadroom, wideHeadroom);
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
