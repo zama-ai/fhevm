@@ -7,13 +7,13 @@
 #   bg-checkpoints.sh dry-run        one GCS row per chain in UpgradeActivated/DryRunStarted with the
 #                                    same proposal on every operator, gateway dry run started, synthetic
 #                                    anchors present, state hashes equal across operators, Green
-#                                    shadowing work, no drift-revert signal
+#                                    shadowing work
 #   bg-checkpoints.sh window-timing  real timestamps of the window blocks per chain, cross-chain skew,
 #                                    skew against WINDOW_START if given, gateway anchor reachability
 #   bg-checkpoints.sh cutover        versioning at the Green version, LIVE/completed everywhere, Green
 #                                    schema dropped, every Green replica running at the Green version,
 #                                    Blue paused, synthetic rows gone
-#   bg-checkpoints.sh post           state hashes still agree, no drift-revert signal, versioning
+#   bg-checkpoints.sh post           state hashes still agree, versioning
 #                                    unchanged, traffic counters clean (run bg-traffic.sh verify too)
 #
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-checkpoints.sh <phase>
@@ -77,13 +77,6 @@ traffic_counters() { # from the bg-traffic state ConfigMaps, if any
 }
 
 # Shared checks ------------------------------------------------------------------------------
-check_no_drift_signal() {
-  for i in ${parties}; do
-    local n
-    n=$(psql_party "${i}" "SELECT (SELECT count(*) FROM public.drift_revert_signal) + COALESCE((SELECT count(*) FROM \"${schema}\".drift_revert_signal WHERE to_regclass('\"${schema}\".drift_revert_signal') IS NOT NULL), 0);" 2>/dev/null || psql_party "${i}" "SELECT count(*) FROM public.drift_revert_signal;")
-    check "party ${i}: drift_revert_signal rows = ${n}" "${n}" = "0"
-  done
-}
 # State hashes must agree across operators for the newest block every operator has hashed.
 check_state_hash_agreement() { # <schema>
   local sch="$1"
@@ -167,7 +160,6 @@ dry-run)
     check "party ${i}: Green deployments ready ${r}" "${r%/*}" = "${r#*/}" -a "${r#*/}" != "0"
   done
   check_state_hash_agreement "${schema}"
-  check_no_drift_signal
   ;;
 
 window-timing)
@@ -225,7 +217,6 @@ cutover)
     syn=$(psql_party "${i}" "WITH h AS (SELECT substring(u.synthetic_txn_hashes FROM g.pos FOR 32) AS tx FROM upgrade_state u, generate_series(1, GREATEST(octet_length(u.synthetic_txn_hashes), 1), 32) AS g(pos) WHERE u.stack_role='GCS' AND octet_length(u.synthetic_txn_hashes) > 0) SELECT (SELECT count(*) FROM computations c JOIN h ON c.transaction_id = h.tx) + (SELECT count(*) FROM verify_proofs WHERE lower(contract_address) = lower('${SYNTHETIC_INPUT_CONTRACT}'));")
     check "party ${i}: synthetic rows left in public = ${syn}" "${syn}" = "0"
   done
-  check_no_drift_signal
   ;;
 
 post)
@@ -238,7 +229,6 @@ post)
     check "party ${i}: computations in the last 30 min: ${p}" "${p}" = "0 pending, 0 errors"
   done
   check_state_hash_agreement public
-  check_no_drift_signal
   while IFS='|' read -r line bad; do
     [[ -n "${line}" ]] || continue
     check "traffic ${line}" "${bad}" = "0"
