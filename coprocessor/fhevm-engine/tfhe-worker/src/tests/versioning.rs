@@ -117,6 +117,37 @@ async fn stack_mode_leaves_gcs_on_the_upgrade_notification() {
 }
 
 #[tokio::test]
+async fn stack_mode_leaves_gcs_without_a_notification() {
+    let db = setup_test_db(ImportMode::None)
+        .await
+        .expect("setup test db");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(db.db_url())
+        .await
+        .expect("connect");
+
+    // Cutover committed before LISTEN: no notification is ever sent.
+    let mode = StackMode::new(true);
+    let cancel = CancellationToken::new();
+    tokio::spawn(run_stack_version_listener(
+        pool.clone(),
+        mode.clone(),
+        cancel.clone(),
+    ));
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while mode.gcs_mode() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    cancel.cancel();
+    assert!(
+        !mode.gcs_mode(),
+        "the listener must reconcile without a notification"
+    );
+}
+
+#[tokio::test]
 async fn bootstrap_refuses_existing_database_and_consensus_downgrade() {
     let db = setup_test_db(ImportMode::None)
         .await
