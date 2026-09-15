@@ -107,6 +107,7 @@ describe("kms-qa registry QA_CASES", () => {
       "epoch-rotation",
       "context-switch",
       "epoch-rotation-pending",
+      "context-switch-pending",
     ]);
   });
 
@@ -122,13 +123,15 @@ describe("kms-qa registry QA_CASES", () => {
     expect(rotation.mutatesLifecycle).toBe(true);
   });
 
-  test("the epoch-rotation-pending case demands a committee that survives one stalled member", () => {
-    const pending = QA_CASES.find((item) => item.id === "epoch-rotation-pending")!;
-    expect(pending.requirements.mode).toBe("threshold");
-    // It withholds one committee confirmation while still requiring a decryption to succeed. The
-    // live run measured the user-decryption threshold at 3 on a 4-member committee, so anything
-    // smaller leaves too few responders.
-    expect(pending.requirements.minCommitteeSize).toBeGreaterThanOrEqual(4);
-    expect(pending.mutatesLifecycle).toBe(true);
+  test("both pending cases demand a committee that survives one stalled member", () => {
+    // Each withholds one confirmation from a party that is also serving decryptions. The live run
+    // measured the user-decryption threshold at 3 on a 4-member committee, so anything smaller
+    // leaves too few responders and the decryption half of the scenario could never pass.
+    for (const id of ["epoch-rotation-pending", "context-switch-pending"]) {
+      const pending = QA_CASES.find((item) => item.id === id)!;
+      expect(pending.requirements.mode).toBe("threshold");
+      expect(pending.requirements.minCommitteeSize).toBeGreaterThanOrEqual(4);
+      expect(pending.mutatesLifecycle).toBe(true);
+    }
   });
 });

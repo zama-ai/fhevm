@@ -1,8 +1,9 @@
 /**
  * Observing — and holding open — an in-flight KMS lifecycle operation.
  *
- * The `epoch-rotation-pending` case needs a rotation to sit in Pending for the ~3 minutes two
- * container probes take. Two problems follow from that, and this module owns both.
+ * The `epoch-rotation-pending` and `context-switch-pending` cases need a transition to sit in Pending
+ * for the ~3 minutes two container probes take. Two problems follow from that, and this module owns
+ * both — plus a third that only context switches have, covered further down.
  *
  * ## 1. Pending is not readable
  *
@@ -29,14 +30,30 @@
  * stays up and reshares normally, which is what makes the hold honest — the epoch is Pending for the
  * reason the scenario describes (awaiting activation), not because the KMS is broken.
  *
- * The stop/restore itself is {@link NodeSupervisor.withTxSendersStopped}; this module only decides
- * *which* party to stall and proves the choice is safe.
+ * The stop/restore itself is `NodeSupervisor.withTxSendersStopped`; this module only decides *which*
+ * party to stall and proves the choice is safe.
+ *
+ * A context switch differs on both counts — it has two Pending stages rather than one, and its
+ * broadcast returns no receipt to read the new ids from. See {@link CONTEXT_SWITCH_STAGES}.
  */
 import { PreflightError } from "../errors";
 import { castBool, castCall } from "../flow/readiness";
-import { callContractAndExpectRevert, parseUintOutput, type Owner } from "../kms-onchain";
+import {
+  callContractAndExpectRevert,
+  keccakTopic,
+  parseUintOutput,
+  type Owner,
+  type Receipt,
+} from "../kms-onchain";
+import { run } from "../utils/process";
 import type { CaseEvidence } from "./evidence";
-import { formatKmsId, type ProtocolConfigTarget } from "./protocol-config";
+import {
+  NEW_KMS_EPOCH_SIGNATURE,
+  decodeNewKmsEpoch,
+  formatKmsId,
+  type NewKmsEpochEvent,
+  type ProtocolConfigTarget,
+} from "./protocol-config";
 
 /** The revert the ProtocolConfig gate raises while a context or epoch is still settling. */
 export const LIFECYCLE_IN_FLIGHT_ERROR = "KmsLifecycleOperationInFlight(uint256,uint256)";
@@ -201,6 +218,206 @@ export const assertEpochValidity = async (
     throw new PreflightError(
       `kms-context-qa: expected isValidEpochForContext(${contextId}, ${epochId}) to be ${expected} — ${why} — ` +
         `but the contract reports ${actual} on ${target.where}.`,
+    );
+  }
+};
+
+/* -------------------------------------------------------------------------------------------- *
+ * Context switches: a second Pending stage, and no receipt to read it from
+ * -------------------------------------------------------------------------------------------- */
+
+/**
+ * A context switch passes through **two** distinct Pending stages, and only the second one matches
+ * the QA scenario's wording.
+ *
+ * `defineNewKmsContextAndEpoch` stores the new context as `Pending` and stops there. The epoch is
+ * not allocated yet: `_createPendingEpoch` runs inside `confirmKmsContextCreation`, only once
+ * `_hasContextCreationQuorum` holds — every node of the new context has confirmed
+ * (`ProtocolConfig.sol:383-388`). So:
+ *
+ *   - **stage 1** — context `Pending`, no epoch exists at all;
+ *   - **stage 2** — context `Created`, epoch `Pending`, `NewKmsEpoch` emitted, cores resharing.
+ *
+ * A scenario that names a pending `E2` can only mean stage 2. Reaching it means letting the
+ * creation quorum complete and withholding the *activation* confirmation instead, which in turn
+ * means knowing `E2` — and unlike an epoch rotation, a switch is broadcast through a compose task
+ * that returns no receipt. {@link waitForNewKmsEpochEvent} recovers the event from the chain's logs
+ * instead, which is also what makes the predicted context id verifiable while the switch is still
+ * pending rather than only after it activates.
+ */
+export const CONTEXT_SWITCH_STAGES = 2;
+
+/** Poll interval while waiting for the creation quorum to allocate the new epoch. */
+export const EPOCH_EVENT_POLL_MS = 1_000;
+
+/**
+ * Bound for the creation quorum. Every node of the new context must land one confirmation, which is
+ * a handful of transactions on an idle chain; three minutes is generous enough to absorb a busy
+ * host while still failing a genuinely stuck cluster quickly.
+ */
+export const EPOCH_EVENT_TIMEOUT_MS = 180_000;
+
+/** Reads the host chain's current block height. Used to bound a log query to what follows it. */
+export const readBlockNumber = async (rpcUrl: string): Promise<bigint> => {
+  const result = await run(["cast", "block-number", "--rpc-url", rpcUrl]);
+  return BigInt(result.stdout.trim());
+};
+
+/**
+ * Queries `topic0` logs from `fromBlock` onwards and returns them shaped as a {@link Receipt}, so
+ * the existing {@link decodeNewKmsEpoch} can consume them unchanged.
+ *
+ * `cast logs --json` emits the same `{address, topics, data}` objects a receipt carries, so the
+ * wrapper is structural rather than a conversion. The synthetic `status` is never read.
+ */
+export const castLogsAsReceipt = async (
+  rpcUrl: string,
+  address: string,
+  topic0: string,
+  fromBlock: bigint,
+): Promise<Receipt> => {
+  const result = await run([
+    "cast",
+    "logs",
+    "--from-block",
+    fromBlock.toString(),
+    "--to-block",
+    "latest",
+    "--address",
+    address,
+    topic0,
+    "--rpc-url",
+    rpcUrl,
+    "--json",
+  ]);
+  const raw = result.stdout.trim();
+  const logs = raw ? (JSON.parse(raw) as Receipt["logs"]) : [];
+  return { status: "0x1", logs } as Receipt;
+};
+
+/**
+ * Picks the `NewKmsEpoch` log belonging to `contextId` out of a log page, or undefined when none is
+ * there yet.
+ *
+ * Filtering on the context matters and is not belt-and-braces: on a stack that has rotated epochs
+ * before, older `NewKmsEpoch` logs exist under previous contexts, and a block lower bound alone
+ * would not exclude a concurrent rotation. The **last** match wins, so a re-org replay or a
+ * duplicated page yields the most recent one.
+ *
+ * Pure; exported for unit testing.
+ */
+export const selectNewKmsEpochLog = (
+  logs: Receipt["logs"],
+  topic0: string,
+  contextId: bigint,
+): Receipt["logs"][number] | undefined => {
+  const matches = logs.filter((log) => {
+    if (log.topics[0]?.toLowerCase() !== topic0.toLowerCase()) return false;
+    const indexedContext = log.topics[1];
+    if (indexedContext === undefined) return false;
+    try {
+      return BigInt(indexedContext) === contextId;
+    } catch {
+      return false;
+    }
+  });
+  return matches[matches.length - 1];
+};
+
+/**
+ * Waits until the creation quorum allocates the new context's first epoch, and returns the decoded
+ * `NewKmsEpoch`.
+ *
+ * This is the moment a switch crosses from stage 1 to stage 2. The caller withholds the activation
+ * confirmation immediately afterwards; the margin is the cores' reshare, which is tens of seconds,
+ * against a poll interval of one second and a container stop of a few hundred milliseconds.
+ *
+ * Filtering on `contextId` matters: on a stack that has rotated epochs before, older `NewKmsEpoch`
+ * logs exist under the previous context, and `fromBlock` alone would not exclude a rotation racing
+ * this switch.
+ *
+ * @throws PreflightError naming the likely cause when the quorum never forms — which is what a
+ *         stopped tx-sender on a node of the new context looks like.
+ */
+export const waitForNewKmsEpochEvent = async (
+  target: ProtocolConfigTarget,
+  evidence: CaseEvidence,
+  contextId: bigint,
+  fromBlock: bigint,
+): Promise<NewKmsEpochEvent> => {
+  const topic0 = await keccakTopic(NEW_KMS_EPOCH_SIGNATURE);
+  const deadline = Date.now() + EPOCH_EVENT_TIMEOUT_MS;
+
+  const event = await evidence.step(
+    "wait",
+    "the creation quorum allocates the new context's first epoch (NewKmsEpoch)",
+    {
+      contract: target.address,
+      contextId: formatKmsId(contextId),
+      fromBlock: fromBlock.toString(),
+      timeoutMs: String(EPOCH_EVENT_TIMEOUT_MS),
+    },
+    async () => {
+      for (;;) {
+        const receipt = await castLogsAsReceipt(target.rpcUrl, target.address, topic0, fromBlock);
+        const mine = selectNewKmsEpochLog(receipt.logs, topic0, contextId);
+        if (mine) {
+          return decodeNewKmsEpoch({ status: "0x1", logs: [mine] } as Receipt, topic0);
+        }
+        if (Date.now() >= deadline) {
+          throw new PreflightError(
+            `kms-context-qa: no NewKmsEpoch for context ${contextId} appeared within ` +
+              `${EPOCH_EVENT_TIMEOUT_MS / 1000}s on ${target.where}. The epoch is allocated only once every node of ` +
+              `the new context has confirmed its creation (_hasContextCreationQuorum), so a node whose tx-sender is ` +
+              `down holds the switch at stage 1 forever — check the kms-connector-*-tx-sender containers.`,
+          );
+        }
+        await Bun.sleep(EPOCH_EVENT_POLL_MS);
+      }
+    },
+  );
+
+  evidence.note("event", "NewKmsEpoch (recovered from chain logs, not a receipt)", {
+    topic0,
+    contextId: formatKmsId(event.contextId),
+    epochId: formatKmsId(event.epochId),
+    previousContextId: formatKmsId(event.previousContextId),
+    previousEpochId: formatKmsId(event.previousEpochId),
+    materialBlockNumber: event.materialBlockNumber.toString(),
+  });
+  return event;
+};
+
+/**
+ * Asserts `isValidKmsContext(contextId)` reports `expected`.
+ *
+ * The context-level counterpart of {@link assertEpochValidity}. A context in stage 1 or stage 2 is
+ * stored and live but not yet valid; only activation makes it valid. Read once during the hold and
+ * once after, so the case makes a claim about `C2` specifically rather than only about what did not
+ * move.
+ */
+export const assertContextValidity = async (
+  target: ProtocolConfigTarget,
+  evidence: CaseEvidence,
+  contextId: bigint,
+  expected: boolean,
+  why: string,
+): Promise<void> => {
+  const actual = await evidence.step(
+    "call",
+    `isValidKmsContext is ${expected} (${why})`,
+    { contract: target.address, contextId: formatKmsId(contextId) },
+    () => castBool(target.rpcUrl, target.address, "isValidKmsContext(uint256)(bool)", contextId.toString()),
+  );
+  evidence.note("note", "isValidKmsContext: result", {
+    contextId: formatKmsId(contextId),
+    valid: String(actual),
+    expected: String(expected),
+  });
+  if (actual !== expected) {
+    throw new PreflightError(
+      `kms-context-qa: expected isValidKmsContext(${contextId}) to be ${expected} — ${why} — but the contract ` +
+        `reports ${actual} on ${target.where}.`,
     );
   }
 };

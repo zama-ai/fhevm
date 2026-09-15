@@ -8,7 +8,9 @@ the `epoch-rotation-pending` case.
 remains deliberately uncovered (see §8), unchanged since scenario 1.
 
 > Scenarios are implemented one at a time, each with its own report named
-> `qa-kms-context-scenario-<n>-<topic>.md`. This is scenario 2.
+> `qa-kms-context-scenario-<n>-<topic>.md`. Scenario 2 has two halves, mirroring scenario 1: this
+> one covers the epoch rotation, `qa-kms-context-scenario-2-pending-context.md` covers the context
+> switch — which, as that report explains, has *two* Pending stages where a rotation has one.
 
 ---
 
@@ -333,6 +335,7 @@ Full evidence and the two options for covering it later are in
 | `src/kms-qa/pending.test.ts` | unit tests for the pure helpers |
 | `src/kms-qa/nodes.ts` | `withTxSendersStopped` — the lever that holds the window open |
 | `test-suite/e2e/test/kmsContextExtraData/kmsContextExtraData.ts` | the container half, shared by all three cases |
+| `qa-kms-context-scenario-2-pending-context.md` | the context-switch half of scenario 2 |
 | `qa-kms-context-scenario-1-epoch.md` | scenario 1 — the SDK follows an activation |
 | `qa-kms-context-scenario-1-context.md` | the context-switch sibling of scenario 1 |
 | `qa-extradata-check.md` | why the response-extraData clause is uncovered |
