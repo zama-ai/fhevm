@@ -16,8 +16,8 @@
 # A release without code change does not bump N, so skipping is the correct outcome.
 #
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-contracts.sh status|upgrade
-# Env: NAMESPACE (required); TARGET_TAG (default: the env's test-suite image tag, i.e. the deployed
-#      branch SHA - every contracts image carries it); CONTRACTS_CHART (charts/contracts of this
+# Env: NAMESPACE (required); TARGET_TAG (default: the env's listener image tag, i.e. the deployed
+#      branch SHA); CONTRACTS_CHART (charts/contracts of this
 #      checkout); GATEWAY_RPC_URL (optional, implementation checks on the gateway);
 #      FROM_TAG (default: contracts.version of the address ConfigMap; override to preview a plan);
 #      DRY_RUN (false: with true, `upgrade` renders the release and prints the Job script instead).
@@ -28,7 +28,12 @@ verb="${1:?usage: bg-contracts.sh status|upgrade}"
 : "${NAMESPACE:?}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 CONTRACTS_CHART="${CONTRACTS_CHART:-${root}/charts/contracts}"
-TARGET_TAG="${TARGET_TAG:-$(kubectl get job -n "${NAMESPACE}" test-suite -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')}"
+# Target = the tag the branch's images were published under. On the production path the contracts,
+# relayer and test-suite are all pinned to the previous release, so the listener (never pinned) is
+# the one deployed component carrying it; the checkout's HEAD is the fallback. Override with TARGET_TAG.
+TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
+  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
+TARGET_TAG="${TARGET_TAG:-$(git -C "${root}" rev-parse --short=7 HEAD)}"
 IMPL_SLOT=0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
