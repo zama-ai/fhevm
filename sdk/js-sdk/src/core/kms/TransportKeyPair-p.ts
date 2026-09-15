@@ -2,7 +2,6 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { FhevmRuntime, WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Bytes, BytesHex } from '../types/primitives.js';
 import type { TkmsPrivateKey } from '../types/tkms-p.js';
-import type { TkmsVersion } from '../../wasm/tkms/KmsLibApi.js';
 import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
@@ -86,11 +85,7 @@ class TransportKeyPairImpl implements TransportKeyPair {
    *
    * @throws If `privateToken` is invalid or `expectedRuntime` does not match.
    */
-  async [GetTkmsPrivateKeyFn](
-    privateToken: symbol,
-    expectedRuntime: FhevmRuntime,
-    expectedTkmsVersion: TkmsVersion,
-  ): Promise<TkmsPrivateKey> {
+  async [GetTkmsPrivateKeyFn](privateToken: symbol, expectedRuntime: FhevmRuntime): Promise<TkmsPrivateKey> {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
@@ -104,13 +99,12 @@ class TransportKeyPairImpl implements TransportKeyPair {
 
     const tkmsPrivateKey = await runtimeWithDecrypt.decrypt.deserializeTkmsPrivateKey({
       tkmsPrivateKeyBytes: this.#privateKeyBytes,
-      tkmsVersion: expectedTkmsVersion,
     });
 
     try {
       // Verify the key is valid
       await verifyTkmsPublicKey(
-        { runtime: runtimeWithDecrypt, tkmsVersion: expectedTkmsVersion },
+        { runtime: runtimeWithDecrypt },
         {
           tkmsPrivateKey: tkmsPrivateKey,
           tkmsPublicKeyBytesHex: this.#publicKeyBytesHex,
@@ -209,13 +203,10 @@ export async function generateTransportKeyPair(
 ): Promise<TransportKeyPair & { readonly tkmsVersion: string }> {
   const tkmsVersion = parameters.fhevmContext.tkmsVersion;
 
-  const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey({ tkmsVersion });
+  const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey();
   try {
-    const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey, tkmsVersion });
-    const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({
-      tkmsPrivateKey,
-      tkmsVersion,
-    });
+    const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey });
+    const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({ tkmsPrivateKey });
     // A freshly generated key pair always carries a resolved tkmsVersion, so we
     // narrow away the `undefined` the impl's getter allows for the general case.
     return new TransportKeyPairImpl(PRIVATE_TOKEN, context.runtime, {
@@ -317,13 +308,9 @@ export function serializeTransportKeyPair(parameters: {
  */
 export async function transportKeyPairToTkmsPrivateKey(
   context: { readonly runtime: FhevmRuntime },
-  parameters: { readonly transportKeyPair: TransportKeyPair; readonly fhevmContext: FhevmClientFrozenContext },
+  parameters: { readonly transportKeyPair: TransportKeyPair },
 ): Promise<TkmsPrivateKey> {
-  const { transportKeyPair, fhevmContext } = parameters;
+  const { transportKeyPair } = parameters;
   assertIsTransportKeyPair(transportKeyPair, {});
-  return await (transportKeyPair as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](
-    PRIVATE_TOKEN,
-    context.runtime,
-    fhevmContext.tkmsVersion,
-  );
+  return await (transportKeyPair as TransportKeyPairImpl)[GetTkmsPrivateKeyFn](PRIVATE_TOKEN, context.runtime);
 }

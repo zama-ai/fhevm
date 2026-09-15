@@ -12,6 +12,7 @@ import type {
   FheEncryptionPublicKeyBrand,
 } from '../../types/fheEncryptionKey.js';
 import type { Bytes, BytesHex, UintNumber } from '../../types/primitives.js';
+import { CANONICAL_WASM_VERSIONS } from '../../runtime/WasmVersions-p.js';
 import type {
   BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
@@ -169,7 +170,7 @@ export async function buildWithProofPacked(
   return {
     ciphertextWithZKProofBytes,
     extraData: cleartextExtraData,
-    tfheVersion: parameters.tfheVersion,
+    tfheVersion: tfheCompactPublicKeyImpl.tfheVersion,
   };
 }
 
@@ -243,7 +244,7 @@ export async function serializeFheEncryptionPublicKey(
   return Object.freeze({
     id: tfhePublicKey.id,
     bytes: tfhePublicKeyBytes,
-    tfheVersion: parameters.tfheVersion,
+    tfheVersion: tfheCompactPublicKeyImpl.tfheVersion,
   });
 }
 
@@ -271,7 +272,7 @@ export async function serializeFheEncryptionCrs(
     id: tfheCrs.id,
     capacity: tfheCrs.capacity,
     bytes: tfheCrsBytes,
-    tfheVersion: parameters.tfheVersion,
+    tfheVersion: tfheCompactPkeCrsImpl.tfheVersion,
   });
 }
 
@@ -287,7 +288,7 @@ export async function deserializeFheEncryptionCrs(
   return new CleartextTfheCompactPkeCrsImpl(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFheCrsBytes.id,
-    parameters.tfheVersion,
+    CANONICAL_WASM_VERSIONS.tfhe,
     globalFheCrsBytes.capacity,
     globalFheCrsBytes.bytes,
   );
@@ -305,7 +306,7 @@ export async function deserializeFheEncryptionPublicKey(
   return new CleartextTfheCompactPublicKeyImpl(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFhePublicKeyBytes.id,
-    parameters.tfheVersion,
+    CANONICAL_WASM_VERSIONS.tfhe,
     globalFhePublicKeyBytes.bytes,
   );
 }

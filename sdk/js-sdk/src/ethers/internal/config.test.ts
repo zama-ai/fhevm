@@ -9,30 +9,22 @@ async function loadConfigModule(): Promise<ConfigModule> {
 }
 
 describe('ethers runtime config', () => {
-  it('allows identical module version objects', async () => {
+  it('allows identical config objects', async () => {
     const { setFhevmRuntimeConfig } = await loadConfigModule();
-    const config: FhevmRuntimeConfig = { moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0' } };
+    const config: FhevmRuntimeConfig = { singleThread: true, numberOfThreads: 4 };
 
     setFhevmRuntimeConfig(config);
 
     expect(() => setFhevmRuntimeConfig(config)).not.toThrow();
   });
 
-  it('treats undefined module versions and auto module versions as different configs', async () => {
+  it('throws when called again with a different config', async () => {
     const { setFhevmRuntimeConfig } = await loadConfigModule();
 
     setFhevmRuntimeConfig({});
 
-    expect(() => setFhevmRuntimeConfig({ moduleVersions: 'auto' })).toThrow(
+    expect(() => setFhevmRuntimeConfig({ singleThread: true })).toThrow(
       'FhevmRuntime config has already been set and cannot be changed.',
     );
-  });
-
-  it('treats auto module versions and undefined module versions as different configs', async () => {
-    const { setFhevmRuntimeConfig } = await loadConfigModule();
-
-    setFhevmRuntimeConfig({ moduleVersions: 'auto' });
-
-    expect(() => setFhevmRuntimeConfig({})).toThrow('FhevmRuntime config has already been set and cannot be changed.');
   });
 });

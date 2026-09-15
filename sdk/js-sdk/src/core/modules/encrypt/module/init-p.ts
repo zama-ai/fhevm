@@ -1,10 +1,5 @@
 import type { FhevmRuntime, FhevmRuntimeConfig } from '../../../types/coreFhevmRuntime.js';
-import type {
-  GetTfheModuleInfoParameters,
-  GetTfheModuleInfoReturnType,
-  InitTfheModuleParameters,
-  TfheModuleInfo,
-} from '../types.js';
+import type { GetTfheModuleInfoParameters, GetTfheModuleInfoReturnType, TfheModuleInfo } from '../types.js';
 import type { TfheLibApi } from '../../../../wasm/tfhe/TfheApi.js';
 import type { TfheAssetMetadata, TfheAssets, TfheVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
 import type { WasmAssetLoadMode } from '../../../types/wasmAssets.js';
@@ -15,6 +10,7 @@ import { threads } from 'wasm-feature-detect';
 import { assertIsFhevmRuntime } from '../../../runtime/CoreFhevmRuntime-p.js';
 import { loadTfheLib, loadTfheWasmBase64, tfheAssetsWithVersion } from '../../../../wasm/tfhe/loadTfheLib.js';
 import { isomorphicFileUrlExists } from '../../../base/isomorphicFs.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../runtime/WasmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -245,37 +241,34 @@ type ResolvedTfheModuleConfig = {
   readonly supportsThreads: boolean | undefined;
 };
 
-const resolvedTfheModuleConfigByVersion = new Map<TfheVersion, ResolvedTfheModuleConfig>();
-const resolvingTfheModuleConfigPromiseByVersion = new Map<TfheVersion, Promise<ResolvedTfheModuleConfig>>();
+// This SDK release loads a single TFHE module (CANONICAL_WASM_VERSIONS.tfhe),
+// so these hold at most one entry; a plain cache slot replaces what used to be
+// a per-version Map.
+let resolvedTfheModuleConfig: ResolvedTfheModuleConfig | undefined;
+let resolvingTfheModuleConfigPromise: Promise<ResolvedTfheModuleConfig> | undefined;
 
 /**
  * @internal
- * Returns the existing resolved config for a TFHE version, or resolves it from
+ * Returns the existing resolved config for the TFHE version, or resolves it from
  * the runtime config.
  */
 async function _getOrResolveTfheModuleConfig(
   runtime: FhevmRuntime,
   tfheVersion: TfheVersion,
 ): Promise<ResolvedTfheModuleConfig> {
-  const resolvedTfheModuleConfig = resolvedTfheModuleConfigByVersion.get(tfheVersion);
   if (resolvedTfheModuleConfig !== undefined) {
     return resolvedTfheModuleConfig;
   }
 
-  let resolvingTfheModuleConfigPromise = resolvingTfheModuleConfigPromiseByVersion.get(tfheVersion);
-  if (resolvingTfheModuleConfigPromise === undefined) {
-    resolvingTfheModuleConfigPromise = _resolveTfheModuleConfig(runtime.config, tfheVersion)
-      .then((cfg) => {
-        resolvedTfheModuleConfigByVersion.set(tfheVersion, cfg);
-        return cfg;
-      })
-      .catch((error: unknown) => {
-        resolvingTfheModuleConfigPromiseByVersion.delete(tfheVersion);
-        throw error;
-      });
-
-    resolvingTfheModuleConfigPromiseByVersion.set(tfheVersion, resolvingTfheModuleConfigPromise);
-  }
+  resolvingTfheModuleConfigPromise ??= _resolveTfheModuleConfig(runtime.config, tfheVersion)
+    .then((cfg) => {
+      resolvedTfheModuleConfig = cfg;
+      return cfg;
+    })
+    .catch((error: unknown) => {
+      resolvingTfheModuleConfigPromise = undefined;
+      throw error;
+    });
 
   return resolvingTfheModuleConfigPromise;
 }
@@ -502,54 +495,37 @@ async function _resolveTfheModuleConfig(
 // initTfheModule
 ////////////////////////////////////////////////////////////////////////////////
 
-const ownerUidByVersion = new Map<TfheVersion, string>();
-const cachedTfheModulePromiseByVersion = new Map<TfheVersion, Promise<TfheLibApi>>();
-const moduleInfoByVersion = new Map<TfheVersion, TfheModuleInfo>();
+// This SDK release loads a single TFHE module, so a plain cache slot replaces
+// what used to be a per-version Map.
+let tfheModuleOwnerUid: string | undefined;
+let cachedTfheModulePromise: Promise<TfheLibApi> | undefined;
+let tfheModuleInfo: TfheModuleInfo | undefined;
 
 ////////////////////////////////////////////////////////////////////////////////
-// Version-tagged native wrappers
-////////////////////////////////////////////////////////////////////////////////
-
-export const TFHE_VERSION_TAG: unique symbol = Symbol('TFHE.version');
-
-export type VersionTaggedTfheNative = {
-  readonly [TFHE_VERSION_TAG]: TfheVersion;
-};
-
-export function getTaggedTfheVersion(value: VersionTaggedTfheNative): TfheVersion {
-  return value[TFHE_VERSION_TAG];
-}
-
-export function assertTaggedTfheVersion(value: VersionTaggedTfheNative, expectedVersion: TfheVersion): void {
-  const actualVersion = getTaggedTfheVersion(value);
-  if (actualVersion !== expectedVersion) {
-    throw new Error(`Unexpected TFHE native wrapper version '${actualVersion}', expected '${expectedVersion}'.`);
-  }
-}
 
 /**
  * Initializes the TFHE module and returns the loaded lib bindings.
- * Idempotent per TFHE version: subsequent calls return the same cached lib instance.
+ * Idempotent: subsequent calls return the same cached lib instance.
  */
-export async function initTfheModule(runtime: FhevmRuntime, parameters: InitTfheModuleParameters): Promise<TfheLibApi> {
+export async function initTfheModule(runtime: FhevmRuntime): Promise<TfheLibApi> {
   assertIsFhevmRuntime(runtime, {});
 
-  const ownerUid = ownerUidByVersion.get(parameters.tfheVersion);
-  if (ownerUid !== undefined && runtime.uid !== ownerUid) {
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+
+  if (tfheModuleOwnerUid !== undefined && runtime.uid !== tfheModuleOwnerUid) {
     throw new Error(
-      `Encrypt WASM module is already owned by runtime '${ownerUid}' and cannot be shared with runtime '${runtime.uid}'`,
+      `Encrypt WASM module is already owned by runtime '${tfheModuleOwnerUid}' and cannot be shared with runtime '${runtime.uid}'`,
     );
   }
 
-  ownerUidByVersion.set(parameters.tfheVersion, runtime.uid);
+  tfheModuleOwnerUid = runtime.uid;
 
   // Cache the whole initialization promise before the first await. Several
   // clients may call initTfheModule concurrently during startup; if the promise
   // were assigned after resolving the config, each caller could enter
   // _initTfheModule and try to start the global TFHE worker pool independently.
-  // Each TFHE version has its own JS glue module and worker pool, and each
-  // version's startWorkers() is intentionally one-shot, so concurrent callers
-  // for the same version must await the same promise.
+  // startWorkers() is intentionally one-shot, so concurrent callers must await
+  // the same promise.
   //
   // Retry is not supported:
   // -----------------------
@@ -559,16 +535,11 @@ export async function initTfheModule(runtime: FhevmRuntime, parameters: InitTfhe
   // original initialization error instead of retrying against half-initialized
   // state and producing secondary errors such as "Already started".
 
-  let cachedTfheModulePromise = cachedTfheModulePromiseByVersion.get(parameters.tfheVersion);
-  if (cachedTfheModulePromise === undefined) {
-    cachedTfheModulePromise = (async () => {
-      // resolve is async
-      const cfg = await _getOrResolveTfheModuleConfig(runtime, parameters.tfheVersion);
-      return await _initTfheModule(cfg);
-    })();
-
-    cachedTfheModulePromiseByVersion.set(parameters.tfheVersion, cachedTfheModulePromise);
-  }
+  cachedTfheModulePromise ??= (async () => {
+    // resolve is async
+    const cfg = await _getOrResolveTfheModuleConfig(runtime, tfheVersion);
+    return await _initTfheModule(cfg);
+  })();
 
   return cachedTfheModulePromise;
 }
@@ -628,18 +599,15 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
     memory.pages = wasmInfo.memory.pages;
   }
 
-  moduleInfoByVersion.set(
-    cfg.version,
-    Object.freeze({
-      wasmUrl: cfg.assets.wasm.url ? new URL(cfg.assets.wasm.url) : undefined,
-      version: wasmInfo.version,
-      name: wasmInfo.name,
-      workerUrl: cfg.assets.worker.url ? new URL(cfg.assets.worker.url) : undefined,
-      numberOfThreads: cfg.singleThread ? 0 : cfg.numberOfThreads,
-      threadsAvailable: cfg.supportsThreads,
-      memory,
-    }),
-  );
+  tfheModuleInfo = Object.freeze({
+    wasmUrl: cfg.assets.wasm.url ? new URL(cfg.assets.wasm.url) : undefined,
+    version: wasmInfo.version,
+    name: wasmInfo.name,
+    workerUrl: cfg.assets.worker.url ? new URL(cfg.assets.worker.url) : undefined,
+    numberOfThreads: cfg.singleThread ? 0 : cfg.numberOfThreads,
+    threadsAvailable: cfg.supportsThreads,
+    memory,
+  });
 
   return tfheLib;
 }
@@ -650,18 +618,17 @@ async function _initTfheModule(cfg: ResolvedTfheModuleConfig): Promise<TfheLibAp
 
 export async function getTfheModuleInfo(parameters: GetTfheModuleInfoParameters): Promise<GetTfheModuleInfoReturnType> {
   const tfheLib = await loadTfheLib(parameters.tfheVersion);
-  const stored = moduleInfoByVersion.get(parameters.tfheVersion);
-  if (stored === undefined) {
+  if (tfheModuleInfo === undefined) {
     throw new Error(`getTfheModuleInfo: no module info recorded for version "${parameters.tfheVersion}"`);
   }
   const memory: { byteLength: number; pages: number } = {
-    byteLength: stored.memory.byteLength,
-    pages: stored.memory.pages,
+    byteLength: tfheModuleInfo.memory.byteLength,
+    pages: tfheModuleInfo.memory.pages,
   };
   const wasmInfo = tfheLib.getWasmInfo();
   if (wasmInfo.memory !== undefined) {
     memory.byteLength = wasmInfo.memory.byteLength;
     memory.pages = wasmInfo.memory.pages;
   }
-  return { ...stored, memory };
+  return { ...tfheModuleInfo, memory };
 }
