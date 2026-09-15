@@ -186,7 +186,7 @@ jobs:
       app-cache-dir: "fhevm-relayer-relayer-migrate"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-migrate-image:
@@ -220,7 +220,7 @@ jobs:
       app-cache-dir: "fhevm-relayer"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-image:
