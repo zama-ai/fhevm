@@ -117,6 +117,8 @@ impl Display for ErrorResponse {
     }
 }
 
+impl std::error::Error for ErrorResponse {}
+
 #[cfg(feature = "endpoint")]
 use actix_web::{HttpResponse, http::StatusCode};
 
