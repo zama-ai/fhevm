@@ -89,7 +89,8 @@ jobs:
             package: transaction-sender
             needs_localstack: true
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            # Coverage compilation exhausted the default runner disk.
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
           - service: gw-listener
             package: gw-listener
             needs_localstack: false
