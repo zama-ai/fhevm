@@ -7,3 +7,4 @@
  */
 
 export * from './hostConfig.js';
+export * from './kmsContext.js';

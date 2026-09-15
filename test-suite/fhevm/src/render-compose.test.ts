@@ -814,6 +814,8 @@ gcs:
       // The BCS release creates the database first; the HEAD migration runs after it.
       expect(doc.services["coprocessor-bcs-db-migration"]?.image).toContain(":v0.13.0");
       expect(doc.services["coprocessor-bcs-db-migration"]?.build).toBeUndefined();
+      expect(doc.services["coprocessor-bcs-db-migration"]?.environment?.ALLOW_DB_BOOTSTRAP).toBe("true");
+      expect(doc.services["coprocessor-db-migration"]?.environment?.ALLOW_DB_BOOTSTRAP).toBe("false");
       expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
         "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
       });

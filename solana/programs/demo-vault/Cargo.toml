@@ -12,6 +12,7 @@ name = "demo_vault"
 
 [features]
 default = []
+preview-env = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []

@@ -91,6 +91,7 @@ RUST_ROOTS=(
 # lived under sdk/js-sdk/src/solana. Installed graphs and build outputs are excluded — a vendored
 # dependency's vocabulary is not ours to police.
 TS_ROOTS=(
+  solana/deploy/src
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
   solana/demo-dapp/demoServerPlugin.ts

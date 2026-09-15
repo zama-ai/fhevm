@@ -1,0 +1,17 @@
+{
+  "name": "@fhevm/solana-programs-deploy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/kit": "6.10.0",
+    "@solana/program-client-core": "6.10.0",
+    "viem": "^2.46.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "typescript": "^5.9.2"
+  }
+}

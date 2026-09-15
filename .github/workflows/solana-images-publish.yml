@@ -1,10 +1,10 @@
 name: solana-images-publish
 
-# Publishes branch-scoped images for the five component groups that solana-e2e otherwise builds
-# from source on every PR (#1766 step 3). Each image is built with the SAME Dockerfile, target,
-# build args that fhevm-cli's --override compose builds use (the COMPONENT_BUILD_SPECS table in
-# test-suite/fhevm/src/generate/compose.ts), so a pulled image is interchangeable with a source
-# build of the same commit.
+# Publishes branch-scoped images for the component groups that solana-e2e otherwise builds
+# from source on every PR (#1766 step 3), plus the zama-host deployer image (Helm Job / compose
+# analog; not pulled by solana-e2e). Compose-pulled images use the SAME Dockerfile, target,
+# and build args as fhevm-cli `--override` source builds (COMPONENT_BUILD_SPECS in
+# test-suite/fhevm/src/generate/compose.ts). solana-programs is Job-only and is not in that table.
 #
 # Tags per image:
 #   ghcr.io/zama-ai/<image>:feature-solana                  floating, tracks the branch tip
@@ -41,8 +41,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Mirrors COMPONENT_BUILD_SPECS in test-suite/fhevm/src/generate/compose.ts: same
-        # dockerfile/context/target/args as the --override source builds.
+        # Mirrors COMPONENT_BUILD_SPECS in test-suite/fhevm/src/generate/compose.ts for the
+        # compose-pulled images; solana-programs is the Helm/compose deployer Job (not an
+        # fhevm-cli --override source build).
         include:
           - name: gateway-contracts
             image: fhevm/gateway-contracts
@@ -51,6 +52,10 @@ jobs:
           - name: host-contracts
             image: fhevm/host-contracts
             dockerfile: host-contracts/Dockerfile
+            context: .
+          - name: solana-programs
+            image: fhevm/solana-programs
+            dockerfile: solana/deploy/Dockerfile
             context: .
           - name: coprocessor-db-migration
             image: fhevm/coprocessor/db-migration

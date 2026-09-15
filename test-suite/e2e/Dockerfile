@@ -46,7 +46,10 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # The sdk's codegen:solana:check step reads the Anchor IDLs from here.
 COPY coprocessor/fhevm-engine/host-listener/idl ./coprocessor/fhevm-engine/host-listener/idl
 # The SDK build runs `codegen:solana:check`, which regenerates the Solana program clients from
-# these IDLs and compares them with the committed clients in the dapp and the test-suite CLI.
+# these IDLs and compares them with the committed deployment, dapp and test-suite clients.
+COPY solana/deploy/src/generated ./solana/deploy/src/generated
+COPY solana/programs/encrypted-counter/idl ./solana/programs/encrypted-counter/idl
+COPY solana/programs/dep-chain/idl ./solana/programs/dep-chain/idl
 COPY solana/demo-dapp/idl ./solana/demo-dapp/idl
 COPY solana/demo-dapp/src/vault/internal/generated ./solana/demo-dapp/src/vault/internal/generated
 COPY test-suite/fhevm/src/solana/internal/generated ./test-suite/fhevm/src/solana/internal/generated

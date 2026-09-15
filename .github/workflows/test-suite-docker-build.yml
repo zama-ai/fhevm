@@ -115,6 +115,16 @@ jobs:
           - 'test-suite/e2e/**'
           - 'library-solidity/**'
           - 'sdk/cli-js-sdk/**'
+          - 'sdk/js-sdk/**'
+          - 'coprocessor/fhevm-engine/host-listener/idl/**'
+          - 'solana/demo-dapp/idl/**'
+          - 'solana/demo-dapp/src/vault/internal/generated/**'
+          - 'test-suite/fhevm/src/solana/internal/generated/**'
+          - 'solana/deploy/src/generated/**'
+          - 'solana/programs/encrypted-counter/idl/**'
+          - 'solana/programs/dep-chain/idl/**'
+          - 'package.json'
+          - 'package-lock.json'
 
   build:
     needs: [is-latest-commit, check-changes, compute-sdk-version]
