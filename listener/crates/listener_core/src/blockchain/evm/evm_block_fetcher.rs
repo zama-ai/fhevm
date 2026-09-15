@@ -121,7 +121,7 @@ pub struct FetchConfig {
     pub retry_interval: Duration,
     /// Whether to verify block integrity after fetching.
     pub verify_block: bool,
-    /// When true, unsupported transaction types are skipped with an ERROR log
+    /// When true, unsupported transaction types are skipped with a WARN log
     /// instead of causing a hard verification failure. Defaults to true.
     pub verify_block_allow_skipping: bool,
     /// Token for cancelling the fetch operation.
@@ -180,7 +180,7 @@ impl EvmBlockFetcher {
     }
 
     /// When true, unsupported transaction types are skipped during verification
-    /// with an ERROR log instead of causing a hard failure. Defaults to true.
+    /// with a WARN log instead of causing a hard failure. Defaults to true.
     pub fn with_verify_block_allow_skipping(mut self, allow_skipping: bool) -> Self {
         self.config.verify_block_allow_skipping = allow_skipping;
         self
