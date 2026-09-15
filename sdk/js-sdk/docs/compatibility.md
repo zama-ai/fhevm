@@ -1,8 +1,8 @@
 # Version compatibility
 
-Which cryptographic and contract versions line up across a protocol release —
-and how the SDK picks the right `tfhe.wasm` version for a given chain. This page
-is the source of truth for the `(protocol, PubKey/CRS, TFHE, KMS)` matrix.
+Which cryptographic and contract versions line up across a protocol release,
+and which `tfhe.wasm` version this SDK release bundles. This page is the
+source of truth for the `(protocol, PubKey/CRS, TFHE, KMS)` matrix.
 
 > For **where** the SDK runs (browser, Node, Edge, SSR/CSR) rather than **which
 > versions** are compatible, see [Runtime compatibility](runtime-compatibility.md).
@@ -20,32 +20,40 @@ format is not forward-compatible across minor versions:
 
 - `tfhe.wasm@v1.5.3` cannot parse a PubKey/CRS produced by `tfhe.wasm@v1.6.2`.
 
-## How the SDK picks a `tfhe.wasm` version
+## Which `tfhe.wasm` version the SDK uses
 
-Lacking a direct signal, the SDK derives the right `tfhe.wasm` version from a
-protocol context:
+The SDK no longer picks a `tfhe.wasm` version per chain. Each release targets
+exactly one protocol line and bundles exactly one `tfhe.wasm` and one
+`tkms.wasm` build for it — currently protocol `0.15.0`, `tfhe.wasm@1.6.2`, and
+`tkms.wasm@0.14.0-1` (see [Off-chain components](#off-chain-components)).
+There is no version-negotiation table, no per-chain fallback, and no runtime
+option to override it (the old `moduleVersions` runtime-config field is gone —
+see [Runtime configuration](runtime-configuration.md)).
 
-1. Read `ACL.version` on the host chain and map it to a protocol version.
-2. Resolve the PubKey/CRS version from what this SDK knows at the time it is written:
-   - for known public Relayers, use the PubKey/CRS version they are known to serve at SDK release time;
-   - otherwise, use the PubKey/CRS version expected when fresh key material is generated for that protocol line.
-3. Map `(protocol version, PubKey/CRS version)` to a wasm version:
-   - Protocol `< v0.13.0` with PubKey/CRS `< v1.6.0` → `tfhe.wasm@v1.5.3`
-   - Protocol `≥ v0.13.0` with PubKey/CRS `< v1.6.0` → `tfhe.wasm@v1.6.2` by default, while `v1.5.3` remains compatible for the current legacy public PubKey/CRS.
-   - Protocol `≥ v0.13.0` with PubKey/CRS `≥ v1.6.0` → `tfhe.wasm@v1.6.2`
+The SDK still derives a protocol context per chain, but purely as metadata
+exposed on the client (for diagnostics/logging), not to select a WASM module:
 
-The PubKey/CRS part is a release-time snapshot, not a future-proof signal. After
-the SDK is published, key rotation or CRS removal can change the material served
-by a Relayer. The SDK cannot guess those future changes without a direct on-chain
-or Relayer-side version signal.
+1. **Protocol version** — fixed to the SDK's target protocol line. The SDK no
+   longer reads `ACL.version` on the host chain to infer it; every chain is
+   assumed to run the targeted protocol line.
+2. **PubKey/CRS version** — resolved from what this SDK knows at the time it
+   is written:
+   - for known public Relayers, the PubKey/CRS version they are known to serve
+     at SDK release time;
+   - otherwise, the PubKey/CRS version expected when fresh key material is
+     generated for the targeted protocol line.
 
-The protocol-version part works as long as every protocol release bumps at least
-one host-contract version.
+Because only one `tfhe.wasm` ships, nothing checks ahead of time whether it
+can actually parse the PubKey/CRS material a chain's Relayer serves — a
+mismatch (e.g. a chain still running an older protocol line with older key
+material) surfaces as a low-level WASM deserialization error rather than a
+curated SDK error. Keeping a chain's key material aligned with the SDK's
+targeted protocol line is the deployment's responsibility.
 
-{% hint style="info" %}
-A future protocol version could expose this directly via view functions on
-`InputVerifier.sol` / `KMSVerifier.sol` or `ProtocolConfig.sol`, removing the need
-for the heuristic above.
+{% hint style="warning" %}
+The PubKey/CRS lookup is a release-time snapshot, not a future-proof signal.
+After the SDK is published, key rotation or CRS removal on a known Relayer can
+change the material it actually serves, and the SDK has no way to detect that.
 {% endhint %}
 
 ## KMS ↔ tfhe-rs
@@ -129,4 +137,4 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025.
 
 - [Runtime compatibility](runtime-compatibility.md) — supported runtimes and rendering environments.
 - [Chains](chains.md) — the per-chain contract addresses these versions map to.
-- [Runtime configuration](runtime-configuration.md) — pinning module versions via `moduleVersions`.
+- [Runtime configuration](runtime-configuration.md) — threading, WASM asset loading, and other runtime options.
