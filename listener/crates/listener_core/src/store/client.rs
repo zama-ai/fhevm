@@ -129,7 +129,7 @@ mod tests {
         ] {
             assert!(
                 connect_options(&config_with(raw_url, None)).is_err(),
-                "expected {raw_url} to be unparseable"
+                "expected {raw_url} to be unparsable"
             );
         }
     }

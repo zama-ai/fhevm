@@ -564,7 +564,7 @@ pub struct DatabaseConfig {
     /// Optional password, supplied out-of-band (e.g. `APP_DATABASE__DB_PASSWORD`).
     /// When set, it overrides any password embedded in `db_url` and is passed to the
     /// driver verbatim. Prefer this whenever the password contains characters that are
-    /// significant in a URL: `/`, `?` and `#` make `db_url` unparseable, and any literal
+    /// significant in a URL: `/`, `?` and `#` make `db_url` unparsable, and any literal
     /// `%XX` sequence is silently percent-decoded into a different password.
     #[serde(default)]
     #[derivative(Debug(format_with = "redact"))]
