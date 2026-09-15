@@ -2366,7 +2366,7 @@ impl Database {
                     dst_chain_id = e.dstChainId,
                     "BridgeHandle event"
                 );
-                let recorded = sqlx::query!(
+                sqlx::query!(
                     "INSERT INTO bridge_handle_events
                         (src_handle, dst_chain_id, src_chain_id, sender_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -2379,35 +2379,12 @@ impl Database {
                     e.guid.as_slice(),
                     block_number as i64,
                     block_hash.as_slice(),
-                    transaction_id.clone(),
+                    transaction_id,
                 )
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0;
-
-                // `send` accepts a transient-only allowance (no ACL event), so
-                // enqueue SnS here or the bridged handle gets no ciphertext.
-                let src_handle = e.srcHandle.to_vec();
-                let producer_block = self
-                    .resolve_handle_producer_block(
-                        tx,
-                        &src_handle,
-                        block_hash.as_slice(),
-                        prev_block_hash.as_slice(),
-                        block_number,
-                    )
-                    .await?;
-                self.insert_pbs_computations_resolved(
-                    tx,
-                    &[(src_handle, producer_block)],
-                    transaction_id,
-                    block_number,
-                    block_hash.as_slice(),
-                )
-                .await?;
-
-                recorded
+                    > 0
             }
             BridgeContractEvents::HandleBridged(e) => {
                 // Verify the destination handle was correctly derived and ignore the
@@ -2463,6 +2440,41 @@ impl Database {
             _ => false,
         };
         self.tick.update();
+        Ok(inserted)
+    }
+
+    /// Enqueues SnS for handles bridged by `ConfidentialBridge.send`, which needs
+    /// only a transient allowance and so emits no ACL event. Call after this
+    /// block's TFHE events are inserted so a same-block producer resolves.
+    pub async fn enqueue_bridge_source_pbs(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[(Vec<u8>, Option<Vec<u8>>)],
+        block_number: u64,
+        block_hash: &[u8],
+        prev_block_hash: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let mut inserted = false;
+        for (handle, transaction_id) in handles {
+            let producer_block = self
+                .resolve_handle_producer_block(
+                    tx,
+                    handle,
+                    block_hash,
+                    prev_block_hash,
+                    block_number,
+                )
+                .await?;
+            inserted |= self
+                .insert_pbs_computations_resolved(
+                    tx,
+                    &[(handle.clone(), producer_block)],
+                    transaction_id.clone(),
+                    block_number,
+                    block_hash,
+                )
+                .await?;
+        }
         Ok(inserted)
     }
 
