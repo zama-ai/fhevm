@@ -12,7 +12,7 @@ import {
   type CoprocessorArgPolicy,
   compatArgPolicyForPinnedTag,
   compatPolicyForState,
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -24,6 +24,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  KMS_CONNECTOR_HTTP_SERVICES,
   REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
@@ -186,6 +187,7 @@ const KMS_CONNECTOR_RUNTIME_BUILD_TARGETS: Record<string, string> = {
   "kms-connector-kms-worker": "kms-worker",
   "kms-connector-tx-sender": "tx-sender",
   "kms-connector-endpoint": "endpoint",
+  "kms-connector-proxy": "proxy",
 };
 
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
@@ -491,10 +493,15 @@ export const blueGreenServiceNames = (
   return names;
 };
 
+/** The kms-connector service suffixes `supportsConnectorHttp` gates (HTTP endpoint + TLS proxy). */
+const KMS_CONNECTOR_HTTP_SUFFIXES: readonly string[] = KMS_CONNECTOR_HTTP_SERVICES.map((service) =>
+  service.slice("kms-connector-".length),
+);
+
 /** kms-connector service suffixes for one party, minus services the resolved bundle lacks. */
 export const kmsConnectorServiceSuffixes = (state: Pick<State, "versions" | "overrides">) =>
   GROUP_SERVICE_SUFFIXES["kms-connector"].filter(
-    (suffix) => suffix !== "endpoint" || supportsConnectorEndpoint(state),
+    (suffix) => !KMS_CONNECTOR_HTTP_SUFFIXES.includes(suffix) || supportsConnectorHttp(state),
   );
 
 /** Lists kms-connector service names across every KMS party (party 1 keeps the bare names). */
@@ -829,7 +836,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
 export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const overridden = overriddenServicesForComponent(plan, "kms-connector");
-  const includeEndpoint = supportsConnectorEndpoint(plan);
+  const includeHttp = supportsConnectorHttp(plan);
   const services: Record<string, Record<string, unknown>> = {};
   const buildOwners = new Set<string>();
   for (let party = 1; party <= plan.kms.parties; party += 1) {
@@ -837,10 +844,10 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
     const envFileValue = envPath(kmsConnectorEnvName(party));
     const deployment = plan.kmsConnectorDeploymentByNodeId?.[party];
     for (const [name, service] of Object.entries(doc.services)) {
-      if (name === "kms-connector-endpoint" && !includeEndpoint) {
+      const suffix = name.replace(/^kms-connector-/, "");
+      if (KMS_CONNECTOR_HTTP_SUFFIXES.includes(suffix) && !includeHttp) {
         continue;
       }
-      const suffix = name.replace(/^kms-connector-/, "");
       const serviceName = `${prefix}${suffix}`;
       const next = structuredClone(service);
       next.container_name = serviceName;

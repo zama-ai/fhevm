@@ -70,8 +70,10 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 ## KMS Connector HTTP endpoint suites
 
 E2E coverage for the kms-connector HTTP decryption endpoint (RFC 033,
-`POST /v1/public-decrypt`, `POST /v1/user-decrypt`), driven directly from the
-e2e container against every KMS party's `kms-connector[-i]-endpoint`:
+`POST /v1/public-decrypt`, `POST /v1/user-decrypt`), driven from the e2e
+container the way the relayer reaches a KMS party: over TLS through every
+party's `kms-connector[-i]-proxy` (API-key check + forwarding to the party's
+`kms-connector[-i]-endpoint`):
 
 - `test/connectorHttp/connectorHttpPublicDecrypt.ts` — per-party KMS
   signatures recovered and checked against `KMSVerifier`, 2t+1 quorum,
@@ -86,10 +88,15 @@ e2e container against every KMS party's `kms-connector[-i]-endpoint`:
   (`400 malformed`, `503`, `504`) are covered by the crate's own tests
 
 The client lives in `test/sdk/connector/` and is deliberately thin: it posts the
-RFC 033 body, never throws on non-2xx, re-submits transient worker outcomes, and
+RFC 033 body with the `Authorization: Bearer $KMS_CONNECTOR_API_KEY` header the
+proxy checks, never throws on non-2xx, re-submits transient worker outcomes, and
 leaves quorum verification to `verify.ts` (the endpoint only returns its own
 party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
-(bundles without the endpoint image).
+(bundles without the endpoint and proxy images). The proxies serve the
+self-signed test certificate checked in under
+`test-suite/fhevm/static/config/kms-connector-proxy`, which the e2e container
+trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
+oversized bodies, upstream errors) are covered by the crate's integration tests.
 
 Run via the fhevm-cli profile `connector-http` (part of `standard`; runs all
 three suites), the narrower `connector-http-public-decrypt`,

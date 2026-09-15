@@ -21,6 +21,18 @@ export const endpointUrls = (): string[] =>
     .map((url) => url.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
+/** Pre-shared API key the proxies check. */
+export const apiKey = (): string => (process.env.KMS_CONNECTOR_API_KEY ?? '').trim();
+
+/** Request headers common to every call: the bearer credential the proxy requires. */
+const authHeaders = (): Record<string, string> => {
+  const key = apiKey();
+  if (!key) {
+    throw new Error('KMS_CONNECTOR_API_KEY is empty while KMS_CONNECTOR_ENDPOINT_URLS is set');
+  }
+  return { authorization: `Bearer ${key}` };
+};
+
 /** MPC threshold `t` (0 in centralized mode); the decryption quorum is `2t+1`. */
 export const kmsThreshold = (): number => Number(process.env.KMS_THRESHOLD ?? '0') || 0;
 
@@ -130,7 +142,7 @@ export async function post<T>(url: string, route: string, body: unknown, opts?: 
   const started = Date.now();
   const resp = await fetch(`${url}${route}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
@@ -143,7 +155,7 @@ export async function post<T>(url: string, route: string, body: unknown, opts?: 
 }
 
 export async function getVersion(url: string): Promise<{ httpStatus: number; body: Record<string, unknown> }> {
-  const resp = await fetch(`${url}${VERSION_ROUTE}`, { signal: AbortSignal.timeout(10_000) });
+  const resp = await fetch(`${url}${VERSION_ROUTE}`, { headers: authHeaders(), signal: AbortSignal.timeout(10_000) });
   return { httpStatus: resp.status, body: await readJson(resp) };
 }
 

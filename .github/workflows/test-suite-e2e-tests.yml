@@ -68,7 +68,7 @@ on:
       connector-versions:
         description:
           'KMS Connector image versions as a JSON object. Keys: db-migration, gw-listener, kms-worker, tx-sender,
-          endpoint. Example: {"gw-listener":"01cf0ff","endpoint":"01cf0ff"}'
+          endpoint, proxy. Example: {"gw-listener":"01cf0ff","endpoint":"01cf0ff","proxy":"01cf0ff"}'
         default: "{}"
         type: string
       test-suite-version:
@@ -160,6 +160,7 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['kms-worker'] }}
       CONNECTOR_TX_SENDER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['tx-sender'] }}
       CONNECTOR_ENDPOINT_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['endpoint'] }}
+      CONNECTOR_PROXY_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['proxy'] }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
@@ -384,6 +385,7 @@ jobs:
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
           snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
           snapshot_logs "KMS Connector Endpoint" kms-connector-endpoint
+          snapshot_logs "KMS Connector Proxy" kms-connector-proxy
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           snapshot_logs "KMS Core" kms-core

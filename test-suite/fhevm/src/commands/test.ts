@@ -1,7 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsConnectorEndpoint, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
@@ -1629,9 +1629,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
   const connectorEndpointSkipReason = () =>
-    supportsConnectorEndpoint(state)
+    supportsConnectorHttp(state)
       ? undefined
-      : "CONNECTOR_ENDPOINT_VERSION is not part of the resolved bundle (no kms-connector-endpoint container)";
+      : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)

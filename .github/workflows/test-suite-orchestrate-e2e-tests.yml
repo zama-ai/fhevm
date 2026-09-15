@@ -200,12 +200,13 @@ jobs:
       coprocessor-upgrade-controller-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: >-
-        ${{ format('{{"db-migration":"{0}","gw-listener":"{1}","kms-worker":"{2}","tx-sender":"{3}","endpoint":"{4}"}}',
+        ${{ format('{{"db-migration":"{0}","gw-listener":"{1}","kms-worker":"{2}","tx-sender":"{3}","endpoint":"{4}","proxy":"{5}"}}',
         steps.create-e2e-tests-input.outputs.connector-db-migration-version,
         steps.create-e2e-tests-input.outputs.connector-gw-listener-version,
         steps.create-e2e-tests-input.outputs.connector-kms-worker-version,
         steps.create-e2e-tests-input.outputs.connector-tx-sender-version,
-        steps.create-e2e-tests-input.outputs.connector-endpoint-version) }}
+        steps.create-e2e-tests-input.outputs.connector-endpoint-version,
+        steps.create-e2e-tests-input.outputs.connector-proxy-version) }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
@@ -255,6 +256,7 @@ jobs:
               ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version", "fhevm/kms-connector/kms-worker", "CONNECTOR_KMS_WORKER_VERSION"],
               ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version", "fhevm/kms-connector/tx-sender", "CONNECTOR_TX_SENDER_VERSION"],
               ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version", "fhevm/kms-connector/endpoint", "CONNECTOR_ENDPOINT_VERSION"],
+              ["kms-connector-docker-build", "proxy_build_result", "connector-proxy-version", "fhevm/kms-connector/proxy", "CONNECTOR_PROXY_VERSION"],
               ["gateway-contracts-docker-build", "build_result", "gateway-version", "fhevm/gateway-contracts", "GATEWAY_VERSION"],
               ["host-contracts-docker-build", "build_result", "host-version", "fhevm/host-contracts", "HOST_VERSION"],
               ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version", "fhevm/relayer-migrate", "RELAYER_MIGRATE_VERSION"],
