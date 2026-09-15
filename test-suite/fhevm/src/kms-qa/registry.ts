@@ -22,6 +22,7 @@ import { epochRotationCase } from "./cases/case-epoch-rotation";
 import { epochRotationPendingCase } from "./cases/case-epoch-rotation-pending";
 import { contextSwitchPendingCase } from "./cases/case-context-switch-pending";
 import { extraDataRejectionCase } from "./cases/case-extradata-rejection";
+import { extraDataGatewayRejectionCase } from "./cases/case-extradata-gateway-rejection";
 
 /** The KMS topology fields a case may predicate on. Mirrors `state.scenario.kms`. */
 export type KmsTopology = State["scenario"]["kms"];
@@ -65,6 +66,19 @@ export type ExtraDataRejectionRunner = (
 ) => Promise<void>;
 
 /**
+ * Runs the in-container check that the GATEWAY reverts calldata carrying a corrupted extraData.
+ *
+ * The contract-level counterpart of {@link ExtraDataRejectionRunner}: that one goes through the
+ * Relayer's HTTP API, this one bypasses it and submits ABI calldata straight to the Decryption
+ * contract. Same injected pair, same purpose for it — letting the spec confirm the chain did not move
+ * between the orchestrator's read and its own.
+ */
+export type ExtraDataGatewayRejectionRunner = (
+  label: string,
+  expected: { readonly contextId: bigint; readonly epochId: bigint },
+) => Promise<void>;
+
+/**
  * Everything a case is allowed to touch.
  *
  * Injected rather than imported, so cases hold no module state, can run in any order, and are
@@ -84,6 +98,8 @@ export type QaCaseContext = {
   readonly runExtraDataCheck: ExtraDataCheckRunner;
   /** Runs the KMS-context extraData REJECTION spec inside the test-suite container. */
   readonly runExtraDataRejection: ExtraDataRejectionRunner;
+  /** Runs the GATEWAY-level extraData rejection spec inside the test-suite container. */
+  readonly runExtraDataGatewayRejection: ExtraDataGatewayRejectionRunner;
 };
 
 /**
@@ -132,6 +148,7 @@ export const QA_CASES: readonly QaCase[] = [
   epochRotationPendingCase,
   contextSwitchPendingCase,
   extraDataRejectionCase,
+  extraDataGatewayRejectionCase,
 ];
 
 /** Environment variable selecting which cases run. Unset or `all` runs everything. */
