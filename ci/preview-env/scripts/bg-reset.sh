@@ -61,9 +61,9 @@ work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 list_blue_deployments() {
   local party="$1" all
-  all=$(kubectl get deploy -n "${NAMESPACE}" -o name) || fail "kubectl get deploy failed"
-  sed 's#^deployment.apps/##' <<<"${all}" \
-    | grep -E "^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-" \
+  all=$(kubectl get deploy -n "${NAMESPACE}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}') || fail "kubectl get deploy failed"
+  grep -E "^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-" <<<"${all}" \
     | grep -v -- "-gcs-" > "${work}/blue-${party}" || true
   [[ -s "${work}/blue-${party}" ]] || fail "party ${party}: no Blue deployments found in ${NAMESPACE}"
 }
@@ -75,7 +75,7 @@ deploy_logs() {
   local name="$1" pod
   pod=$(kubectl get pods -n "${NAMESPACE}" --no-headers -o custom-columns=N:.metadata.name \
     | grep -E "^${name}-[a-z0-9-]+$" | head -1 || true)
-  [[ -n "${pod}" ]] && kubectl logs -n "${NAMESPACE}" "${pod}" 2>/dev/null || true
+  if [[ -n "${pod}" ]]; then kubectl logs -n "${NAMESPACE}" "${pod}" 2>/dev/null || true; fi
 }
 
 echo "== bg-reset: ${NAMESPACE}, ${NB_COPROCESSOR} parties, polygon=${DEPLOY_POLYGON}, target versioning ${BCS_STACK_VERSION}/1"
@@ -125,7 +125,7 @@ done
 left=""
 for _ in $(seq 1 60); do
   left=$(kubectl get pods -n "${NAMESPACE}" --no-headers 2>/dev/null \
-    | grep -E "^coprocessor-(poller-polygon-|poller-|polygon-)?[0-9]+-" | grep -v "db-migration" | wc -l | tr -d ' ' || true)
+    | grep -E "^coprocessor-(poller-polygon-|poller-|polygon-)?[0-9]+-" | grep -vc "db-migration" || true)
   [[ "${left}" == "0" ]] && break
   sleep 5
 done

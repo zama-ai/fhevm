@@ -77,7 +77,11 @@ source_version() { # <ref> <dir> <Contract>
   git -C "${root}" show "$1:$2/contracts/$3.sol" 2>/dev/null | grep -oE 'REINITIALIZER_VERSION = [0-9]+' | head -1 | grep -oE '[0-9]+' || true
 }
 resolve_ref() { # an image tag is either a release tag (vX.Y.Z-N) or a short commit SHA
-  git -C "${root}" rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1 && echo "$1" || fail "tag '$1' is not a commit or tag of this checkout; fetch it first (git fetch --tags)"
+  if git -C "${root}" rev-parse --verify --quiet "$1^{commit}" >/dev/null 2>&1; then
+    echo "$1"
+  else
+    fail "tag '$1' is not a commit or tag of this checkout; fetch it first (git fetch --tags)"
+  fi
 }
 cm_value() { kubectl get configmap -n "${NAMESPACE}" "$1" -o json | jq -r --arg k "$2" '.data[$k] // empty'; }
 rpc_for() { # release -> RPC URL usable from this machine, or empty

@@ -52,6 +52,7 @@ traffic_env=(
 # Run erc20-traffic.ts in the chain's pod with TRAFFIC_CMD=$2 (+ extra env words).
 run_traffic() {
   local chain="$1" tcmd="$2"; shift 2
+  # shellcheck disable=SC2016 # single quotes are deliberate: "$0" is expanded by the pod's shell
   kubectl exec -n "${NAMESPACE}" "$(pod_name "${chain}")" -- \
     env "TRAFFIC_CMD=${tcmd}" "${traffic_env[@]}" "$@" \
     sh -c 'cd /app/test-suite/e2e && npx hardhat run --no-compile scripts/erc20-traffic.ts --network "$0"' "$(hh_network "${chain}")"
@@ -151,6 +152,7 @@ state_json() {
 }
 # Alive = the pid exists and is not a zombie (state field of /proc/<pid>/stat; BusyBox ps has no -p).
 loop_pid() {
+  # shellcheck disable=SC2016 # single quotes are deliberate: $p runs in the pod's shell, not here
   kubectl exec -n "${NAMESPACE}" "$(pod_name "$1")" -- sh -c \
     'p=$(cat /data/erc20-traffic/loop.pid 2>/dev/null) && [ -n "$p" ] && [ -r "/proc/$p/stat" ] && [ "$(awk "{print \$3}" "/proc/$p/stat")" != "Z" ] && echo "$p"' 2>/dev/null || true
 }

@@ -252,7 +252,7 @@ const loop = async () => {
     state.counters.iterations = i;
     state.lastIterationAt = now();
     await saveState(state);
-    // Sleep in short slices so a stop request is honoured within a few seconds.
+    // Sleep in short slices so a stop request is honored within a few seconds.
     for (let waited = 0; waited < intervalSecs && !(await fileExists(stopFile)); waited += 2) {
       await sleep(2000);
     }
