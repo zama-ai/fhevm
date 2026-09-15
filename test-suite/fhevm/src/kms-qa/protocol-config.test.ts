@@ -4,6 +4,7 @@ import {
   assertRotationConsistency,
   dataWordAt,
   decodeNewKmsEpoch,
+  formatKmsId,
   formatPair,
   parseAddressList,
 } from "./protocol-config";
@@ -153,5 +154,39 @@ describe("kms-qa protocol-config parseAddressList", () => {
 
   test("ignores surrounding whitespace and newlines", () => {
     expect(parseAddressList("\n  [0x1111111111111111111111111111111111111111]  \n")).toHaveLength(1);
+  });
+});
+
+describe("kms-qa protocol-config formatKmsId", () => {
+  /** The real ids observed on a live stack: tag 0x07 for contexts, 0x08 for epochs. */
+  const contextId = 3166189940082864718613269121331309980362851143201109172953918312716374638599n;
+  const epochId = 3618502788666131106986593281521497120414687020801267626233049500247285301264n;
+
+  test("renders a context id as ctx#<counter>", () => {
+    expect(formatKmsId(contextId)).toBe("ctx#7");
+  });
+
+  test("renders an epoch id as epoch#<counter>", () => {
+    expect(formatKmsId(epochId)).toBe("epoch#16");
+  });
+
+  test("distinguishes ids that differ only in their last digits", () => {
+    expect(formatKmsId(contextId)).not.toBe(formatKmsId(contextId - 1n));
+    expect(formatKmsId(contextId - 1n)).toBe("ctx#6");
+  });
+
+  test("falls back to the full decimal for an unrecognised tag, rather than a misleading short form", () => {
+    const untagged = 42n;
+    expect(formatKmsId(untagged)).toBe("42");
+    const otherTag = (0x09n << 248n) + 3n;
+    expect(formatKmsId(otherTag)).toBe(otherTag.toString());
+  });
+
+  test("handles a zero counter", () => {
+    expect(formatKmsId(0x07n << 248n)).toBe("ctx#0");
+  });
+
+  test("is used by formatPair, so error messages stay readable", () => {
+    expect(formatPair({ contextId, epochId })).toBe("contextId=ctx#7 epochId=epoch#16");
   });
 });

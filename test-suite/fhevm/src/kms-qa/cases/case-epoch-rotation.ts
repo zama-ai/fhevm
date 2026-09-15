@@ -60,6 +60,7 @@ import { checkConnectorsDbColumn, columnQuery } from "../../kms-connector-db";
 import type { QaCase, QaCaseContext } from "../registry";
 import {
   assertRotationConsistency,
+  formatKmsId,
   readCommitteeParties,
   readCurrentPair,
   sendDefineNewEpoch,
@@ -111,10 +112,10 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     "assert",
     "rotation is consistent with the baseline",
     {
-      baselineContextId: baseline.contextId.toString(),
-      baselineEpochId: baseline.epochId.toString(),
-      eventPreviousEpochId: event.previousEpochId.toString(),
-      eventEpochId: event.epochId.toString(),
+      baselineContextId: formatKmsId(baseline.contextId),
+      baselineEpochId: formatKmsId(baseline.epochId),
+      eventPreviousEpochId: formatKmsId(event.previousEpochId),
+      eventEpochId: formatKmsId(event.epochId),
     },
     async () => assertRotationConsistency(baseline, event),
   );
@@ -133,7 +134,7 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   await evidence.step(
     "assert",
     "every committee node completed the epoch reshare",
-    { parties: committee.join(","), epochId: event.epochId.toString() },
+    { parties: committee.join(","), epochId: formatKmsId(event.epochId) },
     async () =>
       checkConnectorsDbColumn(
         committee,
@@ -149,7 +150,7 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   const decrypted = await evidence.step(
     "probe",
     "user-decryption under the rotated epoch",
-    { contextId: activated.contextId.toString(), epochId: activated.epochId.toString() },
+    { contextId: formatKmsId(activated.contextId), epochId: formatKmsId(activated.epochId) },
     () =>
       runDecryption(
         `kms-context-qa/epoch-rotation: decrypt after rotation (epochId=${activated.epochId})`,
@@ -163,7 +164,9 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     );
   }
 
-  evidence.note("note", "values handed to the container-side extraData check", {
+  // The one place the full uint256 ids are printed: these are what the container asserts and
+  // what you paste into `cast`. Everywhere else the evidence uses the short `ctx#n` form.
+  evidence.note("note", "raw ids handed to the container-side extraData check", {
     context: activated.contextId.toString(),
     epoch: activated.epochId.toString(),
     previousEpoch: baseline.epochId.toString(),
@@ -177,9 +180,9 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
     "probe",
     "SDK embeds the active (context, epoch) in the permit extraData",
     {
-      contextId: activated.contextId.toString(),
-      epochId: activated.epochId.toString(),
-      previousEpochId: baseline.epochId.toString(),
+      contextId: formatKmsId(activated.contextId),
+      epochId: formatKmsId(activated.epochId),
+      previousEpochId: formatKmsId(baseline.epochId),
     },
     () =>
       runExtraDataCheck(
