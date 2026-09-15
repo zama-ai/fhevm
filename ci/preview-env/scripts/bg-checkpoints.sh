@@ -184,13 +184,13 @@ window-timing)
     if [[ -n "${WINDOW_START:-}" && -n "${ts_s}" ]]; then
       req=$(date -u -j -f %Y-%m-%dT%H:%M:%SZ "${WINDOW_START}" +%s 2>/dev/null || date -u -d "${WINDOW_START}" +%s)
       skew=$(( ts_s - req ))
-      check "chain ${chain}: start block is ${skew}s from the requested ${WINDOW_START} (tolerance ${WINDOW_ALIGN_SECS}s)" ${skew#-} -le ${WINDOW_ALIGN_SECS}
+      check "chain ${chain}: start block is ${skew}s from the requested ${WINDOW_START} (tolerance ${WINDOW_ALIGN_SECS}s)" "${skew#-}" -le "${WINDOW_ALIGN_SECS}"
     fi
   done
   if [[ ${#starts[@]} -ge 2 ]]; then
     min=""; max=""
     for s in "${starts[@]}"; do t=${s#*:}; [[ -z "${min}" || ${t} -lt ${min} ]] && min=${t}; [[ -z "${max}" || ${t} -gt ${max} ]] && max=${t}; done
-    check "host windows open within $((max - min))s of each other (tolerance ${WINDOW_ALIGN_SECS}s)" $((max - min)) -le ${WINDOW_ALIGN_SECS}
+    check "host windows open within $((max - min))s of each other (tolerance ${WINDOW_ALIGN_SECS}s)" "$((max - min))" -le "${WINDOW_ALIGN_SECS}"
   fi
   gwsb=$(psql_party 1 "SELECT min(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';")
   if [[ -z "${gwsb}" ]]; then

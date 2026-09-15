@@ -53,7 +53,7 @@ migrations_dir="coprocessor/fhevm-engine/db-migration/migrations"
 if git -C "${root}" cat-file -e "${GCS_IMAGE_TAG}^{commit}" 2>/dev/null; then
   head_migration=$(git -C "${root}" ls-tree --name-only "${GCS_IMAGE_TAG}" "${migrations_dir}/" | sort | tail -1 | xargs basename | cut -d_ -f1)
 else
-  head_migration=$(ls "${root}/${migrations_dir}" | sort | tail -1 | cut -d_ -f1)
+  head_migration=$(find "${root}/${migrations_dir}" -maxdepth 1 -type f | sort | tail -1 | xargs basename | cut -d_ -f1)
 fi
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
