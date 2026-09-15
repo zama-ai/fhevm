@@ -93,8 +93,8 @@ impl FhevmKeys {
             _noise_squashing_key,
             _noise_squashing_compression_key,
             re_randomization_keyswitching_key,
-            _oprf_key,
-            _transciphering_key,
+            oprf_key,
+            transciphering_key,
             tag,
         ) = server_key.clone().into_raw_parts();
         let server_key_without_ns = ServerKey::from_raw_parts(
@@ -105,8 +105,8 @@ impl FhevmKeys {
             None, // noise squashing key excluded
             None, // noise squashing compression key excluded
             re_randomization_keyswitching_key,
-            None, // oprf key excluded
-            None, // transciphering key excluded
+            oprf_key,
+            transciphering_key,
             tag,
         );
 
