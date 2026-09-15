@@ -356,6 +356,14 @@ impl EvmListener {
                     "Block verification failed during strategy validation - the listener will start and retry this block. \
                      If this chain is not block-compute compatible, set compute_block=false or compute_block_allow_skipping=true."
                 );
+                panic!(
+                    "Block verification failed during strategy validation: {}. \
+                    This does not indicate a fundamental strategy incompatibility, \
+                    so the listener will start and retry this block on the next attempt. \
+                    If persistent, consider setting compute_block=false or compute_block_allow_skipping=true. \
+                    Strategy: {:?}",
+                    e, self.fetcher_strategy
+                );
             }
             Err(e) => {
                 tracing::error!(
