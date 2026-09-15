@@ -24,12 +24,17 @@ no balance becomes unreadable. Concretely, an encrypted ERC-20 token is deployed
 mints and decryptions run continuously. Every balance must still decrypt to the expected number
 after the cutover.
 
+**You must also test the opposite: an upgrade with no traffic at all.** A real upgrade may well
+happen on a quiet night. That case is not covered by the busy one, so it is a separate round. See
+**section 7**.
+
 ### How long it takes
 
 | Case | Time |
 | --- | --- |
 | Case A, new environment, contracts on v0.14 | ~1 h to create, then ~45 min of testing |
 | Case B, replay after a reset, contracts on v0.15 | ~25 min total |
+| Case C, the same again with no traffic | ~20 min, on top of A or B |
 
 **Do not run two rounds at the same time in the same namespace.** They share one database.
 
@@ -115,7 +120,7 @@ Write down what it prints, for example `cc9ac24`.
 
 **Important.** That tag only works if the coprocessor was actually built for your branch. If your
 branch only changed CI files or contracts, it was not built, and the Green migration will fail with
-an image pull error (see *Problem 1* in section 10). In that case use the base commit instead:
+an image pull error (see *Problem 1* in section 11). In that case use the base commit instead:
 
 ```bash
 git merge-base HEAD origin/main | cut -c1-7
@@ -324,7 +329,7 @@ bash ci/preview-env/scripts/bg-traffic.sh start
 
 ### Step A9. Send the proposal
 
-Read section 7 first so you know what this does. Then go to section 8.
+Read section 8 first so you know what this does. Then go to section 9.
 
 ---
 
@@ -428,11 +433,82 @@ GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh start
 
 **Expect:** `migrate done`, then `start done: Green ... shadowing Blue`.
 
-Then read section 7 and go to section 8.
+Then read section 8 and go to section 9.
 
 ---
 
-## 7. The proposal — what it is and what it does
+## 7. CASE C — the same round with no traffic
+
+Run this **as well as** Case A or Case B, as a separate round. It is short.
+
+### Why it matters
+
+A real upgrade might happen when nothing is going on. With no traffic there is no real encrypted
+work for Green to copy, so there would be nothing to compare between operators, and on its own that
+would leave the system unable to tell a good upgrade from a bad one.
+
+The product handles this by injecting a small piece of **synthetic** work when the window opens, so
+there is always something to agree on. This case tests that this really happens. If synthetic work
+were ever broken, a busy round would hide it completely, because real traffic would paper over the
+gap.
+
+### What to do
+
+Follow Case A or Case B as normal **up to and including the snapshot**, with one change: after the
+snapshot, **do not restart the traffic loop**.
+
+So the order is:
+
+```bash
+# a token and some starting balances
+bash ci/preview-env/scripts/bg-traffic.sh setup
+bash ci/preview-env/scripts/bg-traffic.sh start
+
+# let it run ~5 minutes only, just to create balances worth checking later
+bash ci/preview-env/scripts/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg-traffic.sh verify        # snapshot: every line OK
+
+# from here on, NO traffic
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh migrate
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh start
+bash ci/preview-env/scripts/bg-propose.sh send
+```
+
+Confirm nothing is running before you propose:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh status
+```
+
+**Expect:** `loop not running` for both chains.
+
+Then follow section 9 exactly as usual.
+
+### What to look for
+
+- The upgrade must still reach the cutover. **This is the whole point of the case.** If the version
+  never changes to `v0.15.0`, that is a real bug. Report it with the output of
+  `bash ci/preview-env/scripts/bg-checkpoints.sh dry-run`.
+- In the dry-run check, the line `synthetic host anchors injected = 1` must appear for each chain,
+  and `synthetic gateway input ... = 1` for each operator. With no traffic these synthetic items are
+  the *only* work, so they matter more here than anywhere else.
+- After the cutover, the balances you created before the quiet period must still decrypt:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh verify
+```
+
+**Expect:** every line `OK`.
+
+### Optional: completely empty
+
+For the strictest version, skip the token entirely: no `setup`, no `start`, nothing at all. Then
+propose and check that the upgrade still cuts over. There will be no balances to verify afterwards,
+so the only result is whether the cutover happened and the checkpoints passed.
+
+---
+
+## 8. The proposal — what it is and what it does
 
 This is the step that actually starts the upgrade. It is worth understanding before you send it.
 
@@ -512,7 +588,7 @@ soon as the operators agree. A longer window only means a later deadline.
 
 ---
 
-## 8. Sending the proposal, the window, and the cutover
+## 9. Sending the proposal, the window, and the cutover
 
 Same for both cases. **Read it through before you start, the interesting part is short.**
 
@@ -625,7 +701,7 @@ investigated.
 
 ---
 
-## 9. What a successful round looks like
+## 10. What a successful round looks like
 
 All of these must be true:
 
@@ -635,7 +711,8 @@ All of these must be true:
 - [ ] Relayer / KMS connector / test-suite on the new version **before** the cutover.
 - [ ] Green started, all its pods `Running` with 0 restarts, including the consensus detector.
 - [ ] Snapshot 2: every line `OK` — **Case A only**.
-- [ ] Traffic was running during the whole window.
+- [ ] Traffic was running during the whole window — **Case A and B**.
+- [ ] No traffic was running during the window, and the cutover still happened — **Case C**.
 - [ ] `dry-run` passed, or was missed because the window was too short (note which).
 - [ ] Version changed to `v0.15.0`.
 - [ ] `cutover` passed.
@@ -646,7 +723,7 @@ If all of these are ticked, the upgrade is good.
 
 ---
 
-## 10. Known problems and what to do
+## 11. Known problems and what to do
 
 ### Problem 1: the Green migration fails to pull an image
 
@@ -731,7 +808,7 @@ The bottom of the output prints the balances. Report it; the wallets need toppin
 
 ---
 
-## 11. Starting and destroying an environment
+## 12. Starting and destroying an environment
 
 The two commands you will use most often, in one place.
 
@@ -789,7 +866,7 @@ environment unless you want to test the contract upgrade step again.
 
 ---
 
-## 12. Reporting a problem
+## 13. Reporting a problem
 
 Include all of this:
 
