@@ -183,7 +183,7 @@ describe('Confidential Bridge', function () {
   /** Mints and bridges in a SINGLE transaction with only the executor's transient allowance (no
    *  FHE.allow) - the RFC-008 gas-saving path. `send` passes on `isAllowed` (transient OR
    *  persistent) but emits no ACL event, so bridging itself must make the ciphertext durable. */
-  async function bridgeTransientFromApp(src: BridgeEnd, dst: BridgeEnd, value: number) {
+  async function bridgeTransientFromApp(src: BridgeEnd, dst: BridgeEnd, value: number, addend: number) {
     const ctx = { srcEndpoint: src.endpoint, dstEndpoint: dst.endpoint, dstBridge: dst.bridge, dstSigner: dst.alice };
     const fromBlock = await getProvider(dst.cfg).getBlockNumber();
     const dstApp = ethers.zeroPadValue(dst.appAddr, 32);
@@ -206,10 +206,11 @@ describe('Confidential Bridge', function () {
     const receipt = await sendWithNonceRetry(src.alice, () =>
       src.app
         .connect(src.alice)
-        .getFunction('mintAndBridgeTransient')(
+        .getFunction('computeAndBridgeTransient')(
           src.bridge,
           enc.handles[0],
           enc.inputProof,
+          addend,
           dst.eid,
           dstApp,
           '0x',
@@ -280,11 +281,11 @@ describe('Confidential Bridge', function () {
   });
 
   it('bridges a handle allowed only transiently (no persistent ACL grant) and decrypts it', async function () {
-    // Without a durability trigger on BridgeHandle the source ciphertext never gets its ct128, the
-    // association worker can never copy it, and this decrypt hangs until the timeout.
-    const { dstHandles } = await bridgeTransientFromApp(host, chainB, 23);
+    // Only the executor's transient allowance backs this handle, and it is computed, so it needs
+    // both halves: the source computation marked allowed, and SnS enqueued for its ct128.
+    const { dstHandles } = await bridgeTransientFromApp(host, chainB, 20, 5);
     expect(dstHandles.length, 'one destination handle').to.equal(1);
-    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(23n);
+    expect(await publicDecrypt(chainB, dstHandles[0])).to.equal(25n);
   });
 
   it('bridges a handle host->chain-b and lets a user decrypt it on the destination', async function () {
