@@ -58,7 +58,7 @@ jobs:
             needs_foundry: false
             shard: 1
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: tfhe-worker-2
             use_nextest: true
             package: tfhe-worker
@@ -66,7 +66,7 @@ jobs:
             needs_foundry: false
             shard: 2
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: tfhe-worker-3
             use_nextest: true
             package: tfhe-worker
@@ -74,50 +74,50 @@ jobs:
             needs_foundry: false
             shard: 3
             shards: 3
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: sns-worker
             package: sns-worker
             needs_localstack: true
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
           - service: zkproof-worker
             package: zkproof-worker
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
           - service: transaction-sender
             package: transaction-sender
             needs_localstack: true
             needs_foundry: true
             # Coverage compilation exhausted the default runner disk.
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: gw-listener
             package: gw-listener
             needs_localstack: false
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
           - service: host-listener
             package: host-listener
             needs_localstack: false
             needs_foundry: true
             # Larger disk: coverage build of host-listener plus the restored cargo
             # cache exceeds the default runner disk.
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: common
             package: fhevm-engine-common
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
           - service: upgrade-controller
             package: upgrade-controller
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
           - service: consensus-detector
             package: consensus-detector
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
