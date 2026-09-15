@@ -8,12 +8,10 @@ import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/s
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack_v13 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
 //
-// Not applicable to localstack_v11: on protocol v0.11 the current KMS context
-// already encodes to extraData v0 (0x00), so a "stale v11 permit" is
+// Not applicable to protocol v0.11: the current KMS context already encodes
+// to extraData v0 (0x00) on that era, so a "stale v11 permit" is
 // indistinguishable from a fresh one.
 //
 ////////////////////////////////////////////////////////////////////////////////

@@ -8,9 +8,6 @@ import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
 import { localcleartext } from '../chains/localcleartext.js';
 import { localstack } from '../chains/localstack.js';
-import { localstack_v11 } from '../chains/localstack_v11.js';
-import { localstack_v12 } from '../chains/localstack_v12.js';
-import { localstack_v13 } from '../chains/localstack_v13.js';
 import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
 import { polygon_devnet } from '../chains/polygon_devnet.js';
@@ -33,9 +30,6 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_v12',
   'localcleartext_v13',
   'localstack',
-  'localstack_v11',
-  'localstack_v12',
-  'localstack_v13',
   'localstack_v14',
   'polygon_devnet',
   'ingen_trex_cleartext',
@@ -88,17 +82,14 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
- * chain runs on, derived from its name. Used to gate migration tests that only
- * make sense on chains at or above a given protocol version.
+ * Protocol era (the minor version of the protocol: 12, 13, 14) a test chain
+ * runs on, derived from its name. Used to gate migration tests that only make
+ * sense on chains at or above a given protocol version.
  *
  * `localstack` (latest) tracks the newest protocol (v0.14 era today).
  */
-export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
-  if (chainName === 'localstack_v11') {
-    return 11;
-  }
-  if (chainName === 'localstack_v12' || chainName === 'localcleartext_v12') {
+export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 {
+  if (chainName === 'localcleartext_v12') {
     return 12;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
@@ -135,9 +126,6 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
-  localstack_v11: '1.5.1',
-  localstack_v12: '1.5.4',
-  localstack_v13: '1.6.1',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -535,9 +523,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   const chainMap: Record<FheTestChainName, FhevmChain> = {
     localstack,
-    localstack_v11,
-    localstack_v12,
-    localstack_v13,
     localstack_v14,
     localcleartext_legacy,
     localcleartext,
