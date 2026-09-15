@@ -85,6 +85,13 @@ async fn main() {
         "otlp-layer",
     );
 
+    #[cfg(feature = "gpu")]
+    if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
+        error!(error = %err, "GPU runtime architecture does not match image target");
+        telemetry::flush();
+        std::process::exit(1);
+    }
+
     // Resolved after tracing is initialized so the `resolve_gcs_mode` log is
     // captured by the subscriber.
     config.gcs_mode =

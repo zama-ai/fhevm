@@ -279,6 +279,8 @@ jobs:
 
       - name: Build the GPU workers
         shell: bash
+        env:
+          FHEVM_GPU_COMPUTE_CAPABILITY: ${{ steps.device.outputs.compute-capability }}
         run: |
           set -euo pipefail
           cd coprocessor/fhevm-engine
