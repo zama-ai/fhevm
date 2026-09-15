@@ -236,8 +236,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      *                      (65 bytes each) and extraData (all the remaining bytes). Counting from the first
      *                      byte of the inputProof, handle i starts at 2 + 32 * i, signature i starts at
      *                      2 + 32 * numHandles + 65 * i and extraData starts at 2 + 32 * numHandles + 65 * numSigners.
-     *                      In memory a bytes value starts with its 32-byte length, which is why the assembly
-     *                      blocks below read handle i at inputProof + 34 + 32 * i.
      *                      Each handle is keccak256(keccak256(bundleCiphertext) || index)[0:20] || index[21] ||
      *                      chainId[22:29] || type[30] || version[31], where bundleCiphertext is
      *                      compressedPackedCT + ZKPOK.
@@ -285,8 +283,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             bytes32[] memory listHandles = new bytes32[](numHandles);
             for (uint256 i = 0; i < numHandles; i++) {
                 bytes32 element;
-                assembly {
-                    element := mload(add(inputProof, add(34, mul(i, 32))))
+                /// @dev numHandles is bounded by a uint8, so the offset cannot overflow.
+                unchecked {
+                    element = BytesOps.readBytes32(inputProof, 2 + 32 * i);
                 }
                 /// @dev Check that all handles are from the correct version.
                 if (uint8(uint256(element)) != HANDLE_VERSION) revert InvalidHandleVersion();
@@ -319,8 +318,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
             /// @dev The proof cache is keyed on the full inputProof bytes, so a cache hit means these
             ///      bytes already passed the length checks and the handle read below is in bounds.
             uint256 element;
-            assembly {
-                element := mload(add(inputProof, add(34, mul(indexHandle, 32))))
+            /// @dev indexHandle is bounded by a uint8, so the offset cannot overflow.
+            unchecked {
+                element = uint256(BytesOps.readBytes32(inputProof, 2 + 32 * indexHandle));
             }
             if (element != result) revert InvalidInputHandle();
         }

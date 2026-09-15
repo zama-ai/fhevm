@@ -321,13 +321,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             ) {
                 revert DeserializingExtraDataFail();
             }
-            uint256 contextId;
-            // Memory layout: [32-byte length][version byte][32-byte contextId][...]
-            // mload(add(extraData, 33)) reads 32 bytes starting at offset 1 (after version byte).
-            assembly {
-                contextId := mload(add(extraData, 33))
-            }
-            return contextId;
+            /// @dev The contextId is the 32 bytes following the version byte.
+            return uint256(BytesOps.readBytes32(extraData, 1));
         }
         revert UnsupportedExtraDataVersion(version);
     }
