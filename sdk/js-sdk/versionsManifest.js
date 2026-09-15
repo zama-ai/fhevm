@@ -35,19 +35,9 @@
 //      manifest-listed WASM packages.
 //   3. Run `npm run codegen:loaders` to regenerate the source loader.
 
-export const TFHE_MANIFEST = Object.freeze([
-  Object.freeze({ version: '1.5.3', tags: Object.freeze(['prod', 'dev']) }),
-  Object.freeze({ version: '1.6.2', tags: Object.freeze(['prod', 'dev']) }),
-  Object.freeze({
-    version: '1.6.0-dev',
-    tags: Object.freeze(['dev']),
-    source: 'file:../../../tfhe-dev-wasm/',
-  }),
-]);
+export const TFHE_MANIFEST = Object.freeze([Object.freeze({ version: '1.6.2', tags: Object.freeze(['prod', 'dev']) })]);
 
 export const KMS_MANIFEST = Object.freeze([
-  Object.freeze({ version: '0.13.10', tags: Object.freeze(['prod', 'dev']) }),
-  Object.freeze({ version: '0.13.20-0', tags: Object.freeze(['prod', 'dev']) }),
   Object.freeze({ version: '0.14.0-1', tags: Object.freeze(['prod', 'dev']) }),
 ]);
 
