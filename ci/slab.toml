@@ -89,6 +89,20 @@ image_id = "ami-0dd24e66365192676"
 instance_type = "hpc7a.96xlarge"
 user = "ubuntu"
 
+# AWS P3 instances provide Volta V100 GPUs (sm_70). The image is the same
+# GPU-ready Ubuntu AMI used by TFHE-rs's AWS GPU runners.
+[backend.aws.p3-v100]
+region = "us-east-1"
+image_id = "ami-0250f541bc1358116"
+instance_type = "p3.2xlarge"
+user = "ubuntu"
+
+[backend.aws.p3dn-v100]
+region = "us-east-1"
+image_id = "ami-0250f541bc1358116"
+instance_type = "p3dn.24xlarge"
+user = "ubuntu"
+
 [backend.aws.big-instance]
 region = "eu-west-3"
 image_id = "ami-0a56cf46caf2fd41c"
