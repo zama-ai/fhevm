@@ -307,6 +307,7 @@ jobs:
         run: |
           solana --version
           anchor --version
+          cargo build-sbf --version
           test "$(anchor --version)" = "anchor-cli ${ANCHOR_VERSION}"
           # AVM can change the active Solana CLI when resolving Anchor. Check after it runs.
           test "$(solana --version | awk '{print $2}')" = "${SOLANA_VERSION}"
@@ -333,6 +334,15 @@ jobs:
       - name: Run Solana workspace tests
         id: workspace-tests
         run: cargo test --workspace
+
+      - name: Preserve SBF programs after a runtime test failure
+        if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-runtime-programs
+          path: solana/target/deploy/*.so
+          if-no-files-found: error
+          retention-days: 3
 
       # A cost snapshot test panics on the first profile that moved, so the failure message names
       # one profile even when several changed, and the fix needs an SBF toolchain the author may
