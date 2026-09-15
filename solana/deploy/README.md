@@ -40,6 +40,12 @@ source namespace. The workflow copies them into the new preview without printing
 | `solana-deployer` | `deployer.json`; first-deploy program keys `zama_host.json`, and optional demo program keys `<program>.json` |
 | `solana-proof-api` | `api-key`, shared by the listeners and KMS connectors |
 
+The deployment copies `solana-deployer` into the preview namespace. Members of
+`coprocessor-dev-access` and `kms-dev-access` have namespace-admin access and can
+read its upgrade-authority key. Use a disposable devnet authority dedicated to
+these experiments; every preview sharing its program addresses trusts those admins.
+This secret-copying flow is unsuitable for a durable network's upgrade authority.
+
 The deployer must hold devnet SOL. Cluster networking must reach the RPC/Yellowstone
 provider and allow connectors to reach `coprocessor-<party>-solana-host-listener:8080`.
 The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.

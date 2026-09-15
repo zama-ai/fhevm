@@ -11,11 +11,8 @@ set -euo pipefail
 GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 schema="gcs-${GCS_VERSION#v}"
 
-psql_party() {
-  local party="$1" sql="$2"
-  kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
-    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
-}
+# shellcheck source=ci/preview-env/scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 failed=0
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
