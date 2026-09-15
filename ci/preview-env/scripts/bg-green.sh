@@ -42,7 +42,8 @@ GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${
 # Green image tag = the tag the branch's coprocessor images were published under. Blue is pinned to
 # the previous release and, on the production path, so are the contracts/relayer/test-suite, so the
 # listener (never pinned) is the one deployed component that carries it; the checkout's HEAD is the
-# fallback. Override with GCS_IMAGE_TAG whenever the deploy resolved a different tag.
+# fallback. Override with GCS_IMAGE_TAG whenever the deploy resolved a different tag - notably on a
+# CI-only branch, where the coprocessor images are not rebuilt and the base commit carries them.
 GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
   -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
 GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(git -C "${root}" rev-parse --short=7 HEAD)}"
@@ -143,8 +144,11 @@ migrate)
     kubectl delete job "${job}" -n "${NAMESPACE}" --ignore-not-found >/dev/null
     kubectl apply -n "${NAMESPACE}" -f "${work}/migrate-${i}.yaml"
     if ! kubectl wait --for=condition=complete "job/${job}" -n "${NAMESPACE}" --timeout=300s; then
+      # Report why: an unbuilt Green tag shows up here as a pull failure, not as a log line.
+      kubectl get pod -n "${NAMESPACE}" -l "job-name=${job}" \
+        -o jsonpath='{range .items[*]}{.status.containerStatuses[*].state.waiting.reason}{" "}{.status.containerStatuses[*].state.waiting.message}{"\n"}{end}' || true
       kubectl logs -n "${NAMESPACE}" "job/${job}" --tail=50 || true
-      fail "party ${i}: migration job did not complete"
+      fail "party ${i}: migration job did not complete (Green tag ${GCS_IMAGE_TAG}; if the image is missing, the coprocessor was not built at that commit - set GCS_IMAGE_TAG to a commit whose coprocessor images were published)"
     fi
     after=$(psql_party "${i}" "SELECT max(version)||' ('||count(*)||')' FROM _sqlx_migrations;")
     [[ "${after}" == "${head_migration} ("* ]] || fail "party ${i}: DB at ${after}, expected ${head_migration}"

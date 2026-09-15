@@ -28,7 +28,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${root}/ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml")}"
 schema="gcs-${GCS_STACK_VERSION}"
 WINDOW_ALIGN_SECS="${WINDOW_ALIGN_SECS:-12}"
-SYNTHETIC_INPUT_CONTRACT='\x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a'
+# verify_proofs.contract_address is text holding 0x-prefixed hex, not bytea.
+SYNTHETIC_INPUT_CONTRACT='0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a'
 
 failed=0
 pass() { echo "[PASS] $*"; }
@@ -114,13 +115,19 @@ baseline)
     n=$(psql_party "${i}" "SELECT count(*) FROM upgrade_state;")
     check "party ${i}: upgrade_state rows = ${n}" "${n}" = "0"
     g=$(psql_party "${i}" "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%';")
-    check "party ${i}: Green schemas = ${g}" "${g}" = "0"
+    # On the production path Green is migrated mid-round, so a Green schema is only a fault
+    # while the Green release is still absent.
+    if helm status "coprocessor-${i}-gcs" -n "${NAMESPACE}" >/dev/null 2>&1; then
+      info "party ${i}: Green schemas = ${g} (Green already installed)"
+    else
+      check "party ${i}: Green schemas = ${g}" "${g}" = "0"
+    fi
     r=$(fleet_ready blue "${i}")
     check "party ${i}: Blue deployments ready ${r}" "${r%/*}" = "${r#*/}"
     c=$(psql_party "${i}" "SELECT count(DISTINCT chain_id) FROM host_chain_blocks_valid WHERE created_at > now() - interval '120 seconds';")
     check "party ${i}: chains ingested in the last 2 min = ${c}/${nb_chains}" "${c}" -ge "${nb_chains}"
     m=$(psql_party "${i}" "SELECT max(version) FROM _sqlx_migrations;")
-    info "party ${i}: schema at migration ${m} (Blue-only until bg-green.sh migrate raises it to the Green level)"
+    info "party ${i}: schema at migration ${m}"
   done
   while IFS='|' read -r line bad; do
     [[ -n "${line}" ]] || continue
@@ -144,7 +151,12 @@ dry-run)
         [[ "${ref%%:*}" == "${chain}" ]] && check "chain ${chain}: same proposal/window on every operator" "${ref}" = "${key}"
       fi
     done <<<"${rows}"
-    gsyn=$(psql_party "${i}" "SELECT count(*) FROM \"${schema}\".verify_proofs WHERE contract_address = '${SYNTHETIC_INPUT_CONTRACT}'::bytea;" 2>/dev/null || echo "0")
+    # Fail loudly on a query error; only a genuinely absent schema reports zero.
+    if [[ "$(psql_party "${i}" "SELECT count(*) FROM pg_namespace WHERE nspname = '${schema}';")" == "0" ]]; then
+      gsyn=0
+    else
+      gsyn=$(psql_party "${i}" "SELECT count(*) FROM \"${schema}\".verify_proofs WHERE lower(contract_address) = lower('${SYNTHETIC_INPUT_CONTRACT}');")
+    fi
     check "party ${i}: synthetic gateway input in ${schema}.verify_proofs = ${gsyn} (0 also when the schema is missing)" "${gsyn}" -ge 1
     for chain in ${chains}; do
       cnt=$(psql_party "${i}" "SELECT count(*)||' ('||count(*) FILTER (WHERE is_completed)||' completed)' FROM \"${schema}\".computations WHERE host_chain_id = ${chain};" 2>/dev/null || echo "0")
@@ -209,7 +221,7 @@ cutover)
     check "party ${i}: every running Green replica carries version label ${GCS_STACK_VERSION} (${bad} without)" "${bad}" = "0"
     paused=$(kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-tx-sender" --tail=500 2>/dev/null | grep -c "pausing into no-op mode" || true)
     check "party ${i}: Blue tx-sender paused into no-op mode (${paused} log line)" "${paused}" -ge 1
-    syn=$(psql_party "${i}" "WITH h AS (SELECT substring(u.synthetic_txn_hashes FROM g.pos FOR 32) AS tx FROM upgrade_state u, generate_series(1, GREATEST(octet_length(u.synthetic_txn_hashes), 1), 32) AS g(pos) WHERE u.stack_role='GCS' AND octet_length(u.synthetic_txn_hashes) > 0) SELECT (SELECT count(*) FROM computations c JOIN h ON c.transaction_id = h.tx) + (SELECT count(*) FROM verify_proofs WHERE contract_address = '${SYNTHETIC_INPUT_CONTRACT}'::bytea);")
+    syn=$(psql_party "${i}" "WITH h AS (SELECT substring(u.synthetic_txn_hashes FROM g.pos FOR 32) AS tx FROM upgrade_state u, generate_series(1, GREATEST(octet_length(u.synthetic_txn_hashes), 1), 32) AS g(pos) WHERE u.stack_role='GCS' AND octet_length(u.synthetic_txn_hashes) > 0) SELECT (SELECT count(*) FROM computations c JOIN h ON c.transaction_id = h.tx) + (SELECT count(*) FROM verify_proofs WHERE lower(contract_address) = lower('${SYNTHETIC_INPUT_CONTRACT}'));")
     check "party ${i}: synthetic rows left in public = ${syn}" "${syn}" = "0"
   done
   check_no_drift_signal
