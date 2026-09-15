@@ -42,8 +42,12 @@ grep -qE '(^| )80002( |$)' <<<"${chains}" && deploy_polygon=true
 
 mnemonic=$(secret_val preview-wallets-mnemonic mnemonic); [[ -n "${mnemonic}" ]] || fail "preview-wallets-mnemonic not found"
 owner_key=$(cast wallet private-key --mnemonic "${mnemonic}" --mnemonic-index 9)
+# The hardhat task lives in the contracts that are on chain now, not the ones first deployed: on
+# the production path the deploy is pinned to the previous release and has no propose task.
 host_image=$(helm get values host-contracts -n "${NAMESPACE}" -o json | jq -r '"\(.scDeploy.image.name):\(.scDeploy.image.tag)"')
 [[ "${host_image}" == *:* && "${host_image}" != *null* ]] || fail "could not resolve the host-contracts image"
+live_tag=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.contracts\.version}' 2>/dev/null || true)
+[[ -z "${live_tag}" ]] || host_image="${host_image%:*}:${live_tag}"
 nb=$(helm list -n "${NAMESPACE}" -o json | jq '[.[] | select(.name | test("^coprocessor-[0-9]+$"))] | length')
 gcs_version="${GCS_VERSION:-v$(yq -r '.commonConfig.stackVersion' "${root}/ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml")}"
 # Unique and monotonic: the contract does not enforce uniqueness but a reused id is ignored.
