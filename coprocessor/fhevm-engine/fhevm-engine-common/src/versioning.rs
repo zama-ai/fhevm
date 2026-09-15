@@ -148,9 +148,13 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
     Ok(())
 }
 
+/// Fallback poll interval: a missed NOTIFY costs one tick.
+const STACK_MODE_POLL_INTERVAL: Duration = Duration::from_secs(30);
+
 /// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
-/// on every notification. Runs until `cancel` fires; logs and retries on
-/// listener errors. Spawn this once per service after startup.
+/// on every notification, and on a fallback poll. Runs until `cancel` fires;
+/// logs and retries on listener errors. Spawn this once per service after
+/// startup.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
@@ -162,9 +166,16 @@ pub async fn run_stack_version_listener(
         channel = EVENT_STACK_VERSION_UPGRADED,
         "stack-version-upgraded listener started"
     );
+    // First tick is immediate: catches a cutover that committed before LISTEN.
+    let mut poll = tokio::time::interval(STACK_MODE_POLL_INTERVAL);
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(()),
+            _ = poll.tick() => {
+                if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
+                    warn!(error = %e, "poll reconcile of stack mode failed");
+                }
+            }
             recv = listener.recv() => match recv {
                 Ok(_) => {
                     if let Err(e) = reconcile_stack_mode(&pool, &mode).await {

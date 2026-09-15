@@ -340,11 +340,12 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let client =
         ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
 
-    let db = Database::new_with_gcs_mode(
+    let stack_mode = StackMode::new(config.gcs_mode);
+    let db = Database::new_with_stack_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
-        config.gcs_mode,
+        stack_mode.clone(),
     )
     .await?;
 
@@ -384,7 +385,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused; the
     // consume handler then drops incoming blocks without writing to the DB.
-    let stack_mode = StackMode::new(config.gcs_mode);
     {
         let pool = db.pool().await;
         let stack_mode = stack_mode.clone();
