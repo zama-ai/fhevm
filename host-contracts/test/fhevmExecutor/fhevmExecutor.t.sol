@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, stdError} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -228,8 +228,16 @@ contract MockHCULimit {
 
 /// @dev Exposes internal choke points of FHEVMExecutor for direct unit tests.
 contract FHEVMExecutorHarness is FHEVMExecutor {
-    function consumeOperand(bytes32 ct, uint256 position) external view returns (uint256) {
+    function consumeOperand(bytes32 ct, uint8 position) external view returns (uint256) {
         return _consumeOperand(ct, position);
+    }
+
+    function narySum(bytes32[] calldata values, FheType resultType) external returns (bytes32) {
+        return _naryOp(Operators.fheSum, values, resultType);
+    }
+
+    function naryIsIn(bytes32 value, bytes32[] calldata values) external returns (bytes32) {
+        return _naryOp(Operators.fheIsIn, value, values, FheType.Bool);
     }
 }
 
@@ -1636,18 +1644,47 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.clearMockedCalls();
     }
 
-    /// @dev Direct pin of the _consumeOperand width backstop: position 255 is
-    ///      the last representable boundary bit; 256 must revert rather than
-    ///      silently dropping the bit (EVM SHL past the word yields 0).
-    function test_ConsumeOperandRevertsPastBoundaryBitWord() public {
+    /// @dev Position 255 is the last representable boundary bit and must be preserved.
+    function test_ConsumeOperandSupportsHighestBoundaryBitPosition() public {
         FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
         address sender = address(123);
         bytes32 handle = _persistedHandle(FheType.Uint64, sender);
 
-        vm.startPrank(sender);
+        vm.prank(sender);
         assertEq(harness.consumeOperand(handle, 255), 1 << 255);
-        vm.expectRevert(abi.encodeWithSelector(FHEVMExecutor.BoundaryBitPositionOverflow.selector, 256));
-        harness.consumeOperand(handle, 256);
+    }
+
+    /// @dev Exercise both internal loops at the largest uint8 collection cap.
+    function test_NaryOpsSupportMaximumCollectionLength() public {
+        FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
+        address sender = address(123);
+        bytes32 handle = _persistedHandle(FheType.Uint64, sender);
+        bytes32[] memory values = new bytes32[](255);
+        for (uint256 i = 0; i < values.length; i++) {
+            values[i] = handle;
+        }
+
+        vm.startPrank(sender);
+        assertEq(harness.narySum(values, FheType.Uint64), _computeExpectedResultFheSum(values, FheType.Uint64));
+        assertEq(harness.naryIsIn(handle, values), _computeExpectedResultFheIsIn(handle, values));
+        vm.stopPrank();
+    }
+
+    /// @dev A derived caller bypassing the public size checks must revert before positions wrap.
+    function test_NaryOpsRejectBoundaryPositionOverflow() public {
+        FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
+        address sender = address(123);
+        bytes32 handle = _persistedHandle(FheType.Uint64, sender);
+        bytes32[] memory values = new bytes32[](256);
+        for (uint256 i = 0; i < values.length; i++) {
+            values[i] = handle;
+        }
+
+        vm.startPrank(sender);
+        vm.expectRevert(stdError.arithmeticError);
+        harness.narySum(values, FheType.Uint64);
+        vm.expectRevert(stdError.arithmeticError);
+        harness.naryIsIn(handle, values);
         vm.stopPrank();
     }
 
