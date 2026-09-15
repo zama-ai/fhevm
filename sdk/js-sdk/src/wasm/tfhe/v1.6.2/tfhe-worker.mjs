@@ -1,5 +1,10 @@
+function ___isNodeLike() {
+  return typeof process !== 'undefined' && typeof process.versions?.node === 'string';
+}
+
 function ___isBrowserLike() {
   return (
+    !___isNodeLike() &&
     typeof addEventListener === 'function' &&
     typeof removeEventListener === 'function'
   );
