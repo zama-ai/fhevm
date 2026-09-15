@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Per-namespace Anvil chains (skipped when USE_BLOCKCHAIN_DEV=true).
+# Per-namespace Anvil chains (skipped when EXTERNAL_CHAINS=true: blockchain-dev / testnets).
 # Usage: deploy-anvil.sh <host|gateway|host-polygon>
 # Env: NAMESPACE, ANVIL_NODE_CHART.
 set -euo pipefail

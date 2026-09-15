@@ -89,7 +89,8 @@ export function assertIsRelayerApiError(
   // 500
   else if (
     value.label === ('internal_server_error' satisfies RelayerApiError500['label']) ||
-    value.label === ('host_acl_failed' satisfies RelayerApiError500['label'])
+    value.label === ('host_acl_failed' satisfies RelayerApiError500['label']) ||
+    value.label === ('no_attestation_consensus' satisfies RelayerApiError500['label'])
   ) {
     assertIsRelayerApiError500(value, name, options);
   }
@@ -121,6 +122,7 @@ export function assertIsRelayerApiError(
           'rate_limited',
           'internal_server_error',
           'host_acl_failed',
+          'no_attestation_consensus',
           'protocol_paused',
           'insufficient_balance',
           'insufficient_allowance',

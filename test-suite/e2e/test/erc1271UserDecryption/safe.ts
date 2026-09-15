@@ -20,11 +20,10 @@
 //     returning a non-magic value — an equally definitive rejection for the
 //     relayer, the KMS Connector, and the js-sdk;
 //   - answers through a proxy -> fallback-handler double round trip. Measured
-//     on the canonical bytecode (incl. intrinsic, vs the 100_000
+//     on the canonical bytecode (incl. intrinsic, against the
 //     `erc1271_gas_limit` all three verifying layers apply): worst flat shape
 //     (3-of-3 ECDSA) ~67k; nested v=0 contract-signature shapes ~83k (inner
-//     1-of-1) and ~91k (inner 2-of-3) — the latter has only ~9% headroom, so
-//     deeper nesting or higher inner thresholds would exceed the default cap.
+//     1-of-1) and ~91k (inner 2-of-3).
 import SafeArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/Safe.sol/Safe.json';
 import CompatibilityFallbackHandlerArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json';
 import SafeProxyFactoryArtifact from '@safe-global/safe-contracts/build/artifacts/contracts/proxies/SafeProxyFactory.sol/SafeProxyFactory.json';
@@ -82,6 +81,16 @@ const CANONICAL_SAFE_V1_4_1 = {
   handler: '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99',
   factory: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
 } as const;
+
+/** ERC-1271 magic value of `isValidSignature(bytes32,bytes)`. */
+const ERC1271_MAGIC_VALUE = '0x1626ba7e';
+
+/**
+ * Gas cap every verifying layer applies to the `isValidSignature` STATICCALL
+ * (relayer `erc1271_gas_limit`, KMS connector, js-sdk — kept equal). Override
+ * via `ERC1271_GAS_LIMIT` to match an environment configured differently.
+ */
+export const ERC1271_GAS_LIMIT = BigInt(process.env.ERC1271_GAS_LIMIT ?? 250_000);
 
 /** A canonical-code probe is one `eth_getCode`; retry once to ride out a rate-limit blip. */
 const PROBE_ATTEMPTS = 2;
@@ -411,4 +420,47 @@ export async function buildSafeNestedMultisigSignature(
     ...(await collectSafeOwnerParts(outer, digest, eoaOwners)),
   ]);
   return concatSignatureParts(staticParts, dynamicTail);
+}
+
+/**
+ * Cross-check on the host chain that `signature` is ERC-1271-valid for
+ * `account` under `gasLimit` — the same STATICCALL the relayer's pre-check
+ * runs — and return the gas the call needs.
+ *
+ * An under-gassed call reverts with empty data, which the relayer reports as
+ * `400 {"field":"signature","issue":"Signature is invalid"}` — the same body a
+ * forged blob gets, since a genuine rejection is told apart only by carrying a
+ * revert reason. Pricing the call here separates a bad signature from a budget
+ * too small to run it.
+ */
+export async function assertErc1271ValidOnChain(
+  provider: Provider,
+  account: string,
+  digest: string,
+  signature: string,
+  gasLimit: bigint = ERC1271_GAS_LIMIT,
+): Promise<bigint> {
+  const data = new Contract(account, CompatibilityFallbackHandlerArtifact.abi, provider).interface.encodeFunctionData(
+    'isValidSignature(bytes32,bytes)',
+    [digest, signature],
+  );
+  const gasNeeded = await provider.estimateGas({ to: account, data }).catch((error: unknown) => {
+    throw new Error(
+      `could not price the ERC-1271 call for ${account} (a bad signature, or a host RPC that would not run it): ` +
+        (error instanceof Error ? error.message : String(error)),
+    );
+  });
+  if (gasNeeded > gasLimit) {
+    throw new Error(
+      `ERC-1271 verification for ${account} needs ${gasNeeded} gas but the cap is ${gasLimit} — ` +
+        'the relayer would reject this valid signature with 400 "Signature is invalid"',
+    );
+  }
+  const returned = await provider.call({ to: account, data, gasLimit });
+  if (!returned.startsWith(ERC1271_MAGIC_VALUE)) {
+    throw new Error(
+      `ERC-1271 isValidSignature returned ${returned.slice(0, 10)} for ${account}, expected ${ERC1271_MAGIC_VALUE}`,
+    );
+  }
+  return gasNeeded;
 }

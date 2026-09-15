@@ -27,8 +27,10 @@ const ALLOWED = new Set([
 const ALWAYS_DEFAULTS = {
   coprocessor_infra_chart_version: "0.6.5",
   common_chart_version: "0.3.3",
-  kms_repo_ref: "35edfa2f0656ee266e3299a004a83ac7d4fe2418",
-  kms_core_version: "d27c3b5",
+  // zama-ai/kms v0.14.1 (75b85afd, 2026-09-01). Image tag is github.ref_name
+  // on the kms release docker-build; keep both keys on the same release.
+  kms_repo_ref: "v0.14.1",
+  kms_core_version: "v0.14.1",
   redis_chart_version: "25.3.8",
 };
 

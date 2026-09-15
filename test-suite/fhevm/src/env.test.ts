@@ -48,6 +48,59 @@ describe("env", () => {
     expect(rendered.componentEnvs["gateway-sc"].HOST_CHAIN_WEBSITE_1).toBe("https://host-chain-1.com");
   });
 
+  test("points the e2e suite at one connector endpoint per committee party, only when the bundle ships it", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const baseState: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario(),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    };
+    const withoutEndpoint: State = {
+      ...baseState,
+      versions: {
+        ...baseState.versions,
+        env: Object.fromEntries(
+          Object.entries(baseState.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION"),
+        ),
+      },
+    };
+
+    const centralized = await renderEnvMaps({ discovery: undefined }, stackSpecForState(baseState), templateEnvs, deriveWallet);
+    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("http://kms-connector-endpoint:8080");
+    expect(centralized.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("0");
+
+    const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(withoutEndpoint), templateEnvs, deriveWallet);
+    expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("");
+
+    // Spares (parties beyond committeeSize) hold no key material and are left out of the list.
+    const threshold: State = {
+      ...baseState,
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+    };
+    const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(threshold), templateEnvs, deriveWallet);
+    expect(rendered.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(
+      [
+        "http://kms-connector-endpoint:8080",
+        "http://kms-connector-2-endpoint:8080",
+        "http://kms-connector-3-endpoint:8080",
+        "http://kms-connector-4-endpoint:8080",
+      ].join(","),
+    );
+    expect(rendered.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
+  });
+
   test("projects custom primary host settings into runtime envs", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
