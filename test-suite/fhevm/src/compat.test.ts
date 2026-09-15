@@ -262,7 +262,7 @@ describe("compat", () => {
 
   test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
     const policy = compatArgPolicyForPinnedTag("v0.15.0");
-    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorArgs).toEqual({ "transaction-sender": [["--gateway-url", { env: "GATEWAY_URL" }]] });
     expect(policy.coprocessorDropFlags).toEqual({});
   });
 
@@ -882,4 +882,13 @@ describe("compat", () => {
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("65cf86e"))).toBe(true);
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-8", [{ group: "host-contracts" }]))).toBe(true);
   });
+});
+
+test.each(["v0.11.0", "v0.12.0", "v0.13.0-2", "v0.14.0-7"])("keeps WS for pinned sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_WS_URL" }]);
+});
+test.each(["v0.15.0", "c2f416b"])("uses HTTP for current sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_URL" }]);
 });
