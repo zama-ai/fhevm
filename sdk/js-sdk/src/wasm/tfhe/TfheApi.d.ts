@@ -40,7 +40,7 @@ export interface TfheLibApi {
 }
 
 // Default version
-export type TfheVersion = '1.5.3' | '1.6.2';
+export type TfheVersion = '1.6.2';
 
 export type TfheWasmBase64 = {
   readonly tfheWasmBase64: string;

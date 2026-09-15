@@ -61,10 +61,14 @@ export declare const fhevmClientFrozenContextBrand: unique symbol;
  * ### Partial resolution
  *
  * A context may carry only the versions an operation needs. The plain accessors
- * (`protocolVersion`, `tfheVersion`, `hostContractVersion(name)`, …) **throw** if
- * the requested version was not resolved, so a miss-scoped call fails fast rather
+ * for those (`protocolVersion`, `hostContractVersion(name)`, …) **throw** if the
+ * requested version was not resolved, so a miss-scoped call fails fast rather
  * than silently proceeding on an absent value. Use the `has*` predicates or the
  * `try*` accessors to probe without throwing.
+ *
+ * `tfheVersion` / `tkmsVersion` are the exception: this SDK release ships a
+ * single TFHE and a single TKMS module, so both always report that canonical
+ * version and never throw — there is nothing partial left to resolve.
  */
 export type FhevmClientFrozenContext = {
   readonly [fhevmClientFrozenContextBrand]: never;
@@ -108,15 +112,11 @@ export type FhevmClientFrozenContext = {
   // TFHE / TKMS module versions
   //////////////////////////////////////////////////////////////////////////////
 
-  readonly hasTfheVersion: boolean;
-  /** @throws If the TFHE version was not resolved in this context. */
+  /** This SDK release ships a single TFHE module, so this never throws. */
   readonly tfheVersion: TfheVersion;
-  readonly tryTfheVersion: TfheVersion | undefined;
 
-  readonly hasTkmsVersion: boolean;
-  /** @throws If the TKMS version was not resolved in this context. */
+  /** This SDK release ships a single TKMS module, so this never throws. */
   readonly tkmsVersion: TkmsVersion;
-  readonly tryTkmsVersion: TkmsVersion | undefined;
 
   //////////////////////////////////////////////////////////////////////////////
 

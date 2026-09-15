@@ -1,4 +1,4 @@
-// Shared harness for the multi-WASM browser smoke / robustness tests.
+// Shared harness for the browser smoke / robustness tests.
 //
 // Centralizes the runtime config, module init + readiness assertions, dummy
 // chains, key loading/caching, encryption, and the DOM logging harness, so each
@@ -19,17 +19,18 @@ import { defineFhevmChain } from '../../../src/core/chains/utils.js';
 import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
 import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
 import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../src/core/runtime/WasmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Versions + resource budget
 ////////////////////////////////////////////////////////////////////////////////
 
 export const EXPECTED_THREADS = 1;
-export const TFHE_VERSIONS: readonly TfheVersion[] = ['1.5.3', '1.6.2'];
-export const TKMS_VERSIONS: readonly TkmsVersion[] = ['0.13.10', '0.13.20-0', '0.14.0-1'];
+export const TFHE_VERSION: TfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+export const TKMS_VERSION: TkmsVersion = CANONICAL_WASM_VERSIONS.kms;
 
 /** A runtime equipped with both the encrypt and decrypt modules. */
-export type MultiWasmRuntime = WithEncrypt & WithDecrypt;
+export type SmokeRuntime = WithEncrypt & WithDecrypt;
 
 ////////////////////////////////////////////////////////////////////////////////
 // DOM logging harness
@@ -112,13 +113,18 @@ export function base64ToBytes(base64: string): Uint8Array {
 ////////////////////////////////////////////////////////////////////////////////
 
 const WASM_URLS: Record<string, URL> = {
-  'tfhe_bg.v1.5.3.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe_bg.wasm', location.origin),
-  'tfhe-worker.v1.5.3.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe-worker.mjs', location.origin),
-  'tfhe_bg.v1.6.2.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe_bg.wasm', location.origin),
-  'tfhe-worker.v1.6.2.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe-worker.mjs', location.origin),
-  'kms_lib_bg.v0.13.10.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.10/kms_lib_bg.wasm', location.origin),
-  'kms_lib_bg.v0.13.20-0.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.20-0/kms_lib_bg.wasm', location.origin),
-  'kms_lib_bg.v0.14.0-1.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.14.0-1/kms_lib_bg.wasm', location.origin),
+  [`tfhe_bg.v${TFHE_VERSION}.wasm`]: new URL(
+    `/__raw_wasm/src/wasm/tfhe/v${TFHE_VERSION}/tfhe_bg.wasm`,
+    location.origin,
+  ),
+  [`tfhe-worker.v${TFHE_VERSION}.mjs`]: new URL(
+    `/__raw_wasm/src/wasm/tfhe/v${TFHE_VERSION}/tfhe-worker.mjs`,
+    location.origin,
+  ),
+  [`kms_lib_bg.v${TKMS_VERSION}.wasm`]: new URL(
+    `/__raw_wasm/src/wasm/tkms/v${TKMS_VERSION}/kms_lib_bg.wasm`,
+    location.origin,
+  ),
 };
 
 function locateWasmFile(file: string): URL {
@@ -133,7 +139,7 @@ function locateWasmFile(file: string): URL {
  * Configures the runtime for direct, URL-backed, multithreaded module init, then
  * returns a runtime extended with the encrypt + decrypt modules.
  */
-export function setupMultiWasmRuntime(): MultiWasmRuntime {
+export function setupSmokeRuntime(): SmokeRuntime {
   log('Setting runtime config for direct module initialization...');
   setFhevmRuntimeConfig({
     wasmAssetLoadMode: 'verified-blob',
@@ -151,12 +157,9 @@ export function setupMultiWasmRuntime(): MultiWasmRuntime {
 // Module init + readiness assertions
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Initializes every TFHE + TKMS version concurrently. */
-export async function initAllModules(runtime: MultiWasmRuntime): Promise<void> {
-  await Promise.all([
-    ...TFHE_VERSIONS.map((tfheVersion) => runtime.encrypt.initTfheModule({ tfheVersion })),
-    ...TKMS_VERSIONS.map((tkmsVersion) => runtime.decrypt.initTkmsModule({ tkmsVersion })),
-  ]);
+/** Initializes the TFHE and TKMS modules concurrently. */
+export async function initAllModules(runtime: SmokeRuntime): Promise<void> {
+  await Promise.all([runtime.encrypt.initTfheModule(), runtime.decrypt.initTkmsModule()]);
 }
 
 /** Asserts a TFHE module is initialized, multithreaded with the expected thread count, and URL-backed. */
@@ -181,7 +184,7 @@ export async function assertTfheModuleReady(runtime: WithEncrypt, tfheVersion: T
 
 /** Generates a TKMS private key and asserts it reports the requested version. */
 async function generateCheckedTkmsPrivateKey(runtime: WithDecrypt, tkmsVersion: TkmsVersion) {
-  const tkmsPrivateKey = await runtime.decrypt.generateTkmsPrivateKey({ tkmsVersion });
+  const tkmsPrivateKey = await runtime.decrypt.generateTkmsPrivateKey();
   if (tkmsPrivateKey.tkmsVersion !== tkmsVersion) {
     throw new Error(`Expected TKMS private key version ${tkmsVersion}, got ${tkmsPrivateKey.tkmsVersion}`);
   }
@@ -194,7 +197,7 @@ async function tkmsPublicKeyByteLength(
   tkmsVersion: TkmsVersion,
   tkmsPrivateKey: Awaited<ReturnType<typeof generateCheckedTkmsPrivateKey>>,
 ): Promise<number> {
-  const publicKeyHex = await runtime.decrypt.getTkmsPublicKeyHex({ tkmsVersion, tkmsPrivateKey });
+  const publicKeyHex = await runtime.decrypt.getTkmsPublicKeyHex({ tkmsPrivateKey });
   const hexNoPrefix = publicKeyHex.startsWith('0x') ? publicKeyHex.slice(2) : publicKeyHex;
   if (hexNoPrefix.length === 0 || hexNoPrefix.length % 2 !== 0) {
     throw new Error(`Expected TKMS ${tkmsVersion} public key to be non-empty.`);
@@ -312,14 +315,10 @@ export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Builds a real ZK proof for a single uint64 on `chain` using the `tfheVersion`
- * module. The key must already be cached for `chain` (see loadAndCacheKey).
+ * Builds a real ZK proof for a single uint64 on `chain`. The key must already
+ * be cached for `chain` (see loadAndCacheKey).
  */
-export async function buildUint64Proof(
-  runtime: WithEncrypt,
-  chain: FhevmChain,
-  tfheVersion: TfheVersion,
-): Promise<ZkProof> {
+export async function buildUint64Proof(runtime: WithEncrypt, chain: FhevmChain): Promise<ZkProof> {
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
@@ -328,9 +327,10 @@ export async function buildUint64Proof(
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,
       extraData: '0x00',
-      // No real client here — synthesize the frozen version basis carrying the
-      // TFHE version under test; build() reads its tfheVersion from this.
-      fhevmContext: createFhevmClientFrozenContext({ tfheVersion }),
+      // No real client here — synthesize a frozen version basis. build() no
+      // longer reads a tfheVersion from it: this SDK release always builds
+      // against the canonical TFHE module.
+      fhevmContext: createFhevmClientFrozenContext({}),
     },
   );
 }

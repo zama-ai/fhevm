@@ -26,9 +26,8 @@ cd test-suite/e2e
 npm run sdk:local
 ```
 
-Set `SDK_BUILD_PROFILE=dev` before `npm run sdk:local` for a faster,
-unminified build while iterating. Re-run it after every change to
-`sdk/js-sdk` source — the install is a one-off pack, not a live link.
+Re-run it after every change to `sdk/js-sdk` source — the install is a
+one-off pack, not a live link.
 
 To install a specific published version from the registry instead, pass it
 explicitly — there's no default to fall back to:

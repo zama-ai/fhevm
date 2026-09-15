@@ -16,7 +16,6 @@ import type {
   DecryptAndReconstructReturnType,
   DeserializeTkmsPrivateKeyParameters,
   DeserializeTkmsPrivateKeyReturnType,
-  GenerateTkmsPrivateKeyParameters,
   GenerateTkmsPrivateKeyReturnType,
   GetTkmsPublicKeyHexParameters,
   GetTkmsPublicKeyHexReturnType,
@@ -34,6 +33,7 @@ import { remove0x } from '../../../base/string.js';
 import { bytesToHexLarge, isBytes65Hex } from '../../../base/bytes.js';
 import { WasmScope } from '../../../base/wasmScope.js';
 import { initTkmsModule } from './init-p.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../runtime/WasmVersions-p.js';
 import { getMetadata, getShares } from '../../../kms/KmsSigncryptedShares-p.js';
 import { createKmsExtraDataFromBytesHex, toKmsSignedExtraDataBytesHex } from '../../../kms/kmsExtraData-p.js';
 
@@ -125,6 +125,9 @@ class TkmsPublicEncKeyMlKem512Impl {
     if (key.#publicEncKeyMlKem512Wasm === undefined) {
       throw new Error(`TkmsPublicKey is already disposed`);
     }
+    // Statically false with single-literal version types, but untyped JS
+    // callers can still pass a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (key.#tkmsVersion !== tkmsVersion) {
       throw new Error(`TkmsVersion mismatch`);
     }
@@ -144,6 +147,9 @@ class TkmsPublicEncKeyMlKem512Impl {
     if (key.#publicEncKeyMlKem512Wasm === undefined) {
       throw new Error(`TkmsPublicKey is already disposed`);
     }
+    // Statically false with single-literal version types, but the wasm-reported
+    // version and untyped JS callers can still diverge at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (key.#tkmsVersion !== tkmsVersion || kmsLibApi.getWasmInfo().version !== tkmsVersion) {
       throw new Error(`TkmsVersion mismatch`);
     }
@@ -196,6 +202,9 @@ class TkmsPrivateEncKeyMlKem512Impl implements TkmsPrivateKey {
     if (key.#privateEncKeyMlKem512Wasm === undefined) {
       throw new Error(`TkmsPrivateKey is already disposed`);
     }
+    // Statically false with single-literal version types, but untyped JS
+    // callers can still pass a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (key.#tkmsVersion !== tkmsVersion) {
       throw new Error(`TkmsVersion mismatch`);
     }
@@ -215,6 +224,9 @@ class TkmsPrivateEncKeyMlKem512Impl implements TkmsPrivateKey {
     if (key.#privateEncKeyMlKem512Wasm === undefined) {
       throw new Error(`TkmsPrivateKey is already disposed`);
     }
+    // Statically false with single-literal version types, but the wasm-reported
+    // version and untyped JS callers can still diverge at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (key.#tkmsVersion !== tkmsVersion || kmsLibApi.getWasmInfo().version !== tkmsVersion) {
       throw new Error(`TkmsVersion mismatch`);
     }
@@ -230,16 +242,14 @@ class TkmsPrivateEncKeyMlKem512Impl implements TkmsPrivateKey {
 // generateTkmsPrivateKey
 //////////////////////////////////////////////////////////////////////////////
 
-export async function generateTkmsPrivateKey(
-  runtime: FhevmRuntime,
-  parameters: GenerateTkmsPrivateKeyParameters,
-): Promise<GenerateTkmsPrivateKeyReturnType> {
-  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
+export async function generateTkmsPrivateKey(runtime: FhevmRuntime): Promise<GenerateTkmsPrivateKeyReturnType> {
+  const tkmsVersion = CANONICAL_WASM_VERSIONS.kms;
+  const kmsLib = await initTkmsModule(runtime);
 
   const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType =
     kmsLib.ml_kem_pke_keygen() as PrivateEncKeyMlKem512WasmType;
 
-  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, parameters.tkmsVersion, privateEncKeyMlKem512Wasm);
+  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, tkmsVersion, privateEncKeyMlKem512Wasm);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -250,7 +260,8 @@ export async function decryptAndReconstruct(
   runtime: FhevmRuntime,
   parameters: DecryptAndReconstructParameters,
 ): Promise<DecryptAndReconstructReturnType> {
-  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
+  const tkmsVersion = CANONICAL_WASM_VERSIONS.kms;
+  const kmsLib = await initTkmsModule(runtime);
 
   const { tkmsPrivateKey, shares } = parameters;
   if (!(tkmsPrivateKey instanceof TkmsPrivateEncKeyMlKem512Impl)) {
@@ -261,16 +272,14 @@ export async function decryptAndReconstruct(
   try {
     // Owned: a fresh public key derived from the caller's private key.
     const tkmsPublicKey: TkmsPublicEncKeyMlKem512Impl = scope.track(
-      TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](
-        tkmsPrivateKey,
-        PRIVATE_TKMS_LIB_TOKEN,
-        parameters.tkmsVersion,
-        kmsLib,
-      ),
+      TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](tkmsPrivateKey, PRIVATE_TKMS_LIB_TOKEN, tkmsVersion, kmsLib),
     );
 
     const metadata: KmsSigncryptedSharesMetadata = getMetadata(shares);
-    if (metadata.tkmsVersion !== parameters.tkmsVersion) {
+    // Statically false with single-literal version types, but shares metadata
+    // is deserialized data and can carry a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (metadata.tkmsVersion !== tkmsVersion) {
       throw new Error('TkmsVersion mismatch');
     }
 
@@ -313,20 +322,20 @@ export async function decryptAndReconstruct(
     const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = TkmsPrivateEncKeyMlKem512Impl[GET_NATIVE_FUNC](
       tkmsPrivateKey,
       PRIVATE_TKMS_LIB_TOKEN,
-      parameters.tkmsVersion,
+      tkmsVersion,
     );
 
     // Borrowed native handle of tkmsPublicKey — NOT tracked (freed via tkmsPublicKey).
     const publicEncKeyMlKem512Wasm: PublicEncKeyMlKem512WasmType = TkmsPublicEncKeyMlKem512Impl[GET_NATIVE_FUNC](
       tkmsPublicKey,
       PRIVATE_TKMS_LIB_TOKEN,
-      parameters.tkmsVersion,
+      tkmsVersion,
     );
 
     const publicEncKeyMlKem512WasmBytesHex: BytesHex = TkmsPublicEncKeyMlKem512Impl[GET_BYTES_HEX_FUNC](
       tkmsPublicKey,
       PRIVATE_TKMS_LIB_TOKEN,
-      parameters.tkmsVersion,
+      tkmsVersion,
       kmsLib,
     );
 
@@ -468,7 +477,8 @@ export async function getTkmsPublicKeyHex(
   runtime: FhevmRuntime,
   parameters: GetTkmsPublicKeyHexParameters,
 ): Promise<GetTkmsPublicKeyHexReturnType> {
-  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
+  const tkmsVersion = CANONICAL_WASM_VERSIONS.kms;
+  const kmsLib = await initTkmsModule(runtime);
 
   const { tkmsPrivateKey } = parameters;
 
@@ -479,7 +489,7 @@ export async function getTkmsPublicKeyHex(
   const tkmsPublicKey = TkmsPrivateEncKeyMlKem512Impl[GET_PUBLIC_KEY_FUNC](
     tkmsPrivateKey,
     PRIVATE_TKMS_LIB_TOKEN,
-    parameters.tkmsVersion,
+    tkmsVersion,
     kmsLib,
   );
 
@@ -487,7 +497,7 @@ export async function getTkmsPublicKeyHex(
     const publicKeyBytesHex: BytesHex = TkmsPublicEncKeyMlKem512Impl[GET_BYTES_HEX_FUNC](
       tkmsPublicKey,
       PRIVATE_TKMS_LIB_TOKEN,
-      parameters.tkmsVersion,
+      tkmsVersion,
       kmsLib,
     );
 
@@ -505,7 +515,8 @@ export async function serializeTkmsPrivateKey(
   runtime: FhevmRuntime,
   parameters: SerializeTkmsPrivateKeyParameters,
 ): Promise<SerializeTkmsPrivateKeyReturnType> {
-  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
+  const tkmsVersion = CANONICAL_WASM_VERSIONS.kms;
+  const kmsLib = await initTkmsModule(runtime);
 
   const { tkmsPrivateKey } = parameters;
 
@@ -516,7 +527,7 @@ export async function serializeTkmsPrivateKey(
   const privateEncKeyMlKem512Wasm: PrivateEncKeyMlKem512WasmType = TkmsPrivateEncKeyMlKem512Impl[GET_NATIVE_FUNC](
     tkmsPrivateKey,
     PRIVATE_TKMS_LIB_TOKEN,
-    parameters.tkmsVersion,
+    tkmsVersion,
   );
 
   return kmsLib.ml_kem_pke_sk_to_u8vec(privateEncKeyMlKem512Wasm);
@@ -530,7 +541,10 @@ export async function deserializeTkmsPrivateKey(
   runtime: FhevmRuntime,
   parameters: DeserializeTkmsPrivateKeyParameters,
 ): Promise<DeserializeTkmsPrivateKeyReturnType> {
-  const kmsLib = await initTkmsModule(runtime, { tkmsVersion: parameters.tkmsVersion });
+  // Deserialization always targets the running SDK's canonical TKMS module —
+  // any version recorded at serialize time is not consulted.
+  const tkmsVersion = CANONICAL_WASM_VERSIONS.kms;
+  const kmsLib = await initTkmsModule(runtime);
 
   const { tkmsPrivateKeyBytes } = parameters;
 
@@ -538,7 +552,7 @@ export async function deserializeTkmsPrivateKey(
     tkmsPrivateKeyBytes,
   ) as PrivateEncKeyMlKem512WasmType;
 
-  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, parameters.tkmsVersion, privateEncKeyMlKem512Wasm);
+  return new TkmsPrivateEncKeyMlKem512Impl(PRIVATE_TKMS_LIB_TOKEN, tkmsVersion, privateEncKeyMlKem512Wasm);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -549,7 +563,10 @@ export function verifyTkmsPrivateKey(_runtime: FhevmRuntime, parameters: VerifyT
   if (!(parameters.tkmsPrivateKey instanceof TkmsPrivateEncKeyMlKem512Impl)) {
     throw new Error('Invalid TkmsPrivateKey');
   }
-  if (parameters.tkmsVersion !== parameters.tkmsPrivateKey.tkmsVersion) {
+  // Statically false with single-literal version types, but untyped JS
+  // callers can still pass a stale version at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (CANONICAL_WASM_VERSIONS.kms !== parameters.tkmsPrivateKey.tkmsVersion) {
     throw new Error(`TkmsVersion mismatch`);
   }
 }
