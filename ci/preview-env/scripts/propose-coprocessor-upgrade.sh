@@ -33,6 +33,9 @@ else
 fi
 # The tool refuses to broadcast when startBlock is closer to the tip than this; the lead is the guard here.
 BUFFER="${BUFFER:-0}"
+# Anything else the hardhat task accepts, appended verbatim - e.g. --use-internal-proxy-address
+# true. Empty by default; the six flags above cover a normal round.
+PROPOSE_EXTRA_ARGS="${PROPOSE_EXTRA_ARGS:-}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
 # UC writes the binary stack version (v0.15.0). Compose e2e stored v0.15.
 # Compare major.minor so either form counts as cutover.
@@ -141,6 +144,7 @@ spec:
           --buffer ${BUFFER}
           --proposal-id ${PROPOSAL_ID}
           --software-version ${GCS_VERSION}
+          ${PROPOSE_EXTRA_ARGS}
       envFrom:
         - secretRef:
             name: ${job}
