@@ -63,7 +63,7 @@ Every behavior in the matrix derives from three mechanisms:
 | **Finality** | Identical to the live cursor, against `final_blocks`. Fully isolated: own lock, queue, and tip — a stalled finality flow never touches the live flow, and vice versa. | Same as cursor. | `get_final_block_number` → `ChainHeightError` → transient; block fetches retry forever. | Fan-out spin → **finality tip frozen** (the final cleaner simply idles at the tip). Live flow unaffected. |
 | **Final catchup** | Same as live catchup (FINAL filter query). | Same as live catchup. | Final-head fetch → transient. | Same as live catchup, on `final-catchup-event`. |
 | **Cleaners** (both) | Delete errors are **swallowed** (logged, iteration skipped); the loop continues and reschedules. Lock error → transient. | Reschedule publish fails → transient → message unacked → loop recovered by redelivery. | Not used — unaffected. | No destination queues — unaffected. |
-| **Watch / Unwatch** | DB error → transient → command retried until the watcher registers. | Reconnect; the command stays pending. | Not used. | N/A (writes to Postgres, not to queues). |
+| **Watch / Unwatch** | DB error → transient → command retried. Atomic WATCH rolls back all additions before retry; invalid members reject the entire command without writes. | Reconnect; the command stays pending. | Not used. | N/A (writes to Postgres, not to queues). |
 
 ## Missing consumer queue — blast radius on other consumers
 
