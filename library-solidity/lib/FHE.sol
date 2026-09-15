@@ -95,10 +95,32 @@ library FHE {
     }
 
     /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(ebool value) private returns (ebool) {
+        if (!isInitialized(value)) {
+            return asEbool(false);
+        }
+        Impl.checkHandleType(ebool.unwrap(value), FheType.Bool);
+        return value;
+    }
+
+    /**
      * @dev Returns true if the encrypted integer is initialized and false otherwise.
      */
     function isInitialized(euint8 v) internal pure returns (bool) {
         return euint8.unwrap(v) != 0;
+    }
+
+    /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint8 value) private returns (euint8) {
+        if (!isInitialized(value)) {
+            return asEuint8(0);
+        }
+        Impl.checkHandleType(euint8.unwrap(value), FheType.Uint8);
+        return value;
     }
 
     /**
@@ -109,10 +131,32 @@ library FHE {
     }
 
     /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint16 value) private returns (euint16) {
+        if (!isInitialized(value)) {
+            return asEuint16(0);
+        }
+        Impl.checkHandleType(euint16.unwrap(value), FheType.Uint16);
+        return value;
+    }
+
+    /**
      * @dev Returns true if the encrypted integer is initialized and false otherwise.
      */
     function isInitialized(euint32 v) internal pure returns (bool) {
         return euint32.unwrap(v) != 0;
+    }
+
+    /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint32 value) private returns (euint32) {
+        if (!isInitialized(value)) {
+            return asEuint32(0);
+        }
+        Impl.checkHandleType(euint32.unwrap(value), FheType.Uint32);
+        return value;
     }
 
     /**
@@ -123,10 +167,32 @@ library FHE {
     }
 
     /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint64 value) private returns (euint64) {
+        if (!isInitialized(value)) {
+            return asEuint64(0);
+        }
+        Impl.checkHandleType(euint64.unwrap(value), FheType.Uint64);
+        return value;
+    }
+
+    /**
      * @dev Returns true if the encrypted integer is initialized and false otherwise.
      */
     function isInitialized(euint128 v) internal pure returns (bool) {
         return euint128.unwrap(v) != 0;
+    }
+
+    /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint128 value) private returns (euint128) {
+        if (!isInitialized(value)) {
+            return asEuint128(0);
+        }
+        Impl.checkHandleType(euint128.unwrap(value), FheType.Uint128);
+        return value;
     }
 
     /**
@@ -137,6 +203,17 @@ library FHE {
     }
 
     /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(eaddress value) private returns (eaddress) {
+        if (!isInitialized(value)) {
+            return asEaddress(address(0));
+        }
+        Impl.checkHandleType(eaddress.unwrap(value), FheType.Uint160);
+        return value;
+    }
+
+    /**
      * @dev Returns true if the encrypted integer is initialized and false otherwise.
      */
     function isInitialized(euint256 v) internal pure returns (bool) {
@@ -144,12 +221,21 @@ library FHE {
     }
 
     /**
+     * @dev Returns the value after validating its FHE type, or a correctly typed encrypted zero if uninitialized.
+     */
+    function _getValidatedFheValue(euint256 value) private returns (euint256) {
+        if (!isInitialized(value)) {
+            return asEuint256(0);
+        }
+        Impl.checkHandleType(euint256.unwrap(value), FheType.Uint256);
+        return value;
+    }
+
+    /**
      * @dev Evaluates and(ebool a, ebool b) and returns the result.
      */
     function and(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -160,9 +246,7 @@ library FHE {
      * @dev Evaluates or(ebool a, ebool b) and returns the result.
      */
     function or(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -173,9 +257,7 @@ library FHE {
      * @dev Evaluates xor(ebool a, ebool b) and returns the result.
      */
     function xor(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -186,9 +268,7 @@ library FHE {
      * @dev Evaluates eq(ebool a, ebool b) and returns the result.
      */
     function eq(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -199,9 +279,7 @@ library FHE {
      * @dev Evaluates ne(ebool a, ebool b) and returns the result.
      */
     function ne(ebool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -212,9 +290,7 @@ library FHE {
      * @dev Evaluates add(euint8 a, euint8 b)  and returns the result.
      */
     function add(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -225,9 +301,7 @@ library FHE {
      * @dev Evaluates sub(euint8 a, euint8 b)  and returns the result.
      */
     function sub(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -238,9 +312,7 @@ library FHE {
      * @dev Evaluates mul(euint8 a, euint8 b)  and returns the result.
      */
     function mul(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -251,9 +323,7 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint8 b)  and returns the result.
      */
     function and(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -264,9 +334,7 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint8 b)  and returns the result.
      */
     function or(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -277,9 +345,7 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint8 b)  and returns the result.
      */
     function xor(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -290,9 +356,7 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint8 b)  and returns the result.
      */
     function eq(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -303,9 +367,7 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint8 b)  and returns the result.
      */
     function ne(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -316,9 +378,7 @@ library FHE {
      * @dev Evaluates ge(euint8 a, euint8 b)  and returns the result.
      */
     function ge(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -329,9 +389,7 @@ library FHE {
      * @dev Evaluates gt(euint8 a, euint8 b)  and returns the result.
      */
     function gt(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -342,9 +400,7 @@ library FHE {
      * @dev Evaluates le(euint8 a, euint8 b)  and returns the result.
      */
     function le(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -355,9 +411,7 @@ library FHE {
      * @dev Evaluates lt(euint8 a, euint8 b)  and returns the result.
      */
     function lt(euint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -368,9 +422,7 @@ library FHE {
      * @dev Evaluates min(euint8 a, euint8 b)  and returns the result.
      */
     function min(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -381,9 +433,7 @@ library FHE {
      * @dev Evaluates max(euint8 a, euint8 b)  and returns the result.
      */
     function max(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -394,9 +444,6 @@ library FHE {
      * @dev Evaluates add(euint8 a, euint16 b)  and returns the result.
      */
     function add(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -407,9 +454,6 @@ library FHE {
      * @dev Evaluates sub(euint8 a, euint16 b)  and returns the result.
      */
     function sub(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -420,9 +464,6 @@ library FHE {
      * @dev Evaluates mul(euint8 a, euint16 b)  and returns the result.
      */
     function mul(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -433,9 +474,6 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint16 b)  and returns the result.
      */
     function and(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -446,9 +484,6 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint16 b)  and returns the result.
      */
     function or(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -459,9 +494,6 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint16 b)  and returns the result.
      */
     function xor(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -472,9 +504,6 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint16 b)  and returns the result.
      */
     function eq(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -485,9 +514,6 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint16 b)  and returns the result.
      */
     function ne(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -498,9 +524,6 @@ library FHE {
      * @dev Evaluates ge(euint8 a, euint16 b)  and returns the result.
      */
     function ge(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -511,9 +534,6 @@ library FHE {
      * @dev Evaluates gt(euint8 a, euint16 b)  and returns the result.
      */
     function gt(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -524,9 +544,6 @@ library FHE {
      * @dev Evaluates le(euint8 a, euint16 b)  and returns the result.
      */
     function le(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -537,9 +554,6 @@ library FHE {
      * @dev Evaluates lt(euint8 a, euint16 b)  and returns the result.
      */
     function lt(euint8 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -550,9 +564,6 @@ library FHE {
      * @dev Evaluates min(euint8 a, euint16 b)  and returns the result.
      */
     function min(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -563,9 +574,6 @@ library FHE {
      * @dev Evaluates max(euint8 a, euint16 b)  and returns the result.
      */
     function max(euint8 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -576,9 +584,6 @@ library FHE {
      * @dev Evaluates add(euint8 a, euint32 b)  and returns the result.
      */
     function add(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -589,9 +594,6 @@ library FHE {
      * @dev Evaluates sub(euint8 a, euint32 b)  and returns the result.
      */
     function sub(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -602,9 +604,6 @@ library FHE {
      * @dev Evaluates mul(euint8 a, euint32 b)  and returns the result.
      */
     function mul(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -615,9 +614,6 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint32 b)  and returns the result.
      */
     function and(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -628,9 +624,6 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint32 b)  and returns the result.
      */
     function or(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -641,9 +634,6 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint32 b)  and returns the result.
      */
     function xor(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -654,9 +644,6 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint32 b)  and returns the result.
      */
     function eq(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -667,9 +654,6 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint32 b)  and returns the result.
      */
     function ne(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -680,9 +664,6 @@ library FHE {
      * @dev Evaluates ge(euint8 a, euint32 b)  and returns the result.
      */
     function ge(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -693,9 +674,6 @@ library FHE {
      * @dev Evaluates gt(euint8 a, euint32 b)  and returns the result.
      */
     function gt(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -706,9 +684,6 @@ library FHE {
      * @dev Evaluates le(euint8 a, euint32 b)  and returns the result.
      */
     function le(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -719,9 +694,6 @@ library FHE {
      * @dev Evaluates lt(euint8 a, euint32 b)  and returns the result.
      */
     function lt(euint8 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -732,9 +704,6 @@ library FHE {
      * @dev Evaluates min(euint8 a, euint32 b)  and returns the result.
      */
     function min(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -745,9 +714,6 @@ library FHE {
      * @dev Evaluates max(euint8 a, euint32 b)  and returns the result.
      */
     function max(euint8 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -758,9 +724,6 @@ library FHE {
      * @dev Evaluates add(euint8 a, euint64 b)  and returns the result.
      */
     function add(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -771,9 +734,6 @@ library FHE {
      * @dev Evaluates sub(euint8 a, euint64 b)  and returns the result.
      */
     function sub(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -784,9 +744,6 @@ library FHE {
      * @dev Evaluates mul(euint8 a, euint64 b)  and returns the result.
      */
     function mul(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -797,9 +754,6 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint64 b)  and returns the result.
      */
     function and(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -810,9 +764,6 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint64 b)  and returns the result.
      */
     function or(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -823,9 +774,6 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint64 b)  and returns the result.
      */
     function xor(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -836,9 +784,6 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint64 b)  and returns the result.
      */
     function eq(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -849,9 +794,6 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint64 b)  and returns the result.
      */
     function ne(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -862,9 +804,6 @@ library FHE {
      * @dev Evaluates ge(euint8 a, euint64 b)  and returns the result.
      */
     function ge(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -875,9 +814,6 @@ library FHE {
      * @dev Evaluates gt(euint8 a, euint64 b)  and returns the result.
      */
     function gt(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -888,9 +824,6 @@ library FHE {
      * @dev Evaluates le(euint8 a, euint64 b)  and returns the result.
      */
     function le(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -901,9 +834,6 @@ library FHE {
      * @dev Evaluates lt(euint8 a, euint64 b)  and returns the result.
      */
     function lt(euint8 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -914,9 +844,6 @@ library FHE {
      * @dev Evaluates min(euint8 a, euint64 b)  and returns the result.
      */
     function min(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -927,9 +854,6 @@ library FHE {
      * @dev Evaluates max(euint8 a, euint64 b)  and returns the result.
      */
     function max(euint8 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -940,9 +864,6 @@ library FHE {
      * @dev Evaluates add(euint8 a, euint128 b)  and returns the result.
      */
     function add(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -953,9 +874,6 @@ library FHE {
      * @dev Evaluates sub(euint8 a, euint128 b)  and returns the result.
      */
     function sub(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -966,9 +884,6 @@ library FHE {
      * @dev Evaluates mul(euint8 a, euint128 b)  and returns the result.
      */
     function mul(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -979,9 +894,6 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint128 b)  and returns the result.
      */
     function and(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -992,9 +904,6 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint128 b)  and returns the result.
      */
     function or(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1005,9 +914,6 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint128 b)  and returns the result.
      */
     function xor(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1018,9 +924,6 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint128 b)  and returns the result.
      */
     function eq(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1031,9 +934,6 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint128 b)  and returns the result.
      */
     function ne(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1044,9 +944,6 @@ library FHE {
      * @dev Evaluates ge(euint8 a, euint128 b)  and returns the result.
      */
     function ge(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1057,9 +954,6 @@ library FHE {
      * @dev Evaluates gt(euint8 a, euint128 b)  and returns the result.
      */
     function gt(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1070,9 +964,6 @@ library FHE {
      * @dev Evaluates le(euint8 a, euint128 b)  and returns the result.
      */
     function le(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1083,9 +974,6 @@ library FHE {
      * @dev Evaluates lt(euint8 a, euint128 b)  and returns the result.
      */
     function lt(euint8 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1096,9 +984,6 @@ library FHE {
      * @dev Evaluates min(euint8 a, euint128 b)  and returns the result.
      */
     function min(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1109,9 +994,6 @@ library FHE {
      * @dev Evaluates max(euint8 a, euint128 b)  and returns the result.
      */
     function max(euint8 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1122,9 +1004,6 @@ library FHE {
      * @dev Evaluates and(euint8 a, euint256 b)  and returns the result.
      */
     function and(euint8 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -1135,9 +1014,6 @@ library FHE {
      * @dev Evaluates or(euint8 a, euint256 b)  and returns the result.
      */
     function or(euint8 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -1148,9 +1024,6 @@ library FHE {
      * @dev Evaluates xor(euint8 a, euint256 b)  and returns the result.
      */
     function xor(euint8 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -1161,9 +1034,6 @@ library FHE {
      * @dev Evaluates eq(euint8 a, euint256 b)  and returns the result.
      */
     function eq(euint8 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -1174,9 +1044,6 @@ library FHE {
      * @dev Evaluates ne(euint8 a, euint256 b)  and returns the result.
      */
     function ne(euint8 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -1190,9 +1057,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.add(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1203,9 +1068,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.sub(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1216,9 +1079,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.mul(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1229,9 +1090,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.and(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1242,9 +1101,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.or(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1255,9 +1112,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.xor(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1268,9 +1123,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.eq(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1281,9 +1134,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ne(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1294,9 +1145,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ge(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1307,9 +1156,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.gt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1320,9 +1167,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.le(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1333,9 +1178,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.lt(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1346,9 +1189,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.min(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1359,9 +1200,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.max(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -1369,9 +1208,7 @@ library FHE {
      * @dev Evaluates add(euint16 a, euint16 b)  and returns the result.
      */
     function add(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1382,9 +1219,7 @@ library FHE {
      * @dev Evaluates sub(euint16 a, euint16 b)  and returns the result.
      */
     function sub(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1395,9 +1230,7 @@ library FHE {
      * @dev Evaluates mul(euint16 a, euint16 b)  and returns the result.
      */
     function mul(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1408,9 +1241,7 @@ library FHE {
      * @dev Evaluates and(euint16 a, euint16 b)  and returns the result.
      */
     function and(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1421,9 +1252,7 @@ library FHE {
      * @dev Evaluates or(euint16 a, euint16 b)  and returns the result.
      */
     function or(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1434,9 +1263,7 @@ library FHE {
      * @dev Evaluates xor(euint16 a, euint16 b)  and returns the result.
      */
     function xor(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1447,9 +1274,7 @@ library FHE {
      * @dev Evaluates eq(euint16 a, euint16 b)  and returns the result.
      */
     function eq(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1460,9 +1285,7 @@ library FHE {
      * @dev Evaluates ne(euint16 a, euint16 b)  and returns the result.
      */
     function ne(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1473,9 +1296,7 @@ library FHE {
      * @dev Evaluates ge(euint16 a, euint16 b)  and returns the result.
      */
     function ge(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1486,9 +1307,7 @@ library FHE {
      * @dev Evaluates gt(euint16 a, euint16 b)  and returns the result.
      */
     function gt(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1499,9 +1318,7 @@ library FHE {
      * @dev Evaluates le(euint16 a, euint16 b)  and returns the result.
      */
     function le(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1512,9 +1329,7 @@ library FHE {
      * @dev Evaluates lt(euint16 a, euint16 b)  and returns the result.
      */
     function lt(euint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1525,9 +1340,7 @@ library FHE {
      * @dev Evaluates min(euint16 a, euint16 b)  and returns the result.
      */
     function min(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1538,9 +1351,7 @@ library FHE {
      * @dev Evaluates max(euint16 a, euint16 b)  and returns the result.
      */
     function max(euint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -1551,9 +1362,6 @@ library FHE {
      * @dev Evaluates add(euint16 a, euint32 b)  and returns the result.
      */
     function add(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1564,9 +1372,6 @@ library FHE {
      * @dev Evaluates sub(euint16 a, euint32 b)  and returns the result.
      */
     function sub(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1577,9 +1382,6 @@ library FHE {
      * @dev Evaluates mul(euint16 a, euint32 b)  and returns the result.
      */
     function mul(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1590,9 +1392,6 @@ library FHE {
      * @dev Evaluates and(euint16 a, euint32 b)  and returns the result.
      */
     function and(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1603,9 +1402,6 @@ library FHE {
      * @dev Evaluates or(euint16 a, euint32 b)  and returns the result.
      */
     function or(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1616,9 +1412,6 @@ library FHE {
      * @dev Evaluates xor(euint16 a, euint32 b)  and returns the result.
      */
     function xor(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1629,9 +1422,6 @@ library FHE {
      * @dev Evaluates eq(euint16 a, euint32 b)  and returns the result.
      */
     function eq(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1642,9 +1432,6 @@ library FHE {
      * @dev Evaluates ne(euint16 a, euint32 b)  and returns the result.
      */
     function ne(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1655,9 +1442,6 @@ library FHE {
      * @dev Evaluates ge(euint16 a, euint32 b)  and returns the result.
      */
     function ge(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1668,9 +1452,6 @@ library FHE {
      * @dev Evaluates gt(euint16 a, euint32 b)  and returns the result.
      */
     function gt(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1681,9 +1462,6 @@ library FHE {
      * @dev Evaluates le(euint16 a, euint32 b)  and returns the result.
      */
     function le(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1694,9 +1472,6 @@ library FHE {
      * @dev Evaluates lt(euint16 a, euint32 b)  and returns the result.
      */
     function lt(euint16 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1707,9 +1482,6 @@ library FHE {
      * @dev Evaluates min(euint16 a, euint32 b)  and returns the result.
      */
     function min(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1720,9 +1492,6 @@ library FHE {
      * @dev Evaluates max(euint16 a, euint32 b)  and returns the result.
      */
     function max(euint16 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -1733,9 +1502,6 @@ library FHE {
      * @dev Evaluates add(euint16 a, euint64 b)  and returns the result.
      */
     function add(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1746,9 +1512,6 @@ library FHE {
      * @dev Evaluates sub(euint16 a, euint64 b)  and returns the result.
      */
     function sub(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1759,9 +1522,6 @@ library FHE {
      * @dev Evaluates mul(euint16 a, euint64 b)  and returns the result.
      */
     function mul(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1772,9 +1532,6 @@ library FHE {
      * @dev Evaluates and(euint16 a, euint64 b)  and returns the result.
      */
     function and(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1785,9 +1542,6 @@ library FHE {
      * @dev Evaluates or(euint16 a, euint64 b)  and returns the result.
      */
     function or(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1798,9 +1552,6 @@ library FHE {
      * @dev Evaluates xor(euint16 a, euint64 b)  and returns the result.
      */
     function xor(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1811,9 +1562,6 @@ library FHE {
      * @dev Evaluates eq(euint16 a, euint64 b)  and returns the result.
      */
     function eq(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1824,9 +1572,6 @@ library FHE {
      * @dev Evaluates ne(euint16 a, euint64 b)  and returns the result.
      */
     function ne(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1837,9 +1582,6 @@ library FHE {
      * @dev Evaluates ge(euint16 a, euint64 b)  and returns the result.
      */
     function ge(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1850,9 +1592,6 @@ library FHE {
      * @dev Evaluates gt(euint16 a, euint64 b)  and returns the result.
      */
     function gt(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1863,9 +1602,6 @@ library FHE {
      * @dev Evaluates le(euint16 a, euint64 b)  and returns the result.
      */
     function le(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1876,9 +1612,6 @@ library FHE {
      * @dev Evaluates lt(euint16 a, euint64 b)  and returns the result.
      */
     function lt(euint16 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1889,9 +1622,6 @@ library FHE {
      * @dev Evaluates min(euint16 a, euint64 b)  and returns the result.
      */
     function min(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1902,9 +1632,6 @@ library FHE {
      * @dev Evaluates max(euint16 a, euint64 b)  and returns the result.
      */
     function max(euint16 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -1915,9 +1642,6 @@ library FHE {
      * @dev Evaluates add(euint16 a, euint128 b)  and returns the result.
      */
     function add(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1928,9 +1652,6 @@ library FHE {
      * @dev Evaluates sub(euint16 a, euint128 b)  and returns the result.
      */
     function sub(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1941,9 +1662,6 @@ library FHE {
      * @dev Evaluates mul(euint16 a, euint128 b)  and returns the result.
      */
     function mul(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1954,9 +1672,6 @@ library FHE {
      * @dev Evaluates and(euint16 a, euint128 b)  and returns the result.
      */
     function and(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1967,9 +1682,6 @@ library FHE {
      * @dev Evaluates or(euint16 a, euint128 b)  and returns the result.
      */
     function or(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1980,9 +1692,6 @@ library FHE {
      * @dev Evaluates xor(euint16 a, euint128 b)  and returns the result.
      */
     function xor(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -1993,9 +1702,6 @@ library FHE {
      * @dev Evaluates eq(euint16 a, euint128 b)  and returns the result.
      */
     function eq(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2006,9 +1712,6 @@ library FHE {
      * @dev Evaluates ne(euint16 a, euint128 b)  and returns the result.
      */
     function ne(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2019,9 +1722,6 @@ library FHE {
      * @dev Evaluates ge(euint16 a, euint128 b)  and returns the result.
      */
     function ge(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2032,9 +1732,6 @@ library FHE {
      * @dev Evaluates gt(euint16 a, euint128 b)  and returns the result.
      */
     function gt(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2045,9 +1742,6 @@ library FHE {
      * @dev Evaluates le(euint16 a, euint128 b)  and returns the result.
      */
     function le(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2058,9 +1752,6 @@ library FHE {
      * @dev Evaluates lt(euint16 a, euint128 b)  and returns the result.
      */
     function lt(euint16 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2071,9 +1762,6 @@ library FHE {
      * @dev Evaluates min(euint16 a, euint128 b)  and returns the result.
      */
     function min(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2084,9 +1772,6 @@ library FHE {
      * @dev Evaluates max(euint16 a, euint128 b)  and returns the result.
      */
     function max(euint16 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2097,9 +1782,6 @@ library FHE {
      * @dev Evaluates and(euint16 a, euint256 b)  and returns the result.
      */
     function and(euint16 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -2110,9 +1792,6 @@ library FHE {
      * @dev Evaluates or(euint16 a, euint256 b)  and returns the result.
      */
     function or(euint16 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -2123,9 +1802,6 @@ library FHE {
      * @dev Evaluates xor(euint16 a, euint256 b)  and returns the result.
      */
     function xor(euint16 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -2136,9 +1812,6 @@ library FHE {
      * @dev Evaluates eq(euint16 a, euint256 b)  and returns the result.
      */
     function eq(euint16 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -2149,9 +1822,6 @@ library FHE {
      * @dev Evaluates ne(euint16 a, euint256 b)  and returns the result.
      */
     function ne(euint16 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -2165,9 +1835,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2178,9 +1846,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2191,9 +1857,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2204,9 +1868,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2217,9 +1879,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2230,9 +1890,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2243,9 +1901,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2256,9 +1912,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2269,9 +1923,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2282,9 +1934,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2295,9 +1945,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2308,9 +1956,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2321,9 +1967,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2334,9 +1978,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2347,9 +1989,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.add(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2360,9 +2000,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.sub(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2373,9 +2011,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.mul(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2386,9 +2022,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.and(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2399,9 +2033,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.or(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2412,9 +2044,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.xor(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2425,9 +2055,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.eq(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2438,9 +2066,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ne(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2451,9 +2077,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ge(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2464,9 +2088,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.gt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2477,9 +2099,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.le(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2490,9 +2110,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.lt(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2503,9 +2121,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.min(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2516,9 +2132,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint32.wrap(Impl.max(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -2526,9 +2140,7 @@ library FHE {
      * @dev Evaluates add(euint32 a, euint32 b)  and returns the result.
      */
     function add(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2539,9 +2151,7 @@ library FHE {
      * @dev Evaluates sub(euint32 a, euint32 b)  and returns the result.
      */
     function sub(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2552,9 +2162,7 @@ library FHE {
      * @dev Evaluates mul(euint32 a, euint32 b)  and returns the result.
      */
     function mul(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2565,9 +2173,7 @@ library FHE {
      * @dev Evaluates and(euint32 a, euint32 b)  and returns the result.
      */
     function and(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2578,9 +2184,7 @@ library FHE {
      * @dev Evaluates or(euint32 a, euint32 b)  and returns the result.
      */
     function or(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2591,9 +2195,7 @@ library FHE {
      * @dev Evaluates xor(euint32 a, euint32 b)  and returns the result.
      */
     function xor(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2604,9 +2206,7 @@ library FHE {
      * @dev Evaluates eq(euint32 a, euint32 b)  and returns the result.
      */
     function eq(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2617,9 +2217,7 @@ library FHE {
      * @dev Evaluates ne(euint32 a, euint32 b)  and returns the result.
      */
     function ne(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2630,9 +2228,7 @@ library FHE {
      * @dev Evaluates ge(euint32 a, euint32 b)  and returns the result.
      */
     function ge(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2643,9 +2239,7 @@ library FHE {
      * @dev Evaluates gt(euint32 a, euint32 b)  and returns the result.
      */
     function gt(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2656,9 +2250,7 @@ library FHE {
      * @dev Evaluates le(euint32 a, euint32 b)  and returns the result.
      */
     function le(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2669,9 +2261,7 @@ library FHE {
      * @dev Evaluates lt(euint32 a, euint32 b)  and returns the result.
      */
     function lt(euint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2682,9 +2272,7 @@ library FHE {
      * @dev Evaluates min(euint32 a, euint32 b)  and returns the result.
      */
     function min(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2695,9 +2283,7 @@ library FHE {
      * @dev Evaluates max(euint32 a, euint32 b)  and returns the result.
      */
     function max(euint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -2708,9 +2294,6 @@ library FHE {
      * @dev Evaluates add(euint32 a, euint64 b)  and returns the result.
      */
     function add(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2721,9 +2304,6 @@ library FHE {
      * @dev Evaluates sub(euint32 a, euint64 b)  and returns the result.
      */
     function sub(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2734,9 +2314,6 @@ library FHE {
      * @dev Evaluates mul(euint32 a, euint64 b)  and returns the result.
      */
     function mul(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2747,9 +2324,6 @@ library FHE {
      * @dev Evaluates and(euint32 a, euint64 b)  and returns the result.
      */
     function and(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2760,9 +2334,6 @@ library FHE {
      * @dev Evaluates or(euint32 a, euint64 b)  and returns the result.
      */
     function or(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2773,9 +2344,6 @@ library FHE {
      * @dev Evaluates xor(euint32 a, euint64 b)  and returns the result.
      */
     function xor(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2786,9 +2354,6 @@ library FHE {
      * @dev Evaluates eq(euint32 a, euint64 b)  and returns the result.
      */
     function eq(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2799,9 +2364,6 @@ library FHE {
      * @dev Evaluates ne(euint32 a, euint64 b)  and returns the result.
      */
     function ne(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2812,9 +2374,6 @@ library FHE {
      * @dev Evaluates ge(euint32 a, euint64 b)  and returns the result.
      */
     function ge(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2825,9 +2384,6 @@ library FHE {
      * @dev Evaluates gt(euint32 a, euint64 b)  and returns the result.
      */
     function gt(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2838,9 +2394,6 @@ library FHE {
      * @dev Evaluates le(euint32 a, euint64 b)  and returns the result.
      */
     function le(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2851,9 +2404,6 @@ library FHE {
      * @dev Evaluates lt(euint32 a, euint64 b)  and returns the result.
      */
     function lt(euint32 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2864,9 +2414,6 @@ library FHE {
      * @dev Evaluates min(euint32 a, euint64 b)  and returns the result.
      */
     function min(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2877,9 +2424,6 @@ library FHE {
      * @dev Evaluates max(euint32 a, euint64 b)  and returns the result.
      */
     function max(euint32 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -2890,9 +2434,6 @@ library FHE {
      * @dev Evaluates add(euint32 a, euint128 b)  and returns the result.
      */
     function add(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2903,9 +2444,6 @@ library FHE {
      * @dev Evaluates sub(euint32 a, euint128 b)  and returns the result.
      */
     function sub(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2916,9 +2454,6 @@ library FHE {
      * @dev Evaluates mul(euint32 a, euint128 b)  and returns the result.
      */
     function mul(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2929,9 +2464,6 @@ library FHE {
      * @dev Evaluates and(euint32 a, euint128 b)  and returns the result.
      */
     function and(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2942,9 +2474,6 @@ library FHE {
      * @dev Evaluates or(euint32 a, euint128 b)  and returns the result.
      */
     function or(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2955,9 +2484,6 @@ library FHE {
      * @dev Evaluates xor(euint32 a, euint128 b)  and returns the result.
      */
     function xor(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2968,9 +2494,6 @@ library FHE {
      * @dev Evaluates eq(euint32 a, euint128 b)  and returns the result.
      */
     function eq(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2981,9 +2504,6 @@ library FHE {
      * @dev Evaluates ne(euint32 a, euint128 b)  and returns the result.
      */
     function ne(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -2994,9 +2514,6 @@ library FHE {
      * @dev Evaluates ge(euint32 a, euint128 b)  and returns the result.
      */
     function ge(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3007,9 +2524,6 @@ library FHE {
      * @dev Evaluates gt(euint32 a, euint128 b)  and returns the result.
      */
     function gt(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3020,9 +2534,6 @@ library FHE {
      * @dev Evaluates le(euint32 a, euint128 b)  and returns the result.
      */
     function le(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3033,9 +2544,6 @@ library FHE {
      * @dev Evaluates lt(euint32 a, euint128 b)  and returns the result.
      */
     function lt(euint32 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3046,9 +2554,6 @@ library FHE {
      * @dev Evaluates min(euint32 a, euint128 b)  and returns the result.
      */
     function min(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3059,9 +2564,6 @@ library FHE {
      * @dev Evaluates max(euint32 a, euint128 b)  and returns the result.
      */
     function max(euint32 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3072,9 +2574,6 @@ library FHE {
      * @dev Evaluates and(euint32 a, euint256 b)  and returns the result.
      */
     function and(euint32 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -3085,9 +2584,6 @@ library FHE {
      * @dev Evaluates or(euint32 a, euint256 b)  and returns the result.
      */
     function or(euint32 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -3098,9 +2594,6 @@ library FHE {
      * @dev Evaluates xor(euint32 a, euint256 b)  and returns the result.
      */
     function xor(euint32 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -3111,9 +2604,6 @@ library FHE {
      * @dev Evaluates eq(euint32 a, euint256 b)  and returns the result.
      */
     function eq(euint32 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -3124,9 +2614,6 @@ library FHE {
      * @dev Evaluates ne(euint32 a, euint256 b)  and returns the result.
      */
     function ne(euint32 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -3140,9 +2627,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.add(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3153,9 +2638,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.sub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3166,9 +2649,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.mul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3179,9 +2660,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.and(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3192,9 +2671,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.or(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3205,9 +2682,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.xor(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3218,9 +2693,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.eq(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3231,9 +2704,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ne(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3244,9 +2715,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ge(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3257,9 +2726,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.gt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3270,9 +2737,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.le(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3283,9 +2748,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.lt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3296,9 +2759,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.min(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3309,9 +2770,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.max(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3322,9 +2781,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.add(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3335,9 +2792,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.sub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3348,9 +2803,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.mul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3361,9 +2814,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.and(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3374,9 +2825,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.or(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3387,9 +2836,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.xor(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3400,9 +2847,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.eq(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3413,9 +2858,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ne(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3426,9 +2869,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ge(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3439,9 +2880,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.gt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3452,9 +2891,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.le(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3465,9 +2902,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.lt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3478,9 +2913,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.min(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3491,9 +2924,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint64.wrap(Impl.max(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3504,9 +2935,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.add(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3517,9 +2946,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.sub(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3530,9 +2957,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.mul(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3543,9 +2968,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.and(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3556,9 +2979,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.or(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3569,9 +2990,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.xor(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3582,9 +3001,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.eq(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3595,9 +3012,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.ne(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3608,9 +3023,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.ge(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3621,9 +3034,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.gt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3634,9 +3045,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.le(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3647,9 +3056,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.lt(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3660,9 +3067,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.min(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3673,9 +3078,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint64.wrap(Impl.max(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -3683,9 +3086,7 @@ library FHE {
      * @dev Evaluates add(euint64 a, euint64 b)  and returns the result.
      */
     function add(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3696,9 +3097,7 @@ library FHE {
      * @dev Evaluates sub(euint64 a, euint64 b)  and returns the result.
      */
     function sub(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3709,9 +3108,7 @@ library FHE {
      * @dev Evaluates mul(euint64 a, euint64 b)  and returns the result.
      */
     function mul(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3722,9 +3119,7 @@ library FHE {
      * @dev Evaluates and(euint64 a, euint64 b)  and returns the result.
      */
     function and(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3735,9 +3130,7 @@ library FHE {
      * @dev Evaluates or(euint64 a, euint64 b)  and returns the result.
      */
     function or(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3748,9 +3141,7 @@ library FHE {
      * @dev Evaluates xor(euint64 a, euint64 b)  and returns the result.
      */
     function xor(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3761,9 +3152,7 @@ library FHE {
      * @dev Evaluates eq(euint64 a, euint64 b)  and returns the result.
      */
     function eq(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3774,9 +3163,7 @@ library FHE {
      * @dev Evaluates ne(euint64 a, euint64 b)  and returns the result.
      */
     function ne(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3787,9 +3174,7 @@ library FHE {
      * @dev Evaluates ge(euint64 a, euint64 b)  and returns the result.
      */
     function ge(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3800,9 +3185,7 @@ library FHE {
      * @dev Evaluates gt(euint64 a, euint64 b)  and returns the result.
      */
     function gt(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3813,9 +3196,7 @@ library FHE {
      * @dev Evaluates le(euint64 a, euint64 b)  and returns the result.
      */
     function le(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3826,9 +3207,7 @@ library FHE {
      * @dev Evaluates lt(euint64 a, euint64 b)  and returns the result.
      */
     function lt(euint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3839,9 +3218,7 @@ library FHE {
      * @dev Evaluates min(euint64 a, euint64 b)  and returns the result.
      */
     function min(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3852,9 +3229,7 @@ library FHE {
      * @dev Evaluates max(euint64 a, euint64 b)  and returns the result.
      */
     function max(euint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -3865,9 +3240,6 @@ library FHE {
      * @dev Evaluates add(euint64 a, euint128 b)  and returns the result.
      */
     function add(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3878,9 +3250,6 @@ library FHE {
      * @dev Evaluates sub(euint64 a, euint128 b)  and returns the result.
      */
     function sub(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3891,9 +3260,6 @@ library FHE {
      * @dev Evaluates mul(euint64 a, euint128 b)  and returns the result.
      */
     function mul(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3904,9 +3270,6 @@ library FHE {
      * @dev Evaluates and(euint64 a, euint128 b)  and returns the result.
      */
     function and(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3917,9 +3280,6 @@ library FHE {
      * @dev Evaluates or(euint64 a, euint128 b)  and returns the result.
      */
     function or(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3930,9 +3290,6 @@ library FHE {
      * @dev Evaluates xor(euint64 a, euint128 b)  and returns the result.
      */
     function xor(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3943,9 +3300,6 @@ library FHE {
      * @dev Evaluates eq(euint64 a, euint128 b)  and returns the result.
      */
     function eq(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3956,9 +3310,6 @@ library FHE {
      * @dev Evaluates ne(euint64 a, euint128 b)  and returns the result.
      */
     function ne(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3969,9 +3320,6 @@ library FHE {
      * @dev Evaluates ge(euint64 a, euint128 b)  and returns the result.
      */
     function ge(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3982,9 +3330,6 @@ library FHE {
      * @dev Evaluates gt(euint64 a, euint128 b)  and returns the result.
      */
     function gt(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -3995,9 +3340,6 @@ library FHE {
      * @dev Evaluates le(euint64 a, euint128 b)  and returns the result.
      */
     function le(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4008,9 +3350,6 @@ library FHE {
      * @dev Evaluates lt(euint64 a, euint128 b)  and returns the result.
      */
     function lt(euint64 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4021,9 +3360,6 @@ library FHE {
      * @dev Evaluates min(euint64 a, euint128 b)  and returns the result.
      */
     function min(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4034,9 +3370,6 @@ library FHE {
      * @dev Evaluates max(euint64 a, euint128 b)  and returns the result.
      */
     function max(euint64 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4047,9 +3380,6 @@ library FHE {
      * @dev Evaluates and(euint64 a, euint256 b)  and returns the result.
      */
     function and(euint64 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -4060,9 +3390,6 @@ library FHE {
      * @dev Evaluates or(euint64 a, euint256 b)  and returns the result.
      */
     function or(euint64 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -4073,9 +3400,6 @@ library FHE {
      * @dev Evaluates xor(euint64 a, euint256 b)  and returns the result.
      */
     function xor(euint64 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -4086,9 +3410,6 @@ library FHE {
      * @dev Evaluates eq(euint64 a, euint256 b)  and returns the result.
      */
     function eq(euint64 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -4099,9 +3420,6 @@ library FHE {
      * @dev Evaluates ne(euint64 a, euint256 b)  and returns the result.
      */
     function ne(euint64 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -4115,9 +3433,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.add(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4128,9 +3444,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.sub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4141,9 +3455,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4154,9 +3466,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.and(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4167,9 +3477,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.or(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4180,9 +3488,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.xor(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4193,9 +3499,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.eq(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4206,9 +3510,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ne(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4219,9 +3521,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ge(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4232,9 +3532,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.gt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4245,9 +3543,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.le(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4258,9 +3554,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.lt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4271,9 +3565,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.min(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4284,9 +3576,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.max(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4297,9 +3587,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.add(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4310,9 +3598,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.sub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4323,9 +3609,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4336,9 +3620,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.and(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4349,9 +3631,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.or(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4362,9 +3642,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.xor(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4375,9 +3653,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.eq(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4388,9 +3664,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ne(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4401,9 +3675,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ge(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4414,9 +3686,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.gt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4427,9 +3697,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.le(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4440,9 +3708,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.lt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4453,9 +3719,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.min(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4466,9 +3730,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint128.wrap(Impl.max(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4479,9 +3741,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.add(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4492,9 +3752,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.sub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4505,9 +3763,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4518,9 +3774,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.and(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4531,9 +3785,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.or(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4544,9 +3796,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.xor(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4557,9 +3807,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.eq(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4570,9 +3818,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.ne(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4583,9 +3829,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.ge(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4596,9 +3840,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.gt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4609,9 +3851,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.le(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4622,9 +3862,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.lt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4635,9 +3873,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.min(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4648,9 +3884,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint128.wrap(Impl.max(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4661,9 +3895,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.add(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4674,9 +3906,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.sub(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4687,9 +3917,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.mul(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4700,9 +3928,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.and(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4713,9 +3939,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.or(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4726,9 +3950,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.xor(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4739,9 +3961,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.eq(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4752,9 +3972,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.ne(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4765,9 +3983,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.ge(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4778,9 +3994,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.gt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4791,9 +4005,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.le(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4804,9 +4016,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.lt(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4817,9 +4027,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.min(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4830,9 +4038,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint128.wrap(Impl.max(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -4840,9 +4046,7 @@ library FHE {
      * @dev Evaluates add(euint128 a, euint128 b)  and returns the result.
      */
     function add(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4853,9 +4057,7 @@ library FHE {
      * @dev Evaluates sub(euint128 a, euint128 b)  and returns the result.
      */
     function sub(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4866,9 +4068,7 @@ library FHE {
      * @dev Evaluates mul(euint128 a, euint128 b)  and returns the result.
      */
     function mul(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4879,9 +4079,7 @@ library FHE {
      * @dev Evaluates and(euint128 a, euint128 b)  and returns the result.
      */
     function and(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4892,9 +4090,7 @@ library FHE {
      * @dev Evaluates or(euint128 a, euint128 b)  and returns the result.
      */
     function or(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4905,9 +4101,7 @@ library FHE {
      * @dev Evaluates xor(euint128 a, euint128 b)  and returns the result.
      */
     function xor(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4918,9 +4112,7 @@ library FHE {
      * @dev Evaluates eq(euint128 a, euint128 b)  and returns the result.
      */
     function eq(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4931,9 +4123,7 @@ library FHE {
      * @dev Evaluates ne(euint128 a, euint128 b)  and returns the result.
      */
     function ne(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4944,9 +4134,7 @@ library FHE {
      * @dev Evaluates ge(euint128 a, euint128 b)  and returns the result.
      */
     function ge(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4957,9 +4145,7 @@ library FHE {
      * @dev Evaluates gt(euint128 a, euint128 b)  and returns the result.
      */
     function gt(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4970,9 +4156,7 @@ library FHE {
      * @dev Evaluates le(euint128 a, euint128 b)  and returns the result.
      */
     function le(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4983,9 +4167,7 @@ library FHE {
      * @dev Evaluates lt(euint128 a, euint128 b)  and returns the result.
      */
     function lt(euint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -4996,9 +4178,7 @@ library FHE {
      * @dev Evaluates min(euint128 a, euint128 b)  and returns the result.
      */
     function min(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -5009,9 +4189,7 @@ library FHE {
      * @dev Evaluates max(euint128 a, euint128 b)  and returns the result.
      */
     function max(euint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -5022,9 +4200,6 @@ library FHE {
      * @dev Evaluates and(euint128 a, euint256 b)  and returns the result.
      */
     function and(euint128 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5035,9 +4210,6 @@ library FHE {
      * @dev Evaluates or(euint128 a, euint256 b)  and returns the result.
      */
     function or(euint128 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5048,9 +4220,6 @@ library FHE {
      * @dev Evaluates xor(euint128 a, euint256 b)  and returns the result.
      */
     function xor(euint128 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5061,9 +4230,6 @@ library FHE {
      * @dev Evaluates eq(euint128 a, euint256 b)  and returns the result.
      */
     function eq(euint128 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5074,9 +4240,6 @@ library FHE {
      * @dev Evaluates ne(euint128 a, euint256 b)  and returns the result.
      */
     function ne(euint128 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5087,9 +4250,7 @@ library FHE {
      * @dev Evaluates eq(eaddress a, eaddress b) and returns the result.
      */
     function eq(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEaddress(address(0));
         }
@@ -5100,9 +4261,7 @@ library FHE {
      * @dev Evaluates ne(eaddress a, eaddress b) and returns the result.
      */
     function ne(eaddress a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEaddress(address(0));
         }
@@ -5116,9 +4275,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.and(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5129,9 +4286,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.or(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5142,9 +4297,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.xor(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5155,9 +4308,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.eq(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5168,9 +4319,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return ebool.wrap(Impl.ne(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5181,9 +4330,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint256.wrap(Impl.and(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5194,9 +4341,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint256.wrap(Impl.or(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5207,9 +4352,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return euint256.wrap(Impl.xor(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5220,9 +4363,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.eq(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5233,9 +4374,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+
         return ebool.wrap(Impl.ne(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5246,9 +4385,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint256.wrap(Impl.and(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5259,9 +4396,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint256.wrap(Impl.or(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5272,9 +4407,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return euint256.wrap(Impl.xor(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5285,9 +4418,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.eq(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5298,9 +4429,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+
         return ebool.wrap(Impl.ne(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5311,9 +4440,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint256.wrap(Impl.and(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5324,9 +4451,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint256.wrap(Impl.or(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5337,9 +4462,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return euint256.wrap(Impl.xor(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5350,9 +4473,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.eq(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5363,9 +4484,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+
         return ebool.wrap(Impl.ne(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5376,9 +4495,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+
         return euint256.wrap(Impl.and(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5389,9 +4506,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+
         return euint256.wrap(Impl.or(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5402,9 +4517,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+
         return euint256.wrap(Impl.xor(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5415,9 +4528,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+
         return ebool.wrap(Impl.eq(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5428,9 +4539,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+
         return ebool.wrap(Impl.ne(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -5438,9 +4547,7 @@ library FHE {
      * @dev Evaluates and(euint256 a, euint256 b)  and returns the result.
      */
     function and(euint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5451,9 +4558,7 @@ library FHE {
      * @dev Evaluates or(euint256 a, euint256 b)  and returns the result.
      */
     function or(euint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5464,9 +4569,7 @@ library FHE {
      * @dev Evaluates xor(euint256 a, euint256 b)  and returns the result.
      */
     function xor(euint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5477,9 +4580,7 @@ library FHE {
      * @dev Evaluates eq(euint256 a, euint256 b)  and returns the result.
      */
     function eq(euint256 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5490,9 +4591,7 @@ library FHE {
      * @dev Evaluates ne(euint256 a, euint256 b)  and returns the result.
      */
     function ne(euint256 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -5503,9 +4602,7 @@ library FHE {
      * @dev Evaluates and(ebool a, bool b) and returns the result.
      */
     function and(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.and(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
@@ -5513,9 +4610,7 @@ library FHE {
      * @dev Evaluates and(bool a, ebool b) and returns the result.
      */
     function and(bool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.and(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
@@ -5523,9 +4618,7 @@ library FHE {
      * @dev Evaluates or(ebool a, bool b) and returns the result.
      */
     function or(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.or(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
@@ -5533,9 +4626,7 @@ library FHE {
      * @dev Evaluates or(bool a, ebool b) and returns the result.
      */
     function or(bool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.or(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
@@ -5543,9 +4634,7 @@ library FHE {
      * @dev Evaluates xor(ebool a, bool b) and returns the result.
      */
     function xor(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.xor(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
@@ -5553,9 +4642,7 @@ library FHE {
      * @dev Evaluates xor(bool a, ebool b) and returns the result.
      */
     function xor(bool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.xor(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
@@ -5563,9 +4650,7 @@ library FHE {
      * @dev Evaluates eq(ebool a, bool b) and returns the result.
      */
     function eq(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
@@ -5573,9 +4658,7 @@ library FHE {
      * @dev Evaluates eq(bool a, ebool b) and returns the result.
      */
     function eq(bool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
@@ -5583,9 +4666,7 @@ library FHE {
      * @dev Evaluates ne(ebool a, bool b) and returns the result.
      */
     function ne(ebool a, bool b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(ebool.unwrap(a), bytes32(uint256(b ? 1 : 0)), true));
     }
 
@@ -5593,9 +4674,7 @@ library FHE {
      * @dev Evaluates ne(bool a, ebool b) and returns the result.
      */
     function ne(bool a, ebool b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(ebool.unwrap(b), bytes32(uint256(a ? 1 : 0)), true));
     }
 
@@ -5603,9 +4682,7 @@ library FHE {
      * @dev Evaluates add(euint8 a, uint8 b) and returns the result.
      */
     function add(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.add(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5613,9 +4690,7 @@ library FHE {
      * @dev Evaluates add(uint8 a, euint8 b) and returns the result.
      */
     function add(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.add(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5623,9 +4698,7 @@ library FHE {
      * @dev Evaluates sub(euint8 a, uint8 b) and returns the result.
      */
     function sub(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.sub(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5644,9 +4717,7 @@ library FHE {
      * @dev Evaluates mul(euint8 a, uint8 b) and returns the result.
      */
     function mul(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.mul(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5654,9 +4725,7 @@ library FHE {
      * @dev Evaluates mul(uint8 a, euint8 b) and returns the result.
      */
     function mul(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.mul(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5664,9 +4733,7 @@ library FHE {
      * @dev Evaluates div(euint8 a, uint8 b) and returns the result.
      */
     function div(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.div(euint8.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -5674,9 +4741,7 @@ library FHE {
      * @dev Evaluates rem(euint8 a, uint8 b) and returns the result.
      */
     function rem(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.rem(euint8.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -5684,9 +4749,7 @@ library FHE {
      * @dev Evaluates and(euint8 a, uint8 b) and returns the result.
      */
     function and(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.and(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5694,9 +4757,7 @@ library FHE {
      * @dev Evaluates and(uint8 a, euint8 b) and returns the result.
      */
     function and(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.and(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5704,9 +4765,7 @@ library FHE {
      * @dev Evaluates or(euint8 a, uint8 b) and returns the result.
      */
     function or(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.or(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5714,9 +4773,7 @@ library FHE {
      * @dev Evaluates or(uint8 a, euint8 b) and returns the result.
      */
     function or(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.or(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5724,9 +4781,7 @@ library FHE {
      * @dev Evaluates xor(euint8 a, uint8 b) and returns the result.
      */
     function xor(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.xor(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5734,9 +4789,7 @@ library FHE {
      * @dev Evaluates xor(uint8 a, euint8 b) and returns the result.
      */
     function xor(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.xor(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5744,9 +4797,7 @@ library FHE {
      * @dev Evaluates eq(euint8 a, uint8 b) and returns the result.
      */
     function eq(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5754,9 +4805,7 @@ library FHE {
      * @dev Evaluates eq(uint8 a, euint8 b) and returns the result.
      */
     function eq(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5764,9 +4813,7 @@ library FHE {
      * @dev Evaluates ne(euint8 a, uint8 b) and returns the result.
      */
     function ne(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5774,9 +4821,7 @@ library FHE {
      * @dev Evaluates ne(uint8 a, euint8 b) and returns the result.
      */
     function ne(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5784,9 +4829,7 @@ library FHE {
      * @dev Evaluates ge(euint8 a, uint8 b) and returns the result.
      */
     function ge(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ge(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5794,9 +4837,7 @@ library FHE {
      * @dev Evaluates ge(uint8 a, euint8 b) and returns the result.
      */
     function ge(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.le(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5804,9 +4845,7 @@ library FHE {
      * @dev Evaluates gt(euint8 a, uint8 b) and returns the result.
      */
     function gt(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.gt(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5814,9 +4853,7 @@ library FHE {
      * @dev Evaluates gt(uint8 a, euint8 b) and returns the result.
      */
     function gt(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.lt(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5824,9 +4861,7 @@ library FHE {
      * @dev Evaluates le(euint8 a, uint8 b) and returns the result.
      */
     function le(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.le(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5834,9 +4869,7 @@ library FHE {
      * @dev Evaluates le(uint8 a, euint8 b) and returns the result.
      */
     function le(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ge(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5844,9 +4877,7 @@ library FHE {
      * @dev Evaluates lt(euint8 a, uint8 b) and returns the result.
      */
     function lt(euint8 a, uint8 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.lt(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5854,9 +4885,7 @@ library FHE {
      * @dev Evaluates lt(uint8 a, euint8 b) and returns the result.
      */
     function lt(uint8 a, euint8 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.gt(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5864,9 +4893,7 @@ library FHE {
      * @dev Evaluates min(euint8 a, uint8 b) and returns the result.
      */
     function min(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.min(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5874,9 +4901,7 @@ library FHE {
      * @dev Evaluates min(uint8 a, euint8 b) and returns the result.
      */
     function min(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.min(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5884,9 +4909,7 @@ library FHE {
      * @dev Evaluates max(euint8 a, uint8 b) and returns the result.
      */
     function max(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.max(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5894,9 +4917,7 @@ library FHE {
      * @dev Evaluates max(uint8 a, euint8 b) and returns the result.
      */
     function max(uint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.max(euint8.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5904,9 +4925,7 @@ library FHE {
      * @dev Evaluates add(euint16 a, uint16 b) and returns the result.
      */
     function add(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.add(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5914,9 +4933,7 @@ library FHE {
      * @dev Evaluates add(uint16 a, euint16 b) and returns the result.
      */
     function add(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.add(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5924,9 +4941,7 @@ library FHE {
      * @dev Evaluates sub(euint16 a, uint16 b) and returns the result.
      */
     function sub(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.sub(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5945,9 +4960,7 @@ library FHE {
      * @dev Evaluates mul(euint16 a, uint16 b) and returns the result.
      */
     function mul(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.mul(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5955,9 +4968,7 @@ library FHE {
      * @dev Evaluates mul(uint16 a, euint16 b) and returns the result.
      */
     function mul(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.mul(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -5965,9 +4976,7 @@ library FHE {
      * @dev Evaluates div(euint16 a, uint16 b) and returns the result.
      */
     function div(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.div(euint16.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -5975,9 +4984,7 @@ library FHE {
      * @dev Evaluates rem(euint16 a, uint16 b) and returns the result.
      */
     function rem(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.rem(euint16.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -5985,9 +4992,7 @@ library FHE {
      * @dev Evaluates and(euint16 a, uint16 b) and returns the result.
      */
     function and(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.and(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -5995,9 +5000,7 @@ library FHE {
      * @dev Evaluates and(uint16 a, euint16 b) and returns the result.
      */
     function and(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.and(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6005,9 +5008,7 @@ library FHE {
      * @dev Evaluates or(euint16 a, uint16 b) and returns the result.
      */
     function or(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.or(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6015,9 +5016,7 @@ library FHE {
      * @dev Evaluates or(uint16 a, euint16 b) and returns the result.
      */
     function or(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.or(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6025,9 +5024,7 @@ library FHE {
      * @dev Evaluates xor(euint16 a, uint16 b) and returns the result.
      */
     function xor(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.xor(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6035,9 +5032,7 @@ library FHE {
      * @dev Evaluates xor(uint16 a, euint16 b) and returns the result.
      */
     function xor(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.xor(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6045,9 +5040,7 @@ library FHE {
      * @dev Evaluates eq(euint16 a, uint16 b) and returns the result.
      */
     function eq(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6055,9 +5048,7 @@ library FHE {
      * @dev Evaluates eq(uint16 a, euint16 b) and returns the result.
      */
     function eq(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6065,9 +5056,7 @@ library FHE {
      * @dev Evaluates ne(euint16 a, uint16 b) and returns the result.
      */
     function ne(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6075,9 +5064,7 @@ library FHE {
      * @dev Evaluates ne(uint16 a, euint16 b) and returns the result.
      */
     function ne(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6085,9 +5072,7 @@ library FHE {
      * @dev Evaluates ge(euint16 a, uint16 b) and returns the result.
      */
     function ge(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ge(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6095,9 +5080,7 @@ library FHE {
      * @dev Evaluates ge(uint16 a, euint16 b) and returns the result.
      */
     function ge(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.le(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6105,9 +5088,7 @@ library FHE {
      * @dev Evaluates gt(euint16 a, uint16 b) and returns the result.
      */
     function gt(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.gt(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6115,9 +5096,7 @@ library FHE {
      * @dev Evaluates gt(uint16 a, euint16 b) and returns the result.
      */
     function gt(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.lt(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6125,9 +5104,7 @@ library FHE {
      * @dev Evaluates le(euint16 a, uint16 b) and returns the result.
      */
     function le(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.le(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6135,9 +5112,7 @@ library FHE {
      * @dev Evaluates le(uint16 a, euint16 b) and returns the result.
      */
     function le(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ge(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6145,9 +5120,7 @@ library FHE {
      * @dev Evaluates lt(euint16 a, uint16 b) and returns the result.
      */
     function lt(euint16 a, uint16 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.lt(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6155,9 +5128,7 @@ library FHE {
      * @dev Evaluates lt(uint16 a, euint16 b) and returns the result.
      */
     function lt(uint16 a, euint16 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.gt(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6165,9 +5136,7 @@ library FHE {
      * @dev Evaluates min(euint16 a, uint16 b) and returns the result.
      */
     function min(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.min(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6175,9 +5144,7 @@ library FHE {
      * @dev Evaluates min(uint16 a, euint16 b) and returns the result.
      */
     function min(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.min(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6185,9 +5152,7 @@ library FHE {
      * @dev Evaluates max(euint16 a, uint16 b) and returns the result.
      */
     function max(euint16 a, uint16 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.max(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6195,9 +5160,7 @@ library FHE {
      * @dev Evaluates max(uint16 a, euint16 b) and returns the result.
      */
     function max(uint16 a, euint16 b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEuint16(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.max(euint16.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6205,9 +5168,7 @@ library FHE {
      * @dev Evaluates add(euint32 a, uint32 b) and returns the result.
      */
     function add(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.add(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6215,9 +5176,7 @@ library FHE {
      * @dev Evaluates add(uint32 a, euint32 b) and returns the result.
      */
     function add(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.add(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6225,9 +5184,7 @@ library FHE {
      * @dev Evaluates sub(euint32 a, uint32 b) and returns the result.
      */
     function sub(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.sub(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6246,9 +5203,7 @@ library FHE {
      * @dev Evaluates mul(euint32 a, uint32 b) and returns the result.
      */
     function mul(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.mul(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6256,9 +5211,7 @@ library FHE {
      * @dev Evaluates mul(uint32 a, euint32 b) and returns the result.
      */
     function mul(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.mul(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6266,9 +5219,7 @@ library FHE {
      * @dev Evaluates div(euint32 a, uint32 b) and returns the result.
      */
     function div(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.div(euint32.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6276,9 +5227,7 @@ library FHE {
      * @dev Evaluates rem(euint32 a, uint32 b) and returns the result.
      */
     function rem(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.rem(euint32.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6286,9 +5235,7 @@ library FHE {
      * @dev Evaluates and(euint32 a, uint32 b) and returns the result.
      */
     function and(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.and(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6296,9 +5243,7 @@ library FHE {
      * @dev Evaluates and(uint32 a, euint32 b) and returns the result.
      */
     function and(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.and(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6306,9 +5251,7 @@ library FHE {
      * @dev Evaluates or(euint32 a, uint32 b) and returns the result.
      */
     function or(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.or(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6316,9 +5259,7 @@ library FHE {
      * @dev Evaluates or(uint32 a, euint32 b) and returns the result.
      */
     function or(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.or(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6326,9 +5267,7 @@ library FHE {
      * @dev Evaluates xor(euint32 a, uint32 b) and returns the result.
      */
     function xor(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.xor(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6336,9 +5275,7 @@ library FHE {
      * @dev Evaluates xor(uint32 a, euint32 b) and returns the result.
      */
     function xor(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.xor(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6346,9 +5283,7 @@ library FHE {
      * @dev Evaluates eq(euint32 a, uint32 b) and returns the result.
      */
     function eq(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6356,9 +5291,7 @@ library FHE {
      * @dev Evaluates eq(uint32 a, euint32 b) and returns the result.
      */
     function eq(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6366,9 +5299,7 @@ library FHE {
      * @dev Evaluates ne(euint32 a, uint32 b) and returns the result.
      */
     function ne(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6376,9 +5307,7 @@ library FHE {
      * @dev Evaluates ne(uint32 a, euint32 b) and returns the result.
      */
     function ne(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6386,9 +5315,7 @@ library FHE {
      * @dev Evaluates ge(euint32 a, uint32 b) and returns the result.
      */
     function ge(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ge(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6396,9 +5323,7 @@ library FHE {
      * @dev Evaluates ge(uint32 a, euint32 b) and returns the result.
      */
     function ge(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.le(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6406,9 +5331,7 @@ library FHE {
      * @dev Evaluates gt(euint32 a, uint32 b) and returns the result.
      */
     function gt(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.gt(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6416,9 +5339,7 @@ library FHE {
      * @dev Evaluates gt(uint32 a, euint32 b) and returns the result.
      */
     function gt(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.lt(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6426,9 +5347,7 @@ library FHE {
      * @dev Evaluates le(euint32 a, uint32 b) and returns the result.
      */
     function le(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.le(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6436,9 +5355,7 @@ library FHE {
      * @dev Evaluates le(uint32 a, euint32 b) and returns the result.
      */
     function le(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ge(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6446,9 +5363,7 @@ library FHE {
      * @dev Evaluates lt(euint32 a, uint32 b) and returns the result.
      */
     function lt(euint32 a, uint32 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.lt(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6456,9 +5371,7 @@ library FHE {
      * @dev Evaluates lt(uint32 a, euint32 b) and returns the result.
      */
     function lt(uint32 a, euint32 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.gt(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6466,9 +5379,7 @@ library FHE {
      * @dev Evaluates min(euint32 a, uint32 b) and returns the result.
      */
     function min(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.min(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6476,9 +5387,7 @@ library FHE {
      * @dev Evaluates min(uint32 a, euint32 b) and returns the result.
      */
     function min(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.min(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6486,9 +5395,7 @@ library FHE {
      * @dev Evaluates max(euint32 a, uint32 b) and returns the result.
      */
     function max(euint32 a, uint32 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.max(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6496,9 +5403,7 @@ library FHE {
      * @dev Evaluates max(uint32 a, euint32 b) and returns the result.
      */
     function max(uint32 a, euint32 b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEuint32(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.max(euint32.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6506,9 +5411,7 @@ library FHE {
      * @dev Evaluates add(euint64 a, uint64 b) and returns the result.
      */
     function add(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.add(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6516,9 +5419,7 @@ library FHE {
      * @dev Evaluates add(uint64 a, euint64 b) and returns the result.
      */
     function add(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.add(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6526,9 +5427,7 @@ library FHE {
      * @dev Evaluates sub(euint64 a, uint64 b) and returns the result.
      */
     function sub(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.sub(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6547,9 +5446,7 @@ library FHE {
      * @dev Evaluates mul(euint64 a, uint64 b) and returns the result.
      */
     function mul(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.mul(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6557,9 +5454,7 @@ library FHE {
      * @dev Evaluates mul(uint64 a, euint64 b) and returns the result.
      */
     function mul(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.mul(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6567,9 +5462,7 @@ library FHE {
      * @dev Evaluates div(euint64 a, uint64 b) and returns the result.
      */
     function div(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.div(euint64.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6577,9 +5470,7 @@ library FHE {
      * @dev Evaluates rem(euint64 a, uint64 b) and returns the result.
      */
     function rem(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.rem(euint64.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6587,9 +5478,7 @@ library FHE {
      * @dev Evaluates and(euint64 a, uint64 b) and returns the result.
      */
     function and(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.and(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6597,9 +5486,7 @@ library FHE {
      * @dev Evaluates and(uint64 a, euint64 b) and returns the result.
      */
     function and(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.and(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6607,9 +5494,7 @@ library FHE {
      * @dev Evaluates or(euint64 a, uint64 b) and returns the result.
      */
     function or(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.or(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6617,9 +5502,7 @@ library FHE {
      * @dev Evaluates or(uint64 a, euint64 b) and returns the result.
      */
     function or(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.or(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6627,9 +5510,7 @@ library FHE {
      * @dev Evaluates xor(euint64 a, uint64 b) and returns the result.
      */
     function xor(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.xor(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6637,9 +5518,7 @@ library FHE {
      * @dev Evaluates xor(uint64 a, euint64 b) and returns the result.
      */
     function xor(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.xor(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6647,9 +5526,7 @@ library FHE {
      * @dev Evaluates eq(euint64 a, uint64 b) and returns the result.
      */
     function eq(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6657,9 +5534,7 @@ library FHE {
      * @dev Evaluates eq(uint64 a, euint64 b) and returns the result.
      */
     function eq(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6667,9 +5542,7 @@ library FHE {
      * @dev Evaluates ne(euint64 a, uint64 b) and returns the result.
      */
     function ne(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6677,9 +5550,7 @@ library FHE {
      * @dev Evaluates ne(uint64 a, euint64 b) and returns the result.
      */
     function ne(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6687,9 +5558,7 @@ library FHE {
      * @dev Evaluates ge(euint64 a, uint64 b) and returns the result.
      */
     function ge(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ge(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6697,9 +5566,7 @@ library FHE {
      * @dev Evaluates ge(uint64 a, euint64 b) and returns the result.
      */
     function ge(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.le(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6707,9 +5574,7 @@ library FHE {
      * @dev Evaluates gt(euint64 a, uint64 b) and returns the result.
      */
     function gt(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.gt(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6717,9 +5582,7 @@ library FHE {
      * @dev Evaluates gt(uint64 a, euint64 b) and returns the result.
      */
     function gt(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.lt(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6727,9 +5590,7 @@ library FHE {
      * @dev Evaluates le(euint64 a, uint64 b) and returns the result.
      */
     function le(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.le(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6737,9 +5598,7 @@ library FHE {
      * @dev Evaluates le(uint64 a, euint64 b) and returns the result.
      */
     function le(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ge(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6747,9 +5606,7 @@ library FHE {
      * @dev Evaluates lt(euint64 a, uint64 b) and returns the result.
      */
     function lt(euint64 a, uint64 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.lt(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6757,9 +5614,7 @@ library FHE {
      * @dev Evaluates lt(uint64 a, euint64 b) and returns the result.
      */
     function lt(uint64 a, euint64 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.gt(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6767,9 +5622,7 @@ library FHE {
      * @dev Evaluates min(euint64 a, uint64 b) and returns the result.
      */
     function min(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.min(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6777,9 +5630,7 @@ library FHE {
      * @dev Evaluates min(uint64 a, euint64 b) and returns the result.
      */
     function min(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.min(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6787,9 +5638,7 @@ library FHE {
      * @dev Evaluates max(euint64 a, uint64 b) and returns the result.
      */
     function max(euint64 a, uint64 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.max(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6797,9 +5646,7 @@ library FHE {
      * @dev Evaluates max(uint64 a, euint64 b) and returns the result.
      */
     function max(uint64 a, euint64 b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEuint64(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.max(euint64.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6807,9 +5654,7 @@ library FHE {
      * @dev Evaluates add(euint128 a, uint128 b) and returns the result.
      */
     function add(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.add(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6817,9 +5662,7 @@ library FHE {
      * @dev Evaluates add(uint128 a, euint128 b) and returns the result.
      */
     function add(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.add(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6827,9 +5670,7 @@ library FHE {
      * @dev Evaluates sub(euint128 a, uint128 b) and returns the result.
      */
     function sub(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.sub(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6848,9 +5689,7 @@ library FHE {
      * @dev Evaluates mul(euint128 a, uint128 b) and returns the result.
      */
     function mul(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.mul(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6858,9 +5697,7 @@ library FHE {
      * @dev Evaluates mul(uint128 a, euint128 b) and returns the result.
      */
     function mul(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.mul(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6868,9 +5705,7 @@ library FHE {
      * @dev Evaluates div(euint128 a, uint128 b) and returns the result.
      */
     function div(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.div(euint128.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6878,9 +5713,7 @@ library FHE {
      * @dev Evaluates rem(euint128 a, uint128 b) and returns the result.
      */
     function rem(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.rem(euint128.unwrap(a), bytes32(uint256(b))));
     }
 
@@ -6888,9 +5721,7 @@ library FHE {
      * @dev Evaluates and(euint128 a, uint128 b) and returns the result.
      */
     function and(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.and(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6898,9 +5729,7 @@ library FHE {
      * @dev Evaluates and(uint128 a, euint128 b) and returns the result.
      */
     function and(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.and(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6908,9 +5737,7 @@ library FHE {
      * @dev Evaluates or(euint128 a, uint128 b) and returns the result.
      */
     function or(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.or(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6918,9 +5745,7 @@ library FHE {
      * @dev Evaluates or(uint128 a, euint128 b) and returns the result.
      */
     function or(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.or(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6928,9 +5753,7 @@ library FHE {
      * @dev Evaluates xor(euint128 a, uint128 b) and returns the result.
      */
     function xor(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.xor(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6938,9 +5761,7 @@ library FHE {
      * @dev Evaluates xor(uint128 a, euint128 b) and returns the result.
      */
     function xor(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.xor(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6948,9 +5769,7 @@ library FHE {
      * @dev Evaluates eq(euint128 a, uint128 b) and returns the result.
      */
     function eq(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6958,9 +5777,7 @@ library FHE {
      * @dev Evaluates eq(uint128 a, euint128 b) and returns the result.
      */
     function eq(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6968,9 +5785,7 @@ library FHE {
      * @dev Evaluates ne(euint128 a, uint128 b) and returns the result.
      */
     function ne(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6978,9 +5793,7 @@ library FHE {
      * @dev Evaluates ne(uint128 a, euint128 b) and returns the result.
      */
     function ne(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -6988,9 +5801,7 @@ library FHE {
      * @dev Evaluates ge(euint128 a, uint128 b) and returns the result.
      */
     function ge(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ge(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -6998,9 +5809,7 @@ library FHE {
      * @dev Evaluates ge(uint128 a, euint128 b) and returns the result.
      */
     function ge(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.le(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7008,9 +5817,7 @@ library FHE {
      * @dev Evaluates gt(euint128 a, uint128 b) and returns the result.
      */
     function gt(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.gt(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7018,9 +5825,7 @@ library FHE {
      * @dev Evaluates gt(uint128 a, euint128 b) and returns the result.
      */
     function gt(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.lt(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7028,9 +5833,7 @@ library FHE {
      * @dev Evaluates le(euint128 a, uint128 b) and returns the result.
      */
     function le(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.le(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7038,9 +5841,7 @@ library FHE {
      * @dev Evaluates le(uint128 a, euint128 b) and returns the result.
      */
     function le(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ge(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7048,9 +5849,7 @@ library FHE {
      * @dev Evaluates lt(euint128 a, uint128 b) and returns the result.
      */
     function lt(euint128 a, uint128 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.lt(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7058,9 +5857,7 @@ library FHE {
      * @dev Evaluates lt(uint128 a, euint128 b) and returns the result.
      */
     function lt(uint128 a, euint128 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.gt(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7068,9 +5865,7 @@ library FHE {
      * @dev Evaluates min(euint128 a, uint128 b) and returns the result.
      */
     function min(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.min(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7078,9 +5873,7 @@ library FHE {
      * @dev Evaluates min(uint128 a, euint128 b) and returns the result.
      */
     function min(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.min(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7088,9 +5881,7 @@ library FHE {
      * @dev Evaluates max(euint128 a, uint128 b) and returns the result.
      */
     function max(euint128 a, uint128 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.max(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7098,9 +5889,7 @@ library FHE {
      * @dev Evaluates max(uint128 a, euint128 b) and returns the result.
      */
     function max(uint128 a, euint128 b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEuint128(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.max(euint128.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7108,9 +5897,7 @@ library FHE {
      * @dev Evaluates eq(eaddress a, address b) and returns the result.
      */
     function eq(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
     }
 
@@ -7118,9 +5905,7 @@ library FHE {
      * @dev Evaluates eq(address a, eaddress b) and returns the result.
      */
     function eq(address a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
     }
 
@@ -7128,9 +5913,7 @@ library FHE {
      * @dev Evaluates ne(eaddress a, address b) and returns the result.
      */
     function ne(eaddress a, address b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(eaddress.unwrap(a), bytes32(uint256(uint160(b))), true));
     }
 
@@ -7138,9 +5921,7 @@ library FHE {
      * @dev Evaluates ne(address a, eaddress b) and returns the result.
      */
     function ne(address a, eaddress b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEaddress(address(0));
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(eaddress.unwrap(b), bytes32(uint256(uint160(a))), true));
     }
 
@@ -7148,9 +5929,7 @@ library FHE {
      * @dev Evaluates and(euint256 a, uint256 b) and returns the result.
      */
     function and(euint256 a, uint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.and(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7158,9 +5937,7 @@ library FHE {
      * @dev Evaluates and(uint256 a, euint256 b) and returns the result.
      */
     function and(uint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(b)) {
-            b = asEuint256(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint256.wrap(Impl.and(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7168,9 +5945,7 @@ library FHE {
      * @dev Evaluates or(euint256 a, uint256 b) and returns the result.
      */
     function or(euint256 a, uint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.or(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7178,9 +5953,7 @@ library FHE {
      * @dev Evaluates or(uint256 a, euint256 b) and returns the result.
      */
     function or(uint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(b)) {
-            b = asEuint256(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint256.wrap(Impl.or(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7188,9 +5961,7 @@ library FHE {
      * @dev Evaluates xor(euint256 a, uint256 b) and returns the result.
      */
     function xor(euint256 a, uint256 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.xor(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7198,9 +5969,7 @@ library FHE {
      * @dev Evaluates xor(uint256 a, euint256 b) and returns the result.
      */
     function xor(uint256 a, euint256 b) internal returns (euint256) {
-        if (!isInitialized(b)) {
-            b = asEuint256(0);
-        }
+        b = _getValidatedFheValue(b);
         return euint256.wrap(Impl.xor(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7208,9 +5977,7 @@ library FHE {
      * @dev Evaluates eq(euint256 a, uint256 b) and returns the result.
      */
     function eq(euint256 a, uint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.eq(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7218,9 +5985,7 @@ library FHE {
      * @dev Evaluates eq(uint256 a, euint256 b) and returns the result.
      */
     function eq(uint256 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint256(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.eq(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7228,9 +5993,7 @@ library FHE {
      * @dev Evaluates ne(euint256 a, uint256 b) and returns the result.
      */
     function ne(euint256 a, uint256 b) internal returns (ebool) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return ebool.wrap(Impl.ne(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7238,9 +6001,7 @@ library FHE {
      * @dev Evaluates ne(uint256 a, euint256 b) and returns the result.
      */
     function ne(uint256 a, euint256 b) internal returns (ebool) {
-        if (!isInitialized(b)) {
-            b = asEuint256(0);
-        }
+        b = _getValidatedFheValue(b);
         return ebool.wrap(Impl.ne(euint256.unwrap(b), bytes32(uint256(a)), true));
     }
 
@@ -7248,9 +6009,7 @@ library FHE {
      * @dev Evaluates shl(euint8 a, euint8 b) and returns the result.
      */
     function shl(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -7261,9 +6020,7 @@ library FHE {
      * @dev Evaluates shl(euint8 a, uint8) and returns the result.
      */
     function shl(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.shl(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7271,9 +6028,7 @@ library FHE {
      * @dev Evaluates shr(euint8 a, euint8 b) and returns the result.
      */
     function shr(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -7284,9 +6039,7 @@ library FHE {
      * @dev Evaluates shr(euint8 a, uint8) and returns the result.
      */
     function shr(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.shr(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7294,9 +6047,7 @@ library FHE {
      * @dev Evaluates rotl(euint8 a, euint8 b) and returns the result.
      */
     function rotl(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -7307,9 +6058,7 @@ library FHE {
      * @dev Evaluates rotl(euint8 a, uint8) and returns the result.
      */
     function rotl(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.rotl(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7317,9 +6066,7 @@ library FHE {
      * @dev Evaluates rotr(euint8 a, euint8 b) and returns the result.
      */
     function rotr(euint8 a, euint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -7330,9 +6077,7 @@ library FHE {
      * @dev Evaluates rotr(euint8 a, uint8) and returns the result.
      */
     function rotr(euint8 a, uint8 b) internal returns (euint8) {
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.rotr(euint8.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7343,9 +6088,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.shl(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -7353,9 +6096,7 @@ library FHE {
      * @dev Evaluates shl(euint16 a, uint8) and returns the result.
      */
     function shl(euint16 a, uint8 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.shl(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7366,9 +6107,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.shr(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -7376,9 +6115,7 @@ library FHE {
      * @dev Evaluates shr(euint16 a, uint8) and returns the result.
      */
     function shr(euint16 a, uint8 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.shr(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7389,9 +6126,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.rotl(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -7399,9 +6134,7 @@ library FHE {
      * @dev Evaluates rotl(euint16 a, uint8) and returns the result.
      */
     function rotl(euint16 a, uint8 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.rotl(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7412,9 +6145,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint16(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint16.wrap(Impl.rotr(euint16.unwrap(a), euint16.unwrap(asEuint16(b)), false));
     }
 
@@ -7422,9 +6153,7 @@ library FHE {
      * @dev Evaluates rotr(euint16 a, uint8) and returns the result.
      */
     function rotr(euint16 a, uint8 b) internal returns (euint16) {
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.rotr(euint16.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7435,9 +6164,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.shl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -7445,9 +6172,7 @@ library FHE {
      * @dev Evaluates shl(euint32 a, uint8) and returns the result.
      */
     function shl(euint32 a, uint8 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.shl(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7458,9 +6183,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.shr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -7468,9 +6191,7 @@ library FHE {
      * @dev Evaluates shr(euint32 a, uint8) and returns the result.
      */
     function shr(euint32 a, uint8 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.shr(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7481,9 +6202,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.rotl(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -7491,9 +6210,7 @@ library FHE {
      * @dev Evaluates rotl(euint32 a, uint8) and returns the result.
      */
     function rotl(euint32 a, uint8 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.rotl(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7504,9 +6221,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint32(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint32.wrap(Impl.rotr(euint32.unwrap(a), euint32.unwrap(asEuint32(b)), false));
     }
 
@@ -7514,9 +6229,7 @@ library FHE {
      * @dev Evaluates rotr(euint32 a, uint8) and returns the result.
      */
     function rotr(euint32 a, uint8 b) internal returns (euint32) {
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.rotr(euint32.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7527,9 +6240,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.shl(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -7537,9 +6248,7 @@ library FHE {
      * @dev Evaluates shl(euint64 a, uint8) and returns the result.
      */
     function shl(euint64 a, uint8 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.shl(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7550,9 +6259,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.shr(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -7560,9 +6267,7 @@ library FHE {
      * @dev Evaluates shr(euint64 a, uint8) and returns the result.
      */
     function shr(euint64 a, uint8 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.shr(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7573,9 +6278,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.rotl(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -7583,9 +6286,7 @@ library FHE {
      * @dev Evaluates rotl(euint64 a, uint8) and returns the result.
      */
     function rotl(euint64 a, uint8 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.rotl(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7596,9 +6297,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint64(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint64.wrap(Impl.rotr(euint64.unwrap(a), euint64.unwrap(asEuint64(b)), false));
     }
 
@@ -7606,9 +6305,7 @@ library FHE {
      * @dev Evaluates rotr(euint64 a, uint8) and returns the result.
      */
     function rotr(euint64 a, uint8 b) internal returns (euint64) {
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.rotr(euint64.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7619,9 +6316,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.shl(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -7629,9 +6324,7 @@ library FHE {
      * @dev Evaluates shl(euint128 a, uint8) and returns the result.
      */
     function shl(euint128 a, uint8 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.shl(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7642,9 +6335,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.shr(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -7652,9 +6343,7 @@ library FHE {
      * @dev Evaluates shr(euint128 a, uint8) and returns the result.
      */
     function shr(euint128 a, uint8 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.shr(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7665,9 +6354,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.rotl(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -7675,9 +6362,7 @@ library FHE {
      * @dev Evaluates rotl(euint128 a, uint8) and returns the result.
      */
     function rotl(euint128 a, uint8 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.rotl(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7688,9 +6373,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint128(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint128.wrap(Impl.rotr(euint128.unwrap(a), euint128.unwrap(asEuint128(b)), false));
     }
 
@@ -7698,9 +6381,7 @@ library FHE {
      * @dev Evaluates rotr(euint128 a, uint8) and returns the result.
      */
     function rotr(euint128 a, uint8 b) internal returns (euint128) {
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint128.wrap(Impl.rotr(euint128.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7711,9 +6392,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.shl(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -7721,9 +6400,7 @@ library FHE {
      * @dev Evaluates shl(euint256 a, uint8) and returns the result.
      */
     function shl(euint256 a, uint8 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.shl(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7734,9 +6411,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.shr(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -7744,9 +6419,7 @@ library FHE {
      * @dev Evaluates shr(euint256 a, uint8) and returns the result.
      */
     function shr(euint256 a, uint8 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.shr(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7757,9 +6430,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.rotl(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -7767,9 +6438,7 @@ library FHE {
      * @dev Evaluates rotl(euint256 a, uint8) and returns the result.
      */
     function rotl(euint256 a, uint8 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.rotl(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7780,9 +6449,7 @@ library FHE {
         if (!isInitialized(a)) {
             a = asEuint256(0);
         }
-        if (!isInitialized(b)) {
-            b = asEuint8(0);
-        }
+
         return euint256.wrap(Impl.rotr(euint256.unwrap(a), euint256.unwrap(asEuint256(b)), false));
     }
 
@@ -7790,9 +6457,7 @@ library FHE {
      * @dev Evaluates rotr(euint256 a, uint8) and returns the result.
      */
     function rotr(euint256 a, uint8 b) internal returns (euint256) {
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         return euint256.wrap(Impl.rotr(euint256.unwrap(a), bytes32(uint256(b)), true));
     }
 
@@ -7804,9 +6469,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEbool(false);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEbool(false);
         }
@@ -7821,9 +6484,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint8(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint8(0);
         }
@@ -7838,9 +6499,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint16(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint16(0);
         }
@@ -7855,9 +6514,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint32(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint32(0);
         }
@@ -7872,9 +6529,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint64(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint64(0);
         }
@@ -7889,9 +6544,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint128(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint128(0);
         }
@@ -7906,9 +6559,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEaddress(address(0));
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEaddress(address(0));
         }
@@ -7923,9 +6574,7 @@ library FHE {
         if (!isInitialized(control)) {
             control = asEbool(false);
         }
-        if (!isInitialized(a)) {
-            a = asEuint256(0);
-        }
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) {
             b = asEuint256(0);
         }
@@ -7936,9 +6585,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
     function asEuint8(euint16 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint8));
     }
 
@@ -7946,9 +6593,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint8'.
      */
     function asEuint8(euint32 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint8));
     }
 
@@ -7956,9 +6601,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint8'.
      */
     function asEuint8(euint64 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint8));
     }
 
@@ -7966,9 +6609,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint8'.
      */
     function asEuint8(euint128 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint8));
     }
 
@@ -7976,9 +6617,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint8'.
      */
     function asEuint8(euint256 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint8));
     }
 
@@ -7987,9 +6626,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint8'.
      */
     function asEuint8(ebool b) internal returns (euint8) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint8.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint8));
     }
 
@@ -7997,9 +6634,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'ebool'.
      */
     function asEbool(euint8 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
         return ne(value, 0);
     }
 
@@ -8007,9 +6641,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint16'.
      */
     function asEuint16(euint8 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint16));
     }
 
@@ -8017,9 +6649,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint16'.
      */
     function asEuint16(euint32 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint16));
     }
 
@@ -8027,9 +6657,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint16'.
      */
     function asEuint16(euint64 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint16));
     }
 
@@ -8037,9 +6665,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint16'.
      */
     function asEuint16(euint128 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint16));
     }
 
@@ -8047,9 +6673,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint16'.
      */
     function asEuint16(euint256 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint16));
     }
 
@@ -8058,9 +6682,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint16'.
      */
     function asEuint16(ebool b) internal returns (euint16) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint16.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint16));
     }
 
@@ -8068,9 +6690,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'ebool'.
      */
     function asEbool(euint16 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
         return ne(value, 0);
     }
 
@@ -8078,9 +6697,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint32'.
      */
     function asEuint32(euint8 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint32));
     }
 
@@ -8088,9 +6705,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint32'.
      */
     function asEuint32(euint16 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint32));
     }
 
@@ -8098,9 +6713,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint32'.
      */
     function asEuint32(euint64 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint32));
     }
 
@@ -8108,9 +6721,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint32'.
      */
     function asEuint32(euint128 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint32));
     }
 
@@ -8118,9 +6729,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint32'.
      */
     function asEuint32(euint256 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint32));
     }
 
@@ -8129,9 +6738,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint32'.
      */
     function asEuint32(ebool b) internal returns (euint32) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint32.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint32));
     }
 
@@ -8139,9 +6746,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'ebool'.
      */
     function asEbool(euint32 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
         return ne(value, 0);
     }
 
@@ -8149,9 +6753,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint64'.
      */
     function asEuint64(euint8 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint64));
     }
 
@@ -8159,9 +6761,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint64'.
      */
     function asEuint64(euint16 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint64));
     }
 
@@ -8169,9 +6769,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint64'.
      */
     function asEuint64(euint32 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint64));
     }
 
@@ -8179,9 +6777,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint64'.
      */
     function asEuint64(euint128 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint64));
     }
 
@@ -8189,9 +6785,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint64'.
      */
     function asEuint64(euint256 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint64));
     }
 
@@ -8200,9 +6794,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint64'.
      */
     function asEuint64(ebool b) internal returns (euint64) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint64.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint64));
     }
 
@@ -8210,9 +6802,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'ebool'.
      */
     function asEbool(euint64 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
         return ne(value, 0);
     }
 
@@ -8220,9 +6809,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint128'.
      */
     function asEuint128(euint8 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint128));
     }
 
@@ -8230,9 +6817,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint128'.
      */
     function asEuint128(euint16 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint128));
     }
 
@@ -8240,9 +6825,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint128'.
      */
     function asEuint128(euint32 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint128));
     }
 
@@ -8250,9 +6833,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint128'.
      */
     function asEuint128(euint64 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint128));
     }
 
@@ -8260,9 +6841,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'euint128'.
      */
     function asEuint128(euint256 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.cast(euint256.unwrap(value), FheType.Uint128));
     }
 
@@ -8271,9 +6850,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint128'.
      */
     function asEuint128(ebool b) internal returns (euint128) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint128.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint128));
     }
 
@@ -8281,9 +6858,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'ebool'.
      */
     function asEbool(euint128 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
         return ne(value, 0);
     }
 
@@ -8291,9 +6865,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint8' to 'euint256'.
      */
     function asEuint256(euint8 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.cast(euint8.unwrap(value), FheType.Uint256));
     }
 
@@ -8301,9 +6873,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint16' to 'euint256'.
      */
     function asEuint256(euint16 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.cast(euint16.unwrap(value), FheType.Uint256));
     }
 
@@ -8311,9 +6881,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint32' to 'euint256'.
      */
     function asEuint256(euint32 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.cast(euint32.unwrap(value), FheType.Uint256));
     }
 
@@ -8321,9 +6889,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint64' to 'euint256'.
      */
     function asEuint256(euint64 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.cast(euint64.unwrap(value), FheType.Uint256));
     }
 
@@ -8331,9 +6897,7 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint128' to 'euint256'.
      */
     function asEuint256(euint128 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.cast(euint128.unwrap(value), FheType.Uint256));
     }
 
@@ -8342,9 +6906,7 @@ library FHE {
      * @dev Converts an 'ebool' to an 'euint256'.
      */
     function asEuint256(ebool b) internal returns (euint256) {
-        if (!isInitialized(b)) {
-            b = asEbool(false);
-        }
+        b = _getValidatedFheValue(b);
         return euint256.wrap(Impl.cast(ebool.unwrap(b), FheType.Uint256));
     }
 
@@ -8352,9 +6914,6 @@ library FHE {
      * @dev Casts an encrypted integer from 'euint256' to 'ebool'.
      */
     function asEbool(euint256 value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
         return ne(value, 0);
     }
 
@@ -8362,9 +6921,7 @@ library FHE {
      * @dev Evaluates not(ebool value) and returns the result.
      */
     function not(ebool value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEbool(false);
-        }
+        value = _getValidatedFheValue(value);
         return ebool.wrap(Impl.not(ebool.unwrap(value)));
     }
 
@@ -8372,9 +6929,7 @@ library FHE {
      * @dev Evaluates neg(euint8 value) and returns the result.
      */
     function neg(euint8 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.neg(euint8.unwrap(value)));
     }
 
@@ -8382,9 +6937,7 @@ library FHE {
      * @dev Evaluates not(euint8 value) and returns the result.
      */
     function not(euint8 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint8.wrap(Impl.not(euint8.unwrap(value)));
     }
 
@@ -8392,9 +6945,7 @@ library FHE {
      * @dev Evaluates neg(euint16 value) and returns the result.
      */
     function neg(euint16 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.neg(euint16.unwrap(value)));
     }
 
@@ -8402,9 +6953,7 @@ library FHE {
      * @dev Evaluates not(euint16 value) and returns the result.
      */
     function not(euint16 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint16.wrap(Impl.not(euint16.unwrap(value)));
     }
 
@@ -8412,9 +6961,7 @@ library FHE {
      * @dev Evaluates neg(euint32 value) and returns the result.
      */
     function neg(euint32 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.neg(euint32.unwrap(value)));
     }
 
@@ -8422,9 +6969,7 @@ library FHE {
      * @dev Evaluates not(euint32 value) and returns the result.
      */
     function not(euint32 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint32.wrap(Impl.not(euint32.unwrap(value)));
     }
 
@@ -8432,9 +6977,7 @@ library FHE {
      * @dev Evaluates neg(euint64 value) and returns the result.
      */
     function neg(euint64 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.neg(euint64.unwrap(value)));
     }
 
@@ -8442,9 +6985,7 @@ library FHE {
      * @dev Evaluates not(euint64 value) and returns the result.
      */
     function not(euint64 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint64.wrap(Impl.not(euint64.unwrap(value)));
     }
 
@@ -8452,9 +6993,7 @@ library FHE {
      * @dev Evaluates neg(euint128 value) and returns the result.
      */
     function neg(euint128 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.neg(euint128.unwrap(value)));
     }
 
@@ -8462,9 +7001,7 @@ library FHE {
      * @dev Evaluates not(euint128 value) and returns the result.
      */
     function not(euint128 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint128.wrap(Impl.not(euint128.unwrap(value)));
     }
 
@@ -8472,9 +7009,7 @@ library FHE {
      * @dev Evaluates neg(euint256 value) and returns the result.
      */
     function neg(euint256 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.neg(euint256.unwrap(value)));
     }
 
@@ -8482,16 +7017,14 @@ library FHE {
      * @dev Evaluates not(euint256 value) and returns the result.
      */
     function not(euint256 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         return euint256.wrap(Impl.not(euint256.unwrap(value)));
     }
 
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted ebool integer.
      * @dev If inputProof is empty, the externalEbool inputHandle can be used as a regular ebool handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEbool inputHandle, bytes memory inputProof) internal returns (ebool) {
@@ -8503,6 +7036,7 @@ library FHE {
                 return asEbool(false);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Bool);
             return ebool.wrap(inputBytes32);
         }
     }
@@ -8528,7 +7062,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint8 integer.
      * @dev If inputProof is empty, the externalEuint8 inputHandle can be used as a regular euint8 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint8 inputHandle, bytes memory inputProof) internal returns (euint8) {
@@ -8540,6 +7074,7 @@ library FHE {
                 return asEuint8(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint8);
             return euint8.wrap(inputBytes32);
         }
     }
@@ -8565,7 +7100,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint16 integer.
      * @dev If inputProof is empty, the externalEuint16 inputHandle can be used as a regular euint16 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint16 inputHandle, bytes memory inputProof) internal returns (euint16) {
@@ -8577,6 +7112,7 @@ library FHE {
                 return asEuint16(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint16);
             return euint16.wrap(inputBytes32);
         }
     }
@@ -8602,7 +7138,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint32 integer.
      * @dev If inputProof is empty, the externalEuint32 inputHandle can be used as a regular euint32 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint32 inputHandle, bytes memory inputProof) internal returns (euint32) {
@@ -8614,6 +7150,7 @@ library FHE {
                 return asEuint32(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint32);
             return euint32.wrap(inputBytes32);
         }
     }
@@ -8639,7 +7176,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint64 integer.
      * @dev If inputProof is empty, the externalEuint64 inputHandle can be used as a regular euint64 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint64 inputHandle, bytes memory inputProof) internal returns (euint64) {
@@ -8651,6 +7188,7 @@ library FHE {
                 return asEuint64(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint64);
             return euint64.wrap(inputBytes32);
         }
     }
@@ -8676,7 +7214,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint128 integer.
      * @dev If inputProof is empty, the externalEuint128 inputHandle can be used as a regular euint128 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint128 inputHandle, bytes memory inputProof) internal returns (euint128) {
@@ -8688,6 +7226,7 @@ library FHE {
                 return asEuint128(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint128);
             return euint128.wrap(inputBytes32);
         }
     }
@@ -8713,7 +7252,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted eaddress integer.
      * @dev If inputProof is empty, the externalEaddress inputHandle can be used as a regular eaddress handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEaddress inputHandle, bytes memory inputProof) internal returns (eaddress) {
@@ -8725,6 +7264,7 @@ library FHE {
                 return asEaddress(address(0));
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint160);
             return eaddress.wrap(inputBytes32);
         }
     }
@@ -8750,7 +7290,7 @@ library FHE {
     /**
      * @dev Convert an inputHandle with corresponding inputProof to an encrypted euint256 integer.
      * @dev If inputProof is empty, the externalEuint256 inputHandle can be used as a regular euint256 handle if it
-     *      has already been verified and allowed to the sender.
+     *      has already been verified and allowed to the sender, and matches the expected FHE type.
      *      This could facilitate integrating smart contract accounts with fhevm.
      */
     function fromExternal(externalEuint256 inputHandle, bytes memory inputProof) internal returns (euint256) {
@@ -8762,6 +7302,7 @@ library FHE {
                 return asEuint256(0);
             }
             if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
+            Impl.checkHandleType(inputBytes32, FheType.Uint256);
             return euint256.wrap(inputBytes32);
         }
     }
@@ -8885,7 +7426,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint8 a, euint8 b, uint8 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint8 a, euint8 b, uint8 divisor) internal returns (euint8) {
-        if (!isInitialized(a)) a = asEuint8(0);
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) b = asEuint8(0);
         return euint8.wrap(Impl.mulDiv(euint8.unwrap(a), euint8.unwrap(b), bytes32(uint256(divisor)), false));
     }
@@ -8894,7 +7435,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint8 a, uint8 b, uint8 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint8 a, uint8 b, uint8 divisor) internal returns (euint8) {
-        if (!isInitialized(a)) a = asEuint8(0);
+        a = _getValidatedFheValue(a);
         return euint8.wrap(Impl.mulDiv(euint8.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
     }
 
@@ -8902,7 +7443,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint16 a, euint16 b, uint16 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint16 a, euint16 b, uint16 divisor) internal returns (euint16) {
-        if (!isInitialized(a)) a = asEuint16(0);
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) b = asEuint16(0);
         return euint16.wrap(Impl.mulDiv(euint16.unwrap(a), euint16.unwrap(b), bytes32(uint256(divisor)), false));
     }
@@ -8911,7 +7452,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint16 a, uint16 b, uint16 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint16 a, uint16 b, uint16 divisor) internal returns (euint16) {
-        if (!isInitialized(a)) a = asEuint16(0);
+        a = _getValidatedFheValue(a);
         return euint16.wrap(Impl.mulDiv(euint16.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
     }
 
@@ -8919,7 +7460,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint32 a, euint32 b, uint32 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint32 a, euint32 b, uint32 divisor) internal returns (euint32) {
-        if (!isInitialized(a)) a = asEuint32(0);
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) b = asEuint32(0);
         return euint32.wrap(Impl.mulDiv(euint32.unwrap(a), euint32.unwrap(b), bytes32(uint256(divisor)), false));
     }
@@ -8928,7 +7469,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint32 a, uint32 b, uint32 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint32 a, uint32 b, uint32 divisor) internal returns (euint32) {
-        if (!isInitialized(a)) a = asEuint32(0);
+        a = _getValidatedFheValue(a);
         return euint32.wrap(Impl.mulDiv(euint32.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
     }
 
@@ -8936,7 +7477,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint64 a, euint64 b, uint64 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint64 a, euint64 b, uint64 divisor) internal returns (euint64) {
-        if (!isInitialized(a)) a = asEuint64(0);
+        a = _getValidatedFheValue(a);
         if (!isInitialized(b)) b = asEuint64(0);
         return euint64.wrap(Impl.mulDiv(euint64.unwrap(a), euint64.unwrap(b), bytes32(uint256(divisor)), false));
     }
@@ -8945,7 +7486,7 @@ library FHE {
      * @dev Evaluates mulDiv(euint64 a, uint64 b, uint64 divisor): returns (a * b) / divisor with intermediate widening.
      */
     function mulDiv(euint64 a, uint64 b, uint64 divisor) internal returns (euint64) {
-        if (!isInitialized(a)) a = asEuint64(0);
+        a = _getValidatedFheValue(a);
         return euint64.wrap(Impl.mulDiv(euint64.unwrap(a), bytes32(uint256(b)), bytes32(uint256(divisor)), true));
     }
 
@@ -9155,9 +7696,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(ebool value, address account) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEbool(false);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(ebool.unwrap(value), account);
         return value;
     }
@@ -9166,9 +7705,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(ebool value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEbool(false);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(ebool.unwrap(value), address(this));
         return value;
     }
@@ -9177,9 +7714,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(ebool value, address account) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEbool(false);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(ebool.unwrap(value), account);
         return value;
     }
@@ -9188,9 +7723,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(ebool value) internal returns (ebool) {
-        if (!isInitialized(value)) {
-            value = asEbool(false);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(ebool.unwrap(value));
         return value;
     }
@@ -9220,9 +7753,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint8 value, address account) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint8.unwrap(value), account);
         return value;
     }
@@ -9231,9 +7762,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint8 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint8.unwrap(value), address(this));
         return value;
     }
@@ -9242,9 +7771,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint8 value, address account) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint8.unwrap(value), account);
         return value;
     }
@@ -9253,9 +7780,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint8 value) internal returns (euint8) {
-        if (!isInitialized(value)) {
-            value = asEuint8(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint8.unwrap(value));
         return value;
     }
@@ -9285,9 +7810,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint16 value, address account) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint16.unwrap(value), account);
         return value;
     }
@@ -9296,9 +7819,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint16 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint16.unwrap(value), address(this));
         return value;
     }
@@ -9307,9 +7828,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint16 value, address account) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint16.unwrap(value), account);
         return value;
     }
@@ -9318,9 +7837,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint16 value) internal returns (euint16) {
-        if (!isInitialized(value)) {
-            value = asEuint16(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint16.unwrap(value));
         return value;
     }
@@ -9350,9 +7867,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint32 value, address account) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint32.unwrap(value), account);
         return value;
     }
@@ -9361,9 +7876,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint32 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint32.unwrap(value), address(this));
         return value;
     }
@@ -9372,9 +7885,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint32 value, address account) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint32.unwrap(value), account);
         return value;
     }
@@ -9383,9 +7894,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint32 value) internal returns (euint32) {
-        if (!isInitialized(value)) {
-            value = asEuint32(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint32.unwrap(value));
         return value;
     }
@@ -9415,9 +7924,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint64 value, address account) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint64.unwrap(value), account);
         return value;
     }
@@ -9426,9 +7933,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint64 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint64.unwrap(value), address(this));
         return value;
     }
@@ -9437,9 +7942,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint64 value, address account) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint64.unwrap(value), account);
         return value;
     }
@@ -9448,9 +7951,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint64 value) internal returns (euint64) {
-        if (!isInitialized(value)) {
-            value = asEuint64(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint64.unwrap(value));
         return value;
     }
@@ -9480,9 +7981,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint128 value, address account) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint128.unwrap(value), account);
         return value;
     }
@@ -9491,9 +7990,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint128 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint128.unwrap(value), address(this));
         return value;
     }
@@ -9502,9 +7999,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint128 value, address account) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint128.unwrap(value), account);
         return value;
     }
@@ -9513,9 +8008,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint128 value) internal returns (euint128) {
-        if (!isInitialized(value)) {
-            value = asEuint128(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint128.unwrap(value));
         return value;
     }
@@ -9545,9 +8038,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(eaddress value, address account) internal returns (eaddress) {
-        if (!isInitialized(value)) {
-            value = asEaddress(address(0));
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(eaddress.unwrap(value), account);
         return value;
     }
@@ -9556,9 +8047,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(eaddress value) internal returns (eaddress) {
-        if (!isInitialized(value)) {
-            value = asEaddress(address(0));
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(eaddress.unwrap(value), address(this));
         return value;
     }
@@ -9567,9 +8056,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(eaddress value, address account) internal returns (eaddress) {
-        if (!isInitialized(value)) {
-            value = asEaddress(address(0));
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(eaddress.unwrap(value), account);
         return value;
     }
@@ -9578,9 +8065,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(eaddress value) internal returns (eaddress) {
-        if (!isInitialized(value)) {
-            value = asEaddress(address(0));
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(eaddress.unwrap(value));
         return value;
     }
@@ -9610,9 +8095,7 @@ library FHE {
      * @dev Allows the use of value for the address account.
      */
     function allow(euint256 value, address account) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint256.unwrap(value), account);
         return value;
     }
@@ -9621,9 +8104,7 @@ library FHE {
      * @dev Allows the use of value for this address (address(this)).
      */
     function allowThis(euint256 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allow(euint256.unwrap(value), address(this));
         return value;
     }
@@ -9632,9 +8113,7 @@ library FHE {
      * @dev Allows the use of value by address account for this transaction.
      */
     function allowTransient(euint256 value, address account) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.allowTransient(euint256.unwrap(value), account);
         return value;
     }
@@ -9643,9 +8122,7 @@ library FHE {
      * @dev Makes the value publicly decryptable.
      */
     function makePubliclyDecryptable(euint256 value) internal returns (euint256) {
-        if (!isInitialized(value)) {
-            value = asEuint256(0);
-        }
+        value = _getValidatedFheValue(value);
         Impl.makePubliclyDecryptable(euint256.unwrap(value));
         return value;
     }
