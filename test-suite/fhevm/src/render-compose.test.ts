@@ -1283,3 +1283,27 @@ describe("test-suite docker socket runtime", () => {
     expect(raw).not.toContain("DOCKER_GID");
   });
 });
+
+test.each([
+  ["v0.13.0-2", false, "ws://gateway:8546"],
+  ["v0.13.5", false, "http://gateway:8545"],
+  ["v0.14.1", false, "ws://gateway:8546"],
+  ["v0.14.2", false, "http://gateway:8545"],
+  ["v0.13.0-2", true, "http://gateway:8545"],
+  ["c2f416b", false, "http://gateway:8545"],
+  ["c2f416b", true, "http://gateway:8545"],
+] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "GATEWAY_URL=http://gateway:8545\nGATEWAY_WS_URL=ws://gateway:8546\n");
+    const input: State = {
+      ...state,
+      versions: presetBundle("latest-main", tag, "test.json"),
+      overrides: local ? [{ group: "coprocessor" }] : [],
+      scenario: testDefaultScenario(),
+    };
+    await generateComposeOverrides(input, stackSpecForState(input));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
+  });
+});
