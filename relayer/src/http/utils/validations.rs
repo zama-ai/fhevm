@@ -325,18 +325,6 @@ pub fn validate_request_validity(
 // v3 (unified EIP-712 user-decryption) validators
 // ---------------------------------------------------------------------------
 
-/// EVM unified EIP-712 attestation type: the `signature` is an EIP-712
-/// signature verified on-chain by the gateway.
-pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-decrypt-v1";
-
-/// Solana attestation type (sRFC-38): the `signature` is an ed25519 `signMessage` blob over
-/// the canonical permit envelope. Unlike the EVM scheme, no contract can check it — the permit
-/// rides in the opaque `solanaRequest` of the gateway's Solana `userDecryptionRequest`
-/// overload, which the gateway never reads — so the relayer verifies it against the locally
-/// reconstructed envelope before submitting, and each KMS party's connector verifies it again
-/// as the authorizing check.
-pub const V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1: &str = "solana-srfc38-user-decrypt-v1";
-
 /// Required `version` value in the EIP-712 payload.
 pub const V3_PAYLOAD_VERSION: &str = "2.0";
 

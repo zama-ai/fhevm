@@ -823,10 +823,6 @@ impl TryFrom<UserDecryptV3RequestJson> for UserDecryptRequest {
         match value {
             UserDecryptV3RequestJson::Eip712Unified(inner) => Self::try_from(inner),
             UserDecryptV3RequestJson::SolanaSrfc38(inner) => Self::try_from(inner),
-            // Validate rejects Unknown before this conversion on the HTTP path.
-            UserDecryptV3RequestJson::Unknown => Err(anyhow::anyhow!(
-                crate::http::endpoints::v3::types::user_decrypt::unsupported_attestation_type_message()
-            )),
         }
     }
 }
@@ -1636,13 +1632,11 @@ mod tests {
         }
     }
 
-    /// An unrecognized `attestationType` is rejected by the tagged envelope itself: an unknown
-    /// protocol must never fall through onto the EVM arm (DD-027, validation is per-protocol).
-    /// Retired ed25519 PoC tags are included so this is the refusal pin, not a leftover validator.
+    /// An unrecognized `attestationType` is a serde error: an unknown protocol must never
+    /// fall through onto the EVM arm (DD-027, validation is per-protocol). Retired ed25519
+    /// PoC tags are included so this is the refusal pin, not a leftover validator.
     #[test]
     fn attested_user_decrypt_rejects_unknown_attestation_type() {
-        use validator::Validate;
-
         for tag in [
             "solana-ed25519-user-decrypt-v3",
             "solana-ed25519-user-decrypt-v2",
@@ -1654,15 +1648,12 @@ mod tests {
                 "attestedPayload": {},
                 "signature": "0x00",
             });
-            let parsed = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
-                .expect("an unknown tag maps to Unknown, not an arm");
+            let err = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
+                .expect_err("an unknown tag must not select an attestation arm");
+            let message = err.to_string();
             assert!(
-                matches!(parsed, UserDecryptV3RequestJson::Unknown),
-                "unknown tag {tag} must not select an attestation arm"
-            );
-            assert!(
-                parsed.validate().is_err(),
-                "Unknown must fail validation for {tag}"
+                message.contains("unknown variant"),
+                "unknown tag {tag} must be a serde unknown-variant error, got {message}"
             );
         }
     }

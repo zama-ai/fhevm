@@ -321,14 +321,6 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
             Ok(UserDecryptV3RequestJson::Eip712Unified(_)) => {
                 panic!("{name}: fixture records are Solana envelopes")
             }
-            Ok(UserDecryptV3RequestJson::Unknown) => {
-                assert_eq!(
-                    declared,
-                    RejectedBy::JsonShape,
-                    "{name}: unknown attestationType, but names another layer"
-                );
-                continue;
-            }
         };
 
         if parsed.validate().is_err() {
