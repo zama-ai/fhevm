@@ -24,7 +24,7 @@ use validator::{Validate, ValidationErrors};
 /// Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
 /// `deny_unknown_fields` and does not repeat the tag.
 #[derive(Deserialize, Clone, ToSchema, Debug)]
-#[serde(tag = "attestationType", deny_unknown_fields)]
+#[serde(tag = "attestationType")]
 pub enum UserDecryptV3RequestJson {
     #[serde(rename = "eip712-unified-user-decrypt-v1")]
     Eip712Unified(AttestedUserDecryptRequestJson),

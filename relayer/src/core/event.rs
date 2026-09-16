@@ -8,7 +8,6 @@ use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
     SolanaUserDecryptRequestJson, UserDecryptV3RequestJson,
 };
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1;
 use zama_solana_request::{
     encode_solana_request, SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES,
 };
@@ -832,8 +831,6 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest");
-
         // Reached only after the tagged envelope selected the EIP-712 arm. `signature`,
         // `publicKey` and `extraData` are forwarded verbatim; the relayer never verifies the
         // signature — the gateway does, on-chain.
@@ -889,11 +886,6 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         use zama_solana_permit::{
             verify_signature, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN,
         };
-
-        info!(
-            attestation_type = V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1,
-            "Converting SolanaUserDecryptRequestJson to UserDecryptRequest"
-        );
 
         let payload = value.attested_payload;
 

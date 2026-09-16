@@ -80,7 +80,6 @@ that look related but are not interchangeable:
 | Gateway ABI `UserDecryptionRequest_4` / Rust `UserDecryptionRequestV3` | Solana host-generic event |
 | `solanaRequest` / `solana_request` | Opaque canonical request bytes on the event and in the DB |
 | Relayer `UserDecryptRequest::SolanaSrfc38V1` | Relayer-internal request after the typed-attestation envelope |
-| `hostPayload` | Retired name; the field is `solanaRequest` |
 
 Solana rows write `user_address` as 20 zero bytes (and leave the EVM ACL columns empty). The
 row reader keys on `solana_request IS NOT NULL` and does not treat those placeholders as an
