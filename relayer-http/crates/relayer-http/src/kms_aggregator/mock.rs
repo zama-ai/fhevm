@@ -84,9 +84,11 @@ impl MockClient {
             max_concurrent_calls: n.max(1),
             call: CallConfig {
                 timeout,
+                // Delays capped by the deadline: keeps the config valid for the short deadlines some tests use.
                 retries: RetryConfig {
                     max_retries,
-                    ..RetryConfig::default()
+                    delay: RetryConfig::default().delay.min(timeout),
+                    backoff_max: RetryConfig::default().backoff_max.min(timeout),
                 },
             },
             user_decrypt: UserDecryptConfig {
