@@ -214,7 +214,7 @@ pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpRepl
     };
     HttpReply {
         status: 200,
-        body: Bytes::from(body.expect("mock: response serialises")),
+        body: Bytes::from(body.expect("mock: response serialisation")),
     }
 }
 
@@ -224,7 +224,7 @@ pub fn error_reply(route: &str, body: &[u8], code: ErrorCode) -> HttpReply {
     let error = ErrorResponse::new(code, format!("mock {}", code.as_str()), id);
     HttpReply {
         status: code.http_status(),
-        body: Bytes::from(serde_json::to_vec(&error).expect("mock: error serialises")),
+        body: Bytes::from(serde_json::to_vec(&error).expect("mock: error serialisation")),
     }
 }
 
