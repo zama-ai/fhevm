@@ -280,10 +280,12 @@ The two host chains are the real public testnets, so this is the only preview sh
   the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
-  connector. Keygen spans two such round trips and was measured at **43 min** end to end,
-  so `apply-chain-env.sh` raises the in-pod waits to `KEYGEN_WAIT_TIMEOUT_MS=60m` and
-  `CRSGEN_WAIT_TIMEOUT_MS=40m` (both 15 m elsewhere), with `KEYGEN_TIMEOUT=110m` giving
-  helm room for both in the one pod. Budget ~70 min of wall clock here on a good run.
+  connector. Preview environments now generate production-size **Default** FHE
+  parameters (`params-type=0`) because Test parameters use drift noise reduction,
+  which TFHE 1.6.3's GPU conversion rejects. A four-party Default-parameter DKG is
+  multi-hour work, so both Anvil and testnet launches allow 4 h for keygen and 1 h
+  for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm room for both in one pod.
+  This deliberately consumes most of the deploy job's six-hour budget.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on

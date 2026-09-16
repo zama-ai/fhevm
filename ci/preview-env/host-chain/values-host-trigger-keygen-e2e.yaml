@@ -41,6 +41,14 @@ scDeploy:
     - {name: HARDHAT_NETWORK, value: "staging"}
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+    # Default (production-size) FHE parameters. Test parameters use drift noise
+    # reduction, which TFHE 1.6.3 cannot convert to a GPU server key.
+    - {name: KEYGEN_PARAMS_TYPE, value: "0"}
+    # A four-party Default-parameter DKG is intentionally much slower than the
+    # former Test-parameter ceremony. Keep both waits within the workflow's
+    # six-hour deploy-job budget.
+    - {name: KEYGEN_WAIT_TIMEOUT_MS, value: "14400000"}
+    - {name: CRSGEN_WAIT_TIMEOUT_MS, value: "3600000"}
     # Deployer AND final ACL owner: Hardhat account #9. Deploys the host contracts,
     # triggers keygen/crsgen (onlyACLOwner), and STAYS the owner - there is deliberately
     # no post-crsgen ownership transfer. Keep in sync with values-host-contracts-e2e.yaml's
@@ -67,10 +75,10 @@ scDeploy:
         exit 1
       fi
       echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
-    # --params-type 1 ("test" FHE parameters, not production-grade) - a real 4-party
-    # enclave DKG against full production parameters is far too slow for a per-PR e2e
-    # smoke check. Matches ../../../charts/contracts/values-kmsgen.yaml's own recommendation.
-    - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
+    # --params-type 0 selects Default production-size parameters. This is required
+    # by the GPU workers because Test parameters use DriftTechniqueNoiseReduction,
+    # which TFHE 1.6.3's GPU conversion rejects.
+    - npx hardhat task:triggerKeygen --params-type "${KEYGEN_PARAMS_TYPE}" --use-internal-proxy-address true
     # (kms-keygen-wait) task:triggerKeygen only waits for its *request* tx to be mined
     # (keygenTx.wait()) - the actual 4-party enclave preprocessing + DKG consensus
     # (ActivateKey on KMSGeneration.sol) can take several more minutes.
@@ -152,7 +160,7 @@ scDeploy:
         );
       })().catch((e) => { console.error(e); process.exit(1); });
       "
-    - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
+    - npx hardhat task:triggerCrsgen --params-type "${KEYGEN_PARAMS_TYPE}" --max-bit-length 2048 --use-internal-proxy-address true
     # kmsNodeStorageUrls[i] comes straight from KMSGeneration.sol's
     # _buildConsensusStorageUrls -> ProtocolConfig.getKmsNodeForContext(...).storageUrl -
     # i.e. each party's own registered public-vault base URL (same one discovered per
