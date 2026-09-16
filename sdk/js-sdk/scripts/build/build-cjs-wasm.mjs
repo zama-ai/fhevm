@@ -72,7 +72,7 @@ if (base64DataEntryPoints.length > 0) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // 2. Copy everything else verbatim. Skips the generated sources — we regenerate
-//    them in step 3 to apply the profile filter.
+//    them in step 3 to apply the manifest-listed version filter.
 ////////////////////////////////////////////////////////////////////////////////
 
 copyWasmRuntimeFiles(context, { skipSourcePaths: transpileSet });
@@ -82,10 +82,10 @@ removeUnexpectedTscJsOutputs(context);
 assertTscJsOutputs(context);
 
 ////////////////////////////////////////////////////////////////////////////////
-// 3. Generate profile-filtered loaders/API declarations. Loaders are transpiled
-//    straight into DEST; declarations are written verbatim. Source files in
-//    src/wasm/ are NOT mutated — the filter is applied only to the published
-//    artifact.
+// 3. Generate loaders/API declarations filtered to the manifest-listed
+//    versions. Loaders are transpiled straight into DEST; declarations are
+//    written verbatim. Source files in src/wasm/ are NOT mutated — the filter
+//    is applied only to the published artifact.
 ////////////////////////////////////////////////////////////////////////////////
 
 const tmp = join(tmpdir(), `fhevm-loaders-${process.pid}-${Date.now()}`);

@@ -1,13 +1,7 @@
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmRuntime } from './coreFhevmRuntime.js';
 import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
-import type {
-  FhevmDecryptModuleVersions,
-  FhevmEncryptModuleVersions,
-  FhevmModuleVersions,
-  TfheVersion,
-  TkmsVersion,
-} from './moduleVersions.js';
+import type { TfheVersion, TkmsVersion } from './moduleVersions.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -17,21 +11,16 @@ export type FhevmBaseOptions = {
 
 export type FhevmEncryptOptions = FhevmBaseOptions & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
-  readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
 };
 
-export type FhevmDecryptOptions = FhevmBaseOptions & {
-  readonly moduleVersions?: FhevmDecryptModuleVersions | undefined;
-};
+export type FhevmDecryptOptions = FhevmBaseOptions;
 
 export type FhevmOptions = FhevmBaseOptions & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

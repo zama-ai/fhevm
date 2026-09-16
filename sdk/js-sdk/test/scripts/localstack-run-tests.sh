@@ -7,24 +7,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 LIB="ethers,viem"
 SKIP_START=false
-PROFILE=""
 CHAIN="localstack"
-VALID_CHAINS=(localstack localstack_v11 localstack_v12 localstack_v13 localstack_v14)
-
-# Chains that must run against this pinned fhevm commit rather than the
-# current checkout of test-suite/fhevm (which may no longer support the
-# fhevm-cli profiles / deploy behavior these older chains rely on).
-PINNED_FHEVM_CHAINS=(localstack_v11 localstack_v12 localstack_v13)
-# July 3 2026 : "chore(sdk): v1.1.0-alpha.7"
-PINNED_FHEVM_COMMIT="86a1821bd76dd429d53894918cc37293df2ae1a7"
-
-FHEVM_CHECKOUT_DIR=""
-cleanup_fhevm_checkout() {
-    if [[ -n "$FHEVM_CHECKOUT_DIR" ]]; then
-        rm -rf "$FHEVM_CHECKOUT_DIR"
-    fi
-}
-trap cleanup_fhevm_checkout EXIT
+VALID_CHAINS=(localstack localstack_v14)
 
 usage() {
     cat <<EOF
@@ -36,10 +20,6 @@ Options:
   --ethlib ethers          Run only the ethers test suite.
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
-  --fhevm-cli-profile <name>
-                           Profile filename forwarded to localstack-restart.sh
-                           (e.g., v0.11.0-mainnet.json). If omitted, the stack
-                           starts without a profile lock file.
   --chain, -c <name>       Chain forwarded to localstack-restart.sh and used as
                            the CHAIN env var when invoking vitest. One of:
                            ${VALID_CHAINS[*]}.
@@ -53,17 +33,6 @@ is_valid_chain() {
     local candidate="$1"
     local c
     for c in "${VALID_CHAINS[@]}"; do
-        if [[ "$c" == "$candidate" ]]; then
-            return 0
-        fi
-    done
-    return 1
-}
-
-needs_pinned_fhevm() {
-    local candidate="$1"
-    local c
-    for c in "${PINNED_FHEVM_CHAINS[@]}"; do
         if [[ "$c" == "$candidate" ]]; then
             return 0
         fi
@@ -102,15 +71,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ethlib=*)
             LIB="${1#--ethlib=}"
-            shift
-            ;;
-        --fhevm-cli-profile)
-            require_arg_value "$1" "${2:-}"
-            PROFILE="$2"
-            shift 2
-            ;;
-        --fhevm-cli-profile=*)
-            PROFILE="${1#--fhevm-cli-profile=}"
             shift
             ;;
         --chain|-c)
@@ -159,29 +119,7 @@ STOP_DURATION=0
 
 SETUP_START=$SECONDS
 if [ "$SKIP_START" = false ]; then
-  RESTART_ARGS=(--chain "$CHAIN")
-  if [[ -n "$PROFILE" ]]; then
-    RESTART_ARGS+=(--fhevm-cli-profile "$PROFILE")
-  fi
-  RESTART_ARGS+=(--force)
-
-  if needs_pinned_fhevm "$CHAIN"; then
-    REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
-    FHEVM_CHECKOUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fhevm-pinned.XXXXXX")"
-    echo "Chain '$CHAIN' requires pinned fhevm commit $PINNED_FHEVM_COMMIT; checking out into $FHEVM_CHECKOUT_DIR..."
-    # Skip smudging on clone: it would otherwise try to check out $REPO_ROOT's own
-    # HEAD, which may only have LFS pointer files (actions/checkout defaults to
-    # lfs: false), causing a spurious "remote missing object" failure against the
-    # local clone's LFS remote before we ever reach the pinned commit below.
-    GIT_LFS_SKIP_SMUDGE=1 git clone --quiet "$REPO_ROOT" "$FHEVM_CHECKOUT_DIR"
-    # Point LFS at the real origin so the pinned commit's LFS objects are fetched
-    # from there instead of the local (LFS-content-less) clone source.
-    git -C "$FHEVM_CHECKOUT_DIR" config remote.origin.url "$(git -C "$REPO_ROOT" config remote.origin.url)"
-    git -C "$FHEVM_CHECKOUT_DIR" checkout --quiet "$PINNED_FHEVM_COMMIT"
-    RESTART_ARGS+=(--fhevm-dir "$FHEVM_CHECKOUT_DIR/test-suite/fhevm")
-  fi
-
-  "$SCRIPT_DIR/localstack-restart.sh" "${RESTART_ARGS[@]}"
+  "$SCRIPT_DIR/localstack-restart.sh" --chain "$CHAIN" --force
 fi
 SETUP_DURATION=$(( SECONDS - SETUP_START ))
 
@@ -205,11 +143,7 @@ TESTS_DURATION=$(( SECONDS - TESTS_START ))
 STOP_START=$SECONDS
 if [ "$SKIP_START" = false ]; then
   STOP_RESULT=0
-  if [[ -n "$FHEVM_CHECKOUT_DIR" ]]; then
-    "$SCRIPT_DIR/localstack-stop.sh" --fhevm-dir "$FHEVM_CHECKOUT_DIR/test-suite/fhevm" || STOP_RESULT=$?
-  else
-    "$SCRIPT_DIR/localstack-stop.sh" || STOP_RESULT=$?
-  fi
+  "$SCRIPT_DIR/localstack-stop.sh" || STOP_RESULT=$?
   if [[ "$STOP_RESULT" -ne 0 ]]; then
     echo "Warning: localstack-stop.sh failed; ignoring teardown error because tests already completed." >&2
   fi

@@ -1,8 +1,5 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
-import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import {
-  getViemDecryptClientOptions,
-  getViemEncryptClientOptions,
   getViemTestConfig,
   type CreateViemDecryptClientFn,
   type CreateViemEncryptClientFn,
@@ -33,7 +30,6 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
   readonly runIf: boolean;
   readonly createFhevmEncryptClient: CreateViemEncryptClientFn;
   readonly createFhevmDecryptClient: CreateViemDecryptClientFn;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 }): void {
   describe.runIf(parameters.runIf)(
     'Encrypt-Decrypt',
@@ -59,7 +55,6 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const client = parameters.createFhevmEncryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
-          options: getViemEncryptClientOptions(config, parameters.moduleVersions),
         });
         await client.ready;
 
@@ -133,7 +128,6 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
         const decryptClient = parameters.createFhevmDecryptClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
-          options: getViemDecryptClientOptions(parameters.moduleVersions),
         });
 
         await decryptClient.ready;

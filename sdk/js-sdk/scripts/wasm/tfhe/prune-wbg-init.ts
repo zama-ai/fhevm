@@ -90,6 +90,7 @@ const expectedWbgImportNames = new Set<string>([
 
 const optionalWbgImportNames = new Set<string>([
   '__wbg___wbindgen_bit_or_*',
+  '__wbg___wbindgen_boolean_get_*',
   '__wbg___wbindgen_shl_*',
   '__wbg_getTime_*',
   '__wbg_new_0_*',

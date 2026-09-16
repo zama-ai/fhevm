@@ -108,9 +108,8 @@ const client = createFhevmClient({
 | ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
 | `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
 | `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
-| `moduleVersions`  | `FhevmModuleVersions`   | varies by client  | Pin specific TFHE/TKMS WASM versions instead of the defaults.     |
 
-Module version pinning and the encryption-key cache are covered in
+The encryption-key cache is covered in
 [Runtime configuration](runtime-configuration.md).
 
 ## Loading and lifecycle

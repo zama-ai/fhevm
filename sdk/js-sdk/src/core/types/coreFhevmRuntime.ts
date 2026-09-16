@@ -4,7 +4,6 @@ import type { EncryptModule, EncryptModuleFactory, WithEncryptModule } from '../
 import type { DecryptModule, DecryptModuleFactory, WithDecryptModule } from '../modules/decrypt/types.js';
 import type { Logger } from './logger.js';
 import type { Auth } from './auth.js';
-import type { FhevmModuleVersions } from './moduleVersions.js';
 import type { WasmAssetLoadMode } from './wasmAssets.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -12,7 +11,6 @@ import type { WasmAssetLoadMode } from './wasmAssets.js';
 export type FhevmRuntimeConfig = {
   readonly locateFile?: ((file: string) => URL) | undefined;
   readonly wasmAssetLoadMode?: WasmAssetLoadMode | undefined;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
   readonly logger?: Logger | undefined;
   readonly singleThread?: boolean | undefined;
   readonly numberOfThreads?: number | undefined;

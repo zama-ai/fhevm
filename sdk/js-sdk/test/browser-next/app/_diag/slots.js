@@ -11,4 +11,3 @@
 // these fallbacks too only if you exercise the app standalone.
 export const LEGACY_SLOT = process.env.NEXT_PUBLIC_FHEVM_SLOT_LEGACY ?? 'v12';
 export const CURRENT_SLOT = process.env.NEXT_PUBLIC_FHEVM_SLOT_CURRENT ?? 'v13';
-export const OLD_MODULE_NEW_KEY_SLOT = process.env.NEXT_PUBLIC_FHEVM_SLOT_OLDMOD ?? 'oldmod-newkey';
