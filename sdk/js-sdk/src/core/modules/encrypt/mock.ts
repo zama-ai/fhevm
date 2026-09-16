@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
 import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
 import { remove0x } from '../../base/string.js';
+import { numberToBytes8 } from '../../base/uint.js';
 import { typedValueToBytes32Hex } from '../../base/typedValue.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
@@ -142,7 +144,7 @@ export async function parseTFHEProvenCompactCiphertextList(
 export async function buildWithProofPacked(
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
-  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
+  const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData, seed } = parameters;
 
   const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
   const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
@@ -157,9 +159,17 @@ export async function buildWithProofPacked(
   const typedValuesBytes32HexNo0x = typedValues.map(typedValueToBytes32Hex).map(remove0x).join('');
   const cleartextExtraData = `0x${typedValuesBytes32HexNo0x}${remove0x(extraData)}` as BytesHex;
 
-  // Per typedValue: random nonce (8 bytes) || metaData || value bytes (32).
-  const perValueBlobs = typedValues.map((tv) => {
-    const nonce = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)));
+  // Per typedValue: nonce (8 bytes) || metaData || value bytes (32).
+  // - No seed: draw the nonce from a CSPRNG, so repeated calls never collide
+  //   (mirrors `build_with_proof_packed` in module/api-p.ts).
+  // - With a seed: derive the nonce deterministically from `seed || index`, so the
+  //   same seed + inputs always reproduce the same ciphertext/handle (mirrors the
+  //   real WASM `build_with_proof_packed_seeded` path in module/api-p.ts).
+  const perValueBlobs = typedValues.map((tv, index) => {
+    const nonce =
+      seed === undefined
+        ? crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)))
+        : keccak_256(concatBytes(seed, numberToBytes8(index))).slice(0, 8);
     const valueBytes = hexToBytes32(typedValueToBytes32Hex(tv));
     return concatBytes(nonce, metaData, valueBytes);
   });
