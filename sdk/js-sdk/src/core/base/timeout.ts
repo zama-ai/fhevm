@@ -18,15 +18,15 @@ export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> 
   signal?.throwIfAborted();
 
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(resolve, ms);
+    const onAbort = (): void => {
+      clearTimeout(timeoutId);
+      reject(createAbortError(signal?.reason));
+    };
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
 
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timeoutId);
-        reject(createAbortError(signal.reason));
-      },
-      { once: true },
-    );
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
