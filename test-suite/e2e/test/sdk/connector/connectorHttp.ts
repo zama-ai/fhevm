@@ -4,7 +4,7 @@ import type { Signer } from 'ethers';
 import { getBytes, hexlify } from 'ethers';
 
 import type { SignMode, UnifiedDecryptRequest } from '../unified/unifiedUserDecrypt';
-import { backdatedStartTimestamp, signRequest } from '../unified/unifiedUserDecrypt';
+import { UNIFIED_ATTESTATION_TYPE, backdatedStartTimestamp, signRequest } from '../unified/unifiedUserDecrypt';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Configuration
@@ -49,14 +49,20 @@ export interface RequestValidity {
   durationSeconds: number;
 }
 
-export interface UserDecryptionRequest {
+/** The RFC 016 fields the user signs over. */
+export interface UserDecryptionPayload {
   handles: HandleEntry[];
   userAddress: string;
   publicKey: string;
   allowedContracts: string[];
   requestValidity: RequestValidity;
-  signature: string;
   extraData: string;
+}
+
+export interface UserDecryptionRequest {
+  attestationType: string;
+  payload: UserDecryptionPayload;
+  signature: string;
 }
 
 export interface PublicDecryptionResponse {
@@ -83,6 +89,7 @@ export interface ErrorResponse {
 /** `retryable` as the connector computes it from the code (ErrorCode::retryable). */
 export const RETRYABLE_BY_CODE: Record<string, boolean> = {
   malformed: false,
+  unsupported_attestation_type: false,
   sender_authentication_failed: false,
   kms_context_destroyed: false,
   unprocessable: false,
@@ -268,13 +275,16 @@ export async function buildUserRequest(
     mode ?? { kind: 'eoa', signer },
   );
   return {
-    handles: input.handles,
-    userAddress: unified.userAddress,
-    publicKey: unified.publicKey,
-    allowedContracts: [...unified.allowedContracts],
-    requestValidity: { startTimestamp: unified.startTimestamp, durationSeconds: unified.durationSeconds },
+    attestationType: UNIFIED_ATTESTATION_TYPE,
+    payload: {
+      handles: input.handles,
+      userAddress: unified.userAddress,
+      publicKey: unified.publicKey,
+      allowedContracts: [...unified.allowedContracts],
+      requestValidity: { startTimestamp: unified.startTimestamp, durationSeconds: unified.durationSeconds },
+      extraData: unified.extraData ?? USER_EXTRA_DATA,
+    },
     signature,
-    extraData: unified.extraData ?? USER_EXTRA_DATA,
   };
 }
 
