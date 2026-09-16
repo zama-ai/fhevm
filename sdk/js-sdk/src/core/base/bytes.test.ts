@@ -85,33 +85,9 @@ describe('bytes', () => {
 
     expect(() => hexToBytes('0xf')).toThrow('Invalid hex string: odd length');
 
-    arr = hexToBytes('za');
-    expect(arr instanceof Uint8Array).toBe(true);
-    expect(arr.length).toBe(1);
-    expect(arr[0]).toBe(0);
-    arr = hexToBytes('za');
-
-    arr = hexToBytes('0xzazazazazaza');
-    expect(arr instanceof Uint8Array).toBe(true);
-    expect(arr.length).toBe(6);
-    expect(arr[0]).toBe(0);
-    expect(arr[1]).toBe(0);
-    expect(arr[2]).toBe(0);
-    expect(arr[3]).toBe(0);
-    expect(arr[4]).toBe(0);
-    expect(arr[5]).toBe(0);
-
-    arr = hexToBytes('0xzzff');
-    expect(arr instanceof Uint8Array).toBe(true);
-    expect(arr.length).toBe(2);
-    expect(arr[0]).toBe(0);
-    expect(arr[1]).toBe(255);
-
-    arr = hexToBytes('0xzfff');
-    expect(arr instanceof Uint8Array).toBe(true);
-    expect(arr.length).toBe(2);
-    expect(arr[0]).toBe(0);
-    expect(arr[1]).toBe(255);
+    for (const malformed of ['za', '0xzazazazazaza', '0xzzff', '0xzfff']) {
+      expect(() => hexToBytes(malformed)).toThrow('non-hexadecimal');
+    }
   });
 
   //////////////////////////////////////////////////////////////////////////////
@@ -686,18 +662,8 @@ describe('bytesToHex - hexToBytes', () => {
       expect(hexToBytes('deadbeef')).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
     });
 
-    // Invalid characters (parseInt returns NaN -> 0)
-    it('converts invalid hex chars to 0 (via parseInt NaN)', () => {
-      // 'zz' -> parseInt('zz', 16) = NaN -> becomes 0 in Uint8Array
-      expect(hexToBytes('zz')).toEqual(new Uint8Array([0]));
-      expect(hexToBytes('0xzz')).toEqual(new Uint8Array([0]));
-    });
-
-    it('handles mixed valid and invalid chars', () => {
-      // 'zf' -> parseInt('zf', 16) = NaN -> 0
-      // 'ff' -> 255
-      expect(hexToBytes('0xzfff')).toEqual(new Uint8Array([0, 255]));
-      expect(hexToBytes('0xffzf')).toEqual(new Uint8Array([255, 0]));
+    it.each(['zz', '0xzz', '0xzfff', '0xffzf'])('rejects malformed hex %s', (value) => {
+      expect(() => hexToBytes(value)).toThrow('non-hexadecimal');
     });
 
     it('handles all zeros', () => {
@@ -738,10 +704,7 @@ describe('bytesToHex - hexToBytes', () => {
 
     // Special prefix handling
     it('handles 0X (uppercase X) prefix', () => {
-      // The regex only removes lowercase 0x
-      const result = hexToBytes('0Xff');
-      // '0Xff' without 0x removal -> ['0X', 'ff'] -> [NaN, 255] -> [0, 255]
-      expect(result).toEqual(new Uint8Array([0, 255]));
+      expect(hexToBytes('0Xff')).toEqual(new Uint8Array([255]));
     });
 
     // Leading zeros preservation
