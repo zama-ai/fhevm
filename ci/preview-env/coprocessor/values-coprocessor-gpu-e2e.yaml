@@ -1,0 +1,82 @@
+# GPU overlay for HEAD FHE workers (tfhe / sns / zkproof).
+#
+# Applied on the standalone coprocessor-<i> release, and on coprocessor-<i>-gcs
+# in Blue/Green. BCS (v0.14.0-7 CPU images) stays on the `coprocessor` nodepool
+# so it does not consume MIG slices it cannot use.
+#
+# deploy-coprocessor.sh pairs this scheduling with the corresponding
+# <resolved-tag>-cuda12.8-sm90 images from coprocessor-gpu-docker-build.
+tfheWorker:
+  resources:
+    requests:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values:
+                  - coprocessor-gpu
+  tolerations:
+    - key: karpenter.sh/nodepool
+      operator: Equal
+      value: coprocessor-gpu
+      effect: NoSchedule
+
+zkProofWorker:
+  resources:
+    requests:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values:
+                  - coprocessor-gpu
+  tolerations:
+    - key: karpenter.sh/nodepool
+      operator: Equal
+      value: coprocessor-gpu
+      effect: NoSchedule
+
+snsWorker:
+  resources:
+    requests:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+    limits:
+      cpu: "16"
+      memory: 32Gi
+      nvidia.com/gpu: "1"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: karpenter.sh/nodepool
+                operator: In
+                values:
+                  - coprocessor-gpu
+  tolerations:
+    - key: karpenter.sh/nodepool
+      operator: Equal
+      value: coprocessor-gpu
+      effect: NoSchedule

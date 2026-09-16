@@ -460,8 +460,12 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   override via `kms_core_version` + `kms_repo_ref` in `overrides` (see
   "Dedicated KMS version pins" above). Enclave **instance type** is still
   whatever kms `deploy.sh` picks for `aws-ci`.
-- Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
-  selection).
+- ~~Add support for changing the coprocessor's FHE worker instance type~~ —
+  `preview-env-gpu` combined with `preview-env-e2e-tests` applies
+  `values-coprocessor-gpu-e2e.yaml` to `tfhe` / `sns` / `zkproof` (one GPU plus
+  `coprocessor-gpu` affinity/toleration) and selects the resolved workers'
+  `cuda12.8-sm90` images. Other label combinations stay on CPU. In Blue/Green,
+  BCS always remains on the CPU `coprocessor` pool.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above
