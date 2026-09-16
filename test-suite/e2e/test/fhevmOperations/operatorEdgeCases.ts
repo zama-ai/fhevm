@@ -5,7 +5,7 @@ import { createInstance } from '../instance';
 import { getSigner } from '../signers';
 
 export const OVERSIZED_SHIFT_64 = 70n;
-export const SHIFT_ROTATE_VALUE_64 = 0x123456789abcdef0n;
+export const SHIFT_ROTATE_VALUE_64 = 0xa5c3f00fdeadbeefn;
 
 export const SHIFT_CASES = [
   { bits: 8n, valueType: 'uint8', value: 0xa5n, amounts: [0n, 7n, 8n, 255n] },
@@ -15,14 +15,14 @@ export const SHIFT_CASES = [
   {
     bits: 128n,
     valueType: 'uint128',
-    value: 0x123456789abcdef0fedcba9876543210n,
+    value: 0xa5c3f00fdeadbeef0123456789abcdefn,
     amounts: [0n, 127n, 128n, 255n],
   },
   {
     // The shift amount is a uint8/euint8, so amount >= 256 is unrepresentable here.
     bits: 256n,
     valueType: 'uint256',
-    value: 0x123456789abcdef0fedcba9876543210123456789abcdef0fedcba9876543210n,
+    value: 0xa5c3f00fdeadbeef0123456789abcdeffedcba9876543210deadbeefcafef00dn,
     amounts: [0n, 255n],
   },
 ] as const;

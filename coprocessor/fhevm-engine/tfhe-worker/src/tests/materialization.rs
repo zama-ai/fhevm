@@ -147,10 +147,7 @@ fn compression_round_trip_bit_exactness_survey() {
     let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset").expect("keyset fixture");
     let keyset: CompressedXofKeySet =
         safe_deserialize_key(&keyset_bytes).expect("deserialize keyset");
-    let (compact_public_key, server_key) = keyset
-        .decompress()
-        .expect("decompress keyset")
-        .into_raw_parts();
+    let (compact_public_key, server_key) = keyset.decompress().into_raw_parts();
     tfhe::set_server_key(server_key);
 
     // Noisy seeds: compact-list encryption carries real encryption noise.
