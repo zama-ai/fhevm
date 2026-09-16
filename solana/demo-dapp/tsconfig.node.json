@@ -7,10 +7,7 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "noEmit": true,
-    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo",
-    "paths": {
-      "@sdk-src/*": ["./node_modules/@fhevm/sdk/_types/*"]
-    }
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
   "include": [
     "vite.config.ts",

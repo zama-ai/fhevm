@@ -3,6 +3,7 @@ import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptDepende
 
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
 const environment = (): Record<string, string> => ({
+  PD_RPC_URL: 'http://127.0.0.1:8899',
   PD_CONTRACTS_CHAIN_ID: '9223372036854788153',
   PD_RELAYER_URL: 'http://127.0.0.1:3000',
   PD_HANDLE: hex32('1'),
@@ -29,6 +30,7 @@ describe('solana-public-decrypt', () => {
     expect(received).toEqual({
       chainId: 9223372036854788153n,
       relayerUrl: 'http://127.0.0.1:3000',
+      rpcUrl: 'http://127.0.0.1:8899',
       apiKey: 'local',
       request: {
         handle: hex32('1'),

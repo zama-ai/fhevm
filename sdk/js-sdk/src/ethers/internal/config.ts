@@ -1,5 +1,10 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import { authsAreEqual, cloneModuleVersions, moduleVersionsAreEqual } from '../../core/runtimeConfig-p.js';
+import {
+  authsAreEqual,
+  cloneModuleVersions,
+  loggersAreEqual,
+  moduleVersionsAreEqual,
+} from '../../core/runtimeConfig-p.js';
 
 let ethersFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -26,7 +31,7 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   }
 
   if (
-    ethersFhevmRuntimeConfig.logger !== config.logger ||
+    !loggersAreEqual(ethersFhevmRuntimeConfig.logger, config.logger) ||
     ethersFhevmRuntimeConfig.locateFile !== config.locateFile ||
     ethersFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
     !moduleVersionsAreEqual(ethersFhevmRuntimeConfig.moduleVersions, config.moduleVersions) ||

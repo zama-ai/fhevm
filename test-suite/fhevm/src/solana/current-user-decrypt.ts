@@ -1,5 +1,5 @@
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaDecryptTrust } from '@sdk-src/solana/index.js';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaDecryptTrust } from '@fhevm/sdk/solana';
 import { PreflightError } from '../errors';
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = 'solana-current-user-decrypt';
@@ -9,6 +9,7 @@ export const SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION =
 type Environment = Readonly<Record<string, string | undefined>>;
 
 type CurrentUserDecryptSdkInput = {
+  rpcUrl: string;
   chainId: bigint;
   relayerUrl: string;
   verifyingProgramId: Bytes32Hex;
@@ -68,21 +69,20 @@ const evmAddress = (value: string, name: string): `0x${string}` => {
   return value as `0x${string}`;
 };
 
-// The source-file SDK dependency exports types from generated `_types`, which is absent in clean
-// CLI checkouts. Keep this structural seam narrow; the real vertical checks the public SDK call.
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
-  const solanaModule = '@fhevm/sdk/solana';
-  const solana = (await import(solanaModule)) as typeof import('@sdk-src/solana/index.js');
+  const solana = await import('@fhevm/sdk/solana');
+  const { createSolanaRpc } = await import('@solana/kit');
+  const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
     fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
-  const client = solana.createFhevmDecryptClient({ chain, trust: input.trust });
+  const client = solana.createFhevmDecryptClient({ chain, rpc, trust: input.trust });
   // The permit path: one wallet signature mints a permissive session, the request runs under it.
   const wallet = solana.solanaPermitWalletFromSecretKey(input.secretKey);
   const session = await client.signPermit({ wallet, durationSeconds: input.request.durationSeconds });
-  return client.userDecrypt({
+  return client.decryptValues({
     session,
     entries: [
       {
@@ -118,6 +118,7 @@ export const runSolanaCurrentUserDecrypt = async (
   const clearValues = await userDecrypt({
     chainId: BigInt(required(environment, 'UD_CONTRACTS_CHAIN_ID')),
     relayerUrl: required(environment, 'UD_RELAYER_URL'),
+    rpcUrl: required(environment, 'UD_RPC_URL'),
     verifyingProgramId: bytes32Hex(required(environment, 'UD_VERIFYING_PROGRAM_ID'), 'UD_VERIFYING_PROGRAM_ID'),
     apiKey: environment.ZAMA_FHEVM_API_KEY ?? 'local',
     secretKey: bytes32(environment, 'UD_SECRET_KEY'),

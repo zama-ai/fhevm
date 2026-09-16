@@ -1,3 +1,4 @@
+import { createSolanaRpc } from '@solana/kit';
 // The decrypt client's action surface, pinned.
 //
 // One absence here is load-bearing: the client must not offer `generateTransportKeyPair`. That
@@ -10,7 +11,7 @@
 
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import { describe, expect, it } from 'vitest';
-import { createFhevmDecryptClient } from './createFhevmDecryptClient.js';
+import { createFhevmPublicDecryptClient } from './createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 
 const chain = {
@@ -20,11 +21,11 @@ const chain = {
   },
 } as const satisfies FhevmSolanaChain;
 
-describe('createFhevmDecryptClient', () => {
+describe('createFhevmPublicDecryptClient', () => {
   it('offers the public-decrypt set, and no EVM-blob transport key generator', async () => {
     setFhevmRuntimeConfig({});
 
-    const client = createFhevmDecryptClient({ chain });
+    const client = createFhevmPublicDecryptClient({ chain, rpc: createSolanaRpc('http://localhost:8899') });
 
     expect(client.publicDecryptCertificate).toBeTypeOf('function');
     expect('generateTransportKeyPair' in client).toBe(false);

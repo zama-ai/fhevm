@@ -1,7 +1,7 @@
 import type { BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { ZkProof } from '../types/zkProof-p.js';
 import type { EncryptionBits, FheType } from '../types/fheType.js';
-import type { ZkProofBuilder } from '../types/zkProofBuilder-p.js';
+import type { SolanaProofContext, ZkProofBuilder } from '../types/zkProofBuilder-p.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
@@ -162,7 +162,14 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
       ciphertextWithZkProof,
       extraData: finalExtraData,
-    } = await this.#encodeAndProve(context, contractAddress, userAddress, asBytesHex(extraData), fhevmContext);
+    } = await this.#encodeAndProve(
+      context,
+      context.chain.fhevm.contracts.acl.address,
+      contractAddress,
+      userAddress,
+      asBytesHex(extraData),
+      fhevmContext,
+    );
 
     if (isSolanaHostChainId(chainId)) {
       throw new ZkProofError({
@@ -191,7 +198,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
    * type inside `buildInputProofMetaData`) and the returned proof type differ.
    */
   public async buildSolana(
-    context: Context & { readonly tfheVersion: TfheVersion },
+    context: SolanaProofContext,
     {
       contractAddress,
       userAddress,
@@ -204,6 +211,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // (`buildInputProofMetaData`), and SolanaZkProof carries no extraData field.
     const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
       context,
+      context.aclProgramAddress,
       contractAddress,
       userAddress,
       asBytesHex('0x00'),
@@ -240,7 +248,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
    * `buildInputProofMetaData`; the caller wraps the result in the matching proof type.
    */
   async #encodeAndProve(
-    context: Context,
+    context: Parameters<typeof fetchFheEncryptionKeyWasm>[0],
+    aclContractAddress: string,
     contractAddress: string,
     userAddress: string,
     extraData: BytesHex,
@@ -262,7 +271,6 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     // should be guaranteed at this point
     assert(this.#totalBits <= this.#bitsCapacity);
 
-    const aclContractAddress = context.chain.fhevm.contracts.acl.address;
     const chainId = context.chain.id;
 
     if (!isUint64(chainId)) {

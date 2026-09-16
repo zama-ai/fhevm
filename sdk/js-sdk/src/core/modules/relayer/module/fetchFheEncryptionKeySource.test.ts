@@ -105,10 +105,12 @@ describe('_assertIsFetchKeyUrlResult accepted payloads', () => {
   ])('accepts a succeeded keyurl response %s', async (_name, payload) => {
     mockFetchStatus(200, JSON.stringify(payload));
 
-    const source = await fetchFheEncryptionKeySource(relayerClient, {});
-
-    expect(source.publicKeySource).toStrictEqual(expectedPublicKeySource);
-    expect(source.crsSource).toStrictEqual(expectedCrsSource);
+    for (const chainId of [relayerClient.chainId, 0x8000000000000001n]) {
+      const source = await fetchFheEncryptionKeySource({ ...relayerClient, chainId }, {});
+      expect(source.metadata.chainId).toBe(chainId);
+      expect(source.publicKeySource).toStrictEqual(expectedPublicKeySource);
+      expect(source.crsSource).toStrictEqual(expectedCrsSource);
+    }
   });
 });
 

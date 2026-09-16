@@ -15,6 +15,15 @@ import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 import type { TfheVersion } from './moduleVersions.js';
+import type { FhevmSolanaChain } from './fhevmSolanaChain.js';
+import type { Bytes32Hex } from './primitives.js';
+
+export type SolanaProofContext = {
+  readonly chain: FhevmSolanaChain;
+  readonly aclProgramAddress: Bytes32Hex;
+  readonly runtime: WithEncrypt;
+  readonly tfheVersion: TfheVersion;
+};
 
 export interface ZkProofBuilder {
   addBool(value: boolean | number | bigint | BoolValueLike): this;
@@ -37,7 +46,7 @@ export interface ZkProofBuilder {
     },
   ): Promise<ZkProof>;
   buildSolana(
-    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt; readonly tfheVersion: TfheVersion },
+    context: SolanaProofContext,
     parameters: {
       readonly contractAddress: string;
       readonly userAddress: string;

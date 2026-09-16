@@ -1,15 +1,4 @@
-/**
- * Solana confidential-vault dapp module (fhevm-internal#1759): typed client actions for the
- * confidential-batcher lifecycle used by the confidential-vault demo (epic #1754).
- *
- * This is dapp code, not SDK code — it lives in the demo (fhevm-internal#1859 §6d) and reaches
- * past the published package's exports via the `@sdk-src/*` alias for internals it needs. The
- * alias resolves to two different copies on purpose: inside this dapp it points at the *built*
- * package under `node_modules/@fhevm/sdk` (`_types` for tsc, `_esm` for vite), so every type has
- * one identity; the bun consumers that run without a build step (test-suite scenarios, the
- * two-holder worker) map it to the SDK *sources* instead. The SDK's protocol surface
- * (`@fhevm/sdk/solana`) carries no vault, token-app, or address-lookup-table code.
- */
+/** Demo vault workflows composed through the public SDK and generated application clients. */
 
 export { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js';

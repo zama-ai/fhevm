@@ -1,6 +1,6 @@
 // AUTO-GENERATED FROM versionsManifest.js - DO NOT EDIT.
 // Generator: scripts/build/codegen-loaders.mjs
-// Profile:   dev
+// Profile:   prod
 //
 // Version-selective TKMS loader. Authored as plain ESM .js (not .ts) so the
 // published artifact is byte-identical to source. Types live in the sibling

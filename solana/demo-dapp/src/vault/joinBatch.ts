@@ -27,12 +27,11 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { hexToBytes } from '@sdk-src/core/base/bytes.js';
-import { assertHandleArrayEquals } from '@sdk-src/core/handle/FhevmHandle.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaSubmitInputProofResult } from '@sdk-src/solana/actions/submitInputProof.js';
+import { hexToBytes } from '@fhevm/sdk/base';
+import { bytes32HexToHandle } from '@fhevm/sdk/solana';
+import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
@@ -57,8 +56,8 @@ import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccou
 export type SolanaVaultJoinParameters = {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  readonly inputProof: SolanaZkProof;
-  readonly inputProofResult: SolanaSubmitInputProofResult;
+  readonly inputProof: SolanaInputProof;
+
   readonly inputIndex: number;
   /** Joining user; the transfer authority over their confidential balance. */
   readonly user: TransactionSigner;
@@ -105,22 +104,18 @@ export async function joinBatch(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
   parameters: SolanaVaultJoinParameters,
 ): Promise<Signature> {
-  const { inputProof, inputProofResult, inputIndex, user, joinConfidentialMint } = parameters;
+  const { inputProof, inputIndex, user, joinConfidentialMint } = parameters;
   const zamaHostProgramAddress = address(base58.encode(hexToBytes(fhevm.aclProgramAddress)));
   if (zamaHostProgramAddress !== ZAMA_HOST_PROGRAM_ADDRESS) {
     throw new Error('configured ACL program does not match the host compiled into confidential-token');
   }
-  const handles = inputProof.getInputHandles();
-  assertHandleArrayEquals(inputProofResult.handles, handles, {
-    actualName: 'input proof submission',
-    expectedName: 'input proof',
-  });
+  const handles = inputProof.handles.map((handle) => bytes32HexToHandle(handle.bytes32Hex));
   if (!Number.isInteger(inputIndex) || inputIndex < 0 || inputIndex > 255 || inputIndex >= handles.length) {
     throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
   }
   const inputHandle = handles[inputIndex];
   if (inputHandle === undefined) throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
-  if (inputProof.encryptionBits[inputIndex] !== 64) throw new Error('join amount must be euint64');
+  if (inputHandle.fheType !== 'euint64') throw new Error('join amount must be euint64');
   if ((inputProof.chainId & (1n << 63n)) === 0n) throw new Error('join requires a Solana chain id');
   if (inputProof.chainId !== fhevm.solanaChain.id)
     throw new Error('input proof chain id does not match the client chain');
@@ -134,7 +129,7 @@ export async function joinBatch(
   if (base58.encode(hexToBytes(inputProof.contractAddress)) !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error('input proof contract does not match the confidential-token program');
   }
-  const signatures = inputProofResult.signatures.map((signature, index) => {
+  const signatures = inputProof.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
     if (bytes.length !== 65) throw new Error(`input proof signature[${index}] must be 65 bytes`);
     return bytes;
@@ -173,7 +168,7 @@ export async function joinBatch(
     userAddress: hexToBytes(inputProof.userAddress),
     contractAddress: hexToBytes(inputProof.contractAddress),
     contractChainId: inputProof.chainId,
-    extraData: hexToBytes(inputProofResult.extraData),
+    extraData: hexToBytes(inputProof.extraData),
     signatures,
   });
 

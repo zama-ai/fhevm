@@ -1452,18 +1452,18 @@ export async function verifySha256(
 }
 
 /**
- * Convert a hex string prefixed by 0x or not to a Uint8Array
- * Any invalid byte string is converted to 0
- * "0xzzff" = [0, 255]
- * "0xzfff" = [0, 255]
+ * Converts hexadecimal bytes with an optional 0x or 0X prefix.
+ * Rejects odd-length input and non-hexadecimal characters.
  */
 export function hexToBytes(hexString: string): Uint8Array {
-  if (hexString.length % 2 !== 0) {
-    throw new Error('Invalid hex string: odd length');
+  const hex = hexString.replace(/^0x/i, '');
+  if (hex.length % 2 !== 0) throw new Error('Invalid hex string: odd length');
+  if (!/^[0-9a-f]*$/i.test(hex)) throw new Error('Invalid hex string: non-hexadecimal character');
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index++) {
+    bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   }
-  const arr = hexString.replace(/^(0x)/, '').match(/.{1,2}/g);
-  if (!arr) return new Uint8Array();
-  return Uint8Array.from(arr.map((byte) => parseInt(byte, 16)));
+  return bytes;
 }
 
 /**

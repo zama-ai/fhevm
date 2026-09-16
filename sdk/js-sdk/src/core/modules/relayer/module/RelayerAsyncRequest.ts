@@ -169,7 +169,7 @@ export class RelayerAsyncRequest {
   private static readonly DEFAULT_RETRY_AFTER_MS = 2500;
   private static readonly MINIMUM_RETRY_AFTER_MS = 1000;
 
-  private static readonly DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+  public static readonly DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
   private static readonly MAX_GET_RETRY = 60 * 24; // number of default retries in 1 hour (24 retries/min)
   private static readonly MAX_POST_RETRY = RelayerAsyncRequest.MAX_GET_RETRY;
 

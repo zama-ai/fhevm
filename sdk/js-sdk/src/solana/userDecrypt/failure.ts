@@ -83,7 +83,9 @@ export function classifySolanaUserDecryptRejection(rejection: SolanaUserDecryptR
       return {
         action: 'retry-unchanged',
         afterSeconds:
-          rejection.retryAfterSeconds > 0 ? rejection.retryAfterSeconds : SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
+          Number.isFinite(rejection.retryAfterSeconds) && rejection.retryAfterSeconds > 0
+            ? rejection.retryAfterSeconds
+            : SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
       };
     case 'unanswered':
       return { action: 'retry-unchanged', afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS };

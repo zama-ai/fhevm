@@ -26,12 +26,11 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { hexToBytes } from '@sdk-src/core/base/bytes.js';
-import { assertHandleArrayEquals } from '@sdk-src/core/handle/FhevmHandle.js';
-import type { SolanaZkProof } from '@sdk-src/core/types/zkProof-p.js';
-import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
-import type { SolanaSubmitInputProofResult } from '@sdk-src/solana/actions/submitInputProof.js';
+import { hexToBytes } from '@fhevm/sdk/base';
+import { bytes32HexToHandle } from '@fhevm/sdk/solana';
+import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getConfidentialTransferInstruction } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
 import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -44,8 +43,8 @@ const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 export type SolanaConfidentialTransferParameters = {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  readonly inputProof: SolanaZkProof;
-  readonly inputProofResult: SolanaSubmitInputProofResult;
+  readonly inputProof: SolanaInputProof;
+
   readonly inputIndex: number;
   readonly owner: TransactionSigner;
   readonly feePayer: TransactionSigner;
@@ -75,22 +74,18 @@ export async function confidentialTransfer(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
   parameters: SolanaConfidentialTransferParameters,
 ): Promise<Signature> {
-  const { inputProof, inputProofResult, inputIndex, owner, feePayer, mint } = parameters;
+  const { inputProof, inputIndex, owner, feePayer, mint } = parameters;
   const zamaHostProgramAddress = address(base58.encode(hexToBytes(fhevm.aclProgramAddress)));
   if (zamaHostProgramAddress !== ZAMA_HOST_PROGRAM_ADDRESS) {
     throw new Error('configured ACL program does not match the host compiled into confidential-token');
   }
-  const handles = inputProof.getInputHandles();
-  assertHandleArrayEquals(inputProofResult.handles, handles, {
-    actualName: 'input proof submission',
-    expectedName: 'input proof',
-  });
+  const handles = inputProof.handles.map((handle) => bytes32HexToHandle(handle.bytes32Hex));
   if (!Number.isInteger(inputIndex) || inputIndex < 0 || inputIndex > 255 || inputIndex >= handles.length) {
     throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
   }
   const inputHandle = handles[inputIndex];
   if (inputHandle === undefined) throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
-  if (inputProof.encryptionBits[inputIndex] !== 64) throw new Error('confidential transfer amount must be euint64');
+  if (inputHandle.fheType !== 'euint64') throw new Error('confidential transfer amount must be euint64');
   if ((inputProof.chainId & (1n << 63n)) === 0n) throw new Error('confidential transfer requires a Solana chain id');
   if (inputProof.chainId !== fhevm.solanaChain.id)
     throw new Error('input proof chain id does not match the client chain');
@@ -105,7 +100,7 @@ export async function confidentialTransfer(
   if (base58.encode(hexToBytes(inputProof.contractAddress)) !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error('input proof contract does not match the confidential-token program');
   }
-  const signatures = inputProofResult.signatures.map((signature, index) => {
+  const signatures = inputProof.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
     if (bytes.length !== 65) throw new Error(`input proof signature[${index}] must be 65 bytes`);
     return bytes;
@@ -147,7 +142,7 @@ export async function confidentialTransfer(
       userAddress: hexToBytes(inputProof.userAddress),
       contractAddress: hexToBytes(inputProof.contractAddress),
       contractChainId: inputProof.chainId,
-      extraData: hexToBytes(inputProofResult.extraData),
+      extraData: hexToBytes(inputProof.extraData),
       signatures,
     },
     // A plain transfer leaves no transferred-amount receipt for a recipient program.

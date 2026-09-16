@@ -51,6 +51,7 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   ]);
   const hex20 = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString("hex")}` as `0x${string}`;
   const config: FheVerticalConfig = {
+    rpcUrl: env.rpcUrl,
     relayerUrl: env.relayerUrl,
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.

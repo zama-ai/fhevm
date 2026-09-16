@@ -5,7 +5,7 @@ import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { bytesToHex, concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
-import { removeSuffix } from '../../core/base/string.js';
+import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { hexToBytes } from '../proof.js';
 
 export type SolanaPublicDecryptCertificateContext = {
@@ -20,6 +20,7 @@ export type SolanaPublicDecryptCertificateParameters = {
   readonly contextId: Uint8Array;
   /** The 32-byte EncryptedStore address whose history authorizes public decryption. */
   readonly encryptedStore: Uint8Array;
+  /** Relayer HTTP/polling budget; RPC calls use the supplied signal and the RPC transport policy. */
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -77,15 +78,18 @@ export async function publicDecryptCertificate(
 
   const requestExtraData = buildSolanaPublicDecryptExtraData(parameters.contextId, parameters.encryptedStore);
   const requestExtraDataHex = bytesToHex(requestExtraData);
+  const options = { auth: context.runtime.config.auth, ...parameters.options };
+  const baseUrl = validateRelayerBaseUrl(context.chain.fhevm.relayerUrl, options.auth !== undefined);
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',
-    url: `${removeSuffix(context.chain.fhevm.relayerUrl, '/')}/v2/public-decrypt`,
+    url: buildRelayerUrlString(baseUrl, 'v2/public-decrypt'),
     retryOnReadinessCheckTimeout: true,
     payload: {
       ciphertextHandles: [handle.bytes32Hex],
       extraData: requestExtraDataHex,
     },
-    options: { auth: context.runtime.config.auth, ...parameters.options },
+    options,
+    logger: context.runtime.config.logger,
   });
   const result = (await request.run()) as {
     readonly decryptedValue: string;

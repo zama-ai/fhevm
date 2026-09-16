@@ -12,6 +12,7 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -33,7 +34,6 @@ import {
   type WritableAccount,
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
-import { findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const REVOKE_DELEGATION_FOR_USER_DECRYPTION_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -138,7 +138,10 @@ export async function getRevokeDelegationForUserDecryptionInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda();
+    accounts.hostConfig.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

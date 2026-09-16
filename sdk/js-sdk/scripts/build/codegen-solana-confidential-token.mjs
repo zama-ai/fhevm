@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { rootNodeFromAnchor } from '@codama/nodes-from-anchor';
 import { renderVisitor } from '@codama/renderers-js';
-import { createFromRoot, deleteNodesVisitor } from 'codama';
+import { createFromRoot, deleteNodesVisitor, updateInstructionsVisitor } from 'codama';
 import { format, resolveConfig } from 'prettier';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -76,11 +76,7 @@ const targets = [
       // coprocessorInputAttestation backs confidentialTransfer/wrapUsdc; mmrInclusionProof is the
       // disclose_secp `proof` argument (the flat leaf_index/siblings pair was folded into this
       // Anchor-native struct by #3252/#3248 — keeping it lets the regenerated builder resolve);
-      definedTypes: new Set([
-        'coprocessorInputAttestation',
-        'disclosedValueKind',
-        'mmrInclusionProof',
-      ]),
+      definedTypes: new Set(['coprocessorInputAttestation', 'disclosedValueKind', 'mmrInclusionProof']),
       // The PDAs the kept builders default (wrapUsdc → vaultAuthority/totalSupplyAuthority,
       // initializeTokenAccount → tokenAccount).
       pdas: new Set(['vaultAuthority', 'totalSupplyAuthority', 'tokenAccount']),
@@ -115,11 +111,12 @@ const targets = [
         'revokeDelegationForUserDecryption',
         'revokePermits',
       ]),
-      definedTypes: new Set(),
+      accounts: new Set(['hostConfig', 'kmsContext']),
+      definedTypes: new Set(['kmsThresholds']),
       // verifyPublicDecrypt and the delegation pair default their host_config account to the
       // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
       // that PDA node so the import resolves.
-      pdas: new Set(['hostConfig']),
+      pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {
       return (
@@ -323,6 +320,26 @@ for (const target of targets) {
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];
   codama.update(deleteNodesVisitor(selectors));
+  // Codama's linked PDA resolver drops the instruction's programAddress override.
+  // Inline same-program PDA definitions while preserving their argument seed bindings.
+  if (target.idlPath === idlUrl('zama_host.json')) {
+    const updates = Object.fromEntries(
+      codama.getRoot().program.instructions.map(({ name, accounts }) => [
+        name,
+        {
+          accounts: Object.fromEntries(
+            accounts.flatMap(({ name, defaultValue }) => {
+              if (defaultValue?.kind !== 'pdaValueNode') return [];
+              const pda = program.pdas.find(({ name }) => name === defaultValue.pda.name);
+              return pda === undefined ? [] : [[name, { defaultValue: { ...defaultValue, pda } }]];
+            }),
+          ),
+        },
+      ]),
+    );
+    codama.update(updateInstructionsVisitor(updates));
+  }
+
   await codama.accept(
     renderVisitor(temporaryRoot, {
       generatedFolder: 'generated',

@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import type { MmrProof } from '@sdk-src/solana/proof.js';
-import type { SolanaPublicDecryptCertificateClaim } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
+import type { MmrProof } from '@fhevm/sdk/solana';
+import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
 import { getDiscloseSecpInstructionDataDecoder } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@sdk-src/solana/internal/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

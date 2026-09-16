@@ -1,5 +1,3 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
-import { encryptedStoreHandle } from '@sdk-src/solana/encryptedStore.js';
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
 // This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
@@ -33,7 +31,7 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 
-import type { Bytes32Hex } from '@sdk-src/core/types/primitives.js';
+import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/index.js';
 
@@ -51,7 +49,7 @@ import {
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
-import { vaultModule, sdkHandleModule } from './lazy-modules';
+import { vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
 // imports (the offline `bun test src` run has no SDK dependency graph to resolve).
@@ -243,6 +241,7 @@ export const createConfidentialMint = async (
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.authority });
   await context.sendTransaction(params.authority, fhe.wrap([
     await vault.buildInitializeMintInstruction({
@@ -269,6 +268,7 @@ export const initializeConfidentialTokenAccount = async (
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
 ): Promise<void> => {
   const vault = await vaultModule();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.payer });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
     fhe: fhe.accounts,
@@ -291,6 +291,7 @@ export const wrapUnderlying = async (
   },
 ): Promise<void> => {
   const vault = await vaultModule();
+  const { createSolanaFheTransaction } = await sdkVerifyModule();
   const fhe = await createSolanaFheTransaction({ payer: params.owner });
   await context.sendTransaction(params.owner, fhe.wrap([
     await vault.buildWrapUsdcInstruction({
@@ -363,7 +364,7 @@ export const readTokenBalanceStore = async (
   params: { readonly mint: Address; readonly owner: Address },
 ): Promise<BalanceStore> => {
   const vault = await vaultModule();
-  const { bytes32HexToHandle } = await sdkHandleModule();
+  const { bytes32HexToHandle, encryptedStoreHandle, fetchSolanaEncryptedStore } = await sdkVerifyModule();
   const { mint, owner } = params;
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
@@ -373,7 +374,7 @@ export const readTokenBalanceStore = async (
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await vault.getEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' });
+  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||

@@ -1,4 +1,4 @@
-import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
+import type { SolanaRuntimeConfig } from './config.js';
 import { describe, expect, it, vi } from 'vitest';
 
 type ConfigModule = typeof import('./config.js');
@@ -8,6 +8,23 @@ async function loadConfigModule(): Promise<ConfigModule> {
   return import('./config.js');
 }
 
+describe('shared logger configuration semantics', () => {
+  it.each(['viem', 'ethers'] as const)(
+    'keeps %s configuration idempotent after copying logger callbacks',
+    async (adapter) => {
+      vi.resetModules();
+      const { setFhevmRuntimeConfig } =
+        adapter === 'viem'
+          ? await import('../../viem/internal/config.js')
+          : await import('../../ethers/internal/config.js');
+      const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      setFhevmRuntimeConfig({ logger });
+      expect(() => setFhevmRuntimeConfig({ logger: { ...logger } })).not.toThrow();
+      expect(() => setFhevmRuntimeConfig({ logger: { ...logger, warn: vi.fn() } })).toThrow();
+    },
+  );
+});
+
 describe('Solana runtime config', () => {
   it('allows an identical normalized config with the same logger callbacks', async () => {
     const { setFhevmRuntimeConfig } = await loadConfigModule();
@@ -15,10 +32,9 @@ describe('Solana runtime config', () => {
     const warn = vi.fn();
     const error = vi.fn();
     const locateFile = (file: string): URL => new URL(file, 'https://example.test/');
-    const config: FhevmRuntimeConfig = {
+    const config: SolanaRuntimeConfig = {
       locateFile,
       wasmAssetLoadMode: 'verified-blob',
-      moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0', checkCompatibility: 'warn' },
       logger: { debug, warn, error },
       singleThread: false,
       numberOfThreads: 4,
@@ -31,7 +47,6 @@ describe('Solana runtime config', () => {
       setFhevmRuntimeConfig({
         ...config,
         logger: { debug, warn, error },
-        moduleVersions: { tfhe: '1.6.2', kms: '0.13.20-0', checkCompatibility: 'warn' },
         auth: { type: 'ApiKeyHeader', header: 'x-api-key', value: 'secret' },
       }),
     ).not.toThrow();
@@ -56,5 +71,10 @@ describe('Solana runtime config', () => {
     expect(() => setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'second' } })).toThrow(
       'FhevmRuntime config has already been set and cannot be changed.',
     );
+  });
+  it('rejects version overrides rather than ignoring them', async () => {
+    const { setFhevmRuntimeConfig } = await loadConfigModule();
+    // @ts-expect-error Verify untyped callers are rejected too.
+    expect(() => setFhevmRuntimeConfig({ moduleVersions: 'auto' })).toThrow('deployment-pinned');
   });
 });

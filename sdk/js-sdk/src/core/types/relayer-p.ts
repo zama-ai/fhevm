@@ -33,10 +33,10 @@ export type RelayerOperation = RelayerPostOperation | RelayerGetOperation;
 export type FetchInputProofPayload = {
   // Hex encoded uint256 string without prefix
   readonly contractChainId: `0x${string}`;
-  // Hex encoded address with 0x prefix.
-  readonly contractAddress: ChecksummedAddress;
-  // Hex encoded address with 0x prefix.
-  readonly userAddress: ChecksummedAddress;
+  // Host identity: checksummed hex on EVM, base58 on Solana.
+  readonly contractAddress: string;
+  // Host identity: checksummed hex on EVM, base58 on Solana.
+  readonly userAddress: string;
   // List of hex encoded binary proof without 0x prefix
   readonly ciphertextWithInputVerification: BytesHexNo0x;
   // Hex encoded bytes with 0x prefix. Default: 0x00

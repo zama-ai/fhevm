@@ -14,11 +14,9 @@ import {
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { bytesToHex, hexToBytes } from '@sdk-src/core/base/bytes.js';
-import type { FhevmSolanaChain } from '@sdk-src/core/types/fhevmSolanaChain.js';
-import type { FhevmRuntime } from '@sdk-src/core/types/coreFhevmRuntime.js';
-import type { RelayerPublicDecryptOptions } from '@sdk-src/core/types/relayer.js';
-import { publicDecryptCertificate } from '@sdk-src/solana/actions/publicDecryptCertificate.js';
+import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
+import type { FhevmSolanaPublicDecryptClient } from '@fhevm/sdk/solana';
+import type { RelayerPublicDecryptOptions } from '@fhevm/sdk/types';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
@@ -39,8 +37,6 @@ export type SolanaVaultSettleOptions = {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly proofService: ProofService;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
-  /** Decrypt runtime (auth) for the certificate phase. */
-  readonly runtime: FhevmRuntime;
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
   /** Which batch to settle; defaults to the batcher's current (most-recently-opened) batch. */
@@ -67,7 +63,7 @@ export type SolanaVaultSettleOptions = {
  * The resulting settle instruction uses the batch's lookup table to fit the transaction packet.
  */
 export async function settleBatch(
-  chain: FhevmSolanaChain,
+  client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate' | 'fetchEncryptedStore'>,
   keeper: TransactionSigner,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
@@ -92,19 +88,16 @@ export async function settleBatch(
   const accounts = await deriveSettleAccounts(roots, addresses);
 
   // The KMS burn certificate. The relayer request names the handle and the account, nothing else.
-  const claim = await publicDecryptCertificate(
-    { chain, runtime: options.runtime },
-    {
+  const claim = await client.publicDecryptCertificate({
       handle: bytesToHex(burnedTotalHandle),
       contextId: options.contextId,
       encryptedStore: base58.decode(accounts.batchBurnedAmountStore),
       options: options.certificateOptions,
-    },
-  );
+  });
 
   const cleartextTotal = settleTotalFromCleartext(hexToBytes(claim.abiEncodedCleartext));
   const inclusionProof = await publicProof(
-    rpc,
+    client,
     options.proofService,
     accounts.batchBurnedAmountStore,
     burnedTotalHandle,

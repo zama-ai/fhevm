@@ -51,6 +51,8 @@ COPY solana/deploy/src/generated ./solana/deploy/src/generated
 COPY solana/programs/encrypted-counter/idl ./solana/programs/encrypted-counter/idl
 COPY solana/programs/dep-chain/idl ./solana/programs/dep-chain/idl
 COPY solana/demo-dapp/idl ./solana/demo-dapp/idl
+COPY solana/programs/encrypted-counter/idl ./solana/programs/encrypted-counter/idl
+COPY solana/programs/dep-chain/idl ./solana/programs/dep-chain/idl
 COPY solana/demo-dapp/src/vault/internal/generated ./solana/demo-dapp/src/vault/internal/generated
 COPY test-suite/fhevm/src/solana/internal/generated ./test-suite/fhevm/src/solana/internal/generated
 
