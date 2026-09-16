@@ -478,13 +478,13 @@ describe('ZamaERC20 - Unit Test', () => {
 
             describe('Transfer - ERC20', () => {
                 describe('transfer', () => {
-                    it('should fail when transfering to address(0)', async () => {
+                    it('should fail when transferring to address(0)', async () => {
                         await expect(
                             zamaERC20.connect(alice).transfer(ethers.constants.AddressZero, TRANSFER_AMOUNT)
                         ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InvalidReceiver')
                     })
 
-                    it('should fail when transfering more token than available', async () => {
+                    it('should fail when transferring more token than available', async () => {
                         // ERC20InsufficientBalance
                         expect(await zamaERC20.balanceOf(alice.address)).to.be.lt(TRANSFER_AMOUNT)
                         await expect(
@@ -543,20 +543,20 @@ describe('ZamaERC20 - Unit Test', () => {
                         await zamaERC20.connect(admin).mint(bob.address, SMALL_MINT_AMOUNT)
                     })
 
-                    it('should fail when transfering with no allowance', async () => {
+                    it('should fail when transferring with no allowance', async () => {
                         await expect(
                             zamaERC20.transferFrom(alice.address, bob.address, TRANSFER_AMOUNT)
                         ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
                     })
 
-                    it('should fail when transfering more than available allowance', async () => {
+                    it('should fail when transferring more than available allowance', async () => {
                         await zamaERC20.connect(alice).approve(bob.address, SMALL_ALLOWANCE)
                         await expect(
                             zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, TRANSFER_AMOUNT)
                         ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
                     })
 
-                    it('should fail when transfering more than available token', async () => {
+                    it('should fail when transferring more than available token', async () => {
                         await zamaERC20.connect(alice).approve(bob.address, ethers.constants.MaxUint256)
                         await expect(
                             zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, MINT_AMOUNT.mul(2))

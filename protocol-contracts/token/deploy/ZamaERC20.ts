@@ -27,7 +27,7 @@ const deploy: DeployFunction = async (hre) => {
     const tokenSymbol = 'ZAMA'
 
     const numReceivers = parseInt(getRequiredEnvVar('NUM_INITIAL_RECEIVERS'))
-    // Parse the intial receivers and initial amounts
+    // Parse the initial receivers and initial amounts
     const receivers = []
     const amounts = []
     for (let idx = 0; idx < numReceivers; idx++) {

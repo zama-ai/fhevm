@@ -2,7 +2,7 @@
 
 ## Deploy Multisig Safe Wallet with only the deployer as owner
 
-**NOTE** This first step is only needed on chains which do not support canonical Safe deployment (eg: Gateway or Polygon Amoy Testnet). For chains which do support the canonical Safe deployment (eg: Polygon Mainnet), the Safe account shoud be deployed via the official [Safe App UI](https://app.safe.global/) instead.
+**NOTE** This first step is only needed on chains which do not support canonical Safe deployment (eg: Gateway or Polygon Amoy Testnet). For chains which do support the canonical Safe deployment (eg: Polygon Mainnet), the Safe account should be deployed via the official [Safe App UI](https://app.safe.global/) instead.
 
 Be sure to start with an `.env` - or copy paste the `.env.example.deploy` and fill its values (not to be confused with `.env.example.test` to be used to run tests in hardhat only!) - with just those filled variables:
 

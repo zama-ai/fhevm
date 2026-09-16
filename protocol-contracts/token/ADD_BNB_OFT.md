@@ -35,7 +35,7 @@ Create a `/deployments` folder in the root of the [/token] directory. The eventu
 
 Follow the same similar steps for the remaining files, i.e `/deployments/ethereum-mainnet/ZamaOFTAdapter.json`, `/deployments/gateway-mainnet/.chainId` and `/deployments/gateway-mainnet/ZamaOFT.json`.
 
-Then modifiy `hardhat.config.ts` by replacing `0x0` by the `ZamaERC20` address under the `ethereum-mainnet` field:
+Then modify `hardhat.config.ts` by replacing `0x0` by the `ZamaERC20` address under the `ethereum-mainnet` field:
 
 ```typescript
 oftAdapter: {
