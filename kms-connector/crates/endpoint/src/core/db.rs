@@ -111,26 +111,27 @@ pub async fn upsert_user_decryption_request<'e>(
     request: &UserDecryptionRequest,
     otlp_ctx: &PropagationContext,
 ) -> anyhow::Result<PgQueryResult> {
-    let mut ct_handles: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    let mut handle_owner_addresses: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    let mut handle_contract_addresses: Vec<Vec<u8>> = Vec::with_capacity(request.handles.len());
-    for entry in &request.handles {
+    let payload = &request.payload;
+    let mut ct_handles: Vec<Vec<u8>> = Vec::with_capacity(payload.handles.len());
+    let mut handle_owner_addresses: Vec<Vec<u8>> = Vec::with_capacity(payload.handles.len());
+    let mut handle_contract_addresses: Vec<Vec<u8>> = Vec::with_capacity(payload.handles.len());
+    for entry in &payload.handles {
         ct_handles.push(entry.handle.to_vec());
         handle_owner_addresses.push(entry.ownerAddress.to_vec());
         handle_contract_addresses.push(entry.contractAddress.to_vec());
     }
-    let allowed_contracts: Vec<Vec<u8>> = request
+    let allowed_contracts: Vec<Vec<u8>> = payload
         .allowedContracts
         .iter()
         .map(|a| a.to_vec())
         .collect();
 
-    let start_timestamp: i64 = request
+    let start_timestamp: i64 = payload
         .requestValidity
         .startTimestamp
         .try_into()
         .map_err(|_| anyhow!("startTimestamp does not fit in i64"))?;
-    let duration_seconds: i64 = request
+    let duration_seconds: i64 = payload
         .requestValidity
         .durationSeconds
         .try_into()
@@ -151,9 +152,9 @@ pub async fn upsert_user_decryption_request<'e>(
         WHERE existing.status = 'failed' AND existing.source = 'http'",
         db_id.as_slice(),
         &ct_handles,
-        request.userAddress.as_slice(),
-        request.publicKey.as_ref(),
-        request.extraData.as_ref(),
+        payload.userAddress.as_slice(),
+        payload.publicKey.as_ref(),
+        payload.extraData.as_ref(),
         Utc::now(),
         bc2wrap::serialize(otlp_ctx)?,
         &handle_owner_addresses,

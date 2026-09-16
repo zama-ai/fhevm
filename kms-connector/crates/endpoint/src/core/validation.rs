@@ -1,4 +1,4 @@
-//! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 malformed`.
+//! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 Bad Request`.
 
 use crate::core::Config;
 use alloy::primitives::B256;
@@ -6,7 +6,9 @@ use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
 };
-use kms_connector_api::{PublicDecryptionRequest, RequestValidity, UserDecryptionRequest};
+use kms_connector_api::{
+    AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity, UserDecryptionRequest,
+};
 use tfhe::FheTypes;
 use thiserror::Error;
 
@@ -32,6 +34,32 @@ pub enum ValidationError {
     InvalidExtraData(String),
     #[error("requestValidity.{field} is too high: {value}, max is {}", i64::MAX)]
     RequestValidityOutOfRange { field: &'static str, value: u64 },
+    #[error(
+        "unsupported attestationType {0:?}, supported: [{supported}]",
+        supported = supported_attestation_types()
+    )]
+    UnsupportedAttestationType(String),
+}
+
+fn supported_attestation_types() -> String {
+    AttestationType::supported().collect::<Vec<_>>().join(", ")
+}
+
+impl ValidationError {
+    /// The error code this failure is answered with.
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            Self::UnsupportedAttestationType(_) => ErrorCode::UnsupportedAttestationType,
+            Self::NoHandles
+            | Self::BitSizeExceeded(..)
+            | Self::TooManyAllowedContracts(..)
+            | Self::InvalidHandle { .. }
+            | Self::MixedChainIds(..)
+            | Self::UnsupportedChainId(_)
+            | Self::InvalidExtraData(_)
+            | Self::RequestValidityOutOfRange { .. } => ErrorCode::Malformed,
+        }
+    }
 }
 
 pub fn validate_public_decryption(
@@ -46,15 +74,22 @@ pub fn validate_user_decryption(
     request: &UserDecryptionRequest,
     config: &Config,
 ) -> Result<(), ValidationError> {
-    validate_handles(request.handles.iter().map(|h| &h.handle), config)?;
-    if request.allowedContracts.len() > config.max_allowed_contracts {
+    let _attestation_type = request
+        .attestationType
+        .parse::<AttestationType>()
+        .map_err(|_| {
+            ValidationError::UnsupportedAttestationType(request.attestationType.clone())
+        })?;
+    let payload = &request.payload;
+    validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    if payload.allowedContracts.len() > config.max_allowed_contracts {
         return Err(ValidationError::TooManyAllowedContracts(
-            request.allowedContracts.len(),
+            payload.allowedContracts.len(),
             config.max_allowed_contracts,
         ));
     }
-    validate_request_validity(&request.requestValidity)?;
-    validate_extra_data(&request.extraData)
+    validate_request_validity(&payload.requestValidity)?;
+    validate_extra_data(&payload.extraData)
 }
 
 fn validate_request_validity(validity: &RequestValidity) -> Result<(), ValidationError> {
@@ -144,7 +179,7 @@ fn validate_extra_data(extra_data: &[u8]) -> Result<(), ValidationError> {
 pub(crate) mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes};
-    use kms_connector_api::HandleEntry;
+    use kms_connector_api::{AttestationType, HandleEntry, UserDecryptionPayload};
 
     const EBOOL: u8 = FheTypes::Bool as u8;
     const EUINT4: u8 = FheTypes::Uint4 as u8;
@@ -184,23 +219,26 @@ pub(crate) mod tests {
 
     pub fn user_request(handles: Vec<B256>, extra_data: Vec<u8>) -> UserDecryptionRequest {
         UserDecryptionRequest {
-            handles: handles
-                .into_iter()
-                .map(|handle| HandleEntry {
-                    handle,
-                    contractAddress: Address::repeat_byte(0x33),
-                    ownerAddress: Address::repeat_byte(0x44),
-                })
-                .collect(),
-            userAddress: Address::repeat_byte(0x55),
-            publicKey: Bytes::from(vec![0x20; 32]),
-            allowedContracts: vec![Address::repeat_byte(0x33)],
-            requestValidity: RequestValidity {
-                startTimestamp: 1_770_000_000,
-                durationSeconds: 300,
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: UserDecryptionPayload {
+                handles: handles
+                    .into_iter()
+                    .map(|handle| HandleEntry {
+                        handle,
+                        contractAddress: Address::repeat_byte(0x33),
+                        ownerAddress: Address::repeat_byte(0x44),
+                    })
+                    .collect(),
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20; 32]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1_770_000_000,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(extra_data),
             },
             signature: Bytes::from(vec![0x66; 65]),
-            extraData: Bytes::from(extra_data),
         }
     }
 
@@ -265,7 +303,10 @@ pub(crate) mod tests {
     fn too_many_allowed_contracts() {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
-        request.allowedContracts.push(Address::repeat_byte(0x77));
+        request
+            .payload
+            .allowedContracts
+            .push(Address::repeat_byte(0x77));
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::TooManyAllowedContracts(2, 1))
@@ -276,10 +317,10 @@ pub(crate) mod tests {
     fn request_validity_out_of_range() {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
-        request.requestValidity.startTimestamp = i64::MAX as u64;
+        request.payload.requestValidity.startTimestamp = i64::MAX as u64;
         assert_eq!(validate_user_decryption(&request, &cfg), Ok(()));
 
-        request.requestValidity.startTimestamp = i64::MAX as u64 + 1;
+        request.payload.requestValidity.startTimestamp = i64::MAX as u64 + 1;
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::RequestValidityOutOfRange {
@@ -288,8 +329,8 @@ pub(crate) mod tests {
             })
         );
 
-        request.requestValidity.startTimestamp = 1_770_000_000;
-        request.requestValidity.durationSeconds = u64::MAX;
+        request.payload.requestValidity.startTimestamp = 1_770_000_000;
+        request.payload.requestValidity.durationSeconds = u64::MAX;
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::RequestValidityOutOfRange {
@@ -297,6 +338,20 @@ pub(crate) mod tests {
                 value: u64::MAX,
             })
         );
+    }
+
+    #[test]
+    fn unsupported_attestation_type() {
+        let cfg = config();
+        let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
+        request.attestationType = "random_attestation_type".to_owned();
+        let error = validate_user_decryption(&request, &cfg).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::UnsupportedAttestationType("random_attestation_type".to_owned())
+        );
+        assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
+        assert_eq!(ValidationError::NoHandles.code(), ErrorCode::Malformed);
     }
 
     #[test]
