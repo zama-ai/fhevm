@@ -44,6 +44,7 @@ import {
   checkCaseRequirements,
   selectCases,
   type ExtraDataCheckRunner,
+  type ExtraDataEchoRunner,
   type ExtraDataGatewayRejectionRunner,
   type ExtraDataRejectionRunner,
   type QaCase,
@@ -156,6 +157,7 @@ export const runKmsContextQaTestsProfile = async (
   runExtraDataCheck: ExtraDataCheckRunner,
   runExtraDataRejection: ExtraDataRejectionRunner,
   runExtraDataGatewayRejection: ExtraDataGatewayRejectionRunner,
+  runExtraDataEcho: ExtraDataEchoRunner,
 ): Promise<void> => {
   assertProfilePreconditions(state);
 
@@ -198,6 +200,7 @@ export const runKmsContextQaTestsProfile = async (
         runExtraDataCheck,
         runExtraDataRejection,
         runExtraDataGatewayRejection,
+        runExtraDataEcho,
       });
       completed.push(item);
       console.log(

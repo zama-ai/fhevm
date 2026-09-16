@@ -24,6 +24,7 @@ import { contextSwitchPendingCase } from "./cases/case-context-switch-pending";
 import { extraDataRejectionCase } from "./cases/case-extradata-rejection";
 import { extraDataGatewayRejectionCase } from "./cases/case-extradata-gateway-rejection";
 import { contextSwitchAbortCase } from "./cases/case-context-switch-abort";
+import { extraDataEchoCase } from "./cases/case-extradata-echo";
 
 /** The KMS topology fields a case may predicate on. Mirrors `state.scenario.kms`. */
 export type KmsTopology = State["scenario"]["kms"];
@@ -80,6 +81,18 @@ export type ExtraDataGatewayRejectionRunner = (
 ) => Promise<void>;
 
 /**
+ * Drives one successful in-container decryption per extraData version (v0, v1, v2).
+ *
+ * The spec asserts only that each decrypts; the response extraData it produces is not observable
+ * from the container, so the case reads it from the relayer's database afterwards. The injected pair
+ * is what the v1 and v2 payloads are built from.
+ */
+export type ExtraDataEchoRunner = (
+  label: string,
+  expected: { readonly contextId: bigint; readonly epochId: bigint },
+) => Promise<void>;
+
+/**
  * Everything a case is allowed to touch.
  *
  * Injected rather than imported, so cases hold no module state, can run in any order, and are
@@ -101,6 +114,8 @@ export type QaCaseContext = {
   readonly runExtraDataRejection: ExtraDataRejectionRunner;
   /** Runs the GATEWAY-level extraData rejection spec inside the test-suite container. */
   readonly runExtraDataGatewayRejection: ExtraDataGatewayRejectionRunner;
+  /** Drives one decryption per extraData version, for the response-echo case. */
+  readonly runExtraDataEcho: ExtraDataEchoRunner;
 };
 
 /**
@@ -151,6 +166,7 @@ export const QA_CASES: readonly QaCase[] = [
   extraDataRejectionCase,
   extraDataGatewayRejectionCase,
   contextSwitchAbortCase,
+  extraDataEchoCase,
 ];
 
 /** Environment variable selecting which cases run. Unset or `all` runs everything. */

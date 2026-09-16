@@ -1090,6 +1090,29 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     assertMatchedTests(result.stdout + result.stderr, label);
   };
 
+  // Container half of the kms-context-qa-tests `extradata-echo` case: three decryptions, one per
+  // extraData version. The echo assertion itself is host-side, against the relayer's database.
+  const runKmsContextExtraDataEcho = async (
+    label: string,
+    expected: { readonly contextId: bigint; readonly epochId: bigint },
+  ) => {
+    const grep = TEST_GREP["kms-context-extradata-echo"];
+    if (!grep) {
+      throw new PreflightError("kms-context-qa-tests: missing kms-context-extradata-echo grep pattern");
+    }
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(runTestsArgs({ ...options, verbose: false, parallel: false, grep }), [
+        "-e",
+        `KMS_QA_EXPECTED_CONTEXT_ID=${expected.contextId}`,
+        "-e",
+        `KMS_QA_EXPECTED_EPOCH_ID=${expected.epochId}`,
+      ]),
+      label,
+    );
+    assertMatchedTests(result.stdout + result.stderr, label);
+  };
+
   const runProfile = async (name: string) => {
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
@@ -1105,6 +1128,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         runKmsContextExtraDataCheck,
         runKmsContextExtraDataRejection,
         runKmsContextExtraDataGatewayRejection,
+        runKmsContextExtraDataEcho,
       );
     }
     if (name === "coprocessor-db-state-revert") {
