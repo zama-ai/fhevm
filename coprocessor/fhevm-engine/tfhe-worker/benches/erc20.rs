@@ -1675,7 +1675,7 @@ fn encrypted_u64_inputs_from_xof_values<const N: usize>(
 ) -> Result<[Vec<u8>; N], Box<dyn std::error::Error>> {
     let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset")?;
     let keyset: CompressedXofKeySet = safe_deserialize_key(&keyset_bytes)?;
-    let (compact_public_key, cpu_server_key) = keyset.decompress()?.into_raw_parts();
+    let (compact_public_key, cpu_server_key) = keyset.decompress().into_raw_parts();
     tfhe::with_server_key_as_context(cpu_server_key, || {
         let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
         for value in values {
@@ -2169,7 +2169,7 @@ async fn seed_legacy_input_ciphertext(
 fn encrypted_u64_inputs_from_xof() -> Result<[Vec<u8>; 3], Box<dyn std::error::Error>> {
     let keyset_bytes = std::fs::read("../fhevm-keys/xof-keyset")?;
     let keyset: CompressedXofKeySet = safe_deserialize_key(&keyset_bytes)?;
-    let (compact_public_key, cpu_server_key) = keyset.decompress()?.into_raw_parts();
+    let (compact_public_key, cpu_server_key) = keyset.decompress().into_raw_parts();
     let inputs = tfhe::with_server_key_as_context(cpu_server_key, || {
         let mut builder = tfhe::CompactCiphertextList::builder(&compact_public_key);
         for value in [100_u64, 20_u64, 10_u64] {
