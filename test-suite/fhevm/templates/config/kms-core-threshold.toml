@@ -9,7 +9,6 @@
 #     prefixes "UNSET-*") and are overridden per container via KMS_CORE__* env vars in
 #     buildKmsThresholdOverride. A dropped override therefore fails loudly (my_id = 0 is
 #     rejected) instead of silently misconfiguring the cluster.
-mock_enclave = true
 
 [service]
 listen_address = "0.0.0.0"
