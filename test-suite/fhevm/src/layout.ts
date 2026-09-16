@@ -284,7 +284,7 @@ export const TEST_GREP: Record<string, string> = {
   // Container half of the kms-context-qa-tests `epoch-rotation` case: asserts the SDK embeds the
   // active (context, epoch) pair in the permit extraData. Driven by the profile, which injects the
   // pair it observed on chain; also runnable standalone.
-  "kms-context-extradata": "KMS context extraData",
+  "kms-context-extradata": "KMS context extraData permit",
   // The negative half of the KMS-context extraData story: an SDK-built request corrupted after
   // signing, plus the malformed shapes the relayer refuses synchronously with HTTP 400. Driven by
   // the kms-context-qa-tests `extradata-rejection` case; also runnable standalone.

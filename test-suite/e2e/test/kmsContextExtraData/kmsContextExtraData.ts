@@ -29,6 +29,13 @@
 //
 // The client is built fresh inside the suite (createInstance() mints a new runtime uid, so the
 // 15-minute cache starts cold) because the epoch may have rotated moments ago.
+//
+// NAMING: the suite is `KMS context extraData permit`, not the bare `KMS context extraData`, and the
+// qualifier is load-bearing. The profile selects suites with mocha's `--grep`, which matches on a
+// substring of the full test title, so a bare name would also select every sibling in this directory
+// — `… rejection`, `… gateway rejection`, `… echo`. It did: a full profile run reported `10 passing`
+// where two were expected, with the earlier cases silently dragging the later suites along. Keep
+// every describe here mutually non-prefixing.
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
@@ -73,7 +80,7 @@ const expectedFromEnv = (name: string): bigint | undefined => {
   return BigInt(raw.trim());
 };
 
-describe('KMS context extraData', function () {
+describe('KMS context extraData permit', function () {
   let signers: Signers;
   let contract: UserDecrypt;
   let contractAddress: string;
