@@ -30,7 +30,7 @@ solana-program = "3.0.0"
 solana-sdk = "3.0.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-zama-host = { path = "../programs/zama-host", features = ["no-entrypoint", "encode"] }
+zama-host = { path = "../programs/zama-host", features = ["no-entrypoint", "encode", "admin-sweep"] }
 zama-solana-acl = { path = "../crates/zama-solana-acl" }
 zama-solana-test-kit = { path = "../test-kit" }
 

@@ -7,6 +7,10 @@
 mod common;
 mod transient;
 pub use transient::*;
+#[cfg(feature = "admin-sweep")]
+pub mod close_owned_accounts;
+#[cfg(feature = "admin-sweep")]
+pub use close_owned_accounts::*;
 pub mod create_encrypted_store;
 pub use create_encrypted_store::*;
 pub mod define_kms_context;

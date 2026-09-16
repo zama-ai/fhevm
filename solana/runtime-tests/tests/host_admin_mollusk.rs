@@ -1,5 +1,5 @@
-//! Host admin surface: `initialize_host_config` and the `HostAdmin` setters (pause,
-//! grant-deny, admin transfer, EIP-712 domain).
+//! Host admin surface: `initialize_host_config`, the `HostAdmin` setters (pause,
+//! grant-deny, admin transfer, EIP-712 domain) and the preview-only `close_owned_accounts`.
 //!
 //! Split out of `host_mollusk.rs` so that file does not keep growing. These tests only
 //! touch `HostConfig` through the admin account contexts; they do not share the
@@ -10,8 +10,8 @@ use mollusk_svm::result::Check;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use zama_host::{self as host, errors::ZamaHostError};
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_framework_error_check, anchor_ix, event_authority,
-    program_data_account, system_account,
+    account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
+    event_authority, funded_system_account, program_data_account, system_account, writable, Ctx,
 };
 
 mod host_fixtures;
@@ -432,4 +432,120 @@ fn mollusk_set_eip712_domain_persists_zeros() {
     assert_eq!(config.gateway_chain_id, 0);
     assert_eq!(config.input_verification_contract, [0u8; 20]);
     assert_eq!(config.decryption_contract, [0u8; 20]);
+}
+
+// ---- close_owned_accounts (admin-sweep) ----
+
+/// The shipped artifact lacks `close_owned_accounts`. check-zama-host-idl.sh builds the
+/// `admin-sweep` feature set as `zama_host_admin_sweep.so` for these tests alone.
+fn sweep_context(payer: Pubkey, seeded_accounts: Vec<(Pubkey, Account)>) -> Ctx {
+    let mut accounts = std::collections::HashMap::from([(payer, funded_system_account())]);
+    accounts.extend(seeded_accounts);
+    zama_solana_test_kit::svm(&host::id(), "zama_host_admin_sweep").with_context(accounts)
+}
+
+fn read_lamports(context: &Ctx, address: Pubkey) -> u64 {
+    context
+        .account_store
+        .borrow()
+        .get(&address)
+        .map_or(0, |account| account.lamports)
+}
+
+/// `close_owned_accounts` signed by `admin` with `targets` as remaining accounts.
+fn close_owned_accounts_ix(admin: Pubkey, targets: &[Pubkey]) -> Instruction {
+    let mut ix = anchor_ix(
+        host::id(),
+        host::accounts::CloseOwnedAccounts {
+            admin,
+            program_data: program_data_account(None).0,
+        },
+        host::instruction::CloseOwnedAccounts {},
+    );
+    ix.accounts
+        .extend(targets.iter().map(|target| writable(*target)));
+    ix
+}
+
+#[test]
+fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
+    // A wipe batch built from `getProgramAccounts` may name accounts the program no longer
+    // owns; those are skipped so one stale entry cannot fail the batch.
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_acct) = host_config_account(admin);
+    let owned = Pubkey::new_unique();
+    let owned_acct = program_owned_account();
+    let foreign = Pubkey::new_unique();
+    let (program_data, program_data_acct) = program_data_account(Some(admin));
+    let context = sweep_context(
+        admin,
+        vec![
+            (host_config, host_config_acct.clone()),
+            (owned, owned_acct.clone()),
+            (foreign, system_account(5_000)),
+            (program_data, program_data_acct),
+        ],
+    );
+    let admin_before = read_lamports(&context, admin);
+
+    context.process_and_validate_instruction(
+        &close_owned_accounts_ix(admin, &[host_config, owned, foreign]),
+        &[Check::success()],
+    );
+
+    assert!(account_is_system_owned_and_empty(&context, host_config));
+    assert!(account_is_system_owned_and_empty(&context, owned));
+    assert_eq!(read_lamports(&context, foreign), 5_000);
+    assert_eq!(
+        read_lamports(&context, admin),
+        admin_before + host_config_acct.lamports + owned_acct.lamports
+    );
+}
+
+#[test]
+fn mollusk_close_owned_accounts_rejects_signer_who_is_not_upgrade_authority() {
+    // `HostConfig.admin` is not enough: only the upgrade authority can wipe, so a rotated
+    // config admin on a program it does not control cannot drain accounts.
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_acct) = host_config_account(admin);
+    let (program_data, program_data_acct) = program_data_account(Some(Pubkey::new_unique()));
+    let context = sweep_context(
+        admin,
+        vec![
+            (host_config, host_config_acct),
+            (program_data, program_data_acct),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &close_owned_accounts_ix(admin, &[host_config]),
+        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+    );
+    assert!(read_host_config(&context, host_config).is_some());
+}
+
+#[test]
+fn close_owned_accounts_wire_format_matches_deployer() {
+    // The instruction is absent from the vendored IDL (it is feature-gated), so
+    // solana/deploy/src/wipe.ts hand-builds it: discriminator, then admin (writable signer) and
+    // program_data (readonly) ahead of the targets. Keep the two in sync.
+    use anchor_lang::{Discriminator, ToAccountMetas};
+    assert_eq!(
+        host::instruction::CloseOwnedAccounts::DISCRIMINATOR,
+        &[36, 68, 214, 114, 46, 227, 146, 228]
+    );
+    let admin = Pubkey::new_unique();
+    let program_data = program_data_account(None).0;
+    let metas = host::accounts::CloseOwnedAccounts {
+        admin,
+        program_data,
+    }
+    .to_account_metas(None);
+    assert_eq!(
+        metas,
+        vec![
+            solana_sdk::instruction::AccountMeta::new(admin, true),
+            solana_sdk::instruction::AccountMeta::new_readonly(program_data, false),
+        ]
+    );
 }
