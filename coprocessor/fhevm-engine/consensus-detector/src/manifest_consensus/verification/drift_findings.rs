@@ -610,7 +610,7 @@ fn compare_blocks<'a>(
         {
             let local_descriptor = local_descriptors.get(&handle).copied();
             let observed_descriptor = observed_descriptors.get(&handle).copied();
-            if local_descriptor == observed_descriptor {
+            if same_consensus_material(local_descriptor, observed_descriptor) {
                 continue;
             }
             findings.push(DriftHandleFinding {
@@ -626,6 +626,17 @@ fn compare_blocks<'a>(
         }
     }
     Ok(findings)
+}
+
+fn same_consensus_material(
+    local: Option<&BlockCiphertextDescriptor>,
+    observed: Option<&BlockCiphertextDescriptor>,
+) -> bool {
+    match (local, observed) {
+        (Some(local), Some(observed)) => local.consensus_digest() == observed.consensus_digest(),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 fn intersect_window(scope: &CommitmentScope, window: HistoricalWindow) -> Option<HistoricalWindow> {
@@ -657,19 +668,17 @@ fn drift_reason(
             Some(CiphertextStatus::Computed {
                 ct64_digest: local_ct64,
                 keyset_id: local_key,
-                gateway_key_id: local_gateway,
                 ..
             }),
             Some(CiphertextStatus::Computed {
                 ct64_digest: peer_ct64,
                 keyset_id: peer_key,
-                gateway_key_id: peer_gateway,
                 ..
             }),
         ) => {
             if local_ct64 != peer_ct64 {
                 "ct64_mismatch"
-            } else if local_key != peer_key || local_gateway != peer_gateway {
+            } else if local_key != peer_key {
                 "metadata_mismatch"
             } else {
                 "ct128_mismatch"
@@ -858,6 +867,102 @@ mod reason_tests {
                 CiphertextFormat::CompressedOnCpu,
             );
             assert_eq!(drift_reason(Some(&computed), Some(&peer)), expected);
+        }
+        let gateway_only = BlockCiphertextDescriptor::computed(
+            h,
+            U256::ONE,
+            Some(U256::from(7)),
+            h,
+            h,
+            CiphertextFormat::CompressedOnCpu,
+        );
+        assert_ne!(computed, gateway_only);
+        assert!(same_consensus_material(
+            Some(&computed),
+            Some(&gateway_only)
+        ));
+        let ct128_and_gateway = BlockCiphertextDescriptor::computed(
+            h,
+            U256::ONE,
+            Some(U256::from(7)),
+            h,
+            B256::repeat_byte(2),
+            CiphertextFormat::CompressedOnCpu,
+        );
+        assert!(!same_consensus_material(
+            Some(&computed),
+            Some(&ct128_and_gateway)
+        ));
+        assert_eq!(
+            drift_reason(Some(&computed), Some(&ct128_and_gateway)),
+            "ct128_mismatch"
+        );
+    }
+
+    #[test]
+    fn provenance_only_differences_are_not_handle_findings() {
+        let handle = B256::repeat_byte(1);
+        let other = B256::repeat_byte(2);
+        let drifted = B256::repeat_byte(3);
+        let local = vec![
+            BlockCiphertextDescriptor::computed(
+                handle,
+                U256::ONE,
+                Some(U256::from(7)),
+                handle,
+                handle,
+                CiphertextFormat::CompressedOnCpu,
+            ),
+            BlockCiphertextDescriptor::from_computation_error(other, Some("gpu Display".into())),
+            BlockCiphertextDescriptor::computed(
+                drifted,
+                U256::ONE,
+                Some(U256::from(7)),
+                B256::repeat_byte(0x11),
+                drifted,
+                CiphertextFormat::CompressedOnCpu,
+            ),
+        ];
+        let observed = vec![
+            BlockCiphertextDescriptor::computed(
+                handle,
+                U256::ONE,
+                None,
+                handle,
+                handle,
+                CiphertextFormat::CompressedOnCpu,
+            ),
+            BlockCiphertextDescriptor::from_computation_error(other, Some("cpu Display".into())),
+            BlockCiphertextDescriptor::computed(
+                drifted,
+                U256::ONE,
+                None,
+                B256::repeat_byte(0x22),
+                drifted,
+                CiphertextFormat::CompressedOnCpu,
+            ),
+        ];
+        let local_block = test_block(local);
+        let observed_block = test_block(observed);
+        let findings = compare_blocks(
+            [&local_block],
+            [&observed_block],
+            "legacy",
+            B256::repeat_byte(0x11),
+            true,
+        )
+        .expect("compare provenance-mixed blocks");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].handle, drifted);
+    }
+
+    fn test_block(ciphertexts: Vec<BlockCiphertextDescriptor>) -> ManifestBlockEntry {
+        ManifestBlockEntry {
+            block_number: U256::from(42),
+            block_hash: B256::repeat_byte(0xaa),
+            parent_block_hash: B256::repeat_byte(0xa9),
+            block_content_digest: B256::ZERO,
+            ciphertexts,
         }
     }
 }
