@@ -23,6 +23,10 @@
 //! this connector share), and the ACL model (the `zama-solana-acl` crate — account layout,
 //! seeds, leaf commitments, MMR). None is reimplemented here; this module is the host policy
 //! that consumes all three.
+//!
+//! PDA derivations of the two singleton-shaped records the pipeline reads (host config and a
+//! delegation row) live in [`super::solana_acl`], which re-exports `HOST_CONFIG_SEED` from
+//! `zama-solana-acl` rather than restating the byte string.
 
 /// Delegation-record freshness.
 pub mod delegation;

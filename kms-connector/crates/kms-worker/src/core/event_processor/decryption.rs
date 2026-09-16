@@ -314,10 +314,10 @@ where
         Ok(())
     }
 
-    /// Verify that a `UserDecryptionRequestV3` is internally consistent before the ACL phase:
-    /// every handle resolves to the same host chain id. Returns that shared chain id.
-    /// Shared by the EVM (`UserDecryptionRequestV3`) and Solana (`UserDecryptionRequestSolana`)
-    /// paths — both carry the same `handles` shape.
+    /// Verify that a `UserDecryptionRequest` (RFC 016 EVM) is internally consistent before the
+    /// ACL phase: every handle resolves to the same host chain id. Returns that shared chain id.
+    /// Solana `UserDecryptionRequestV3` extracts the chain id from `ctHandles` in
+    /// [`Self::check_user_decryption_request_v3`] instead.
     fn validate_handles_and_extract_chain_id(
         handles: &[HandleEntry],
     ) -> Result<u64, RequestCheckError> {
@@ -485,14 +485,14 @@ where
         Ok(())
     }
 
-    /// Host-generic (V2) Solana user-decryption check. The gateway forwarded the request's
-    /// host-specific material as one opaque `hostPayload`; here it is decoded, its handle list is
+    /// Host-generic Solana user-decryption check. The gateway forwarded the request's
+    /// host-specific material as one opaque `solanaRequest`; here it is decoded, its handle list is
     /// held to exactly the event's typed `ctHandles`, and the whole permit is authorized through
     /// the connector pipeline (`authorize_request`) — one funnel doing signature, window,
     /// deployment, KMS-pair servability, the atomic host-state snapshot, and every per-entry rule.
     /// Returns the KMS-request identity data built from the decoded permit (the transport key from
-    /// the typed event, the Solana identity from the signed permit), since the V2 event carries no
-    /// typed identity field of its own.
+    /// the typed event, the Solana identity from the signed permit), since the Solana event carries
+    /// no typed identity field of its own.
     pub async fn check_user_decryption_request_v3(
         &self,
         request: &UserDecryptionRequestV3,
@@ -516,7 +516,7 @@ where
                     )
                 })
             })?;
-        info!("Starting Solana V2 user-decryption check for chain {chain_id}...");
+        info!("Starting Solana user-decryption check for chain {chain_id}...");
 
         let host = match self.host_chain_backend(chain_id)? {
             HostChainAclBackend::Solana(host) => host,
@@ -597,7 +597,7 @@ where
             .filter(|entry| entry.allowed_key != solana_identity)
             .count();
         info!(
-            "Solana V2 user-decryption authorization passed for {} handles, {} of them delegated!",
+            "Solana user-decryption authorization passed for {} handles, {} of them delegated!",
             ct_handles.len(),
             delegated_entries
         );
@@ -1757,8 +1757,8 @@ mod tests {
         }
     }
 
-    /// A host-generic V2 request naming `handle`. Its `hostPayload` is empty because every test
-    /// using it asserts a failure reached during backend resolution — before the payload decode.
+    /// A host-generic Solana request naming `handle`. Its `solanaRequest` is empty because every
+    /// test using it asserts a failure reached during backend resolution — before the payload decode.
     fn make_solana_request(handle: B256) -> UserDecryptionRequestV3 {
         UserDecryptionRequestV3 {
             decryptionId: U256::from(1),
@@ -1974,7 +1974,7 @@ mod tests {
             .expect("the mock coprocessor has a URL")
             .clone();
 
-        // The gateway event: the victim's signed permit rides in `hostPayload`; `publicKey` and
+        // The gateway event: the victim's signed permit rides in `solanaRequest`; `publicKey` and
         // `requestValidity` carry whatever the caller chose (the unsigned, relayer-controlled
         // fields).
         let event = UserDecryptionRequestV3 {

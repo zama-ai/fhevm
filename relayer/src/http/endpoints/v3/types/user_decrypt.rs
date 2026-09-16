@@ -1,7 +1,9 @@
 //! v3 user-decrypt JSON wire types.
 //!
-//! The body is an envelope discriminated by `attestationType` (see the issue comment
-//! 4278777024); the field name is the external JSON boundary and is kept as it stands.
+//! The body is a typed-attestation envelope discriminated by `attestationType` (see the
+//! issue comment 4278777024); the field name is the external JSON boundary and is kept as
+//! it stands. [`UserDecryptV3RequestJson`] is that envelope: serde's internally tagged
+//! enum is the discriminant, so an unknown tag never reaches an arm.
 //!
 //! The two schemes differ in what the envelope carries and where its signature is checked.
 //! The EVM one carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
@@ -15,7 +17,29 @@ use crate::http::utils::redact::redact_len;
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use validator::Validate;
+use validator::{Validate, ValidationErrors};
+
+/// POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
+///
+/// Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
+/// `deny_unknown_fields` and does not repeat the tag.
+#[derive(Deserialize, Clone, ToSchema, Debug)]
+#[serde(tag = "attestationType", deny_unknown_fields)]
+pub enum UserDecryptV3RequestJson {
+    #[serde(rename = "eip712-unified-user-decrypt-v1")]
+    Eip712Unified(AttestedUserDecryptRequestJson),
+    #[serde(rename = "solana-srfc38-user-decrypt-v1")]
+    SolanaSrfc38(SolanaUserDecryptRequestJson),
+}
+
+impl Validate for UserDecryptV3RequestJson {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            Self::Eip712Unified(inner) => inner.validate(),
+            Self::SolanaSrfc38(inner) => inner.validate(),
+        }
+    }
+}
 
 /// The EVM arm of the v3 user-decrypt envelope, selected by
 /// `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
@@ -28,12 +52,6 @@ use validator::Validate;
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttestedUserDecryptRequestJson {
-    /// The scheme the `signature` bytes follow. Must equal
-    /// `"eip712-unified-user-decrypt-v1"` on this arm.
-    #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
-    #[schema(example = "eip712-unified-user-decrypt-v1")]
-    pub attestation_type: String,
-
     /// The EIP-712 Unified User-Decryption Request payload that the
     /// `signature` attests over.
     #[validate(nested)]
@@ -111,11 +129,6 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaUserDecryptRequestJson {
-    /// Must equal `"solana-srfc38-user-decrypt-v1"`.
-    #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
-    #[schema(example = "solana-srfc38-user-decrypt-v1")]
-    pub attestation_type: String,
-
     /// The Solana permit fields the `signature` covers, plus the per-handle entries it
     /// deliberately does not: an entry names what to decrypt, and the connector checks it
     /// against host state and the coprocessors' leaf record.

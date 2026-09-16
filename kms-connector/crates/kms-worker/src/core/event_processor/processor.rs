@@ -269,9 +269,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryptionV3(req) => {
-                // Host-generic V2 (Solana today): the whole permit and per-handle evidence ride
-                // in the opaque `hostPayload`. The check decodes it, holds its handle list to the
-                // typed `ctHandles`, and authorizes through the connector pipeline; it returns the
+                // Host-generic Solana path: the whole permit and per-handle evidence ride in the
+                // opaque `solanaRequest`. The check decodes it, holds its handle list to the typed
+                // `ctHandles`, and authorizes through the connector pipeline; it returns the
                 // KMS-request identity data built from the decoded permit.
                 let user_decrypt_data = self
                     .decryption_processor

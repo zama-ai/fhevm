@@ -72,6 +72,20 @@ At least one of these two options must be provided.
 
 See the [architecture documentation](./docs/architecture.md) for more detail.
 
+Solana user-decryption shares the `user_decryption_requests` table with the EVM path. Names
+that look related but are not interchangeable:
+
+| Name | What it is |
+| --- | --- |
+| Gateway ABI `UserDecryptionRequest` 4th overload / Rust `UserDecryptionRequestV3` | Solana host-generic event |
+| `solanaRequest` / `solana_request` | Opaque canonical request bytes on the event and in the DB |
+| Relayer `UserDecryptRequest::SolanaSrfc38V1` | Relayer-internal request after the typed-attestation envelope |
+| `hostPayload` | Retired name; the field is `solanaRequest` |
+
+Solana rows write `user_address` as 20 zero bytes (and leave the EVM ACL columns empty). The
+row reader keys on `solana_request IS NOT NULL` and does not treat those placeholders as an
+EVM identity. See `publish_user_decryption_v3` in `gw-listener`.
+
 ## Support
 
 <a target="_blank" href="https://community.zama.ai">

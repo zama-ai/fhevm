@@ -2,7 +2,6 @@
 //!
 //! `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json` is the HTTP seam between the SDK and
 //! this relayer, and it is consumed from both sides: the SDK builds its request and compares it to
-//! the same records this file feeds to `SolanaUserDecryptRequestJson`. That is the point of a shared
 //! file rather than two independent test suites — a key renamed on one side and mirrored in that
 //! side's own test would look green twice and fail in production.
 //!
@@ -25,7 +24,7 @@ mod permit_vectors;
 use alloy::primitives::U256;
 use fhevm_relayer::core::event::UserDecryptRequest;
 use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
-use fhevm_relayer::http::endpoints::v3::types::SolanaUserDecryptRequestJson;
+use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
@@ -201,11 +200,14 @@ fn every_accepted_record_becomes_a_solana_request() {
         let name = name_of(record);
         let body = fixture.compose(record);
 
-        let parsed: SolanaUserDecryptRequestJson = serde_json::from_value(body)
+        let parsed: UserDecryptV3RequestJson = serde_json::from_value(body)
             .unwrap_or_else(|err| panic!("{name}: should parse: {err}"));
         parsed
             .validate()
             .unwrap_or_else(|err| panic!("{name}: should validate: {err}"));
+        let UserDecryptV3RequestJson::SolanaSrfc38(parsed) = parsed else {
+            panic!("{name}: fixture records are Solana envelopes");
+        };
 
         let handle_count = parsed.attested_payload.handles.len();
         let encrypted_stores = parsed
@@ -265,8 +267,11 @@ fn accepted_handles_belong_to_the_signed_host_chain() {
 
     for record in fixture.records("accepted") {
         let name = name_of(record);
-        let parsed: SolanaUserDecryptRequestJson =
+        let parsed: UserDecryptV3RequestJson =
             serde_json::from_value(fixture.compose(record)).expect("accepted record parses");
+        let UserDecryptV3RequestJson::SolanaSrfc38(parsed) = parsed else {
+            panic!("{name}: fixture records are Solana envelopes");
+        };
         let request = UserDecryptRequest::try_from(parsed).expect("accepted record converts");
 
         for handle in request.ct_handles() {
@@ -295,7 +300,7 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
         );
         let body = fixture.compose(record);
 
-        let parsed = match serde_json::from_value::<SolanaUserDecryptRequestJson>(body) {
+        let parsed = match serde_json::from_value::<UserDecryptV3RequestJson>(body) {
             Err(_) => {
                 assert_eq!(
                     declared,
@@ -304,13 +309,16 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
                 );
                 continue;
             }
-            Ok(parsed) => {
+            Ok(UserDecryptV3RequestJson::SolanaSrfc38(parsed)) => {
                 assert_ne!(
                     declared,
                     RejectedBy::JsonShape,
                     "{name}: names the wire shape, and the wire type accepted it"
                 );
                 parsed
+            }
+            Ok(UserDecryptV3RequestJson::Eip712Unified(_)) => {
+                panic!("{name}: fixture records are Solana envelopes")
             }
         };
 

@@ -1,4 +1,7 @@
 use crate::http::utils::responses::{AppResponse, FieldJsonErrorType, ParseError};
+use crate::http::utils::validations::{
+    V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1,
+};
 use axum::{
     body::Bytes,
     extract::FromRequest,
@@ -17,16 +20,15 @@ fn deserialize_json<JsonType: DeserializeOwned>(body: &[u8]) -> Result<JsonType,
             let error_msg = e.to_string();
 
             // Check if it's a field-specific error vs true JSON syntax error
-            if error_msg.contains("missing field")
-                || error_msg.contains("invalid type")
-                || error_msg.contains("unknown field")
-            {
+            if is_field_specific_serde_error(&error_msg) {
                 let field_name = extract_field_from_serde_error(&e);
                 let issue = format_serde_error_message(&e);
 
                 let error_type = if error_msg.contains("missing field") {
                     FieldJsonErrorType::Missing
-                } else if error_msg.contains("unknown field") {
+                } else if error_msg.contains("unknown field")
+                    || error_msg.contains("unknown variant")
+                {
                     FieldJsonErrorType::Unknown
                 } else {
                     FieldJsonErrorType::InvalidType
@@ -127,10 +129,7 @@ where
 
                 // Check if it's a field-specific error (missing field, wrong type, unknown field)
                 // vs true JSON syntax error
-                if error_msg.contains("missing field")
-                    || error_msg.contains("invalid type")
-                    || error_msg.contains("unknown field")
-                {
+                if is_field_specific_serde_error(&error_msg) {
                     // Field-specific JSON issues - use validation error structure
                     let mut errors = validator::ValidationErrors::new();
                     let field_name = extract_field_from_serde_error(&e);
@@ -149,6 +148,18 @@ where
                         "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                         "extraData" => "extra_data",
                         "ciphertextHandles" => "ciphertext_handles",
+                        "attestationType" => "attestation_type",
+                        "attestedPayload" => "attested_payload",
+                        "userPubkey" => "user_pubkey",
+                        "transportKey" => "transport_key",
+                        "allowedScopes" => "allowed_scopes",
+                        "verifyingProgramId" => "verifying_program_id",
+                        "encryptedStore" => "encrypted_store",
+                        "allowedKey" => "allowed_key",
+                        "chainId" => "chain_id",
+                        "publicKey" => "public_key",
+                        "signature" => "signature",
+                        "handles" => "handles",
                         _ => "request",
                     };
 
@@ -179,6 +190,19 @@ where
     }
 }
 
+fn is_field_specific_serde_error(error_msg: &str) -> bool {
+    error_msg.contains("missing field")
+        || error_msg.contains("invalid type")
+        || error_msg.contains("unknown field")
+        || error_msg.contains("unknown variant")
+}
+
+fn is_v3_attestation_variant_error(error_msg: &str) -> bool {
+    error_msg.contains("unknown variant")
+        && (error_msg.contains(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1)
+            || error_msg.contains(V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1))
+}
+
 /// Extract field name from serde JSON error message
 pub fn extract_field_from_serde_error(error: &serde_json::Error) -> String {
     let error_msg = error.to_string();
@@ -207,6 +231,12 @@ pub fn extract_field_from_serde_error(error: &serde_json::Error) -> String {
         }
     }
 
+    // Internally tagged `/v3/user-decrypt` reports an unknown `attestationType` as
+    // `unknown variant`, with no field name in the serde message.
+    if is_v3_attestation_variant_error(&error_msg) {
+        return "attestationType".to_string();
+    }
+
     // Fallback: use generic field name
     "request".to_string()
 }
@@ -229,6 +259,11 @@ pub fn format_serde_error_message(error: &serde_json::Error) -> String {
         }
     } else if error_msg.contains("unknown field") {
         "Unknown field".to_string()
+    } else if is_v3_attestation_variant_error(&error_msg) {
+        format!(
+            "Unsupported attestationType; expected one of: [{}, {}]",
+            V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1
+        )
     } else if error_msg.contains("expected") && error_msg.contains("found") {
         "Invalid JSON format".to_string()
     } else {

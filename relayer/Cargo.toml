@@ -36,7 +36,6 @@ aws-sdk-kms = { version = "1.104.0", default-features = false, features = [
 ] }
 dashmap = "6.1.0"
 derivative = "2.2"
-ed25519-dalek = "2"
 futures = "0.3.32"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }
@@ -113,6 +112,7 @@ built = { version = "0.8", features = [
 # `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
 # the mock provider used there is already available via the `json-rpc` feature above.
 alloy = { version = "2.2.0", features = ["signer-local"] }
+ed25519-dalek = "2"
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"

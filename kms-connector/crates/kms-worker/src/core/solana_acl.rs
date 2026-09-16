@@ -19,7 +19,7 @@ pub use zama_solana_acl::UserDecryptionDelegationRecord;
 pub use zama_solana_acl::WILDCARD_AUTHORITY;
 pub use zama_solana_acl::delegation::DELEGATION_SEED;
 
-pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+pub use zama_solana_acl::HOST_CONFIG_SEED;
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 
 /// A decoded delegation record together with where it was read from.

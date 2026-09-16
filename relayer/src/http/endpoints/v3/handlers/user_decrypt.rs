@@ -19,13 +19,10 @@ use crate::http::endpoints::v2::types::error::{ApiResponseStatus, RelayerV2Respo
 use crate::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptQueuedResult,
 };
-use crate::http::endpoints::v3::types::{
-    AttestedUserDecryptRequestJson, SolanaUserDecryptRequestJson,
-};
+use crate::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1;
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
@@ -169,34 +166,17 @@ impl UserDecryptHandler {
             }
         };
 
-        // The attestation type selects the envelope: the Solana sRFC-38 form has its own
-        // Solana-native shape, everything else parses as the EVM envelope (whose validator
-        // rejects unknown types). Peeking just the tag keeps each envelope strict
-        // (`deny_unknown_fields`) instead of merging both shapes into one lenient type.
-        #[derive(serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct AttestationTypeProbe {
-            attestation_type: String,
-        }
-        let is_solana = serde_json::from_slice::<AttestationTypeProbe>(&body)
-            .map(|probe| probe.attestation_type == V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1)
-            .unwrap_or(false);
-
-        let parsed = if is_solana {
-            parse_and_validate::<SolanaUserDecryptRequestJson, UserDecryptRequest>(&body)
-        } else {
-            parse_and_validate::<AttestedUserDecryptRequestJson, UserDecryptRequest>(&body)
-        };
-        let user_decrypt_request: UserDecryptRequest = match parsed {
-            Ok(request) => request,
-            Err(parse_error) => {
-                return RelayerV2ResponseFailed::from_parse_error(
-                    &parse_error,
-                    &request_id.to_string(),
-                )
-                .into_response();
-            }
-        };
+        let user_decrypt_request: UserDecryptRequest =
+            match parse_and_validate::<UserDecryptV3RequestJson, UserDecryptRequest>(&body) {
+                Ok(request) => request,
+                Err(parse_error) => {
+                    return RelayerV2ResponseFailed::from_parse_error(
+                        &parse_error,
+                        &request_id.to_string(),
+                    )
+                    .into_response();
+                }
+            };
 
         info!("Successfully parsed and validated v3 request");
 
@@ -438,7 +418,7 @@ impl UserDecryptHandler {
 #[utoipa::path(
     post,
     path = "/v3/user-decrypt",
-    request_body = AttestedUserDecryptRequestJson,
+    request_body = UserDecryptV3RequestJson,
     responses(
         (status = 202, description = "Request accepted for processing.", body = UserDecryptPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),
