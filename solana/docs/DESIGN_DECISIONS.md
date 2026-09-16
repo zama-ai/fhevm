@@ -2430,9 +2430,10 @@ checks. The branch retains current slot/publication and PendingBurn semantics; h
 
 ## DD-051: A Zama Is One Host Program ID
 
-Status: **adopted**. HostConfig is that program's singleton `PDA("host-config")`.
+Status: **adopted** for identity. The preview-env wipe and the admin close instruction are
+follow-up; zama-host cannot close these accounts today.
 
-Four public `zama-host` program IDs:
+HostConfig is that program's singleton `PDA("host-config")`. Four public `zama-host` program IDs:
 
 ```text
 mainnet        one program; Squads is the upgrade authority
@@ -2443,32 +2444,49 @@ preview-env    DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ on Solana devnet
 
 Localnet e2e uses the committed throwaway keypairs. That is CI, not a fifth Zama.
 
-The tuple is `(program_id, chain_id)`. `program_id` is the Zama. `chain_id` is the Solana cluster.
-Handles hash `crate::ID`, so two programs on Solana devnet do not accept each other's proofs. Do
-not put HostConfig in child PDA seeds to mint a second Zama. Each program has its own upgrade
-authority. CI does not generate program IDs.
+A handle and every host PDA bind `(program_id, chain_id)`: `program_id` is the Zama, compiled as
+`crate::ID`, and `chain_id` is the Solana cluster. Two programs on Solana devnet therefore do not
+accept each other's proofs. EncryptedStore addresses already seed the app program, authority and
+scope under `crate::ID`. Putting HostConfig in those seeds would make a second config account a
+second Zama under one program ID, which this decision rejects.
 
-`zama-zws/gitops` does not deploy the preview-env program. GitOps supplies the cluster and the RPC
-and deployer secrets. The preview-env GitHub Actions workflows are the only writers of `DPq5y89…`.
-Durable zama-devnet, zama-testnet and mainnet are later GitOps environments on the other three IDs.
+The program ID is compiled into the `.so` (`declare_id!`). The crate today has two: the default
+localnet id `6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu`, and `--features preview-env` for
+`DPq5y89…`. Mainnet, zama-devnet and zama-testnet will each need their own compiled id the same
+way, so shipping those Zamas is additional feature-gated builds, not a runtime switch, and CI
+does not generate the keypairs. Each deployed program has its own upgrade authority, so a
+preview-env workflow cannot replace zama-testnet's bytecode.
 
-Only one preview namespace uses that program at a time. Each namespace has its own Anvil Gateway,
-and HostConfig stores that Gateway's chain id, InputVerification, Decryption and coprocessor
-signers. So every acquire closes every account owned by the program (`getProgramAccounts`), uploads
-this `.so` when the bytecode differs, then runs `initialize_host_config` and `define_kms_context`
-for this Gateway. Closing HostConfig does not close EncryptedStores, KMS contexts, the rand nonce
-or demo-program accounts; those are peer accounts. `initialize_host_config` also creates the rand
-nonce, so both must be gone or the next init fails. If the preview also deployed the shared demo
-program IDs, acquire and destroy close those programs' accounts the same way.
+`zama-zws/gitops` does not deploy the preview-env program. GitOps provides the Kubernetes cluster,
+the Solana RPC credentials, and the deployer keypair. The preview-env GitHub Actions workflows are
+the only intended writers of `DPq5y89…`. Durable zama-devnet, zama-testnet and mainnet are later
+GitOps environments on the other three IDs.
 
-`preview-env-destroy.yml` closes those accounts again before it deletes the namespace. It does not
-initialize. If this namespace uploaded a different `.so`, destroy writes the pinned baseline `.so`
-back. The next acquire initializes against its Gateway.
+### Follow-up: preview-env wipe
 
-zama-host has no instruction that closes these accounts today. `destroy_kms_context` only sets
-`destroyed = true`. The admin sweep, taking unchecked accounts so an old layout still closes, is
-the follow-up the preview-env Solana deploy needs. PR CI stays on localnet. The preview-env writer
-closes before it replaces bytecode. Durable GitOps environments upgrade in place on their own IDs.
+Only one preview namespace should use `DPq5y89…` at a time. Each namespace deploys its own Anvil
+Gateway, and HostConfig stores that Gateway's chain id, InputVerification address, Decryption
+address and coprocessor signers, so leftover HostConfig from the previous namespace cannot bind
+the next one.
 
-Coprocessor `host_chains` is unique on `chain_id`. When zama-devnet and zama-testnet coexist, that
-row must also key by `program_id`. RFC 035/036 do not change.
+zama-host has no instruction that closes HostConfig or EncryptedStores. `destroy_kms_context` only
+sets `destroyed = true`. The preview-env Solana deploy will need an admin instruction that takes
+raw account addresses, checks that this program owns them, and returns the rent. The accounts
+cannot be typed `Account<EncryptedStore>` (or `Account<HostConfig>`), because an old byte layout
+would fail to deserialize, and that leftover is what the wipe must delete. Solana has no parent
+account: closing HostConfig leaves EncryptedStores, KMS contexts, the rand nonce and accounts
+owned by the shared demo programs in place until the same instruction closes each of them.
+`initialize_host_config` also creates the rand nonce, so both addresses must be empty or the next
+init fails.
+
+Once that instruction exists, `preview-env-deploy.yml` will close every account owned by the
+program (listed by `getProgramAccounts`), upload this `.so` when the bytecode differs, then run
+`initialize_host_config` and `define_kms_context` for this Gateway. `preview-env-destroy.yml` will
+close those accounts again before it deletes the namespace and will not initialize. If that
+namespace uploaded a different `.so`, destroy will write the pinned baseline `.so` back.
+Pull-request CI stays on localnet and does not touch `DPq5y89…`. Durable GitOps environments will
+upgrade bytecode in place on their own program IDs.
+
+Coprocessor `host_chains` uses `chain_id BIGINT PRIMARY KEY`. That collides only if one
+coprocessor database indexes both zama-devnet and zama-testnet. Separate databases, one per Zama,
+do not need a schema change. RFC 035 and RFC 036 do not change.
