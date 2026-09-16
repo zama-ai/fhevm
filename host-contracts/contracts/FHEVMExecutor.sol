@@ -687,7 +687,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128)
             ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
-            : FHE_COLLECTION_NARROW_MAX_SIZE;
+            : uint256(FHE_COLLECTION_NARROW_MAX_SIZE);
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
         result = _naryOp(Operators.fheSum, values, resultType);
@@ -721,7 +721,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             valueType == FheType.Uint160 ||
             valueType == FheType.Uint256)
             ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
-            : FHE_COLLECTION_NARROW_MAX_SIZE;
+            : uint256(FHE_COLLECTION_NARROW_MAX_SIZE);
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
         if (_typeOf(value) != valueType) revert IncompatibleTypes();
 
