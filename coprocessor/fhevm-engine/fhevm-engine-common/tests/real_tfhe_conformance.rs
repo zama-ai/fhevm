@@ -31,10 +31,7 @@ fn test_keys() -> &'static TestKeys {
             &std::fs::read(fixtures.join("xof-keyset")).expect("read xof-keyset fixture"),
         )
         .expect("deserialize xof-keyset fixture");
-        let (_, server) = keyset
-            .decompress()
-            .expect("decompress xof-keyset fixture")
-            .into_raw_parts();
+        let (_, server) = keyset.decompress().into_raw_parts();
         let client = safe_deserialize_key(
             &std::fs::read(fixtures.join("xof-cks")).expect("read xof-cks fixture"),
         )
