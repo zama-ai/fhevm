@@ -7,8 +7,6 @@ use url::{Host, Url};
 
 /// Upper bound of every configured duration: keeps deadline arithmetic trivially safe.
 pub const MAX_TIMEOUT: Duration = Duration::from_secs(60);
-/// Upper bound of `call.retries.max_retries`.
-pub const MAX_RETRIES: u32 = 9;
 
 /// Invalid configuration; the message names the offending field with its dotted path.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -47,11 +45,14 @@ pub struct CallConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetryConfig {
-    /// Retries after the first attempt, retryable errors only. 0 = one attempt.
+    /// Retries after the first attempt, retryable errors only. 0 = one attempt. Any value: the deadline
+    /// (`call.timeout`) is the real bound, a retry whose delay does not fit before it is skipped.
     #[serde(default)]
     pub max_retries: u32,
+    /// Delay before the first retry; retry `k` waits `min(delay * 2^(k-1), backoff_max)`.
     #[serde(with = "humantime_serde", default = "default_delay")]
     pub delay: Duration,
+    /// Cap of the exponential delay, at most `call.timeout`.
     #[serde(with = "humantime_serde", default = "default_backoff_max")]
     pub backoff_max: Duration,
 }
@@ -191,19 +192,15 @@ impl KmsAggregatorConfig {
             ));
         }
         let retries = &call.retries;
-        if retries.max_retries > MAX_RETRIES {
-            return fail(format!(
-                "kms_aggregator.call.retries.max_retries must be <= {MAX_RETRIES}"
-            ));
-        }
         if retries.max_retries > 0
             && (retries.delay.is_zero()
                 || retries.delay > retries.backoff_max
-                || retries.backoff_max > MAX_TIMEOUT)
+                || retries.backoff_max > call.timeout)
         {
-            return fail(format!(
-                "kms_aggregator.call.retries must satisfy 0 < delay <= backoff_max <= {MAX_TIMEOUT:?}"
-            ));
+            return fail(
+                "kms_aggregator.call.retries must satisfy 0 < delay <= backoff_max <= call.timeout"
+                    .to_owned(),
+            );
         }
         for (name, threshold) in [
             ("user_decrypt", self.user_decrypt.threshold),
@@ -377,21 +374,25 @@ pub(crate) mod tests {
     #[test]
     fn retry_rules() {
         let mut cfg = valid(1);
-        cfg.call.retries.max_retries = MAX_RETRIES + 1;
-        assert!(message(&cfg).contains("max_retries must be <= 9"));
+        // No ceiling on the count: the deadline bounds the retries that actually run.
+        cfg.call.retries.max_retries = u32::MAX;
+        cfg.validate().unwrap();
         cfg.call.retries.max_retries = 2;
         cfg.call.retries.delay = Duration::ZERO;
-        assert!(message(&cfg).contains("0 < delay <= backoff_max"));
+        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
         cfg.call.retries.delay = Duration::from_secs(5);
         cfg.call.retries.backoff_max = Duration::from_secs(4);
-        assert!(message(&cfg).contains("0 < delay <= backoff_max"));
-        cfg.call.retries.backoff_max = MAX_TIMEOUT + Duration::from_secs(1);
-        assert!(message(&cfg).contains("0 < delay <= backoff_max"));
-        cfg.call.retries.backoff_max = Duration::from_secs(8);
+        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
+        // backoff_max beyond the deadline can never take effect: refused.
+        cfg.call.retries.delay = Duration::from_millis(500);
+        cfg.call.retries.backoff_max = cfg.call.timeout + Duration::from_secs(1);
+        assert!(message(&cfg).contains("0 < delay <= backoff_max <= call.timeout"));
+        cfg.call.retries.backoff_max = cfg.call.timeout;
         cfg.validate().unwrap();
         // With no retries the delays are irrelevant.
         cfg.call.retries.max_retries = 0;
         cfg.call.retries.delay = Duration::ZERO;
+        cfg.call.retries.backoff_max = Duration::from_secs(600);
         cfg.validate().unwrap();
     }
 
