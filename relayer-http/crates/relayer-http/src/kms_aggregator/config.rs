@@ -315,7 +315,7 @@ pub(crate) mod tests {
     fn url_without_host_is_rejected() {
         let mut cfg = valid(1);
         cfg.endpoints[0].url = url("http:///path");
-        // `url` normalises `http:///path` to a URL with an empty host for special schemes.
+        // `url` parses `http:///path` as a URL with an empty host for special schemes.
         assert!(cfg.validate().is_err());
     }
 
