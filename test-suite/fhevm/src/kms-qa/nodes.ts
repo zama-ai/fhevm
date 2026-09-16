@@ -8,7 +8,7 @@
  * works, but it puts the restore guarantee in the hands of every future case author, and a missed
  * `finally` leaves containers down for every subsequent case and for the developer's next run.
  *
- * {@link NodeSupervisor} centralises the guarantee. It owns the scope helpers, and it also tracks
+ * {@link NodeSupervisor} centralizes the guarantee. It owns the scope helpers, and it also tracks
  * everything it has stopped so the profile runner can force a restore from its own outermost
  * `finally` even when a case failed in a way that skipped its scope exit.
  *

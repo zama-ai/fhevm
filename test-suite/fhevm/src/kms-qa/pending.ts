@@ -591,7 +591,7 @@ export const assertContextPointers = async (
     throw new PreflightError(
       `kms-context-qa: expected the current-context pointers to be host=${expectedHost} gateway=${expectedGateway} ` +
         `— ${why} — but they are host=${host} gateway=${gateway}. The Gateway's pointer only ever advances; if this ` +
-        `changed, cross-chain synchronisation was added and qa/scenario_tb_checked/ghost.md needs revisiting.`,
+        `changed, cross-chain synchronization was added and qa/scenario_tb_checked/ghost.md needs revisiting.`,
     );
   }
 };

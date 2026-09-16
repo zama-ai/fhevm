@@ -180,7 +180,7 @@ const KMS_ID_TAGS: Readonly<Record<number, string>> = { 0x07: "ctx", 0x08: "epoc
  * in their last digits, which makes an evidence table genuinely hard to read and easy to misread —
  * two different epochs look identical at a glance.
  *
- * An id whose tag is not recognised falls back to the full decimal value rather than being rendered
+ * An id whose tag is not recognized falls back to the full decimal value rather than being rendered
  * as something misleadingly short. Error messages and the per-case handoff note keep the full value,
  * because that is what `cast` and a bug report need.
  *
@@ -285,7 +285,7 @@ export const broadcastContextSwitch = async (
 /**
  * Registers a pending context on the Gateway, before it activates on the host chain.
  *
- * Ordering matters and is not an optimisation: a fresh SDK client must never observe a context as
+ * Ordering matters and is not an optimization: a fresh SDK client must never observe a context as
  * active on the host that the Gateway has not yet accepted, or its decryption requests would be
  * rejected. `kms-context-switch` pre-registers for the same reason.
  */

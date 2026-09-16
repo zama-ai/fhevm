@@ -175,7 +175,7 @@ describe("kms-qa protocol-config formatKmsId", () => {
     expect(formatKmsId(contextId - 1n)).toBe("ctx#6");
   });
 
-  test("falls back to the full decimal for an unrecognised tag, rather than a misleading short form", () => {
+  test("falls back to the full decimal for an unrecognized tag, rather than a misleading short form", () => {
     const untagged = 42n;
     expect(formatKmsId(untagged)).toBe("42");
     const otherTag = (0x09n << 248n) + 3n;

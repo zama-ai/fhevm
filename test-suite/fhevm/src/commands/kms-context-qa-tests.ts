@@ -227,7 +227,7 @@ export const runKmsContextQaTestsProfile = async (
  * Prints the post-failure forensic state and the remediation command.
  *
  * On-chain state is never rolled back: a half-finished lifecycle operation is evidence, not litter,
- * and destroying it automatically would erase the most useful artefact of a failed run.
+ * and destroying it automatically would erase the most useful artifact of a failed run.
  */
 const reportStackState = async (
   target: ProtocolConfigTarget,

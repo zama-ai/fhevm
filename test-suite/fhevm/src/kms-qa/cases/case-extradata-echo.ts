@@ -46,7 +46,7 @@
  * ## The one tolerated difference, measured rather than assumed
  *
  * The first live run found v2 and v1 echoed byte for byte, and v0's `0x00` coming back as `0x` on
- * every share. That is not regeneration — the connector normalises the legacy marker to empty before
+ * every share. That is not regeneration — the connector normalizes the legacy marker to empty before
  * the KMS core sees it, and its own unit test says so by name
  * (`kms_decryption_extra_data_normalizes_legacy_zero_marker`). Both values mean "no context".
  *
@@ -157,7 +157,7 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
   );
 
   // The claim itself. Byte-exact on the stored strings, with one measured exception: the legacy
-  // `0x00` marker comes back empty, because the connector normalises it before the KMS core sees it
+  // `0x00` marker comes back empty, because the connector normalizes it before the KMS core sees it
   // (`kms_decryption_extra_data_normalizes_legacy_zero_marker`). Both values mean "no context".
   //
   // The exception admits ONLY the empty payload — see `isAcceptableEcho`. A v0 request answered with
