@@ -111,6 +111,7 @@ describe("kms-qa registry QA_CASES", () => {
       "extradata-rejection",
       "extradata-gateway-rejection",
       "context-switch-abort-and-retry",
+      "extradata-echo",
     ]);
   });
 

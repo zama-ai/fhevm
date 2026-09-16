@@ -300,6 +300,9 @@ export const TEST_GREP: Record<string, string> = {
   // Decryption contract, bypassing the Relayer. Driven by the kms-context-qa-tests
   // `extradata-gateway-rejection` case; also runnable standalone.
   "kms-context-extradata-gateway": "KMS context extraData gateway rejection",
+  // The response half: drives one decryption per extraData version so the profile can read back,
+  // from the relayer's database, what each KMS share echoed. Driven by the `extradata-echo` case.
+  "kms-context-extradata-echo": "KMS context extraData echo",
   "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
