@@ -43,12 +43,10 @@ impl State {
         })
     }
 
-    /// Runs the load-balancer's healthcheck against every endpoint.
-    ///
-    /// Splits them into the healthy and unhealthy ones.
-    async fn endpoints_healthcheck(&self) -> (Vec<String>, Vec<String>) {
+    /// Splits the endpoints into the healthy and unhealthy ones, as last observed by the
+    /// load-balancer's background healthcheck.
+    fn endpoints_health(&self) -> (Vec<String>, Vec<String>) {
         let backends = self.endpoint_balancer.backends();
-        backends.run_health_check(true).await;
         let all = backends.get_backend();
         let (healthy, unhealthy) = all.iter().partition(|b| backends.ready(b));
         let addresses =
@@ -78,10 +76,8 @@ impl State {
 
 impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
-        let (tls_listener_result, (healthy_endpoints, unhealthy_endpoints)) = tokio::join!(
-            self.tls_listener_healthcheck(),
-            self.endpoints_healthcheck()
-        );
+        let tls_listener_result = self.tls_listener_healthcheck().await;
+        let (healthy_endpoints, unhealthy_endpoints) = self.endpoints_health();
 
         let mut errors = vec![];
         let tls_listener_reachable = tls_listener_result.map_err(|e| errors.push(e)).is_ok();
@@ -143,7 +139,7 @@ pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck>
         .map_err(|e| anyhow!("Failed to build the endpoint healthcheck request: {e}"))?;
     health_check.req.set_uri(version_uri);
     // The connection phase is capped by `healthcheck_timeout` so a large `endpoint_connect_timeout`
-    // cannot stall the healthcheck.
+    // cannot make a probe outlast the healthcheck period.
     let connect_timeout = config
         .endpoint_connect_timeout
         .min(config.healthcheck_timeout);

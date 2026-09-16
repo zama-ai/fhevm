@@ -33,6 +33,12 @@ pub struct Config {
     /// The timeout to establish a TCP connection to an endpoint.
     #[serde(with = "humantime_serde", default = "default_endpoint_connect_timeout")]
     pub endpoint_connect_timeout: Duration,
+    /// How often the endpoints are probed in the background to filter which ones receive requests.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_endpoint_healthcheck_frequency"
+    )]
+    pub endpoint_healthcheck_frequency: Duration,
     /// How long the proxy waits for an endpoint response before answering `502`.
     #[serde(
         with = "humantime_serde",
@@ -108,6 +114,10 @@ fn default_endpoint_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_endpoint_healthcheck_frequency() -> Duration {
+    Duration::from_secs(3)
+}
+
 fn default_endpoint_response_timeout() -> Duration {
     // Should exceed the endpoint's `decryption_timeout` (30s by default) so the endpoint's own
     // `504 timeout` reaches the relayer instead of a proxy `502`.
@@ -151,6 +161,7 @@ impl Default for Config {
                 "kms-connector-endpoint-2:9090".parse().unwrap(),
             ],
             endpoint_connect_timeout: default_endpoint_connect_timeout(),
+            endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
             max_body_bytes: default_max_body_bytes(),
@@ -192,6 +203,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_API_KEY_DIGEST");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_ADDRESSES");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
@@ -229,6 +241,7 @@ mod tests {
                 "endpoint-1:8080,endpoint-2:8080",
             );
             env::set_var("KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT", "1s");
+            env::set_var("KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
             env::set_var("KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT", "45s");
             env::set_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT", "7s");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
@@ -258,6 +271,10 @@ mod tests {
             ]
         );
         assert_eq!(config.endpoint_connect_timeout, Duration::from_secs(1));
+        assert_eq!(
+            config.endpoint_healthcheck_frequency,
+            Duration::from_millis(500)
+        );
         assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.max_body_bytes, 2048);

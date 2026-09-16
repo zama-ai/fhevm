@@ -1,7 +1,10 @@
 mod common;
 
 use alloy::transports::http::reqwest::{self, StatusCode, Url};
-use common::{API_KEY, StubEndpoint, TestProxy, TestTls, free_addr, wait_for_listener};
+use common::{
+    API_KEY, ENDPOINT_HEALTHCHECK_FREQUENCY, StubEndpoint, TestProxy, TestTls, free_addr,
+    wait_for_listener,
+};
 use connector_utils::monitoring::{
     health::{Healthcheck, query_healthcheck_endpoint},
     server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
@@ -71,8 +74,8 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     // Stop one endpoint: degraded but healthy, the other one is still able to serve
     let (stopped, live) = (&t.endpoints[0], &t.endpoints[1]);
     stopped.stop().await;
+    let status = wait_for_unhealthy_endpoints(&monitoring_url, 1).await?;
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone())).await?;
-    let status = fetch_status(&monitoring_url).await?;
     assert!(status.healthy);
     assert!(status.tls_listener_reachable);
     assert_eq!(status.healthy_endpoints, [live.addr.to_string()]);
@@ -95,10 +98,10 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
 
     // Stop the last endpoint and verify healthcheck failure
     live.stop().await;
+    let status = wait_for_unhealthy_endpoints(&monitoring_url, 2).await?;
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone()))
         .await
         .unwrap_err();
-    let status = fetch_status(&monitoring_url).await?;
     assert!(!status.healthy);
     assert!(status.tls_listener_reachable);
     assert!(status.healthy_endpoints.is_empty());
@@ -158,4 +161,21 @@ async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
 
 async fn fetch_status(url: &Url) -> anyhow::Result<HealthStatus> {
     Ok(reqwest::get(url.clone()).await?.json().await?)
+}
+
+/// Polls `/healthz` until the background probes have evicted `count` endpoints.
+async fn wait_for_unhealthy_endpoints(url: &Url, count: usize) -> anyhow::Result<HealthStatus> {
+    let deadline = tokio::time::Instant::now() + 20 * ENDPOINT_HEALTHCHECK_FREQUENCY;
+    loop {
+        let status = fetch_status(url).await?;
+        if status.unhealthy_endpoints.len() == count {
+            return Ok(status);
+        }
+        anyhow::ensure!(
+            tokio::time::Instant::now() < deadline,
+            "only {} endpoint(s) evicted after the deadline, expected {count}",
+            status.unhealthy_endpoints.len()
+        );
+        tokio::time::sleep(ENDPOINT_HEALTHCHECK_FREQUENCY / 2).await;
+    }
 }

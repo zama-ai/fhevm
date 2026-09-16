@@ -96,6 +96,9 @@ async fn echo(
     }))
 }
 
+/// How often the test proxy probes its endpoints in the background.
+pub const ENDPOINT_HEALTHCHECK_FREQUENCY: Duration = Duration::from_millis(200);
+
 /// Runs a `Proxy` for the lifetime of one test.
 pub struct TestProxy {
     pub client: Client,
@@ -162,6 +165,7 @@ impl TestProxy {
             api_key_digest: API_KEY_DIGEST.parse().unwrap(),
             endpoint_addresses,
             endpoint_connect_timeout: Duration::from_millis(500),
+            endpoint_healthcheck_frequency: ENDPOINT_HEALTHCHECK_FREQUENCY,
             max_body_bytes: MAX_BODY_BYTES,
             healthcheck_timeout: Duration::from_secs(2),
             ..Config::default()

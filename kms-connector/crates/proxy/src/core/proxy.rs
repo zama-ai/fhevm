@@ -12,6 +12,7 @@ use pingora::{
     prelude::Server,
     proxy::http_proxy_service_with_name,
     server::{RunArgs, UnixShutdownSignalWatch, configuration::ServerConf},
+    services::background::GenBackgroundService,
 };
 use std::sync::Arc;
 use tracing::info;
@@ -43,6 +44,8 @@ impl Proxy {
                 .collect::<Vec<_>>()
         );
         endpoint_balancer.set_health_check(Box::new(endpoint_health_check(&config)?));
+        endpoint_balancer.health_check_frequency = Some(config.endpoint_healthcheck_frequency);
+        endpoint_balancer.parallel_health_check = true;
         let endpoint_balancer = Arc::new(endpoint_balancer);
 
         let state = health::State::new(
@@ -89,6 +92,12 @@ impl Proxy {
         // it, so check their consistency explicitly to fail fast.
         tls.check_private_key()
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+
+        let endpoint_health_service = GenBackgroundService::new(
+            "BG endpoint health check".to_string(),
+            Arc::clone(&self.endpoint_balancer),
+        );
+        server.add_service(endpoint_health_service);
 
         let service_name = self.config.service_name.clone();
         let mut proxy_service =
