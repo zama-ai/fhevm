@@ -44,6 +44,13 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      - name: Setup Node
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: protocol-contracts/staking/package-lock.json
+
       - name: Install safe-chain
         shell: bash
         run: |
@@ -60,18 +67,22 @@ jobs:
         working-directory: protocol-contracts/staking
         run: npm run lint
 
-      - name: Compile
+      - name: Run compile
         working-directory: protocol-contracts/staking
         run: npm run compile
 
-      - name: Run hardhat tests
+      - name: Run unit tests
         working-directory: protocol-contracts/staking
         run: make test
 
-      - name: Run task tests
+      - name: Run tasks tests
         working-directory: protocol-contracts/staking
         run: make test-tasks
 
       - name: Run coverage
         working-directory: protocol-contracts/staking
         run: npm run coverage
+
+      - name: Check coverage thresholds (core contracts only)
+        working-directory: protocol-contracts/staking
+        run: npm run coverage:check

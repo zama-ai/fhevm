@@ -1,0 +1,16 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "MessageLibBase",
+  "sourceName": "@layerzerolabs/lz-evm-messagelib-v2/contracts/MessageLibBase.sol",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "LZ_MessageLib_OnlyEndpoint",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}

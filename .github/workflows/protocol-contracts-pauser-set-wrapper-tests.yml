@@ -44,6 +44,13 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      - name: Setup Node
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: protocol-contracts/pauserSetWrapper/package-lock.json
+
       - name: Install safe-chain
         shell: bash
         run: |
@@ -56,10 +63,14 @@ jobs:
         working-directory: protocol-contracts/pauserSetWrapper
         run: npm ci
 
-      - name: Run hardhat tests
+      - name: Run unit tests
         working-directory: protocol-contracts/pauserSetWrapper
         run: make test
 
       - name: Run coverage
         working-directory: protocol-contracts/pauserSetWrapper
         run: npm run coverage
+
+      - name: Check coverage thresholds (core contracts only)
+        working-directory: protocol-contracts/pauserSetWrapper
+        run: npm run coverage:check

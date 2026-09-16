@@ -50,7 +50,7 @@ async function deployLuganodesOperatorStakingV2Impl(hre: HardhatRuntimeEnvironme
 }
 
 // Deploy the LuganodesOperatorStakingV2 implementation contract
-// After deploying the implementation, the owner should call `upagradeToAndCall(address,bytes)` function on the Proxy,
+// After deploying the implementation, the owner should call `upgradeToAndCall(address,bytes)` function on the Proxy,
 // with the address of the implementation as first argument,
 // and second argument the calldata returned by, for e.g: `cast calldata "reinitializeV2(string,string)" "Mock Luganodes Staked ZAMA (Coprocessor)" "stZAMA-Mock-Luganodes-Coprocessor"`
 // Example usage:

@@ -44,6 +44,18 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: protocol-contracts/token/pnpm-lock.yaml
+
       - name: Install safe-chain
         shell: bash
         run: |
@@ -54,12 +66,24 @@ jobs:
 
       - name: Install dependencies
         working-directory: protocol-contracts/token
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Run hardhat tests
+      - name: Run lint
         working-directory: protocol-contracts/token
-        run: npx hardhat test
+        run: pnpm run lint
+
+      - name: Run compile
+        working-directory: protocol-contracts/token
+        run: pnpm run compile
+
+      - name: Run unit tests
+        working-directory: protocol-contracts/token
+        run: pnpm test
 
       - name: Run coverage
         working-directory: protocol-contracts/token
-        run: npm run coverage
+        run: pnpm run coverage
+
+      - name: Check coverage thresholds (core contracts only)
+        working-directory: protocol-contracts/token
+        run: pnpm run coverage:check

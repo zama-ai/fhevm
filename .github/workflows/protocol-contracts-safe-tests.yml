@@ -44,6 +44,17 @@ jobs:
         with:
           persist-credentials: 'false'
 
+      - name: Setup Node
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: protocol-contracts/safe/package-lock.json
+
+      - name: Setup env
+        working-directory: protocol-contracts/safe
+        run: cp .env.example.test .env.example
+
       - name: Install safe-chain
         shell: bash
         run: |
@@ -56,14 +67,10 @@ jobs:
         working-directory: protocol-contracts/safe
         run: npm ci
 
-      - name: Use the test env file
+      - name: Run lint
         working-directory: protocol-contracts/safe
-        run: cp .env.example.test .env.example
+        run: npm run prettier:check && npm run lint:sol
 
-      - name: Run hardhat tests
+      - name: Run unit tests
         working-directory: protocol-contracts/safe
         run: make test
-
-      - name: Run coverage
-        working-directory: protocol-contracts/safe
-        run: npm run coverage
