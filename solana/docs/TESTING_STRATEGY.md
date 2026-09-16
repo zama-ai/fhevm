@@ -1,4 +1,4 @@
-# Testing Strategy — Solana EncryptedValue + MMR ACL
+# Testing Strategy — Solana EncryptedStore + MMR ACL
 
 How the MMR-ACL rewrite and the confidential-token flows are tested, layer by layer, and what is
 deliberately deferred. Companion to [`MMR_ACL_MVP.md`](./MMR_ACL_MVP.md) (the model) and

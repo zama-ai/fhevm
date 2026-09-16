@@ -85,7 +85,7 @@ images_for() {
 # Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are no longer copied into any
 # builder stage, and runtime-tests sources are copied only for cargo workspace resolution and are
 # never compiled into a runtime image, so none of them trigger a rebuild. Programs that no image
-# consumes (demo-vault, confidential-deposit-app) are none-ruled explicitly; any FUTURE program
+# consumes (demo-vault) are none-ruled explicitly; any FUTURE program
 # falls into the general solana/programs/* rule and is over-built by default.
 groups_for_path() {
   local path="$1"
@@ -107,7 +107,7 @@ groups_for_path() {
     shared/*) echo "coprocessor kms-connector relayer" ;;
     # On-chain-only demo and specimen programs: no docker image compiles them (checked against
     # the Cargo.tomls and Dockerfile COPY lines cited above).
-    solana/programs/demo-vault/*|solana/programs/confidential-deposit-app/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
+    solana/programs/demo-vault/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
     # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
     solana/crates/zama-solana-acl/*|solana/crates/zama-solana-request/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;

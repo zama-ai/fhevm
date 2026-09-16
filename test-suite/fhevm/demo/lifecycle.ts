@@ -118,7 +118,6 @@ const REQUIRED_KEYPAIRS = [
   ...[
     "confidential_batcher",
     "confidential_token",
-    "confidential_token_receiver",
     "demo_vault",
     "zama_host",
   ].map((name) =>

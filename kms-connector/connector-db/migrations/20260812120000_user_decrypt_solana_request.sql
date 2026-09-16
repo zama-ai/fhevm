@@ -1,7 +1,6 @@
 -- Solana user-decryption: the gateway's Solana entry carries the fields the gateway itself
 -- consumes (handles, validity window, transport key, KMS routing) as typed event fields, and
--- everything else as one opaque request blob. On the connector side that means one new column
--- and the removal of the RFC-021 Solana typed columns, whose content now lives inside it.
+-- everything else as one opaque request blob. On the connector side that is one new column.
 --
 --   - `solana_request`: the opaque canonical request bytes the gateway forwarded verbatim. The
 --                     worker decodes it with the shared `zama-solana-request` codec and
@@ -14,9 +13,3 @@
 -- self-declarations about a blob the gateway cannot read: a truthful one adds nothing the
 -- worker does not already check against the signature, and a false one is refused there anyway.
 ALTER TABLE user_decryption_requests ADD COLUMN solana_request BYTEA;
-
--- The RFC-021 Solana typed columns are gone: their content is inside `host_payload` now, and no
--- code path reads them after the V2 cutover. This is a PoC branch with no rows to preserve.
-ALTER TABLE user_decryption_requests DROP COLUMN solana_identity;
-ALTER TABLE user_decryption_requests DROP COLUMN solana_nonce;
-ALTER TABLE user_decryption_requests DROP COLUMN solana_allowed_acl_domain_keys;
