@@ -72,3 +72,5 @@ Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
   inbound-credit (DD-016).
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both are PoC shortcuts today — DD-028).
+- One coprocessor indexing both zama-devnet and zama-testnet would need `host_chains` to key by
+  program ID as well as `chain_id` (DD-051).
