@@ -31,7 +31,6 @@ impl State {
         // The proxy's certificate is issued for its public hostname, not for the loopback
         // address used here, so its verification is disabled for this client only.
         let loopback_client = reqwest::Client::builder()
-            .timeout(healthcheck_timeout)
             .tls_danger_accept_invalid_certs(true)
             .build()
             .context("Failed to build the healthcheck HTTP client")?;
