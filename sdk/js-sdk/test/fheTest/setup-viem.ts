@@ -5,7 +5,6 @@ import type {
   createFhevmEncryptClient as createViemFhevmEncryptClient,
 } from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
-import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { createPublicClient, http, type PublicClient, type Transport, type Chain } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
@@ -36,7 +35,6 @@ export type FheTestViemConfig = {
   readonly fheTestAddress: string;
   readonly protocolVersion: FheTestBaseEnv['protocolVersion'];
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 type CreateViemClientParameters = {
@@ -108,7 +106,6 @@ function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
     fheTestAddress: env.fheTestAddress,
     protocolVersion: env.protocolVersion,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
-    moduleVersions: env.moduleVersions,
   };
 }
 
@@ -135,52 +132,4 @@ export function areAllViemTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getViemTestConfigs().length > 1;
-}
-
-export function getViemClientOptions(
-  config: FheTestViemConfig,
-  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
-}
-
-export function getViemEncryptClientOptions(
-  config: FheTestViemConfig,
-  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmEncryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      tfhe: moduleVersions.tfhe,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
-}
-
-export function getViemDecryptClientOptions(
-  moduleVersions: FhevmModuleVersions | undefined,
-): FhevmDecryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.kms === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      kms: moduleVersions.kms,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
 }

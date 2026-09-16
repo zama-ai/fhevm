@@ -37,6 +37,7 @@ import { encryptionBitsFromFheTypeId, isFheTypeId } from '../../../handle/FheTyp
 import { EncryptionError } from '../../../errors/EncryptionError.js';
 import { getErrorMessage } from '../../../base/errors/utils.js';
 import { initTfheModule } from './init-p.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../runtime/WasmVersions-p.js';
 import { assertIsTypedValue } from '../../../base/typedValue.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -89,6 +90,9 @@ class TfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
     if (!(key instanceof TfheCompactPublicKeyImpl)) {
       throw new Error('Unauthorized');
     }
+    // Statically false with single-literal version types, but untyped JS
+    // callers can still pass a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (tfheVersion !== key.#tfheVersion) {
       throw new Error('TfheVersion mismatch');
     }
@@ -143,6 +147,9 @@ class TfheCompactPkeCrsImpl implements FheEncryptionCrs {
     if (!(key instanceof TfheCompactPkeCrsImpl)) {
       throw new Error('Unauthorized');
     }
+    // Statically false with single-literal version types, but untyped JS
+    // callers can still pass a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (tfheVersion !== key.#tfheVersion) {
       throw new Error('TfheVersion mismatch');
     }
@@ -158,7 +165,7 @@ export async function parseTFHEProvenCompactCiphertextList(
   runtime: FhevmRuntime,
   parameters: ParseTFHEProvenCompactCiphertextListParameters,
 ): Promise<ParseTFHEProvenCompactCiphertextListReturnType> {
-  const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
+  const tfheLib = await initTfheModule(runtime);
 
   const { ciphertextWithZkProof: ciphertextWithZKProof } = parameters;
   if ((ciphertextWithZKProof as unknown) == null) {
@@ -218,7 +225,8 @@ export async function buildWithProofPacked(
   runtime: FhevmRuntime,
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
-  const tfheLib = await initTfheModule(runtime, { tfheVersion: parameters.tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  const tfheLib = await initTfheModule(runtime);
 
   const { fheEncryptionKey: publicEncryptionParams, metaData, typedValues, extraData } = parameters;
 
@@ -241,12 +249,12 @@ export async function buildWithProofPacked(
     const tfheCompactPublicKeyWasm: TfheCompactPublicKey = TfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
       tfheCompactPublicKeyImpl,
       PRIVATE_TFHE_LIB_TOKEN,
-      parameters.tfheVersion,
+      tfheVersion,
     );
     const compactPkeCrsWasm: CompactPkeCrs = TfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
       tfheCompactPkeCrsImpl,
       PRIVATE_TFHE_LIB_TOKEN,
-      parameters.tfheVersion,
+      tfheVersion,
     );
 
     fheCompactCiphertextListBuilderWasm = tfheLib.CompactCiphertextList.builder(tfheCompactPublicKeyWasm);
@@ -292,7 +300,7 @@ export async function buildWithProofPacked(
     return Object.freeze({
       ciphertextWithZKProofBytes,
       extraData,
-      tfheVersion: parameters.tfheVersion,
+      tfheVersion,
     });
   } finally {
     try {
@@ -321,8 +329,8 @@ export async function serializeFheEncryptionKey(
   runtime: FhevmRuntime,
   parameters: SerializeFheEncryptionKeyParameters,
 ): Promise<SerializeFheEncryptionKeyReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  await initTfheModule(runtime);
 
   const { fheEncryptionKey: publicEncryptionParams } = parameters;
 
@@ -374,8 +382,8 @@ export async function serializeFheEncryptionPublicKey(
   runtime: FhevmRuntime,
   parameters: SerializeFheEncryptionPublicKeyParameters,
 ): Promise<SerializeFheEncryptionPublicKeyReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  await initTfheModule(runtime);
 
   const { publicKey: tfhePublicKey } = parameters;
 
@@ -406,8 +414,8 @@ export async function serializeFheEncryptionCrs(
   runtime: FhevmRuntime,
   parameters: SerializeFheEncryptionCrsParameters,
 ): Promise<SerializeFheEncryptionCrsReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  await initTfheModule(runtime);
 
   const { crs: tfheCrs } = parameters;
 
@@ -439,8 +447,8 @@ export async function deserializeFheEncryptionCrs(
   runtime: FhevmRuntime,
   parameters: DeserializeFheEncryptionCrsParameters,
 ): Promise<DeserializeFheEncryptionCrsReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  const tfheLib = await initTfheModule(runtime, { tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  const tfheLib = await initTfheModule(runtime);
 
   const { crsBytes: globalFheCrsBytes } = parameters;
 
@@ -466,8 +474,8 @@ export async function deserializeFheEncryptionPublicKey(
   runtime: FhevmRuntime,
   parameters: DeserializeFheEncryptionPublicKeyParameters,
 ): Promise<DeserializeFheEncryptionPublicKeyReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  const tfheLib = await initTfheModule(runtime, { tfheVersion });
+  const tfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
+  const tfheLib = await initTfheModule(runtime);
 
   const { publicKeyBytes: globalFhePublicKeyBytes } = parameters;
 

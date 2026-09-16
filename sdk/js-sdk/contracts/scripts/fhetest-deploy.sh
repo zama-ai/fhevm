@@ -94,8 +94,8 @@ fi
 
 acl_addr="$(fhevm_chain_address ${chain} acl)"
 kms_verifier_addr="$(fhevm_chain_address ${chain} kmsVerifier)"
-# ProtocolConfig only exists from v0.13.0 onward — older pinned chains
-# (localstack_v11, localstack_v12) have no such contract to read.
+# ProtocolConfig only exists from v0.13.0 onward — kept defensive in case an
+# older chain without that contract is ever targeted again.
 protocol_config_addr="$(fhevm_chain_address ${chain} protocolConfig 2>/dev/null || true)"
 
 # If this call fails, the ACL proxy isn't deployed (or hasn't been upgraded

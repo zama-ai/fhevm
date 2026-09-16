@@ -2,12 +2,7 @@ import type { ethers } from 'ethers';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import {
-  getEthersClientOptions,
-  getEthersTestConfig,
-  type CreateEthersBaseClientFn,
-  type FheTestEthersConfig,
-} from '../setup-ethers.js';
+import { getEthersTestConfig, type CreateEthersBaseClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import {
   createLogger,
   decryptTestCases,
@@ -73,7 +68,6 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
         const client = parameters.createFhevmBaseClient({
           chain: config.fhevmChain,
           provider: config.provider,
-          options: getEthersClientOptions(config),
         });
 
         const typedValue: TypedValue = await client.decryptPublicValue({
@@ -126,7 +120,6 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         provider: config.provider,
-        options: getEthersClientOptions(config),
       });
 
       const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));

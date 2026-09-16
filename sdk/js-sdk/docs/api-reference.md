@@ -38,7 +38,6 @@ type FhevmRuntimeConfig = {
   readonly singleThread?: boolean | undefined;
   readonly wasmAssetLoadMode?: WasmAssetLoadMode | undefined;
   readonly locateFile?: ((file: string) => URL) | undefined;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
   readonly logger?: Logger | undefined;
   readonly auth?: Auth | undefined;
 };
@@ -49,14 +48,6 @@ type WasmAssetLoadMode =
   | 'precheck-direct-url'
   | 'trusted-direct-url'
   | 'auto';
-
-type FhevmModuleVersions =
-  | 'auto'
-  | {
-      readonly tfhe?: '1.5.3' | '1.6.2' | undefined;
-      readonly kms?: '0.13.10' | '0.13.20-0' | '0.14.0-1' | undefined;
-      readonly checkCompatibility?: 'throw' | 'warn' | 'off' | undefined;
-    };
 ```
 
 ### Runtime init helpers
@@ -112,17 +103,13 @@ type FhevmBaseOptions = {
 
 type FhevmOptions = FhevmBaseOptions & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 type FhevmEncryptOptions = FhevmBaseOptions & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
-  readonly moduleVersions?: FhevmEncryptModuleVersions | undefined;
 };
 
-type FhevmDecryptOptions = FhevmBaseOptions & {
-  readonly moduleVersions?: FhevmDecryptModuleVersions | undefined;
-};
+type FhevmDecryptOptions = FhevmBaseOptions;
 ```
 
 ### Client lifecycle members

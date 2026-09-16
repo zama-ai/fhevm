@@ -4,12 +4,8 @@
 // Two ways to use this script:
 //
 // 1. CLI (regenerates the source loaders/API declarations, committed to git):
-//      node scripts/build/codegen-loaders.mjs              # writes the 'dev' (full) generated files
-//      node scripts/build/codegen-loaders.mjs --check      # verifies committed generated files are fresh
-//      BUILD_PROFILE=prod node scripts/build/codegen-loaders.mjs  # writes the 'prod' generated files
-//    The default is 'dev' so the source tree always reflects "every supported
-//    version." Only opt into 'prod' source for an experiment; restore with the
-//    default before committing.
+//      node scripts/build/codegen-loaders.mjs         # writes the generated files
+//      node scripts/build/codegen-loaders.mjs --check # verifies committed generated files are fresh
 //
 // 2. Programmatic (build scripts):
 //      import {
@@ -20,8 +16,8 @@
 //        resolveDefaultWasmVersions,
 //      }
 //        from './codegen-loaders.mjs';
-//      const defaults = resolveDefaultWasmVersions(profile);
-//      const source = generateTfheLoaderSource(versions, profile, defaults.tfhe);
+//      const defaults = resolveDefaultWasmVersions();
+//      const source = generateTfheLoaderSource(versions, defaults.tfhe);
 //    This is how build-cjs-wasm.mjs / build-esm-wasm.mjs override generated
 //    files emitted into src/_cjs/wasm/ and src/_esm/wasm/, without mutating
 //    src/wasm/.
@@ -31,13 +27,12 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { BUILD_PROFILES, KMS_MANIFEST, TFHE_MANIFEST, WASM_DEFAULT_VERSIONS } from '../../versionsManifest.js';
+import { KMS_MANIFEST, TFHE_MANIFEST, WASM_DEFAULT_VERSIONS } from '../../versionsManifest.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC_WASM = resolve(__dirname, '../../src/wasm');
 const TEMPLATES_DIR = resolve(__dirname, '../wasm/loaders');
 
-const BUILD_PROFILE_PLACEHOLDER = '__BUILD_PROFILE__';
 const TFHE_API_TEMPLATE_PATH = resolve(TEMPLATES_DIR, 'TfheApi.template.d.ts');
 const KMS_API_TEMPLATE_PATH = resolve(TEMPLATES_DIR, 'KmsLibApi.template.d.ts');
 
@@ -226,21 +221,16 @@ export function getKmsApiAnchorVersion() {
   return readApiTemplate(KMS_API_TEMPLATE_PATH, 'KMS', 'TkmsVersion').anchorVersion;
 }
 
-export function resolveDefaultWasmVersions(profile) {
-  const defaults = WASM_DEFAULT_VERSIONS[profile];
-  if (defaults === undefined) {
-    fail(`Missing WASM default versions for BUILD_PROFILE='${profile}'.`);
-  }
-
-  const { tfhe, tkms } = defaults;
+export function resolveDefaultWasmVersions() {
+  const { tfhe, tkms } = WASM_DEFAULT_VERSIONS;
   if (tfhe === undefined) {
-    fail(`Missing TFHE default version for BUILD_PROFILE='${profile}'.`);
+    fail('Missing TFHE default version in WASM_DEFAULT_VERSIONS.');
   }
   if (tkms === undefined) {
-    fail(`Missing TKMS default version for BUILD_PROFILE='${profile}'.`);
+    fail('Missing TKMS default version in WASM_DEFAULT_VERSIONS.');
   }
 
-  return defaults;
+  return WASM_DEFAULT_VERSIONS;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -249,15 +239,13 @@ export function resolveDefaultWasmVersions(profile) {
 
 /**
  * @param {readonly string[]} versions
- * @param {string} profile
  * @param {string} defaultVersion
  * @returns {string} JS source for src/wasm/tfhe/loadTfheLib.js
  */
-export function generateTfheLoaderSource(versions, profile, defaultVersion = versions[0]) {
+export function generateTfheLoaderSource(versions, defaultVersion = versions[0]) {
   return renderTemplate(
     resolve(TEMPLATES_DIR, 'loadTfheLib.template.js'),
     new Map([
-      [BUILD_PROFILE_PLACEHOLDER, profile],
       ['__TFHE_VERSIONS__', renderVersionList(versions)],
       ['__TFHE_DEFAULT_VERSION__', renderDefaultVersion(versions, 'TFHE', defaultVersion)],
       ['  /* __TFHE_LIB_LOADERS__ */', renderImportLoaders(versions, 'tfhe.js')],
@@ -291,15 +279,13 @@ export function generateTfheApiSource(versions) {
 
 /**
  * @param {readonly string[]} versions
- * @param {string} profile
  * @param {string} defaultVersion
  * @returns {string} JS source for src/wasm/tkms/loadKmsLib.js
  */
-export function generateKmsLoaderSource(versions, profile, defaultVersion = versions[0]) {
+export function generateKmsLoaderSource(versions, defaultVersion = versions[0]) {
   return renderTemplate(
     resolve(TEMPLATES_DIR, 'loadKmsLib.template.js'),
     new Map([
-      [BUILD_PROFILE_PLACEHOLDER, profile],
       ['__KMS_VERSIONS__', renderVersionList(versions)],
       ['__TKMS_DEFAULT_VERSION__', renderDefaultVersion(versions, 'TKMS', defaultVersion)],
       ['  /* __KMS_LIB_LOADERS__ */', renderImportLoaders(versions, 'kms_lib.js')],
@@ -341,17 +327,9 @@ if (isMain) {
     process.exit(1);
   }
 
-  const profile = process.env.BUILD_PROFILE ?? 'dev';
-  if (!BUILD_PROFILES.includes(profile)) {
-    console.error(
-      `[codegen-loaders] unknown BUILD_PROFILE='${profile}'. Expected one of: ${BUILD_PROFILES.join(', ')}`,
-    );
-    process.exit(1);
-  }
-
-  const tfheVersions = TFHE_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
-  const kmsVersions = KMS_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
-  const defaultVersions = resolveDefaultWasmVersions(profile);
+  const tfheVersions = TFHE_MANIFEST.map((entry) => entry.version);
+  const kmsVersions = KMS_MANIFEST.map((entry) => entry.version);
+  const defaultVersions = resolveDefaultWasmVersions();
   const tfheApiAnchorVersion = getTfheApiAnchorVersion();
   const kmsApiAnchorVersion = getKmsApiAnchorVersion();
 
@@ -359,7 +337,7 @@ if (isMain) {
     {
       path: resolve(SRC_WASM, 'tfhe/loadTfheLib.js'),
       rel: 'src/wasm/tfhe/loadTfheLib.js',
-      source: generateTfheLoaderSource(tfheVersions, profile, defaultVersions.tfhe),
+      source: generateTfheLoaderSource(tfheVersions, defaultVersions.tfhe),
     },
     {
       path: resolve(SRC_WASM, 'tfhe/TfheApi.d.ts'),
@@ -369,7 +347,7 @@ if (isMain) {
     {
       path: resolve(SRC_WASM, 'tkms/loadKmsLib.js'),
       rel: 'src/wasm/tkms/loadKmsLib.js',
-      source: generateKmsLoaderSource(kmsVersions, profile, defaultVersions.tkms),
+      source: generateKmsLoaderSource(kmsVersions, defaultVersions.tkms),
     },
     {
       path: resolve(SRC_WASM, 'tkms/KmsLibApi.d.ts'),
@@ -396,7 +374,7 @@ if (isMain) {
     }
   }
 
-  console.log(`[codegen-loaders] ${check ? 'checked' : 'generated'} profile=${profile}`);
+  console.log(`[codegen-loaders] ${check ? 'checked' : 'generated'}`);
   console.log(`[codegen-loaders]   TFHE versions:   ${renderDisplayVersionList(tfheVersions) || '(none)'}`);
   console.log(`[codegen-loaders]   TFHE API anchor: v${tfheApiAnchorVersion}`);
   console.log(`[codegen-loaders]   KMS versions:    ${renderDisplayVersionList(kmsVersions) || '(none)'}`);

@@ -74,6 +74,9 @@ class FheEncryptionKeyWasmImpl implements FheEncryptionKeyWasm {
     if (!(instance instanceof FheEncryptionKeyWasmImpl)) {
       throw new Error('Invalid FheEncryptionKey instance');
     }
+    // Statically false with single-literal version types, but untyped JS
+    // callers can still pass a stale version at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (tfheVersion !== instance.#tfheVersion) {
       throw new Error('TfheVersion mismatch');
     }

@@ -17,12 +17,10 @@ export async function deserializeFheEncryptionKey(
   const { keyBytes, fhevmContext } = parameters;
   const publicKeyNative = await context.runtime.encrypt.deserializeFheEncryptionPublicKey({
     publicKeyBytes: keyBytes.publicKeyBytes,
-    tfheVersion: fhevmContext.tfheVersion,
   });
 
   const crsNative = await context.runtime.encrypt.deserializeFheEncryptionCrs({
     crsBytes: keyBytes.crsBytes,
-    tfheVersion: fhevmContext.tfheVersion,
   });
 
   return createFheEncryptionKeyWasm(new WeakRef(context.runtime), {

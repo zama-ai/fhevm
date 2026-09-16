@@ -1,8 +1,8 @@
 # Runtime configuration
 
 The runtime config controls _how_ the SDK loads and runs its WebAssembly
-cryptography — thread count, where WASM assets come from, and which module
-versions to use. Set it once, before any client is created.
+cryptography — thread count and where WASM assets come from. Set it once,
+before any client is created.
 
 ```ts
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
@@ -51,7 +51,6 @@ type FhevmRuntimeConfig = {
   readonly singleThread?: boolean;
   readonly wasmAssetLoadMode?: WasmAssetLoadMode;
   readonly locateFile?: (file: string) => URL;
-  readonly moduleVersions?: FhevmModuleVersions;
   readonly logger?: Logger;
   readonly auth?: Auth;
 };
@@ -65,7 +64,6 @@ Every field is optional.
 | `singleThread`      | `false`                                  | Force single-threaded mode; skips all worker setup.           |
 | `wasmAssetLoadMode` | `'auto'`                                 | How the worker script is fetched and verified.                |
 | `locateFile`        | auto (`file://` in Node, embedded in browser) | Map an asset filename to a URL you host.                 |
-| `moduleVersions`    | `'auto'`                                 | Pin specific TFHE/TKMS WASM versions.                          |
 | `logger`            | none                                     | `{ debug, warn, error }` hooks for SDK diagnostics.           |
 | `auth`              | none                                     | Authentication context for Relayer requests.                  |
 
@@ -153,26 +151,6 @@ setFhevmRuntimeConfig({
 
 Return a `URL` to serve that asset from your host, or `undefined` to fall back to
 the embedded base64 copy for that file.
-
-## Pinning module versions
-
-By default the SDK uses the latest bundled WASM versions (TFHE `1.6.2`, TKMS
-`0.14.0-1`). To pin explicit versions — for reproducible builds or
-compatibility with a specific protocol deployment — set `moduleVersions`:
-
-```ts
-setFhevmRuntimeConfig({
-  moduleVersions: {
-    tfhe: '1.6.2', // encryption WASM
-    kms: '0.14.0-1', // decryption WASM
-    checkCompatibility: 'throw', // 'throw' | 'warn' | 'off'
-  },
-});
-```
-
-Bundled versions: TFHE `'1.5.3'` or `'1.6.2'`; TKMS `'0.13.10'`, `'0.13.20-0'`, or `'0.14.0-1'`.
-`checkCompatibility` decides what happens when a pinned version doesn't match the
-chain's protocol — throw, warn, or ignore. It has no effect under `'auto'`.
 
 ## Preloading WASM
 

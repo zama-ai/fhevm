@@ -1,12 +1,7 @@
 import { resolveFhevmConfig } from '@fhevm/sdk/actions/host';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { beforeAll, describe, expect, it } from 'vitest';
-import {
-  getEthersClientOptions,
-  type CreateEthersBaseClientFn,
-  type FheTestEthersConfig,
-  getEthersTestConfig,
-} from '../setup-ethers.js';
+import { type CreateEthersBaseClientFn, type FheTestEthersConfig, getEthersTestConfig } from '../setup-ethers.js';
 import { createLogger, safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,7 +36,6 @@ export function defineClientBaseChainTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain,
         provider: config.provider,
-        options: getEthersClientOptions(config),
       });
       const cfg = await resolveFhevmConfig(client, chain);
       console.log(safeJSONstringify(cfg, 2));

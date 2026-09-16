@@ -3,10 +3,8 @@ import type {
   DecryptAndReconstructParameters,
   DecryptModuleFactory,
   DeserializeTkmsPrivateKeyParameters,
-  GenerateTkmsPrivateKeyParameters,
   GetTkmsModuleInfoParameters,
   GetTkmsPublicKeyHexParameters,
-  InitTkmsModuleParameters,
   SerializeTkmsPrivateKeyParameters,
   VerifyTkmsPrivateKeyParameters,
 } from '../types.js';
@@ -27,12 +25,12 @@ import { getTkmsModuleInfo, initTkmsModule } from './init-p.js';
 export const decryptModule: DecryptModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
     decrypt: Object.freeze({
-      initTkmsModule: async (args: InitTkmsModuleParameters) => {
-        await initTkmsModule(runtime, args);
+      initTkmsModule: async () => {
+        await initTkmsModule(runtime);
       },
       getTkmsModuleInfo: (args: GetTkmsModuleInfoParameters) => getTkmsModuleInfo(args),
       decryptAndReconstruct: (args: DecryptAndReconstructParameters) => decryptAndReconstruct(runtime, args),
-      generateTkmsPrivateKey: (args: GenerateTkmsPrivateKeyParameters) => generateTkmsPrivateKey(runtime, args),
+      generateTkmsPrivateKey: () => generateTkmsPrivateKey(runtime),
       serializeTkmsPrivateKey: (args: SerializeTkmsPrivateKeyParameters) => serializeTkmsPrivateKey(runtime, args),
       deserializeTkmsPrivateKey: (args: DeserializeTkmsPrivateKeyParameters) =>
         deserializeTkmsPrivateKey(runtime, args),

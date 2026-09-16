@@ -5,9 +5,10 @@ import type {
   ProtocolVersionResolution,
   PubKeyCrsVersionResolution,
 } from '../types/coreFhevmClient.js';
-import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import type { FhevmClientFrozenContext, fhevmClientFrozenContextBrand } from '../types/fhevmClientFrozenContext-p.js';
+import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { CANONICAL_WASM_VERSIONS } from '../runtime/WasmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -18,11 +19,12 @@ const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
 /**
  * The already-resolved versions used to build a {@link FhevmClientFrozenContext}.
  *
- * Every field is optional: a context only needs to carry the versions a given
- * operation actually consumes — an encrypt path resolves `tfheVersion` (and the
- * `protocol`/`ACL` versions it derives from) but never `tkmsVersion` or the
- * KMSVerifier version; a public-decrypt path is the opposite. Resolving only the
- * needed subset keeps the number of on-chain `getVersion()` reads minimal.
+ * `hostContractVersions`, `protocolVersion`, and `pubKeyCrsVersion` are optional:
+ * a context only needs to carry the versions a given operation actually
+ * consumes. There is no `tfheVersion` / `tkmsVersion` field — this SDK release
+ * ships a single TFHE and a single TKMS module, so
+ * {@link FhevmClientFrozenContext.tfheVersion} / `.tkmsVersion` always report
+ * {@link CANONICAL_WASM_VERSIONS} regardless of what this context resolved.
  *
  * Values passed here are assumed to already have been read/derived consistently
  * (ideally in a single batched round-trip). This type performs no I/O.
@@ -31,8 +33,6 @@ export type CreateFhevmClientFrozenContextParameters = {
   readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
   readonly protocolVersion?: ProtocolVersionResolution | undefined;
   readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
-  readonly tfheVersion?: TfheVersion | undefined;
-  readonly tkmsVersion?: TkmsVersion | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -52,8 +52,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   readonly #hostContractVersions: Readonly<Partial<Record<HostContractName, HostContractVersion>>>;
   readonly #protocolVersion: ProtocolVersionResolution | undefined;
   readonly #pubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
-  readonly #tfheVersion: TfheVersion | undefined;
-  readonly #tkmsVersion: TkmsVersion | undefined;
 
   constructor(privateToken: symbol, parameters: CreateFhevmClientFrozenContextParameters) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -63,8 +61,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
     this.#hostContractVersions = Object.freeze({ ...(parameters.hostContractVersions ?? {}) });
     this.#protocolVersion = parameters.protocolVersion;
     this.#pubKeyCrsVersion = parameters.pubKeyCrsVersion;
-    this.#tfheVersion = parameters.tfheVersion;
-    this.#tkmsVersion = parameters.tkmsVersion;
 
     Object.freeze(this);
   }
@@ -155,36 +151,22 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   // TFHE / TKMS module versions
   //////////////////////////////////////////////////////////////////////////////
 
-  public get hasTfheVersion(): boolean {
-    return this.#tfheVersion !== undefined;
-  }
-
-  /** @throws If the TFHE version was not resolved in this context. */
+  /**
+   * This SDK release ships a single TFHE module, so this always returns
+   * {@link CANONICAL_WASM_VERSIONS}.tfhe, regardless of what this context
+   * resolved.
+   */
   public get tfheVersion(): TfheVersion {
-    if (this.#tfheVersion === undefined) {
-      throw new Error('FhevmClientFrozenContext: tfheVersion was not resolved in this context.');
-    }
-    return this.#tfheVersion;
+    return CANONICAL_WASM_VERSIONS.tfhe;
   }
 
-  public get tryTfheVersion(): TfheVersion | undefined {
-    return this.#tfheVersion;
-  }
-
-  public get hasTkmsVersion(): boolean {
-    return this.#tkmsVersion !== undefined;
-  }
-
-  /** @throws If the TKMS version was not resolved in this context. */
+  /**
+   * This SDK release ships a single TKMS module, so this always returns
+   * {@link CANONICAL_WASM_VERSIONS}.kms, regardless of what this context
+   * resolved.
+   */
   public get tkmsVersion(): TkmsVersion {
-    if (this.#tkmsVersion === undefined) {
-      throw new Error('FhevmClientFrozenContext: tkmsVersion was not resolved in this context.');
-    }
-    return this.#tkmsVersion;
-  }
-
-  public get tryTkmsVersion(): TkmsVersion | undefined {
-    return this.#tkmsVersion;
+    return CANONICAL_WASM_VERSIONS.kms;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -194,8 +176,8 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
       hostContractVersions: this.#hostContractVersions,
       protocolVersion: this.#protocolVersion,
       pubKeyCrsVersion: this.#pubKeyCrsVersion,
-      tfheVersion: this.#tfheVersion,
-      tkmsVersion: this.#tkmsVersion,
+      tfheVersion: this.tfheVersion,
+      tkmsVersion: this.tkmsVersion,
     };
   }
 }
@@ -238,8 +220,6 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
     readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
     readonly protocolVersion?: ProtocolVersionResolution | undefined;
     readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
-    readonly tfheVersion?: TfheVersion | undefined;
-    readonly tkmsVersion?: TkmsVersion | undefined;
     readonly relayerSupportsV3UserDecryptRoute: boolean;
   };
 
@@ -257,8 +237,6 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
     hostContractVersions,
     protocolVersion: state.protocolVersion === undefined ? undefined : { ...state.protocolVersion },
     pubKeyCrsVersion: state.pubKeyCrsVersion === undefined ? undefined : { ...state.pubKeyCrsVersion },
-    tfheVersion: state.tfheVersion,
-    tkmsVersion: state.tkmsVersion,
   });
 }
 

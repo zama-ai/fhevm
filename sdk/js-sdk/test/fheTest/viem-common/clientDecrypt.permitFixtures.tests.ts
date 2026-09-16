@@ -20,11 +20,11 @@ import { createLogger } from '../setupCommon.js';
 // inside each file and are committed forever — a future serialization or
 // validation change that breaks them breaks real cached permits.
 //
-// Verify (default):
-//   CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitFixtures.test.ts
+// Verify (default; skipped when no fixture exists for the given chain):
+//   CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitFixtures.test.ts
 //
 // Generate a missing fixture for a chain (requires the chain's stack running):
-//   GENERATE_PERMIT_FIXTURES=1 CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitFixtures.test.ts
+//   GENERATE_PERMIT_FIXTURES=1 CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.permitFixtures.test.ts
 //
 // Fixtures are chain-specific (the EIP-712 signature covers the host chain id
 // and the gateway Decryption address), deterministic for localstack chains,

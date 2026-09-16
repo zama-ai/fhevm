@@ -22,7 +22,6 @@ import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
-import { cloneModuleVersions } from '../runtimeConfig-p.js';
 import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -643,7 +642,6 @@ function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, O
 function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
   return Object.freeze<ResolvedFhevmOptions>({
     batchRpcCalls: options?.batchRpcCalls ?? false,
-    moduleVersions: cloneModuleVersions(options?.moduleVersions),
   });
 }
 

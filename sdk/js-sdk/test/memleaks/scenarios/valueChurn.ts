@@ -53,17 +53,13 @@ export const valueChurnScenario: Scenario = {
       });
     }
 
-    const tfheVersion =
-      config.moduleVersions !== undefined && config.moduleVersions !== 'auto' ? config.moduleVersions.tfhe : undefined;
-
     const client = createFhevmEncryptClient({
       chain: config.fhevmChain,
       provider: config.provider,
-      options: config.moduleVersions !== undefined ? { moduleVersions: config.moduleVersions } : undefined,
     });
     await client.ready;
 
-    const readTfheMemory = await createTfheMemoryReader(tfheVersion);
+    const readTfheMemory = await createTfheMemoryReader();
 
     let counter = 0;
 
