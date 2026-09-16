@@ -10,6 +10,7 @@ version.workspace = true
 connector-utils.workspace = true
 kms-connector-api.workspace = true
 
+actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
@@ -22,10 +23,10 @@ serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-actix-web.workspace = true
 rcgen.workspace = true
 rstest.workspace = true
 rustls.workspace = true
