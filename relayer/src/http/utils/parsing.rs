@@ -17,16 +17,15 @@ fn deserialize_json<JsonType: DeserializeOwned>(body: &[u8]) -> Result<JsonType,
             let error_msg = e.to_string();
 
             // Check if it's a field-specific error vs true JSON syntax error
-            if error_msg.contains("missing field")
-                || error_msg.contains("invalid type")
-                || error_msg.contains("unknown field")
-            {
+            if is_field_specific_serde_error(&error_msg) {
                 let field_name = extract_field_from_serde_error(&e);
                 let issue = format_serde_error_message(&e);
 
                 let error_type = if error_msg.contains("missing field") {
                     FieldJsonErrorType::Missing
-                } else if error_msg.contains("unknown field") {
+                } else if error_msg.contains("unknown field")
+                    || error_msg.contains("unknown variant")
+                {
                     FieldJsonErrorType::Unknown
                 } else {
                     FieldJsonErrorType::InvalidType
@@ -127,10 +126,7 @@ where
 
                 // Check if it's a field-specific error (missing field, wrong type, unknown field)
                 // vs true JSON syntax error
-                if error_msg.contains("missing field")
-                    || error_msg.contains("invalid type")
-                    || error_msg.contains("unknown field")
-                {
+                if is_field_specific_serde_error(&error_msg) {
                     // Field-specific JSON issues - use validation error structure
                     let mut errors = validator::ValidationErrors::new();
                     let field_name = extract_field_from_serde_error(&e);
@@ -179,6 +175,13 @@ where
     }
 }
 
+fn is_field_specific_serde_error(error_msg: &str) -> bool {
+    error_msg.contains("missing field")
+        || error_msg.contains("invalid type")
+        || error_msg.contains("unknown field")
+        || error_msg.contains("unknown variant")
+}
+
 /// Extract field name from serde JSON error message
 pub fn extract_field_from_serde_error(error: &serde_json::Error) -> String {
     let error_msg = error.to_string();
@@ -207,7 +210,8 @@ pub fn extract_field_from_serde_error(error: &serde_json::Error) -> String {
         }
     }
 
-    // Fallback: use generic field name
+    // Fallback: use generic field name. Internally tagged enums report an unknown
+    // tag as `unknown variant` with no field name, so this is `request`.
     "request".to_string()
 }
 
@@ -229,6 +233,8 @@ pub fn format_serde_error_message(error: &serde_json::Error) -> String {
         }
     } else if error_msg.contains("unknown field") {
         "Unknown field".to_string()
+    } else if error_msg.contains("unknown variant") {
+        error_msg
     } else if error_msg.contains("expected") && error_msg.contains("found") {
         "Invalid JSON format".to_string()
     } else {

@@ -36,7 +36,6 @@ aws-sdk-kms = { version = "1.104.0", default-features = false, features = [
 ] }
 dashmap = "6.1.0"
 derivative = "2.2"
-ed25519-dalek = "2"
 futures = "0.3.32"
 hex = "0.4.3"
 moka = { version = "0.12.13", features = ["future"] }
@@ -75,7 +74,7 @@ zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 # Solana ACL: the encrypted value account and delegation record decoders the advisory
 # delegation pre-check reads host state through — the connector's own crate, so one decoder.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
-# Canonical `hostPayload` serialization forwarded into the host-generic gateway calldata.
+# Canonical `solanaRequest` serialization forwarded into the host-generic gateway calldata.
 borsh = { version = "1", features = ["derive"] }
 # Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check. `client`
 # brings in the networked half (registry mirroring, S3 fetch, consensus fan-out); the base half
@@ -113,6 +112,7 @@ built = { version = "0.8", features = [
 # `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
 # the mock provider used there is already available via the `json-rpc` feature above.
 alloy = { version = "2.2.0", features = ["signer-local"] }
+ed25519-dalek = "2"
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"

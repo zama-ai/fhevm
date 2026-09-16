@@ -6,9 +6,8 @@ use crate::http::endpoints::v2::types::{
 };
 use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
-    SolanaUserDecryptRequestJson,
+    SolanaUserDecryptRequestJson, UserDecryptV3RequestJson,
 };
-use crate::http::utils::validations::V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1;
 use zama_solana_request::{
     encode_solana_request, SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES,
 };
@@ -817,19 +816,24 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
     }
 }
 
+impl TryFrom<UserDecryptV3RequestJson> for UserDecryptRequest {
+    type Error = anyhow::Error;
+
+    fn try_from(value: UserDecryptV3RequestJson) -> Result<Self, Self::Error> {
+        match value {
+            UserDecryptV3RequestJson::Eip712Unified(inner) => Self::try_from(inner),
+            UserDecryptV3RequestJson::SolanaSrfc38(inner) => Self::try_from(inner),
+        }
+    }
+}
+
 impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        info!(
-            attestation_type = %value.attestation_type,
-            "Converting AttestedUserDecryptRequestJson to UserDecryptRequest"
-        );
-
-        // This envelope is the EVM EIP-712 unified path. `signature`, `publicKey` and `extraData`
-        // are forwarded verbatim (opaque to the relayer); the relayer never verifies the
-        // signature — the gateway does, on-chain. Solana requests arrive in their own envelope
-        // (`SolanaUserDecryptRequestJson`) and are dispatched at the HTTP handler.
+        // Reached only after the tagged envelope selected the EIP-712 arm. `signature`,
+        // `publicKey` and `extraData` are forwarded verbatim; the relayer never verifies the
+        // signature — the gateway does, on-chain.
         let payload_inner = value.attested_payload;
 
         // The EVM unified path: each handle carries its EVM contract/owner addresses, which feed
@@ -864,23 +868,14 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
         let public_key = Bytes::from_str(&payload_inner.public_key)?;
         let extra_data = Bytes::from_str(&payload_inner.extra_data)?;
 
-        // Exhaustive per-protocol dispatch: an unknown attestation type is rejected HERE, not
-        // only by the HTTP-layer validator — the conversion must never default a request it
-        // doesn't recognize onto the EVM arm (DD-027: validation is per-protocol).
-        match value.attestation_type.as_str() {
-            V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 => eip712_unified_v1(
-                payload_inner,
-                handles,
-                request_validity,
-                signature,
-                public_key,
-                extra_data,
-            ),
-            other => Err(anyhow::anyhow!(
-                "AttestedUserDecryptRequestJson carries a non-EVM attestationType {other:?}; \
-                 expected {V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1:?} (Solana requests use their own envelope)"
-            )),
-        }
+        eip712_unified_v1(
+            payload_inner,
+            handles,
+            request_validity,
+            signature,
+            public_key,
+            extra_data,
+        )
     }
 }
 
@@ -891,11 +886,6 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         use zama_solana_permit::{
             verify_signature, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN,
         };
-
-        info!(
-            attestation_type = %value.attestation_type,
-            "Converting SolanaUserDecryptRequestJson to UserDecryptRequest"
-        );
 
         let payload = value.attested_payload;
 
@@ -1379,7 +1369,7 @@ mod tests {
 
     /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`
     /// variant: the permit passes the typed pre-check, the whole request (permit, signature,
-    /// per-handle entries) is serialized into the opaque `host_payload`, and the fields the
+    /// per-handle entries) is serialized into the opaque `solana_request`, and the fields the
     /// gateway calldata consumes are derived from the permit — the transport key as `publicKey`,
     /// the signed KMS routing as `extraData`, the handle list as `ctHandles`.
     #[test]
@@ -1501,7 +1491,6 @@ mod tests {
         };
 
         crate::http::endpoints::v3::types::SolanaUserDecryptRequestJson {
-            attestation_type: "solana-srfc38-user-decrypt-v1".to_string(),
             attested_payload: payload,
             signature: format!("0x{signature}"),
         }
@@ -1590,7 +1579,7 @@ mod tests {
 
     #[test]
     fn solana_payload_denies_unknown_and_evm_fields() {
-        use crate::http::endpoints::v3::types::SolanaUserDecryptRequestJson;
+        use crate::http::endpoints::v3::types::UserDecryptV3RequestJson;
 
         // The Solana payload is strict: a stray field — including the EVM `userAddress` or the
         // retired `nonce` — is refused at deserialization, not silently ignored.
@@ -1606,7 +1595,7 @@ mod tests {
                 "attestedPayload": payload,
                 "signature": format!("0x{}", "ab".repeat(64)),
             });
-            let parsed: Result<SolanaUserDecryptRequestJson, _> = serde_json::from_value(envelope);
+            let parsed: Result<UserDecryptV3RequestJson, _> = serde_json::from_value(envelope);
             assert!(
                 parsed.is_err(),
                 "the Solana payload must reject the stray field `{forbidden}`"
@@ -1614,9 +1603,7 @@ mod tests {
         }
     }
 
-    /// A v3 envelope carrying `attestation_type`, otherwise a well-formed Solana payload. Both
-    /// `solana*` fields are populated so a rejection can only come from the attestation type.
-    fn attested_envelope(attestation_type: &str) -> AttestedUserDecryptRequestJson {
+    fn attested_envelope() -> AttestedUserDecryptRequestJson {
         use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
         use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
 
@@ -1624,7 +1611,6 @@ mod tests {
         extra.extend_from_slice(&[0u8; 32]);
 
         AttestedUserDecryptRequestJson {
-            attestation_type: attestation_type.to_string(),
             attested_payload: Eip712UnifiedUserDecryptPayloadJson {
                 version: "2.0".to_string(),
                 r#type: "user_decryption".to_string(),
@@ -1646,29 +1632,38 @@ mod tests {
         }
     }
 
-    /// An unrecognized `attestationType` is rejected by the conversion itself, not only by the
-    /// HTTP-layer validator: an unknown protocol must never fall through onto the EVM arm and be
-    /// served with EVM authorization rules (DD-027, validation is per-protocol).
+    /// An unrecognized `attestationType` is a serde error: an unknown protocol must never
+    /// fall through onto the EVM arm (DD-027, validation is per-protocol). Retired ed25519
+    /// PoC tags are included so this is the refusal pin, not a leftover validator.
     #[test]
     fn attested_user_decrypt_rejects_unknown_attestation_type() {
-        let error =
-            UserDecryptRequest::try_from(attested_envelope("solana-ed25519-user-decrypt-v3"))
-                .expect_err("an unknown attestation type has no arm to route to");
-        let message = error.to_string();
-        assert!(
-            message.contains("non-EVM attestationType"),
-            "unexpected rejection reason: {message}"
-        );
+        for tag in [
+            "solana-ed25519-user-decrypt-v3",
+            "solana-ed25519-user-decrypt-v2",
+            "solana-ed25519-user-decrypt-v1",
+            "garbage",
+        ] {
+            let envelope = serde_json::json!({
+                "attestationType": tag,
+                "attestedPayload": {},
+                "signature": "0x00",
+            });
+            let err = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
+                .expect_err("an unknown tag must not select an attestation arm");
+            let message = err.to_string();
+            assert!(
+                message.contains("unknown variant"),
+                "unknown tag {tag} must be a serde unknown-variant error, got {message}"
+            );
+        }
     }
 
-    /// The other arm of the same dispatch: the EVM attestation type still routes to
-    /// `Eip712UnifiedV1`, so the rejection above is narrow and not a blanket refusal. The
-    /// `solana*` fields present in this fixture are tolerated and ignored on the EVM arm.
+    /// The other arm of the same dispatch: the EVM inner type still routes to `Eip712UnifiedV1`,
+    /// so the rejection above is narrow and not a blanket refusal of well-formed EVM envelopes.
     #[test]
     fn attested_user_decrypt_routes_evm_attestation_type_to_eip712_unified() {
         let request =
-            UserDecryptRequest::try_from(attested_envelope(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1))
-                .expect("the EVM attestation type converts");
+            UserDecryptRequest::try_from(attested_envelope()).expect("the EVM envelope converts");
         match request {
             UserDecryptRequest::Eip712UnifiedV1 {
                 user_address,

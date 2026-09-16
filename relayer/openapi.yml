@@ -1158,13 +1158,13 @@ paths:
     post:
       tags:
       - User Decrypt v3
-      summary: Submit a v3 (unified EIP-712) user-decryption request.
+      summary: Submit a v3 user-decryption request (EIP-712 or Solana sRFC-38).
       operationId: user_decrypt_post_v3
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AttestedUserDecryptRequestJson'
+              $ref: '#/components/schemas/UserDecryptV3RequestJson'
         required: true
       responses:
         '202':
@@ -1314,16 +1314,9 @@ components:
         Solana requests do not use this shape: they arrive as [`SolanaUserDecryptRequestJson`],
         which carries no EVM placeholders and is verified by the relayer before submission.
       required:
-      - attestationType
       - attestedPayload
       - signature
       properties:
-        attestationType:
-          type: string
-          description: |-
-            The scheme the `signature` bytes follow. Must equal
-            `"eip712-unified-user-decrypt-v1"` on this arm.
-          example: eip712-unified-user-decrypt-v1
         attestedPayload:
           $ref: '#/components/schemas/Eip712UnifiedUserDecryptPayloadJson'
           description: |-
@@ -1897,14 +1890,9 @@ components:
         overload as `solanaRequest`. The relayer verifies the signature before it submits, and each
         KMS party's connector verifies it again — that second check is the authorizing one.
       required:
-      - attestationType
       - attestedPayload
       - signature
       properties:
-        attestationType:
-          type: string
-          description: Must equal `"solana-srfc38-user-decrypt-v1"`.
-          example: solana-srfc38-user-decrypt-v1
         attestedPayload:
           $ref: '#/components/schemas/SolanaSrfc38UserDecryptPayloadJson'
           description: |-
@@ -2027,6 +2015,34 @@ components:
         status:
           type: string
           example: succeeded
+    UserDecryptV3RequestJson:
+      oneOf:
+      - allOf:
+        - $ref: '#/components/schemas/AttestedUserDecryptRequestJson'
+        - type: object
+          required:
+          - attestationType
+          properties:
+            attestationType:
+              type: string
+              enum:
+              - eip712-unified-user-decrypt-v1
+      - allOf:
+        - $ref: '#/components/schemas/SolanaUserDecryptRequestJson'
+        - type: object
+          required:
+          - attestationType
+          properties:
+            attestationType:
+              type: string
+              enum:
+              - solana-srfc38-user-decrypt-v1
+      description: |-
+        POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
+
+        Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
+        `deny_unknown_fields` and does not repeat the tag. An unknown tag is a serde
+        error; it never becomes an arm.
     V2ApiError:
       type: object
       description: Simple error body — used for 400 (no details), 404, 429, 500, and 503.
