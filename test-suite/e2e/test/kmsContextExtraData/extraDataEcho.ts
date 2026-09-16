@@ -46,7 +46,7 @@ const SETUP_TIMEOUT_MS = 3 * 60 * 1000;
 const CASE_TIMEOUT_MS = 8 * 60 * 1000;
 const DURATION_SECONDS = 10 * 24 * 3600;
 
-/** The plaintext the `UserDecrypt` contract initialises `xUint64` to. */
+/** The plaintext the `UserDecrypt` contract initializes `xUint64` to. */
 const EXPECTED_CLEAR = 18446744073709551600n;
 
 const hex32 = (value: bigint) => value.toString(16).padStart(64, '0');

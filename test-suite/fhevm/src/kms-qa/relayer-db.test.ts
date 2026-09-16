@@ -13,11 +13,11 @@ describe("kms-qa relayer-db isAcceptableEcho", () => {
   });
 
   test("accepts the legacy 0x00 marker coming back empty", () => {
-    // The connector normalises the marker before the KMS core sees it; both mean "no context".
+    // The connector normalizes the marker before the KMS core sees it; both mean "no context".
     expect(isAcceptableEcho("0x00", "0x")).toBe(true);
   });
 
-  test("accepts 0x00 echoed unchanged, should the normalisation ever be removed", () => {
+  test("accepts 0x00 echoed unchanged, should the normalization ever be removed", () => {
     expect(isAcceptableEcho("0x00", "0x00")).toBe(true);
   });
 

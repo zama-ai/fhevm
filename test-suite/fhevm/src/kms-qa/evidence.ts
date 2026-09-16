@@ -67,7 +67,7 @@ type CastSendReceiptDetails = Receipt &
 
 /**
  * Renders a numeric receipt field as decimal, accepting the hex (`0x…`) or decimal forms `cast`
- * may emit. Returns undefined for anything unparseable, so evidence never fails a run.
+ * may emit. Returns undefined for anything unparsable, so evidence never fails a run.
  */
 const decimalOrUndefined = (value: string | number | undefined): string | undefined => {
   if (value === undefined || value === null) return undefined;

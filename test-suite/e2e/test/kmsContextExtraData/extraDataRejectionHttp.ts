@@ -23,7 +23,7 @@ export const V3_USER_DECRYPT_ROUTE = 'v3/user-decrypt';
 export const VALIDATION_FAILED_LABEL = 'validation_failed';
 
 /**
- * The unified envelope, as the SDK serialises it.
+ * The unified envelope, as the SDK serializes it.
  *
  * Mirrors `FetchUserDecryptPayloadV2` in `sdk/js-sdk/src/core/types/relayer-p.ts` and
  * `AttestedUserDecryptRequestJson` in the relayer. Only the fields this scenario touches are typed;

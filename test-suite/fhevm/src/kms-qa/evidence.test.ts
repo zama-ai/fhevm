@@ -98,7 +98,7 @@ describe("kms-qa evidence txEvidenceFields", () => {
     });
   });
 
-  test("omits missing or unparseable fields instead of throwing — evidence must never fail a run", () => {
+  test("omits missing or unparsable fields instead of throwing — evidence must never fail a run", () => {
     const fields = txEvidenceFields(receipt({ blockNumber: "not-a-number" }));
     expect(fields.block).toBeUndefined();
     expect(fields.txHash).toBeUndefined();

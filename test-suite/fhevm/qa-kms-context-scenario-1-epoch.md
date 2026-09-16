@@ -181,7 +181,7 @@ every run, passing or not. This paid for itself immediately (see §7).
 
 **Node control before it was needed.** `nodes.ts` is not exercised by this case. It exists because
 upcoming cases withhold quorums by stopping components, and retrofitting restore discipline after
-the fact is how containers get left down. It centralises the `try`/`finally` idiom currently
+the fact is how containers get left down. It centralizes the `try`/`finally` idiom currently
 copy-pasted at each call site in `kms-context-switch.ts` and `kms-generation.ts`, and tracks every
 stop so the runner's outermost `finally` can force a restore.
 

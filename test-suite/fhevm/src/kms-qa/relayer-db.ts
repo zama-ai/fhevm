@@ -101,7 +101,7 @@ export const readExtraDataEchoRows = async (afterRequestId: number): Promise<Ext
     const [requestId, requestExtraData, shareIndex, shareExtraData] = line.split(FIELD_SEPARATOR);
     if (requestExtraData === undefined || shareExtraData === undefined) {
       throw new PreflightError(
-        `kms-context-qa: unparseable relayer row ${JSON.stringify(line)} — the user_decrypt_req / ` +
+        `kms-context-qa: unparsable relayer row ${JSON.stringify(line)} — the user_decrypt_req / ` +
           `user_decrypt_share schema may have changed.`,
       );
     }
@@ -117,17 +117,17 @@ export const readExtraDataEchoRows = async (afterRequestId: number): Promise<Ext
 /** The legacy "no context" marker a v0 request carries. */
 export const LEGACY_ZERO_MARKER = "0x00";
 
-/** The empty payload the connector normalises {@link LEGACY_ZERO_MARKER} to. */
+/** The empty payload the connector normalizes {@link LEGACY_ZERO_MARKER} to. */
 export const EMPTY_EXTRA_DATA = "0x";
 
 /**
  * Returns whether `shareExtraData` is an acceptable echo of `requestExtraData`.
  *
  * Byte-exact for every versioned payload. The one exception is the legacy `0x00` marker, which the
- * kms-connector deliberately normalises to empty before handing the request to the KMS core — see
+ * kms-connector deliberately normalizes to empty before handing the request to the KMS core — see
  * `kms-connector/.../event_processor/decryption.rs`, whose unit test
  * `kms_decryption_extra_data_normalizes_legacy_zero_marker` asserts exactly that. Both values mean
- * "no context", so the normalisation preserves meaning even though it does not preserve bytes.
+ * "no context", so the normalization preserves meaning even though it does not preserve bytes.
  *
  * **This exception is deliberately narrow, and that is the point.** It admits only the empty payload.
  * A v0 request answered with 33 or 65 bytes is still a failure — that would be the field being

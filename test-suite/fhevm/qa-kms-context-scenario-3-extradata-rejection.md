@@ -108,7 +108,7 @@ the envelope being re-nested.
 
 (`relayer/src/http/utils/responses.rs:182` and `src/http/endpoints/v2/types/error.rs:239`.)
 
-So asserting `httpStatus === 400` would pass whether the relayer honoured the scenario or rejected
+So asserting `httpStatus === 400` would pass whether the relayer honored the scenario or rejected
 the request for the *other* defect. The suite asserts the `extraData` field is flagged **and the
 `signature` field is not**.
 

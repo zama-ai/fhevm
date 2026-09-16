@@ -188,7 +188,7 @@ with no epoch** — something a regenerated value could not produce. There is no
 
 ### What it is
 
-Deliberate normalisation of the legacy marker. The kms-connector converts `0x00` to empty before the
+Deliberate normalization of the legacy marker. The kms-connector converts `0x00` to empty before the
 KMS core sees it, and says so in a unit test named for the behaviour:
 
 ```rust
@@ -199,7 +199,7 @@ fn kms_decryption_extra_data_normalizes_legacy_zero_marker() {
 }
 ```
 
-`0x00` and empty both mean "no context". The normalisation preserves meaning; it does not preserve
+`0x00` and empty both mean "no context". The normalization preserves meaning; it does not preserve
 bytes.
 
 ### The decision, and why it is not a relaxation
@@ -213,11 +213,11 @@ substitution — `0x00` → `0x` — and nothing else:
 
 | Request | Response | Verdict |
 |---|---|---|
-| `0x00` | `0x` | accepted — the measured normalisation |
-| `0x00` | `0x00` | accepted — should the normalisation ever be removed |
+| `0x00` | `0x` | accepted — the measured normalization |
+| `0x00` | `0x00` | accepted — should the normalization ever be removed |
 | `0x00` | 33 or 65 bytes | **rejected** — regeneration |
 | v1 | v2 | **rejected** — regeneration |
-| v1 or v2 | `0x` | **rejected** — the exception does not generalise |
+| v1 or v2 | `0x` | **rejected** — the exception does not generalize |
 
 Widening the rule to *"any length is fine for v0"* would have surrendered precisely the
 discrimination v0 was chosen to provide. The predicate is pure and carries seven unit tests, so the
