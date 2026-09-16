@@ -1,10 +1,10 @@
-# QA KMS context — scenarios 5 and 6: aborting a switch, and retrying it
+# QA KMS context — scenarios 5, 6 and 7: aborting a switch, retrying it, and the Gateway pointer
 
-Implementation report for the fifth **and sixth** scenarios of the `kms-context-qa-tests` profile,
-implemented together as the single `context-switch-abort-and-retry` case.
+Implementation report for the fifth, **sixth and seventh** scenarios of the `kms-context-qa-tests`
+profile, implemented together as the single `context-switch-abort-and-retry` case.
 
-> **Two scenarios were proposed; one case was built.** §0 explains why, and which clauses came from
-> which. Both were also altered from their proposed form — §3.3 and §4 record what changed and why.
+> **Three scenarios were proposed; one case was built.** §0 explains why, and which clauses came from
+> which. All three were also altered from their proposed form — §3.3 and §4 record what changed.
 
 **Status:** delivered and green against a live stack, first run.
 **Scope:** the cross-layer and live-cluster behaviour of aborting a context switch held at **stage
@@ -48,7 +48,32 @@ Activation alone does not say that — it proves every signer voted, not that th
 agreed. So the recovery step gained a per-node `new_kms_epoch.status = completed` check against the
 connector DB. That assertion exists **because** B was merged in; A did not need it.
 
-The case id reflects both: `context-switch-abort-and-retry`.
+### Scenario C, added later
+
+```gherkin
+Scenario C: A new switch advances the Gateway after the previous switch is cancelled in the host
+```
+
+Same `Given`/`When` as A and B again — it is the third description of one flow — plus four `Then`
+clauses about the **Gateway's pointer**. Three were uncovered and are now asserted:
+
+| Scenario C clause | How it is covered |
+|---|---|
+| Gateway retains `C2` as its highest registered id | `assertContextPointers` after the abort |
+| Gateway **rejects** registering `C1` or `C2` | **not re-implemented** — the strictly-increasing guard is unit-tested at `gateway-contracts/test/GatewayConfig.ts:955` (`KmsContextAlreadyRegistered`). Asserting the pointer states the same invariant as a read instead of a failed write, and avoids building `KmsNode[]` calldata for a revert probe. |
+| Gateway has `C3` as its highest id after the retry | `assertContextPointers` after activation |
+| a decryption after activation uses `C3, E3` | extraData probe, with the aborted context passed as forbidden |
+
+The pointer readings are the live half of a finding written up separately in
+`qa/scenario_tb_checked/ghost.md`: while the two chains disagree, an empty or `0x00` extraData
+resolves through the Gateway's pointer to a context the host cannot serve. That document proposed
+this exact assertion as a canary; scenario C asked for it independently.
+
+The extraData probe is **not** a duplicate of what the `context-switch` case proves: there the switch
+is clean, here the SDK has to pick the right pair with a ghost context still registered on the
+Gateway and an aborted one in the chain's history.
+
+The case id reflects the merge: `context-switch-abort-and-retry`.
 
 ---
 
@@ -237,6 +262,21 @@ Verified rather than assumed: a second run was started on the stack the first on
 39  ok    917ms assert  every node of the recovered context completed the reshare
                         parties=1,2,3,4  -> completed, completed, completed, completed
 ```
+
+Scenario C's readings, from the run that added them:
+
+```
+32  note  current-context pointers  host=ctx#11 gateway=ctx#12 diverged=true    <- after the abort
+44  note  current-context pointers  host=ctx#13 gateway=ctx#13 diverged=false   <- after the retry
+45  probe SDK embeds the recovered pair, and neither the aborted context
+          nor the previous one                                        ok 66.6s
+```
+
+The divergence is now measured as a **pointer**, not only as validity: the Gateway's current context
+is the one the host destroyed. And the convergence happens because the Gateway advanced *past* the
+ghost to `ctx#13` — nothing rolled it back, which is the whole point of the canary.
+
+`PASS (467s)`, 45 steps, first run with scenario C's assertions.
 
 Four results are worth keeping.
 

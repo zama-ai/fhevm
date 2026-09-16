@@ -544,3 +544,54 @@ export const assertGatewayContextValidity = async (
     );
   }
 };
+
+/**
+ * Asserts where each chain's "current KMS context" pointer sits.
+ *
+ * The two are independent. The host rolls its pointer back when a pending context is destroyed; the
+ * Gateway's only moves forward, because `updateKmsContext` advances it unconditionally and nothing
+ * ever lowers it (`GatewayConfig.sol:294-309` — the sole guards are non-zero and strictly
+ * increasing). After an aborted switch they therefore disagree, and the Gateway points at a context
+ * the host no longer has.
+ *
+ * That matters beyond bookkeeping: `Decryption._extractContextId` resolves an empty or `0x00`
+ * extraData through the Gateway's pointer, so while the two disagree an unqualified request binds to
+ * a context the host cannot serve. Recorded in `qa/scenario_tb_checked/ghost.md`.
+ *
+ * Asserting both in one step keeps the divergence legible as a single line of evidence rather than
+ * two readings a reader has to correlate.
+ */
+export const assertContextPointers = async (
+  target: ProtocolConfigTarget,
+  gatewayRpcUrl: string,
+  gatewayConfigAddress: string,
+  evidence: CaseEvidence,
+  expectedHost: bigint,
+  expectedGateway: bigint,
+  why: string,
+): Promise<void> => {
+  const [host, gateway] = await evidence.step(
+    "call",
+    "read the current-context pointer on both chains",
+    { host: target.address, gateway: gatewayConfigAddress, why },
+    async () =>
+      Promise.all([
+        castCall(target.rpcUrl, target.address, "getCurrentKmsContextId()(uint256)").then(parseUintOutput),
+        castCall(gatewayRpcUrl, gatewayConfigAddress, "getCurrentKmsContextId()(uint256)").then(parseUintOutput),
+      ]),
+  );
+  evidence.note("note", "current-context pointers", {
+    host: formatKmsId(host!),
+    gateway: formatKmsId(gateway!),
+    diverged: String(host !== gateway),
+    expectedHost: formatKmsId(expectedHost),
+    expectedGateway: formatKmsId(expectedGateway),
+  });
+  if (host !== expectedHost || gateway !== expectedGateway) {
+    throw new PreflightError(
+      `kms-context-qa: expected the current-context pointers to be host=${expectedHost} gateway=${expectedGateway} ` +
+        `— ${why} — but they are host=${host} gateway=${gateway}. The Gateway's pointer only ever advances; if this ` +
+        `changed, cross-chain synchronisation was added and qa/scenario_tb_checked/ghost.md needs revisiting.`,
+    );
+  }
+};
