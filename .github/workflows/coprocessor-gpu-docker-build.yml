@@ -51,7 +51,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: "Instance to build on. Scaleway first: far better availability than Hyperstack. Only single-GPU profiles -- a compile gains nothing from eight."
+        description: "GPU build profile"
         required: true
         default: "scaleway::single-h100 (H100-1-80G)"
         type: choice
@@ -59,15 +59,18 @@ on:
           - "scaleway::single-h100 (H100-1-80G)"
           - "hyperstack::single-h100 (n3-H100x1)"
           - "hyperstack::l40 (n3-L40x1)"
+          - "hyperstack::multi-a100-nvlink (n3-A100x8-NVLink)"
+          - "aws::p3-v100 (p3.2xlarge)"
+          - "aws::p3dn-v100 (p3dn.24xlarge)"
       runtime-base:
-        description: "Runtime base image. Production is the Chainguard pin; the open Chainguard image is for testing without cgr.dev credentials."
+        description: "Runtime base image"
         default: "cgr.dev/zama.ai/glibc-dynamic:15.2.0"
         type: choice
         options:
           - cgr.dev/zama.ai/glibc-dynamic:15.2.0
           - cgr.dev/chainguard/glibc-dynamic:latest
       push:
-        description: "Push to ghcr.io. Off by default so a run can be inspected first."
+        description: "Push images to GHCR"
         default: false
         type: boolean
 
@@ -279,6 +282,8 @@ jobs:
 
       - name: Build the GPU workers
         shell: bash
+        env:
+          FHEVM_GPU_COMPUTE_CAPABILITY: ${{ steps.device.outputs.compute-capability }}
         run: |
           set -euo pipefail
           cd coprocessor/fhevm-engine

@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to list GHCR tags during baseline resolution
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
@@ -73,9 +74,16 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           BASE_SHA: ${{ steps.diff-base.outputs.base-sha }}
+          # Package versions API 403s without read:packages; GITHUB_TOKEN then
+          # skips the published-image check and pins unverified missing baselines.
+          GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          REQUIRE_PUBLISHED_IMAGE_CHECK: "true"
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
+          # Keep resolve diagnostics in the job log; only the last line is the lock path.
+          resolve_out="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset)"
+          printf '%s\n' "$resolve_out"
+          lock_path="$(printf '%s\n' "$resolve_out" | tail -n 1)"
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -161,19 +169,25 @@ jobs:
       - relayer-docker-build
       - test-suite-docker-build
     if: |
+      needs.resolve-baseline.result == 'success' &&
       (success() || failure()) &&
       (
         github.event_name == 'workflow_dispatch' ||
         startsWith(github.head_ref, 'mergify/merge-queue/') ||
         startsWith(github.base_ref, 'release/')
       )
+    # github-script + GHCR wait — a GitHub-hosted runner starts in seconds, while a
+    # provisioned runner adds minutes of spin-up variance on the merge-queue
+    # critical path for a short job.
+    runs-on: ubuntu-latest
+    permissions:
+      actions: 'read' # Required to download the baseline lock artifact
+      contents: 'read' # Required to checkout wait-built-ghcr-tags.cjs
+      packages: 'read' # Required to verify lock-selected GHCR tags
     env:
       NEW_COMMIT_HASH: ${{ github.event.pull_request.head.sha || github.sha }}
       DOCKER_BUILD_RESULTS: ${{ toJSON(needs) }}
-    # github-script only — a GitHub-hosted runner starts in seconds, while a
-    # provisioned runner adds minutes of spin-up variance on the merge-queue
-    # critical path for a 10-second job.
-    runs-on: ubuntu-latest
+      GHCR_USER: ${{ github.actor }}
     outputs:
       coprocessor-db-migration-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
       coprocessor-gw-listener-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
@@ -200,49 +214,108 @@ jobs:
       relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Download frozen baseline lock
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
+          path: ${{ runner.temp }}/baseline-lock
+
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
+        env:
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          LOCK_DIR: ${{ runner.temp }}/baseline-lock
         with:
           script: |
+            const fs = require("fs");
+            const path = require("path");
+            const waitBuiltGhcrTags = require(`${process.env.GITHUB_WORKSPACE}/ci/preview-env/scripts/wait-built-ghcr-tags.cjs`);
+            const { assertLockGhcrTags, selectBaselineGhcrImages } = waitBuiltGhcrTags;
             const headTag = process.env.NEW_COMMIT_HASH.slice(0, 7);
             const buildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
             core.setOutput("kms-core-version", "");
             const mappings = [
-              ["coprocessor-docker-build", "db_migration_build_result", "coprocessor-db-migration-version"],
-              ["coprocessor-docker-build", "gw_listener_build_result", "coprocessor-gw-listener-version"],
-              ["coprocessor-docker-build", "host_listener_build_result", "coprocessor-host-listener-version"],
-              ["coprocessor-docker-build", "sns_worker_build_result", "coprocessor-sns-worker-version"],
-              ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version"],
-              ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version"],
-              ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version"],
-              ["coprocessor-docker-build", "consensus_detector_build_result", "coprocessor-consensus-detector-version"],
-              ["coprocessor-docker-build", "upgrade_controller_build_result", "coprocessor-upgrade-controller-version"],
-              ["listener-docker-build", "build_result", "listener-core-version"],
-              ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version"],
-              ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version"],
-              ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version"],
-              ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version"],
-              ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version"],
-              ["gateway-contracts-docker-build", "build_result", "gateway-version"],
-              ["host-contracts-docker-build", "build_result", "host-version"],
-              ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version"],
-              ["relayer-docker-build", "relayer_build_result", "relayer-version"],
-              ["test-suite-docker-build", "build_result", "test-suite-version"],
+              ["coprocessor-docker-build", "db_migration_build_result", "coprocessor-db-migration-version", "fhevm/coprocessor/db-migration", "COPROCESSOR_DB_MIGRATION_VERSION"],
+              ["coprocessor-docker-build", "gw_listener_build_result", "coprocessor-gw-listener-version", "fhevm/coprocessor/gw-listener", "COPROCESSOR_GW_LISTENER_VERSION"],
+              ["coprocessor-docker-build", "host_listener_build_result", "coprocessor-host-listener-version", "fhevm/coprocessor/host-listener", "COPROCESSOR_HOST_LISTENER_VERSION"],
+              ["coprocessor-docker-build", "sns_worker_build_result", "coprocessor-sns-worker-version", "fhevm/coprocessor/sns-worker", "COPROCESSOR_SNS_WORKER_VERSION"],
+              ["coprocessor-docker-build", "tfhe_worker_build_result", "coprocessor-tfhe-worker-version", "fhevm/coprocessor/tfhe-worker", "COPROCESSOR_TFHE_WORKER_VERSION"],
+              ["coprocessor-docker-build", "tx_sender_build_result", "coprocessor-tx-sender-version", "fhevm/coprocessor/tx-sender", "COPROCESSOR_TX_SENDER_VERSION"],
+              ["coprocessor-docker-build", "zkproof_worker_build_result", "coprocessor-zkproof-worker-version", "fhevm/coprocessor/zkproof-worker", "COPROCESSOR_ZKPROOF_WORKER_VERSION"],
+              ["coprocessor-docker-build", "consensus_detector_build_result", "coprocessor-consensus-detector-version", "fhevm/coprocessor/consensus-detector", "COPROCESSOR_CONSENSUS_DETECTOR_VERSION"],
+              ["coprocessor-docker-build", "upgrade_controller_build_result", "coprocessor-upgrade-controller-version", "fhevm/coprocessor/upgrade-controller", "COPROCESSOR_UPGRADE_CONTROLLER_VERSION"],
+              ["listener-docker-build", "build_result", "listener-core-version", "fhevm/listener/listener-core", "LISTENER_CORE_VERSION"],
+              ["kms-connector-docker-build", "db_migration_build_result", "connector-db-migration-version", "fhevm/kms-connector/db-migration", "CONNECTOR_DB_MIGRATION_VERSION"],
+              ["kms-connector-docker-build", "gw_listener_build_result", "connector-gw-listener-version", "fhevm/kms-connector/gw-listener", "CONNECTOR_GW_LISTENER_VERSION"],
+              ["kms-connector-docker-build", "kms_worker_build_result", "connector-kms-worker-version", "fhevm/kms-connector/kms-worker", "CONNECTOR_KMS_WORKER_VERSION"],
+              ["kms-connector-docker-build", "tx_sender_build_result", "connector-tx-sender-version", "fhevm/kms-connector/tx-sender", "CONNECTOR_TX_SENDER_VERSION"],
+              ["kms-connector-docker-build", "endpoint_build_result", "connector-endpoint-version", "fhevm/kms-connector/endpoint", "CONNECTOR_ENDPOINT_VERSION"],
+              ["gateway-contracts-docker-build", "build_result", "gateway-version", "fhevm/gateway-contracts", "GATEWAY_VERSION"],
+              ["host-contracts-docker-build", "build_result", "host-version", "fhevm/host-contracts", "HOST_VERSION"],
+              ["relayer-docker-build", "relayer_migrate_build_result", "relayer-migrate-version", "fhevm/relayer-migrate", "RELAYER_MIGRATE_VERSION"],
+              ["relayer-docker-build", "relayer_build_result", "relayer-version", "fhevm/relayer", "RELAYER_VERSION"],
+              ["test-suite-docker-build", "build_result", "test-suite-version", "fhevm/test-suite/e2e", "TEST_SUITE_VERSION"],
             ];
 
-            for (const [job, resultKey, outputName] of mappings) {
+            const lockDir = process.env.LOCK_DIR;
+            const lockFile = fs.readdirSync(lockDir).find((name) => name.endsWith(".json"));
+            if (!lockFile) {
+              throw new Error(`Could not locate downloaded baseline lock in ${lockDir}`);
+            }
+            const lock = JSON.parse(fs.readFileSync(path.join(lockDir, lockFile), "utf8"));
+            if (Array.isArray(lock.sources)) {
+              for (const source of lock.sources) {
+                core.info(`[baseline-lock] ${source}`);
+              }
+              const unverified = lock.sources.filter(
+                (source) =>
+                  source.includes("published-image-check=skipped") ||
+                  source.includes("unverified:"),
+              );
+              if (unverified.length) {
+                throw new Error(
+                  `baseline lock is unverified; refusing to start e2e:\n` +
+                    unverified.map((source) => `  - ${source}`).join("\n"),
+                );
+              }
+            }
+
+            const built = [];
+            const skipped = [];
+            for (const [job, resultKey, outputName, repo, envKey] of mappings) {
               const result =
                 buildResults[job] && buildResults[job].outputs && buildResults[job].outputs[resultKey]
                   ? buildResults[job].outputs[resultKey]
                   : "missing";
               if (result === "success") {
                 core.setOutput(outputName, headTag);
+                built.push({ repo, tag: headTag });
               } else if (result === "skipped") {
                 core.setOutput(outputName, "");
+                skipped.push({ envKey, repo });
               } else {
                 throw new Error(`Required repo-owned build output failed: ${job}.${resultKey}=${result}`);
               }
             }
+
+            const baseline = selectBaselineGhcrImages({ lockEnv: lock.env || {}, skipped });
+            await assertLockGhcrTags({
+              core,
+              user: process.env.GHCR_USER,
+              token: process.env.GHCR_READ_TOKEN,
+              images: baseline,
+            });
+            await waitBuiltGhcrTags({
+              core,
+              user: process.env.GHCR_USER,
+              token: process.env.GHCR_READ_TOKEN,
+              images: built,
+            });
 
   # The standard suite is sharded into three parallel legs (compute / decryption /
   # stateful), each booting its own stack — wall-clock is bounded by the slowest
