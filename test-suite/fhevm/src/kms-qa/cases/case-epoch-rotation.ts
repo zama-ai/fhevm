@@ -24,7 +24,7 @@
  * independent sources. It then proves the rotated pair actually serves, by running the existing
  * user-decryption and input-proof probes.
  *
- * It then drives the container-side spec (`KMS context extraData`, in
+ * It then drives the container-side spec (`KMS context extraData permit`, in
  * `test-suite/e2e/test/kmsContextExtraData/`), which signs a decryption permit through the SDK and
  * asserts the embedded `extraData` decodes as v2 with the pair that is now active — closing the
  * scenario's `Then` clauses about the request extraData.
