@@ -117,7 +117,7 @@ describe('task:deployAllHostContracts', function () {
       readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
     );
 
-    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.3.0');
     expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
   });
 });
@@ -149,7 +149,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.2.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.3.0"; expected "KMSGeneration v…".`,
     );
   });
 
