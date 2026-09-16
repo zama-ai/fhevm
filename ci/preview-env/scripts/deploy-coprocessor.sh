@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install BCS (and optional GCS) coprocessor releases.
 # Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, OBSERVABILITY,
-# AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, OTLP_ENDPOINT,
-# COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS fleet; optional).
+# AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
+# OTLP_ENDPOINT, COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS
+# fleet; optional).
 set -euo pipefail
 
 polygon_args=()
@@ -38,13 +39,18 @@ if [[ "${GPU:-false}" == "true" ]]; then
   fi
 fi
 
+# Single published GPU worker tag for tfhe / sns / zkproof. Do not derive it
+# from resolve-tags: GPU images are built separately and this pin is the one
+# that matches the coprocessor-gpu nodepool.
+GPU_IMAGE_TAG="${GPU_IMAGE_TAG:-b358436-cuda12.8-sm70}"
+
 worker_image_tag() {
-  local key="$1" tag
-  tag=$(jq -r ".${key}" <<<"${TAGS_JSON}")
+  local key="$1"
   if [[ "${GPU:-false}" == "true" ]]; then
-    tag="${tag}-${GPU_IMAGE_SUFFIX:-cuda12.8-sm90}"
+    printf '%s' "${GPU_IMAGE_TAG}"
+    return
   fi
-  printf '%s' "${tag}"
+  jq -r ".${key}" <<<"${TAGS_JSON}"
 }
 
 party_common() {
