@@ -13,14 +13,29 @@ bcs_overlay=()
 if [[ "${BLUE_GREEN}" == "true" ]]; then
   bcs_overlay=(-f ci/preview-env/coprocessor/values-coprocessor-bcs-e2e.yaml)
 fi
+# GPU overlay for HEAD FHE workers (tfhe / sns / zkproof), when GPU=true:
+#   preview-env-gpu + preview-env-e2e-tests
+#     -> coprocessor-<i> (this release is HEAD)
+#   preview-env-gpu + preview-env-blue-green + preview-env-e2e-tests
+#     -> coprocessor-<i>-gcs (Green is HEAD)
+# Blue (BCS, pinned CPU images) never takes the overlay or a cuda tag.
 gpu_overlay=()
 if [[ "${GPU:-false}" == "true" ]]; then
   gpu_overlay=(-f ci/preview-env/coprocessor/values-coprocessor-gpu-e2e.yaml)
+  if [[ "${BLUE_GREEN}" == "true" ]]; then
+    echo "GPU: Green FHE workers on coprocessor-gpu; Blue stays on the CPU pool"
+  else
+    echo "GPU: FHE workers on coprocessor-gpu"
+  fi
 fi
-# In Blue/Green, BCS is the pinned CPU release; only HEAD/GCS may use GPU.
-head_gpu_overlay=()
-if [[ "${BLUE_GREEN}" != "true" && "${GPU:-false}" == "true" ]]; then
-  head_gpu_overlay=("${gpu_overlay[@]}")
+coproc_gpu_overlay=()
+gcs_gpu_overlay=()
+if [[ "${GPU:-false}" == "true" ]]; then
+  if [[ "${BLUE_GREEN}" == "true" ]]; then
+    gcs_gpu_overlay=("${gpu_overlay[@]}")
+  else
+    coproc_gpu_overlay=("${gpu_overlay[@]}")
+  fi
 fi
 
 worker_image_tag() {
@@ -111,7 +126,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
     "${polygon_args[@]}" \
     "${bcs_overlay[@]}" \
-    ${head_gpu_overlay[@]+"${head_gpu_overlay[@]}"} \
+    ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
     "${fleet_json[@]}" \
     --set-string "fullnameOverride=coprocessor-${i}" \
     "${common_args[@]}" \
@@ -170,7 +185,7 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
       helm upgrade --install "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" \
         -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
         -f ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml \
-        ${gpu_overlay[@]+"${gpu_overlay[@]}"} \
+        ${gcs_gpu_overlay[@]+"${gcs_gpu_overlay[@]}"} \
         --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-gcs\"}" \
         --set-string "fullnameOverride=coprocessor-${i}-gcs" \
         --set-string "upgradeController.serviceAccountName=coprocessor-${i}" \

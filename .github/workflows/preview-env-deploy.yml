@@ -23,7 +23,9 @@ name: preview-env-deploy
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
 #   - preview-env-gpu: with preview-env-e2e-tests, request one GPU for each FHE
-#     worker and place them on the coprocessor-gpu nodepool.
+#     worker and place them on the coprocessor-gpu nodepool. Combines with
+#     preview-env-e2e (HEAD workers) or preview-env-blue-green (Green/GCS
+#     workers; Blue/BCS stays CPU). Does nothing without preview-env-e2e-tests.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
