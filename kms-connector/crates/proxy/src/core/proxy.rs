@@ -2,7 +2,7 @@
 use crate::core::TlsConfig;
 use crate::{
     core::{ApiKeyVerifier, Config},
-    monitoring::health::{State, endpoint_health_check},
+    monitoring::health::{self, endpoint_health_check},
 };
 use anyhow::{Context, anyhow};
 use http::uri::Authority;
@@ -28,8 +28,8 @@ pub struct Proxy {
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
 impl Proxy {
-    /// Creates the `Proxy` from its configuration, and the `State` used to monitor it.
-    pub fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+    /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
+    pub fn from_config(config: Config) -> anyhow::Result<(Self, health::State)> {
         let mut endpoint_balancer =
             LoadBalancer::try_from_iter(config.endpoint_addresses.iter().map(Authority::as_str))
                 .context("Failed to resolve endpoint addresses")?;
@@ -45,7 +45,7 @@ impl Proxy {
         endpoint_balancer.set_health_check(Box::new(endpoint_health_check(&config)?));
         let endpoint_balancer = Arc::new(endpoint_balancer);
 
-        let state = State::new(
+        let state = health::State::new(
             config.bind_address,
             Arc::clone(&endpoint_balancer),
             config.healthcheck_timeout,

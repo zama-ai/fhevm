@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-/// The struct used to monitor the state of the `Proxy`.
+/// The struct used to monitor the health of the `Proxy`.
 #[derive(Clone)]
 pub struct State {
     proxy_version_url: Url,
