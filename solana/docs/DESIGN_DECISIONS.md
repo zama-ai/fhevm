@@ -1416,7 +1416,11 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
   carries the RFC-021 chain-type high bit (`SOLANA_CHAIN_TYPE_BIT | 12345`), and `initialize_host_config`
   rejects a host `chain_id` without bit 63 set (and a `gateway_chain_id` with it set). The
   low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
-  decision, tracked separately.
+  decision, tracked separately. `chain_id` names the Solana cluster. It does not name the Zama
+  (DD-051).
+- HostConfig identity: DIRECTION ACCEPTED (DD-051). Code on this branch is still the singleton
+  `PDA("host-config")`. The Zama is the `HostConfig` PDA, not the host program ID. Flip DD-051 to
+  adopted when the e2e two-instance gate in that entry holds.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
   per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life); its
   growth is bounded at 64 peaks (2229 bytes) for all time, so compaction is a rent question, not a
@@ -2426,3 +2430,99 @@ This removes per-call transient store opening, token result-scratch/result-autho
 and redundant add-zero balance copies. All affected PoC clients must migrate together; no compatibility path is kept
 for the retired wire layout. Resource snapshots include lifecycle CU overhead and separate whole-transaction packet
 checks. The branch retains current slot/publication and PendingBurn semantics; historical re-sharing is still #2007.
+
+## DD-051: The Zama Is The `HostConfig` PDA, Not The Host Program ID
+
+Status: **product-open** — direction accepted; code on this branch is still the singleton
+`PDA("host-config")`. Flip to adopted when the e2e gate below holds.
+
+Context:
+
+Two Zamas on one Solana cluster must not accept each other's input proofs or decrypts. Today's
+identity is the host program ID plus a singleton `HostConfig` at `PDA("host-config")`, with
+`initialize_host_config` gated by the BPF upgrade authority. Child host accounts inherit that
+assumption: `EncryptedStore` seeds are `["encrypted-state", program, authority, scope]` (DD-047 /
+DD-049); `RandNonce` is `["rand-nonce"]`; deny and HCU records are `["deny-scope", program, scope]`
+and `["hcu-block-meter", program, scope]`; handle keccak includes `crate::ID` and `chain_id` but not
+the config account. Off-chain copies the same singleton: `host_config_address()` in the host,
+the coprocessor listener, the KMS connector, the SDK, and `test-suite` provision.
+
+That forces a new program keypair (and usually a rebuild, because of Anchor `declare_id!`) for every
+isolated deployment, including preview environments on one cluster. Reusing one program keypair
+across clusters then makes the PDA address the same on every ledger. `chain_id` is meant to name the
+cluster (the per-cluster low-63-bit allocation is still the open deployment-config item above); it
+cannot also name two Zamas that share a cluster. The coprocessor `host_chains` row is unique on
+`chain_id`, so two Zamas on one cluster cannot even be two database rows today.
+
+A human-readable label such as `preview-pr-3979` is a name, not a capability. Putting it in a global
+seed only helps if initialize is permissionless on that seed; it does not authorize the instance.
+
+Decision:
+
+Keep the type name `HostConfig`, the field and seed name `host_config`, and the English "this
+HostConfig is a Zama". One `zama-host` program ID can serve many HostConfigs. The unique tuple is
+`(program_id, host_config, chain_id)`.
+
+```text
+HostConfig = PDA("host-config", creator, n)
+```
+
+`creator` signs initialize and, until a later governance decision, must still be this program's
+upgrade authority (the check that exists today). `n` is a `u64`. The default e2e instance is `n = 0`.
+Do not put a string label in the seeds. A preview name, if one is wanted, is metadata.
+
+Every host-owned PDA includes `host_config` in its seeds. `EncryptedStore::seeds` becomes
+`["encrypted-state", host_config, program, authority, scope]`. The same binding applies to
+`KmsContext`, `RandNonce`, `DenyScopeRecord`, HCU records, delegation, and permit-invalidation.
+Handle keccak includes the `HostConfig` pubkey next to the program ID and `chain_id`, so two
+instances that share coprocessor signers and FHE keys still cannot alias an input proof.
+
+App-owned PDAs (confidential-token mint, token account, vault authorities) stay mint-scoped.
+Isolation at the token layer is a distinct mint per HostConfig, not a second copy of `host_config`
+in every token seed.
+
+`chain_id` continues to name the Solana cluster. It is not a per-Zama identifier.
+
+Rationale:
+
+A PDA of a shared program is the Solana way to have many instances without many program keypairs.
+Preview environments then `initialize_host_config` instead of deploying a new program. The upgrade
+authority gate keeps initialize from being a permissionless spawn of Zamas on a program Zama
+operates. Binding child PDAs and handles to `host_config` is what makes two instances on one cluster
+fail closed against each other even when they share a coprocessor.
+
+The alternative — one program keypair per Zama — isolates only by `program_id`, collides if that
+keypair is reused across clusters, and makes preview environments a compile-and-deploy problem.
+
+Consequences:
+
+- RFC 035 must take the `EncryptedStore` seed change when this is implemented. RFC 036 / the KMS
+  linker (`verifyingProgramId`, `chainId`) is not blocked; adding `host_config` to the permit is a
+  later open question, not a stop on that work.
+- The coprocessor cannot keep `host_chains` unique on `chain_id` alone. The off-chain stack (host
+  listener, coprocessor, relayer, KMS connector, SDK, test-kit, test-suite provision, preview-env)
+  must take a `host_config` instead of deriving the singleton.
+- solana-map currently states that HostConfig is one PDA per host program ID. Update it after the
+  code lands; do not treat the map as the design home.
+- `zama-host` README, `EVM_PARITY.md` (GatewayConfig / ProtocolConfig rows), and `FUTURE_DESIGN.md`
+  update in the implementation PR, not as a second design document.
+
+Implementation sequence, one branch on `feature/solana`, no compatibility with the singleton:
+
+1. `HostConfig` seeds and `initialize_host_config` (mollusk).
+2. Child host PDAs, including `EncryptedStore::seeds`.
+3. Handle keccak includes `host_config`.
+4. Off-chain derivation (listener, connector, SDK, test-kit, test-suite).
+5. Coprocessor `host_chains` uniqueness.
+6. E2E two-instance gate, then flip this entry to adopted.
+
+Done when all of the following hold on `feature/solana` against the existing docker/local e2e loop:
+
+1. The current single-instance e2e still passes against `n = 0` of the one deployed program.
+2. A second HostConfig (`n = 1`) initializes on that same program without a second program keypair
+   or a rebuild.
+3. An input proof, handle, EncryptedStore, or decrypt produced under `n = 0` is refused by `n = 1`,
+   and the reverse, including when both instances share coprocessor signers and FHE keys.
+4. No zero-argument `host_config_address()` remains. Every host-owned PDA lists `host_config` in its
+   seeds.
+5. This entry's status is **adopted** in the same PR as the e2e gate.

@@ -5,8 +5,9 @@ branch.
 
 ```text
 DESIGN_DECISIONS.md
-  The stable *why* (DD-001..DD-030) + open product decisions. Read this before changing ACL, input
-  verification, decrypt, KMS context, event transport, or token-transfer behavior.
+  The stable *why* (DD-001..) + open product decisions. Read this before changing ACL, input
+  verification, decrypt, KMS context, HostConfig identity (DD-051), event transport, or
+  token-transfer behavior.
 
 EVM_PARITY.md
   Capability-by-capability EVM -> Solana parity map (ERC7984 + host-contracts + gateway-contracts)

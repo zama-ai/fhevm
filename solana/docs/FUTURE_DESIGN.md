@@ -72,3 +72,5 @@ Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
   inbound-credit (DD-016).
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both are PoC shortcuts today — DD-028).
+- HostConfig identity (DD-051): direction accepted, code still singleton. Remaining work is the e2e
+  two-instance gate in that entry, not a second design choice.
