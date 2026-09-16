@@ -11,6 +11,9 @@
 # Gateway Team ownership
 /gateway-contracts/ @zama-ai/fhevm-gateway
 
+# Protocol Contracts Team ownership
+/protocol-contracts/ @zama-ai/fhevm-protocol-contracts
+
 # Coprocessor Team ownership
 /coprocessor/ @zama-ai/fhevm-coprocessor
 /host-contracts/ @zama-ai/fhevm-coprocessor
