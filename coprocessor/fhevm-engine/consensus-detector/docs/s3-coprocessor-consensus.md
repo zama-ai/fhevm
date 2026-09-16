@@ -34,7 +34,7 @@ and peer verification.
 | --- | --- | --- |
 | Manifest format | Version 1 canonical encoding, Keccak-256 commitments, signatures, independent revisions, and deterministic object keys | Later format versions |
 | Local publication | Branch-aware block discovery, completeness checks, empty-block commitments, detailed ranges, persisted dyadic roots, missing-predecessor reconstruction, immutable S3 upload, local archive insertion, and independent immutable revisions | Automatic higher-revision publication and replay initiation |
-| Scheduling | A fixed Rust table selects a block cadence per chain; each lineage progresses independently | Runtime cadence configuration |
+| Scheduling | A fixed Rust table selects a block cadence per chain; `--manifest-publication-cadence` / helm overlays are stored at insert | Automatic higher-revision publication |
 | Registry | `gw-listener` persists a complete `GatewayConfig` snapshot at startup, on relevant events, and periodically | A registry independent of Gateway |
 | Peer download | Delayed durable tasks, pinned registry data, per-peer rows, bounded retries, claims, bounded bodies, highest-authenticated-revision selection, and range-directed manifest retrieval for historical drift localization | Cross-height discovery when peers use different cadences; periodic reopening after exhaustion |
 | Comparison | Exact detailed and historical block ranges are grouped by digest; any visible difference is drift; quorum separately identifies a remediation reference; every attempt and every divergent range's digest groups are persisted | Persisted uncovered intervals and cross-height evidence |
