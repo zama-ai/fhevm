@@ -823,6 +823,7 @@ impl TryFrom<UserDecryptV3RequestJson> for UserDecryptRequest {
         match value {
             UserDecryptV3RequestJson::Eip712Unified(inner) => Self::try_from(inner),
             UserDecryptV3RequestJson::SolanaSrfc38(inner) => Self::try_from(inner),
+            // Validate rejects Unknown before this conversion on the HTTP path.
             UserDecryptV3RequestJson::Unknown => Err(anyhow::anyhow!(
                 crate::http::endpoints::v3::types::user_decrypt::unsupported_attestation_type_message()
             )),

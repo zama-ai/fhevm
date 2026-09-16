@@ -31,7 +31,7 @@ pub(crate) fn unsupported_attestation_type_message() -> String {
     )
 }
 
-fn tagged_openapi_arm(schema_name: &str, tag: &'static str) -> RefOr<Schema> {
+fn tagged_openapi_arm(schema_name: impl Into<String>, tag: &'static str) -> RefOr<Schema> {
     AllOfBuilder::new()
         .item(Ref::from_schema_name(schema_name))
         .item(
@@ -66,36 +66,18 @@ impl PartialSchema for UserDecryptV3RequestJson {
     fn schema() -> RefOr<Schema> {
         OneOfBuilder::new()
             .item(tagged_openapi_arm(
-                "AttestedUserDecryptRequestJson",
+                AttestedUserDecryptRequestJson::name(),
                 V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1,
             ))
             .item(tagged_openapi_arm(
-                "SolanaUserDecryptRequestJson",
+                SolanaUserDecryptRequestJson::name(),
                 V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1,
-            ))
-            .description(Some(
-                "POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.\n\n\
-Internally tagged so the HTTP handler parses one type. Each arm's inner struct is\n\
-`deny_unknown_fields` and does not repeat the tag.",
             ))
             .into()
     }
 }
 
-impl ToSchema for UserDecryptV3RequestJson {
-    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
-        schemas.push((
-            AttestedUserDecryptRequestJson::name().into(),
-            AttestedUserDecryptRequestJson::schema(),
-        ));
-        <AttestedUserDecryptRequestJson as ToSchema>::schemas(schemas);
-        schemas.push((
-            SolanaUserDecryptRequestJson::name().into(),
-            SolanaUserDecryptRequestJson::schema(),
-        ));
-        <SolanaUserDecryptRequestJson as ToSchema>::schemas(schemas);
-    }
-}
+impl ToSchema for UserDecryptV3RequestJson {}
 
 impl Validate for UserDecryptV3RequestJson {
     fn validate(&self) -> Result<(), ValidationErrors> {

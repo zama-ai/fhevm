@@ -2037,11 +2037,6 @@ components:
               type: string
               enum:
               - solana-srfc38-user-decrypt-v1
-      description: |-
-        POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
-
-        Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
-        `deny_unknown_fields` and does not repeat the tag.
     V2ApiError:
       type: object
       description: Simple error body — used for 400 (no details), 404, 429, 500, and 503.
