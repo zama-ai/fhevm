@@ -72,4 +72,5 @@ Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
   inbound-credit (DD-016).
 - Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
   (both are PoC shortcuts today — DD-028).
-- HostConfig identity (DD-051): a Zama is one host program ID. Four public IDs. Singleton config.
+- Coprocessor `host_chains` is unique on `chain_id`. zama-devnet and zama-testnet share Solana
+  devnet, so that row must also key by `program_id` (DD-051 leftover).

@@ -2430,38 +2430,45 @@ checks. The branch retains current slot/publication and PendingBurn semantics; h
 
 ## DD-051: A Zama Is One Host Program ID
 
-Status: **adopted** as identity. HostConfig stays the singleton `PDA("host-config")` of that program.
+Status: **adopted**. HostConfig is that program's singleton `PDA("host-config")`.
 
-There are four public `zama-host` program IDs — four Zamas:
+Four public `zama-host` program IDs:
 
 ```text
-mainnet        →  one program, Squads upgrades it
-zama-devnet    →  one program on Solana devnet
-zama-testnet   →  a second program on Solana devnet
-preview-env    →  one shared program on Solana devnet (already DPq5y89…)
+mainnet        one program; Squads is the upgrade authority
+zama-devnet    one program on Solana devnet
+zama-testnet   a second program on Solana devnet
+preview-env    DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ on Solana devnet
 ```
 
-Localnet e2e keeps the committed throwaway keypairs. That is CI, not a fifth Zama.
+Localnet e2e uses the committed throwaway keypairs. That is CI, not a fifth Zama.
 
 The tuple is `(program_id, chain_id)`. `program_id` is the Zama. `chain_id` is the Solana cluster.
-Handles already hash `crate::ID`; every host PDA is derived under that program. Two Zamas on
-Solana devnet do not accept each other's proofs. HostConfig is not an instance counter. Do not put
-it in child seeds to mint a second Zama.
+Handles hash `crate::ID`, so two programs on Solana devnet do not accept each other's proofs. Do
+not put HostConfig in child PDA seeds to mint a second Zama. Each program has its own upgrade
+authority. CI does not generate program IDs.
 
-Each program has its own upgrade authority. A preview kube cannot upgrade testnet. CI does not
-generate program IDs.
+`zama-zws/gitops` does not deploy the preview-env program. GitOps supplies the cluster and the RPC
+and deployer secrets. The preview-env GitHub Actions workflows are the only writers of `DPq5y89…`.
+Durable zama-devnet, zama-testnet and mainnet are later GitOps environments on the other three IDs.
 
-Preview-env is shared staging, not twenty programs. PR CI stays on localnet. A preview kube that
-does not change `solana/programs` talks to `DPq5y89…` as it is. One that does:
+Only one preview namespace uses that program at a time. Each namespace has its own Anvil Gateway,
+and HostConfig stores that Gateway's chain id, InputVerification, Decryption and coprocessor
+signers. So every acquire closes every account owned by the program (`getProgramAccounts`), uploads
+this `.so` when the bytecode differs, then runs `initialize_host_config` and `define_kms_context`
+for this Gateway. Closing HostConfig does not close EncryptedStores, KMS contexts, the rand nonce
+or demo-program accounts; those are peer accounts. `initialize_host_config` also creates the rand
+nonce, so both must be gone or the next init fails. If the preview also deployed the shared demo
+program IDs, acquire and destroy close those programs' accounts the same way.
 
-1. Close that program's protocol accounts (`HostConfig`, rand nonce, bootstrap mints/stores).
-2. Deploy this PR's `.so`.
-3. `initialize_host_config` and bootstrap.
+`preview-env-destroy.yml` closes those accounts again before it deletes the namespace. It does not
+initialize. If this namespace uploaded a different `.so`, destroy writes the pinned baseline `.so`
+back. The next acquire initializes against its Gateway.
 
-On destroy: close those accounts, deploy the pinned baseline `.so`, init empty. Leftover accounts
-are not last quarter's balances to keep; they are why the next init or a layout-changing
-downgrade fails. Do not upgrade-in-place.
+zama-host has no instruction that closes these accounts today. `destroy_kms_context` only sets
+`destroyed = true`. The admin sweep, taking unchecked accounts so an old layout still closes, is
+the follow-up the preview-env Solana deploy needs. PR CI stays on localnet. The preview-env writer
+closes before it replaces bytecode. Durable GitOps environments upgrade in place on their own IDs.
 
-Coprocessor `host_chains` (and any other unique-on-`chain_id` row) must also key by `program_id`:
-zama-devnet and zama-testnet share a cluster. RFC 035/036 do not change. solana-map's "one HostConfig
-per program" is already this decision.
+Coprocessor `host_chains` is unique on `chain_id`. When zama-devnet and zama-testnet coexist, that
+row must also key by `program_id`. RFC 035/036 do not change.
