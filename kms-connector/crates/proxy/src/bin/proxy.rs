@@ -1,10 +1,16 @@
 use connector_utils::{
     cli::{Cli, Subcommands},
     config::DeserializeConfig,
-    monitoring::otlp::init_otlp_setup,
+    monitoring::{
+        health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
+    },
 };
-use proxy::core::{Config, Proxy};
+use proxy::{
+    core::{Config, Proxy},
+    monitoring::health::HealthStatus,
+};
 use std::process::ExitCode;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
 fn main() -> ExitCode {
@@ -22,8 +28,9 @@ fn run() -> anyhow::Result<()> {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config))?;
         }
-        Subcommands::Health { endpoint: _ } => {
-            todo!("Proxy healthcheck is not implemented yet")
+        Subcommands::Health { endpoint } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(query_healthcheck_endpoint::<HealthStatus>(endpoint))?;
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
@@ -39,7 +46,17 @@ fn run() -> anyhow::Result<()> {
             let _guard = runtime.enter();
             init_otlp_setup(config.service_name.clone())?;
 
-            Proxy::from_config(config)?.run()?;
+            // The monitoring server runs on the tokio runtime, next to Pingora's own.
+            let monitoring_endpoint = config.monitoring_endpoint;
+            let (proxy, state) = Proxy::from_config(config)?;
+            let cancel_token = CancellationToken::new();
+            let monitoring_server_task =
+                start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
+
+            proxy.run()?;
+
+            cancel_token.cancel();
+            runtime.block_on(monitoring_server_task)?;
         }
     }
     Ok(())
