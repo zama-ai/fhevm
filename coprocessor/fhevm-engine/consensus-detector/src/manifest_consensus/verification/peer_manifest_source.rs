@@ -259,6 +259,9 @@ impl S3BucketLocation {
     }
 }
 
+/// `s3://bucket/key`: the host is the bucket, including dots.
+/// Virtual-hosted HTTPS: bucket is the host prefix before the S3 endpoint.
+/// Path-style HTTP(S): first path segment is the bucket.
 pub(super) fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, ExecutionError> {
     let url = Url::parse(bucket_url)
         .map_err(|err| internal(format!("invalid peer S3 bucket URL {bucket_url}: {err}")))?;
@@ -273,13 +276,10 @@ pub(super) fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, E
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let first_host_label = host.split('.').next().unwrap_or_default();
-    let virtual_hosted = url.scheme() == "s3"
-        || host.contains(".s3.")
-        || host.contains(".s3-")
-        || host.ends_with(".s3.amazonaws.com");
-    let (bucket, key_segments) = if virtual_hosted {
-        (first_host_label, segments.as_slice())
+    let (bucket, key_segments) = if url.scheme() == "s3" {
+        (host, segments.as_slice())
+    } else if let Some(bucket) = virtual_hosted_bucket(host) {
+        (bucket, segments.as_slice())
     } else {
         let Some((bucket, key_segments)) = segments.split_first() else {
             return Err(internal(format!(
@@ -299,6 +299,76 @@ pub(super) fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, E
     })
 }
 
+fn virtual_hosted_bucket(host: &str) -> Option<&str> {
+    let bucket = host
+        .split_once(".s3.")
+        .or_else(|| host.split_once(".s3-"))
+        .map(|(bucket, _)| bucket)?;
+    (!bucket.is_empty()).then_some(bucket)
+}
+
 fn internal(message: impl Into<String>) -> ExecutionError {
     ExecutionError::InternalError(message.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{s3_bucket_location, S3BucketLocation};
+
+    fn loc(bucket: &str, key_prefix: &str) -> S3BucketLocation {
+        S3BucketLocation {
+            bucket: bucket.into(),
+            key_prefix: key_prefix.into(),
+        }
+    }
+
+    #[test]
+    fn parses_s3_bucket_urls() {
+        let cases = [
+            (
+                "http://localhost:4566/peer-ct128/operator-1",
+                loc("peer-ct128", "operator-1"),
+            ),
+            (
+                "https://peer-ct128.s3.eu-west-1.amazonaws.com/operator-1",
+                loc("peer-ct128", "operator-1"),
+            ),
+            (
+                "https://peer-ct128.s3.amazonaws.com/operator-1",
+                loc("peer-ct128", "operator-1"),
+            ),
+            (
+                "https://peer-ct128.s3-eu-west-1.amazonaws.com/operator-1",
+                loc("peer-ct128", "operator-1"),
+            ),
+            ("s3://coprocessor-bucket-1", loc("coprocessor-bucket-1", "")),
+            (
+                "s3://coprocessor-bucket-1/operator-1",
+                loc("coprocessor-bucket-1", "operator-1"),
+            ),
+            (
+                "s3://operator.manifests/prefix",
+                loc("operator.manifests", "prefix"),
+            ),
+            (
+                "s3://operator.manifests/a/b",
+                loc("operator.manifests", "a/b"),
+            ),
+            (
+                "https://operator.manifests.s3.eu-west-1.amazonaws.com/prefix",
+                loc("operator.manifests", "prefix"),
+            ),
+            (
+                "https://operator.manifests.s3-eu-west-1.amazonaws.com/prefix",
+                loc("operator.manifests", "prefix"),
+            ),
+            (
+                "https://s3.eu-west-1.amazonaws.com/operator.manifests/prefix",
+                loc("operator.manifests", "prefix"),
+            ),
+        ];
+        for (url, expected) in cases {
+            assert_eq!(s3_bucket_location(url).expect(url), expected, "{url}");
+        }
+    }
 }

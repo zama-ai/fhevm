@@ -2014,6 +2014,13 @@ fn parses_path_style_and_virtual_host_bucket_urls() {
             key_prefix: "operator-1".into(),
         },
     );
+    assert_eq!(
+        s3_bucket_location("s3://operator.manifests/prefix").unwrap(),
+        S3BucketLocation {
+            bucket: "operator.manifests".into(),
+            key_prefix: "prefix".into(),
+        },
+    );
 }
 
 #[tokio::test]
