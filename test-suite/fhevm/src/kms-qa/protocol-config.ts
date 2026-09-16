@@ -15,7 +15,7 @@
  */
 import { PreflightError } from "../errors";
 import { castCall } from "../flow/readiness";
-import { castSend, getEventTopic, keccakTopic, type Owner, type Receipt } from "../kms-onchain";
+import { castSend, getEventTopic, keccakTopic, type Owner, type Receipt } from "./onchain";
 import { stepComposeTask } from "../flow/runtime-compose";
 import { waitForContainer } from "../flow/readiness";
 import { parseContextAndEpoch, type ContextAndEpoch } from "../commands/kms-context-switch";

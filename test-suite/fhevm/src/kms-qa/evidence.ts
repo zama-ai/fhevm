@@ -15,7 +15,7 @@
  * `src/commands/test.ts` and `timed` in `src/flow/runtime-compose.ts` — but neither is exported and
  * neither records structured fields. {@link EvidenceRecorder.step} replaces both for this profile.
  */
-import type { Receipt } from "../kms-onchain";
+import type { Receipt } from "./onchain";
 
 /** Log prefix shared by every line this profile emits. */
 export const EVIDENCE_PREFIX = "kms-context-qa";

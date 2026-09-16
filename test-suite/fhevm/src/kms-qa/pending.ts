@@ -44,7 +44,7 @@ import {
   parseUintOutput,
   type Owner,
   type Receipt,
-} from "../kms-onchain";
+} from "./onchain";
 import { run } from "../utils/process";
 import type { CaseEvidence } from "./evidence";
 import {

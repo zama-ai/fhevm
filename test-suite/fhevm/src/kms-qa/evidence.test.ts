@@ -9,7 +9,7 @@ import {
   txEvidenceFields,
   type EvidenceEntry,
 } from "./evidence";
-import type { Receipt } from "../kms-onchain";
+import type { Receipt } from "./onchain";
 
 const entry = (overrides: Partial<EvidenceEntry> = {}): EvidenceEntry => ({
   seq: 1,

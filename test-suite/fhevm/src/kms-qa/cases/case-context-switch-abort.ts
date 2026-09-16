@@ -124,8 +124,8 @@
  * run's output (ctx#3/epoch#2 -> aborted ctx#4 -> recovered to ctx#5) passed.
  */
 import { PreflightError } from "../../errors";
-import { checkConnectorsDbColumn, columnQuery } from "../../kms-connector-db";
-import { castSend, keccakTopic, getEventTopic } from "../../kms-onchain";
+import { checkConnectorsDbColumn, columnQuery } from "../connector-db";
+import { castSend, keccakTopic, getEventTopic } from "../onchain";
 import type { QaCase, QaCaseContext } from "../registry";
 import { assertTxSendersRunning } from "../nodes";
 import {

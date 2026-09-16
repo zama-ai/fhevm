@@ -35,7 +35,7 @@
  */
 import { PreflightError } from "../errors";
 import { resolveKmsGenerationTarget } from "../flow/readiness";
-import { loadHostOwner } from "../kms-onchain";
+import { loadHostOwner } from "../kms-qa/onchain";
 import { EvidenceRecorder } from "../kms-qa/evidence";
 import { NodeSupervisor } from "../kms-qa/nodes";
 import {

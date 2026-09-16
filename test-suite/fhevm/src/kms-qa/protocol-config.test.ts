@@ -9,7 +9,7 @@ import {
   parseAddressList,
 } from "./protocol-config";
 import type { NewKmsEpochEvent } from "./protocol-config";
-import type { Receipt } from "../kms-onchain";
+import type { Receipt } from "./onchain";
 
 /** A 32-byte word of `value`, as it appears in a log's `data` payload. */
 const word = (value: bigint) => value.toString(16).padStart(64, "0");

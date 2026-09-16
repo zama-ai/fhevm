@@ -49,7 +49,7 @@
  * Re-up between runs: `fhevm-cli down && fhevm-cli up --scenario five-party-swap-threshold-kms`.
  */
 import { PreflightError } from "../../errors";
-import { checkConnectorsDbColumn, columnQuery } from "../../kms-connector-db";
+import { checkConnectorsDbColumn, columnQuery } from "../connector-db";
 import type { QaCase, QaCaseContext } from "../registry";
 import { assertTxSendersRunning } from "../nodes";
 import {

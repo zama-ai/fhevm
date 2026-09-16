@@ -13,7 +13,7 @@ import { PreflightError } from "../errors";
 import type { DecryptionRunner } from "../commands/kms-generation";
 import type { SmokeRunner } from "../commands/kms-context-switch";
 import type { State } from "../types";
-import type { Owner } from "../kms-onchain";
+import type { Owner } from "./onchain";
 import type { CaseEvidence } from "./evidence";
 import type { NodeSupervisor } from "./nodes";
 import type { ProtocolConfigTarget } from "./protocol-config";
