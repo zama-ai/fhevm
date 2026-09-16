@@ -142,8 +142,15 @@ pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck>
         .parse()
         .map_err(|e| anyhow!("Failed to build the endpoint healthcheck request: {e}"))?;
     health_check.req.set_uri(version_uri);
-    health_check.peer_template.options.connection_timeout = Some(config.endpoint_connect_timeout);
-    health_check.peer_template.options.read_timeout = Some(config.healthcheck_timeout);
+    // The connection phase is capped by `healthcheck_timeout` so a large `endpoint_connect_timeout`
+    // cannot stall the healthcheck.
+    let connect_timeout = config
+        .endpoint_connect_timeout
+        .min(config.healthcheck_timeout);
+    let options = &mut health_check.peer_template.options;
+    options.connection_timeout = Some(connect_timeout);
+    options.total_connection_timeout = Some(connect_timeout);
+    options.read_timeout = Some(config.healthcheck_timeout);
     Ok(health_check)
 }
 
