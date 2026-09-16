@@ -25,6 +25,10 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # ENV: KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # endpoint_connect_timeout = "3s"
 
+# How often the endpoints are probed in the background to filter which ones receive requests (optional, defaults to "3s").
+# ENV: KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_healthcheck_frequency = "3s"
+
 # How long the proxy waits for an endpoint response before answering `502` (optional, defaults to "60s").
 # Must exceed the endpoint's `decryption_timeout` so its own `504 timeout` reaches the relayer.
 # ENV: KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
@@ -47,6 +51,14 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # The pod's `terminationGracePeriodSeconds` must exceed this value.
 # ENV: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
 # shutdown_grace_period = "60s"
+
+# The endpoint used to monitor the connector components (optional, defaults to "0.0.0.0:9100")
+# ENV: KMS_CONNECTOR_MONITORING_ENDPOINT
+# monitoring_endpoint = "0.0.0.0:9100"
+
+# The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
+# ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# healthcheck_timeout = "3s"
 
 # TLS configuration of the proxy (required)
 [tls_config]
