@@ -7,8 +7,9 @@
 //! for the symbols that named it and fails while any of them exists.
 //!
 //! The retired attestation *tag* (`solana-ed25519-user-decrypt-v2`) is deliberately NOT scanned
-//! for: it lives on as a rejection assertion in `validate_v3_attestation_type`'s tests, which is a
-//! stronger statement than its absence — the relayer actively refuses it.
+//! for: `UserDecryptV3RequestJson` has no such variant, and
+//! `v3_rejects_unknown_attestation_type` plus the unit test
+//! `attested_user_decrypt_rejects_unknown_attestation_type` refuse it as an unknown tag.
 
 use std::fs;
 use std::path::{Path, PathBuf};

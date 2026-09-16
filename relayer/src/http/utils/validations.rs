@@ -343,25 +343,6 @@ pub const V3_PAYLOAD_VERSION: &str = "2.0";
 /// Required `type` value in the EIP-712 payload.
 pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
 
-/// v3 envelope: `attestationType` must match a supported scheme. The two schemes differ in
-/// where the signature is checked: the EVM EIP-712 one is verified on chain by the gateway,
-/// while the Solana ed25519 one is verified by the relayer before submission and by each KMS
-/// party's connector afterwards.
-pub fn validate_v3_attestation_type(value: &str) -> Result<(), ValidationError> {
-    if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
-        && value != V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1
-    {
-        return Err(ValidationError::new("validation_error").with_message(
-            format!(
-                "Unsupported attestationType; expected one of: [{}, {}]",
-                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1
-            )
-            .into(),
-        ));
-    }
-    Ok(())
-}
-
 /// v3 payload: `version` must be `"2.0"`.
 pub fn validate_v3_version(value: &str) -> Result<(), ValidationError> {
     if value != V3_PAYLOAD_VERSION {
@@ -462,29 +443,6 @@ mod tests {
         "00000000000000000000000000000000000000000000000000000000000000a1";
     const UNTAGGED_EPOCH_ID_HEX: &str =
         "00000000000000000000000000000000000000000000000000000000000000b2";
-
-    #[test]
-    fn v3_attestation_type_accepts_evm_and_the_srfc38_solana_tag() {
-        // Block 6: the normative Solana tag is `solana-srfc38-user-decrypt-v1` (spec §9.1/§11).
-        assert!(validate_v3_attestation_type(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1).is_ok());
-        assert!(validate_v3_attestation_type("solana-srfc38-user-decrypt-v1").is_ok());
-    }
-
-    #[test]
-    fn v3_attestation_type_rejects_the_retired_ed25519_tags() {
-        // The ed25519 PoC forms are retired, not routed. `-v2` is the form this block tears
-        // down; `-v1` was already only ever a rejection.
-        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v2").is_err());
-        assert!(validate_v3_attestation_type("solana-ed25519-user-decrypt-v1").is_err());
-    }
-
-    #[test]
-    fn v3_attestation_type_rejects_unknown() {
-        assert!(validate_v3_attestation_type("eip712-unified-user-decrypt-v2").is_err());
-        assert!(validate_v3_attestation_type("solana-srfc38-user-decrypt-v2").is_err());
-        assert!(validate_v3_attestation_type("").is_err());
-        assert!(validate_v3_attestation_type("garbage").is_err());
-    }
 
     fn solana_public_decrypt_extra_data_hex() -> String {
         let mut bytes = vec![0x04u8];

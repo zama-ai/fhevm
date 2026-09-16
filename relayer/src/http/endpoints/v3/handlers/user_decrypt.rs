@@ -1,12 +1,11 @@
-//! v3 `/v3/user-decrypt` handler (unified user-decryption).
+//! v3 `/v3/user-decrypt` handler (typed-attestation envelope).
 //!
-//! POST validates the typed-attestation envelope, converts it to the
-//! shared `UserDecryptRequest` with `UserDecryptPayload::Unified`, runs the
+//! POST validates the envelope discriminated by `attestationType`, converts it
+//! to `UserDecryptRequest` (`Eip712UnifiedV1` or `SolanaSrfc38V1`), runs the
 //! same dedup/queue pipeline as v2, and dispatches a
 //! `RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser)`
-//! event. From there the orchestrator funnels the job through the unified
-//! `userDecryptionRequest(HandleEntry[], …)` calldata builder and the
-//! shared receipt-handling path. GET is delegated verbatim to the v2
+//! event. The orchestrator then builds the matching gateway
+//! `userDecryptionRequest` overload. GET is delegated verbatim to the v2
 //! handler since the response schema is unchanged.
 
 use crate::core::event::{
@@ -414,7 +413,7 @@ impl UserDecryptHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions.
-/// Submit a v3 (unified EIP-712) user-decryption request.
+/// Submit a v3 user-decryption request (EIP-712 or Solana sRFC-38).
 #[utoipa::path(
     post,
     path = "/v3/user-decrypt",

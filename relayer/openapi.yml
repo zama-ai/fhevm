@@ -1158,7 +1158,7 @@ paths:
     post:
       tags:
       - User Decrypt v3
-      summary: Submit a v3 (unified EIP-712) user-decryption request.
+      summary: Submit a v3 user-decryption request (EIP-712 or Solana sRFC-38).
       operationId: user_decrypt_post_v3
       requestBody:
         content:

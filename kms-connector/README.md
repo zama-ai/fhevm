@@ -77,7 +77,7 @@ that look related but are not interchangeable:
 
 | Name | What it is |
 | --- | --- |
-| Gateway ABI `UserDecryptionRequest` 4th overload / Rust `UserDecryptionRequestV3` | Solana host-generic event |
+| Gateway ABI `UserDecryptionRequest_4` / Rust `UserDecryptionRequestV3` | Solana host-generic event |
 | `solanaRequest` / `solana_request` | Opaque canonical request bytes on the event and in the DB |
 | Relayer `UserDecryptRequest::SolanaSrfc38V1` | Relayer-internal request after the typed-attestation envelope |
 | `hostPayload` | Retired name; the field is `solanaRequest` |

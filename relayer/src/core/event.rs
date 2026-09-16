@@ -1377,7 +1377,7 @@ mod tests {
 
     /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`
     /// variant: the permit passes the typed pre-check, the whole request (permit, signature,
-    /// per-handle entries) is serialized into the opaque `host_payload`, and the fields the
+    /// per-handle entries) is serialized into the opaque `solana_request`, and the fields the
     /// gateway calldata consumes are derived from the permit — the transport key as `publicKey`,
     /// the signed KMS routing as `extraData`, the handle list as `ctHandles`.
     #[test]
@@ -1642,20 +1642,28 @@ mod tests {
 
     /// An unrecognized `attestationType` is rejected by the tagged envelope itself: an unknown
     /// protocol must never fall through onto the EVM arm (DD-027, validation is per-protocol).
+    /// Retired ed25519 PoC tags are included so this is the refusal pin, not a leftover validator.
     #[test]
     fn attested_user_decrypt_rejects_unknown_attestation_type() {
-        let envelope = serde_json::json!({
-            "attestationType": "solana-ed25519-user-decrypt-v3",
-            "attestedPayload": {},
-            "signature": "0x00",
-        });
-        let error = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
-            .expect_err("an unknown attestation type has no arm to route to");
-        let message = error.to_string();
-        assert!(
-            message.contains("unknown variant"),
-            "unexpected rejection reason: {message}"
-        );
+        for tag in [
+            "solana-ed25519-user-decrypt-v3",
+            "solana-ed25519-user-decrypt-v2",
+            "solana-ed25519-user-decrypt-v1",
+            "garbage",
+        ] {
+            let envelope = serde_json::json!({
+                "attestationType": tag,
+                "attestedPayload": {},
+                "signature": "0x00",
+            });
+            let error = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
+                .expect_err("an unknown attestation type has no arm to route to");
+            let message = error.to_string();
+            assert!(
+                message.contains("unknown variant"),
+                "unexpected rejection reason for {tag}: {message}"
+            );
+        }
     }
 
     /// The other arm of the same dispatch: the EVM inner type still routes to `Eip712UnifiedV1`,

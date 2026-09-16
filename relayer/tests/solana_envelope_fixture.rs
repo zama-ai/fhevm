@@ -2,6 +2,7 @@
 //!
 //! `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json` is the HTTP seam between the SDK and
 //! this relayer, and it is consumed from both sides: the SDK builds its request and compares it to
+//! the same records this file feeds to `UserDecryptV3RequestJson`. That is the point of a shared
 //! file rather than two independent test suites — a key renamed on one side and mirrored in that
 //! side's own test would look green twice and fail in production.
 //!

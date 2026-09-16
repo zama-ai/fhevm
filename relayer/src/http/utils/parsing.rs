@@ -148,18 +148,6 @@ where
                         "ciphertextWithInputVerification" => "ciphertext_with_input_verification",
                         "extraData" => "extra_data",
                         "ciphertextHandles" => "ciphertext_handles",
-                        "attestationType" => "attestation_type",
-                        "attestedPayload" => "attested_payload",
-                        "userPubkey" => "user_pubkey",
-                        "transportKey" => "transport_key",
-                        "allowedScopes" => "allowed_scopes",
-                        "verifyingProgramId" => "verifying_program_id",
-                        "encryptedStore" => "encrypted_store",
-                        "allowedKey" => "allowed_key",
-                        "chainId" => "chain_id",
-                        "publicKey" => "public_key",
-                        "signature" => "signature",
-                        "handles" => "handles",
                         _ => "request",
                     };
 
@@ -198,6 +186,9 @@ fn is_field_specific_serde_error(error_msg: &str) -> bool {
 }
 
 fn is_v3_attestation_variant_error(error_msg: &str) -> bool {
+    // Internally tagged `/v3/user-decrypt` reports an unknown `attestationType` as
+    // `unknown variant`, and serde's message lists the allowed tags. That is how this
+    // generic parser recognizes the v3 envelope without a second allowlist function.
     error_msg.contains("unknown variant")
         && (error_msg.contains(V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1)
             || error_msg.contains(V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1))

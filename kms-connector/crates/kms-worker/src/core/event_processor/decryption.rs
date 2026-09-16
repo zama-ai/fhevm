@@ -314,7 +314,7 @@ where
         Ok(())
     }
 
-    /// Verify that a `UserDecryptionRequest` (RFC 016 EVM) is internally consistent before the
+    /// Verify that a RFC 016 EVM `UserDecryptionRequestV2` is internally consistent before the
     /// ACL phase: every handle resolves to the same host chain id. Returns that shared chain id.
     /// Solana `UserDecryptionRequestV3` extracts the chain id from `ctHandles` in
     /// [`Self::check_user_decryption_request_v3`] instead.
@@ -531,14 +531,14 @@ where
             }
         };
 
-        // The opaque host payload decodes to the wire request, which is then validated into the
-        // typed form. Neither step compares the request to the event it arrived on — that is the
-        // parity pass below.
+        // The opaque `solanaRequest` decodes to the wire request, which is then validated into
+        // the typed form. Neither step compares the request to the event it arrived on — that is
+        // the parity pass below.
         let wire = decode_solana_request(request.solanaRequest.as_ref()).map_err(|e| {
             RequestCheckError::irrecoverable(
                 RequestCheckKind::Acl,
                 ErrorCode::Unprocessable,
-                anyhow!("Solana host payload does not decode: {e}"),
+                anyhow!("solanaRequest does not decode: {e}"),
             )
         })?;
         let typed_request = SolanaUserDecryptRequest::decode(&wire).map_err(|e| {
