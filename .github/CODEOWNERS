@@ -23,6 +23,7 @@
 /sdk/js-sdk/ @zama-ai/dev-ex
 /library-solidity/ @zama-ai/dev-ex
 /relayer/ @zama-ai/dev-ex
+/relayer-http/ @zama-ai/dev-ex
 
 # MPC Team ownership
 /kms-connector/ @zama-ai/mpc-devs
