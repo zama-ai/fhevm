@@ -58,7 +58,7 @@ jobs:
 
       - name: Run hardhat tests
         working-directory: protocol-contracts/pauserSetWrapper
-        run: npx hardhat test
+        run: make test
 
       - name: Run coverage
         working-directory: protocol-contracts/pauserSetWrapper

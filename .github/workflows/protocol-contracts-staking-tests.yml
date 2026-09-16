@@ -56,9 +56,21 @@ jobs:
         working-directory: protocol-contracts/staking
         run: npm ci
 
+      - name: Run lint
+        working-directory: protocol-contracts/staking
+        run: npm run lint
+
+      - name: Compile
+        working-directory: protocol-contracts/staking
+        run: npm run compile
+
       - name: Run hardhat tests
         working-directory: protocol-contracts/staking
-        run: npx hardhat test
+        run: make test
+
+      - name: Run task tests
+        working-directory: protocol-contracts/staking
+        run: make test-tasks
 
       - name: Run coverage
         working-directory: protocol-contracts/staking

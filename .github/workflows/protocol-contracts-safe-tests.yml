@@ -56,9 +56,13 @@ jobs:
         working-directory: protocol-contracts/safe
         run: npm ci
 
+      - name: Use the test env file
+        working-directory: protocol-contracts/safe
+        run: cp .env.example.test .env.example
+
       - name: Run hardhat tests
         working-directory: protocol-contracts/safe
-        run: npx hardhat test
+        run: make test
 
       - name: Run coverage
         working-directory: protocol-contracts/safe
