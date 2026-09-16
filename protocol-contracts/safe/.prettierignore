@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+artifacts/
+cache/
+
+# Version control
+.git/
+.gitignore
+
+# Environment
+.env
+
+# Typechain
+typechain-types/
