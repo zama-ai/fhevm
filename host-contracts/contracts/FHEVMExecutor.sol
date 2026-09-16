@@ -64,6 +64,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice Returned if `scalarByte` is not a legal `fheMulDiv` bitmask (`0x01` enc×enc or `0x03` enc×scalar).
     error InvalidMulDivScalarByte();
 
+    /// @notice Returned if a plaintext operand does not fit in its FHE type.
+    error ScalarOutOfRange();
+
     /// @notice Returned if the type is not supported for this operation.
     error UnsupportedType();
 
@@ -132,7 +135,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -148,7 +151,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /// Domain separator for hashing when building an output handle for a FHE computation
     bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
@@ -182,12 +185,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V5.
+     * @notice Re-initializes the contract from V6.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.
@@ -261,7 +264,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheDiv(msg.sender, lhs, rhs, scalarByte, result);
@@ -282,7 +284,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRem(msg.sender, lhs, rhs, scalarByte, result);
@@ -749,7 +750,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64));
         FheType factor1Type = _verifyAndReturnType(factor1, supportedTypes);
-        if (_isScalarZeroForType(divisor, factor1Type)) revert DivisionByZero();
         result = _mulDivOp(Operators.fheMulDiv, factor1, factor2, divisor, scalarByte, factor1Type);
         HCU_LIMIT.checkHCUForFheMulDiv(factor1Type, scalarByte, factor1, factor2, result, msg.sender);
         emit FheMulDiv(msg.sender, factor1, factor2, divisor, scalarByte, result);
@@ -816,6 +816,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint256));
 
         if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
+        _checkScalarRange(pt, toType);
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
@@ -859,6 +860,16 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         // input ciphertext, so consumers fold a boundary bit for it.
         ACL.allowTransient(result, msg.sender);
         emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
+    }
+
+    /**
+     * @notice Asserts the type of an initialized ciphertext handle.
+     * @dev This checks metadata only; it does not verify a proof or grant ACL permissions.
+     * @param handle Ciphertext handle. Zero is an uninitialized sentinel, not a ciphertext.
+     * @param expectedType Expected FHE type.
+     */
+    function checkHandleType(bytes32 handle, FheType expectedType) external view virtual {
+        if (handle == bytes32(0) || _typeOf(handle) != expectedType) revert InvalidType();
     }
 
     /**
@@ -944,16 +955,19 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
 
-    function _isScalarZeroForType(bytes32 scalar, FheType scalarType) internal pure virtual returns (bool) {
-        uint256 scalarUint = uint256(scalar);
+    function _checkScalarRange(uint256 scalar, FheType scalarType) internal pure virtual {
+        uint256 maxValue;
+        if (scalarType == FheType.Bool) maxValue = 1;
+        else if (scalarType == FheType.Uint8) maxValue = type(uint8).max;
+        else if (scalarType == FheType.Uint16) maxValue = type(uint16).max;
+        else if (scalarType == FheType.Uint32) maxValue = type(uint32).max;
+        else if (scalarType == FheType.Uint64) maxValue = type(uint64).max;
+        else if (scalarType == FheType.Uint128) maxValue = type(uint128).max;
+        else if (scalarType == FheType.Uint160) maxValue = type(uint160).max;
+        else if (scalarType == FheType.Uint256) return;
+        else revert UnsupportedType();
 
-        if (scalarType == FheType.Uint8) return uint8(scalarUint) == 0;
-        if (scalarType == FheType.Uint16) return uint16(scalarUint) == 0;
-        if (scalarType == FheType.Uint32) return uint32(scalarUint) == 0;
-        if (scalarType == FheType.Uint64) return uint64(scalarUint) == 0;
-        if (scalarType == FheType.Uint128) return uint128(scalarUint) == 0;
-
-        revert UnsupportedType();
+        if (scalar > maxValue) revert ScalarOutOfRange();
     }
 
     /// @dev Records a handle this executor derived in the current transaction
@@ -1063,9 +1077,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         _checkBoolean(scalar);
 
         uint256 boundaryBits = _consumeOperand(lhs, 0);
+        FheType lhsType = _typeOf(lhs);
         if (scalar == 0x00) {
             boundaryBits |= _consumeOperand(rhs, 1);
-            if (_typeOf(lhs) != _typeOf(rhs)) revert IncompatibleTypes();
+            if (lhsType != _typeOf(rhs)) revert IncompatibleTypes();
+        } else {
+            _checkScalarRange(uint256(rhs), lhsType);
+            if ((op == Operators.fheDiv || op == Operators.fheRem) && rhs == bytes32(0)) {
+                revert DivisionByZero();
+            }
         }
         result = keccak256(
             abi.encodePacked(
@@ -1101,7 +1121,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             boundaryBits |= _consumeOperand(factor2, 1);
             // resultType == _typeOf(factor1) (set by the caller's _verifyAndReturnType).
             if (resultType != _typeOf(factor2)) revert IncompatibleTypes();
+        } else {
+            _checkScalarRange(uint256(factor2), resultType);
         }
+        _checkScalarRange(uint256(divisor), resultType);
+        if (divisor == bytes32(0)) revert DivisionByZero();
+
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
