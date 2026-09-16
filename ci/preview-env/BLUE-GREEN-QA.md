@@ -141,11 +141,11 @@ Your branch must be pushed to `origin` first. Then run this, replacing `<your-br
 
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --testnets --watch \
-  --set host_contracts_version=v0.14.1-1 \
-  --set gateway_contracts_version=v0.14.1-1 \
-  --set relayer_version=v0.14.1-1 \
-  --set kms_connector_version=v0.14.1-1 \
-  --set test_suite_version=v0.14.1-1
+  --set host_contracts_version=v0.14.1 \
+  --set gateway_contracts_version=v0.14.1 \
+  --set relayer_version=v0.14.1 \
+  --set kms_connector_version=v0.14.1 \
+  --set test_suite_version=v0.14.1
 ```
 
 What the options mean:
@@ -156,7 +156,7 @@ What the options mean:
 | `--blue-green` | Turns on Blue/Green and gives you 2 operators. |
 | `--testnets` | Uses the real Sepolia and Amoy test networks, plus the Nitro gateway. Both chains are included automatically. |
 | `--watch` | Streams the progress in your terminal. Drop it if you prefer to watch in the browser. |
-| `--set ..._version=v0.14.1-1` | Pins those five components to the old release. |
+| `--set ..._version=v0.14.1` | Pins those five components to the old release. |
 
 This takes about an hour, mostly key generation. Wait for the workflow to finish successfully
 before continuing.
@@ -412,7 +412,7 @@ bash ci/preview-env/scripts/bg-stack.sh status
 ```
 
 **Expect:** the KMS connector rows already show the new tag. They usually stay upgraded from the
-previous round. If they show `v0.14.1-1`, upgrade them now, as in step A6.
+previous round. If they show `v0.14.1`, upgrade them now, as in step A6.
 
 ### Step B6. Snapshot 1
 
@@ -837,11 +837,11 @@ Your branch must be pushed to `origin` first.
 
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --testnets --watch \
-  --set host_contracts_version=v0.14.1-1 \
-  --set gateway_contracts_version=v0.14.1-1 \
-  --set relayer_version=v0.14.1-1 \
-  --set kms_connector_version=v0.14.1-1 \
-  --set test_suite_version=v0.14.1-1
+  --set host_contracts_version=v0.14.1 \
+  --set gateway_contracts_version=v0.14.1 \
+  --set relayer_version=v0.14.1 \
+  --set kms_connector_version=v0.14.1 \
+  --set test_suite_version=v0.14.1
 ```
 
 Takes about an hour. See step A1 for what each option means.

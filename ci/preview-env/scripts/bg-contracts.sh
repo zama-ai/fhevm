@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Blue/Green QA, production path step 4: upgrade the host and gateway contracts of a preview env
-# from the deployed release (e.g. v0.14.1-1) to the Green release (the branch's image tag), in
+# from the deployed release (e.g. v0.14.1) to the Green release (the branch's image tag), in
 # place on the existing proxies, while Blue keeps serving.
 #
 #   bg-contracts.sh status    per chain and contract: deployed tag, target tag, reinitializer version

@@ -392,7 +392,7 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 | Model | Meaning | How to enable |
 | --- | --- | --- |
 | **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
-| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.1`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
 
 Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. With `deploy_polygon` (so on `chain_mode=testnets`) each fleet also gets its own Polygon consumer (`coprocessor-polygon-<i>` / `-gcs`), the proposal carries one window per host chain (Polygon offsets scaled by block time so both windows share the same wall-clock span) and the dry-run / cutover asserts read one `upgrade_state` row per chain. Incompatible with `nb_coprocessor=1`.
 
