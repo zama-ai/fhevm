@@ -14,22 +14,87 @@
 
 use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
 use crate::http::utils::redact::redact_len;
+use crate::http::utils::validations::{
+    V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1,
+};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
-use validator::{Validate, ValidationErrors};
+use utoipa::openapi::schema::{AllOfBuilder, ObjectBuilder, OneOfBuilder, SchemaType, Type};
+use utoipa::openapi::{Ref, RefOr, Schema};
+use utoipa::{PartialSchema, ToSchema};
+use validator::{Validate, ValidationError, ValidationErrors};
+
+pub(crate) fn unsupported_attestation_type_message() -> String {
+    format!(
+        "Unsupported attestationType; expected one of: [{}, {}]",
+        V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1, V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1
+    )
+}
+
+fn tagged_openapi_arm(schema_name: &str, tag: &'static str) -> RefOr<Schema> {
+    AllOfBuilder::new()
+        .item(Ref::from_schema_name(schema_name))
+        .item(
+            ObjectBuilder::new()
+                .property(
+                    "attestationType",
+                    ObjectBuilder::new()
+                        .schema_type(SchemaType::Type(Type::String))
+                        .enum_values(Some([serde_json::Value::String(tag.to_string())])),
+                )
+                .required("attestationType"),
+        )
+        .into()
+}
 
 /// POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
 ///
 /// Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
 /// `deny_unknown_fields` and does not repeat the tag.
-#[derive(Deserialize, Clone, ToSchema, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "attestationType")]
 pub enum UserDecryptV3RequestJson {
     #[serde(rename = "eip712-unified-user-decrypt-v1")]
     Eip712Unified(AttestedUserDecryptRequestJson),
     #[serde(rename = "solana-srfc38-user-decrypt-v1")]
     SolanaSrfc38(SolanaUserDecryptRequestJson),
+    #[serde(other)]
+    Unknown,
+}
+
+impl PartialSchema for UserDecryptV3RequestJson {
+    fn schema() -> RefOr<Schema> {
+        OneOfBuilder::new()
+            .item(tagged_openapi_arm(
+                "AttestedUserDecryptRequestJson",
+                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1,
+            ))
+            .item(tagged_openapi_arm(
+                "SolanaUserDecryptRequestJson",
+                V3_ATTESTATION_TYPE_SOLANA_SRFC38_V1,
+            ))
+            .description(Some(
+                "POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.\n\n\
+Internally tagged so the HTTP handler parses one type. Each arm's inner struct is\n\
+`deny_unknown_fields` and does not repeat the tag.",
+            ))
+            .into()
+    }
+}
+
+impl ToSchema for UserDecryptV3RequestJson {
+    fn schemas(schemas: &mut Vec<(String, RefOr<Schema>)>) {
+        schemas.push((
+            AttestedUserDecryptRequestJson::name().into(),
+            AttestedUserDecryptRequestJson::schema(),
+        ));
+        <AttestedUserDecryptRequestJson as ToSchema>::schemas(schemas);
+        schemas.push((
+            SolanaUserDecryptRequestJson::name().into(),
+            SolanaUserDecryptRequestJson::schema(),
+        ));
+        <SolanaUserDecryptRequestJson as ToSchema>::schemas(schemas);
+    }
 }
 
 impl Validate for UserDecryptV3RequestJson {
@@ -37,6 +102,13 @@ impl Validate for UserDecryptV3RequestJson {
         match self {
             Self::Eip712Unified(inner) => inner.validate(),
             Self::SolanaSrfc38(inner) => inner.validate(),
+            Self::Unknown => {
+                let mut errors = ValidationErrors::new();
+                let mut error = ValidationError::new("unsupported_attestation_type");
+                error.message = Some(unsupported_attestation_type_message().into());
+                errors.add("attestation_type", error);
+                Err(errors)
+            }
         }
     }
 }

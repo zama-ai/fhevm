@@ -823,6 +823,9 @@ impl TryFrom<UserDecryptV3RequestJson> for UserDecryptRequest {
         match value {
             UserDecryptV3RequestJson::Eip712Unified(inner) => Self::try_from(inner),
             UserDecryptV3RequestJson::SolanaSrfc38(inner) => Self::try_from(inner),
+            UserDecryptV3RequestJson::Unknown => Err(anyhow::anyhow!(
+                crate::http::endpoints::v3::types::user_decrypt::unsupported_attestation_type_message()
+            )),
         }
     }
 }
@@ -1637,6 +1640,8 @@ mod tests {
     /// Retired ed25519 PoC tags are included so this is the refusal pin, not a leftover validator.
     #[test]
     fn attested_user_decrypt_rejects_unknown_attestation_type() {
+        use validator::Validate;
+
         for tag in [
             "solana-ed25519-user-decrypt-v3",
             "solana-ed25519-user-decrypt-v2",
@@ -1648,12 +1653,15 @@ mod tests {
                 "attestedPayload": {},
                 "signature": "0x00",
             });
-            let error = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
-                .expect_err("an unknown attestation type has no arm to route to");
-            let message = error.to_string();
+            let parsed = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
+                .expect("an unknown tag maps to Unknown, not an arm");
             assert!(
-                message.contains("unknown variant"),
-                "unexpected rejection reason for {tag}: {message}"
+                matches!(parsed, UserDecryptV3RequestJson::Unknown),
+                "unknown tag {tag} must not select an attestation arm"
+            );
+            assert!(
+                parsed.validate().is_err(),
+                "Unknown must fail validation for {tag}"
             );
         }
     }

@@ -390,7 +390,7 @@ async fn v3_rejects_unknown_attestation_type() {
         &url,
         helpers::create_v3_envelope(),
         with_invalid_field("attestationType", json!("ed25519-solana-user-decrypt-v1")),
-        expect_v2_validation_error("request", "unknown variant"),
+        expect_v2_validation_error("attestationType", "Unsupported attestationType"),
     )
     .await;
 
