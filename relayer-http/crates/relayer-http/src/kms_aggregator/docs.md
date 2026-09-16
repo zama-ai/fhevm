@@ -122,7 +122,8 @@ not stored.
 - The semaphore (`max_concurrent_calls`) bounds HTTP calls in flight across all aggregations of the process. A permit
   is held for one attempt only, never while sleeping between attempts.
 - Retries happen only for retryable errors, at most `max_retries` times, with delay `min(delay * 2^(k-1), backoff_max)`
-  before retry `k`, and never when the delay would end after the deadline.
+  before retry `k`. The deadline is the real bound: a retry whose delay does not fit in the remaining time is skipped
+  (the call gives up), so `max_retries` has no ceiling and no call outlives `call.timeout`.
 - An authentication rejection is never retried: our key is wrong for that node.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
   answering. The aggregator's deadline is the decision.
@@ -184,7 +185,7 @@ kms_aggregator:
   max_concurrent_calls: 64     # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s)
-    retries: { max_retries: 0, delay: 500ms, backoff_max: 4s }   # max_retries <= 9; 0 < delay <= backoff_max
+    retries: { max_retries: 0, delay: 500ms, backoff_max: 4s }   # 0 < delay <= backoff_max <= timeout
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
@@ -195,9 +196,9 @@ kms_aggregator:
 
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty with unique names and
   URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` or `auth: none` only towards loopback
-  unless `allow_insecure_http`; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`; `max_retries <= 9` and
-  `0 < delay <= backoff_max <= 60s` when retries are on; each `threshold` within `1..=n`. Every message names the field
-  with its dotted path.
+  unless `allow_insecure_http`; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
+  `0 < delay <= backoff_max <= timeout` when retries are on (`max_retries` itself has no ceiling); each `threshold`
+  within `1..=n`. Every message names the field with its dotted path.
 - The API key is read from the named env var at startup and sent as `authorization: Bearer <key>`; it is never in the
   config, the logs or any error message.
 - `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit.

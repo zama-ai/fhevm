@@ -92,7 +92,7 @@ being the reference.
 
 **No unexpected panic.** Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
-the runtime arithmetic relies on (`call.timeout <= 60s`, `max_retries <= 9`, semaphore size capped) so that no
+the runtime arithmetic relies on (`call.timeout <= 60s`, `backoff_max <= call.timeout`, semaphore size capped) so that no
 arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the
