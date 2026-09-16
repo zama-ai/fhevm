@@ -11,12 +11,14 @@ ALTER TABLE ciphertext_digest
         );
 
 -- Before this change, both digest columns were written only after a successful
--- S3 postflight. Treat that pair as already published. Do not touch
--- s3_format_version: it was already set on those rows, and new pre-upload
--- rows get it together with the witness at postflight.
+-- S3 postflight. `20260526090000` already set `s3_format_version = 0` on every
+-- row that had a digest (`NULL` means not uploaded). New enqueue writes digests
+-- before upload and leaves `s3_format_version` NULL until postflight. Do not
+-- treat in-flight pre-upload rows as already published.
 UPDATE ciphertext_digest
    SET s3_publication_verified_at = NOW(),
        s3_publication_verified_digest = ciphertext
  WHERE s3_publication_verified_at IS NULL
    AND ciphertext IS NOT NULL
-   AND ciphertext128 IS NOT NULL;
+   AND ciphertext128 IS NOT NULL
+   AND s3_format_version IS NOT NULL;
