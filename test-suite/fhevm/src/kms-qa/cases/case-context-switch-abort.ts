@@ -1,8 +1,8 @@
 /**
- * QA case `context-switch-abort-and-retry` — **two QA scenarios, merged into one case.**
+ * QA case `context-switch-abort-and-retry` — **three QA scenarios, merged into one case.**
  *
- * They were proposed separately, and the second turned out to be the literal continuation of the
- * first: everything it lists as `Given` is what the first one *leaves behind*, and its `When`/`Then`
+ * They were proposed separately, and each later one turned out to be the literal continuation of the
+ * one before: everything it lists as `Given` is what the first one *leaves behind*, and its `When`/`Then`
  * were already the first one's recovery step. Implementing them apart would have meant a second case
  * that re-created, from a clean stack, exactly the state the first case ends in — paying six minutes
  * to reach a starting line the other one crosses on its way past.
@@ -31,9 +31,36 @@
  *     And all required confirmations for "C3, E3" complete with compatible results
  *     Then "C3, E3" must become the active pair
  *
+ *   Scenario C: A new switch advances the Gateway after the previous switch is cancelled in the host
+ *     (same Given/When as A and B, plus:)
+ *     Then the Gateway must retain "C2" as its highest registered context_id
+ *     And the Gateway must reject an attempt to register "C1" or "C2"
+ *     And the Gateway must have "C3" as its highest registered context_id after the retry
+ *     And a decryption request created after activation must use "C3, E3"
+ *
  * Scenario B's five `Given` clauses map one-to-one onto assertions scenario A already makes — the
  * abort, the orphaned Gateway registration, the unchanged pair, and the reopened gate. Nothing has to
- * be set up for B; it starts where A stops.
+ * be set up for B; it starts where A stops. Scenario C is the same flow again, adding four
+ * observations at points the case already passes through.
+ *
+ * ## What scenario C added
+ *
+ * Three of its four clauses were genuinely uncovered. `assertContextPointers` now reads the
+ * **current-context pointer on both chains** at two moments: after the abort, where they must
+ * disagree — host rolled back, Gateway did not — and after the retry, where they must agree again
+ * because the Gateway advanced *past* the ghost rather than being rolled back. And the extraData
+ * probe at the end asserts the SDK picks the recovered pair with a ghost still registered on the
+ * Gateway, which the clean-switch `context-switch` case does not exercise.
+ *
+ * Its remaining clause — *"the Gateway must reject an attempt to register C1 or C2"* — is **not**
+ * re-implemented here: it is the strictly-increasing guard, already unit-tested at
+ * `gateway-contracts/test/GatewayConfig.ts:955` (`KmsContextAlreadyRegistered`). Asserting the
+ * pointer states the same invariant as a read rather than a failed write, and does not need the
+ * `KmsNode[]` calldata a direct `updateKmsContext` probe would.
+ *
+ * The pointer divergence is the live half of a finding written up separately in
+ * `qa/scenario_tb_checked/ghost.md`: while the two disagree, an empty or `0x00` extraData resolves
+ * through the Gateway's pointer to a context the host cannot serve.
  *
  * ## What the merge added, beyond concatenation
  *
@@ -102,6 +129,7 @@ import { castSend, keccakTopic, getEventTopic } from "../../kms-onchain";
 import type { QaCase, QaCaseContext } from "../registry";
 import { assertTxSendersRunning } from "../nodes";
 import {
+  assertContextPointers,
   assertContextValidity,
   assertGatewayContextValidity,
   assertLifecycleGateOpen,
@@ -126,7 +154,7 @@ import { txEvidenceFields } from "../evidence";
 const KMS_CONTEXT_DESTROYED_SIGNATURE = "KmsContextDestroyed(uint256)";
 
 const run = async (ctx: QaCaseContext): Promise<void> => {
-  const { state, target, owner, nodes, evidence, runDecryption, runSmoke } = ctx;
+  const { state, target, owner, nodes, evidence, runDecryption, runSmoke, runExtraDataCheck } = ctx;
 
   evidence.note("note", "target", {
     protocolConfig: target.address,
@@ -287,6 +315,21 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
         true,
         "the host-side abort does not reach the Gateway, which has its own destroyKmsContext",
       );
+
+      // Sharper than validity: the Gateway's *current* pointer is the aborted context, because
+      // `updateKmsContext` only ever advances it. The host rolled back to the pair that still
+      // serves; the Gateway did not. While they disagree, an empty or `0x00` extraData resolves
+      // through the Gateway's pointer to a context the host no longer has — see
+      // `qa/scenario_tb_checked/ghost.md`. Asserted, not merely noted, so a future change breaks.
+      await assertContextPointers(
+        target,
+        gatewayRpcUrl,
+        gatewayConfigAddress,
+        evidence,
+        baseline.contextId,
+        pendingContextId,
+        "the host rolled its pointer back on the destroy; the Gateway's only moves forward",
+      );
     },
   );
 
@@ -337,6 +380,43 @@ const run = async (ctx: QaCaseContext): Promise<void> => {
         `epoch ${activated.epochId} reshare completed (recovery after the abort)`,
         columnQuery("new_kms_epoch", "epoch_id", "status", activated.epochId),
         ["completed"],
+      ),
+  );
+
+  // Scenario C's closing clauses: the Gateway's pointer caught up, and it did so by moving FORWARD
+  // past the ghost rather than by anything rolling it back.
+  await assertContextPointers(
+    target,
+    gatewayRpcUrl,
+    gatewayConfigAddress,
+    evidence,
+    activated.contextId,
+    activated.contextId,
+    "the retry registered a higher id, so the Gateway advanced past the aborted context and the two agree again",
+  );
+
+  // "A decryption request created after activation must use C3, E3." Not the same claim the
+  // `context-switch` case makes: there the switch is clean, here the SDK has to pick the right pair
+  // with a ghost context still registered on the Gateway and an aborted one in the chain's history.
+  // The aborted id is passed as forbidden, so a permit naming it fails rather than passing quietly.
+  await evidence.step(
+    "probe",
+    "SDK embeds the recovered pair, and neither the aborted context nor the previous one",
+    {
+      contextId: formatKmsId(activated.contextId),
+      epochId: formatKmsId(activated.epochId),
+      abortedContextId: formatKmsId(pendingContextId),
+    },
+    () =>
+      runExtraDataCheck(
+        `kms-context-qa/context-switch-abort-and-retry: extraData carries contextId=${activated.contextId}`,
+        {
+          contextId: activated.contextId,
+          epochId: activated.epochId,
+          previousContextId: baseline.contextId,
+          previousEpochId: baseline.epochId,
+          forbiddenContextId: pendingContextId,
+        },
       ),
   );
 
