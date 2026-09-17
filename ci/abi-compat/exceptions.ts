@@ -31,6 +31,16 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event ActivateKey(uint256,string[],(uint8,bytes)[])",
       "function keygen(uint8)",
     ],
+    // RFC 3.1 binds KmsThresholds into the context's nodeConfigHash: changing a threshold is a
+    // context switch, not an in-place edit. The owner-only threshold setters were removed, so the
+    // events they emitted disappear from the ABI. The setters themselves are onlyACLOwner and were
+    // never part of the stable surface.
+    ProtocolConfig: [
+      "event PublicDecryptionThresholdUpdated(uint256 indexed,uint256)",
+      "event UserDecryptionThresholdUpdated(uint256 indexed,uint256)",
+      "event KmsGenThresholdUpdated(uint256 indexed,uint256)",
+      "event MpcThresholdUpdated(uint256 indexed,uint256)",
+    ],
   },
   "gateway-contracts": {
     // The NotCustodian{Signer,TxSender} selectors were inherited from the GatewayConfigChecks
