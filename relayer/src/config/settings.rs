@@ -1,6 +1,6 @@
 use crate::http::endpoints::v2::types::keyurl::KeyData;
 use crate::http::utils::redact::redact;
-use config::{Config, Environment, File};
+use config::{Config, Environment, File, Map};
 use derivative::Derivative;
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
@@ -913,15 +913,22 @@ impl Settings {
         };
         // Change how we specify environment variables
         // Environment variables always override file-based configuration
-        let s = s.add_source(
+        let env_source = |vars: Map<String, String>| {
             Environment::with_prefix("APP")
                 .separator("__") // Use double underscore
                 .prefix_separator("_") // Separator between APP and the rest
-                // Required for structs with numeric fields (e.g., host_chains.chain_id: u64)
-                // inside Vec fields using deserialize_vec_from_map_or_seq. Without this,
-                // env vars remain strings and fail to deserialize into numeric types.
-                .try_parsing(true),
-        );
+                .source(Some(vars))
+        };
+        // `try_parsing` turns env strings into bool, i64 or f64 so that numeric fields inside
+        // Vec entries (deserialize_vec_from_map_or_seq) deserialize. RFC-021 Solana host ids
+        // exceed i64::MAX and would come out as a lossy f64, so host chain ids stay strings
+        // and go through `deserialize_u64_from_str_or_num`, like their quoted YAML form.
+        let (host_chain_ids, parsed): (Map<String, String>, Map<String, String>) = env::vars()
+            .filter(|(key, _)| key.starts_with("APP_"))
+            .partition(|(key, _)| key.starts_with("APP_HOST_CHAINS__") && key.ends_with("__CHAIN_ID"));
+        let s = s
+            .add_source(env_source(parsed).try_parsing(true))
+            .add_source(env_source(host_chain_ids));
 
         let settings: Settings = s
             .build()
@@ -2311,6 +2318,40 @@ mod tests {
             "Settings::new must load a quoted Solana host chain id above i64::MAX (RFC-021)",
         );
         assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
+    }
+
+    #[test]
+    #[serial] // avoid env var leakage from parallel tests
+    fn test_host_chain_id_above_i64_max_from_env() {
+        const SOLANA_CHAIN_ID: u64 = (1u64 << 63) | 12345; // 9223372036854788153 > i64::MAX
+        // Same shape as the preview-env relayer Deployment: every host chain comes from
+        // APP_HOST_CHAINS__<i>__* env vars, the EVM one at index 0 and the Solana one at 1.
+        let vars = [
+            ("APP_HOST_CHAINS__0__CHAIN_ID", "12345".to_string()),
+            ("APP_HOST_CHAINS__0__URL", "http://anvil-host:8545".to_string()),
+            (
+                "APP_HOST_CHAINS__0__ACL_ADDRESS",
+                "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836".to_string(),
+            ),
+            ("APP_HOST_CHAINS__1__CHAIN_ID", SOLANA_CHAIN_ID.to_string()),
+            ("APP_HOST_CHAINS__1__URL", "https://devnet.example/rpc".to_string()),
+            (
+                "APP_HOST_CHAINS__1__ACL_ADDRESS",
+                "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+            ),
+        ];
+        for (key, value) in &vars {
+            env::set_var(key, value);
+        }
+        let result = Settings::new(Some("tests/relayer-test-config.yaml".to_string()));
+        for (key, _) in &vars {
+            env::remove_var(key);
+        }
+        let settings = result
+            .expect("Settings::new must load a Solana host chain id above i64::MAX from env");
+        let ids: Vec<u64> = settings.host_chains.iter().map(|c| c.chain_id).collect();
+        assert_eq!(ids, vec![12345, SOLANA_CHAIN_ID], "{:?}", settings.host_chains);
+        assert_eq!(settings.host_chains[1].url, "https://devnet.example/rpc");
     }
 
     /// Values in the env file intentionally differ from the YAML to prove
