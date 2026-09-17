@@ -31,8 +31,8 @@ retains its normal destroy-and-recreate behavior when invoked again.
 
 ### Provisioning
 
-Fred's existing secret synchronization must expose these secrets in the selected
-source namespace. The workflow copies them into the new preview without printing them.
+These secrets must exist in the namespace passed as `solana_secrets_namespace`. The
+workflow copies them into the new preview without printing them.
 
 | Secret | Keys |
 | --- | --- |
