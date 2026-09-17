@@ -79,12 +79,12 @@ jobs:
             package: sns-worker
             needs_localstack: true
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: zkproof-worker
             package: zkproof-worker
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: transaction-sender
             package: transaction-sender
             needs_localstack: true
@@ -95,7 +95,7 @@ jobs:
             package: gw-listener
             needs_localstack: false
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: host-listener
             package: host-listener
             needs_localstack: false
@@ -112,7 +112,7 @@ jobs:
             package: upgrade-controller
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: consensus-detector
             package: consensus-detector
             needs_localstack: false
