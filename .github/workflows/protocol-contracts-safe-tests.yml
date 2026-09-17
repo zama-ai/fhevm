@@ -55,6 +55,11 @@ jobs:
         working-directory: protocol-contracts/safe
         run: cp .env.example.test .env.example
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
+        with:
+          version: v1.7.1
+
       - name: Install safe-chain
         shell: bash
         run: |
@@ -66,6 +71,10 @@ jobs:
       - name: Install dependencies
         working-directory: protocol-contracts/safe
         run: npm ci
+
+      - name: Check contract selectors
+        working-directory: protocol-contracts/safe
+        run: make check-selectors
 
       - name: Run lint
         working-directory: protocol-contracts/safe
