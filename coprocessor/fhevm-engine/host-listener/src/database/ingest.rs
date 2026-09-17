@@ -1060,7 +1060,7 @@ async fn notify_coprocessor_upgrade_proposed(
     if let Some(host_chain_id) =
         host_chain_ids.difference(&seen_chain_ids).next()
     {
-        warn!(
+        error!(
             proposal_id = %proposal_id_hex,
             host_chain_id,
             "Rejecting CoprocessorUpgradeProposed: host chain is missing from proposal"
@@ -1070,7 +1070,7 @@ async fn notify_coprocessor_upgrade_proposed(
     if let Some(host_chain_id) =
         seen_chain_ids.difference(&host_chain_ids).next()
     {
-        warn!(
+        error!(
             proposal_id = %proposal_id_hex,
             host_chain_id,
             "Rejecting CoprocessorUpgradeProposed: proposed chain is absent from host_chains"
