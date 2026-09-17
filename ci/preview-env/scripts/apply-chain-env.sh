@@ -108,14 +108,12 @@ set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # gw-listener pins its Ethereum reads to the FINALIZED block (BlockId::finalized() in
   # kms-connector/crates/gw-listener/src/core/ethereum.rs - not configurable), and Sepolia
-  # finalizes ~14 min behind head. Keygen needs two such round trips (PrepKeygenRequest ->
-  # response tx -> KeygenRequest -> response tx); measured end to end on Sepolia:
-  # PrepKeygenRequest 19:55:12 -> ActivateKey 20:38:24, i.e. 43 min. 60m leaves headroom
-  # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
-  # a genuine failure there from burning the full keygen budget.
+  # finalizes ~14 min behind head. Default-parameter threshold keygen is itself
+  # multi-hour work, in addition to the two finalized-chain round trips. Use the
+  # same four-hour keygen and one-hour CRS budgets as the base preview values.
   # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
 fi
 
 # --- listener ---
