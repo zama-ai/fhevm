@@ -16,3 +16,9 @@ node_modules
 
 # Hardhat Ignition default folder for deployments against a local node
 ignition/deployments/chain-31337
+
+# foundry build output (the selector check is the first thing to run forge here)
+/out
+
+# transient output of `make check-selectors`
+/selectors.actual
