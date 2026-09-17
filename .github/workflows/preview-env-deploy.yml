@@ -15,13 +15,17 @@ name: preview-env-deploy
 #     gitops sync-secrets chart (no GitHub secrets). Implies deploy_polygon; slow (12s blocks), real testnet gas.
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
-# Three PR labels control deployment (see check-labels below):
+# Four PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
 #     fresh from the PR HEAD (only changed components; the rest resolve to the
 #     change-detection base commit's images). In-repo charts (charts/*) install
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
+#   - preview-env-gpu: with preview-env-e2e-tests, request one GPU for each FHE
+#     worker and place them on the coprocessor-gpu nodepool. Combines with
+#     preview-env-e2e (HEAD workers) or preview-env-blue-green (Green/GCS
+#     workers; Blue/BCS stays CPU). Does nothing without preview-env-e2e-tests.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
@@ -175,8 +179,8 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: PRs labeled preview-env-e2e(-tests) or preview-env-blue-green get a
-  # preview. On PRs images are always built fresh from the PR branch.
+  # Gate: preview labels are evaluated here. preview-env-gpu only enables GPU
+  # scheduling when preview-env-e2e-tests is also present.
   # workflow_dispatch always deploys (the dispatch itself is the request);
   # build_images comes from its input.
   ##########################################################################
@@ -188,12 +192,14 @@ jobs:
       github.event.action != 'labeled' ||
       github.event.label.name == 'preview-env-e2e' ||
       github.event.label.name == 'preview-env-e2e-tests' ||
+      github.event.label.name == 'preview-env-gpu' ||
       github.event.label.name == 'preview-env-blue-green'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
       automated_tests: ${{ steps.check.outputs.automated_tests }}
+      gpu: ${{ steps.check.outputs.gpu }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
@@ -239,18 +245,22 @@ jobs:
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
           # never set it (always build everything they're allowed to).
-          echo "build_test_suite_only=false" >> "$GITHUB_OUTPUT"
           # automated_tests defaults off; dispatch reads its input, PR runs opt
           # in via the preview-env-e2e-tests label (handled below).
-          echo "automated_tests=false" >> "$GITHUB_OUTPUT"
+          # GPU scheduling is label-only and requires automated e2e tests.
           # observability is a dispatch-only knob for now (no PR label), off by
           # default.
-          echo "observability=false" >> "$GITHUB_OUTPUT"
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
           # is two-party consensus). PRs: preview-env-blue-green label, N=2.
-          echo "blue_green=false" >> "$GITHUB_OUTPUT"
-          echo "nb_coprocessor=1" >> "$GITHUB_OUTPUT"
-          echo "chain_mode=anvil" >> "$GITHUB_OUTPUT"
+          {
+            echo "build_test_suite_only=false"
+            echo "automated_tests=false"
+            echo "gpu=false"
+            echo "observability=false"
+            echo "blue_green=false"
+            echo "nb_coprocessor=1"
+            echo "chain_mode=anvil"
+          } >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -260,14 +270,17 @@ jobs:
                 nb_coprocessor=2
               fi
             fi
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
-            echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
-            echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}" >> "$GITHUB_OUTPUT"
-            echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
-            echo "blue_green=${blue_green}" >> "$GITHUB_OUTPUT"
-            echo "nb_coprocessor=${nb_coprocessor}" >> "$GITHUB_OUTPUT"
-            echo "chain_mode=${DISPATCH_CHAIN_MODE:-anvil}" >> "$GITHUB_OUTPUT"
+            {
+              echo "should_deploy=true"
+              echo "build_images=${DISPATCH_BUILD_IMAGES}"
+              echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}"
+              echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
+              echo "gpu=false"
+              echo "observability=${DISPATCH_OBSERVABILITY:-false}"
+              echo "blue_green=${blue_green}"
+              echo "nb_coprocessor=${nb_coprocessor}"
+              echo "chain_mode=${DISPATCH_CHAIN_MODE:-anvil}"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -278,6 +291,7 @@ jobs:
           should_deploy=false
           build_images=false
           automated_tests=false
+          gpu=false
           blue_green=false
           chain_mode=anvil
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -286,6 +300,10 @@ jobs:
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests")' > /dev/null; then
             automated_tests=true
             should_deploy=true
+          fi
+          if [[ "${automated_tests}" == "true" ]] &&
+             echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-gpu")' > /dev/null; then
+            gpu=true
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e")' > /dev/null; then
             should_deploy=true
@@ -308,6 +326,7 @@ jobs:
             echo "should_deploy=${should_deploy}"
             echo "build_images=${build_images}"
             echo "automated_tests=${automated_tests}"
+            echo "gpu=${gpu}"
             echo "blue_green=${blue_green}"
             echo "nb_coprocessor=${nb_coprocessor}"
             echo "chain_mode=${chain_mode}"
@@ -484,6 +503,7 @@ jobs:
       # Gate for the automated e2e test workflow (see the test-suite-workflow
       # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
+      GPU: ${{ needs.check-labels.outputs.gpu }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}

@@ -6,7 +6,10 @@
 set -euo pipefail
 
 deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
-keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
+# Default-parameter threshold keygen is a multi-hour ceremony. Keep the Helm
+# wait below the preview deploy job's six-hour timeout while allowing four
+# hours for keygen, one hour for CRS generation, and some chart overhead.
+keygen_timeout="${KEYGEN_TIMEOUT:-310m}"
 
 kind="${1:?kind}"
 case "${kind}" in

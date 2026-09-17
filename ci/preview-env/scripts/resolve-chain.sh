@@ -93,9 +93,10 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # One pod waits for BOTH ceremonies (60m keygen + 40m crsgen, see
-      # apply-chain-env.sh), so helm must outlast their sum plus the hardhat compile.
-      echo "KEYGEN_TIMEOUT=110m"
+      # One pod waits for BOTH Default-parameter ceremonies (4h keygen + 1h
+      # crsgen, see apply-chain-env.sh), so Helm must outlast their sum plus
+      # the Hardhat compile while remaining below the six-hour deploy-job cap.
+      echo "KEYGEN_TIMEOUT=310m"
     } >> "${GITHUB_ENV}"
     echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
