@@ -8,7 +8,6 @@ import {
   type Instruction,
   type Slot,
   type TransactionSigner,
-  fetchEncodedAccount,
   getAddressDecoder,
 } from '@solana/kit';
 
@@ -29,16 +28,26 @@ export type WipeZamaHostParams = {
 
 /**
  * Fails unless the program is deployed and `payer` is its upgrade authority. The instruction
- * enforces the same, but a wipe that finds zero accounts never sends it, and a wrong profile or
- * cluster must not print a clean sweep.
+ * enforces the same, but a wipe that finds zero accounts never sends it, so an undeployed program
+ * id or a program held by another authority (a wrong profile or cluster) must not print a clean
+ * sweep. A deployed program with this authority and zero accounts still does; nothing here
+ * proves that its bytecode carries the instruction.
  */
 const assertUpgradeAuthority = async (context: HostDeployContext, params: WipeZamaHostParams): Promise<Address> => {
   const programData = await programDataAddressFor(params.programAddress);
-  const account = await fetchEncodedAccount(context.rpc, programData, { commitment: 'confirmed' });
-  if (!account.exists) throw new Error(`program ${params.programAddress} is not deployed`);
-  const hasAuthority = account.data[PROGRAM_DATA_AUTHORITY_OFFSET] === 1;
+  // The ProgramData account holds the whole bytecode; only its 45-byte metadata header is needed.
+  const { value } = await context.rpc
+    .getAccountInfo(programData, {
+      commitment: 'confirmed',
+      encoding: 'base64',
+      dataSlice: { offset: 0, length: PROGRAM_DATA_AUTHORITY_OFFSET + 1 + 32 },
+    })
+    .send();
+  if (value === null) throw new Error(`program ${params.programAddress} is not deployed`);
+  const header = Uint8Array.from(Buffer.from(value.data[0], 'base64'));
+  const hasAuthority = header[PROGRAM_DATA_AUTHORITY_OFFSET] === 1;
   const authority = hasAuthority
-    ? getAddressDecoder().decode(account.data, PROGRAM_DATA_AUTHORITY_OFFSET + 1)
+    ? getAddressDecoder().decode(header, PROGRAM_DATA_AUTHORITY_OFFSET + 1)
     : undefined;
   if (authority !== params.payer.address) {
     throw new Error(`deployer is not the upgrade authority of ${params.programAddress} (${authority ?? 'finalized'})`);

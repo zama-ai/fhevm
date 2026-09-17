@@ -512,6 +512,64 @@ fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
 }
 
 #[test]
+fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
+    // wipe.ts sends TARGETS_PER_TRANSACTION = 25 targets per transaction with no compute-budget
+    // instruction, so a full batch must fit the default 200k-unit transaction budget.
+    let admin = Pubkey::new_unique();
+    let (program_data, program_data_acct) = program_data_account(Some(admin));
+    let targets: Vec<Pubkey> = (0..25).map(|_| Pubkey::new_unique()).collect();
+    let mut seeded = vec![(program_data, program_data_acct)];
+    seeded.extend(targets.iter().map(|t| (*t, program_owned_account())));
+    let context = sweep_context(admin, seeded);
+    let admin_before = read_lamports(&context, admin);
+
+    let result = context.process_and_validate_instruction(
+        &close_owned_accounts_ix(admin, &targets),
+        &[Check::success()],
+    );
+
+    assert!(
+        result.compute_units_consumed < 200_000,
+        "25 targets used {} compute units",
+        result.compute_units_consumed
+    );
+    assert!(targets
+        .iter()
+        .all(|t| account_is_system_owned_and_empty(&context, *t)));
+    assert_eq!(
+        read_lamports(&context, admin),
+        admin_before + 25 * program_owned_account().lamports
+    );
+}
+
+#[test]
+fn mollusk_default_artifact_rejects_close_owned_accounts() {
+    // The feature gate is the whole point: the shipped `zama_host.so` must not dispatch the
+    // sweep discriminator, so this test loads the default artifact rather than the sweep build.
+    let admin = Pubkey::new_unique();
+    let owned = Pubkey::new_unique();
+    let (program_data, program_data_acct) = program_data_account(Some(admin));
+    let context = zama_solana_test_kit::svm(&host::id(), "zama_host").with_context(
+        std::collections::HashMap::from([
+            (admin, funded_system_account()),
+            (owned, program_owned_account()),
+            (program_data, program_data_acct),
+        ]),
+    );
+
+    context.process_and_validate_instruction(
+        &close_owned_accounts_ix(admin, &[owned]),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::InstructionFallbackNotFound,
+        )],
+    );
+    assert_eq!(
+        read_lamports(&context, owned),
+        program_owned_account().lamports
+    );
+}
+
+#[test]
 fn mollusk_close_owned_accounts_rejects_signer_who_is_not_upgrade_authority() {
     // `HostConfig.admin` is not enough: only the upgrade authority can wipe, so a rotated
     // config admin on a program it does not control cannot drain accounts.
