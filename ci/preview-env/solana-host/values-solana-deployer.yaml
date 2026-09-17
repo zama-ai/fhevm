@@ -1,0 +1,23 @@
+# sync-secrets values: preview-only Solana keypairs (1Password "Preview Env", item
+# "preview-env - Solana host keypairs (public Solana cluster)", mirrored into AWS Secrets
+# Manager). Each property holds one keypair file's JSON array. The deployer is the upgrade
+# authority of every preview program; the program keys are read on first deployment only.
+# Helm release name is the ExternalSecret name (solana-deployer).
+externalSecret:
+  enabled: true
+  targetSecretName: solana-deployer
+  data:
+    - keyReference: "zws-dev/preview-solana-host-keypairs"
+      propertyReference: deployer
+      secretKeyName: deployer
+    - keyReference: "zws-dev/preview-solana-host-keypairs"
+      propertyReference: zama_host
+      secretKeyName: zama_host
+    - keyReference: "zws-dev/preview-solana-host-keypairs"
+      propertyReference: confidential_token
+      secretKeyName: confidential_token
+  template:
+    data:
+      deployer.json: '{{ .deployer }}'
+      zama_host.json: '{{ .zama_host }}'
+      confidential_token.json: '{{ .confidential_token }}'

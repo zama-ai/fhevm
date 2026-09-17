@@ -1,0 +1,21 @@
+# sync-secrets values: Solana devnet RPC and Yellowstone gRPC (1Password "Preview Env",
+# item "Helius Devnet Solana RPC", mirrored into AWS Secrets Manager).
+# Helm release name is the ExternalSecret name (solana-rpc).
+externalSecret:
+  enabled: true
+  targetSecretName: solana-rpc
+  data:
+    - keyReference: "zws-dev/external-solana-rpcs"
+      propertyReference: solana-devnet-rpc-url
+      secretKeyName: rpc_url
+    - keyReference: "zws-dev/external-solana-rpcs"
+      propertyReference: solana-devnet-grpc-url
+      secretKeyName: grpc_url
+    - keyReference: "zws-dev/external-solana-rpcs"
+      propertyReference: solana-devnet-grpc-x-token
+      secretKeyName: grpc_x_token
+  template:
+    data:
+      rpc-url: '{{ .rpc_url }}'
+      grpc-url: '{{ .grpc_url }}'
+      grpc-x-token: '{{ .grpc_x_token }}'

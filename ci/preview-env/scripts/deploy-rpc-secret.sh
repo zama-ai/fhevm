@@ -6,6 +6,9 @@
 # Env: NAMESPACE, SYNC_SECRETS_CHART, SYNC_SECRETS_CHART_VERSION,
 # RPC_SECRET_NAME, ETH_FAUCET_SECRET_NAME, POLYGON_FAUCET_SECRET_NAME.
 set -euo pipefail
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci/preview-env/scripts/lib.sh
+source "${script_dir}/lib.sh"
 
 : "${NAMESPACE:?}"
 : "${SYNC_SECRETS_CHART:?}"
@@ -21,15 +24,9 @@ helm upgrade --install preview-eth-faucet "${SYNC_SECRETS_CHART}" --version "${S
 helm upgrade --install preview-polygon-faucet "${SYNC_SECRETS_CHART}" --version "${SYNC_SECRETS_CHART_VERSION}" \
   -n "${NAMESPACE}" -f ci/preview-env/testnets/values-polygon-faucet.yaml
 
-wait_es() {
-  local name="$1"
-  kubectl wait -n "${NAMESPACE}" "externalsecret/${name}" --for=condition=Ready --timeout=120s \
-    || { kubectl describe -n "${NAMESPACE}" "externalsecret/${name}" | tail -20; exit 1; }
-}
-
-wait_es preview-rpc
-wait_es preview-eth-faucet
-wait_es preview-polygon-faucet
+wait_external_secret preview-rpc
+wait_external_secret preview-eth-faucet
+wait_external_secret preview-polygon-faucet
 
 # Mask and write straight to GITHUB_ENV: ::add-mask:: must reach the step's own
 # stdout, so it cannot be emitted from inside a command substitution.

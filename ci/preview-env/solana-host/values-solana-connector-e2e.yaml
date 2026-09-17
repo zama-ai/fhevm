@@ -1,0 +1,14 @@
+# Merge after values-kms-connector-e2e.yaml for every KMS party.
+# hostChains is a list, which Helm replaces instead of merging, so deploy-preview.sh appends
+# connector-host-chain.yaml to each release's existing entries rather than restating them here.
+kmsConnectorKmsWorker:
+  env:
+    - name: SOLANA_RPC_URL
+      valueFrom:
+        secretKeyRef: {name: solana-rpc, key: rpc-url}
+    - name: SOLANA_PROOF_API_KEY
+      valueFrom:
+        secretKeyRef: {name: solana-proof-api, key: api-key}
+    - name: SOLANA_HOST_PROGRAM_ID
+      valueFrom:
+        configMapKeyRef: {name: solana-host-addresses, key: zama_host.address}

@@ -39,6 +39,14 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
+      deploy_solana:
+        description: "Also deploy the Solana host onto public Solana devnet, with one listener per coprocessor. Secrets come from AWS Secrets Manager via sync-secrets (ci/preview-env/solana-host/values-solana-*.yaml)."
+        type: boolean
+        default: false
+      deploy_example_programs:
+        description: "Also deploy the Solana example programs."
+        type: boolean
+        default: false
       build_images:
         description: "Build fresh images from the selected branch (the branch picked above via 'Use workflow from'). Uncheck to skip building entirely and deploy what the branch's merge-base with main runs."
         required: true
@@ -82,7 +90,7 @@ on:
           - "4"
           - "13"
       overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: solana_programs_version, host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
         required: false
         default: ""
       deploy_polygon:
@@ -105,9 +113,10 @@ on:
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
-  # workflow_dispatch: keyed on run_id, so manual runs never cancel each other.
-  group: pr-preview-deploy-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # Solana dispatches share the preview's Solana devnet program addresses, so they queue on one group
+  # (GitHub keeps one running and one pending run; a third dispatch replaces the pending one).
+  group: pr-preview-deploy-${{ inputs.deploy_solana && 'solana-devnet' || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ !inputs.deploy_solana }}
 
 permissions: {}
 
@@ -123,6 +132,8 @@ permissions: {}
 # relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
 ##############################################################################
 env:
+  DEPLOY_SOLANA: ${{ inputs.deploy_solana || 'false' }}
+  SOLANA_DEPLOY_EXAMPLE_PROGRAMS: ${{ inputs.deploy_example_programs || 'false' }}
   # How far back from the base commit to look for a published image before
   # failing.
   MAX_IMAGE_COMMIT_COUNT: "50"
@@ -222,6 +233,21 @@ jobs:
           OVERRIDES_RAW: ${{ inputs.overrides }}
           EVENT_NAME: ${{ github.event_name }}
         run: node ci/preview-env/scripts/parse-overrides.cjs
+      - name: Validate Solana topology
+        env:
+          BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only || 'false' }}
+          ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
+          BUILD_IMAGES: ${{ inputs.build_images || 'false' }}
+          OVERRIDES_JSON: ${{ steps.parse_overrides.outputs.overrides_json }}
+        run: |
+          if [[ "$DEPLOY_SOLANA" == true && ( "$CHAIN_MODE" != anvil || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
+            echo '::error::Solana preview currently requires Anvil host/gateway and one coprocessor fleet'; exit 1
+          fi
+          # No workflow publishes fhevm/solana-programs under a base-commit tag, so
+          # without a build the tag can only come from an explicit override.
+          if [[ "$DEPLOY_SOLANA" == true && ( "$BUILD_IMAGES" != true || "$BUILD_TEST_SUITE_ONLY" == true ) && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
+            echo '::error::Solana preview needs build_images=true with build_test_suite_only=false, or overrides.solana_programs_version'; exit 1
+          fi
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -343,6 +369,24 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
 
+  build-solana-programs:
+    name: build/solana-programs
+    needs: check-labels
+    if: >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.build_images == 'true' &&
+      needs.check-labels.outputs.build_test_suite_only != 'true' &&
+      inputs.deploy_solana == true
+    uses: ./.github/workflows/solana-programs-docker-build.yml
+    permissions:
+      contents: read # Checkout source in the shared image builder.
+      packages: write # Publish the deployment image.
+      id-token: write # Required by the shared manifest job.
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+
   build-gateway-contracts:
     name: build/gateway-contracts
     needs: check-labels
@@ -408,6 +452,7 @@ jobs:
     needs:
       - check-labels
       - build-host-contracts
+      - build-solana-programs
       - build-gateway-contracts
       - build-kms-connector
       - build-coprocessor
@@ -439,6 +484,7 @@ jobs:
           # Parsed overrides_json (always a JSON object). Image pins are empty
           # on pull_request; dispatch may set <component>_version keys.
           INPUTS: ${{ needs.check-labels.outputs.overrides_json }}
+          DEPLOY_SOLANA: ${{ inputs.deploy_solana || 'false' }}
           ACTOR: ${{ github.actor }}
           GHCR_USER: ${{ github.actor }}
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -605,7 +651,7 @@ jobs:
         with:
           repository: zama-ai/kms
           ref: ${{ env.KMS_REPO_REF }}
-          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }} # zizmor: ignore[secrets-outside-env] -- Repository checkout token, as in the existing preview bootstrap.
           persist-credentials: false
           sparse-checkout: |
             ci/scripts
@@ -1077,6 +1123,10 @@ jobs:
       # during DryRunStarted (BCS live, GCS must shadow computations > 0),
       # then again after versioning flips to v0.15 (green).
       ######################################################################
+      - name: Deploy Solana host and listener
+        if: env.DEPLOY_SOLANA == 'true'
+        run: bash ci/preview-env/solana-host/deploy-preview.sh
+
       - name: Deploy automated e2e test workflow
         if: env.AUTOMATED_TESTS == 'true'
         env:

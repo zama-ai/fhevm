@@ -1,0 +1,24 @@
+# Install once per coprocessor DB after canonical key generation, before starting its workers.
+# deploy-preview.sh appends DATABASE_URL for each coprocessor release.
+scDeploy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/solana-programs
+    tag: latest
+  configmap:
+    name: solana-coprocessor-registration
+  env:
+    - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
+    # The canonical EVM host chain whose keys the Solana chain shares (Anvil host, see deploy-preview.sh).
+    - {name: SOLANA_KEY_SOURCE_CHAIN_ID, value: "12345"}
+  deployCommands:
+    - node /app/cli.mjs coprocessor register
+  verifyContracts: false
+nodeSelector:
+  kubernetes.io/arch: amd64
+persistence:
+  enabled: false
+  volumeClaim:
+    create: false
+scUpgrade:
+  enabled: false
