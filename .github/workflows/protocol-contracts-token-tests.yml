@@ -71,7 +71,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: protocol-contracts/token
-        run: pnpm install --frozen-lockfile
+        run: make install
 
       - name: Check contract selectors
         working-directory: protocol-contracts/token
@@ -79,20 +79,20 @@ jobs:
 
       - name: Run lint
         working-directory: protocol-contracts/token
-        run: pnpm run lint
+        run: make lint-check
 
       - name: Run compile
         working-directory: protocol-contracts/token
-        run: pnpm run compile
+        run: make compile
 
       - name: Run unit tests
         working-directory: protocol-contracts/token
-        run: pnpm test
+        run: make test
 
       - name: Run coverage
         working-directory: protocol-contracts/token
-        run: pnpm run coverage
+        run: make coverage
 
       - name: Check coverage thresholds (core contracts only)
         working-directory: protocol-contracts/token
-        run: pnpm run coverage:check
+        run: make coverage-check

@@ -66,7 +66,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: protocol-contracts/pauserSetWrapper
-        run: npm ci
+        run: make install
 
       - name: Check contract selectors
         working-directory: protocol-contracts/pauserSetWrapper
@@ -78,8 +78,8 @@ jobs:
 
       - name: Run coverage
         working-directory: protocol-contracts/pauserSetWrapper
-        run: npm run coverage
+        run: make coverage
 
       - name: Check coverage thresholds (core contracts only)
         working-directory: protocol-contracts/pauserSetWrapper
-        run: npm run coverage:check
+        run: make coverage-check

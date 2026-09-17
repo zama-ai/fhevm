@@ -53,7 +53,7 @@ jobs:
 
       - name: Setup env
         working-directory: protocol-contracts/safe
-        run: cp .env.example.test .env.example
+        run: make setup-env
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
@@ -70,7 +70,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: protocol-contracts/safe
-        run: npm ci
+        run: make install
 
       - name: Check contract selectors
         working-directory: protocol-contracts/safe
@@ -78,7 +78,7 @@ jobs:
 
       - name: Run lint
         working-directory: protocol-contracts/safe
-        run: npm run prettier:check && npm run lint:sol
+        run: make lint-check
 
       - name: Run unit tests
         working-directory: protocol-contracts/safe

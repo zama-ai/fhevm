@@ -44,3 +44,26 @@ check-selectors:
 
 update-selectors:
 	forge selectors list | tail -n +2 > ./selectors.txt
+
+# ── CI entry points ─────────────────────────────────────────────────────────
+# Every step of this package's workflow is `make <target>`, so the same command
+# runs locally and in CI. These delegate to package.json rather than restating
+# the command, so there is one source of truth for what runs and one entry point
+# for how to run it.
+#
+# NOTE `lint-check` not `lint`: where a `lint` target already exists it runs the
+# --fix variants and REWRITES files, which is a local convenience and the wrong
+# thing for CI — a fixing lint step passes while hiding what it changed.
+install:
+	npm ci
+
+lint-check:
+	npm run lint
+
+coverage:
+	npm run coverage
+
+coverage-check:
+	npm run coverage:check
+
+.PHONY: install lint-check coverage coverage-check
