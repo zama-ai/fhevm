@@ -92,6 +92,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             previous_epoch: Some(previous_epoch),
             domain: Some(self.domain.clone()),
             extra_data: extra_data_v2_payload(event.kmsContextId, event.epochId),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
             signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }

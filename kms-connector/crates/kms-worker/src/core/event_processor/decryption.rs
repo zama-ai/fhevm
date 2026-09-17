@@ -579,6 +579,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
 
@@ -592,6 +593,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
             Ok(public_decryption_request.into())
