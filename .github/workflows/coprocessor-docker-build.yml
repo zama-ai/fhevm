@@ -114,6 +114,24 @@ jobs:
     permissions:
       contents: 'read' # Required so the reusable workflow can git ls-remote
 
+
+  # FILTERS AND SHARED CRATES
+  #
+  # A service's filter must list every crate it links, not just its own
+  # directory. When a filter misses one, the build is reported "skipped", the
+  # orchestration reads that as "no diff", and the stack silently runs a stale
+  # image for that service beside freshly built siblings.
+  #
+  # This is not hypothetical: a change to `fhevm-engine-common` -- linked by
+  # every worker -- once left gw-listener, tx-sender and zkproof-worker with no
+  # image at that commit, and an e2e run fell back to main's. It was only
+  # harmless because that change happened to be GPU-gated, so the stale images
+  # behaved identically on CPU.
+  #
+  # `src/coprocessor-build-filters.test.ts` in the fhevm CLI enforces this: it
+  # walks each service's Cargo manifests transitively and fails, naming the
+  # dependency, if a filter does not cover it. Add the path here when a new
+  # dependency appears; the test will tell you which one.
   check-changes-db-migration:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
     if: github.event_name == 'push' || inputs.is_workflow_call
@@ -152,6 +170,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-host-listener:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -170,6 +189,9 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - listener/crates/consumer/**
+          - listener/crates/shared/broker/**
+          - listener/crates/shared/primitives/**
 
   check-changes-sns-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -188,6 +210,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -227,6 +250,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-zkproof-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -263,6 +287,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-upgrade-controller:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
