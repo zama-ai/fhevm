@@ -77,7 +77,7 @@ const getDefaultRuntimeEnvironment = (): HardhatRuntimeEnvironment => {
  * ```typescript
  * const env = getHreByNetworkName("bsc-testnet");
  *
- * // All the ususal properties are present
+ * // All the usual properties are present
  * env.deployments.get("MyContract")
  * ```
  *
@@ -103,7 +103,7 @@ export const getHreByNetworkName: GetByNetwork<HardhatRuntimeEnvironment> = asyn
       context.environmentExtenders,
       environment.userConfig,
       context.providerExtenders,
-      // This is a bit annoying - the environmentExtenders are not stronly typed
+      // This is a bit annoying - the environmentExtenders are not strongly typed
       // so TypeScript complains that the properties required by HardhatRuntimeEnvironment
       // are not present on HardhatRuntimeEnvironmentImplementation
     ) as unknown as HardhatRuntimeEnvironment;

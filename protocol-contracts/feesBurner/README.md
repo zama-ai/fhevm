@@ -42,7 +42,7 @@ npx hardhat deploy --tags FeesSenderToBurner --network gateway-testnet
 You can verify the contracts on Etherscan with the following tasks:
 
 ```bash
-npx hardhat --network ethereum-testnet task:verifyProtocolFeesBurner --protocol-fees-burner <PROCOTOL_FEES_BURNER_ADDRESS>
+npx hardhat --network ethereum-testnet task:verifyProtocolFeesBurner --protocol-fees-burner <PROTOCOL_FEES_BURNER_ADDRESS>
 ```
 
 ```bash
