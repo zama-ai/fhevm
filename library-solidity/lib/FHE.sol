@@ -7521,16 +7521,18 @@ library FHE {
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(ebool value, address account) internal view returns (bool) {
-        return Impl.isAllowed(ebool.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(ebool value) internal view returns (bool) {
-        return Impl.isAllowed(ebool.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7570,24 +7572,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(ebool value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(ebool.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint8 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint8.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint8 value) internal view returns (bool) {
-        return Impl.isAllowed(euint8.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7627,24 +7632,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint8 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint8.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint16 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint16.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint16 value) internal view returns (bool) {
-        return Impl.isAllowed(euint16.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7684,24 +7692,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint16 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint16.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint32 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint32.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint32 value) internal view returns (bool) {
-        return Impl.isAllowed(euint32.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7741,24 +7752,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint32 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint32.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint64 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint64.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint64 value) internal view returns (bool) {
-        return Impl.isAllowed(euint64.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7798,24 +7812,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint64 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint64.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint128 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint128.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint128 value) internal view returns (bool) {
-        return Impl.isAllowed(euint128.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7855,24 +7872,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint128 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint128.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(eaddress value, address account) internal view returns (bool) {
-        return Impl.isAllowed(eaddress.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(eaddress value) internal view returns (bool) {
-        return Impl.isAllowed(eaddress.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7912,24 +7932,27 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(eaddress value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(eaddress.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(euint256 value, address account) internal view returns (bool) {
-        return Impl.isAllowed(euint256.unwrap(value), account);
+        return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
      * @dev Returns whether the sender is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isSenderAllowed(euint256 value) internal view returns (bool) {
-        return Impl.isAllowed(euint256.unwrap(value), msg.sender);
+        return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -7969,10 +7992,11 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(euint256 value) internal view returns (bool) {
-        return Impl.isPubliclyDecryptable(euint256.unwrap(value));
+        return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     /**
@@ -8379,57 +8403,89 @@ library FHE {
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(ebool value) internal pure returns (bytes32 ct) {
+    function toBytes32(ebool value) internal view returns (bytes32 ct) {
         ct = ebool.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Bool);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint8 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint8 value) internal view returns (bytes32 ct) {
         ct = euint8.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint8);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint16 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint16 value) internal view returns (bytes32 ct) {
         ct = euint16.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint16);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint32 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint32 value) internal view returns (bytes32 ct) {
         ct = euint32.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint32);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint64 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint64 value) internal view returns (bytes32 ct) {
         ct = euint64.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint64);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint128 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint128 value) internal view returns (bytes32 ct) {
         ct = euint128.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint128);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(eaddress value) internal pure returns (bytes32 ct) {
+    function toBytes32(eaddress value) internal view returns (bytes32 ct) {
         ct = eaddress.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint160);
+        }
     }
 
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
+    function toBytes32(euint256 value) internal view returns (bytes32 ct) {
         ct = euint256.unwrap(value);
+        if (ct != bytes32(0)) {
+            Impl.checkHandleType(ct, FheType.Uint256);
+        }
     }
 }

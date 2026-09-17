@@ -654,16 +654,18 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
     res.push(`
     /**
      * @dev Returns whether the account is allowed to use the value.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isAllowed(e${fheType.type.toLowerCase()} value, address account) internal view returns (bool) {
-      return Impl.isAllowed(e${fheType.type.toLowerCase()}.unwrap(value), account);
+      return Impl.isAllowed(toBytes32(value), account);
     }
 
     /**
     * @dev Returns whether the sender is allowed to use the value.
+    * Reverts if an initialized value does not match its declared FHE type.
     */
     function isSenderAllowed(e${fheType.type.toLowerCase()} value) internal view returns (bool) {
-      return Impl.isAllowed(e${fheType.type.toLowerCase()}.unwrap(value), msg.sender);
+      return Impl.isAllowed(toBytes32(value), msg.sender);
     }
 
     /**
@@ -703,10 +705,11 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
+     * Reverts if an initialized value does not match its declared FHE type.
      */
     function isPubliclyDecryptable(e${fheType.type.toLowerCase()} value) internal view returns (bool) {
-      return Impl.isPubliclyDecryptable(e${fheType.type.toLowerCase()}.unwrap(value));
+      return Impl.isPubliclyDecryptable(toBytes32(value));
     }
 
     `),
@@ -721,9 +724,13 @@ function generateToBytes32(fheTypes: AdjustedFheType[]): string {
     res.push(`
     /**
      * @dev Converts handle from its custom type to the underlying bytes32. Used when requesting a decryption.
+     * Reverts if an initialized value does not match its declared FHE type. Returns zero if uninitialized.
      */
-    function toBytes32(e${fheType.type.toLowerCase()} value) internal pure returns (bytes32 ct) {
+    function toBytes32(e${fheType.type.toLowerCase()} value) internal view returns (bytes32 ct) {
       ct = e${fheType.type.toLowerCase()}.unwrap(value);
+      if (ct != bytes32(0)) {
+        Impl.checkHandleType(ct, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
+      }
     }
     `),
   );
