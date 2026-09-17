@@ -1,4 +1,4 @@
-// sdk/js-sdk/src/wasm/tkms/v0.14.0-1/type-check.test.ts
+// sdk/js-sdk/src/wasm/tkms/v0.15.0-0/type-check.test.ts
 //
 // Verifies that this version's generated kms_lib module matches the canonical
 // API contract declared in ../KmsLibApi.d.ts. Any drift here is a hard type
