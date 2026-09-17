@@ -43,3 +43,13 @@ Note that, for now, we omit the Data Availability (DA) layer. It is still work i
 Since the coprocessor can extract data dependencies from the ingested events, it can use them to execute FHE computations in parallel.
 
 At the time of writing, the Coprocessor uses a simple policy to schedule FHE computation on multiple threads. More optimal policies will be introduced in the future and made configurable.
+
+## Slow Lane for Dependent Operations
+
+When a single chain submits a large burst of FHE operations that all depend on each other (a deep dependency chain), those operations must execute sequentially — they can starve other chains' operations from being processed.
+
+The **slow lane** is a scheduling mechanism that detects chains with an unusually high number of dependent operations per ingested block, and deprioritises them so that independent operations from other chains continue to make progress.
+
+A chain is placed in the slow lane when the number of dependent operations inserted for it in a single block exceeds the `dependentOpsMaxPerChain` threshold. Once the pressure drops, the chain is automatically promoted back to the normal lane.
+
+The slow lane is **disabled by default** (`dependentOpsMaxPerChain: 0`). See [Configuration](../../../getting_started/fhevm/coprocessor/configuration.md#slow-lane) for how to enable it.
