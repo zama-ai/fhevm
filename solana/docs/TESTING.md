@@ -138,7 +138,7 @@ Two rules the layer holds itself to:
 
 The harness (`e2e/harness/`):
 
-- `loadEnv()` → a `TestEnv` (RPC/WS/relayer/gateway URLs, the RFC-021 chain id, the zama-host
+- `loadEnv()` → a `TestEnv` (RPC/WS/relayer/gateway URLs, the DD-052 chain id, the zama-host
   program id, the user-decrypt context, the coprocessor DB container, the deployer
   keypair root, and capability flags `faucet` / `freshMints` / `fastSlots`). Its source today is the
   lifecycle-owned stack (env-var overridable); it is structured so a demo-config JSON or a

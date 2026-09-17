@@ -1,6 +1,6 @@
 # Solana PoC Design Decisions
 
-Last synced: 2026-09-11.
+Last synced: 2026-09-17.
 
 This document is the stable rationale index for the Solana FHEVM PoC: why the current design exists.
 Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
@@ -934,7 +934,7 @@ Reorg unwind may still be added for resource recovery, but is not an authorizati
 ## DD-026: Input / Identity Encoding (bytes32 non-EVM) and the Move To Typed User-Decrypt — RESOLVED
 
 Status: adopted (reconciliation) — the user-decrypt `extraData` debate is now RESOLVED (typed gateway
-fields).
+fields). The chain-type marker is superseded by DD-052.
 
 Context:
 
@@ -949,8 +949,8 @@ Decision:
 - Non-EVM bytes32 input via `InputVerification.verifyProofRequestSolana` + event
   `VerifyProofRequestSolana` (dapp/user are 32-byte host addresses; shares zkProofId + consensus with
   the EVM path; request stored in `solanaZkProofInputs` for bytes32 EIP-712 response validation).
-- **Chain-id high bit (bit 63)** marks a non-EVM chain id (`SOLANA_CHAIN_TYPE_BIT = 1 << 63`; relayer
-  `is_solana_host_chain_id`; the high bit survives into the chain-id word used in handle derivation).
+- Which `u64` is a Solana host chain id is DD-052. Relayer `is_solana_host_chain_id` still
+  tests bit 63.
 - The input's `extraData` is the **coprocessor cert's EIP-712 `CiphertextVerification` extraData** — it
   is NOT, and never was, the `0x03` Solana user-decrypt blob. The input identity itself is a plain
   bytes32 host address (no version-byte blob).
@@ -978,7 +978,7 @@ Decision:
 
 Why:
 
-A bytes32 identity + high-bit chain id keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
+A bytes32 identity plus a Solana chain id (DD-052) keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
 typed gateway fields make the Solana identity/auth request self-describing. The signed, versioned
 `extraData` tail remains the current transport for optional encrypted value account and MMR proof evidence.
 
@@ -992,7 +992,7 @@ nonce, or allowed-domain-key authorization.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation (didn't-work-then-fixed)
 
-Status: adopted (reconciliation)
+Status: adopted (reconciliation). The chain-type detector is superseded by DD-052.
 
 Context:
 
@@ -1006,15 +1006,15 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 
 Decision / fix:
 
-A **cross-field validator branches on `contracts_chain_id`** (via `is_solana_host_chain_id`, the bit-63
-convention): EVM-strict (non-empty contracts, exact EIP-712 130-hex signature) vs Solana-relaxed (empty
-contracts allowed, 128-or-130-char signature). Per-field validators stay permissive; strictness is
-enforced in the cross-field branch.
+A **cross-field validator branches on `contracts_chain_id`** via `is_solana_host_chain_id` (bit 63
+today; the predicate’s meaning is DD-052): EVM-strict (non-empty contracts, exact EIP-712 130-hex
+signature) vs Solana-relaxed (empty contracts allowed, 128-or-130-char signature). Per-field
+validators stay permissive; strictness is enforced in the cross-field branch.
 
 Why / what worked:
 
-Branching on the chain-type bit keeps EVM strictness intact while admitting Solana. The CI integration
-test that caught the regression now passes for both.
+Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
+test that caught the regression now passes for both. This entry only keeps that split.
 
 Open for debate:
 
@@ -1413,12 +1413,8 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Handle creation entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
-- The PoC sentinel `chain_id` is RESOLVED (zama-ai/fhevm-internal#1635): `SOLANA_POC_CHAIN_ID` now
-  carries the RFC-021 chain-type high bit (`SOLANA_CHAIN_TYPE_BIT | 12345`), and `initialize_host_config`
-  rejects a host `chain_id` without bit 63 set (and a `gateway_chain_id` with it set). The
-  low-63-bit allocation for canonical MAINNET/DEVNET Solana host chain ids remains a deployment-config
-  decision, tracked separately. `chain_id` names the Solana cluster. The Zama is the host program ID
-  (DD-051).
+- Solana `chain_id` encoding and the published cluster table: RESOLVED (DD-052). #1635's bit-63
+  sentinel is the current tree, not the decision.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
   per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life); its
   growth is bounded at 64 peaks (2229 bytes) for all time, so compaction is a rent question, not a
@@ -2447,7 +2443,7 @@ Localnet e2e uses the committed throwaway keypairs. That is CI, not a fifth Zama
 
 A handle binds `(program_id, chain_id)` and every host PDA is derived under `program_id`.
 `program_id` is the Zama, compiled as `crate::ID`. `chain_id` is the Solana cluster and lives in
-HostConfig. No PDA seed includes it. Two programs on Solana devnet therefore do not accept each
+HostConfig. The `u64` is DD-052. No PDA seed includes it. Two programs on Solana devnet therefore do not accept each
 other's proofs. EncryptedStore addresses already seed the app program, authority and
 scope under `crate::ID`. Putting HostConfig in those seeds would make a second config account a
 second Zama under one program ID, which this decision rejects.
@@ -2492,3 +2488,59 @@ upgrade bytecode in place on their own program IDs.
 Coprocessor `host_chains` uses `chain_id BIGINT PRIMARY KEY`. That collides only if one
 coprocessor database indexes both zama-devnet and zama-testnet. Separate databases, one per Zama,
 do not need a schema change. RFC 035 and RFC 036 do not change.
+
+## DD-052: A Solana chain id is type byte `0x01` plus a published cluster tag
+
+Status: adopted
+
+This entry fixes the target, not the current code. The tree still uses
+`SOLANA_POC_CHAIN_ID = (1 << 63) | 12345`, and `is_solana_host_chain_id` still tests bit 63.
+
+`chain_id` names the Solana cluster (DD-051), not a Zama. Preview on Solana devnet uses the
+solana-devnet row. Two Zamas on one cluster share the number and differ by `program_id`.
+
+The chain id is a `u64` because handle bytes 22–29 (`handle[22..30]` in Rust) and coprocessor
+`host_chains.chain_id BIGINT` already store that width. `host_chains` also checks
+`chain_id >= 0`. Type byte `0x01` stays a positive `BIGINT`. Bit 63 is a negative `i64` and
+would fail that check. EVM ids are unchanged (Sepolia `11155111`, Anvil `12345`): they sit
+below `2^56`, so their type byte reads as `0x00`.
+
+```text
+bits 56..63  chain type    0x00 = EVM, 0x01 = Solana
+bits  0..55  cluster tag
+```
+
+Public Solana rows take the first seven bytes of the cluster genesis hash (the raw 32-byte
+hash, big-endian), not the CAIP-2 32-character base58 prefix. Localnet has no stable genesis:
+`solana-test-validator --reset` mints a new one, so that row is a pinned sentinel. A type
+byte of `0x01` is outside JavaScript `Number` (`2^53`), as bit 63 already was. Solana ids
+travel as `bigint` or hex.
+
+| Row | Low 56 bits | `u64` |
+|---|---|---|
+| solana-mainnet | genesis `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` | `0x0145296998a6f8e2` |
+| solana-devnet | genesis `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG` | `0x01ce59db5080fc2c` |
+| solana-testnet | genesis `4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY` | `0x013a132ece10305e` |
+| localnet | pinned `12345`, not a hash | `0x0100000000003039` |
+
+This table is the only assignment, and no file in the tree holds it yet. The deploy workflow
+selects a row by its name, such as `solana-devnet`, and passes that one integer to
+`initialize_host_config`, the listener and the connector. Nothing invents a second integer.
+
+`initialize_host_config` today requires bit 63 set on the host `chain_id` and clear on
+`gateway_chain_id`. After the follow-up it will require type byte `0x01` and `0x00`.
+HostConfig then holds the chosen row. The listener, connector and relayer must use that
+same value. The listener today takes `chain_id` from its config and does not compare it to
+HostConfig (#1972). A deployment on a named public row may also compare RPC `getGenesisHash`
+with the hash above to confirm it is on the intended cluster, without that comparison defining
+the id.
+
+#1880 proposed this type byte and the genesis recipe. This entry accepts both and writes
+the numbers down. It rejects deriving localnet from RPC at boot, and it rejects treating
+“e2e targets any cluster” as part of the id.
+
+This entry supersedes the chain-type marker in DD-026, the bit-63 detector in DD-027,
+RFC-021’s high-bit reservation as the long-term marker, and the open-product #1635
+sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt. DD-027 still
+owns EVM-strict vs Solana-relaxed validation. Both keep calling `is_solana_host_chain_id`;
+this entry says what that predicate must become.
