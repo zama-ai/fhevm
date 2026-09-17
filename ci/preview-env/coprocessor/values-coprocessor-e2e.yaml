@@ -37,15 +37,10 @@ commonConfig:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
   protocolConfigContractAddress:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-  # Must be ws:// (not http://): both gwListener's --gw-url and txSender's
-  # --gateway-url alloy providers use ProviderBuilder::connect_ws/WsConnect
-  # (confirmed via coprocessor/fhevm-engine/{gw-listener/src/bin/gw_listener.rs,
-  # transaction-sender/src/bin/transaction_sender.rs}) - there's no separate
-  # ws/http split field here the way commonConfig.hostChain{Ws,Http}Url has for
-  # the host chain, since neither consumer needs an HTTP connection to the
-  # gateway. anvil serves both HTTP and WS on the same port (see
-  # ../gateway-chain/values-anvil-gateway-e2e.yaml's single `port: 8546`), so
-  # only the scheme changes, not the host:port.
+  # ws:// for the gw-listener (alloy WsConnect). The tx-sender needs http://
+  # since #3922 and gets it from txSender.config.gatewayUrl below. anvil serves
+  # both HTTP and WS on the same port (see ../gateway-chain/
+  # values-anvil-gateway-e2e.yaml's single `port: 8546`).
   gatewayUrl: {value: "ws://anvil-gateway-anvil-node:8546"}
   gatewayContractAddresses:
     inputVerification:
@@ -272,6 +267,10 @@ txSender:
   # gw-sc-addresses` - no multichain_acl.address key) - caused
   # CreateContainerConfigError without this.
   disabledArgs: ["multichain-acl-address"]
+  # The tx-sender speaks HTTP to the Gateway since #3922 and exits on a ws://
+  # URL; commonConfig.gatewayUrl stays ws:// for the gw-listener.
+  config:
+    gatewayUrl: {value: "http://anvil-gateway-anvil-node:8546"}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
