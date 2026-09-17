@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public.verify_proofs WHERE block_number >= $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb4716d3d81f6277200330125caa070cc7c6ce26ad0ecefbd6a828278153b991"
+}
