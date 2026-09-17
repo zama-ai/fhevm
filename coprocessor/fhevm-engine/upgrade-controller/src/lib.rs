@@ -1703,15 +1703,35 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
     // a missing `ciphertext_digest` entry. Block cutover until every pre-window PBS computation
     // is completed. Transient (the sns-worker clears it), so it shares the `PendingBcsUploads`
     // retry path.
+    //
+    // Excludes a PBS row whose handle's own computation is SETTLED via a terminal error (a
+    // stamp without the RETRYABLE marker, same test `check_dry_run_ready` uses): that handle's
+    // ciphertext will never exist, so the sns-worker will never complete the row and it would
+    // otherwise block every cutover attempt forever. A handle with no `computations` row at all
+    // (e.g. a directly-allowed input, never computed) is not excluded — nothing marks that case
+    // as unrecoverable, so it keeps blocking like any other still-pending row.
     let pbs_origins = PBS_COMPUTATION_TABLES
         .iter()
         .map(|pbs_table| {
+            let not_terminally_errored = COMPUTATION_TABLES
+                .iter()
+                .map(|comp_table| {
+                    format!(
+                        "SELECT 1 FROM public.{comp_table} c
+                          WHERE c.output_handle = p.handle
+                            AND c.is_error = true
+                            AND c.error_message NOT LIKE '%' || $1 || '%'"
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" UNION ALL ");
             format!(
                 "SELECT p.host_chain_id, p.handle
                    FROM public.{pbs_table} p
                    JOIN windows w ON w.host_chain_id = p.host_chain_id
                   WHERE p.block_number < w.start_block
-                    AND p.is_completed = false"
+                    AND p.is_completed = false
+                    AND NOT EXISTS ({not_terminally_errored})"
             )
         })
         .collect::<Vec<_>>()
@@ -1727,7 +1747,10 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
           GROUP BY host_chain_id
           ORDER BY host_chain_id"
     );
-    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_sql).fetch_all(&mut **tx).await?;
+    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_sql)
+        .bind(RETRYABLE_STAMP_MARKER)
+        .fetch_all(&mut **tx)
+        .await?;
     if !pbs_pending.is_empty() {
         let mut pbs_total: i64 = 0;
         for (chain_id, pending) in &pbs_pending {
@@ -4653,6 +4676,72 @@ mod tests {
         execute_cutover(&pool)
             .await
             .expect("cutover proceeds once the pre-window upload landed");
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// A pre-window PBS row whose handle's computation errored terminally must not block
+    /// cutover forever — its ciphertext will never exist, so the sns-worker will never
+    /// complete the row. A pre-window PBS row still genuinely in flight must keep blocking,
+    /// and cutover proceeds once it completes.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_skips_terminally_errored_pbs_pending_handles() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100
+
+        let errored = &[0xF1u8; 32][..]; // terminally errored computation
+        let pending = &[0xF2u8; 32][..]; // still genuinely in flight
+
+        sqlx::query(
+            "INSERT INTO computations
+                (output_handle, dependencies, fhe_operation, is_scalar,
+                 is_completed, is_error, error_message, host_chain_id, block_number)
+             VALUES ($1, ARRAY[]::bytea[], 0, false, false, true, 'terminal boom', 1, 50)",
+        )
+        .bind(errored)
+        .execute(&pool)
+        .await
+        .expect("seed terminally errored computation");
+
+        sqlx::query(
+            "INSERT INTO computations
+                (output_handle, dependencies, fhe_operation, is_scalar,
+                 is_completed, is_error, host_chain_id, block_number)
+             VALUES ($1, ARRAY[]::bytea[], 0, false, false, false, 1, 50)",
+        )
+        .bind(pending)
+        .execute(&pool)
+        .await
+        .expect("seed pending computation");
+
+        for handle in [errored, pending] {
+            sqlx::query(
+                "INSERT INTO pbs_computations (handle, host_chain_id, block_number, is_completed)
+                 VALUES ($1, 1, 50, false)",
+            )
+            .bind(handle)
+            .execute(&pool)
+            .await
+            .expect("seed pbs_computations");
+        }
+
+        let err = execute_cutover(&pool)
+            .await
+            .expect_err("cutover must refuse while the genuinely pending PBS row remains");
+        assert!(
+            matches!(err, Error::PendingBcsUploads { pending: 1 }),
+            "the terminally errored handle must not count towards pending, got: {err:?}"
+        );
+
+        sqlx::query("UPDATE pbs_computations SET is_completed = true WHERE handle = $1")
+            .bind(pending)
+            .execute(&pool)
+            .await
+            .expect("complete the genuinely pending PBS row");
+
+        execute_cutover(&pool)
+            .await
+            .expect("cutover proceeds once the only genuinely pending PBS row completes");
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
 
