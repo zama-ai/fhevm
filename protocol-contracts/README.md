@@ -14,12 +14,12 @@ first package lands.
 
 | Package | Description | Status |
 | --- | --- | --- |
-| `staking` | Operator and protocol staking vaults, and the rewarder that distributes to them | to move |
-| `governance` | The cross-chain governance path — an Aragon DAO on Ethereum driving LayerZero OApp senders and receivers | to move |
-| `safe` | Per-chain Safe and the admin module that lets a governance message execute locally | to move |
-| `token` | The `$ZAMA` token and its LayerZero OFT deployments | to move |
+| `staking` | Operator and protocol staking vaults, and the rewarder that distributes to them | moved |
+| `governance` | The cross-chain governance path — an Aragon DAO on Ethereum driving LayerZero OApp senders and receivers | moved |
+| `safe` | Per-chain Safe and the admin module that lets a governance message execute locally | moved |
+| `token` | The `$ZAMA` token and its LayerZero OFT deployments | moved |
 | `feesBurner` | Receives protocol fees and burns them | moved |
-| `pauserSetWrapper` | Wraps the pauser set so governance can administer it | to move |
+| `pauserSetWrapper` | Wraps the pauser set so governance can administer it | moved |
 
 The Solana OFT programs are tracked separately, since they cannot live inside an EVM package —
 [`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352).
