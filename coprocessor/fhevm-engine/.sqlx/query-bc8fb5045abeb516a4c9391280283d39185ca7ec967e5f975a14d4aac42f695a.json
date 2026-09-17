@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n            SELECT 1 FROM public.drifted_handle d\n             WHERE d.reason = 'ct64_mismatch' AND d.healed_at IS NULL\n               AND (\n                    (d.consensus_epoch = $1 AND NOT d.is_contained)\n                    OR (\n                        d.consensus_epoch <> $1\n                        AND NOT EXISTS (\n                            SELECT 1 FROM public.drifted_handle cur\n                             WHERE cur.consensus_epoch = $1\n                               AND cur.host_chain_id = d.host_chain_id\n                               AND cur.handle = d.handle\n                               AND cur.reason = 'ct64_mismatch'\n                        )\n                        AND (\n                            (\n                                NOT EXISTS (\n                                    SELECT 1 FROM ciphertexts ct\n                                     WHERE ct.handle = d.handle\n                                       AND octet_length(ct.ciphertext) > 0\n                                )\n                                AND EXISTS (\n                                    SELECT 1 FROM computations c\n                                     WHERE c.host_chain_id = d.host_chain_id\n                                       AND c.dependencies @> ARRAY[d.handle]::bytea[]\n                                )\n                            )\n                            OR (\n                                d.local_ct64_digest IS NOT NULL\n                                AND EXISTS (\n                                    SELECT 1 FROM ciphertext_digest cd\n                                     WHERE cd.handle = d.handle\n                                       AND cd.ciphertext = d.local_ct64_digest\n                                )\n                            )\n                        )\n                    )\n               )\n        ) AS \"pending!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bc8fb5045abeb516a4c9391280283d39185ca7ec967e5f975a14d4aac42f695a"
+}

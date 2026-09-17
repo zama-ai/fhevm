@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM public.drifted_handle\n            WHERE consensus_epoch = $1 AND version = $2 AND coprocessor_context_id = $3\n              AND host_chain_id = $4 AND block_hash = $5 AND handle = $6\n              AND reason = 'ct64_mismatch'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cb3156e46ff4e12e0673e4dd9c9b0944c72c9de348b9159e07008e96bf9135e6"
+}
