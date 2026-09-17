@@ -4,6 +4,7 @@ pub mod chain_id;
 pub mod crs;
 pub mod database;
 pub mod db_keys;
+pub mod drift_containment;
 pub mod drift_revert;
 pub mod gcs_activation;
 pub mod gpu_arch;
