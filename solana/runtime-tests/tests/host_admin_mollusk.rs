@@ -528,7 +528,7 @@ fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
     let admin_before = read_lamports(&context, admin);
     let ix = close_owned_accounts_ix(admin, &targets);
 
-    let message = solana_sdk::message::Message::new(&[ix.clone()], Some(&admin));
+    let message = solana_sdk::message::Message::new(std::slice::from_ref(&ix), Some(&admin));
     let transaction_bytes =
         1 + 64 * usize::from(message.header.num_required_signatures) + message.serialize().len();
     assert!(
