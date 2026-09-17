@@ -75,6 +75,17 @@ green_values() {
   cp "${values_dir}/values-coprocessor-e2e.yaml" "${out}"
   BLUE="${blue}" yq -i '.commonConfig = load(strenv(BLUE)).commonConfig
     | .chains = [load(strenv(BLUE)).chains[] | select(.name == "host")]' "${out}"
+  # The checkout's gatewayUrl is the anvil one; CI rewrites it per chain mode in apply-chain-env.sh,
+  # which never runs here. Blue's own value is ws:// and the 0.15 tx-sender rejects that, so take
+  # the HTTP endpoint from a deployed 0.15 kms-connector instead.
+  local gw_http
+  gw_http=$(kubectl get deploy -n "${NAMESPACE}" kms-connector-1-kms-connector-tx-sender \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KMS_CONNECTOR_GATEWAY_URL")].value}' 2>/dev/null || true)
+  if [[ -n "${gw_http}" ]]; then
+    GW="${gw_http}" yq -i '.txSender.config.gatewayUrl.value = strenv(GW)' "${out}"
+  else
+    echo "::warning::could not resolve the gateway HTTP URL from kms-connector; Green keeps ${values_dir}'s default" >&2
+  fi
   echo "${out}"
 }
 
