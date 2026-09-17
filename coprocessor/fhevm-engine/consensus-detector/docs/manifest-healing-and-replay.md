@@ -1,7 +1,11 @@
 # Manifest healing and replay
 
 Status: containment propagation, TFHE scheduling/result checks, and healing-state
-fields are implemented. Healing workers remain planned.
+fields are implemented. The healing worker downloads known-source ct64 and
+installs it locally. Inferred rows start with no target and no sources; a live
+attestation quorum pins both, then GETs. A digest mismatch HEADs the same way.
+A new quorum digest or an unavailable pinned target is counted and retried.
+SNS/publication repair remain planned.
 
 Healing is local emergency recovery. It prevents further ct64 contamination,
 replaces erroneous local ciphertexts with quorum-identical material, and lets
@@ -54,8 +58,10 @@ when uncontained ct64 findings remain, without awaiting it. No startup scan or p
 The detached task logs errors; they do not change the committed verification
 result or consume another verification attempt. TFHE batches participate in the shared barrier and check containment before
 scheduling and result persistence. Freeze records `tx_unlock_potential`, an EMA
-of the per-batch unlock share of each drifted handle. Evidence collection and
-local repair are not implemented.
+of the per-batch unlock share of each drifted handle. Verification stores the
+quorum group's pinned registry S3 URLs on `peer_sources` and records the
+registry pin plus quorum ct64 statements on `target_evidence`. A matching
+download installs the ct64 and sets `healed_at` in one transaction.
 
 An interrupted or failed call can leave additional contaminated computations.
 This is an accepted containment delay: all outputs remain subject to manifest
@@ -88,9 +94,11 @@ ct64-repair reason (ct64 mismatch, missing, error, or uncomputed here). It does 
 promise a downloadable source. Ct128-only, peer-side, and metadata-only reasons
 cannot enable ct64 replacement. Inferred outputs use `ct64_mismatch`; obtaining a
 target does not change their origin. A later verified observation of the same
-handle COALESCE-pins `target_ct64_digest` onto that inferred row and does not
-insert a second finding. Repeated observations do not overwrite a
-pinned healing candidate's target, claim, priority, or origin.
+handle COALESCE-pins the quorum descriptor (`target_ct64_digest` and computed
+`target_keyset_id` / `target_ct128_*`), sources, and evidence onto that
+inferred row (`ON CONFLICT` on handle identity) and does not insert a second
+finding. Repeated observations do not overwrite a pinned healing candidate's
+target, claim, priority, or origin.
 
 An operation that failed while depending on drifted material is also recorded as
 `inferred` with reason `ct64_mismatch`, and `local_present = false` when no local
@@ -116,9 +124,13 @@ TFHE scheduling and result writing participate in the same query and lock
 contract through the shared barrier key and their frozen inventory.
 The worker-side integration uses the shared barrier and the frozen inventory. The containment
 directory holds the propagation functions. The healing worker starts with publication and
-verification: it LISTENs on `event_healing_work` and polls every 30s, then claims due
-`can_be_healed` rows and downloads matching ct64 from peer buckets. Local installation
-is not implemented yet.
+verification: it LISTENs on `event_healing_work` and polls on
+`--manifest-healing-poll-interval` (default **30s**), then picks up to
+`--manifest-healing-batch-size` (default **8**) due `can_be_healed` rows and
+downloads matching ct64 from peer buckets concurrently. A matching GET
+writes `ciphertexts` and `healed_at` in the same transaction. A pass that
+installs at least one handle NOTIFYs `work_available` once so idle TFHE
+picks unfrozen dependents without waiting for its poll.
 
 ## Containment
 
