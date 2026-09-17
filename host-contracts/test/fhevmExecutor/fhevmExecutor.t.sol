@@ -1974,6 +1974,65 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
+    function test_FheDivAndRemRejectOutOfRangeDivisorsWithNonzeroLowBits() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            // 2^width + 1 would truncate to one, but must still fail the range check.
+            bytes32 rhs = bytes32(_maxScalar(types[t]) + 2);
+
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheDiv(lhs, rhs, 0x01);
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheRem(lhs, rhs, 0x01);
+        }
+    }
+
+    function test_FheDivAndRemRejectMalformedScalarFlagsBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        bytes1[2] memory scalarFlags = [bytes1(0x02), bytes1(0xff)];
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < scalarFlags.length; ++f) {
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    fhevmExecutor.fheDiv(lhs, divisors[d], scalarFlags[f]);
+                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    fhevmExecutor.fheRem(lhs, divisors[d], scalarFlags[f]);
+                }
+            }
+        }
+    }
+
+    function test_FheDivAndRemCheckACLBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                lhs,
+                address(this)
+            );
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheDiv(lhs, divisors[d], 0x01);
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheRem(lhs, divisors[d], 0x01);
+            }
+        }
+    }
+
     function test_RevertsIfFheDivRHSIsNotScalar() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
@@ -2497,6 +2556,104 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
             fhevmExecutor.fheMulDiv(factor1, bytes32(0), bytes32(uint256(1)), FHE_MUL_DIV_FACTOR2_SCALAR);
             vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
             fhevmExecutor.fheMulDiv(factor1, bytes32(maximum + 1), bytes32(uint256(1)), FHE_MUL_DIV_FACTOR2_SCALAR);
+        }
+    }
+
+    function test_FheMulDivRejectsMalformedScalarFlagsBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        bytes1[3] memory scalarFlags = [bytes1(0x00), bytes1(0x02), bytes1(0xff)];
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            _approveHandleInACL(factor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < scalarFlags.length; ++f) {
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
+                    fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], scalarFlags[f]);
+                }
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor1ACLBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 encryptedFactor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(encryptedFactor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                factor1,
+                address(this)
+            );
+
+            for (uint256 mode; mode < 2; ++mode) {
+                bytes1 scalarByte = mode == 0 ? FHE_MUL_DIV_FACTOR2_ENCRYPTED : FHE_MUL_DIV_FACTOR2_SCALAR;
+                bytes32 factor2 = mode == 0 ? encryptedFactor2 : bytes32(uint256(1));
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(expectedError);
+                    fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], scalarByte);
+                }
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor2ACLBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                factor2,
+                address(this)
+            );
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor2TypeBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[(t + 1) % types.length]);
+            _approveHandleInACL(factor1, address(this));
+            _approveHandleInACL(factor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
+                fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+            }
+        }
+    }
+
+    function test_FheMulDivChecksScalarFactorRangeBeforeZeroDivisor() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[2] memory invalidFactors = [bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < invalidFactors.length; ++f) {
+                vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+                fhevmExecutor.fheMulDiv(factor1, invalidFactors[f], bytes32(0), FHE_MUL_DIV_FACTOR2_SCALAR);
+            }
         }
     }
 
