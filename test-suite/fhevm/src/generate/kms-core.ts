@@ -42,7 +42,7 @@ import { GENERATED_CONFIG_DIR } from "../layout";
 
 /** Knobs the generator needs that come from the surrounding stack (S3, image tag). */
 export type KmsRenderOptions = {
-  coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
+  coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
   s3Endpoint: string; // e.g. http://minio:9000
   s3Bucket: string; // e.g. kms-public
   s3Region: string; // e.g. eu-west-1
@@ -51,9 +51,12 @@ export type KmsRenderOptions = {
 };
 
 /** Render options from the resolved core image version + fhevm minio defaults
- * (the static test credentials from templates/env/.env.minio). */
+ * (the static test credentials from templates/env/.env.minio).
+ *
+ * The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
+ */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
-  coreImage: `ghcr.io/zama-ai/kms/core-service:${coreVersion}`,
+  coreImage: `ghcr.io/zama-ai/kms/core-service-insecure:${coreVersion}`,
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",
