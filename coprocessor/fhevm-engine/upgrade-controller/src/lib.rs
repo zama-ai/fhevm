@@ -70,6 +70,24 @@ pub use fhevm_engine_common::versioning::EVENT_STACK_VERSION_UPGRADED;
 const READINESS_CONFIRMATIONS: i64 = 10_000;
 const NO_READINESS_ATTEMPT: i64 = -2;
 
+/// If the chain tip pulls this many blocks ahead of `start_block` while GCS is
+/// still waiting on [`check_dry_run_ready`], the attempt is abandoned as failed
+/// rather than waited on forever. That check requires a `host_chain_blocks_valid`
+/// row at `start_block` with `block_status = 'finalized'`, and the host-listener
+/// prunes finalized rows once they fall [`READINESS_CONFIRMATIONS`] (== the
+/// host-listener's `BLOCKS_VALID_RETENTION`, 10_000) blocks behind the tip — after
+/// that, readiness can never become true again. Comfortably inside that margin so
+/// the attempt fails, and the dry-run can be retried, while the row (and the
+/// `computations` window readiness also needs) still exist.
+const DRY_RUN_READINESS_STALE_BLOCKS: i64 = 1_000;
+
+/// True once the chain tip has pulled more than [`DRY_RUN_READINESS_STALE_BLOCKS`]
+/// ahead of `start_block` — see that constant for why this must fire well before
+/// the finalized `start_block` row can be pruned out from under the readiness check.
+fn dry_run_readiness_is_stale(tip: i64, start_block: i64) -> bool {
+    tip.saturating_sub(start_block) > DRY_RUN_READINESS_STALE_BLOCKS
+}
+
 /// Substring that marks a `computations.error_message` as a RETRYABLE stamp
 /// rather than a terminal one. Must stay in sync with `tfhe-worker`'s
 /// `RETRYABLE_STAMP_MARKER` (the canonical definition; it is `pub(crate)` there
@@ -563,10 +581,11 @@ async fn prune_gcs_computations_before_start(
 /// Additionally requires `start_block` itself to be `finalized` (a
 /// `host_chain_blocks_valid` row at that height with `block_status = 'finalized'`),
 /// so the dry-run window is anchored on a settled block, not one that could still
-/// be reorged out. This row must never be pruned while a GCS upgrade needs it —
-/// see the `upgrade_state` guard in `prune_finalized_block_history` — otherwise
-/// this hard requirement would deadlock forever once the row ages past the
-/// retention window.
+/// be reorged out. `prune_finalized_block_history` has no guard keeping this row
+/// around: once the tip pulls `BLOCKS_VALID_RETENTION` blocks past `start_block`
+/// it is prunable like any other old row, and this predicate would then stay
+/// false forever. [`wait_until_dry_run_ready`] is what breaks that deadlock — see
+/// [`dry_run_readiness_is_stale`].
 async fn check_dry_run_ready(
     pool: &Pool<Postgres>,
     chain_id: i64,
@@ -625,15 +644,34 @@ async fn check_dry_run_ready(
     Ok(ready)
 }
 
+/// The host-listener's own watermark for `chain_id`: `MAX(block_number)` over
+/// `host_chain_blocks_valid`, the same value [`check_dry_run_ready`]'s check 1
+/// reads. Used as the chain tip [`dry_run_readiness_is_stale`] compares
+/// `start_block` against — a missing watermark reads as `-1`, never stale.
+async fn host_chain_tip(pool: &Pool<Postgres>, chain_id: i64) -> Result<i64, sqlx::Error> {
+    let (tip,): (i64,) = sqlx::query_as(
+        "SELECT COALESCE(
+             (SELECT MAX(block_number) FROM public.host_chain_blocks_valid WHERE chain_id = $1),
+             -1
+         )",
+    )
+    .bind(chain_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(tip)
+}
+
 /// GCS-only loop. Polls `check_dry_run_ready`, re-triggered by every
 /// `event_new_block` and `event_ciphertext_computed` notification.
 ///
 /// Returns `Ok(true)` once readiness is satisfied — the caller then prunes the
 /// GCS snapshot and performs the `DryRunStarted` transition (the internal
 /// "upgrade activated" spawn). Returns `Ok(false)` if it exits for any other
-/// reason: cancellation, or another path having already moved the GCS row out
-/// of `UpgradeActivated`. In the `false` case the caller skips pruning and the
-/// transition.
+/// reason: cancellation, another path having already moved the GCS row out of
+/// `UpgradeActivated`, or [`dry_run_readiness_is_stale`] tripping and this loop
+/// itself failing the attempt via [`rollback_dry_run`] — see that constant for
+/// why readiness can otherwise deadlock forever. In the `false` case the caller
+/// skips pruning and the transition.
 async fn wait_until_dry_run_ready(
     pool: Pool<Postgres>,
     cancel: CancellationToken,
@@ -699,14 +737,40 @@ async fn wait_until_dry_run_ready(
                 info!(chain_id, start_block, "Dry-run readiness satisfied");
                 return Ok(true);
             }
-            Ok(false) => {
-                debug!(
+            Ok(false) => match host_chain_tip(&pool, chain_id).await {
+                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => {
+                    warn!(
+                        chain_id,
+                        start_block,
+                        tip,
+                        stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
+                        "dry-run readiness stalled too far behind the chain tip — \
+                             failing the attempt"
+                    );
+                    match rollback_dry_run(
+                        &pool,
+                        proposal_id,
+                        proposal_block,
+                        None,
+                        "dry_run_readiness_stalled",
+                    )
+                    .await
+                    {
+                        Ok(_) => return Ok(false),
+                        Err(e) => error!(
+                            error = %e,
+                            "failed to fail the stalled dry-run attempt; will retry"
+                        ),
+                    }
+                }
+                Ok(_) => debug!(
                     chain_id,
                     from_block,
                     start_block,
                     "Dry-run readiness not yet satisfied; waiting for next notification"
-                );
-            }
+                ),
+                Err(e) => error!(error = %e, "failed to read chain tip for staleness check"),
+            },
             Err(e) => {
                 error!(error = %e, "Readiness check query failed; will retry on next notification");
             }
@@ -2311,14 +2375,21 @@ async fn try_cutover_if_consensus(
 }
 
 /// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake
-/// workers. Scoped to both the proposal and its maximum end block, which is the
-/// attempt identity carried by the detector's timeout notification. Returns
-/// whether it acted.
+/// workers. Returns whether it acted.
+///
+/// When `timeout_end_block` is `Some`, the rollback is additionally scoped to the
+/// proposal's maximum end block — the attempt identity carried by the detector's
+/// timeout notification, guarding against a late notification acting on a newer
+/// attempt. `None` skips that guard, for callers (like
+/// [`wait_until_dry_run_ready`]'s staleness check) that already hold a
+/// freshly-read, matching `(proposal_id, proposal_block)` and have no comparable
+/// end-block token to check.
 async fn rollback_dry_run(
     pool: &Pool<Postgres>,
     proposal_id: &[u8],
     proposal_block: i64,
-    timeout_end_block: i64,
+    timeout_end_block: Option<i64>,
+    last_error: &str,
 ) -> Result<bool, Error> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
@@ -2334,7 +2405,7 @@ async fn rollback_dry_run(
         r#"
         UPDATE upgrade_state u
            SET state = 'PAUSED', status = 'failed',
-               last_error = 'unanimity_consensus_timeout',
+               last_error = $4,
                host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                gw_dry_run_started = FALSE,
                -- Cleared with the latches: the rolled-back window's schema is dropped, and the
@@ -2347,19 +2418,20 @@ async fn rollback_dry_run(
            AND u.state IN ('UpgradeActivated', 'DryRunStarted')
            AND u.proposal_id = $1
            AND COALESCE(u.proposal_block, -1) = $2
-           AND $3 = (
+           AND ($3::BIGINT IS NULL OR $3 = (
                SELECT MAX(w.end_block)
                  FROM upgrade_state w
                 WHERE w.stack_role = u.stack_role
                   AND w.proposal_id = u.proposal_id
                   AND COALESCE(w.proposal_block, -1) =
                       COALESCE(u.proposal_block, -1)
-           )
+           ))
         "#,
     )
     .bind(proposal_id)
     .bind(proposal_block)
     .bind(timeout_end_block)
+    .bind(last_error)
     .execute(&mut *tx)
     .await?;
     if claimed.rows_affected() == 0 {
@@ -2768,7 +2840,8 @@ pub async fn handle_unanimity_consensus_timeout(
         pool,
         &payload.proposal_id,
         proposal_block,
-        payload.block_height,
+        Some(payload.block_height),
+        "unanimity_consensus_timeout",
     )
     .await?
     {
@@ -3188,6 +3261,21 @@ mod tests {
         assert_eq!(hex_encode(&bytes), "0001abff");
     }
 
+    #[test]
+    fn dry_run_readiness_is_stale_trips_past_the_threshold() {
+        let start_block = 100;
+        assert!(!dry_run_readiness_is_stale(
+            start_block + DRY_RUN_READINESS_STALE_BLOCKS,
+            start_block
+        ));
+        assert!(dry_run_readiness_is_stale(
+            start_block + DRY_RUN_READINESS_STALE_BLOCKS + 1,
+            start_block
+        ));
+        // A tip that never advanced (or an unseen watermark reading -1) is never stale.
+        assert!(!dry_run_readiness_is_stale(-1, start_block));
+    }
+
     /// Regression test for the cutover merge `ON CONFLICT` targets drifting away
     /// from the live primary keys. After `collapse_overlapping_unique_keys`, the
     /// PKs on `public.ciphertexts` and `public.ciphertext_digest` became
@@ -3414,6 +3502,62 @@ mod tests {
         assert!(
             marker_exists(&pool).await,
             "a duplicate timeout must not reset the schema again"
+        );
+    }
+
+    /// If the chain tip pulls more than [`DRY_RUN_READINESS_STALE_BLOCKS`] ahead of
+    /// `start_block` while readiness is still unmet, the loop itself fails the
+    /// attempt (PAUSED/failed, schema reset) instead of polling forever toward a
+    /// `start_block` row that will eventually be pruned out from under it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn wait_until_dry_run_ready_fails_a_stalled_attempt() {
+        use sqlx::Row;
+        use tokio::time::{timeout, Duration};
+
+        let (_instance, pool) = test_pool().await;
+
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // chain_id = 1, start_block = 100
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        create_marker(&pool).await;
+
+        // The chain tip is far past start_block, but start_block itself was never
+        // ingested/finalized — readiness can never become true.
+        let tip = 100 + DRY_RUN_READINESS_STALE_BLOCKS + 1;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, $2, 'finalized')",
+        )
+        .bind(&[0xB1u8; 32][..])
+        .bind(tip)
+        .execute(&pool)
+        .await
+        .expect("seed host_chain_blocks_valid tip");
+
+        let ready = timeout(
+            Duration::from_secs(10),
+            wait_until_dry_run_ready(pool.clone(), CancellationToken::new(), &[0x02], 10, 1, 100),
+        )
+        .await
+        .expect("readiness loop did not exit")
+        .expect("readiness loop failed");
+        assert!(!ready, "a stalled attempt must not report readiness");
+
+        assert!(
+            !marker_exists(&pool).await,
+            "a stalled attempt must reset the gcs schema like any other rollback"
+        );
+
+        let row = sqlx::query(
+            "SELECT state, status, last_error FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("GCS row");
+        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
+        assert_eq!(
+            row.try_get::<String, _>("last_error").unwrap(),
+            "dry_run_readiness_stalled"
         );
     }
 
@@ -4690,8 +4834,16 @@ mod tests {
         };
 
         let rollback_pool = pool.clone();
-        let mut rollback =
-            tokio::spawn(async move { rollback_dry_run(&rollback_pool, &[0x02], 10, 200).await });
+        let mut rollback = tokio::spawn(async move {
+            rollback_dry_run(
+                &rollback_pool,
+                &[0x02],
+                10,
+                Some(200),
+                "unanimity_consensus_timeout",
+            )
+            .await
+        });
 
         assert!(
             timeout(Duration::from_millis(200), &mut rollback)
