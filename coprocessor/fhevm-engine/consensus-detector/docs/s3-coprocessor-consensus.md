@@ -7,8 +7,10 @@ This document describes the manifest publisher and verifier implemented by
 and archives manifests. It does not change execution, Gateway voting, decryption
 readiness, ciphertext retrieval, or local state after drift.
 
-Cross-height localization, healing, replay, signed summaries, and cleanup
-are deferred and are not part of the current operational protocol.
+Deferred cross-height localization, healing, replay, signed summaries, and cleanup
+are specified separately in
+[Manifest healing and replay](manifest-healing-and-replay.md). Statements in that
+document are not part of the current operational protocol.
 
 ## Purpose
 
@@ -38,7 +40,7 @@ and peer verification.
 | Registry | `gw-listener` persists a complete `GatewayConfig` snapshot at startup, on relevant events, and periodically | A registry independent of Gateway |
 | Peer download | Delayed durable tasks, pinned registry data, per-peer rows, bounded retries, claims, bounded bodies, highest-authenticated-revision selection, and range-directed manifest retrieval for historical drift localization | Cross-height discovery when peers use different cadences; periodic reopening after exhaustion |
 | Comparison | Exact detailed and historical block ranges are grouped by digest; any visible difference is drift; quorum separately identifies a remediation reference; every attempt and every divergent range's digest groups are persisted | Persisted uncovered intervals and cross-height evidence |
-| Drift inventory | Handle-level local/observed differences, explanations, quorum attribution, task-order guards, and remission on a later concordant task | Automatic repair or revert |
+| Drift inventory | Handle-level local/observed differences, explanations, quorum attribution, and task-order guards. Later concordance does not close rows | Automatic repair or revert |
 | External output | Signed manifests | Signed consensus summaries, public drift reports, and status tags |
 | Operations | Structured logs, durable audit state, publication/download/verification counters, queue and drift gauges, and registry-refresh health metrics | Alert definitions, cleanup, and production replay controls |
 
@@ -408,7 +410,7 @@ Quorum and drift answer different questions:
 If every coprocessor publishes a different value, every coprocessor is drifted and
 there is no remediation reference.
 
-### 6. Persist handle findings and remission
+### 6. Persist handle findings
 
 For a different detailed range, the verifier compares blocks, then merges the two
 canonical handle lists. A `drifted_handle` row represents:
@@ -441,10 +443,11 @@ detailed blocks and handles. Missing covering material leaves explicit unknown
 ranges and makes localization incomplete. Discovering equivalent evidence when a
 peer publishes only at different block heights or cadence is deferred.
 
-When a later local task is concordant, findings for block hashes covered by its
-detailed range are marked resolved. Monotonic verification-task IDs prevent a
-stale worker from reopening or resolving findings. Manifest revision remains useful
-through the referenced task, but is not an ordering key across publication blocks.
+A later concordant local task does not mark those rows resolved. Healing decides
+per handle; unresolved verified findings stay for inspection, manual clearing, or
+delayed cleanup. Monotonic verification-task IDs still prevent a stale worker from
+reopening findings. Manifest revision remains useful through the referenced task,
+but is not an ordering key across publication blocks.
 
 ## Canonical manifest model
 
@@ -769,15 +772,26 @@ the latest task reference, and resolution state. It belongs to one local operato
 and uses one `consensus_epoch`; peer manifests remain in the archive. `detected_at`
 records the first detection; `healed_at` is reserved for successful local ct64
 installation. Verification agreement never sets it.
+`is_contained` defaults to false and records completion of a committed exclusive
+drift-propagation pass. It is independent of healing and never permits use of an
+unhealed ct64 mismatch. Ct128-only findings do not require propagation.
+Containment is spawned after a drift verification commits, without delaying the
+verification result. There is no startup scan or periodic containment worker.
+A pass loads unhealed ct64 rows and scans `computations` from the oldest of
+those findings through both execution stacks; already-computed descendants
+become inferred findings. TFHE batches hold the shared containment barrier and
+check a frozen inventory before scheduling and result persistence.
 Mismatch kind and per-field differences are derived from the two stored descriptors.
 
-The same row carries healing state: `detection_kind`, `demand_count`,
+The same row carries healing state: `detection_kind`, `tx_unlock_potential`,
 `target_evidence`, `peer_sources`, `next_retry_at`, `claimed_by`,
 `claim_expires_at`, and `healed_at`. Evidence is a JSON object containing the pinned
 registry/quorum and authenticated statements; sources are a JSON array of publisher
 identities and download locations. Their population and the healing worker remain
-planned. Demand counts require deduplication by blocked computation in scheduler
-integration; retries must not blindly increment the counter.
+planned. `tx_unlock_potential` is an EMA of per-batch unlock share: each stalled
+transaction contributes `1/k` to every drifted handle that transitively blocks it.
+Only handles seen as blockers are updated. Concurrent workers serialize on the
+row update.
 
 `detection_kind` is never NULL and is either `verified` (direct peer comparison)
 or `inferred` (contaminated input). Verified does not itself mean quorum-backed.
@@ -790,7 +804,9 @@ absence/status first, then ct64, metadata, and ct128; stored descriptors retain
 additional material differences.
 
 Claims require both an owner and expiry and cannot remain attached to a healed
-row. Inferred rows need no peer commitment, verification task, or completed SNS
+row. Inferred rows always use `ct64_mismatch`; `local_present` may be false when
+the dependent operation failed without producing ct64. This does not assert a
+successful peer result. Inferred rows need no peer commitment, verification task, or completed SNS
 metadata. Their exact local identity has a separate unique index. Observation
 status remains for non-healing differences; it is not the healing completion bit.
 
@@ -950,12 +966,15 @@ stack-version transition fences the retired Blue detector from further work.
 ## Deferred protocol work
 
 Cross-height localization, consensus summaries, public drift evidence, healing,
-replay, and checkpoint-driven cleanup are not part of the current protocol.
+replay, and checkpoint-driven cleanup are not part of the current protocol. Local
+containment and healing are designed in [Manifest healing and replay](manifest-healing-and-replay.md);
+public evidence and checkpoint protocols remain separate deferred work.
 
 ## Current retention
 
 No manifest deletion worker is currently enabled. All archive rows and S3 objects
-are retained. Cleanup is deferred.
+are retained. Checkpoint design and cleanup policy remain deferred separately
+from local ciphertext healing.
 
 ## Metrics and alerts
 
@@ -1015,7 +1034,8 @@ The principal metric names are:
 
 The current observation-only path runs beside Gateway consensus. It may publish
 manifests and persist comparison evidence, but it must not affect readiness or
-mutate computation state.
+mutate computation state. Planned containment and local recovery are described in
+[Manifest healing and replay](manifest-healing-and-replay.md).
 
 ### Verification logs during E2E
 

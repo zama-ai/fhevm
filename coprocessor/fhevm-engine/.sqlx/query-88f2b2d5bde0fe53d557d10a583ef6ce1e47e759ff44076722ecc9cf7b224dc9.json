@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT n.nspname::text AS \"schema!\"\n           FROM pg_namespace n\n           WHERE n.nspname LIKE $1\n             AND EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = n.oid\n                         AND c.relname = 'blue_green_consensus_epoch' AND c.relkind = 'r')\n           ORDER BY n.nspname",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "schema!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "88f2b2d5bde0fe53d557d10a583ef6ce1e47e759ff44076722ecc9cf7b224dc9"
+}

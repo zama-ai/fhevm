@@ -10,7 +10,7 @@ use fhevm_engine_common::gcs_activation::{
 };
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
-use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts, TxHash};
 use fhevm_engine_common::versioning::{
     run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
 };
@@ -53,8 +53,8 @@ fn is_retryable_gpu_reservation_error(error: &FhevmError) -> bool {
 }
 
 struct WorkItem {
-    output_handle: Vec<u8>,
-    dependencies: Vec<Vec<u8>>,
+    output_handle: Handle,
+    dependencies: Vec<Handle>,
     fhe_operation: i16,
     is_scalar: bool,
     is_allowed: bool,
@@ -67,7 +67,7 @@ struct WorkItem {
     /// Set alongside `is_error`; consulted only to classify the stamp
     /// (retryable panic vs deterministic error).
     error_message: Option<String>,
-    transaction_id: Vec<u8>,
+    transaction_id: TxHash,
     schedule_order: PrimitiveDateTime,
     /// Authoritative, listener-derived executor `boundaryBits`. Nullable at
     /// the schema level for rows written by a pre-mask listener; for those
@@ -758,7 +758,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, more) = query_for_work(
+        let (nodes, _, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -793,7 +793,7 @@ mod operand_boundary_mask_tests {
 
         // The very next acquisition reaches the younger chain.
         let mut trx = pool.begin().await?;
-        let (nodes, _, _) = query_for_work(
+        let (nodes, _, _, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -946,7 +946,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, more) = query_for_work(
+        let (nodes, _, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1100,7 +1100,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (mut nodes, _, more) = query_for_work(
+        let (mut nodes, _, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1130,8 +1130,14 @@ mod operand_boundary_mask_tests {
             1,
         )
         .await?;
-        let (progressed, _) =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut locks).await?;
+        let (progressed, _) = upload_transaction_graph_results(
+            &mut tx_graph,
+            &mut trx,
+            &mut locks,
+            false,
+            &mut frozen_computations::Freeze::default(),
+        )
+        .await?;
         trx.commit().await?;
         assert!(progressed, "a fresh verdict on the consumer is progress");
 
@@ -1217,7 +1223,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, more) = query_for_work(
+        let (nodes, _, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1248,7 +1254,7 @@ mod operand_boundary_mask_tests {
 
         // Next cycle: nothing pending -> the no-work path retires the chain.
         let mut trx = pool.begin().await?;
-        let (nodes, _, more) = query_for_work(
+        let (nodes, _, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1318,7 +1324,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, _) = query_for_work(
+        let (nodes, _, _, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1332,7 +1338,7 @@ mod operand_boundary_mask_tests {
         assert!(nodes.is_empty(), "oldest transaction defers");
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, _) = query_for_work(
+        let (nodes, _, _, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1932,7 +1938,7 @@ mod operand_boundary_mask_tests {
         let mut no_progress_cycles = 0;
         let mut cooldown = DeferredTransactionCooldown::new();
         let mut transaction = pool.begin().await?;
-        let (nodes, _, found_work) = query_for_work(
+        let (nodes, _, found_work, _) = query_for_work(
             &args,
             &health_check,
             &mut transaction,
@@ -2038,7 +2044,7 @@ mod operand_boundary_mask_tests {
         let mut no_progress_cycles = 0;
         let mut cooldown = DeferredTransactionCooldown::new();
         let mut transaction = pool.begin().await?;
-        let (nodes, _, found_work) = query_for_work(
+        let (nodes, _, found_work, _) = query_for_work(
             &args,
             &health_check,
             &mut transaction,
@@ -2516,8 +2522,10 @@ async fn tfhe_worker_cycle(
             }
         };
 
+        fhevm_engine_common::drift_containment::acquire_ct_computation_permit(&mut trx).await?;
+
         // Query for transactions to execute
-        let (mut transactions, _, has_more_work) = query_for_work(
+        let (mut transactions, _, has_more_work, mut freeze) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -2531,22 +2539,20 @@ async fn tfhe_worker_cycle(
         if has_more_work {
             if transactions.is_empty() {
                 // Rows were loaded but nothing was schedulable: every
-                // transaction deferred (uninterpretable rows) or drained
-                // (terminal stamps written above). Persist the stamps —
-                // the no-work branch below would drop them with the
-                // transaction. query_for_work already rotated a deferring
-                // chain to the FIFO back (or cooled the transactions, in
-                // lockless mode), and the pace falls back to the normal
-                // poll/notify cadence: an unconditional immediate re-poll
-                // would hot-loop when everything reachable defers (more
-                // wedged chains than fit one lock TTL, or a lockless
-                // backlog past the cooldown cap). New real work still
+                // transaction deferred (uninterpretable rows), drained
+                // (terminal stamps written above), or frozen (schedule_order
+                // already pushed back). Persist those writes — the no-work
+                // branch below would drop them with the transaction.
+                // Immediate re-poll only when freeze moved txs out of the
+                // window; defer/drain must not hot-loop. New real work still
                 // wakes the worker instantly via work_available. The
                 // global no-progress counter is deliberately untouched: it
                 // gates the acquire_early_lock escalation, which must not
                 // be reachable through wedged chains alone.
                 trx.commit().await?;
-                immediately_poll_more_work = false;
+                // Freeze penalty already moved those txs in schedule_order:
+                // pick again now. Defer/drain (frozen empty) must not hot-loop.
+                immediately_poll_more_work = !freeze.frozen.is_empty();
                 continue;
             }
             // We've fetched work, so we'll poll again without waiting
@@ -2746,10 +2752,15 @@ async fn tfhe_worker_cycle(
             DCID_LEASE_LOST_DURING_EXECUTION_COUNTER.inc();
             warn!(target: "tfhe_worker", "Lost dcid lock during transaction execution; persisting deterministic results may be redundant");
         }
-        let (has_progressed, cooldown_transactions) =
-            upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
-                .instrument(loop_span.clone())
-                .await?;
+        let (has_progressed, cooldown_transactions) = upload_transaction_graph_results(
+            &mut tx_graph,
+            &mut trx,
+            &mut dcid_mngr,
+            stack_mode.gcs_mode(),
+            &mut freeze,
+        )
+        .instrument(loop_span.clone())
+        .await?;
         if !dcid_mngr.enabled() {
             // Pace retryable failures in the lockless fallback: without this
             // the oldest-first window re-selects a still-failing transaction
@@ -3062,7 +3073,15 @@ async fn query_for_work<'a>(
     no_progress_cycles: &mut u32,
     deferred_cooldown: &mut DeferredTransactionCooldown,
     gcs_mode: bool,
-) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
+) -> Result<
+    (
+        Vec<ComponentNode>,
+        PrimitiveDateTime,
+        bool,
+        frozen_computations::Freeze,
+    ),
+    CoprocessorError,
+> {
     // Demotion is only half a mechanism: the row stops being selected here,
     // and `rearm_demoted_chains` is what gives it another pass. That sweep
     // runs from `do_cleanup`, which returns immediately when locking is
@@ -3165,7 +3184,12 @@ async fn query_for_work<'a>(
         health_check.update_db_access();
         health_check.update_activity();
         info!(target: "tfhe_worker", "No dcid found to process");
-        return Ok((vec![], PrimitiveDateTime::MAX, false));
+        return Ok((
+            vec![],
+            PrimitiveDateTime::MAX,
+            false,
+            frozen_computations::Freeze::default(),
+        ));
     }
     s_dcid.record(
         "dependence_chain_id",
@@ -3214,7 +3238,7 @@ async fn query_for_work<'a>(
     // The result sets are unchanged for the normal window: the global oldest
     // LIMIT rows are contained in the union of each chain's oldest LIMIT rows.
     // The lockless fallback keeps the historical global query.
-    let the_work = if adaptive_batch_execution {
+    let mut the_work = if adaptive_batch_execution {
         let share =
             dcid_transaction_share(transaction_batch_size, dependence_chain_ids.len(), true);
         sqlx::query_as!(
@@ -3512,6 +3536,21 @@ WHERE c.transaction_id IN (
         err
     })?;
 
+    let window_max = the_work.iter().map(|w| w.schedule_order).max();
+    let filtered =
+        frozen_computations::containment_filter(deps_chain_mngr.pool(), the_work).await?;
+    if let Some(window_max) = window_max {
+        if !filtered.empty_transactions.is_empty() {
+            frozen_computations::penalize_frozen_transactions(
+                trx,
+                &filtered.empty_transactions,
+                window_max,
+            )
+            .await?;
+        }
+    }
+    let freeze = filtered.freeze;
+    the_work = filtered.kept;
     WORK_ITEMS_QUERY_HISTOGRAM.observe(started_at.elapsed().unwrap_or_default().as_secs_f64());
     s_work.record("count", the_work.len());
     health_check.update_db_access();
@@ -3520,7 +3559,12 @@ WHERE c.transaction_id IN (
             info!(target: "tfhe_worker", dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "No work items found to process");
         }
         health_check.update_activity();
-        return Ok((vec![], PrimitiveDateTime::MAX, false));
+        if freeze.frozen.is_empty() {
+            return Ok((vec![], PrimitiveDateTime::MAX, false, freeze));
+        }
+        // Fully dropped txs already had schedule_order bumped in this trx.
+        // Re-poll so the caller does not retire the chain as no-work.
+        return Ok((vec![], PrimitiveDateTime::MAX, true, freeze));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
@@ -3635,7 +3679,7 @@ WHERE c.transaction_id IN (
     // distinguishes the empty case itself: it commits the stamps and moves
     // straight on to the next chain (or the next window slice, in
     // lockless mode).
-    Ok((transactions, earliest_schedule_order, true))
+    Ok((transactions, earliest_schedule_order, true, freeze))
 }
 
 /// Ops of one transaction, ready for `build_component_nodes`.
@@ -4218,14 +4262,23 @@ async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_mngr: &mut dependence_chain::LockMngr,
-) -> Result<(bool, Vec<Vec<u8>>), CoprocessorError> {
+    _gcs_mode: bool,
+    freeze: &mut frozen_computations::Freeze,
+) -> Result<(bool, Vec<TxHash>), CoprocessorError> {
     // Schema isolation: the connection's `search_path` already routes
     // unqualified writes to the stack's own schema (`public` for BCS,
     // `gcs` for GCS post-activation). The two-step ciphertext read in
     // `query_ciphertexts` is the only place where the cross-schema fallback
     // is explicit.
-    // Get computation results
+    // Fresh READ COMMITTED reads: drift may have been committed while FHE
+    // execution ran. Discard results whose inputs or in-batch parents are
+    // drifted. A detection racing after this check is covered by the detector's
+    // exclusive pass, which waits for this batch's shared barrier before
+    // propagating.
     let graph_results = tx_graph.get_results();
+    freeze
+        .frozen
+        .extend(frozen_computations::revise(deps_mngr.pool(), freeze).await?);
     let mut handles_to_update = vec![];
     let mut cooldown_transactions: Vec<Vec<u8>> = vec![];
     let mut res = false;
@@ -4234,6 +4287,18 @@ async fn upload_transaction_graph_results<'a>(
     // upload their results/errors.
     let mut cts_to_insert = vec![];
     for result in graph_results.into_iter() {
+        if result.handles.iter().any(|h| {
+            freeze
+                .frozen
+                .contains(&(result.transaction_id.clone(), h.clone()))
+        }) {
+            frozen_computations::note_discarded(result.handles.len());
+            debug!(target: "tfhe_worker",
+                transaction_id = %hex::encode(&result.transaction_id),
+                handles = ?result.handles.iter().map(hex::encode).collect::<Vec<_>>(),
+                "Discarding frozen computation result; leaving work pending");
+            continue;
+        }
         match result.compressed_ct {
             Ok(cct) => {
                 let [handle] = result.handles.as_slice() else {
@@ -4348,7 +4413,15 @@ async fn upload_transaction_graph_results<'a>(
                 // per pass, or its retry count advances once per sibling.
                 let mut propagated: HashSet<Vec<u8>> = HashSet::new();
                 for handle in &result.handles {
-                    let blocked = tx_graph.allowed_dependents(&result.transaction_id, handle);
+                    let blocked: Vec<_> = tx_graph
+                        .allowed_dependents(&result.transaction_id, handle)
+                        .into_iter()
+                        .filter(|h| {
+                            !freeze
+                                .frozen
+                                .contains(&(result.transaction_id.clone(), (*h).clone()))
+                        })
+                        .collect();
                     if tx_graph.is_foreign_producer(&result.transaction_id, handle) {
                         // A foreign row belongs to another chain: never stamp it
                         // from here. What this failure blocks is OUR owned allowed
@@ -4877,3 +4950,22 @@ async fn set_computation_error<'a>(
     }
     Ok(stamped)
 }
+
+#[cfg(test)]
+#[path = "containment_barrier_tests.rs"]
+mod containment_barrier_tests;
+
+#[path = "frozen_computations.rs"]
+mod frozen_computations;
+
+#[cfg(test)]
+#[path = "frozen_scheduling_tests.rs"]
+mod frozen_scheduling_tests;
+
+#[cfg(test)]
+#[path = "frozen_result_tests.rs"]
+mod frozen_result_tests;
+
+#[cfg(test)]
+#[path = "containment_test_support.rs"]
+mod containment_test_support;
