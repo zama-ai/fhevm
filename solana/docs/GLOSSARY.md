@@ -1,6 +1,6 @@
 # Glossary
 
-Last synced: 2026-09-11.
+Last synced: 2026-09-17.
 
 This file is normative. Code, docs, IDL, tests, and commit messages use these
 terms and no synonyms. Each entry gives the definition first; where a term
@@ -86,6 +86,13 @@ stack where one exists.
 | **decoded op records** | The typed structs the listener decodes from an execution's instruction data, one per step, fed to the coprocessor. They are not on-chain events. | `Fhe*Event` structs | `FheAdd`… events |
 | **reconstruction** | The listener's re-derivation of output handles and leaves from raw transaction bytes, using the program's own derivation functions. | — | — |
 | **crank** | A call anyone may make that advances work an earlier transaction could not finish — the demo's address-lookup-table lifecycle is driven this way, since deactivation has to wait out a cooldown. Retrying is the point: a crank that throws leaves the work for the next one rather than recording it as done. | — | — |
+
+## Environments
+
+| Term | Definition | Replaces | EVM equivalent |
+|---|---|---|---|
+| **Zama devnet** | The Zama environment before Zama testnet where QA and integration tests run, deployed on public EVM testnets. Bare "devnet", "testnet" and "mainnet" always name Zama environments. | devnet | Zama devnet |
+| **Solana devnet** | The public Solana cluster used for testing. Always written with "Solana", because Solana's own "testnet" cluster is a validator-release proving ground, not a place to test application behavior. The preview environment and Zama devnet both deploy onto Solana devnet, each with its own program keypairs. | devnet (for the cluster) | Sepolia, Amoy |
 
 ## Banned names
 

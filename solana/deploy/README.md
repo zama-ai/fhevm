@@ -25,7 +25,7 @@ confidential-batcher. They use the same image's `demos deploy` command; deployin
 programs does not create test users, balances or application fixtures.
 
 The first integration supports the preview's Anvil Gateway and canonical EVM host.
-Solana uses public devnet. Polygon, blockchain-dev and blue-green combinations are
+Solana uses the public Solana devnet cluster. Polygon, blockchain-dev and blue-green combinations are
 outside this integration. The namespace can remain running; the creation workflow
 retains its normal destroy-and-recreate behavior when invoked again.
 
@@ -42,16 +42,18 @@ source namespace. The workflow copies them into the new preview without printing
 
 The deployment copies `solana-deployer` into the preview namespace. Members of
 `coprocessor-dev-access` and `kms-dev-access` have namespace-admin access and can
-read its upgrade-authority key. Use a disposable devnet authority dedicated to
+read its upgrade-authority key. Use a disposable Solana devnet authority dedicated to
 these experiments; every preview sharing its program addresses trusts those admins.
-This secret-copying flow is unsuitable for a durable network's upgrade authority.
+This secret-copying flow is unsuitable for Zama devnet or any other durable
+environment's upgrade authority. Zama devnet deploys its own host onto Solana devnet
+with separate program keypairs, so its addresses never collide with the preview's.
 
-The deployer must hold devnet SOL. Cluster networking must reach the RPC/Yellowstone
+The deployer must hold Solana devnet SOL. Cluster networking must reach the RPC/Yellowstone
 provider and allow connectors to reach `coprocessor-<party>-solana-host-listener:8080`.
 The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.
 The listener stores computations, MMR leaves and checkpoints in its coprocessor's database.
 
-Keep one active experiment per set of devnet program addresses, and run only one
+Keep one active experiment per set of Solana devnet program addresses, and run only one
 deployer at a time. CI serializes Solana launches; manual deployments are the operator's
 responsibility. No separate coordination database is required.
 
