@@ -195,11 +195,16 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         CHECK (reason IN ('ct64_mismatch', 'ct128_mismatch', 'missing_here',
             'unknown_on_peer', 'error_here', 'error_on_peer', 'uncomputed_here',
             'uncomputed_on_peer', 'metadata_mismatch')),
+    -- Only a committed propagation pass under the containment barrier sets this.
+    is_contained BOOLEAN NOT NULL DEFAULT FALSE,
     can_be_healed BOOLEAN GENERATED ALWAYS AS
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
             AND quorum_ct64_digest IS NOT NULL
             AND healed_at IS NULL) STORED,
-    demand_count BIGINT NOT NULL DEFAULT 0 CHECK (demand_count >= 0),
+    -- EMA of per-batch unlock share: stalled txs contribute 1/k to each
+    -- drifted handle that transitively blocks them in that batch.
+    tx_unlock_potential DOUBLE PRECISION NOT NULL DEFAULT 0
+        CHECK (tx_unlock_potential >= 0),
     -- Evidence contains the pinned registry/quorum and authenticated statements.
     -- Sources contain publisher identities and their download locations.
     target_evidence JSONB NULL CHECK (jsonb_typeof(target_evidence) = 'object'),
@@ -211,6 +216,7 @@ CREATE TABLE IF NOT EXISTS drifted_handle
     -- Observation status is separate from successful local installation.
     status TEXT NOT NULL DEFAULT 'unresolved'
         CHECK (status IN ('unresolved', 'resolved')),
+    -- Describes the finding's local result; it is not a containment predicate.
     local_present BOOLEAN NOT NULL,
     quorum_present BOOLEAN NOT NULL,
     local_keyset_id BYTEA NULL
@@ -253,12 +259,13 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
             AND quorum_ct64_digest IS NOT NULL AND claimed_by IS NULL)),
     CHECK (target_evidence IS NULL OR quorum_ct64_digest IS NOT NULL),
-    CHECK (detection_kind <> 'inferred' OR (local_present AND reason = 'ct64_mismatch')),
+    -- Inferred outputs may have failed instead of producing stored ct64.
+    CHECK (detection_kind <> 'inferred' OR reason = 'ct64_mismatch'),
     CHECK (detection_kind = 'inferred' OR last_quorum_task_id IS NOT NULL)
 );
 
 CREATE INDEX idx_drifted_handle_healing_priority
-ON drifted_handle (demand_count DESC, detected_at, block_number)
+ON drifted_handle (tx_unlock_potential DESC, detected_at, block_number)
 WHERE reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
     AND healed_at IS NULL;
 

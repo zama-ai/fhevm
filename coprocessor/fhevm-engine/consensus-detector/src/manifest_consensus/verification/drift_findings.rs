@@ -22,7 +22,7 @@ use super::consensus_analysis::{
 };
 
 #[derive(Clone, Debug)]
-struct DriftHandleFinding {
+pub(crate) struct DriftHandleFinding {
     consensus_epoch: String,
     block_number: i64,
     block_hash: B256,
@@ -32,11 +32,12 @@ struct DriftHandleFinding {
     observed_has_quorum: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct DriftLocalization {
     pub complete: bool,
     pub drifted_block_count: Option<i64>,
     pub drifted_handle_count: Option<i64>,
+    pub findings: Vec<DriftHandleFinding>,
 }
 
 pub(crate) struct DriftLocalizationContext<'a> {
@@ -48,8 +49,8 @@ pub(crate) struct DriftLocalizationContext<'a> {
 /// Atomically maintains the local drift inventory alongside a completed
 /// verification decision. One row per handle; `target_*` is the quorum
 /// descriptor when a computed threshold group exists.
-/// A later concordant manifest closes findings for the exact covered block
-/// hashes, with a revision guard against stale workers.
+/// Later concordance does not close rows: healing decides per handle, and
+/// unresolved verified findings stay for inspection or delayed cleanup.
 pub(crate) async fn apply_evaluation_to_drift_handles(
     trx: &mut Transaction<'_, Postgres>,
     task_id: i64,
@@ -58,50 +59,48 @@ pub(crate) async fn apply_evaluation_to_drift_handles(
     evaluation: &QuorumEvaluation,
     context: DriftLocalizationContext<'_>,
 ) -> Result<DriftLocalization, ExecutionError> {
+    if evaluation.outcome != VerificationOutcome::Drift {
+        return Ok(DriftLocalization {
+            complete: true,
+            drifted_block_count: (evaluation.outcome == VerificationOutcome::Consensus)
+                .then_some(0),
+            drifted_handle_count: (evaluation.outcome == VerificationOutcome::Consensus)
+                .then_some(0),
+            findings: vec![],
+        });
+    }
+
     let local_manifest = manifests
         .iter()
         .find(|manifest| manifest.signed.payload.publisher == local_publisher)
         .ok_or_else(|| internal("local manifest is missing from drift evaluation"))?;
-
-    match evaluation.outcome {
-        VerificationOutcome::Drift => {
-            let (findings, localization_complete) = attributed_findings(
-                trx,
-                manifests,
-                local_publisher,
-                context.peer_publishers,
-                context.required_quorum,
-                &without_completed_history(evaluation, context.completed_history),
-            )
-            .await?;
-            let block_count = i64::try_from(
-                findings
-                    .iter()
-                    .map(|finding| (finding.block_number, finding.block_hash))
-                    .collect::<BTreeSet<_>>()
-                    .len(),
-            )
-            .map_err(|_| internal("drifted block count exceeds BIGINT"))?;
-            let handle_count = i64::try_from(findings.len())
-                .map_err(|_| internal("drifted handle count exceeds BIGINT"))?;
-            for finding in findings {
-                upsert_finding(trx, task_id, local_manifest, &finding).await?;
-            }
-            return Ok(DriftLocalization {
-                complete: localization_complete,
-                drifted_block_count: localization_complete.then_some(block_count),
-                drifted_handle_count: localization_complete.then_some(handle_count),
-            });
-        }
-        VerificationOutcome::Consensus => {
-            resolve_covered_findings(trx, task_id, local_manifest).await?;
-        }
-        _ => {}
+    let (findings, localization_complete) = attributed_findings(
+        trx,
+        manifests,
+        local_publisher,
+        context.peer_publishers,
+        context.required_quorum,
+        &without_completed_history(evaluation, context.completed_history),
+    )
+    .await?;
+    let block_count = i64::try_from(
+        findings
+            .iter()
+            .map(|finding| (finding.block_number, finding.block_hash))
+            .collect::<BTreeSet<_>>()
+            .len(),
+    )
+    .map_err(|_| internal("drifted block count exceeds BIGINT"))?;
+    let handle_count = i64::try_from(findings.len())
+        .map_err(|_| internal("drifted handle count exceeds BIGINT"))?;
+    for finding in &findings {
+        upsert_finding(trx, task_id, local_manifest, finding).await?;
     }
     Ok(DriftLocalization {
-        complete: true,
-        drifted_block_count: (evaluation.outcome == VerificationOutcome::Consensus).then_some(0),
-        drifted_handle_count: (evaluation.outcome == VerificationOutcome::Consensus).then_some(0),
+        complete: localization_complete,
+        drifted_block_count: localization_complete.then_some(block_count),
+        drifted_handle_count: localization_complete.then_some(handle_count),
+        findings,
     })
 }
 
@@ -815,43 +814,6 @@ async fn upsert_finding(
     )
     .execute(trx.as_mut())
     .await?;
-    Ok(())
-}
-
-async fn resolve_covered_findings(
-    trx: &mut Transaction<'_, Postgres>,
-    task_id: i64,
-    local_manifest: &AuthenticatedManifest,
-) -> Result<(), ExecutionError> {
-    let payload = &local_manifest.signed.payload;
-    let context = payload.coprocessor_context_id.to_be_bytes::<32>();
-    let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
-    for block in &payload.detailed_range.blocks {
-        sqlx::query!(
-            r#"
-            UPDATE drifted_handle
-                   SET status = 'resolved',
-                   last_quorum_task_id = $5,
-                   resolved_task_id = $5
-             WHERE consensus_epoch = $1
-               AND coprocessor_context_id = $2
-               AND host_chain_id = $3
-               AND block_hash = $4
-               AND status = 'unresolved'
-               AND detection_kind <> 'inferred'
-               AND NOT can_be_healed
-               AND healed_at IS NULL
-               AND last_quorum_task_id <= $5
-            "#,
-            payload.consensus_epoch.clone(),
-            context.as_slice(),
-            host_chain_id,
-            block.block_hash.as_slice(),
-            task_id,
-        )
-        .execute(trx.as_mut())
-        .await?;
-    }
     Ok(())
 }
 
