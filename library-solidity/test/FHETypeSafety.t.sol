@@ -22,6 +22,54 @@ contract TypeSafetyAdapter {
         ACL(aclAdd).allow(handle, msg.sender);
     }
 
+    function isAllowed(FheType expectedType, bytes32 handle, address account) external view returns (bool) {
+        if (expectedType == FheType.Bool) return FHE.isAllowed(ebool.wrap(handle), account);
+        if (expectedType == FheType.Uint8) return FHE.isAllowed(euint8.wrap(handle), account);
+        if (expectedType == FheType.Uint16) return FHE.isAllowed(euint16.wrap(handle), account);
+        if (expectedType == FheType.Uint32) return FHE.isAllowed(euint32.wrap(handle), account);
+        if (expectedType == FheType.Uint64) return FHE.isAllowed(euint64.wrap(handle), account);
+        if (expectedType == FheType.Uint128) return FHE.isAllowed(euint128.wrap(handle), account);
+        if (expectedType == FheType.Uint160) return FHE.isAllowed(eaddress.wrap(handle), account);
+        if (expectedType == FheType.Uint256) return FHE.isAllowed(euint256.wrap(handle), account);
+        revert("Unsupported test type");
+    }
+
+    function isSenderAllowed(FheType expectedType, bytes32 handle) external view returns (bool) {
+        if (expectedType == FheType.Bool) return FHE.isSenderAllowed(ebool.wrap(handle));
+        if (expectedType == FheType.Uint8) return FHE.isSenderAllowed(euint8.wrap(handle));
+        if (expectedType == FheType.Uint16) return FHE.isSenderAllowed(euint16.wrap(handle));
+        if (expectedType == FheType.Uint32) return FHE.isSenderAllowed(euint32.wrap(handle));
+        if (expectedType == FheType.Uint64) return FHE.isSenderAllowed(euint64.wrap(handle));
+        if (expectedType == FheType.Uint128) return FHE.isSenderAllowed(euint128.wrap(handle));
+        if (expectedType == FheType.Uint160) return FHE.isSenderAllowed(eaddress.wrap(handle));
+        if (expectedType == FheType.Uint256) return FHE.isSenderAllowed(euint256.wrap(handle));
+        revert("Unsupported test type");
+    }
+
+    function isPubliclyDecryptable(FheType expectedType, bytes32 handle) external view returns (bool) {
+        if (expectedType == FheType.Bool) return FHE.isPubliclyDecryptable(ebool.wrap(handle));
+        if (expectedType == FheType.Uint8) return FHE.isPubliclyDecryptable(euint8.wrap(handle));
+        if (expectedType == FheType.Uint16) return FHE.isPubliclyDecryptable(euint16.wrap(handle));
+        if (expectedType == FheType.Uint32) return FHE.isPubliclyDecryptable(euint32.wrap(handle));
+        if (expectedType == FheType.Uint64) return FHE.isPubliclyDecryptable(euint64.wrap(handle));
+        if (expectedType == FheType.Uint128) return FHE.isPubliclyDecryptable(euint128.wrap(handle));
+        if (expectedType == FheType.Uint160) return FHE.isPubliclyDecryptable(eaddress.wrap(handle));
+        if (expectedType == FheType.Uint256) return FHE.isPubliclyDecryptable(euint256.wrap(handle));
+        revert("Unsupported test type");
+    }
+
+    function toBytes32(FheType expectedType, bytes32 handle) external view returns (bytes32) {
+        if (expectedType == FheType.Bool) return FHE.toBytes32(ebool.wrap(handle));
+        if (expectedType == FheType.Uint8) return FHE.toBytes32(euint8.wrap(handle));
+        if (expectedType == FheType.Uint16) return FHE.toBytes32(euint16.wrap(handle));
+        if (expectedType == FheType.Uint32) return FHE.toBytes32(euint32.wrap(handle));
+        if (expectedType == FheType.Uint64) return FHE.toBytes32(euint64.wrap(handle));
+        if (expectedType == FheType.Uint128) return FHE.toBytes32(euint128.wrap(handle));
+        if (expectedType == FheType.Uint160) return FHE.toBytes32(eaddress.wrap(handle));
+        if (expectedType == FheType.Uint256) return FHE.toBytes32(euint256.wrap(handle));
+        revert("Unsupported test type");
+    }
+
     function importHandle(FheType expectedType, bytes32 handle, bytes memory proof) external returns (bytes32) {
         if (expectedType == FheType.Bool) return ebool.unwrap(FHE.fromExternal(externalEbool.wrap(handle), proof));
         if (expectedType == FheType.Uint8) return euint8.unwrap(FHE.fromExternal(externalEuint8.wrap(handle), proof));
@@ -169,6 +217,66 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
                 bytes32 imported = adapter.importHandle(types[expected], handle, "");
                 if (actual == expected) assertEq(imported, handle);
             }
+        }
+    }
+
+    function test_ACLViewsRejectEveryMismatchedTypePair() public {
+        FheType[8] memory types = _types();
+        bytes32[] memory handles = new bytes32[](1);
+        for (uint256 actual; actual < types.length; ++actual) {
+            bytes32 handle = adapter.mint(types[actual], 1);
+            handles[0] = handle;
+            ACL(aclAdd).allowForDecryption(handles);
+            for (uint256 expected; expected < types.length; ++expected) {
+                if (actual != expected) vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                bool allowed = adapter.isAllowed(types[expected], handle, address(this));
+                if (actual == expected) assertTrue(allowed);
+
+                if (actual != expected) vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                bool senderAllowed = adapter.isSenderAllowed(types[expected], handle);
+                if (actual == expected) assertTrue(senderAllowed);
+
+                if (actual != expected) vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                bool publiclyDecryptable = adapter.isPubliclyDecryptable(types[expected], handle);
+                if (actual == expected) assertTrue(publiclyDecryptable);
+            }
+        }
+    }
+
+    function test_ToBytes32RejectsEveryMismatchedTypePair() public {
+        FheType[8] memory types = _types();
+        for (uint256 actual; actual < types.length; ++actual) {
+            bytes32 handle = adapter.mint(types[actual], 1);
+            for (uint256 expected; expected < types.length; ++expected) {
+                if (actual != expected) vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                bytes32 converted = adapter.toBytes32(types[expected], handle);
+                if (actual == expected) assertEq(converted, handle);
+            }
+        }
+    }
+
+    function test_TypedViewsPreserveZeroSentinelForEveryType() public view {
+        FheType[8] memory types = _types();
+        for (uint256 i; i < types.length; ++i) {
+            assertFalse(adapter.isAllowed(types[i], bytes32(0), address(this)));
+            assertFalse(adapter.isSenderAllowed(types[i], bytes32(0)));
+            assertFalse(adapter.isPubliclyDecryptable(types[i], bytes32(0)));
+            assertEq(adapter.toBytes32(types[i], bytes32(0)), bytes32(0));
+        }
+    }
+
+    function test_TypedViewsDoNotGrantPermissions() public {
+        FheType[8] memory types = _types();
+        address outsider = address(0xBAD);
+        for (uint256 i; i < types.length; ++i) {
+            bytes32 handle = adapter.mint(types[i], 1);
+            assertFalse(adapter.isAllowed(types[i], handle, outsider));
+            vm.prank(outsider);
+            assertFalse(adapter.isSenderAllowed(types[i], handle));
+            assertFalse(adapter.isPubliclyDecryptable(types[i], handle));
+            vm.prank(outsider);
+            assertEq(adapter.toBytes32(types[i], handle), handle);
+            assertFalse(ACL(aclAdd).isAllowed(handle, outsider));
         }
     }
 
