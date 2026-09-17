@@ -88,6 +88,7 @@ their immutable selectors. Preview-env sets e.g. fhevm.zama.ai/fleet=bcs.
 {{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+
 {{- define "coprocessorDatabaseAuthMode" -}}
 {{- $authMode := default "password" .Values.commonConfig.databaseAuthMode -}}
 {{- if not (or (eq $authMode "password") (eq $authMode "iam")) -}}
@@ -164,4 +165,3 @@ volumes:
     configMap:
       name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
 {{- end -}}
-

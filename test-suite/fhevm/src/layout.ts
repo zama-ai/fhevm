@@ -117,6 +117,8 @@ export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
 export const DEFAULT_CHAIN_ID = "12345";
+/** Classic Anvil/Hardhat chain id. Local E2E uses `DEFAULT_CHAIN_ID` instead. */
+export const ANVIL_CHAIN_ID = "31337";
 
 /**
  * Confidential bridge opt-out: a real LayerZero endpoint preconfigured for a chain via
