@@ -48,7 +48,7 @@ fn the_identity_is_the_configured_program_and_chain_id() {
 /// user error every time.
 #[test]
 fn a_configured_chain_id_without_type_byte_0x01_fails_at_startup() {
-    let without_type_byte = 0x0123_4567_89ab_cdef & 0x00ff_ffff_ffff_ffff;
+    let without_type_byte = CHAIN_ID & 0x00ff_ffff_ffff_ffff;
 
     let error = DeploymentIdentity::resolve(PROGRAM_ID, without_type_byte)
         .expect_err("a Solana chain id has type byte 0x01");
@@ -179,7 +179,7 @@ fn handles_embedding_a_cluster_other_than_the_signed_one_are_rejected() {
 }
 
 /// The embedded chain id is read from the bytes the handle format puts it in, big-endian, and
-/// the chain-kind bit comes along with it — the same u64 the permit signs.
+/// the type byte comes along with it — the same u64 the permit signs.
 #[test]
 fn the_embedded_chain_id_is_read_from_the_handle_bytes() {
     let live = handle(0x16, FHE_TYPE_UINT64);

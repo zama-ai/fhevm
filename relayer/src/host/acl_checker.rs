@@ -123,7 +123,7 @@ impl HostAclChecker {
             })?;
 
         for hc in host_chains {
-            // The chain id is the sole chain-kind discriminator. Settings validation
+            // The type byte on the chain id is the sole discriminator. Settings validation
             // enforces the matching address encoding; keep this constructor fail-closed
             // for direct callers too.
             if crate::core::event::is_solana_host_chain_id(hc.chain_id) {

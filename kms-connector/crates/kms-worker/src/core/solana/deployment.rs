@@ -29,7 +29,7 @@ pub use crate::core::config::{SOLANA_CHAIN_TYPE, is_solana_host_chain_id, solana
 /// The Connector's own deployment identity.
 ///
 /// No public constructor: the only way to obtain one is [`DeploymentIdentity::resolve`], so a
-/// chain id that never passed the chain-kind check cannot enter through a struct literal.
+/// chain id that never passed the type-byte check cannot enter through a struct literal.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DeploymentIdentity {
     program_id: SolanaPubkeyBytes,

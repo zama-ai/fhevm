@@ -1413,8 +1413,8 @@ in [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 - Handle creation entropy/idempotency policy is RESOLVED (keep per-block entropy, DD-015); reorg-unstable
   handles are accepted on every chain.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
-- Solana `chain_id` encoding and the published cluster table: RESOLVED (DD-052). #1635's bit-63
-  sentinel is the current tree, not the decision.
+- Solana `chain_id` encoding and the published cluster table: RESOLVED (DD-052). The tree uses
+  type byte `0x01`; #1635's bit-63 sentinel is superseded.
 - Rent/archival policy for the `EncryptedValue` MMR itself (DD-032): the account no longer needs
   per-update PDA closes (one stable PDA is reused for an encrypted value account's whole life); its
   growth is bounded at 64 peaks (2229 bytes) for all time, so compaction is a rent question, not a
@@ -2544,4 +2544,4 @@ This entry supersedes the chain-type marker in DD-026, the bit-63 detector in DD
 RFC-021’s high-bit reservation as the long-term marker, and the open-product #1635
 sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt. DD-027 still
 owns EVM-strict vs Solana-relaxed validation. Both keep calling `is_solana_host_chain_id`;
-this entry says what that predicate must become.
+this entry is that predicate: high byte `0x01`.
