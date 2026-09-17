@@ -12,6 +12,12 @@ For the `RPC_URL_SOLANA` value, we recommend getting one from [Helius](https://w
 
 Please make sure to fund your public key with 5 SOL on Solana mainnet, before deploying.
 
+> [!NOTE]
+> `Anchor.toml` reads the localnet wallet from `~/.config/solana/id.json` — the same keypair
+> `solana-keygen` writes above. The package used to carry a committed `junk-id.json` for this;
+> it was dropped when the package moved into `fhevm`, and `*-id.json` is now gitignored.
+> Keypairs do not belong in the repository.
+
 ### Prepare the Solana OFT Program keypair
 
 Run `anchor keys sync -p oft` command. This will create the OFT `programId` keypair and also automatically update `Anchor.toml` to use the generated keypair's public key. The default path for the program's keypair will be `target/deploy/oft-keypair.json`. The program keypair is only used for initial deployment of the program.

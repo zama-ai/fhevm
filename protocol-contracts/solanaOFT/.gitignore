@@ -30,3 +30,7 @@ ethereum-wiring.json
 aragonProposal.json
 deployments/solana-testnet/
 deployments/solana-mainnet/
+
+# Solana keypairs — never commit one; Anchor reads ~/.config/solana/id.json
+*-id.json
+id.json

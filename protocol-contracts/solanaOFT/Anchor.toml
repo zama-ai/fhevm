@@ -13,7 +13,7 @@ url = "https://api.apr.dev"
 
 [provider]
 cluster = "localnet"
-wallet = "./junk-id.json"
+wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "npx jest test/anchor"

@@ -22,10 +22,10 @@ first package lands.
 | `pauserSetWrapper` | Wraps the pauser set so governance can administer it | to move |
 | `solanaOFT` | The `$ZAMA` OFT on Solana and the EVM side of its bridge — Anchor programs beside Hardhat and Foundry contracts | moved |
 
-`solanaOFT` is tracked in
+`solanaOFT` lives here rather than in a repository of its own — the decision is recorded on
 [`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352). Its CI runs
 the EVM half only — lint and Foundry tests; the Anchor programs need a Solana toolchain no runner
-here installs yet.
+here installs yet, which is the coverage they had in `protocol-apps` too.
 
 `confidential-wrapper` and `confidential-token-wrappers-registry` are **not** moving; they stay with
 Protocol Apps.
