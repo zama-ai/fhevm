@@ -49,7 +49,7 @@ export interface RequestValidity {
   durationSeconds: number;
 }
 
-/** The RFC 016 fields the user signs over. */
+/** The RFC 016 protocol inputs. All fields except `handles` are signed over. */
 export interface UserDecryptionPayload {
   handles: HandleEntry[];
   userAddress: string;
