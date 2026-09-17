@@ -1,29 +1,14 @@
 #!/usr/bin/env bash
-# Patch preview-env Helm values in the working tree for an external chain mode (blockchain-dev | testnets); no-op on Anvil.
-# Keys/mnemonic/RPCs come from env (resolve-chain.sh + generate-mnemonic.cjs). With RPC_SECRET_NAME set (testnets),
-# host RPC URLs are wired as secretKeyRef into Secret ${RPC_SECRET_NAME} instead of literals.
+# Patch preview-env Helm values in the working tree.
+# External chain modes (blockchain-dev | testnets) rewrite RPC/mnemonic overlays.
+# GPU=true (Anvil or external) switches keygen to Default FHE params.
+# Anvil without GPU is a no-op.
 set -euo pipefail
 
-if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" ]]; then
   echo "Anvil mode: leaving values overlays unchanged."
   exit 0
 fi
-
-: "${CHAIN_MODE:?}"
-: "${HOST_HTTP:?}"
-: "${HOST_WS:?}"
-: "${GATEWAY_HTTP:?}"
-: "${GATEWAY_WS:?}"
-: "${HOST_CHAIN_ID:?}"
-: "${GATEWAY_CHAIN_ID:?}"
-: "${POLLER_SEED_START_BLOCK:?}"
-: "${HOST_FINALITY_DEPTH:?}"
-: "${HOST_FINALITY_LAG:?}"
-: "${MNEMONIC:?}"
-: "${DEPLOYER_KEY_0:?}"
-: "${DEPLOYER_KEY_3:?}"
-: "${DEPLOYER_KEY_9:?}"
-: "${HARDHAT_NETWORK_TESTS:?}"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -75,6 +60,39 @@ set_poller_flag() {
 # Workflow run-test env is nested; match by .name anywhere under a given file
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
+apply_gpu_keygen() {
+  # GPU workers cannot ingest Test keys (DriftTechniqueNoiseReduction). Bound
+  # Default params + the multi-hour waits to this path only.
+  local keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
+}
+
+if [[ "${GPU:-false}" == "true" ]]; then
+  apply_gpu_keygen
+  if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
+    echo "Anvil GPU: Default FHE params and long keygen waits."
+    exit 0
+  fi
+fi
+
+: "${CHAIN_MODE:?}"
+: "${HOST_HTTP:?}"
+: "${HOST_WS:?}"
+: "${GATEWAY_HTTP:?}"
+: "${GATEWAY_WS:?}"
+: "${HOST_CHAIN_ID:?}"
+: "${GATEWAY_CHAIN_ID:?}"
+: "${POLLER_SEED_START_BLOCK:?}"
+: "${HOST_FINALITY_DEPTH:?}"
+: "${HOST_FINALITY_LAG:?}"
+: "${MNEMONIC:?}"
+: "${DEPLOYER_KEY_0:?}"
+: "${DEPLOYER_KEY_3:?}"
+: "${DEPLOYER_KEY_9:?}"
+: "${HARDHAT_NETWORK_TESTS:?}"
+
 echo "Patching preview-env values for ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}, poller seed ${POLLER_SEED_START_BLOCK})"
 
 # --- gateway contracts ---
@@ -105,15 +123,17 @@ set_named_env "${keygen}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
 if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
-if [[ "${CHAIN_MODE}" == "testnets" ]]; then
+if [[ "${CHAIN_MODE}" == "testnets" && "${GPU:-false}" != "true" ]]; then
   # gw-listener pins its Ethereum reads to the FINALIZED block (BlockId::finalized() in
   # kms-connector/crates/gw-listener/src/core/ethereum.rs - not configurable), and Sepolia
-  # finalizes ~14 min behind head. Default-parameter threshold keygen is itself
-  # multi-hour work, in addition to the two finalized-chain round trips. Use the
-  # same four-hour keygen and one-hour CRS budgets as the base preview values.
+  # finalizes ~14 min behind head. Keygen needs two such round trips (PrepKeygenRequest ->
+  # response tx -> KeygenRequest -> response tx); measured end to end on Sepolia:
+  # PrepKeygenRequest 19:55:12 -> ActivateKey 20:38:24, i.e. 43 min. 60m leaves headroom
+  # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
+  # a genuine failure there from burning the full keygen budget.
   # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
 fi
 
 # --- listener ---
