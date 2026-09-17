@@ -2124,6 +2124,11 @@ lazy_static! {
         "times instant notifications for work items received from the database"
     )
     .unwrap();
+    static ref WORK_BATCH_TRANSACTIONS: Histogram = register_histogram!(
+        "coprocessor_work_batch_transactions",
+        "Transactions in each persisted work batch",
+        vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
+    ).unwrap();
     static ref WORK_ITEMS_FOUND_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_found",
         "work items queried from database"
@@ -2528,6 +2533,7 @@ async fn tfhe_worker_cycle(
         )
         .instrument(loop_span.clone())
         .await?;
+        let batch_transactions = transactions.len();
         if has_more_work {
             if transactions.is_empty() {
                 // Rows were loaded but nothing was schedulable: every
@@ -2760,6 +2766,7 @@ async fn tfhe_worker_cycle(
             }
         }
         trx.commit().await?;
+        WORK_BATCH_TRANSACTIONS.observe(batch_transactions as f64);
 
         // Releasing after commit makes terminal work visible before another
         // worker can acquire a dependent DCID. Keep unfinished DCIDs leased;
