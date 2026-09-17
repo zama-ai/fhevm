@@ -219,7 +219,7 @@ describe("buildKmsThresholdOverride", () => {
   test("renders an explicitly selected core version without changing the other nodes", () => {
     const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "target-core" }).services;
     expect(services["kms-core"].image).toBe(RENDER_OPTS.coreImage);
-    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:target-core");
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service-insecure:target-core");
     expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
     expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
   });

@@ -15,8 +15,8 @@ use fhevm_host_bindings::protocol_config::{
 use kms_grpc::{
     kms::v1::{
         CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-        KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse,
-        UserDecryptionResponse as GrpcUserDecryptionResponse,
+        KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse, SigningSchemeType,
+        TypedSignature, UserDecryptionResponse as GrpcUserDecryptionResponse,
     },
     rpc_types::abi_encode_plaintexts,
 };
@@ -240,6 +240,21 @@ impl KmsResponseKind {
     }
 }
 
+/// Extracts the ECDSA256K1 (EIP-712) signature of a KMS Core response.
+///
+/// The `signatures` list is the source of truth. The deprecated `external_signature` field is
+/// only used as a fallback for KMS Cores that predate the multi-scheme `signatures` list.
+fn ecdsa_signature(signatures: Vec<TypedSignature>, legacy: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    match signatures
+        .into_iter()
+        .find(|s| s.scheme == SigningSchemeType::Ecdsa256k1 as i32)
+    {
+        Some(s) => Ok(s.signature),
+        None if !legacy.is_empty() => Ok(legacy),
+        None => Err(anyhow!("KMS response carries no ECDSA256K1 signature")),
+    }
+}
+
 /// Converts the Core's `EpochResultResponse` into the ABI-encoded `(EpochKeyResult[],
 /// EpochCrsResult[])` payload expected by `confirmEpochActivation`.
 fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
@@ -262,7 +277,7 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             prepKeygenId: preproc_id,
             keyId: key_id,
             keyDigests: key_digests,
-            signature: key.external_signature.into(),
+            signature: ecdsa_signature(key.signatures, key.external_signature)?.into(),
         });
     }
 
@@ -274,7 +289,7 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             crsId: crs_id,
             maxBitLength: U256::from(crs.max_num_bits),
             crsDigest: crs.crs_digest.into(),
-            signature: crs.external_signature.into(),
+            signature: ecdsa_signature(crs.signatures, crs.external_signature)?.into(),
         });
     }
 
@@ -394,7 +409,7 @@ impl PublicDecryptionResponse {
         Ok(PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
-            signature: grpc_response.external_signature,
+            signature: ecdsa_signature(grpc_response.signatures, grpc_response.external_signature)?,
             extra_data: grpc_response.extra_data,
         })
     }
@@ -423,7 +438,7 @@ impl UserDecryptionResponse {
         Ok(UserDecryptionResponse {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
-            signature: grpc_response.external_signature,
+            signature: ecdsa_signature(grpc_response.signatures, grpc_response.external_signature)?,
             extra_data: grpc_response.extra_data,
         })
     }
@@ -447,7 +462,7 @@ impl PrepKeygenResponse {
 
         Ok(PrepKeygenResponse {
             prep_keygen_id,
-            signature: grpc_response.external_signature,
+            signature: ecdsa_signature(grpc_response.signatures, grpc_response.external_signature)?,
         })
     }
 }
@@ -477,7 +492,7 @@ impl KeygenResponse {
         Ok(KeygenResponse {
             key_id,
             key_digests,
-            signature: grpc_response.external_signature,
+            signature: ecdsa_signature(grpc_response.signatures, grpc_response.external_signature)?,
         })
     }
 }
@@ -496,7 +511,7 @@ impl CrsgenResponse {
         Ok(CrsgenResponse {
             crs_id,
             crs_digest: grpc_response.crs_digest,
-            signature: grpc_response.external_signature,
+            signature: ecdsa_signature(grpc_response.signatures, grpc_response.external_signature)?,
         })
     }
 }

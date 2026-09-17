@@ -17,7 +17,8 @@ use fhevm_host_bindings::{
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CrsInfo, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext, MpcNode,
-    NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo,
+    NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest,
+    SigningSchemeType,
 };
 
 /// Builder for the KMS Core gRPC requests triggered by `ProtocolConfig` events.
@@ -91,6 +92,8 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             previous_epoch: Some(previous_epoch),
             domain: Some(self.domain.clone()),
             extra_data: extra_data_v2_payload(event.kmsContextId, event.epochId),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }
 
@@ -247,6 +250,12 @@ fn build_new_kms_context_grpc_from_event(
             // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
             // connector transaction sender's address of this node
             extra_signer_addresses: vec![n.txSenderAddress.to_vec()],
+            // Scheme-specific digests of the KMS node's signing keys. The Gateway only exposes
+            // an ECDSA signer address for now, so this is the only entry.
+            scheme_digests: vec![SchemeDigest {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                digest: n.signerAddress.to_vec(),
+            }],
         })
         .collect();
 
