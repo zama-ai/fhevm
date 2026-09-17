@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET next_retry_at = NOW() + ($2::BIGINT * INTERVAL '1 second')\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2dce56dbfccfd84dfe3f5d69728cf155ed2dabb2ee99394b19c66af45559f16c"
+}

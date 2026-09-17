@@ -140,6 +140,10 @@ impl fmt::Debug for DatabaseChainLock {
 }
 
 impl LockMngr {
+    pub(crate) fn pool(&self) -> &sqlx::Pool<Postgres> {
+        &self.pool
+    }
+
     pub fn new(worker_id: Uuid, pool: sqlx::Pool<Postgres>) -> Self {
         Self {
             worker_id,

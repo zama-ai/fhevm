@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                SELECT 1 FROM ciphertexts ct\n                 WHERE ct.handle = $1 AND octet_length(ct.ciphertext) > 0\n           ) AS \"stored!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stored!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a845401ece45aeeabdb1cf0f3ed545813a75b6bea8b2e47f7ebac6a59413607c"
+}

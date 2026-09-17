@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SHOW search_path",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "search_path",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "35309ee6e38fa437a24aaa0fc3b225d3a6e87c286db4a980e55a5ca2d4d7e0d1"
+}

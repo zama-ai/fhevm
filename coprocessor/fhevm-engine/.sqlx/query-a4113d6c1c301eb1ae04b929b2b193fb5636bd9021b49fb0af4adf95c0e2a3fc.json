@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar,\n                  c.is_completed, c.is_allowed, c.is_error,\n                  EXISTS (SELECT 1 FROM ciphertexts ct\n                          WHERE ct.handle = c.output_handle\n                            AND octet_length(ct.ciphertext) > 0) AS \"stored!\"\n             FROM computations c\n            WHERE c.host_chain_id = $1 AND c.block_number = $2\n            ORDER BY c.transaction_id, c.output_handle",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_completed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_error",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 7,
+        "name": "stored!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a4113d6c1c301eb1ae04b929b2b193fb5636bd9021b49fb0af4adf95c0e2a3fc"
+}
