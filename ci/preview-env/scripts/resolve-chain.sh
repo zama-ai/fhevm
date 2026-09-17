@@ -93,11 +93,16 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # One pod waits for BOTH Default-parameter ceremonies (4h keygen + 1h
-      # crsgen, see apply-chain-env.sh), so Helm must outlast their sum plus
-      # the Hardhat compile while remaining below the six-hour deploy-job cap.
-      echo "KEYGEN_TIMEOUT=310m"
+      # Test-parameter keygen + crsgen on Sepolia (~43 min + ~25 min) plus
+      # compile. GPU overwrites KEYGEN_TIMEOUT to 310m after this case.
+      echo "KEYGEN_TIMEOUT=110m"
     } >> "${GITHUB_ENV}"
-    echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
+      echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
 esac
+
+# Default-parameter DKG (GPU only) needs a Helm wait that outlasts 4h keygen + 1h
+# crsgen plus compile, still under the six-hour deploy-job cap.
+if [[ "${GPU:-false}" == "true" ]]; then
+  echo "KEYGEN_TIMEOUT=310m" >> "${GITHUB_ENV}"
+fi

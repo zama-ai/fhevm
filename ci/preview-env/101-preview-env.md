@@ -30,6 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
+| `preview-env-gpu` | With `preview-env-e2e-tests`, schedule FHE workers on the `coprocessor-gpu` nodepool and generate Default FHE parameters. Alone it does nothing. Combines with `preview-env-e2e` (HEAD workers) or `preview-env-blue-green` (Green/GCS GPU; Blue/BCS stays CPU). |
 | `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. With `deploy_polygon` the upgrade spans both host chains. |
 
 On PRs, images are **always** built fresh from the branch - there is no
@@ -71,8 +72,11 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   `3`/`5` stay N-party only. See `README.md`.
 - `enable_blue_green` — RFC-021 BCS+GCS on each identity (default `false`).
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
-  is the other gate. Incompatible with `deploy_polygon` (so also with
-  `chain_mode=testnets`).
+  is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
+  the upgrade spans both host chains.
+- `enable_gpu` — GPU workers + Default FHE params (default `false`). CLI
+  `--gpu`. The `preview-env-gpu` + `preview-env-e2e-tests` labels are the
+  other gate. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -168,6 +172,8 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -177,6 +183,8 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
+`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params). Combine
+with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
 
 `launch` polls for the new Actions run and prints its id. Stream progress with
