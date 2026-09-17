@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT d.host_chain_id, d.handle,\n                   d.consensus_epoch = $1 AS \"local!\"\n           FROM public.drifted_handle d\n           WHERE d.reason = 'ct64_mismatch' AND d.healed_at IS NULL\n             AND (d.consensus_epoch = $1\n                  OR ($2 AND NOT EXISTS (\n                          SELECT 1 FROM ciphertexts ct WHERE ct.handle = d.handle))\n                  OR (d.local_ct64_digest IS NOT NULL\n                      AND EXISTS (\n                          SELECT 1 FROM ciphertext_digest cd\n                           WHERE cd.handle = d.handle\n                             AND cd.ciphertext = d.local_ct64_digest)))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "3ec3cf32e7be1593a1651c5545353236b80dee4c19705f14617f0261744a23b6"
+}
