@@ -128,6 +128,14 @@ struct Args {
     #[arg(long, default_value_t = 59)]
     manifest_verification_retry_count: u32,
 
+    /// Concurrent ct64 downloads per healing pass.
+    #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(i64).range(1..))]
+    manifest_healing_batch_size: i64,
+
+    /// Fallback poll while waiting for `event_healing_work`.
+    #[arg(long, default_value = "30s", value_parser = parse_duration)]
+    manifest_healing_poll_interval: Duration,
+
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as uncomputed. A computed handle resets it.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
@@ -250,6 +258,8 @@ async fn main() -> anyhow::Result<()> {
             verification_delay: args.manifest_verification_delay,
             verification_retry_delay: args.manifest_verification_retry_delay,
             verification_retry_count: args.manifest_verification_retry_count,
+            healing_batch_size: args.manifest_healing_batch_size,
+            healing_poll_interval: args.manifest_healing_poll_interval,
             incomplete_block_timeout: args.incomplete_block_timeout,
             incomplete_manifest_max_lag: args.incomplete_manifest_max_lag,
             publication_cadence_overrides:

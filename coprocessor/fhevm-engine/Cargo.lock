@@ -2814,6 +2814,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "block-manifest",
+ "ciphertext-attestation",
  "clap",
  "dashmap",
  "fhevm-engine-common",
