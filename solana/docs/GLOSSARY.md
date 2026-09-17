@@ -12,7 +12,7 @@ stack where one exists.
 
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
-| **handle** | 32-byte opaque identifier of one ciphertext, derived on-chain during execution. The high bit of its embedded chain id marks the chain type (Solana = set). | — | `bytes32` handle |
+| **handle** | 32-byte opaque identifier of one ciphertext, derived on-chain during execution. Bytes 22–29 are the host `chain_id` (DD-052). The decided Solana type byte is `0x01`; today's tree still sets bit 63. | — | `bytes32` handle |
 | **encrypted store** | Host-owned `EncryptedStore` PDA at `["encrypted-state", program, authority, scope]`. Holds up to 32 keyed current handles and one shared decryption-history MMR. Creating it validates the authority as a PDA of the program; subsequent access validates canonical identity and the required signer. | encrypted value account, `EncryptedValue`, lineage account | application storage plus ACL history |
 | **application** | The pair `(program, scope)`: the program a value belongs to and the scope that program declared within itself. `AppScope` in code. It is the identity HCU metering charges, the deny list names, and a permit scopes to. Trustworthy only as the pair: the host verifies `program` on every write (below), so another program cannot forge that half, and `scope` means what `program` says it means. | domain, `acl_domain_key`, compute subject (as the metered identity) | ACL contract instance / `msg.sender` of the dapp |
 | **program** | The application program in a Store identity. Its control of the authority PDA is proved when the Store is created. | — | application contract |
