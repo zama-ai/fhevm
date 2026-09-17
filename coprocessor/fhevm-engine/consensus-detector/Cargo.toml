@@ -5,6 +5,12 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Test-box only: keep computing state_hash rows after cutover, past the
+# upgrade window, so the blue/green consensus test loop can keep verifying
+# operator agreement. Never enable in a production build.
+post-cutover-state-hash = []
+
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }

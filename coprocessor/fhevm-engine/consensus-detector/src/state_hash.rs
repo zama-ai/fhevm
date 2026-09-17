@@ -547,18 +547,7 @@ async fn compute_and_upload_state_hashes(
                 .await?;
         }
     } else {
-        // LOCAL CHANGE: keep computing gcs.state_hash AFTER cutover, when there is
-        // no active upgrade window. Hash every finalized, not-yet-hashed block for
-        // each host chain against the retained gcs schema. compute_and_insert_gcs
-        // skips already-hashed blocks (NOT EXISTS) and is bounded by batch_limit,
-        // so a full [0, i64::MAX] range is safe and idempotent.
-        let chain_rows = sqlx::query("SELECT chain_id FROM public.host_chains ORDER BY chain_id")
-            .fetch_all(&mut *tx)
-            .await?;
-        for row in chain_rows {
-            let chain_id: i64 = row.try_get("chain_id")?;
-            compute_and_insert_gcs(&mut tx, chain_id, 0, i64::MAX, batch_limit, "public").await?;
-        }
+        compute_post_cutover_state_hashes(&mut tx, batch_limit).await?;
     }
     tx.commit().await?;
 
@@ -567,6 +556,45 @@ async fn compute_and_upload_state_hashes(
         upload_pending_state_hashes(pool, s3, my_bucket, batch_limit).await?;
         upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit).await?;
     }
+    Ok(())
+}
+
+/// Test-box-only build: keep computing `state_hash` rows AFTER cutover, once
+/// there is no active upgrade window, against the retained gcs schema now living
+/// in `public`. Hash every finalized, not-yet-hashed block for each host chain.
+/// `compute_and_insert_gcs` skips already-hashed blocks (`NOT EXISTS`) and is
+/// bounded by `batch_limit`, so a full `[0, i64::MAX]` range is safe and
+/// idempotent.
+///
+/// Used by the blue/green consensus test loop to keep verifying operator
+/// agreement past cutover; not needed by the upgrade procedure itself, which is
+/// why it only exists behind the `post-cutover-state-hash` Cargo feature — a
+/// production build never compiles this in. Enable with `cargo build --features
+/// post-cutover-state-hash` (or add it under `[features]` in the consuming
+/// Cargo.toml) on the test box only.
+#[cfg(feature = "post-cutover-state-hash")]
+async fn compute_post_cutover_state_hashes(
+    tx: &mut Transaction<'_, Postgres>,
+    batch_limit: i64,
+) -> anyhow::Result<()> {
+    let chain_rows = sqlx::query("SELECT chain_id FROM public.host_chains ORDER BY chain_id")
+        .fetch_all(&mut **tx)
+        .await?;
+    for row in chain_rows {
+        let chain_id: i64 = row.try_get("chain_id")?;
+        compute_and_insert_gcs(tx, chain_id, 0, i64::MAX, batch_limit, "public").await?;
+    }
+    Ok(())
+}
+
+/// Production build: no active upgrade window means nothing to hash — see
+/// [`compute_and_upload_state_hashes`]. The `post-cutover-state-hash` feature
+/// swaps in the test-box variant above.
+#[cfg(not(feature = "post-cutover-state-hash"))]
+async fn compute_post_cutover_state_hashes(
+    _tx: &mut Transaction<'_, Postgres>,
+    _batch_limit: i64,
+) -> anyhow::Result<()> {
     Ok(())
 }
 
