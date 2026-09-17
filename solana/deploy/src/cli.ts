@@ -1,4 +1,4 @@
-// Solana deployer: host deploy|upgrade, demos deploy|upgrade.
+// Solana deployer: host deploy|upgrade|wipe, demos deploy|upgrade, coprocessor register.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -9,11 +9,14 @@ import { registerSolanaCoprocessorSql } from './coprocessor';
 import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
 import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './gateway';
-import { resolveKeypairPath } from './keypair';
+import { loadKeypairSigner, resolveKeypairPath } from './keypair';
 import { programIdsFor, readSolanaProgramProfile } from './program-profile';
+import { createHostDeployContext } from './send';
+import { wipeZamaHost } from './wipe';
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 
+const USAGE = 'usage: host deploy|upgrade|wipe; demos deploy|upgrade; coprocessor register';
 const KEYPAIR_DIR = process.env.SOLANA_KEYPAIR_DIR ?? '/tmp/solana-deploy-keypairs';
 const ARTIFACTS_DIR = process.env.SOLANA_ARTIFACTS_DIR ?? '/app/programs';
 const ADDRESSES_DIR = process.env.ADDRESSES_DIR ?? '/app/addresses';
@@ -46,7 +49,7 @@ const resolveDeployerKeypairPath = (): Promise<string> =>
   });
 
 if (process.argv.includes('--help')) {
-  console.log('usage: host deploy|upgrade; demos deploy|upgrade; coprocessor register');
+  console.log(USAGE);
   process.exit(0);
 }
 
@@ -64,9 +67,14 @@ const main = async () => {
     // psql reports RAISE EXCEPTION messages and connection failures on stderr.
     if (result.status !== 0) throw new Error(`coprocessor registration failed: ${result.stderr.trim()}`);
     await writeSolanaAddressArtifact(ADDRESSES_DIR, { zama_host: programIds.zamaHost });
+  } else if (target === 'host' && action === 'wipe') {
+    const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
+    const payer = await loadKeypairSigner(await resolveDeployerKeypairPath());
+    const closed = await wipeZamaHost(context, { payer, programAddress: programIds.zamaHost });
+    console.log(`profile=${profile}; host=${programIds.zamaHost}; swept ${closed} program-owned accounts; none remain`);
   } else {
     if ((target !== 'host' && target !== 'demos') || (action !== 'deploy' && action !== 'upgrade')) {
-      throw new Error('usage: host deploy|upgrade; demos deploy|upgrade; coprocessor register');
+      throw new Error(USAGE);
     }
     const programs =
       target === 'host' ? (['zama_host'] as const) : SOLANA_DEPLOY_PROGRAMS.filter((p) => p !== 'zama_host');

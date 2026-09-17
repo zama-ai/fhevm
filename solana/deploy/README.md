@@ -57,6 +57,7 @@ bash solana/scripts/build-programs.sh localnet zama_host confidential_token
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host upgrade
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host wipe
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> demos deploy
 ```
 
@@ -84,6 +85,11 @@ changing an address requires rebuilding. Private keys are never build inputs.
 | Existing program with `upgrade` | Validate bindings and authority, then upgrade at the same address |
 | Incompatible host configuration | Fail before modifying bytecode |
 
+`host wipe` closes every account the host program owns and returns the rent to the deployer,
+which must be the program's upgrade authority. In the image it needs only `SOLANA_RPC_URL` and the
+deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `preview-env` builds,
+so the command fails against a localnet or production program.
+
 `coprocessor register` is an internal deployment command that associates the Solana
 host with the canonical host's key material in PostgreSQL. It shares registration SQL
 with the local harness; it is not a new top-level fhevm-cli command.
@@ -93,7 +99,7 @@ with the local harness; it is not a new top-level fhevm-cli command.
 1. Stop traffic before upgrading; stop the listener too if its decoder must change.
 2. For a compatible change, upgrade the program, then update the affected infrastructure.
 3. For a breaking change, run `gh workflow run preview-env-destroy.yml -f namespace=<namespace>`.
-4. Upgrade the program and recreate the preview with fresh application state and matching host bindings; Kubernetes teardown does not erase Solana accounts.
+4. Run `host wipe`, then upgrade the program and recreate the preview with fresh application state and matching host bindings; Kubernetes teardown does not erase Solana accounts.
 5. Resume traffic when the listener is ingesting and a computation/decryption smoke test passes.
 
 An existing HostConfig/KMS context cannot be silently rebound to a new Gateway or

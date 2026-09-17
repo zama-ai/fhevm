@@ -2427,8 +2427,9 @@ checks. The branch retains current slot/publication and PendingBurn semantics; h
 
 ## DD-051: A Zama Is One Host Program ID
 
-Status: **adopted** for identity. The preview-env wipe and the admin close instruction are
-follow-up; zama-host cannot close these accounts today.
+Status: **adopted** for identity. zama-host closes its accounts through `close_owned_accounts`
+(`admin-sweep` builds only) and the deployer's `host wipe`; wiring the wipe into the preview-env
+workflows is follow-up.
 
 HostConfig is that program's singleton `PDA("host-config")`. Four public `zama-host` program IDs:
 
@@ -2460,25 +2461,25 @@ the Solana RPC credentials, and the deployer keypair. The preview-env GitHub Act
 the only intended writers of `DPq5y89…`. Durable zama-devnet, zama-testnet and mainnet are later
 GitOps environments on the other three IDs.
 
-### Follow-up: preview-env wipe
+### Preview-env wipe (workflow wiring is follow-up)
 
 Only one preview namespace should use `DPq5y89…` at a time. Each namespace deploys its own Anvil
 Gateway, and HostConfig stores that Gateway's chain id, InputVerification address, Decryption
 address and coprocessor signers, so leftover HostConfig from the previous namespace cannot bind
 the next one.
 
-zama-host has no instruction that closes HostConfig or EncryptedStores. `destroy_kms_context` only
-sets `destroyed = true`. The preview-env Solana deploy will need an admin instruction that takes
-raw account addresses, checks that this program owns them, and returns the rent. The accounts
-cannot be typed `Account<EncryptedStore>` (or `Account<HostConfig>`), because an old byte layout
-would fail to deserialize, and that leftover is what the wipe must delete. Solana has no parent
-account: closing HostConfig leaves EncryptedStores, KMS contexts, the rand nonce and accounts
-owned by the shared demo programs in place until the same instruction closes each of them.
-`initialize_host_config` also creates the rand nonce, so both addresses must be empty or the next
-init fails.
+`destroy_kms_context` only sets `destroyed = true`, and no production instruction closes HostConfig
+or EncryptedStores. `close_owned_accounts`, compiled only behind the `admin-sweep` feature that the
+`preview-env` profile enables, takes raw account addresses as remaining accounts, skips the ones
+this program does not own, and returns the rent to the signer, who must be the program's upgrade
+authority. The accounts are untyped because an old byte layout would fail to deserialize, and that
+leftover is what the wipe must delete. Solana has no parent account: closing HostConfig leaves
+EncryptedStores, KMS contexts and the rand nonce in place until the same instruction closes each
+of them, so the deployer's `host wipe` closes everything `getProgramAccounts` lists and fails if
+anything remains. `initialize_host_config` also creates the rand nonce, so both addresses must be
+empty or the next init fails. Accounts owned by the shared demo programs are not covered.
 
-Once that instruction exists, `preview-env-deploy.yml` will close every account owned by the
-program (listed by `getProgramAccounts`), upload this `.so` when the bytecode differs, then run
+`preview-env-deploy.yml` will run `host wipe`, upload this `.so` when the bytecode differs, then run
 `initialize_host_config` and `define_kms_context` for this Gateway. `preview-env-destroy.yml` will
 close those accounts again before it deletes the namespace and will not initialize. If that
 namespace uploaded a different `.so`, destroy will write the pinned baseline `.so` back.

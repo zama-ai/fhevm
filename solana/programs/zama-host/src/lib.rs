@@ -103,6 +103,14 @@ pub mod zama_host {
         instructions::destroy_kms_context(ctx, context_id)
     }
 
+    /// Preview-only wipe: closes the program-owned remaining accounts, rent to the upgrade authority.
+    #[cfg(feature = "admin-sweep")]
+    pub fn close_owned_accounts<'info>(
+        ctx: Context<'info, CloseOwnedAccounts<'info>>,
+    ) -> Result<()> {
+        instructions::close_owned_accounts(ctx)
+    }
+
     pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
         instructions::set_host_pause(ctx, paused)
     }
