@@ -102,6 +102,16 @@ which must be the program's upgrade authority. In the image it needs only `SOLAN
 deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `preview-env` builds,
 so the command fails against a localnet or production program.
 
+The destroy workflow does not run `host wipe`. Run it (a one-shot Job with the deployer image and the
+namespace's `solana-rpc` / `solana-deployer` Secrets) before destroying a preview; otherwise the next
+`host deploy` finds the previous HostConfig and KMS context bound to the same program address.
+
+The SDK's Solana actions default to the generated `localnet` program ids, and the demo dapp and
+`test-suite/fhevm` generated clients inline them as well (program address constants, PDA helper
+defaults and instruction account defaults). `bun run test:e2e` and the demo therefore cannot target a
+preview's `preview-env` programs today; only the deployer resolves that profile. The confidential
+transfer scenarios also require `deploy_example_programs=true`, since they call `confidential_token`.
+
 `coprocessor register` is an internal deployment command that associates the Solana
 host with the canonical host's key material in PostgreSQL. It shares registration SQL
 with the local harness; it is not a new top-level fhevm-cli command.
