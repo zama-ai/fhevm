@@ -103,8 +103,7 @@ pub mod zama_host {
         instructions::destroy_kms_context(ctx, context_id)
     }
 
-    /// Closes every program-owned account passed as remaining accounts and refunds the rent to
-    /// the upgrade authority. Preview-only: absent from builds without `admin-sweep`.
+    /// Preview-only wipe: closes the program-owned remaining accounts, rent to the upgrade authority.
     #[cfg(feature = "admin-sweep")]
     pub fn close_owned_accounts<'info>(
         ctx: Context<'info, CloseOwnedAccounts<'info>>,

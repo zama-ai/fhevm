@@ -5,6 +5,7 @@
 //! touch `HostConfig` through the admin account contexts; they do not share the
 //! `FheExecutionFixture` harness.
 
+use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_lang::{prelude::system_program, InstructionData};
 use mollusk_svm::result::Check;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
@@ -458,7 +459,7 @@ fn close_owned_accounts_ix(admin: Pubkey, targets: &[Pubkey]) -> Instruction {
         host::id(),
         host::accounts::CloseOwnedAccounts {
             admin,
-            program_data: program_data_account(None).0,
+            program_data: bpf_loader_upgradeable::get_program_data_address(&host::ID),
         },
         host::instruction::CloseOwnedAccounts {},
     );
@@ -469,33 +470,41 @@ fn close_owned_accounts_ix(admin: Pubkey, targets: &[Pubkey]) -> Instruction {
 
 #[test]
 fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
-    // A wipe batch built from `getProgramAccounts` may name accounts the program no longer
-    // owns; those are skipped so one stale entry cannot fail the batch.
+    // A target list built from `getProgramAccounts` may name an account the program no longer
+    // owns, or name one twice; neither fails the instruction and neither is refunded twice.
     let admin = Pubkey::new_unique();
     let (host_config, host_config_acct) = host_config_account(admin);
     let owned = Pubkey::new_unique();
     let owned_acct = program_owned_account();
     let foreign = Pubkey::new_unique();
+    let foreign_acct = Account {
+        owner: Pubkey::new_unique(),
+        data: vec![7; 16],
+        ..program_owned_account()
+    };
     let (program_data, program_data_acct) = program_data_account(Some(admin));
     let context = sweep_context(
         admin,
         vec![
             (host_config, host_config_acct.clone()),
             (owned, owned_acct.clone()),
-            (foreign, system_account(5_000)),
+            (foreign, foreign_acct.clone()),
             (program_data, program_data_acct),
         ],
     );
     let admin_before = read_lamports(&context, admin);
 
     context.process_and_validate_instruction(
-        &close_owned_accounts_ix(admin, &[host_config, owned, foreign]),
+        &close_owned_accounts_ix(admin, &[host_config, owned, foreign, owned]),
         &[Check::success()],
     );
 
     assert!(account_is_system_owned_and_empty(&context, host_config));
     assert!(account_is_system_owned_and_empty(&context, owned));
-    assert_eq!(read_lamports(&context, foreign), 5_000);
+    assert_eq!(
+        context.account_store.borrow().get(&foreign),
+        Some(&foreign_acct)
+    );
     assert_eq!(
         read_lamports(&context, admin),
         admin_before + host_config_acct.lamports + owned_acct.lamports
@@ -525,6 +534,27 @@ fn mollusk_close_owned_accounts_rejects_signer_who_is_not_upgrade_authority() {
 }
 
 #[test]
+fn mollusk_close_owned_accounts_rejects_finalized_program() {
+    // With no upgrade authority nobody can wipe: the accounts of a finalized program are permanent.
+    let admin = Pubkey::new_unique();
+    let (host_config, host_config_acct) = host_config_account(admin);
+    let (program_data, program_data_acct) = program_data_account(None);
+    let context = sweep_context(
+        admin,
+        vec![
+            (host_config, host_config_acct),
+            (program_data, program_data_acct),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &close_owned_accounts_ix(admin, &[host_config]),
+        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+    );
+    assert!(read_host_config(&context, host_config).is_some());
+}
+
+#[test]
 fn close_owned_accounts_wire_format_matches_deployer() {
     // The instruction is absent from the vendored IDL (it is feature-gated), so
     // solana/deploy/src/wipe.ts hand-builds it: discriminator, then admin (writable signer) and
@@ -535,7 +565,7 @@ fn close_owned_accounts_wire_format_matches_deployer() {
         &[36, 68, 214, 114, 46, 227, 146, 228]
     );
     let admin = Pubkey::new_unique();
-    let program_data = program_data_account(None).0;
+    let program_data = bpf_loader_upgradeable::get_program_data_address(&host::ID);
     let metas = host::accounts::CloseOwnedAccounts {
         admin,
         program_data,

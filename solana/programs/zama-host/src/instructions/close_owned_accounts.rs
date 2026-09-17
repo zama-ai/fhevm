@@ -1,11 +1,9 @@
-//! Closes program-owned accounts so a preview deployment can be wiped between trials.
+//! Closes program-owned accounts so a preview deployment can be wiped between trials (DD-051).
 //!
-//! Only the owner program can zero an account's lamports or reassign it, so without this
-//! instruction the accounts of a redeployed host (HostConfig, KMS contexts, stores) would
-//! outlive every Kubernetes teardown. The caller lists the targets as remaining accounts;
-//! accounts the program does not own are skipped, so a stale `getProgramAccounts` page cannot
-//! fail the whole batch. Gated on the program's upgrade authority rather than `HostConfig.admin`
-//! because a half-initialized deployment has no config to consult.
+//! Only the owner program can zero an account's lamports or reassign it. Targets are untyped
+//! remaining accounts, so an account left by an older layout can still be closed, and a target
+//! the program does not own is skipped rather than failing the instruction. Gated on the upgrade
+//! authority rather than `HostConfig.admin` because a half-initialized deployment has no config.
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{bpf_loader_upgradeable, system_program};
