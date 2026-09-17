@@ -30,11 +30,11 @@
 //      manifest-listed WASM packages.
 //   3. Run `npm run codegen:loaders` to regenerate the source loader.
 
-export const TFHE_MANIFEST = Object.freeze([Object.freeze({ version: '1.6.2' })]);
+export const TFHE_MANIFEST = Object.freeze([Object.freeze({ version: '1.8.1' })]);
 
-export const KMS_MANIFEST = Object.freeze([Object.freeze({ version: '0.14.0-1' })]);
+export const KMS_MANIFEST = Object.freeze([Object.freeze({ version: '0.15.0-0' })]);
 
 export const WASM_DEFAULT_VERSIONS = Object.freeze({
-  tfhe: '1.6.2',
-  tkms: '0.14.0-1',
+  tfhe: '1.8.1',
+  tkms: '0.15.0-0',
 });
