@@ -27,7 +27,7 @@ and the connector's `ProofRecordBehind` / `NoLeaf` classification).
    honest).
 2. **On-chain integration — Mollusk** (`solana/runtime-tests/tests/{host,token}_mollusk.rs`): runs the
    **real compiled `.so`** against Mollusk. Covers both leaf kinds, program verification of the
-   output authority (`EncryptedValueAuthorityNotProgramPda`), the deny list by application, the rand
+   output authority (`EncryptedStoreAuthorityNotProgramPda`), the deny list by application, the rand
    nonce, the full token flows (wrap / transfer / burn→redeem / disclose), the produced-public
    lifecycle event (zero/one/multiple/max-size), the sequential pending-burn redeem/cancel act-once
    lifecycle, and handle update. Token disclosure is the thin `disclose_secp` consumer of the host

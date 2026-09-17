@@ -450,8 +450,9 @@ cross-field validator (DD-027).
 
 Replaced design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
 (`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
-Reversed to reuse one decrypt trust model and routing path. The native-v0 Connector tables and
-typed-column detour were never read by any code path and are gone from this branch.
+Reversed to reuse one decrypt trust model and routing path. The connector subsystem that read the
+native-v0 tables was deleted earlier; the tables and the typed-column detour had no reader left, no
+shared database ever applied them, and they are now gone from this branch.
 
 Open for debate: is unifying on the EVM/Gateway stack the right long-term call, or does a second
 non-EVM chain eventually justify a native path? The KMS-connector decrypt is exercised in the harness,

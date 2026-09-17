@@ -85,8 +85,8 @@ images_for() {
 # Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are no longer copied into any
 # builder stage, and runtime-tests sources are copied only for cargo workspace resolution and are
 # never compiled into a runtime image, so none of them trigger a rebuild. Programs that no image
-# consumes (demo-vault) are none-ruled explicitly; any FUTURE program falls into the general
-# solana/programs/* rule and is over-built by default.
+# consumes (demo-vault, encrypted-counter, dep-chain) are none-ruled explicitly; any other program,
+# including a FUTURE one, falls into the general solana/programs/* rule and is over-built by default.
 groups_for_path() {
   local path="$1"
   case "$path" in
