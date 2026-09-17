@@ -117,8 +117,12 @@ const sendAndWait = async (txPromise: Promise<{ hash: string }>) => {
   return receipt;
 };
 
+const ZERO_HANDLE = `0x${'0'.repeat(64)}`;
+
 const decryptBalance = async (ctx: Ctx, holder: Holder): Promise<bigint> => {
   const handle = await ctx.token.balanceOf(ctx.signers[holder].address);
+  // A holder who has never been credited has an uninitialized handle, which is a balance of 0.
+  if (handle === ZERO_HANDLE) return 0n;
   return ctx.instances[holder].userDecryptSingleHandle({
     handle,
     contractAddress: ctx.state.contractAddress,
