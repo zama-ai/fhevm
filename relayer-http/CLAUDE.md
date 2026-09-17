@@ -81,8 +81,12 @@ docker run --rm -p 8080:8080 -v "$PWD/relayer-http/config/config.yaml:/app/confi
   -e KMS_00_API_KEY=... relayer-http            # the config is mounted at /app/config/config.yaml
 ```
 
-The CI workflow for this image (the reusable docker template, change filters on `relayer-http/**` and
-`kms-connector/crates/api/**`) is not wired yet.
+CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/workflows/relayer-http-docker-build.yml`
+(pushes to `main`/`release/*`, releases, manual runs, or a call from the e2e orchestrator). The two other workflows,
+`relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
+then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
+and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
+`kms-connector/crates/api/**` and `kms-connector/Cargo.toml`.
 
 ## Rules
 
