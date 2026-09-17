@@ -1988,9 +1988,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
             for (uint256 f; f < scalarFlags.length; ++f) {
                 for (uint256 d; d < divisors.length; ++d) {
-                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
                     fhevmExecutor.fheDiv(lhs, divisors[d], scalarFlags[f]);
-                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
                     fhevmExecutor.fheRem(lhs, divisors[d], scalarFlags[f]);
                 }
             }
@@ -2082,6 +2082,24 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 rhs = _generateMockHandle(FheType(5));
         vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
         fhevmExecutor.fheMul(lhs, rhs, 0x42);
+    }
+
+    function test_FheDivRevertsIfScalarByteIsNotBoolean() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint16);
+        bytes32 rhs = bytes32(uint256(1));
+        _approveHandleInACL(lhs, address(this));
+
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheDiv(lhs, rhs, 0x02);
+    }
+
+    function test_FheRemRevertsIfScalarByteIsNotBoolean() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint16);
+        bytes32 rhs = bytes32(uint256(1));
+        _approveHandleInACL(lhs, address(this));
+
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheRem(lhs, rhs, 0x02);
     }
 
     function test_FheRandBoundedAboveMaxTypeValueRevertAsExpected() public {
