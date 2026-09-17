@@ -73,7 +73,7 @@ trusted for authorization.
   repeated 32-byte values in a dictionary; the KMS settle transaction requires
   a v0 transaction plus one address lookup table. Both bounds are pinned by
   tests, not assumed.
-- **The chain-type high bit.** Solana chain ids set bit 63, which lets 32-byte
+- **The chain-type byte.** Solana chain ids start with `0x01`, which lets 32-byte
   handles ride the shared gateway and coprocessor infrastructure while every
   consumer can branch on chain type where the shapes genuinely differ.
 - **Roles are account positions, not `msg.sender`.** An execution names a

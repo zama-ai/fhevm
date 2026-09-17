@@ -949,8 +949,8 @@ Decision:
 - Non-EVM bytes32 input via `InputVerification.verifyProofRequestSolana` + event
   `VerifyProofRequestSolana` (dapp/user are 32-byte host addresses; shares zkProofId + consensus with
   the EVM path; request stored in `solanaZkProofInputs` for bytes32 EIP-712 response validation).
-- Which `u64` is a Solana host chain id is DD-052. Relayer `is_solana_host_chain_id` still
-  tests bit 63.
+- Which `u64` is a Solana host chain id is DD-052. Relayer `is_solana_host_chain_id`
+  matches type byte `0x01`.
 - The input's `extraData` is the **coprocessor cert's EIP-712 `CiphertextVerification` extraData** — it
   is NOT, and never was, the `0x03` Solana user-decrypt blob. The input identity itself is a plain
   bytes32 host address (no version-byte blob).
@@ -1006,8 +1006,8 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 
 Decision / fix:
 
-A **cross-field validator branches on `contracts_chain_id`** via `is_solana_host_chain_id` (bit 63
-today; the predicate’s meaning is DD-052): EVM-strict (non-empty contracts, exact EIP-712 130-hex
+A **cross-field validator branches on `contracts_chain_id`** via `is_solana_host_chain_id` (type byte
+`0x01`; the predicate’s meaning is DD-052): EVM-strict (non-empty contracts, exact EIP-712 130-hex
 signature) vs Solana-relaxed (empty contracts allowed, 128-or-130-char signature). Per-field
 validators stay permissive; strictness is enforced in the cross-field branch.
 
@@ -2493,8 +2493,9 @@ do not need a schema change. RFC 035 and RFC 036 do not change.
 
 Status: adopted
 
-This entry fixes the target, not the current code. The tree still uses
-`SOLANA_POC_CHAIN_ID = (1 << 63) | 12345`, and `is_solana_host_chain_id` still tests bit 63.
+This entry is the encoding the tree uses. `SOLANA_POC_CHAIN_ID` is
+`solana_host_chain_id(12345)` (`0x0100000000003039`), and `is_solana_host_chain_id`
+matches high byte `0x01`.
 
 `chain_id` names the Solana cluster (DD-051), not a Zama. Preview on Solana devnet uses the
 solana-devnet row. Two Zamas on one cluster share the number and differ by `program_id`.
@@ -2523,12 +2524,12 @@ travel as `bigint` or hex.
 | solana-testnet | genesis `4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY` | `0x013a132ece10305e` |
 | localnet | pinned `12345`, not a hash | `0x0100000000003039` |
 
-This table is the only assignment, and no file in the tree holds it yet. The deploy workflow
-selects a row by its name, such as `solana-devnet`, and passes that one integer to
-`initialize_host_config`, the listener and the connector. Nothing invents a second integer.
+This table is the assignment. The deploy workflow selects a row by its name, such as
+`solana-devnet`, and passes that one integer to `initialize_host_config`, the listener and
+the connector. Nothing invents a second integer.
 
-`initialize_host_config` today requires bit 63 set on the host `chain_id` and clear on
-`gateway_chain_id`. After the follow-up it will require type byte `0x01` and `0x00`.
+`initialize_host_config` requires type byte `0x01` on the host `chain_id` and `0x00` on
+`gateway_chain_id`.
 HostConfig then holds the chosen row. The listener, connector and relayer must use that
 same value. The listener today takes `chain_id` from its config and does not compare it to
 HostConfig (#1972). A deployment on a named public row may also compare RPC `getGenesisHash`

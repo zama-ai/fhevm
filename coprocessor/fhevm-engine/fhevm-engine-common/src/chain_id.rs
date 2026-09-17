@@ -17,43 +17,59 @@ pub struct InvalidChainId {
     value: String,
 }
 
-/// RFC-021 reserves the high bit of the u64 chain id as the host `chain_type`
-/// marker: when set, the host chain is Solana rather than an EVM chain. The
-/// remaining 63 bits carry the logical chain id.
-pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
+/// High byte of the eight-byte chain-id field (handle bytes 22–29).
+pub const EVM_CHAIN_TYPE: u8 = 0x00;
+pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
+const CHAIN_TYPE_SHIFT: u32 = 56;
+pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+
+pub const fn chain_type_byte(chain_id: u64) -> u8 {
+    (chain_id >> CHAIN_TYPE_SHIFT) as u8
+}
+
+pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == EVM_CHAIN_TYPE
+}
+
+pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
+}
+
+pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
+    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
+}
 
 impl ChainId {
     /// Returns the inner value as `i64` (for database operations).
     ///
-    /// For a Solana host id (chain-type high bit set) this is the negative
-    /// two's-complement bit pattern of the canonical u64; the BIGINT column
-    /// stores that pattern so the value round-trips back through [`Self::as_u64`].
+    /// Type-byte Solana ids sit below `i64::MAX` and store as a positive BIGINT.
+    /// [`Self::from_canonical_u64`] still bitcasts any `u64`, including values
+    /// with bit 63 set.
     #[inline]
     pub fn as_i64(self) -> i64 {
         self.0
     }
 
     /// Returns the canonical u64 chain id (for blockchain APIs and handle
-    /// derivation). The chain-type high bit is preserved verbatim.
+    /// derivation). The type byte is preserved verbatim.
     #[inline]
     pub fn as_u64(self) -> u64 {
         self.0 as u64
     }
 
-    /// Builds a chain id from a canonical u64 host identifier, accepting the
-    /// RFC-021 `chain_type` high bit. Unlike `TryFrom<u64>` (which is strict and
-    /// rejects values above `i64::MAX` for EVM safety), this preserves the full
-    /// 64-bit identity by storing its two's-complement bit pattern, so a Solana
-    /// host id survives the round-trip through the i64-backed BIGINT column.
+    /// Builds a chain id from a canonical u64 host identifier. Unlike
+    /// `TryFrom<u64>` (which rejects values above `i64::MAX`), this bitcasts the
+    /// full 64-bit identity so a value with bit 63 set still round-trips through
+    /// the BIGINT column. Type-byte Solana ids do not need that path.
     #[inline]
     pub fn from_canonical_u64(value: u64) -> Self {
         ChainId(value as i64)
     }
 
-    /// True when the chain-type high bit marks this as a Solana host chain.
+    /// True when the high byte is the Solana type byte `0x01`.
     #[inline]
     pub fn is_solana_host(self) -> bool {
-        self.as_u64() & SOLANA_CHAIN_TYPE_BIT != 0
+        is_solana_host_chain_id(self.as_u64())
     }
 }
 
@@ -190,17 +206,14 @@ mod tests {
     }
 
     #[test]
-    fn canonical_u64_round_trips_solana_high_bit() {
-        let canonical = SOLANA_CHAIN_TYPE_BIT | 12345;
+    fn canonical_u64_round_trips_solana_type_byte() {
+        let canonical = solana_host_chain_id(12345);
         let id = ChainId::from_canonical_u64(canonical);
 
-        // Recovered verbatim as u64, even though the i64 storage is negative.
         assert_eq!(id.as_u64(), canonical);
-        assert!(id.as_i64() < 0);
+        assert!(id.as_i64() > 0);
         assert!(id.is_solana_host());
-
-        // Storing the i64 bit pattern and reading it back preserves identity,
-        // matching how the BIGINT column round-trips the value.
+        assert_eq!(ChainId::try_from(canonical).unwrap(), id);
         assert_eq!(ChainId::from_canonical_u64(id.as_i64() as u64), id);
     }
 

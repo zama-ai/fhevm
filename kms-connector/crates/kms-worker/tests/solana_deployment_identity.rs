@@ -21,7 +21,7 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     deployment::{
-        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, SOLANA_CHAIN_TYPE_BIT,
+        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, solana_host_chain_id,
         check_deployment, embedded_chain_id,
     },
     failure::FailureClass,
@@ -48,14 +48,14 @@ fn the_identity_is_the_configured_program_and_chain_id() {
 /// user error every time.
 #[test]
 fn a_configured_chain_id_without_the_chain_kind_bit_fails_at_startup() {
-    let without_bit = CHAIN_ID & !SOLANA_CHAIN_TYPE_BIT;
+    let without_type_byte = 0x0123_4567_89ab_cdef & 0x00ff_ffff_ffff_ffff;
 
-    let error = DeploymentIdentity::resolve(PROGRAM_ID, without_bit)
-        .expect_err("a Solana chain id carries the chain-kind bit");
+    let error = DeploymentIdentity::resolve(PROGRAM_ID, without_type_byte)
+        .expect_err("a Solana chain id has type byte 0x01");
 
     assert!(matches!(
         error,
-        DeploymentIdentityError::ChainKindBitMissing { chain_id } if chain_id == without_bit
+        DeploymentIdentityError::ChainTypeByteInvalid { chain_id } if chain_id == without_type_byte
     ));
     assert_eq!(error.class(), FailureClass::Terminal);
 }
@@ -107,7 +107,7 @@ fn a_permit_signed_for_another_program_is_rejected() {
 #[test]
 fn a_permit_signed_for_another_cluster_is_rejected() {
     let wallet = Wallet::new(1);
-    let other_chain = SOLANA_CHAIN_TYPE_BIT | 0xdead_beef;
+    let other_chain = solana_host_chain_id(0xdead_beef);
     let live = handle_on_chain(0x12, FHE_TYPE_UINT64, other_chain);
     let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
@@ -132,7 +132,7 @@ fn a_permit_signed_for_another_cluster_is_rejected() {
 fn handles_embedding_different_chain_ids_are_rejected() {
     let wallet = Wallet::new(1);
     let local = handle(0x13, FHE_TYPE_UINT64);
-    let foreign_chain = SOLANA_CHAIN_TYPE_BIT | 0x1234;
+    let foreign_chain = solana_host_chain_id(0x1234);
     let foreign = handle_on_chain(0x14, FHE_TYPE_UINT64, foreign_chain);
     let encrypted_store = EncryptedStoreFixture::allowing(local, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
@@ -161,7 +161,7 @@ fn handles_embedding_different_chain_ids_are_rejected() {
 #[test]
 fn handles_embedding_a_cluster_other_than_the_signed_one_are_rejected() {
     let wallet = Wallet::new(1);
-    let foreign_chain = SOLANA_CHAIN_TYPE_BIT | 0x4321;
+    let foreign_chain = solana_host_chain_id(0x4321);
     let foreign = handle_on_chain(0x15, FHE_TYPE_UINT64, foreign_chain);
     let encrypted_store = EncryptedStoreFixture::allowing(foreign, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
@@ -185,10 +185,9 @@ fn the_embedded_chain_id_is_read_from_the_handle_bytes() {
     let live = handle(0x16, FHE_TYPE_UINT64);
 
     assert_eq!(embedded_chain_id(&live), CHAIN_ID);
-    assert_ne!(
-        CHAIN_ID & SOLANA_CHAIN_TYPE_BIT,
-        0,
-        "the fixture chain id carries the chain-kind bit, so the read above proves the bit \
+    assert!(
+        kms_worker::core::solana::deployment::is_solana_host_chain_id(CHAIN_ID),
+        "the fixture chain id has type byte 0x01, so the read above proves the type byte \
          survives the round trip"
     );
 }

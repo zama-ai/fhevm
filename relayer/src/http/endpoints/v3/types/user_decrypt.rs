@@ -174,7 +174,7 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub verifying_program_id: String,
 
-    /// The host chain id the handles belong to (decimal string; carries the chain-type high bit).
+    /// The host chain id the handles belong to (decimal string; type byte `0x01`).
     pub chain_id: String,
 
     /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId), `0x`-hex.

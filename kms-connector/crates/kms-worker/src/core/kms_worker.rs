@@ -1,7 +1,9 @@
 use crate::{
     core::{
         KmsResponsePublisher,
-        config::{Config, HostChainConfig, HostChainKind, SOLANA_CHAIN_TYPE_BIT},
+        config::{
+            Config, HostChainConfig, HostChainKind, is_evm_host_chain_id, is_solana_host_chain_id,
+        },
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
@@ -418,12 +420,11 @@ fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Resul
             ));
         }
 
-        let has_chain_type_bit = host_chain.chain_id & SOLANA_CHAIN_TYPE_BIT != 0;
         match host_chain.chain_kind {
             HostChainKind::Evm => {
-                if has_chain_type_bit {
+                if !is_evm_host_chain_id(host_chain.chain_id) {
                     return Err(anyhow!(
-                        "EVM host chain {} must not set the RFC-021 Solana chain-type high bit (bit 63)",
+                        "EVM host chain {} is not a uint64-padded EVM chain id (high byte must be 0x00)",
                         host_chain.chain_id
                     ));
                 }
@@ -449,9 +450,9 @@ fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Resul
                 }
             }
             HostChainKind::Solana => {
-                if !has_chain_type_bit {
+                if !is_solana_host_chain_id(host_chain.chain_id) {
                     return Err(anyhow!(
-                        "Solana host chain {} must set the RFC-021 Solana chain-type high bit (bit 63)",
+                        "Solana host chain {} must have type byte 0x01",
                         host_chain.chain_id
                     ));
                 }
@@ -488,11 +489,11 @@ fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::solana_host_chain_id;
     use alloy::primitives::Address;
 
     /// Builds a host-chain config for the given logical id and kind, applying the
-    /// RFC-021 chain-type high bit to Solana ids so the fixture satisfies the
-    /// invariant enforced by `validate_host_chain_configs`.
+    /// Solana type byte so the fixture satisfies `validate_host_chain_configs`.
     fn host_chain(chain_id: u64, chain_kind: HostChainKind) -> HostChainConfig {
         let mut host_chain = Config::default().host_chains.remove(0);
         host_chain.chain_kind = chain_kind;
@@ -502,7 +503,7 @@ mod tests {
                 host_chain.solana_host_program_id = None;
             }
             HostChainKind::Solana => {
-                host_chain.chain_id = SOLANA_CHAIN_TYPE_BIT | chain_id;
+                host_chain.chain_id = solana_host_chain_id(chain_id);
                 host_chain.acl_address = None;
                 host_chain.solana_host_program_id = Some([7; 32]);
                 host_chain.solana_proof_endpoints =
@@ -536,7 +537,7 @@ mod tests {
             backends.get(&1),
             Some(HostChainAclBackend::Evm(_))
         ));
-        match backends.get(&(SOLANA_CHAIN_TYPE_BIT | 2)) {
+        match backends.get(&solana_host_chain_id(2)) {
             Some(HostChainAclBackend::Solana(host)) => {
                 assert_eq!(host.deployment.program_id(), [7; 32])
             }
@@ -565,7 +566,7 @@ mod tests {
             ..Default::default()
         };
         let backends = register_host_chain_backends(&config).await.unwrap();
-        let HostChainAclBackend::Solana(host) = &backends[&(SOLANA_CHAIN_TYPE_BIT | 2)] else {
+        let HostChainAclBackend::Solana(host) = &backends[&solana_host_chain_id(2)] else {
             panic!("expected Solana backend")
         };
         let keys = SnapshotKeys::new([[1; 32]]);
@@ -590,7 +591,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_chain_ids() {
         // Under the RFC-021 invariant an EVM id and a Solana id can never collide
-        // (different high bit), so duplicates are only possible within one kind.
+        // (different type byte), so duplicates are only possible within one kind.
         for kind in [HostChainKind::Evm, HostChainKind::Solana] {
             let duplicate_id = host_chain(7, kind).chain_id;
             let error = validation_error(&[host_chain(7, kind), host_chain(7, kind)]);
@@ -605,21 +606,20 @@ mod tests {
 
     #[test]
     fn rejects_chain_id_inconsistent_with_chain_kind() {
-        // A Solana host chain that leaves the high bit clear.
+        // A Solana host chain whose high byte is not 0x01.
         let mut solana_without_bit = host_chain(9, HostChainKind::Solana);
         solana_without_bit.chain_id = 9;
-        // An EVM host chain that sets the high bit.
-        let mut evm_with_bit = host_chain(9, HostChainKind::Evm);
-        evm_with_bit.chain_id = SOLANA_CHAIN_TYPE_BIT | 9;
+        let mut evm_with_solana_type = host_chain(9, HostChainKind::Evm);
+        evm_with_solana_type.chain_id = solana_host_chain_id(9);
 
         let cases = [
             (
                 solana_without_bit,
-                "must set the RFC-021 Solana chain-type high bit",
+                "must have type byte 0x01",
             ),
             (
-                evm_with_bit,
-                "must not set the RFC-021 Solana chain-type high bit",
+                evm_with_solana_type,
+                "high byte must be 0x00",
             ),
         ];
         for (host_chain, expected) in cases {

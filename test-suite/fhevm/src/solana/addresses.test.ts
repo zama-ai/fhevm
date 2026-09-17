@@ -21,8 +21,8 @@ const addressArrayReturnData = (addresses: readonly string[]): string =>
 
 describe("solana host chain id constants", () => {
   test("i64 form is the same 64-bit pattern as the u64 form", () => {
-    expect(SOLANA_HOST_CHAIN_ID).toBe(9223372036854788153n);
-    expect(SOLANA_HOST_CHAIN_ID_I64).toBe(-9223372036854763463n);
+    expect(SOLANA_HOST_CHAIN_ID).toBe(72057594037940281n);
+    expect(SOLANA_HOST_CHAIN_ID_I64).toBe(72057594037940281n);
     expect(BigInt.asUintN(64, SOLANA_HOST_CHAIN_ID_I64)).toBe(SOLANA_HOST_CHAIN_ID);
   });
 });

@@ -449,7 +449,7 @@ where
                         verifying_contract: self.input_verification_address,
                     };
 
-                    // RFC-021 Solana hosts carry the chain-type high bit; they use bytes32 dapp/user
+                    // RFC-021 Solana hosts carry type byte `0x01`; they use bytes32 dapp/user
                     // identities and the verifyProofResponseSolana entrypoint, signing the matching
                     // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
                     if ChainId::from_canonical_u64(row.chain_id as u64).is_solana_host() {

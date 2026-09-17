@@ -563,7 +563,7 @@ describe('ZkProof', () => {
 });
 
 it('builds a Solana proof without EVM contracts and preserves its exact chain identity', async () => {
-  const chainId = 0x8000000000000001n;
+  const chainId = 0x0100000000000001n;
   const buildWithProofPacked = vi.fn().mockResolvedValue({
     ciphertextWithZKProofBytes: new Uint8Array([1, 2, 3]),
     extraData: '0x00',
@@ -585,6 +585,6 @@ it('builds a Solana proof without EVM contracts and preserves its exact chain id
   expect(fetchFheEncryptionKeyWasm).toHaveBeenLastCalledWith(context, expect.anything());
   const metadata = buildWithProofPacked.mock.calls[0]![0].metaData as Uint8Array;
   expect(Buffer.from(metadata).toString('hex')).toBe(
-    '11'.repeat(32) + '22'.repeat(32) + '33'.repeat(32) + '00'.repeat(24) + '8000000000000001',
+    '11'.repeat(32) + '22'.repeat(32) + '33'.repeat(32) + '00'.repeat(24) + '0100000000000001',
   );
 });

@@ -449,8 +449,7 @@ async fn execute_verify_proof_routine(
         };
         let host_chain_id_raw: i64 = row.chain_id;
 
-        // A Solana host id carries the RFC-021 chain-type high bit and is stored as a
-        // negative i64 bit pattern, which the strict ChainId::try_from rejects;
+        // A Solana host id carries type byte `0x01` and stores as a positive i64.
         // from_canonical_u64 recovers the full u64 host id for EVM and Solana alike.
         // The lookup below still guards against a cache/SELECT divergence.
         let host_chain_id = ChainId::from_canonical_u64(host_chain_id_raw as u64);

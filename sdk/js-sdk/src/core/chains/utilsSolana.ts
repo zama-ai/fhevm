@@ -1,12 +1,29 @@
 import type { FhevmSolanaChain } from '../types/fhevmSolanaChain.js';
 import { simpleDeepFreeze } from '../base/object.js';
 
-const SOLANA_CHAIN_TYPE_BIT = 1n << 63n;
+/**
+ * High byte of the eight-byte chain-id field. `0x01` is Solana.
+ */
+export const SOLANA_CHAIN_TYPE = 0x01n;
+const CHAIN_TYPE_SHIFT = 56n;
+const CLUSTER_TAG_MASK = 0x00ffffffffffffffn;
 const U64_MAX = (1n << 64n) - 1n;
 
+export function chainTypeByte(chainId: bigint): bigint {
+  return (chainId >> CHAIN_TYPE_SHIFT) & 0xffn;
+}
+
+export function isSolanaHostChainId(chainId: bigint | number): boolean {
+  return chainTypeByte(BigInt(chainId)) === SOLANA_CHAIN_TYPE;
+}
+
+export function solanaHostChainId(clusterTag: bigint | number): bigint {
+  return (SOLANA_CHAIN_TYPE << CHAIN_TYPE_SHIFT) | (BigInt(clusterTag) & CLUSTER_TAG_MASK);
+}
+
 export function assertValidSolanaChainId(chainId: bigint): void {
-  if (typeof chainId !== 'bigint' || chainId < SOLANA_CHAIN_TYPE_BIT || chainId > U64_MAX) {
-    throw new Error('Solana chain id must be a u64 bigint with bit 63 set');
+  if (typeof chainId !== 'bigint' || chainId > U64_MAX || !isSolanaHostChainId(chainId)) {
+    throw new Error('Solana chain id must be a u64 bigint with type byte 0x01');
   }
 }
 

@@ -10,7 +10,7 @@
 //! * **Every 64-bit number is a decimal string.** A JSON number would arrive in a
 //!   TypeScript consumer as an IEEE-754 double and silently lose precision above
 //!   2^53 — and the chain id routinely exceeds that, because it is derived from a
-//!   genesis hash and carries the host-kind high bit. Strings make the loss
+//!   genesis hash and carries type byte `0x01`. Strings make the loss
 //!   impossible rather than unlikely.
 //! * **Every rejection names its rule, and every rejecting record names the single
 //!   mutation that produced it.** A negative vector that fails "somehow" tests

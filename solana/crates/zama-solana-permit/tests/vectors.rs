@@ -744,12 +744,9 @@ fn build_vector_file() -> PermitVectorFile {
             chain_id_decimal: CHAIN_ID.to_string(),
             chain_id_hex: format!("{CHAIN_ID:#018x}"),
             chain_id_be_bytes: to_hex(&CHAIN_ID.to_be_bytes()),
-            chain_id_derivation: "zama-solana-chain-id-v1: digest = SHA-256(ASCII(\
-                                  \"zama-solana-chain-id-v1\") || genesis_hash); chain_id \
-                                  = 0x8000000000000000 | (be_u64(digest[0..8]) & \
-                                  0x7fffffffffffffff). Applied once per cluster at \
-                                  deployment; running components read the id from \
-                                  configuration and check only the chain-kind bit."
+            chain_id_derivation: "type-byte encoding: chain_id = be_u64(0x01 || genesis_hash[0..7]). \
+                                  Applied once per cluster at deployment; running components read \
+                                  the id from configuration and check only the type byte."
                 .to_string(),
         },
         transport_keys: builder.transport_keys,

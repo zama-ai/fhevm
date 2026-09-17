@@ -13,7 +13,7 @@ describe("solana", () => {
       serializeKmsHostChains([
         {
           url: "http://host.docker.internal:8899",
-          chainId: "9223372036854788153",
+          chainId: "72057594037940281",
           kind: "solana",
           solanaProgramId: "SoLaNaProgram111",
         },
@@ -47,13 +47,13 @@ describe("solana", () => {
     // would silently corrupt the id. Read the literal out of the text rather than through
     // JSON.parse, which would itself go through a double.
     const serialized = serializeKmsHostChains([
-      { url: "http://host.docker.internal:8899", chainId: "9223372036854788153", kind: "solana" },
+      { url: "http://host.docker.internal:8899", chainId: "72057594037940281", kind: "solana" },
     ]);
-    expect(serialized).toContain('"chain_id":9223372036854788153');
+    expect(serialized).toContain('"chain_id":72057594037940281');
   });
 
   test("maps a u64 host chain id to the two's-complement i64 the coprocessor DB stores", () => {
-    expect(solanaHostChainIdI64("9223372036854788153")).toBe("-9223372036854763463");
+    expect(solanaHostChainIdI64("72057594037940281")).toBe("72057594037940281");
     expect(solanaHostChainIdI64("9650")).toBe("9650");
   });
 });

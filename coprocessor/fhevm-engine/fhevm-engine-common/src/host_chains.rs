@@ -25,9 +25,9 @@ impl HostChainsCache {
 
         for row in rows {
             // The BIGINT column stores the i64 bit pattern of the canonical u64 chain
-            // id (negative for an RFC-021 Solana host, whose chain-type high bit is
-            // set). Reconstruct via the canonical-u64 path so the value round-trips
-            // exactly as it was written by `ChainId::as_i64`, matching the verifier.
+            // id. Type-byte Solana ids are positive. Reconstruct via the canonical-u64
+            // path so the value round-trips exactly as it was written by `ChainId::as_i64`,
+            // matching the verifier.
             let chain_id_raw: i64 = row.try_get("chain_id")?;
             let chain = HostChain {
                 chain_id: ChainId::from_canonical_u64(chain_id_raw as u64),

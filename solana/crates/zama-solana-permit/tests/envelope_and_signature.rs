@@ -40,7 +40,7 @@ fn envelope_layout_is_the_offchain_message_form() {
     );
     assert_eq!(&envelope[18..50], fields.user_pubkey().as_bytes());
     assert_eq!(&envelope[50..], render_canonical_text(&fields).as_bytes());
-    assert_eq!(envelope.len(), 669);
+    assert_eq!(envelope.len(), 666);
     assert_eq!(
         digest(&envelope),
         bytes32(REFERENCE_ENVELOPE_DIGEST_HEX),
@@ -59,7 +59,7 @@ fn permissive_envelope_matches_its_independent_digest() {
     let fields = decoded(&permissive_wire());
     let envelope = build_envelope(&fields);
 
-    assert_eq!(envelope.len(), 499);
+    assert_eq!(envelope.len(), 496);
     assert_eq!(digest(&envelope), bytes32(PERMISSIVE_ENVELOPE_DIGEST_HEX));
 }
 

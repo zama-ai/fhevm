@@ -8,7 +8,7 @@ import { createFhevmEncryptClient } from './createFhevmEncryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import type { FheEncryptionKeyBytes } from '../../core/types/fheEncryptionKey.js';
 
-const chain = { id: 9223372036854788153n, fhevm: { relayerUrl: 'https://relayer.example.test' } };
+const chain = { id: 72057594037940281n, fhevm: { relayerUrl: 'https://relayer.example.test' } };
 const rpc = createSolanaRpc('http://localhost:8899');
 
 afterEach(() => vi.restoreAllMocks());

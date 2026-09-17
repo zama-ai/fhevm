@@ -3,16 +3,9 @@ import { isAddress } from '../base/address.js';
 import { hexToBytes20, hexToBytes32, isBytes32Hex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 
-/**
- * RFC-021 reserves the high bit of the u64 chain id as the host `chain_type`
- * marker: when set, the host chain is Solana rather than an EVM chain.
- */
-export const SOLANA_CHAIN_TYPE_BIT = 1n << 63n;
+import { isSolanaHostChainId } from '../chains/utilsSolana.js';
 
-/** True when the chain-type high bit marks this as a Solana host chain. */
-export function isSolanaHostChainId(chainId: bigint | number): boolean {
-  return (BigInt(chainId) & SOLANA_CHAIN_TYPE_BIT) !== 0n;
-}
+export { isSolanaHostChainId };
 
 /**
  * Assembles the auxiliary data that the input ZK proof is bound to.
@@ -26,7 +19,7 @@ export function isSolanaHostChainId(chainId: bigint | number): boolean {
  *   = 128 bytes, where the three identities are bytes32 host addresses.
  *
  * The chain id is always the trailing 32-byte big-endian word and carries the
- * chain-type high bit verbatim. This mirrors `ZkData::assemble` in
+ * type byte verbatim. This mirrors `ZkData::assemble` in
  * `coprocessor/fhevm-engine/zkproof-worker/src/auxiliary.rs`.
  */
 export function buildInputProofMetaData(params: {

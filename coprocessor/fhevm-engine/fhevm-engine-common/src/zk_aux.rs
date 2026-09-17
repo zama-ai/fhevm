@@ -12,7 +12,7 @@
 //! Solana hosts (RFC-021 bytes32 identities, 128 bytes total):
 //!
 //! ```text
-//! contract (32) || user (32) || acl (32) || chain_id (32 BE, chain-type high bit set)
+//! contract (32) || user (32) || acl (32) || chain_id (32 BE, type byte 0x01)
 //! ```
 //!
 //! Verifier side: `zkproof-worker`'s `auxiliary::ZkData`, built from the `verify_proofs`
@@ -59,7 +59,7 @@ pub const SOLANA_ZK_AUX_DATA_SIZE: usize = 128;
 /// Assemble the auxiliary data bound into an input proof for a Solana host.
 ///
 /// The three identities are RFC-021 bytes32 host addresses, accepted in either encoding
-/// they appear in (see [`parse_bytes32`]). The chain id keeps its chain-type high bit.
+/// they appear in (see [`parse_bytes32`]). The chain id keeps its type byte.
 pub fn assemble_solana_aux_data(
     contract_identity: &str,
     user_identity: &str,
@@ -130,19 +130,19 @@ mod tests {
 
     #[test]
     fn solana_layout_is_bytes32_identities_then_big_endian_chain_id() {
-        use crate::chain_id::SOLANA_CHAIN_TYPE_BIT;
+        use crate::chain_id::solana_host_chain_id;
         let assembled = assemble_solana_aux_data(
             &format!("0x{}", "11".repeat(32)),
             &format!("0x{}", "22".repeat(32)),
             &format!("0x{}", "33".repeat(32)),
-            ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 12345),
+            ChainId::from_canonical_u64(solana_host_chain_id(12345)),
         )
         .expect("assemble");
         assert_eq!(&assembled[0..32], &[0x11; 32]);
         assert_eq!(&assembled[32..64], &[0x22; 32]);
         assert_eq!(&assembled[64..96], &[0x33; 32]);
         let expected_chain_id =
-            alloy::primitives::U256::from(SOLANA_CHAIN_TYPE_BIT | 12345).to_be_bytes::<32>();
+            alloy::primitives::U256::from(solana_host_chain_id(12345)).to_be_bytes::<32>();
         assert_eq!(&assembled[96..128], &expected_chain_id);
     }
 

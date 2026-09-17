@@ -71,7 +71,7 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
 ///
 /// EVM acceptance is byte-identical to `validate_blockchain_address`; a non-EVM
 /// string is additionally accepted when it is a canonical Solana base58 address.
-/// The `contract_chain_id` (carrying the Solana chain-type high bit) decides how
+/// The `contract_chain_id` (carrying the Solana type byte) decides how
 /// the accepted string is later interpreted in `InputProofRequest::try_from`.
 pub fn validate_host_address(address: &str) -> Result<(), ValidationError> {
     if validate_blockchain_address(address).is_ok()

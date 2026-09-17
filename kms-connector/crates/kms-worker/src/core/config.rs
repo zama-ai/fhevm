@@ -127,11 +127,27 @@ pub struct Config {
     pub healthcheck_timeout: Duration,
 }
 
-/// RFC-021 reserves the high bit (bit 63) of the u64 chain id as the host
-/// `chain_type` marker: when set, the host chain is Solana rather than an EVM
-/// chain. EVM chain ids keep this bit clear. Mirrors `SOLANA_CHAIN_TYPE_BIT` in
-/// the coprocessor (`fhevm-engine-common`) and the relayer.
-pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
+/// High byte of the eight-byte chain-id field. Matches the coprocessor and host.
+pub const EVM_CHAIN_TYPE: u8 = 0x00;
+pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
+const CHAIN_TYPE_SHIFT: u32 = 56;
+pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+
+pub const fn chain_type_byte(chain_id: u64) -> u8 {
+    (chain_id >> CHAIN_TYPE_SHIFT) as u8
+}
+
+pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == EVM_CHAIN_TYPE
+}
+
+pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
+}
+
+pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
+    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
+}
 
 /// Supported host-chain ACL backends.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -607,8 +623,8 @@ mod tests {
             config.host_chains,
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
-                // RFC-021 Solana host id: chain-type high bit | 31888.
-                chain_id: SOLANA_CHAIN_TYPE_BIT | 31888,
+                // RFC-021 Solana host id: type byte 0x01 | 31888.
+                chain_id: solana_host_chain_id(31888),
                 chain_kind: HostChainKind::Solana,
                 acl_address: Some(
                     Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),

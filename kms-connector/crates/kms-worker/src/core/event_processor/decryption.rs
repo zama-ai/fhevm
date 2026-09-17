@@ -911,6 +911,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::solana_host_chain_id;
     use crate::core::event_processor::ProcessingErrorKind;
     use crate::core::solana::proof::HttpHostProofReader;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
@@ -1025,7 +1026,7 @@ mod tests {
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
                     deployment: crate::core::solana::deployment::DeploymentIdentity::resolve(
                         [7; 32],
-                        chain_id | crate::core::config::SOLANA_CHAIN_TYPE_BIT,
+                        chain_id,
                     )
                     .expect("fixture deployment resolves"),
                     reader: crate::core::solana::snapshot::RpcHostStateReader::new(
@@ -1815,7 +1816,7 @@ mod tests {
         const AUTHORITY: [u8; 32] = [2; 32];
         const SCOPE: [u8; 32] = [3; 32];
         const LABEL: [u8; 32] = *b"balance_________________________";
-        const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
+        const CHAIN_ID: u64 = solana_host_chain_id(0x0123_4567_89ab_cdef);
         const FHE_TYPE_UINT64: u8 = 5;
 
         // A handle of this cluster: chain id big-endian at [22..30], FHE type at [30], version at

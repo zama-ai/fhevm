@@ -11,7 +11,7 @@ import { base58 } from '@scure/base';
 
 import { submitInputProof } from './submitInputProof.js';
 
-const CHAIN_ID = (1n << 63n) | 12345n;
+const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
 const CONTRACT = `0x${'22'.repeat(32)}` as Bytes32Hex;
 const USER = `0x${'33'.repeat(32)}` as Bytes32Hex;
@@ -118,7 +118,7 @@ describe('submitInputProof', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       ciphertextWithInputVerification: '01',
       contractAddress: base58.encode(hexToBytes32(CONTRACT)),
-      contractChainId: '0x8000000000003039',
+      contractChainId: '0x0100000000003039',
       extraData: '0x00',
       userAddress: base58.encode(hexToBytes32(USER)),
     });

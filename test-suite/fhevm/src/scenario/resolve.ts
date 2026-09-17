@@ -68,7 +68,6 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
 };
 
 const MAX_KMS_PARTIES = 7;
-const SOLANA_CHAIN_TYPE_BIT = 1n << 63n;
 const U64_MAX = (1n << 64n) - 1n;
 
 /**
@@ -264,8 +263,8 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
           `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
         );
       }
-      const hasSolanaChainTypeBit = (parsedChainId & SOLANA_CHAIN_TYPE_BIT) !== 0n;
-      if (type === "solana" ? !hasSolanaChainTypeBit : hasSolanaChainTypeBit) {
+      const isSolanaChainId = ((parsedChainId >> 56n) & 0xffn) === 0x01n;
+      if (type === "solana" ? !isSolanaChainId : isSolanaChainId) {
         throw new Error(`${chainIdLabel} "${rawChainId}" does not match host chain type "${type ?? "evm"}"`);
       }
       if (seenChainIds.has(chainId)) {

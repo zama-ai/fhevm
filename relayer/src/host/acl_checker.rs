@@ -92,7 +92,7 @@ struct SolanaHostChain {
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
-    /// RFC-021 Solana host chains (chain-type high bit), keyed by chain id. A Solana
+    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id. A Solana
     /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
     /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
     /// Direct entries and public decrypts are not pre-checked here — their authorization
@@ -1079,8 +1079,8 @@ mod tests {
     async fn solana_host_starts_and_skips_evm_precheck() {
         use crate::config::settings::HostChainConfig;
 
-        // RFC-021 Solana host: chain-type high bit + base58 acl_address (zama-host program).
-        let solana_chain_id = (1u64 << 63) | 12345;
+        // RFC-021 Solana host: type byte 0x01 + base58 acl_address (zama-host program).
+        let solana_chain_id = crate::core::event::solana_host_chain_id(12345);
         let host_chains = vec![HostChainConfig {
             chain_id: solana_chain_id,
             url: "http://127.0.0.1:8899".to_string(),
@@ -1116,7 +1116,7 @@ mod tests {
         let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
         for (chain_id, acl_address) in
-            [((1u64 << 63) | 12345, evm_address), (12345, solana_address)]
+            [(crate::core::event::solana_host_chain_id(12345), evm_address), (12345, solana_address)]
         {
             let result = HostAclChecker::new(
                 &[HostChainConfig {
@@ -1149,7 +1149,7 @@ mod tests {
 
         let checker = HostAclChecker::new(
             &[HostChainConfig {
-                chain_id: (1u64 << 63) | 12345,
+                chain_id: crate::core::event::solana_host_chain_id(12345),
                 url: format!("http://{addr}"),
                 acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
             }],

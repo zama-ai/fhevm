@@ -74,10 +74,10 @@ fn assert_canonical_metadata(handle: [u8; 32], fhe_type: u8, chain_id: u64) {
 }
 
 #[test]
-fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
-    // A Solana host chain id sets the reserved high bit; the derived handle
-    // must round-trip it verbatim through bytes 22..30. `SOLANA_POC_CHAIN_ID`
-    // already carries the chain-type high bit (RFC-021 / #1494).
+fn eval_handle_derivation_preserves_solana_chain_type_byte() {
+    // A Solana host chain id has type byte `0x01`; the derived handle must
+    // round-trip it verbatim through bytes 22..30. `SOLANA_POC_CHAIN_ID`
+    // already carries the type byte (RFC-021 / DD-052).
     let chain_id = SOLANA_POC_CHAIN_ID;
     let handle = computed_eval_handle(
         FheBinaryOpCode::Sub,
@@ -96,12 +96,11 @@ fn eval_handle_derivation_preserves_solana_chain_type_high_bit() {
     assert_eq!(
         handle_chain_id(handle),
         chain_id,
-        "the chain id reader must recover the high-bit chain type"
+        "the chain id reader must recover the type byte"
     );
-    assert_ne!(
-        handle_chain_id(handle) & SOLANA_CHAIN_TYPE_BIT,
-        0,
-        "the Solana chain-type bit must survive derivation"
+    assert!(
+        is_solana_host_chain_id(handle_chain_id(handle)),
+        "the Solana type byte must survive derivation"
     );
 }
 

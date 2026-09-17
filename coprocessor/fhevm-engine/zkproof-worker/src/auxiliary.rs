@@ -21,7 +21,7 @@ impl ZkData {
     /// prover cannot drift. The host chain type selects it: EVM hosts use
     /// 20-byte addresses (92 bytes total), Solana hosts use RFC-021 bytes32
     /// identities (128 bytes total). The chain id is always the trailing
-    /// 32-byte big-endian word and carries the chain-type high bit verbatim.
+    /// 32-byte big-endian word and carries the type byte verbatim.
     pub fn assemble(&self) -> anyhow::Result<Vec<u8>> {
         if self.chain_id.is_solana_host() {
             assemble_solana_aux_data(
@@ -47,7 +47,7 @@ impl ZkData {
 mod tests {
     use super::*;
     use alloy_primitives::hex;
-    use fhevm_engine_common::chain_id::SOLANA_CHAIN_TYPE_BIT;
+    use fhevm_engine_common::chain_id::solana_host_chain_id;
     use fhevm_engine_common::zk_aux::{SOLANA_ZK_AUX_DATA_SIZE, ZK_AUX_DATA_SIZE};
 
     /// EVM auxiliary layout: 3 x 20-byte address + 32-byte chain id.
@@ -86,7 +86,7 @@ mod tests {
         let contract = format!("0x{}", "11".repeat(32));
         let user = format!("0x{}", "22".repeat(32));
         let acl = format!("0x{}", "33".repeat(32));
-        let chain_id = ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 12345);
+        let chain_id = ChainId::from_canonical_u64(solana_host_chain_id(12345));
 
         let zk_data = ZkData {
             contract_address: contract,
@@ -98,12 +98,12 @@ mod tests {
         let assembled = zk_data.assemble().expect("assemble solana aux");
         assert_eq!(assembled.len(), SIZE_SOLANA);
 
-        // contract(32) || user(32) || acl(32) || chain_id(32 BE, high bit set).
+        // contract(32) || user(32) || acl(32) || chain_id(32 BE, type byte 0x01).
         assert_eq!(&assembled[0..32], &[0x11; 32]);
         assert_eq!(&assembled[32..64], &[0x22; 32]);
         assert_eq!(&assembled[64..96], &[0x33; 32]);
         let expected_chain_id =
-            alloy_primitives::U256::from(SOLANA_CHAIN_TYPE_BIT | 12345).to_be_bytes::<32>();
+            alloy_primitives::U256::from(solana_host_chain_id(12345)).to_be_bytes::<32>();
         assert_eq!(&assembled[96..128], &expected_chain_id);
     }
 
@@ -113,7 +113,7 @@ mod tests {
             contract_address: "0x1111111111111111111111111111111111111111".to_string(),
             user_address: format!("0x{}", "22".repeat(32)),
             acl_contract_address: format!("0x{}", "33".repeat(32)),
-            chain_id: ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 1),
+            chain_id: ChainId::from_canonical_u64(solana_host_chain_id(1)),
         };
         // The 20-byte contract address is not a valid bytes32 identity.
         assert!(zk_data.assemble().is_err());
@@ -137,7 +137,7 @@ mod tests {
         let user = format!("0x{}", "22".repeat(32));
         let acl_hex = "0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5";
         let acl_b58 = "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW";
-        let chain_id = ChainId::from_canonical_u64(SOLANA_CHAIN_TYPE_BIT | 12345);
+        let chain_id = ChainId::from_canonical_u64(solana_host_chain_id(12345));
 
         let with_hex = ZkData {
             contract_address: contract.clone(),

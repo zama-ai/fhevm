@@ -25,7 +25,7 @@ const balance = (owner: string, handleByte: string): BalanceStore => ({
   tokenAccount: owner === alice.owner ? "5".repeat(32) : "6".repeat(32),
   encryptedStore: owner === alice.owner ? "7".repeat(32) : "8".repeat(32),
   currentHandle: hex32(handleByte),
-  chainId: "9223372036854788153",
+  chainId: "72057594037940281",
 });
 
 describe("solana-two-holder-transfer", () => {

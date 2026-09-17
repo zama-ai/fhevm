@@ -44,7 +44,7 @@ if (owner.address !== required('TRANSFER_OWNER')) throw new Error('transfer sign
 if (owner.address === required('TRANSFER_RECIPIENT')) throw new Error('Alice and Bob must use distinct owners');
 
 const chainId = BigInt(required('TRANSFER_CHAIN_ID'));
-if ((chainId & (1n << 63n)) === 0n) throw new Error('transfer chain id is not a Solana high-bit chain id');
+if (((chainId >> 56n) & 0xffn) !== 0x01n) throw new Error('transfer chain id is not a Solana type-byte chain id');
 const aclProgramAddress = bytes32(required('TRANSFER_ACL_PROGRAM'));
 if (addressHex(HOST_PROGRAM) !== aclProgramAddress) throw new Error('configured ACL program is not the fixed Zama host program');
 const rpc = createSolanaRpc(required('TRANSFER_RPC_URL'));

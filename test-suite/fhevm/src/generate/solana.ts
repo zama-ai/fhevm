@@ -35,12 +35,9 @@ export const solanaProgramIdFromKeypairFile = (keypairPath: string): string => {
   return base58Encode(bytes.subarray(32, 64));
 };
 
-// RFC-021 Solana host chain ids occupy the high half of u64 (chain-type high bit set), so they
-// exceed both i63 and Number.MAX_SAFE_INTEGER. Two consequences this module centralizes:
-//   1. the coprocessor DB stores chain_id as a signed BIGINT, so the u64 is mapped to its
-//      two's-complement i64;
-//   2. any JSON/number context must carry the id as a raw integer or string literal — never a
-//      lossy JS `Number`.
+// Solana host chain ids have type byte `0x01`, so they exceed Number.MAX_SAFE_INTEGER
+// (`2^53`) and must travel as bigint or a decimal string. They fit in i64; this helper
+// still two's-complements values above `i64::MAX` so a leftover bit-63 id round-trips.
 
 const TWO_POW_64 = 1n << 64n;
 const I64_MAX = (1n << 63n) - 1n;

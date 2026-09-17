@@ -20,7 +20,7 @@
       "comment": "The ordinary request: one handle, the signer's own key as the allowed key, and the encrypted store whose history grants access. The entry carries no proof: the connector fetches the allow leaf from the coprocessors and verifies it against the state it reads itself.",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
@@ -31,12 +31,12 @@
       "comment": "Two entries that are byte-identical. Duplicates travel as they are: de-duplicating them would change what the KMS is asked for, and the linker binds the ordered list the request actually carried.",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
@@ -47,12 +47,12 @@
       "comment": "Two handles with different allowed keys: one the signer's own, one a delegator's. The allowed key is per entry precisely so a single permit can carry both, and the signer's own key appears only once, in the permit.",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         },
         {
-          "handle": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b28b4cddfda76385ae0000",
+          "handle": "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2014539cf79f667040000",
           "allowedKey": "0xd0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0",
           "encryptedStore": "0xe2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2"
         }
@@ -66,7 +66,7 @@
       "rejected_by": "json-shape",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedValueAccount": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
@@ -81,7 +81,7 @@
       },
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
@@ -93,7 +93,7 @@
       "rejected_by": "json-shape",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
       ]
@@ -104,7 +104,7 @@
       "rejected_by": "json-shape",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1",
           "accessProof": "0x"
@@ -123,7 +123,7 @@
       "rejected_by": "request-decode",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae00",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f6670400",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
         }
@@ -135,7 +135,7 @@
       "rejected_by": "request-decode",
       "handles": [
         {
-          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a18b4cddfda76385ae0000",
+          "handle": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1014539cf79f667040000",
           "allowedKey": "0xc11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
           "encryptedStore": "0xe1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e100"
         }

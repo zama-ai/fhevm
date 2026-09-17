@@ -152,7 +152,7 @@ mod helpers {
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
-        let chain_id = 0x8000_0000_0000_0000u64 | 1;
+        let chain_id = fhevm_relayer::core::event::solana_host_chain_id(1);
         let mut extra_data = vec![0x02u8];
         extra_data.extend_from_slice(&[0u8; 64]);
         let start_timestamp = now - 1;

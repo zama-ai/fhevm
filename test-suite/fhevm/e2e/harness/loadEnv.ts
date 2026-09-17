@@ -43,7 +43,7 @@ export type TestEnv = {
   readonly gatewayRpcUrl: string;
   /** Primary EVM host chain RPC — where the deployed `ProtocolConfig` declares the active KMS pair. */
   readonly hostRpcUrl: string;
-  /** RFC-021 Solana host chain id (9223372036854788153); the high bit marks it a Solana chain. */
+  /** RFC-021 Solana host chain id (72057594037940281); type byte `0x01` marks it a Solana chain. */
   readonly chainId: bigint;
   /** zama-host program id as a bytes32 hex — the Solana ACL identity. */
   readonly aclProgram: `0x${string}`;
@@ -81,7 +81,7 @@ const LOCAL_DEFAULTS = {
   relayerUrl: "http://127.0.0.1:3000",
   gatewayRpcUrl: "http://127.0.0.1:8546",
   hostRpcUrl: "http://127.0.0.1:8545",
-  chainId: "9223372036854788153",
+  chainId: "72057594037940281",
   aclProgram: SOLANA_ACL_PROGRAM,
   coprocessorDbContainer: COPROCESSOR_DB_CONTAINER,
 } as const;
@@ -102,7 +102,9 @@ const bytes32Hex = (value: string): `0x${string}` => {
 const solanaChainId = (value: string): bigint => {
   if (!/^\d+$/.test(value)) throw new Error(`chainId must be an unsigned decimal integer, got ${value}`);
   const id = BigInt(value);
-  if ((id & (1n << 63n)) === 0n) throw new Error(`chainId ${value} is not a Solana high-bit chain id`);
+  if (((id >> 56n) & 0xffn) !== 0x01n) {
+    throw new Error(`chainId ${value} is not a Solana type-byte chain id`);
+  }
   return id;
 };
 
