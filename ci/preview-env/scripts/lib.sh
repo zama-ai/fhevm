@@ -18,6 +18,13 @@ require_nonempty() {
   fi
 }
 
+# Block until the External Secrets Operator has materialised the Secret behind NAME.
+wait_external_secret() {
+  local name="$1"
+  kubectl wait -n "${NAMESPACE}" "externalsecret/${name}" --for=condition=Ready --timeout=120s \
+    || { kubectl describe -n "${NAMESPACE}" "externalsecret/${name}" | tail -20; exit 1; }
+}
+
 # The per-party preview Postgres instances use the shared ephemeral credentials.
 psql_party() {
   local party="$1" sql="$2"

@@ -1,6 +1,7 @@
 """Render the production charts and verify the Solana deployment boundaries."""
 import pathlib
 import json
+import re
 import os
 import tempfile
 import subprocess
@@ -130,6 +131,39 @@ class SolanaCharts(unittest.TestCase):
                            [VALUES / "values-gateway-add-host-chains-solana-e2e.yaml"])
         job = next(d for d in documents if d and d["kind"] == "Job")
         self.assertTrue(job["spec"]["template"]["spec"]["containers"])
+
+    def test_synced_secret_keys_match_what_the_overlays_read(self):
+        # sync-secrets' template names the Secret keys. Every required secretKeyRef in the
+        # overlays and in deploy-preview.sh must be one of them, or a pod starts without its value.
+        synced = {}
+        for filename in ["values-solana-rpc.yaml", "values-solana-deployer.yaml"]:
+            spec = yaml.safe_load((VALUES / filename).read_text())["externalSecret"]
+            rendered = "".join(spec["template"]["data"].values())
+            for entry in spec["data"]:
+                self.assertIn("{{ ." + entry["secretKeyName"] + " }}", rendered, filename)
+            synced[spec["targetSecretName"]] = set(spec["template"]["data"])
+
+        def refs(node):
+            if isinstance(node, dict):
+                ref = node.get("secretKeyRef")
+                if isinstance(ref, dict) and ref.get("name") in synced and not ref.get("optional"):
+                    yield ref["name"], ref["key"]
+                for value in node.values():
+                    yield from refs(value)
+            elif isinstance(node, list):
+                for value in node:
+                    yield from refs(value)
+
+        consumed = {name: set() for name in synced}
+        for path in VALUES.glob("values-solana-*-e2e.yaml"):
+            for name, key in refs(yaml.safe_load(path.read_text())):
+                consumed[name].add(key)
+        script = (VALUES / "deploy-preview.sh").read_text()
+        for name, key in re.findall(r'"secretKeyRef":\{"name":"(solana-[a-z]+)","key":"([\w.-]+)"\}', script):
+            consumed[name].add(key)
+        for name, keys in consumed.items():
+            self.assertTrue(keys, name)
+            self.assertLessEqual(keys, synced[name], name)
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/parse-overrides.cjs"

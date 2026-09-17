@@ -130,7 +130,7 @@ module.exports = async ({ core, context, github }) => {
   const needs = JSON.parse(process.env.NEEDS);
   const isDispatch = process.env.EVENT_NAME === 'workflow_dispatch';
   const inputs = JSON.parse(process.env.INPUTS);
-  const images = process.env.SOLANA_SECRETS_NAMESPACE ? [...IMAGES, {
+  const images = process.env.DEPLOY_SOLANA === 'true' ? [...IMAGES, {
     key: 'solana_programs', repo: 'fhevm/solana-programs', job: 'build-solana-programs', output: 'build_result', component: 'solana_programs', label: 'solana-programs',
   }] : IMAGES;
   const { owner, repo } = context.repo;

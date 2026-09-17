@@ -50,9 +50,11 @@ ci/preview-env/
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
-├── solana-host/                          # opt-in via solana_secrets_namespace; runs after the relayer, before e2e
+├── solana-host/                          # opt-in via deploy_solana; runs after the relayer, before e2e
 │   ├── deploy-preview.sh                 # orchestrates every step below against the existing releases
 │   ├── test_charts.py                    # renders the chart + overlays (charts-helm-checks)
+│   ├── values-solana-rpc.yaml            # sync-secrets: Solana devnet RPC + Yellowstone → Secret solana-rpc
+│   ├── values-solana-deployer.yaml       # sync-secrets: preview keypairs → Secret solana-deployer
 │   ├── values-solana-programs-e2e.yaml   # contracts overlay, host deployment + HostConfig/KMS context
 │   ├── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
 │   ├── values-solana-register-coprocessor-e2e.yaml # contracts overlay, per-coprocessor DB registration

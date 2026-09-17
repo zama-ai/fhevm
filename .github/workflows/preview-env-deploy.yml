@@ -39,10 +39,10 @@ on:
     types: [opened, labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
-      solana_secrets_namespace:
-        description: "Opt into Solana devnet using solana-rpc, solana-deployer and solana-proof-api secrets from this namespace."
-        type: string
-        default: ""
+      deploy_solana:
+        description: "Also deploy the Solana host onto public Solana devnet, with one listener per coprocessor. Secrets come from AWS Secrets Manager via sync-secrets (ci/preview-env/solana-host/values-solana-*.yaml)."
+        type: boolean
+        default: false
       deploy_example_programs:
         description: "Also deploy the Solana example programs."
         type: boolean
@@ -115,8 +115,8 @@ concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
   # Solana dispatches share the preview's Solana devnet program addresses, so they queue on one group
   # (GitHub keeps one running and one pending run; a third dispatch replaces the pending one).
-  group: pr-preview-deploy-${{ inputs.solana_secrets_namespace && 'solana-devnet' || github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ !inputs.solana_secrets_namespace }}
+  group: pr-preview-deploy-${{ inputs.deploy_solana && 'solana-devnet' || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ !inputs.deploy_solana }}
 
 permissions: {}
 
@@ -132,7 +132,7 @@ permissions: {}
 # relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
 ##############################################################################
 env:
-  SOLANA_SECRETS_NAMESPACE: ${{ inputs.solana_secrets_namespace }}
+  DEPLOY_SOLANA: ${{ inputs.deploy_solana || 'false' }}
   SOLANA_DEPLOY_EXAMPLE_PROGRAMS: ${{ inputs.deploy_example_programs || 'false' }}
   # How far back from the base commit to look for a published image before
   # failing.
@@ -240,12 +240,12 @@ jobs:
           BUILD_IMAGES: ${{ inputs.build_images || 'false' }}
           OVERRIDES_JSON: ${{ steps.parse_overrides.outputs.overrides_json }}
         run: |
-          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$CHAIN_MODE" != anvil || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
+          if [[ "$DEPLOY_SOLANA" == true && ( "$CHAIN_MODE" != anvil || "$DEPLOY_POLYGON" == true || "$ENABLE_BLUE_GREEN" == true ) ]]; then
             echo '::error::Solana preview currently requires Anvil host/gateway and one coprocessor fleet'; exit 1
           fi
           # No workflow publishes fhevm/solana-programs under a base-commit tag, so
           # without a build the tag can only come from an explicit override.
-          if [[ -n "$SOLANA_SECRETS_NAMESPACE" && ( "$BUILD_IMAGES" != true || "$BUILD_TEST_SUITE_ONLY" == true ) && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
+          if [[ "$DEPLOY_SOLANA" == true && ( "$BUILD_IMAGES" != true || "$BUILD_TEST_SUITE_ONLY" == true ) && -z "$(jq -r '.solana_programs_version // ""' <<< "$OVERRIDES_JSON")" ]]; then
             echo '::error::Solana preview needs build_images=true with build_test_suite_only=false, or overrides.solana_programs_version'; exit 1
           fi
       - id: check
@@ -376,7 +376,7 @@ jobs:
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.check-labels.outputs.build_images == 'true' &&
       needs.check-labels.outputs.build_test_suite_only != 'true' &&
-      inputs.solana_secrets_namespace != ''
+      inputs.deploy_solana == true
     uses: ./.github/workflows/solana-programs-docker-build.yml
     permissions:
       contents: read # Checkout source in the shared image builder.
@@ -484,7 +484,7 @@ jobs:
           # Parsed overrides_json (always a JSON object). Image pins are empty
           # on pull_request; dispatch may set <component>_version keys.
           INPUTS: ${{ needs.check-labels.outputs.overrides_json }}
-          SOLANA_SECRETS_NAMESPACE: ${{ inputs.solana_secrets_namespace }}
+          DEPLOY_SOLANA: ${{ inputs.deploy_solana || 'false' }}
           ACTOR: ${{ github.actor }}
           GHCR_USER: ${{ github.actor }}
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -1124,7 +1124,7 @@ jobs:
       # then again after versioning flips to v0.15 (green).
       ######################################################################
       - name: Deploy Solana host and listener
-        if: env.SOLANA_SECRETS_NAMESPACE != ''
+        if: env.DEPLOY_SOLANA == 'true'
         run: bash ci/preview-env/solana-host/deploy-preview.sh
 
       - name: Deploy automated e2e test workflow

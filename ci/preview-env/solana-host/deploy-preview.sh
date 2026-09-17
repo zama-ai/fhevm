@@ -12,12 +12,17 @@ tag=$(jq -er .solana_programs <<< "$TAGS_JSON")
 # The canonical EVM host chain (per-namespace Anvil) whose key material the Solana chain shares.
 key_source_chain_id=12345
 
-# Credentials are provisioned by the existing secret sync outside the throwaway namespace.
-for name in solana-rpc solana-deployer solana-proof-api; do
-  kubectl get secret "$name" -n "$SOLANA_SECRETS_NAMESPACE" -o json |
-    jq --arg ns "$NAMESPACE" '{apiVersion,kind,type,data,metadata:{name:.metadata.name,namespace:$ns}}' |
-    kubectl apply -f - >/dev/null
+# RPC credentials and keypairs come from AWS Secrets Manager into this namespace, the same
+# way chain_mode=testnets gets its RPC URLs; they disappear with the namespace.
+for name in solana-rpc solana-deployer; do
+  helm upgrade --install "$name" "$SYNC_SECRETS_CHART" --version "$SYNC_SECRETS_CHART_VERSION" \
+    -n "$NAMESPACE" -f "$values/values-$name.yaml"
+  wait_external_secret "$name"
 done
+# The leaf-proof bearer token is only ever read inside this namespace, by the listeners and
+# the connectors, so each preview mints its own.
+kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
+  --from-literal=api-key="$(openssl rand -base64 32)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
