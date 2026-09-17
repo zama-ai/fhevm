@@ -20,14 +20,9 @@ ENV AWS_REGION=${SCCACHE_REGION}
 # Use root user for build stage
 USER root
 
-WORKDIR /app
-
 # TODO(sccache): temporary inline install for testing; remove once sccache
 # ships in the rust-glibc golden image and rely on that instead.
-# Skipped entirely (no network fetch) when SCCACHE_BUCKET is unset, the same
-# signal the build hook below uses, so the disabled path stays a plain build.
 RUN set -eux; \
-    if [ -z "${SCCACHE_BUCKET}" ]; then echo "SCCACHE_BUCKET unset; skipping sccache install"; exit 0; fi; \
     arch="$(uname -m)"; \
     case "$arch" in \
         x86_64)  triple=x86_64-unknown-linux-musl ;; \
@@ -38,6 +33,11 @@ RUN set -eux; \
         | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
     chmod +x /usr/local/bin/sccache; \
     sccache --version
+
+WORKDIR /app
+
+# Copy git directory to include commit hash in build info
+COPY .git ./.git
 
 # Copy sources
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
@@ -53,10 +53,7 @@ COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
 COPY solana/crates/zama-solana-permit ./solana/crates/zama-solana-permit
 COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 
-# Build with improved caching. The build scripts shell out to git for version
-# metadata; the build context may come from a git worktree (where .git is a
-# file), so instead of copying .git we synthesize a minimal repo with a build
-# tag. This also keeps per-commit .git churn out of the layer-cache key.
+# Build with improved caching
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
@@ -67,12 +64,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    git config --global --add safe.directory '*' && \
-    git config --global user.email build@local && \
-    git config --global user.name build && \
-    git init -q /app && \
-    git -C /app commit --allow-empty -q -m build && \
-    git -C /app tag -a v0.0.0-build -m build && \
+    git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} -p endpoint && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
