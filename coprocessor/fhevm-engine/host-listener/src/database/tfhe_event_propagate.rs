@@ -1947,7 +1947,7 @@ impl Database {
                     dst_chain_id = e.dstChainId,
                     "BridgeHandle event"
                 );
-                sqlx::query!(
+                let recorded = sqlx::query!(
                     "INSERT INTO bridge_handle_events
                         (src_handle, dst_chain_id, src_chain_id, sender_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -1960,12 +1960,24 @@ impl Database {
                     e.guid.as_slice(),
                     block_number as i64,
                     block_hash.as_slice(),
-                    transaction_id,
+                    transaction_id.clone(),
                 )
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0
+                    > 0;
+
+                // Enqueue SnS for the handle: `ConfidentialBridge.send` needs
+                // only a transient allowance and so emits no ACL event.
+                self.insert_pbs_computations(
+                    tx,
+                    &[e.srcHandle.to_vec()],
+                    transaction_id,
+                    block_number,
+                )
+                .await?;
+
+                recorded
             }
             BridgeContractEvents::HandleBridged(e) => {
                 // Verify the destination handle was correctly derived and ignore the
@@ -2024,8 +2036,6 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Adds handles to the pbs_computations table and alerts the SnS worker
-    /// about new of PBS work.
     pub async fn insert_pbs_computations(
         &self,
         tx: &mut Transaction<'_>,
