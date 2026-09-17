@@ -7,27 +7,27 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const KMS_VERSIONS = Object.freeze(['0.14.0-1']);
-export const DEFAULT_TKMS_VERSION = '0.14.0-1';
+export const KMS_VERSIONS = Object.freeze(['0.15.0-0']);
+export const DEFAULT_TKMS_VERSION = '0.15.0-0';
 
 const _loaders = {
-  '0.14.0-1': () => import('./v0.14.0-1/kms_lib.js'),
+  '0.15.0-0': () => import('./v0.15.0-0/kms_lib.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _wasmBase64Loaders = {
-  '0.14.0-1': () => import('./v0.14.0-1/kms_lib_bg.wasm.base64.js'),
+  '0.15.0-0': () => import('./v0.15.0-0/kms_lib_bg.wasm.base64.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _assets = Object.freeze({
-  '0.14.0-1': Object.freeze({
+  '0.15.0-0': Object.freeze({
     wasm: Object.freeze({
-      filename: 'kms_lib_bg.v0.14.0-1.wasm',
-      localRelativePath: './v0.14.0-1/kms_lib_bg.wasm',
-      sha256: 'd4c2a1ed2567e7a3b2dfefb4c24e8a521110dd7c7648b533316647c06f6a9252',
+      filename: 'kms_lib_bg.v0.15.0-0.wasm',
+      localRelativePath: './v0.15.0-0/kms_lib_bg.wasm',
+      sha256: '0e33f45989dc2bb2350494da8c336eab98a7cbe0c711b820f5aa1bd79a4d8f12',
     }),
   }),
 });
