@@ -1426,8 +1426,10 @@ async fn cleanup_orphaned_dependence_chains(
 /// proposal-wide rather than per-chain. Like [`delete_bcs_chains_leftovers`], must run
 /// before the merge and the schema drop, while `gcs.*` still exists.
 ///
-/// Note: `verify_proofs` is truncated at cutover so no BCS-era proof row (whose
-/// input ciphertexts are deleted above) is left behind for green to trip over.
+/// Note: every `verify_proofs` row at/after `gw_start_block` is deleted too, so no
+/// gw-window BCS proof row (whose input ciphertexts are deleted above) is left behind
+/// for green to trip over; a pre-window proof blue already verified is left alone, same
+/// as `input_handles`.
 async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT gw_start_block FROM upgrade_state
@@ -1476,10 +1478,21 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
         "delete_bcs_gw_leftovers: deleted BCS-leftover ciphertexts and input_handles"
     );
 
-    // verify_proofs
-    sqlx::query("TRUNCATE TABLE public.verify_proofs")
-        .execute(&mut **tx)
-        .await?;
+    // Same window as input_handles above: a pre-window proof blue already verified
+    // must survive cutover, so this is scoped rather than a blanket truncate.
+    let deleted_verify_proofs = sqlx::query!(
+        "DELETE FROM public.verify_proofs WHERE block_number >= $1",
+        gw_start_block,
+    )
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+
+    info!(
+        gw_start_block,
+        rows_deleted = deleted_verify_proofs,
+        "delete_bcs_gw_leftovers: deleted BCS-leftover verify_proofs"
+    );
 
     Ok(())
 }
@@ -4158,7 +4171,7 @@ mod tests {
         let h_left = &[0xC1u8; 32][..]; // input handle of the leftover proof
         let h_repro = &[0xC2u8; 32][..]; // input handle of the reproduced proof
 
-        for (id, block) in [(100_i64, 5_i64), (200_i64, 3_i64)] {
+        for (id, block) in [(50_i64, 0_i64), (100_i64, 5_i64), (200_i64, 3_i64)] {
             sqlx::query(
                 "INSERT INTO verify_proofs
                     (zk_proof_id, chain_id, contract_address, user_address, verified, block_number)
@@ -4237,15 +4250,18 @@ mod tests {
             "a handle GCS reproduced must be restored by the merge"
         );
 
-        // `delete_bcs_gw_leftovers` truncates `verify_proofs` at cutover, so the
-        // BCS-era proof row is cleared along with the rest of the table. Pinned
-        // here so a change to that behavior has to update this expectation.
-        let remaining: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 100")
-                .fetch_one(&pool)
-                .await
-                .expect("verify_proofs count");
-        assert_eq!(remaining, 0, "proof 100 is truncated at cutover");
+        // `delete_bcs_gw_leftovers` deletes gw-window `verify_proofs` rows at cutover,
+        // so the in-window BCS-era proof (100) is cleared, but a pre-window proof (50)
+        // blue already verified is left alone.
+        let (in_window, pre_window): (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 100),
+                    (SELECT COUNT(*) FROM verify_proofs WHERE zk_proof_id = 50)",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("verify_proofs count");
+        assert_eq!(in_window, 0, "gw-window proof 100 is deleted at cutover");
+        assert_eq!(pre_window, 1, "pre-window proof 50 must survive cutover");
     }
 
     /// A handle BCS already committed (`txn_is_sent = true`) must stay committed
