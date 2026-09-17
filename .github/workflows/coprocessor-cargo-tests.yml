@@ -168,6 +168,26 @@ jobs:
       with:
         node-version: 20.x
 
+    # Warm the image once per runner before parallel tests start containers.
+    # Retry provisioning here rather than retrying failed test assertions.
+    - name: Pre-pull PostgreSQL test image
+      timeout-minutes: 5
+      shell: bash
+      run: |
+        set -euo pipefail
+        for attempt in 1 2 3; do
+          if docker pull postgres:15.7; then
+            docker image inspect postgres:15.7 >/dev/null
+            exit 0
+          fi
+          if [ "$attempt" -lt 3 ]; then
+            echo "PostgreSQL image pull failed (attempt $attempt/3); retrying"
+            sleep "$((attempt * 5))"
+          fi
+        done
+        echo "::error::Failed to pull postgres:15.7 after 3 attempts"
+        exit 1
+
     - name: Start localstack
       if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
