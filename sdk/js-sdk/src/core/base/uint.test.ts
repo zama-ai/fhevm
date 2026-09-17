@@ -1286,8 +1286,8 @@ describe('uintToHex', () => {
 
 describe('u64ToHex0x', () => {
   it('pads a type-byte Solana chain id to 16 nibbles', () => {
-    expect(u64ToHex0x(72057594037940281n)).toBe('0x0100000000003039');
-    expect(uintToHex0x(72057594037940281n)).toBe('0x100000000003039');
+    expect(u64ToHex0x(asUint(72057594037940281n))).toBe('0x0100000000003039');
+    expect(uintToHex0x(asUint(72057594037940281n))).toBe('0x100000000003039');
   });
 });
 
