@@ -4,6 +4,10 @@ ABI coverage is derived from each package's `upgrade-manifest.json`.
 Stable-surface policy lives in [`config.ts`](./config.ts): initializer, ownership, upgrade,
 and other intentionally non-public entrypoints are excluded there.
 
+A contract listed in `upgrade-manifest.json` with no source file in the baseline ref fails
+[`check.ts`](./check.ts); move `ABI_COMPAT_FROM_TAG` to a release that contains it.
+[`list.ts`](./list.ts) skips it instead.
+
 Compare the stable contract ABI surface between two refs locally with:
 
 ```bash

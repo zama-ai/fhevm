@@ -47,6 +47,15 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     ],
     InputVerification: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     GatewayConfig: [
+      // The priority coprocessor feature was removed in #3345: it let one designated tx sender
+      // finalize consensus on its own, which made the configured threshold inert. The whole
+      // entrypoint group went with it. These signatures were added after v0.11.1 and removed
+      // before v0.14.1, so the old baseline never saw them.
+      "error PriorityCoprocessorNotInNewCoprocessors(address)",
+      "error PriorityCoprocessorSignerChanged(address,address,address)",
+      "error PriorityCoprocessorTxSenderNotRegistered(address)",
+      "event UpdatePriorityCoprocessorTxSender(address indexed)",
+      "function getPriorityCoprocessorTxSender() returns (address)",
       // AddHostChain now indexes the chain ID so listeners can filter on it, which changes the
       // event signature. Nothing off-chain subscribes to it.
       "event AddHostChain((uint256,address,address,string,string))",

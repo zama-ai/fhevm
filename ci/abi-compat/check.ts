@@ -22,7 +22,8 @@ for (const result of results) {
   console.log(`::group::Checking ${result.name}`);
   try {
     if (!result.baselineExists) {
-      console.log(`Skipping ${result.name} (new contract, not in baseline)`);
+      console.error(`::error::${result.name} is in upgrade-manifest.json but absent from the ABI baseline`);
+      errors++;
       continue;
     }
 
