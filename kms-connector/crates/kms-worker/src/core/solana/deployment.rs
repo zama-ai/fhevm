@@ -24,9 +24,7 @@
 use crate::core::solana_acl::SolanaPubkeyBytes;
 
 /// Solana type-byte helpers. Re-exported so tests share the worker's definition.
-pub use crate::core::config::{
-    is_solana_host_chain_id, solana_host_chain_id, SOLANA_CHAIN_TYPE,
-};
+pub use crate::core::config::{SOLANA_CHAIN_TYPE, is_solana_host_chain_id, solana_host_chain_id};
 
 /// The Connector's own deployment identity.
 ///
@@ -143,7 +141,9 @@ pub fn embedded_chain_id(handle: &[u8; 32]) -> u64 {
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DeploymentIdentityError {
     /// The configured chain id does not have Solana type byte `0x01`.
-    #[error("configured chain id {chain_id} is not a Solana host chain id (high byte must be 0x01)")]
+    #[error(
+        "configured chain id {chain_id} is not a Solana host chain id (high byte must be 0x01)"
+    )]
     ChainTypeByteInvalid {
         /// The configured value.
         chain_id: u64,

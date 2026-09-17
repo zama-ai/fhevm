@@ -21,8 +21,8 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     deployment::{
-        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, solana_host_chain_id,
-        check_deployment, embedded_chain_id,
+        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, check_deployment,
+        embedded_chain_id, solana_host_chain_id,
     },
     failure::FailureClass,
 };

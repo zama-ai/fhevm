@@ -3,7 +3,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FetchInputProofResult, RelayerInputProofOptions } from '../../core/types/relayer.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
 import { submitInputProofPayload } from '../../core/modules/relayer/module/fetchCoprocessorSignatures.js';
-import { uintToHex0x } from '../../core/base/uint.js';
+import { u64ToHex0x } from '../../core/base/uint.js';
 import { asBytesHex, bytesToHexNo0x, hexToBytes32 } from '../../core/base/bytes.js';
 import { InputProofError } from '../../core/errors/InputProofError.js';
 import { assertHandleArrayEquals } from '../../core/handle/FhevmHandle.js';
@@ -61,7 +61,7 @@ export async function submitInputProof(
     payload: {
       ciphertextWithInputVerification: bytesToHexNo0x(inputProof.ciphertextWithZkProof),
       contractAddress: base58.encode(hexToBytes32(inputProof.contractAddress)),
-      contractChainId: uintToHex0x(inputProof.chainId),
+      contractChainId: u64ToHex0x(inputProof.chainId),
       extraData: asBytesHex('0x00'),
       userAddress: base58.encode(hexToBytes32(inputProof.userAddress)),
     },

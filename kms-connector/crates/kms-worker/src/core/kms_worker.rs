@@ -617,22 +617,10 @@ mod tests {
         evm_unknown_type.chain_id = 0x0200_0000_0000_0009;
 
         let cases = [
-            (
-                solana_without_type,
-                "must have type byte 0x01",
-            ),
-            (
-                evm_with_solana_type,
-                "high byte must be 0x00",
-            ),
-            (
-                solana_unknown_type,
-                "must have type byte 0x01",
-            ),
-            (
-                evm_unknown_type,
-                "high byte must be 0x00",
-            ),
+            (solana_without_type, "must have type byte 0x01"),
+            (evm_with_solana_type, "high byte must be 0x00"),
+            (solana_unknown_type, "must have type byte 0x01"),
+            (evm_unknown_type, "high byte must be 0x00"),
         ];
         for (host_chain, expected) in cases {
             let error = validation_error(&[host_chain]);

@@ -6,8 +6,8 @@ import init, {
   process_user_decryption_resp_solana_from_js,
   u8vec_to_ml_kem_pke_pk,
   u8vec_to_ml_kem_pke_sk,
-} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.93af722c.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.93af722c.wasm.base64.js';
+} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.6b36473c.js';
+import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.6b36473c.wasm.base64.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
 
 // KMS core/service/src/client/solana_response.rs generates these deterministic test keys

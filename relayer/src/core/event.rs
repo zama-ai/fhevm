@@ -1365,6 +1365,21 @@ mod tests {
     }
 
     #[test]
+    fn solana_input_proof_accepts_unpadded_type_byte_hex() {
+        // uintToHex0x used to emit this 15-nibble form; the relayer still parses it.
+        let json = InputProofRequestJson {
+            contract_chain_id: "0x100000000003039".to_string(),
+            contract_address: SOLANA_CONTRACT.to_string(),
+            user_address: SOLANA_USER.to_string(),
+            ciphertext_with_input_verification: "abcd".to_string(),
+            extra_data: "0x00".to_string(),
+        };
+        let request = InputProofRequest::try_from(json).expect("unpadded hex is still a u64");
+        assert_eq!(request.contract_chain_id, solana_host_chain_id(12345));
+        assert!(request.is_solana());
+    }
+
+    #[test]
     fn evm_input_proof_request_carries_evm_fields_and_leaves_solana_identities_unset() {
         let json = InputProofRequestJson {
             contract_chain_id: CHAIN_ID.to_string(),

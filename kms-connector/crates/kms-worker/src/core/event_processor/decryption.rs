@@ -1025,8 +1025,7 @@ mod tests {
                 chain_id,
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
                     deployment: crate::core::solana::deployment::DeploymentIdentity::resolve(
-                        [7; 32],
-                        chain_id,
+                        [7; 32], chain_id,
                     )
                     .expect("fixture deployment resolves"),
                     reader: crate::core::solana::snapshot::RpcHostStateReader::new(
