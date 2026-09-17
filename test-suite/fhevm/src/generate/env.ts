@@ -544,8 +544,7 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
-  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
-  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  // Auto-revert stays off under blue-green: the cutover merge legitimately replaces blue's in-window digests with green's, which the detector cannot tell from real drift.
   if (plan.blueGreen) {
     envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
   }
