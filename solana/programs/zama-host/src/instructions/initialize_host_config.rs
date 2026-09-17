@@ -144,4 +144,12 @@ mod tests {
         let err = assert_valid_host_config_args(&args).unwrap_err();
         assert_eq!(err, error!(ZamaHostError::InvalidChainTypeByte));
     }
+
+    #[test]
+    fn rejects_unknown_host_chain_type_byte() {
+        let mut args = valid_args();
+        args.chain_id = 0x0200_0000_0000_3039;
+        let err = assert_valid_host_config_args(&args).unwrap_err();
+        assert_eq!(err, error!(ZamaHostError::InvalidChainTypeByte));
+    }
 }

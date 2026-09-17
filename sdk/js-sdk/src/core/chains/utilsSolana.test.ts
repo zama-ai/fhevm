@@ -14,7 +14,7 @@ describe('defineFhevmSolanaChain', () => {
     expect(defineFhevmSolanaChain(chain).id).toBe(72057594037940281n);
   });
 
-  it.each([0n, 12345n, 1n << 63n, 1n << 64n])('rejects invalid Solana chain id %s', (id) => {
+  it.each([0n, 12345n, 1n << 63n, 1n << 64n, 0x02n << 56n])('rejects invalid Solana chain id %s', (id) => {
     expect(() => defineFhevmSolanaChain({ ...chain, id })).toThrow(
       'Solana chain id must be a u64 bigint with type byte 0x01',
     );

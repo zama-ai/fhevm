@@ -55,4 +55,15 @@ describe('buildInputProofMetaData', () => {
     expect(isSolanaHostChainId(12345)).toBe(false);
     expect(isSolanaHostChainId(solanaHostChainId(12345n))).toBe(true);
   });
+
+  it('refuses an unknown chain type byte', () => {
+    expect(() =>
+      buildInputProofMetaData({
+        chainId: 0x0200000000003039n,
+        contractAddress: `0x${'11'.repeat(20)}`,
+        userAddress: `0x${'22'.repeat(20)}`,
+        aclContractAddress: `0x${'33'.repeat(20)}`,
+      }),
+    ).toThrow('unsupported chain type byte 0x02');
+  });
 });

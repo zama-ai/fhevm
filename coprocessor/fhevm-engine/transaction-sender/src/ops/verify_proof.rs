@@ -452,7 +452,19 @@ where
                     // RFC-021 Solana hosts carry type byte `0x01`; they use bytes32 dapp/user
                     // identities and the verifyProofResponseSolana entrypoint, signing the matching
                     // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
-                    if ChainId::from_canonical_u64(row.chain_id as u64).is_solana_host() {
+                    let chain_id = ChainId::from_canonical_u64(row.chain_id as u64);
+                    if !chain_id.is_solana_host() && !chain_id.is_evm_host() {
+                        error!(
+                            parent: &span,
+                            chain_id = row.chain_id,
+                            "unsupported chain type byte (expected 0x00 EVM or 0x01 Solana)"
+                        );
+                        self.remove_proof_by_id(row.zk_proof_id)
+                            .instrument(span.clone())
+                            .await?;
+                        continue;
+                    }
+                    if chain_id.is_solana_host() {
                         let signing_hash = solana_zkpok::CiphertextVerification {
                             ctHandles: handles.clone(),
                             userAddress: row

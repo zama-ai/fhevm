@@ -31,7 +31,7 @@ impl ZkData {
                 self.chain_id,
             )
             .map(|data| data.to_vec())
-        } else {
+        } else if self.chain_id.is_evm_host() {
             assemble_aux_data(
                 &self.contract_address,
                 &self.user_address,
@@ -39,6 +39,11 @@ impl ZkData {
                 self.chain_id,
             )
             .map(|data| data.to_vec())
+        } else {
+            anyhow::bail!(
+                "unsupported chain type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
+                fhevm_engine_common::chain_id::chain_type_byte(self.chain_id.as_u64())
+            )
         }
     }
 }
@@ -117,6 +122,20 @@ mod tests {
         };
         // The 20-byte contract address is not a valid bytes32 identity.
         assert!(zk_data.assemble().is_err());
+    }
+
+    #[test]
+    fn assemble_refuses_unknown_chain_type_byte() {
+        let zk_data = ZkData {
+            contract_address: "0x1111111111111111111111111111111111111111".to_string(),
+            user_address: "0x2222222222222222222222222222222222222222".to_string(),
+            acl_contract_address: "0x3333333333333333333333333333333333333333".to_string(),
+            chain_id: ChainId::from_canonical_u64(0x0200_0000_0000_3039),
+        };
+        let err = zk_data
+            .assemble()
+            .expect_err("unknown type byte is not EVM");
+        assert!(err.to_string().contains("unsupported chain type byte 0x02"));
     }
 
     #[test]

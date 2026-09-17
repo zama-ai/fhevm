@@ -607,18 +607,30 @@ mod tests {
     #[test]
     fn rejects_chain_id_inconsistent_with_chain_kind() {
         // A Solana host chain whose high byte is not 0x01.
-        let mut solana_without_bit = host_chain(9, HostChainKind::Solana);
-        solana_without_bit.chain_id = 9;
+        let mut solana_without_type = host_chain(9, HostChainKind::Solana);
+        solana_without_type.chain_id = 9;
         let mut evm_with_solana_type = host_chain(9, HostChainKind::Evm);
         evm_with_solana_type.chain_id = solana_host_chain_id(9);
+        let mut solana_unknown_type = host_chain(9, HostChainKind::Solana);
+        solana_unknown_type.chain_id = 0x0200_0000_0000_0009;
+        let mut evm_unknown_type = host_chain(9, HostChainKind::Evm);
+        evm_unknown_type.chain_id = 0x0200_0000_0000_0009;
 
         let cases = [
             (
-                solana_without_bit,
+                solana_without_type,
                 "must have type byte 0x01",
             ),
             (
                 evm_with_solana_type,
+                "high byte must be 0x00",
+            ),
+            (
+                solana_unknown_type,
+                "must have type byte 0x01",
+            ),
+            (
+                evm_unknown_type,
                 "high byte must be 0x00",
             ),
         ];

@@ -3,9 +3,9 @@ import { isAddress } from '../base/address.js';
 import { hexToBytes20, hexToBytes32, isBytes32Hex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 
-import { isSolanaHostChainId } from '../chains/utilsSolana.js';
+import { chainTypeByte, isEvmHostChainId, isSolanaHostChainId } from '../chains/utilsSolana.js';
 
-export { isSolanaHostChainId };
+export { isEvmHostChainId, isSolanaHostChainId };
 
 /**
  * Assembles the auxiliary data that the input ZK proof is bound to.
@@ -42,6 +42,12 @@ export function buildInputProofMetaData(params: {
     metaData.set(hexToBytes32(aclContractAddress), 64);
     metaData.set(chainIdBytes32, 96);
     return metaData;
+  }
+
+  if (!isEvmHostChainId(chainId)) {
+    throw new ZkProofError({
+      message: `unsupported chain type byte 0x${chainTypeByte(BigInt(chainId)).toString(16).padStart(2, '0')} (expected 0x00 EVM or 0x01 Solana)`,
+    });
   }
 
   assertAddress(contractAddress, 'contract address');

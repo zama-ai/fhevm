@@ -605,7 +605,7 @@ mod tests {
                     [
                         {
                             "url": "http://localhost:9545",
-                            "chainId": 9223372036854807696,
+                            "chainId": 72057594037959824,
                             "chainKind": "solana",
                             "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
                             "solanaHostProgramId": "11111111111111111111111111111111"

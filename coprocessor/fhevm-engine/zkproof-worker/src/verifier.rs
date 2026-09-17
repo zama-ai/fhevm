@@ -837,12 +837,17 @@ fn compute_handle_hash(
             auxiliary::parse_bytes32(&aux_data.acl_contract_address)
                 .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))?,
         );
-    } else {
+    } else if aux_data.chain_id.is_evm_host() {
         handle_hash.update(
             Address::from_str(&aux_data.acl_contract_address)
                 .expect("valid acl_contract_address")
                 .into_array(),
         );
+    } else {
+        return Err(ExecutionError::InvalidAuxData(format!(
+            "unsupported chain type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
+            fhevm_engine_common::chain_id::chain_type_byte(aux_data.chain_id.as_u64())
+        )));
     }
     handle_hash.update(chain_id_bytes);
     let handle = handle_hash.finalize().to_vec();

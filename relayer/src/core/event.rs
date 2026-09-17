@@ -687,6 +687,12 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
                 "Solana user decrypts are served by the v3 endpoint only; the legacy v2 path is EVM-only"
             );
         }
+        if !is_evm_host_chain_id(contracts_chain_id) {
+            anyhow::bail!(
+                "unsupported chain type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
+                chain_type_byte(contracts_chain_id)
+            );
+        }
 
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
@@ -1144,7 +1150,7 @@ pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
     chain_type_byte(chain_id) == EVM_CHAIN_TYPE
 }
 
-pub fn is_solana_host_chain_id(contract_chain_id: u64) -> bool {
+pub const fn is_solana_host_chain_id(contract_chain_id: u64) -> bool {
     chain_type_byte(contract_chain_id) == SOLANA_CHAIN_TYPE
 }
 
@@ -1270,6 +1276,12 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
                 extra_data,
             ));
         }
+        if !is_evm_host_chain_id(contract_chain_id) {
+            anyhow::bail!(
+                "unsupported chain type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
+                chain_type_byte(contract_chain_id)
+            );
+        }
 
         let contract_address = Address::from_str(&json.contract_address)
             .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
@@ -1329,7 +1341,10 @@ mod tests {
 
         let request = InputProofRequest::try_from(json).expect("Solana request should parse");
 
-        assert!(request.is_solana(), "type-byte 0x01 chain id is a Solana host");
+        assert!(
+            request.is_solana(),
+            "type-byte 0x01 chain id is a Solana host"
+        );
         assert_eq!(request.contract_chain_id, solana_host_chain_id(12345));
         // 20-byte EVM fields are unused on the Solana path.
         assert_eq!(request.contract_address, Address::ZERO);
@@ -1377,6 +1392,19 @@ mod tests {
         );
         assert_eq!(request.solana_contract_address, None);
         assert_eq!(request.solana_user_address, None);
+    }
+
+    #[test]
+    fn input_proof_request_refuses_unknown_chain_type_byte() {
+        let json = InputProofRequestJson {
+            contract_chain_id: "0x0200000000003039".to_string(),
+            contract_address: CONTRACT_ADDRESS.to_string(),
+            user_address: USER_ADDRESS.to_string(),
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data: EXTRA_DATA.to_string(),
+        };
+        let err = InputProofRequest::try_from(json).expect_err("unknown type byte is not EVM");
+        assert!(err.to_string().contains("unsupported chain type byte 0x02"));
     }
 
     /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`

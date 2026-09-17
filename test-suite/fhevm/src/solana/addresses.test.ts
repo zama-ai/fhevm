@@ -9,7 +9,6 @@ import {
   readActiveKmsPair,
   readGatewayBootstrapInputs,
   SOLANA_HOST_CHAIN_ID,
-  SOLANA_HOST_CHAIN_ID_I64,
 } from "./addresses";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
@@ -20,10 +19,8 @@ const addressArrayReturnData = (addresses: readonly string[]): string =>
   `0x${word("0x20")}${word(`0x${addresses.length.toString(16)}`)}${addresses.map(word).join("")}`;
 
 describe("solana host chain id constants", () => {
-  test("i64 form is the same 64-bit pattern as the u64 form", () => {
+  test("localnet id is the type-byte sentinel", () => {
     expect(SOLANA_HOST_CHAIN_ID).toBe(72057594037940281n);
-    expect(SOLANA_HOST_CHAIN_ID_I64).toBe(72057594037940281n);
-    expect(BigInt.asUintN(64, SOLANA_HOST_CHAIN_ID_I64)).toBe(SOLANA_HOST_CHAIN_ID);
   });
 });
 

@@ -1033,8 +1033,15 @@ impl Settings {
             // downstream components cannot classify the same host differently.
             let valid_acl_address = if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
                 crate::http::utils::solana_address::is_solana_address(&hc.acl_address)
-            } else {
+            } else if crate::core::event::is_evm_host_chain_id(hc.chain_id) {
                 Address::from_str(&hc.acl_address).is_ok()
+            } else {
+                return Err(AppConfigError::Config(format!(
+                    "host_chains[{}].chain_id {} has unsupported type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
+                    i,
+                    hc.chain_id,
+                    crate::core::event::chain_type_byte(hc.chain_id)
+                )));
             };
             if !valid_acl_address {
                 return Err(AppConfigError::InvalidAddress(format!(
@@ -2249,6 +2256,29 @@ mod tests {
     }
 
     #[test]
+    fn test_host_chains_refuses_unknown_chain_type_byte() {
+        let config_path = ConfigBuilder::from_example()
+            .expect("Failed to load example config")
+            .to_temp_file()
+            .expect("Failed to create temp config file");
+
+        let config = Config::builder()
+            .add_source(File::from(config_path.as_path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let mut settings: Settings = config.try_deserialize().expect("Failed to deserialize");
+        settings.host_chains[0].chain_id = 0x0200_0000_0000_3039;
+        let err = settings
+            .validate_host_chains()
+            .expect_err("unknown type byte is not EVM");
+        assert!(
+            err.to_string().contains("unsupported type byte 0x02"),
+            "Error should refuse the type byte, got: {err}"
+        );
+    }
+
+    #[test]
     fn test_deserialize_host_chains_standard_yaml_still_works() {
         let config_path = ConfigBuilder::from_example()
             .expect("Failed to load example config")
@@ -2286,10 +2316,10 @@ mod tests {
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_loads_quoted_solana_host_chain_id() {
         const SOLANA_CHAIN_ID: u64 = crate::core::event::solana_host_chain_id(12345);
-                                                           // Mirror the live config (the e2e setup deploy.ts writes the Solana host_chains entry with a
-                                                           // QUOTED chain_id, because a bare YAML number above the IEEE-754 mantissa coerces to a
-                                                           // lossy f64). Loading must succeed through the real
-                                                           // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
+        // Mirror the live config (the e2e setup deploy.ts writes the Solana host_chains entry with a
+        // QUOTED chain_id, because a bare YAML number above the IEEE-754 mantissa coerces to a
+        // lossy f64). Loading must succeed through the real
+        // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
         let base = std::fs::read_to_string("tests/relayer-test-config.yaml")
             .expect("read tests/relayer-test-config.yaml");
         let solana_cfg = base
@@ -2310,9 +2340,8 @@ mod tests {
         std::fs::write(&path, solana_cfg).expect("write temp config");
         let result = Settings::new(Some(path.to_string_lossy().into_owned()));
         let _ = std::fs::remove_file(&path);
-        let settings = result.expect(
-            "Settings::new must load a quoted Solana host chain id (RFC-021)",
-        );
+        let settings =
+            result.expect("Settings::new must load a quoted Solana host chain id (RFC-021)");
         assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
     }
 

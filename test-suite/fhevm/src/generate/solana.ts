@@ -35,19 +35,6 @@ export const solanaProgramIdFromKeypairFile = (keypairPath: string): string => {
   return base58Encode(bytes.subarray(32, 64));
 };
 
-// Solana host chain ids have type byte `0x01`, so they exceed Number.MAX_SAFE_INTEGER
-// (`2^53`) and must travel as bigint or a decimal string. They fit in i64; this helper
-// still two's-complements values above `i64::MAX` so a leftover bit-63 id round-trips.
-
-const TWO_POW_64 = 1n << 64n;
-const I64_MAX = (1n << 63n) - 1n;
-
-/** Maps a u64 Solana host chain id (decimal string) to the two's-complement i64 the DB stores. */
-export const solanaHostChainIdI64 = (chainId: string): string => {
-  const u = BigInt(chainId);
-  return (u > I64_MAX ? u - TWO_POW_64 : u).toString();
-};
-
 /**
  * The Solana host's program id (base58) — its ACL identity, discovered post-deploy like an EVM
  * host's ACL address and stored under the same `ACL_CONTRACT_ADDRESS` discovery key.

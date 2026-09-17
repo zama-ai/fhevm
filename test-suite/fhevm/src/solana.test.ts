@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   serializeKmsHostChains,
-  solanaHostChainIdI64,
   solanaLeafProofUrl,
   SOLANA_LEAF_PROOF_API_KEY,
 } from "./generate/solana";
@@ -50,10 +49,5 @@ describe("solana", () => {
       { url: "http://host.docker.internal:8899", chainId: "72057594037940281", kind: "solana" },
     ]);
     expect(serialized).toContain('"chain_id":72057594037940281');
-  });
-
-  test("maps a u64 host chain id to the two's-complement i64 the coprocessor DB stores", () => {
-    expect(solanaHostChainIdI64("72057594037940281")).toBe("72057594037940281");
-    expect(solanaHostChainIdI64("9650")).toBe("9650");
   });
 });

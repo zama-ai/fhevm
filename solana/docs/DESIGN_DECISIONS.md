@@ -427,7 +427,7 @@ Gateway V2 path (RFC-016) rather than a parallel native stack:
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
   KMS signers from the cert and threshold-checks them, mirroring the EVM `KMSVerifier`
   (`verifyDecryptionEIP712KMSSignatures`). See DD-021.
-- Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, high-bit chain id;
+- Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, type-byte `0x01` chain id;
   added to the relayer `host_chains`).
 
 Why:

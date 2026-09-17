@@ -43,11 +43,11 @@ fn the_identity_is_the_configured_program_and_chain_id() {
 }
 
 /// The one thing checked about the configured value: handles embed it and routing reads the
-/// chain-kind bit out of it, so a chain id without the bit matches no handle of any Solana cluster.
+/// type byte out of it, so a chain id without type byte 0x01 matches no handle of any Solana cluster.
 /// Caught at startup, where it is one log line, rather than per request, where it would look like a
 /// user error every time.
 #[test]
-fn a_configured_chain_id_without_the_chain_kind_bit_fails_at_startup() {
+fn a_configured_chain_id_without_type_byte_0x01_fails_at_startup() {
     let without_type_byte = 0x0123_4567_89ab_cdef & 0x00ff_ffff_ffff_ffff;
 
     let error = DeploymentIdentity::resolve(PROGRAM_ID, without_type_byte)

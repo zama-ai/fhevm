@@ -2132,9 +2132,15 @@ mod tests {
         );
     }
 
+    fn rand_solana_handle() -> B256 {
+        let mut bytes = *rand_handle();
+        bytes[22..30].copy_from_slice(&solana_host_chain_id(12345).to_be_bytes());
+        bytes.into()
+    }
+
     #[tokio::test]
     async fn public_decryption_dispatches_to_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
 
@@ -2158,7 +2164,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_user_decryption_rejects_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
 
@@ -2176,7 +2182,7 @@ mod tests {
 
     #[tokio::test]
     async fn rfc016_user_decryption_rejects_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
         let signer = PrivateKeySigner::random();

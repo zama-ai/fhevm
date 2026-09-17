@@ -149,6 +149,13 @@ impl HostAclChecker {
                 );
                 continue;
             }
+            if !crate::core::event::is_evm_host_chain_id(hc.chain_id) {
+                return Err(anyhow::anyhow!(
+                    "unsupported chain type byte 0x{:02x} for chain {} (expected 0x00 EVM or 0x01 Solana)",
+                    crate::core::event::chain_type_byte(hc.chain_id),
+                    hc.chain_id
+                ));
+            }
 
             let url = Url::parse(&hc.url).map_err(|e| {
                 anyhow::anyhow!("Invalid host chain URL for chain {}: {}", hc.chain_id, e)
@@ -1115,9 +1122,10 @@ mod tests {
         let evm_address = "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836";
         let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
-        for (chain_id, acl_address) in
-            [(crate::core::event::solana_host_chain_id(12345), evm_address), (12345, solana_address)]
-        {
+        for (chain_id, acl_address) in [
+            (crate::core::event::solana_host_chain_id(12345), evm_address),
+            (12345, solana_address),
+        ] {
             let result = HostAclChecker::new(
                 &[HostChainConfig {
                     chain_id,

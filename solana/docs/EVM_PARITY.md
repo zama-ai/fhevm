@@ -18,7 +18,7 @@ semantics. The current account and composition model is RFC35 / PR3883; DD-049 i
 | Make publicly decryptable | Fresh outputs may append public leaves; `make_store_handle_public` publishes an exact current slot under its authority signature | Publication of history-only handles is deferred to #2007. An existing public leaf stays valid after slot replacement. |
 | `isAllowed` / decrypt authorization | Connector verifies exact-handle/key MMR inclusion against its own Store snapshot | It requests proofs from coprocessors; clients do not supply authorization proofs. Compute access does not follow from this leaf alone. |
 | Application identity (`msg.sender`) | Program identity proven by authority PDA creation; execution names `(program, scope)` | Program, scope and authority have separate roles. Program upgrade authority remains trusted to preserve app policy. |
-| Handle type/chain metadata | Shared 32-byte handle layout and high-bit Solana chain classification | Handles are not portable across chains. Bank-hash/timestamp entropy is Solana-specific; missing entropy fails closed. |
+| Handle type/chain metadata | Shared 32-byte handle layout and type-byte Solana chain classification (`0x01`) | Handles are not portable across chains. Bank-hash/timestamp entropy is Solana-specific; missing entropy fails closed. |
 | HCU limits | Per-execution total/depth plus per-application per-slot cap | No global EVM-style block cap. Disabled limits are explicitly configured; runtime cost snapshots measure supported shapes. |
 
 Supported FHE types cover Bool and Uint8 through Uint128. Signed, larger and string types

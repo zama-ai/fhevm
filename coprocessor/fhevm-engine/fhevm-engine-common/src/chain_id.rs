@@ -71,6 +71,12 @@ impl ChainId {
     pub fn is_solana_host(self) -> bool {
         is_solana_host_chain_id(self.as_u64())
     }
+
+    /// True when the high byte is the EVM type byte `0x00`.
+    #[inline]
+    pub fn is_evm_host(self) -> bool {
+        is_evm_host_chain_id(self.as_u64())
+    }
 }
 
 impl TryFrom<i64> for ChainId {
@@ -203,6 +209,17 @@ mod tests {
     fn evm_chain_is_not_solana_host() {
         let id = ChainId::try_from(12345_u64).unwrap();
         assert!(!id.is_solana_host());
+        assert!(id.is_evm_host());
+    }
+
+    #[test]
+    fn unknown_type_byte_is_neither_evm_nor_solana() {
+        let id = ChainId::from_canonical_u64(0x0200_0000_0000_3039);
+        assert!(!id.is_solana_host());
+        assert!(!id.is_evm_host());
+        let leftover_bit63 = ChainId::from_canonical_u64(0x8000_0000_0000_3039);
+        assert!(!leftover_bit63.is_solana_host());
+        assert!(!leftover_bit63.is_evm_host());
     }
 
     #[test]

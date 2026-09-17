@@ -22,7 +22,7 @@
 //!   dropping a class during a regeneration fails the suite instead of silently
 //!   shrinking coverage.
 //!
-//! The chain-id derivation is settled (`zama-solana-chain-id-v1`) and these records
+//! The chain-id derivation is settled (`0x01 || genesis[0..7]`) and these records
 //! carry ids derived by it — see `chain_id_derivation.rs` for the rule and its parity
 //! with the public cluster registry. With the derivation settled and the transport
 //! key in its canonical container representation, this set is byte-frozen: a
