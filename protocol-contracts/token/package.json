@@ -23,9 +23,7 @@
     "zama:oft:send:ethToGateway": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40424 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.testnet.ts' --",
     "zama:oft:send:ethToGateway:testnet": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40161 --dst-eid 40424 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.testnet.ts --oft-address 0x55D5258841e9Fd304007683ff4637b0a80fb0e62' --",
     "zama:oft:send:gatewayToEth": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40424 --dst-eid 40161 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.testnet.ts' --",
-    "zama:oft:send:gatewayToEth:testnet": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40424 --dst-eid 40161 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.testnet.ts --oft-address 0xcE762c7FDaac795D31a266B9247F8958c159c6d4' --",
-    "selectors:update": "forge selectors list | tail -n +2 > ./selectors.txt",
-    "selectors:check": "forge selectors list | tail -n +2 | diff ./selectors.txt - > /dev/null || (echo 'Contract selectors are not up-to-date. Please run selectors:update.' && exit 1)"
+    "zama:oft:send:gatewayToEth:testnet": "dotenv -e .env -- bash -c 'npx hardhat evm:validate:address --address \"$1\" && npx hardhat lz:oft:send --src-eid 40424 --dst-eid 40161 --amount \"$2\" --to \"$1\" --oapp-config  layerzero.config.testnet.ts --oft-address 0xcE762c7FDaac795D31a266B9247F8958c159c6d4' --"
   },
   "resolutions": {
     "ethers": "^5.7.2",

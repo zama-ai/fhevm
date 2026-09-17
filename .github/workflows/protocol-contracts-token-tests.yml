@@ -75,7 +75,7 @@ jobs:
 
       - name: Check contract selectors
         working-directory: protocol-contracts/token
-        run: pnpm run selectors:check
+        run: make check-selectors
 
       - name: Run lint
         working-directory: protocol-contracts/token

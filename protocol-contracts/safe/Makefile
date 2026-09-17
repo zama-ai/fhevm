@@ -15,7 +15,7 @@ get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts
 
 # Define it as a phony target to avoid conflicts with the test directory
-.PHONY: test
+.PHONY: test check-selectors update-selectors
 test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test --network hardhat $(if $(GREP),--grep '$(GREP)',)
 

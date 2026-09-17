@@ -18,9 +18,7 @@
     "verify:etherscan:polygon:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n polygon-mainnet -u https://api.etherscan.io/v2/api?chainid=137 -k $ETHERSCAN_API'",
     "verify:etherscan:polygonAmoy:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n polygon-amoy-testnet -u https://api.etherscan.io/v2/api?chainid=80002 -k $ETHERSCAN_API'",
     "verify:etherscan:gateway:mainnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-mainnet -u $BLOCKSCOUT_API'",
-    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'",
-    "selectors:update": "forge selectors list | tail -n +2 > ./selectors.txt",
-    "selectors:check": "forge selectors list | tail -n +2 | diff ./selectors.txt - > /dev/null || (echo 'Contract selectors are not up-to-date. Please run selectors:update.' && exit 1)"
+    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'"
   },
   "resolutions": {
     "ethers": "^5.7.2",
