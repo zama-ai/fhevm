@@ -44,7 +44,7 @@ fn start_runtime_inner(
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
     readiness: tfhe_worker::Readiness,
 ) {
-    tokio::runtime::Builder::new_multi_thread()
+    let fatal = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
         .max_blocking_threads(args.coprocessor_fhe_threads)
@@ -63,10 +63,25 @@ fn start_runtime_inner(
                         info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
+                // Callers that pass `close_recv` run the worker in-process (the
+                // unit tests and the benchmark harness) and own the process
+                // themselves, so a failure here must not take them down.
+                false
             } else if let Err(e) = async_main_inner(args, readiness).await {
                 error!(target: "main", { error = e }, "Runtime error");
+                // Export the fatal event while its async runtime is still alive.
+                telemetry::flush();
+                true
+            } else {
+                false
             }
-        })
+        });
+
+    // Supervisors using restart-on-failure need a nonzero status. The runtime
+    // has been dropped here; embedded callers retain ownership of their process.
+    if fatal {
+        std::process::exit(1);
+    }
 }
 
 // Used for testing as we would call `async_main()` multiple times.
