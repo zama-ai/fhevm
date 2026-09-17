@@ -860,7 +860,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @param expectedType Expected FHE type.
      */
     function checkHandleType(bytes32 handle, FheType expectedType) external view virtual {
-        if (handle == bytes32(0) || _typeOf(handle) != expectedType) revert InvalidType();
+        // Compare against the ABI-validated enum without converting the untrusted handle byte to an enum.
+        if (handle == bytes32(0) || uint8(handle[30]) != uint8(expectedType)) revert InvalidType();
     }
 
     /**

@@ -174,6 +174,18 @@ contract TypeSafetyAdapter {
         return euint32.unwrap(FHE.allowThis(euint32.wrap(a)));
     }
 
+    function allowTo32(bytes32 a, address account) external returns (bytes32) {
+        return euint32.unwrap(FHE.allow(euint32.wrap(a), account));
+    }
+
+    function allowTransient32(bytes32 a, address account) external returns (bytes32) {
+        return euint32.unwrap(FHE.allowTransient(euint32.wrap(a), account));
+    }
+
+    function makePubliclyDecryptable32(bytes32 a) external returns (bytes32) {
+        return euint32.unwrap(FHE.makePubliclyDecryptable(euint32.wrap(a)));
+    }
+
     function sum32(bytes32 a, bytes32 b) external returns (bytes32) {
         euint32[] memory values = new euint32[](2);
         values[0] = euint32.wrap(a);
@@ -382,6 +394,22 @@ contract FHETypeSafetyTest is HostContractsDeployerTestUtils {
         adapter.select32(condition, wrong, wrong);
         vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
         adapter.select32(condition, right, wrong);
+    }
+
+    function test_OperationsAndPermissionsRejectEveryOutOfRangeTypeByte() public {
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            adapter.addScalar32(handle, 1);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            adapter.allow32(handle);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            adapter.allowTo32(handle, address(this));
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            adapter.allowTransient32(handle, address(this));
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            adapter.makePubliclyDecryptable32(handle);
+        }
     }
 
     function _assertCallType(bytes memory data, bool shouldSucceed, FheType expectedType) internal {
