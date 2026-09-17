@@ -20,9 +20,12 @@ first package lands.
 | `token` | The `$ZAMA` token and its LayerZero OFT deployments | to move |
 | `feesBurner` | Receives protocol fees and burns them | to move |
 | `pauserSetWrapper` | Wraps the pauser set so governance can administer it | to move |
+| `solanaOFT` | The `$ZAMA` OFT on Solana and the EVM side of its bridge — Anchor programs beside Hardhat and Foundry contracts | moved |
 
-The Solana OFT programs are tracked separately, since they cannot live inside an EVM package —
-[`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352).
+`solanaOFT` is tracked in
+[`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352). Its CI runs
+the EVM half only — lint and Foundry tests; the Anchor programs need a Solana toolchain no runner
+here installs yet.
 
 `confidential-wrapper` and `confidential-token-wrappers-registry` are **not** moving; they stay with
 Protocol Apps.
