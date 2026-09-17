@@ -4,7 +4,7 @@ mod history_fetch;
 mod localization_cache;
 pub(crate) mod metrics;
 pub(crate) mod peer_downloader;
-mod peer_manifest_source;
+pub(crate) mod peer_manifest_source;
 mod quorum_coverage;
 mod verification_evidence;
 mod verification_queue;
