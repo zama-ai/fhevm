@@ -165,3 +165,25 @@ volumes:
       name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
 {{- end -}}
 
+{{/*
+Container resources for FHE workers. CPU/memory keep the previous defaults;
+nvidia.com/gpu is passed through when set so pods can land on GPU nodepools.
+*/}}
+{{- define "coprocessor.containerResources" -}}
+{{- $res := default dict . -}}
+{{- $req := default dict $res.requests -}}
+{{- $lim := default dict $res.limits -}}
+resources:
+  requests:
+    cpu: {{ default "100m" $req.cpu }}
+    memory: {{ default "256Mi" $req.memory }}
+    {{- with index $req "nvidia.com/gpu" }}
+    nvidia.com/gpu: {{ . | quote }}
+    {{- end }}
+  limits:
+    cpu: {{ default "500m" $lim.cpu }}
+    memory: {{ default "512Mi" $lim.memory }}
+    {{- with index $lim "nvidia.com/gpu" }}
+    nvidia.com/gpu: {{ . | quote }}
+    {{- end }}
+{{- end -}}

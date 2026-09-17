@@ -6,7 +6,7 @@
 set -euo pipefail
 
 deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
-keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
+keygen_timeout="${KEYGEN_TIMEOUT:-310m}"
 
 kind="${1:?kind}"
 case "${kind}" in

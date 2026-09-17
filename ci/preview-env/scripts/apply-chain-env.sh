@@ -114,8 +114,8 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
   # a genuine failure there from burning the full keygen budget.
   # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
 fi
 
 # --- listener ---

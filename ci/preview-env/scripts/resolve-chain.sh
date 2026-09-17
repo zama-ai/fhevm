@@ -93,7 +93,7 @@ case "${CHAIN_MODE}" in
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
       # One pod waits for BOTH ceremonies (60m keygen + 40m crsgen, see
       # apply-chain-env.sh), so helm must outlast their sum plus the hardhat compile.
-      echo "KEYGEN_TIMEOUT=110m"
+      echo "KEYGEN_TIMEOUT=310m"
     } >> "${GITHUB_ENV}"
     echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
