@@ -1051,6 +1051,33 @@ async fn notify_coprocessor_upgrade_proposed(
         return Ok(());
     };
 
+    let host_chain_ids: HashSet<i64> =
+        sqlx::query_scalar("SELECT chain_id FROM host_chains")
+            .fetch_all(&mut **tx)
+            .await?
+            .into_iter()
+            .collect();
+    if let Some(host_chain_id) =
+        host_chain_ids.difference(&seen_chain_ids).next()
+    {
+        warn!(
+            proposal_id = %proposal_id_hex,
+            host_chain_id,
+            "Rejecting CoprocessorUpgradeProposed: host chain is missing from proposal"
+        );
+        return Ok(());
+    }
+    if let Some(host_chain_id) =
+        seen_chain_ids.difference(&host_chain_ids).next()
+    {
+        warn!(
+            proposal_id = %proposal_id_hex,
+            host_chain_id,
+            "Rejecting CoprocessorUpgradeProposed: proposed chain is absent from host_chains"
+        );
+        return Ok(());
+    }
+
     // ProtocolConfig ingestion replaces a proposal-wide row set. Serialize it
     // with controller transitions and concurrent listeners so readers can
     // never observe only a subset of the proposed chains.
@@ -1925,6 +1952,13 @@ mod tests {
             .expect("pool");
 
         sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
+        sqlx::query(
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
@@ -2008,19 +2042,26 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01'), (2, 'test', '0x02')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
             softwareVersion: "v2".to_string(),
             chainUpgradeWindows: vec![
                 ProtocolConfig::ChainUpgradeWindow {
-                    chainId: 1,
-                    startBlock: 100,
-                    endBlock: 200,
-                },
-                ProtocolConfig::ChainUpgradeWindow {
                     chainId: 2,
                     startBlock: 300,
                     endBlock: 400,
+                },
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 1,
+                    startBlock: 100,
+                    endBlock: 200,
                 },
             ],
             gwStartBlock: 5,
@@ -2086,6 +2127,13 @@ mod tests {
             .connect(instance.db_url())
             .await
             .expect("pool");
+
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
 
         // Seed a completed GCS row from a prior cycle with gw_dry_run_started TRUE.
         sqlx::query(
@@ -2156,6 +2204,13 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         // A completed GCS cycle for proposal 1.
         sqlx::query(
             r#"
@@ -2216,6 +2271,13 @@ mod tests {
             .connect(instance.db_url())
             .await
             .expect("pool");
+
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
 
         sqlx::query(
             r#"
@@ -2326,6 +2388,13 @@ mod tests {
             .expect("pool");
 
         sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01'), (2, 'test', '0x02')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
+        sqlx::query(
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
@@ -2401,6 +2470,13 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         // A completed cycle for proposal 2, observed at block 100.
         sqlx::query(
             r#"
@@ -2451,5 +2527,84 @@ mod tests {
         );
         assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "completed");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn upgrade_rejects_chain_set_mismatch() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        for (registered, proposed, message) in [
+            (
+                vec![1_i64, 2],
+                vec![1_u64],
+                "host chain is missing from proposal",
+            ),
+            (
+                vec![1],
+                vec![1, 2],
+                "proposed chain is absent from host_chains",
+            ),
+            (
+                vec![1, 2],
+                vec![1, 3],
+                "host chain is missing from proposal",
+            ),
+        ] {
+            sqlx::query("DELETE FROM host_chains")
+                .execute(&pool)
+                .await
+                .expect("clear host chains");
+            sqlx::query(
+                "INSERT INTO host_chains (chain_id, name, acl_contract_address)
+                 SELECT chain_id, 'test', '0x01' FROM UNNEST($1::bigint[]) AS chain_id",
+            )
+            .bind(&registered)
+            .execute(&pool)
+            .await
+            .expect("seed host chains");
+
+            let event = ProtocolConfig::CoprocessorUpgradeProposed {
+                proposalId: U256::from(2u64),
+                softwareVersion: "v2".to_string(),
+                chainUpgradeWindows: proposed
+                    .into_iter()
+                    .map(|chain_id| ProtocolConfig::ChainUpgradeWindow {
+                        chainId: chain_id,
+                        startBlock: 100,
+                        endBlock: 200,
+                    })
+                    .collect(),
+                gwStartBlock: 5,
+            };
+            let mut tx = pool.begin().await.expect("tx");
+            notify_coprocessor_upgrade_proposed(
+                &mut tx,
+                ChainId::try_from(1_u64).expect("chain id"),
+                &event,
+                300,
+            )
+            .await
+            .expect("reject proposal");
+            tx.commit().await.expect("commit");
+
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM upgrade_state")
+                    .fetch_one(&pool)
+                    .await
+                    .expect("row count");
+            assert_eq!(count, 0);
+            assert!(logs_contain(message));
+            assert!(logs_contain("host_chain_id=2"));
+        }
     }
 }
