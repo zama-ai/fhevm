@@ -523,7 +523,7 @@ signs it.
 
 | Field | Meaning |
 | --- | --- |
-| Proposal id | A number identifying this upgrade. It must be **higher than any previous one**. The script uses the current time in seconds, so this is handled automatically. |
+| Proposal id | A number identifying this upgrade. It must not be zero, and it must be **different from the last completed one**. It does not have to be higher. The script uses the current time in seconds, so this is handled automatically. |
 | Target version | The version Green will become, for example `v0.15.0`. |
 | One window per host chain | A start block and an end block, for Sepolia and for Amoy. |
 | Gateway start block | The matching start point on the gateway chain. |
@@ -531,6 +531,12 @@ signs it.
 The windows are worked out from the current block times of each chain, so that all chains and the
 gateway start at roughly the same moment. The script prints the difference, called the skew,
 usually a few seconds.
+
+**When a new proposal is allowed to replace an older one.** The operators accept it only if it
+arrives in a **later block** than the previous one, and the previous attempt either failed or
+completed with a different id. While an attempt is still in progress, a new proposal is refused
+with `another proposal is active, completed, or newer`. Sending the exact same proposal again is
+ignored, and sending the same id with different windows is rejected.
 
 ### What it does NOT do
 
@@ -742,7 +748,177 @@ If all of these are ticked, the upgrade is good.
 
 ---
 
-## 11. Known problems and what to do
+## 11. Edge cases to test
+
+Sections 5 to 7 cover the normal round. This section covers the harder cases, the ones you have to
+set up on purpose.
+
+Run one edge case per round. If you combine them and something fails, you will not know which one
+caused it.
+
+### Edge case 1. A balance created seconds before the cutover
+
+**Why it matters.** This is the riskiest moment of the round. Blue computes a ciphertext, uploads
+it to S3, and records it on the gateway. Moments later Green takes over and uploads its own copy to
+the same place. The two copies are not identical, so the record on the gateway can end up pointing
+at data that is no longer there.
+
+**What to do.** Keep traffic running and watch how much of the window is left:
+
+```bash
+bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
+```
+
+Let traffic keep running through the last few seconds before the switch. Then, after the switch:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh verify
+```
+
+**Expect:** every line says `OK`.
+
+If a balance created just before the switch never decrypts, check the KMS connector log. A line
+saying `on-chain tuple mismatch on sns_ciphertext_digest` means you have hit this problem. Report
+it and leave the environment running.
+
+### Edge case 2. Traffic that never stops
+
+**Why it matters.** In production nobody pauses the system to upgrade it. The proposal, the window
+and the cutover all have to work while transactions keep arriving.
+
+**What to do.** Start traffic before you send the proposal, and leave it running until step 7.
+Check the counter before and after:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh status
+```
+
+**Expect:** the iteration number is higher after the cutover than before the proposal, and the
+final `verify` is all `OK`.
+
+If the counter stops moving at the switch, that is a real problem. Report it.
+
+### Edge case 3. One operator's Green is missing
+
+**Why it matters.** The switch needs every operator to agree. If one is missing, the system must
+wait for it rather than going ahead without it.
+
+**What to do.** Turn off one operator's Green worker, then send the proposal:
+
+```bash
+kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=0
+bash ci/preview-env/scripts/bg-propose.sh send
+```
+
+**Expect:** no cutover. The version stays on `v0.14` for as long as that worker is off.
+
+Then turn it back on, and the round should finish normally:
+
+```bash
+kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=1
+```
+
+### Edge case 4. The windows must line up across chains
+
+**Why it matters.** The proposal carries one block window per host chain, plus a start block for
+the gateway. They are worked out from each chain's current block rate, so they are estimates. If an
+estimate is wrong, the windows do not cover the same period of real time, and the chains can never
+agree.
+
+**What to do.** Before sending anything, print the plan. This is read-only and changes nothing:
+
+```bash
+bash ci/preview-env/scripts/bg-propose.sh calldata
+```
+
+Look at the **Cross-chain alignment** part of the output.
+
+**Expect:** a start skew of a few seconds, and no `WARN` lines.
+
+A skew of minutes, or a warning saying `block-time sampling failed` or
+`observed block time drifted >20% from fallback`, means the estimate is not reliable. Report it,
+and do not send the proposal — the round would most likely be wasted.
+
+After sending, check the real blocks matched the estimate:
+
+```bash
+bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
+```
+
+### Edge case 5. The target version does not match Green
+
+**Why it matters.** The proposal names the version the system should move to. If that name does not
+match what Green is actually running, nothing must happen. This is the protection against
+upgrading to the wrong thing.
+
+**What to do.** Send a proposal naming a version nobody is running:
+
+```bash
+GCS_VERSION=v0.99.0 bash ci/preview-env/scripts/bg-propose.sh send
+```
+
+**Expect:** no cutover. The version stays on `v0.14`, and Blue keeps serving.
+
+If the cutover happens anyway, that is a serious problem. Report it and leave the environment
+running.
+
+Afterwards, send a normal proposal with a new id and let the round finish as usual.
+
+### Edge case 6. The window is too short to agree
+
+**Why it matters.** If the operators cannot all agree before the window closes, the upgrade must be
+abandoned cleanly. A half-finished upgrade would be much worse than none.
+
+**What to do.** Send a proposal with a window far too short to reach agreement:
+
+```bash
+WINDOW_DURATION=2m bash ci/preview-env/scripts/bg-propose.sh send
+```
+
+Then watch the state:
+
+```bash
+kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
+  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+  "SELECT host_chain_id, state, status, last_error FROM upgrade_state ORDER BY host_chain_id;"
+```
+
+**Expect:** the state ends as `PAUSED` / `failed`, with `last_error` saying
+`unanimity_consensus_timeout`. The version stays on `v0.14` and Blue keeps serving.
+
+Anything else is a problem worth reporting — especially a state that stays stuck, or a version that
+moves to `v0.15.0` anyway.
+
+### Edge case 7. Proposing again after a failed window
+
+**Why it matters.** After a window closes without agreement, the environment has to be usable
+again. This is the recovery path, and it is the normal thing to do in production after a failed
+attempt.
+
+**What to do.** Straight after edge case 6, send a normal proposal with a new id:
+
+```bash
+PROPOSAL_ID=$(date +%s) bash ci/preview-env/scripts/bg-propose.sh send
+```
+
+**Expect:** the round runs normally from there — the window opens, the operators agree, the version
+becomes `v0.15.0`, and the final `verify` is all `OK`.
+
+If the second attempt cannot start, or the old failed attempt is still in the way, report it.
+
+### Edge case 8. The proposal sent twice
+
+**Why it matters.** Someone will eventually send it twice, by retrying or by mistake. That must not
+start two upgrades.
+
+**What to do.** Send the proposal, wait until it appears in the upgrade state, then send it again.
+
+**Expect:** the second one is rejected or does nothing. There is still exactly one upgrade, and one
+cutover.
+
+---
+
+## 12. Known problems and what to do
 
 ### Problem 1: the Green migration fails to pull an image
 
@@ -827,7 +1003,7 @@ The bottom of the output prints the balances. Report it; the wallets need toppin
 
 ---
 
-## 12. Starting and destroying an environment
+## 13. Starting and destroying an environment
 
 The two commands you will use most often, in one place.
 
@@ -885,7 +1061,7 @@ environment unless you want to test the contract upgrade step again.
 
 ---
 
-## 13. Reporting a problem
+## 14. Reporting a problem
 
 Include all of this:
 
