@@ -25,6 +25,7 @@ use super::consensus_analysis::{
 };
 use super::drift_findings::{
     apply_evaluation_to_drift_handles, derive_historical_scope_digest, DriftLocalizationContext,
+    TargetEvidencePin,
 };
 use super::history_fetch::{archive_history_for_disagreements, archive_peer_history_predecessors};
 use super::localization_cache::load_completed_history;
@@ -750,11 +751,15 @@ async fn finish_claim(
         claim.required_quorum,
     );
     let completed_history = load_completed_history(&mut trx, claim, &evaluation).await?;
-    let peer_publishers = claim
+    let peer_bucket_urls = claim
         .peers
         .iter()
-        .map(|peer| peer.publisher)
+        .map(|peer| (peer.publisher, peer.s3_bucket_url.clone()))
         .collect::<Vec<_>>();
+    let peer_publishers: Vec<_> = peer_bucket_urls
+        .iter()
+        .map(|(publisher, _)| *publisher)
+        .collect();
     let localization = apply_evaluation_to_drift_handles(
         &mut trx,
         claim.task_id,
@@ -763,7 +768,15 @@ async fn finish_claim(
         &evaluation,
         DriftLocalizationContext {
             peer_publishers: &peer_publishers,
-            required_quorum: claim.required_quorum,
+            peer_bucket_urls: &peer_bucket_urls,
+            registry: TargetEvidencePin {
+                required_quorum: claim.required_quorum,
+                registered_coprocessor_count: claim.registered_coprocessor_count,
+                gateway_chain_id: claim.gateway_chain_id,
+                gateway_config_address: claim.gateway_config_address,
+                registry_block_number: claim.registry_block_number,
+                registry_block_hash: claim.registry_block_hash,
+            },
             completed_history: &completed_history,
         },
     )
