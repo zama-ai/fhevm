@@ -497,6 +497,73 @@ export class TypedPlaintext {
 }
 if (Symbol.dispose) TypedPlaintext.prototype[Symbol.dispose] = TypedPlaintext.prototype.free;
 
+/**
+ * A single signature together with the scheme that produced it.
+ *
+ * Used to carry a chain-native signature for one signing scheme when a response
+ * may be signed under several schemes at once (e.g. ECDSA/secp256k1 EIP-712 for
+ * an EVM, ed25519 for Solana, ML-DSA for post-quantum).
+ */
+export class TypedSignature {
+    static __wrap(ptr) {
+        const obj = Object.create(TypedSignature.prototype);
+        obj.__wbg_ptr = ptr;
+        TypedSignatureFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    static __unwrap(jsValue) {
+        if (!(jsValue instanceof TypedSignature)) {
+            return 0;
+        }
+        return jsValue.__destroy_into_raw();
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TypedSignatureFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_typedsignature_free(ptr, 0);
+    }
+    /**
+     * The signature scheme that produced `signature`.
+     * @returns {number}
+     */
+    get scheme() {
+        const ret = wasm.__wbg_get_typedsignature_scheme(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * The raw, scheme-specific signature bytes.
+     * @returns {Uint8Array}
+     */
+    get signature() {
+        const ret = wasm.__wbg_get_typedsignature_signature(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * The signature scheme that produced `signature`.
+     * @param {number} arg0
+     */
+    set scheme(arg0) {
+        wasm.__wbg_set_typedsignature_scheme(this.__wbg_ptr, arg0);
+    }
+    /**
+     * The raw, scheme-specific signature bytes.
+     * @param {Uint8Array} arg0
+     */
+    set signature(arg0) {
+        const ptr0 = passArray8ToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_typedsignature_signature(this.__wbg_ptr, ptr0, len0);
+    }
+}
+if (Symbol.dispose) TypedSignature.prototype[Symbol.dispose] = TypedSignature.prototype.free;
+
 export class TypedSigncryptedCiphertext {
     static __wrap(ptr) {
         const obj = Object.create(TypedSigncryptedCiphertext.prototype);
@@ -626,9 +693,7 @@ export class UserDecryptionRequest {
     }
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      * @returns {RequestId | undefined}
      */
     get context_id() {
@@ -655,7 +720,8 @@ export class UserDecryptionRequest {
         return v1;
     }
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      * @returns {RequestId | undefined}
      */
     get epoch_id() {
@@ -691,6 +757,18 @@ export class UserDecryptionRequest {
         return ret === 0 ? undefined : RequestId.__wrap(ret);
     }
     /**
+     * The signature schemes to include in the response `signatures` field.
+     * If empty, it defaults to ECDSA256K1, so the response carries a single ECDSA
+     * entry.
+     * @returns {Int32Array}
+     */
+    get signing_schemes() {
+        const ret = wasm.__wbg_get_userdecryptionrequest_signing_schemes(this.__wbg_ptr);
+        var v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * The list of ciphertexts to decrypt for the user.
      * @returns {TypedCiphertext[]}
      */
@@ -711,9 +789,7 @@ export class UserDecryptionRequest {
     }
     /**
      * MPC context ID which is used to identify the context to use for this request.
-     *
-     * NOTE: at the moment this can be None since we do not fully support multiple contexts.
-     * See <https://github.com/zama-ai/kms-internal/issues/2530>
+     * If unset, the server's default context is used.
      * @param {RequestId | null} [arg0]
      */
     set context_id(arg0) {
@@ -747,7 +823,8 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_enc_key(this.__wbg_ptr, ptr0, len0);
     }
     /**
-     * The epoch number placeholder (zama-ai/kms-internal#2743).
+     * The MPC epoch ID identifying which epoch's key material and session to
+     * use for this request.
      * @param {RequestId | null} [arg0]
      */
     set epoch_id(arg0) {
@@ -794,6 +871,17 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_request_id(this.__wbg_ptr, ptr0);
     }
     /**
+     * The signature schemes to include in the response `signatures` field.
+     * If empty, it defaults to ECDSA256K1, so the response carries a single ECDSA
+     * entry.
+     * @param {Int32Array} arg0
+     */
+    set signing_schemes(arg0) {
+        const ptr0 = passArray32ToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_userdecryptionrequest_signing_schemes(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
      * The list of ciphertexts to decrypt for the user.
      * @param {TypedCiphertext[]} arg0
      */
@@ -817,7 +905,7 @@ export class UserDecryptionResponse {
         wasm.__wbg_userdecryptionresponse_free(ptr, 0);
     }
     /**
-     * This is the external signature created from the Eip712 domain
+     * This is the external ECDSA signature created from the Eip712 domain
      * on the structure, where userDecryptedShare is bc2wrap::serialize(&payload)
      * struct UserDecryptResponseVerification {
      * bytes publicKey;
@@ -825,6 +913,7 @@ export class UserDecryptionResponse {
      * bytes userDecryptedShare; // serialization of payload
      * bytes extraData;
      * }
+     * DEPRECATED: To be removed in 0.16 TODO(0.16)
      * @returns {Uint8Array}
      */
     get external_signature() {
@@ -852,6 +941,11 @@ export class UserDecryptionResponse {
         return ret === 0 ? undefined : UserDecryptionResponsePayload.__wrap(ret);
     }
     /**
+     * DEPRECATED to be removed in 0.16.0 TODO(0.16)
+     * The KMS-internal ECDSA/secp256k1 authenticity signature over
+     * the serialization of \[UserDecryptionResponsePayload\]. Kept at field 1 (and
+     * kept populated) for wire backward-compatibility with clients that predate
+     * the multi-scheme `signatures` list.
      * @returns {Uint8Array}
      */
     get signature() {
@@ -861,7 +955,18 @@ export class UserDecryptionResponse {
         return v1;
     }
     /**
-     * This is the external signature created from the Eip712 domain
+     * Per-scheme KMS signatures, one per scheme requested in the request's
+     * `signing_schemes`.
+     * @returns {TypedSignature[]}
+     */
+    get signatures() {
+        const ret = wasm.__wbg_get_userdecryptionresponse_signatures(this.__wbg_ptr);
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * This is the external ECDSA signature created from the Eip712 domain
      * on the structure, where userDecryptedShare is bc2wrap::serialize(&payload)
      * struct UserDecryptResponseVerification {
      * bytes publicKey;
@@ -869,6 +974,7 @@ export class UserDecryptionResponse {
      * bytes userDecryptedShare; // serialization of payload
      * bytes extraData;
      * }
+     * DEPRECATED: To be removed in 0.16 TODO(0.16)
      * @param {Uint8Array} arg0
      */
     set external_signature(arg0) {
@@ -898,12 +1004,27 @@ export class UserDecryptionResponse {
         wasm.__wbg_set_userdecryptionresponse_payload(this.__wbg_ptr, ptr0);
     }
     /**
+     * DEPRECATED to be removed in 0.16.0 TODO(0.16)
+     * The KMS-internal ECDSA/secp256k1 authenticity signature over
+     * the serialization of \[UserDecryptionResponsePayload\]. Kept at field 1 (and
+     * kept populated) for wire backward-compatibility with clients that predate
+     * the multi-scheme `signatures` list.
      * @param {Uint8Array} arg0
      */
     set signature(arg0) {
         const ptr0 = passArray8ToWasm0(arg0, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         wasm.__wbg_set_userdecryptionresponse_signature(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * Per-scheme KMS signatures, one per scheme requested in the request's
+     * `signing_schemes`.
+     * @param {TypedSignature[]} arg0
+     */
+    set signatures(arg0) {
+        const ptr0 = passArrayJsValueToWasm0(arg0, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_userdecryptionresponse_signatures(this.__wbg_ptr, ptr0, len0);
     }
 }
 if (Symbol.dispose) UserDecryptionResponse.prototype[Symbol.dispose] = UserDecryptionResponse.prototype.free;
@@ -1632,6 +1753,14 @@ function __wbg_get_imports() {
             const ret = TypedPlaintext.__wrap(arg0);
             return ret;
         },
+        __wbg_typedsignature_new: function(arg0) {
+            const ret = TypedSignature.__wrap(arg0);
+            return ret;
+        },
+        __wbg_typedsignature_unwrap: function(arg0) {
+            const ret = TypedSignature.__unwrap(arg0);
+            return ret;
+        },
         __wbg_typedsigncryptedciphertext_new: function(arg0) {
             const ret = TypedSigncryptedCiphertext.__wrap(arg0);
             return ret;
@@ -1710,6 +1839,9 @@ const TypedCiphertextFinalization = (typeof FinalizationRegistry === 'undefined'
 const TypedPlaintextFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_typedplaintext_free(ptr, 1));
+const TypedSignatureFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_typedsignature_free(ptr, 1));
 const TypedSigncryptedCiphertextFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_typedsigncryptedciphertext_free(ptr, 1));
@@ -1800,6 +1932,11 @@ function debugString(val) {
     return className;
 }
 
+function getArrayI32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayJsValueFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     const mem = getDataViewMemory0();
@@ -1824,8 +1961,24 @@ function getDataViewMemory0() {
     return cachedDataViewMemory0;
 }
 
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -1847,6 +2000,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArray8ToWasm0(arg, malloc) {
@@ -1944,6 +2104,8 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;
@@ -2034,11 +2196,11 @@ function getWasmInfo() {
   const memory = wasm?.memory;
   return {
     name: 'tkms',
-    version: '0.14.0-1',
+    version: '0.15.0-0',
     downloadFiles: [
       {
         filename: "kms_lib_bg.wasm",
-        sha256: "d4c2a1ed2567e7a3b2dfefb4c24e8a521110dd7c7648b533316647c06f6a9252",
+        sha256: "0e33f45989dc2bb2350494da8c336eab98a7cbe0c711b820f5aa1bd79a4d8f12",
       }
     ],
     memory:

@@ -1,4 +1,4 @@
-// sdk/js-sdk/src/wasm/tfhe/v1.6.2/type-check.test.ts
+// sdk/js-sdk/src/wasm/tfhe/v1.8.1/type-check.test.ts
 //
 // Verifies that this version's generated tfhe module conforms to the canonical
 // API contract declared in ../TfheApi.d.ts. The check is one-way assignability:
