@@ -66,3 +66,6 @@ contracts-exposed
 
 yarn.lock
 fhevmTemp
+
+# transient output of `make check-selectors`
+selectors.actual

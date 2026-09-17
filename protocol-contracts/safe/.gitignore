@@ -19,3 +19,6 @@ node_modules
 ignition/deployments/chain-31337
 
 deployments/
+
+# transient output of `make check-selectors`
+selectors.actual

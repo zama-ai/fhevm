@@ -22,3 +22,6 @@ pnpm-error.log
 # Editor and OS files
 .DS_Store
 .idea
+
+# transient output of `make check-selectors`
+selectors.actual
