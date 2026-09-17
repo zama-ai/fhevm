@@ -18,11 +18,14 @@ first package lands.
 | `governance` | The cross-chain governance path — an Aragon DAO on Ethereum driving LayerZero OApp senders and receivers | to move |
 | `safe` | Per-chain Safe and the admin module that lets a governance message execute locally | to move |
 | `token` | The `$ZAMA` token and its LayerZero OFT deployments | to move |
-| `feesBurner` | Receives protocol fees and burns them | to move |
+| `feesBurner` | Receives protocol fees and burns them | moved |
 | `pauserSetWrapper` | Wraps the pauser set so governance can administer it | to move |
 
-The Solana OFT programs are tracked separately, since they cannot live inside an EVM package —
-[`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352).
+`solanaOFT` moves here too, as `protocol-contracts/solanaOFT`, tracked in
+[`planning-blockchain#1352`](https://github.com/zama-ai/planning-blockchain/issues/1352). It is a
+cross-chain package rather than a Solana-only one — Anchor programs beside Hardhat and Foundry
+contracts for the EVM side of the same bridge — and it moves last because it brings the first
+Anchor and Solana toolchain into this repository.
 
 `confidential-wrapper` and `confidential-token-wrappers-registry` are **not** moving; they stay with
 Protocol Apps.
