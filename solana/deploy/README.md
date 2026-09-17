@@ -33,7 +33,7 @@ retains its normal destroy-and-recreate behavior when invoked again.
 
 Secrets reach the preview namespace the way the `testnets` chain mode gets its RPC URLs:
 `deploy-preview.sh` installs the `sync-secrets` chart with the two values files below, and the
-External Secrets Operator materialises them from AWS Secrets Manager. They are deleted with
+External Secrets Operator materializes them from AWS Secrets Manager. They are deleted with
 the namespace. The human copy is the 1Password vault "Preview Env".
 
 | AWS entry | Properties | Kubernetes Secret and keys | Values file |

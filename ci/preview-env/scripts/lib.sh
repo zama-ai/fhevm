@@ -18,7 +18,7 @@ require_nonempty() {
   fi
 }
 
-# Block until the External Secrets Operator has materialised the Secret behind NAME.
+# Block until the External Secrets Operator has materialized the Secret behind NAME.
 wait_external_secret() {
   local name="$1"
   kubectl wait -n "${NAMESPACE}" "externalsecret/${name}" --for=condition=Ready --timeout=120s \
