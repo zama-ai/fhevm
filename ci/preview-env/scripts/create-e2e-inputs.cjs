@@ -130,6 +130,14 @@ function selectImages({ buildResults, headTag, gpuWorkerTag }) {
   if (gpuWorkerTag !== undefined && !gpuWorkerTag) {
     throw new Error('the GPU worker build produced no tag; nothing to test against');
   }
+  const requiredJobs = new Set(mappings.map(([job]) => job));
+  if (gpuWorkerTag !== undefined) requiredJobs.add('gpu-worker-build');
+  for (const job of requiredJobs) {
+    const result = buildResults[job]?.result ?? 'missing';
+    if (result !== 'success') {
+      throw new Error(`Required build job did not succeed: ${job}=${result}`);
+    }
+  }
   const outputs = { 'kms-core-version': '' };
   const built = [];
   const skipped = [];

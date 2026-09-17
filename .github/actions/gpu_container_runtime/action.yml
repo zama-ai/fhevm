@@ -26,6 +26,7 @@ runs:
         # instance may ship docker without running it, and `docker compose` is a
         # separate package from `docker.io` on Ubuntu -- the e2e stack needs both.
         sudo apt-get -o DPkg::Lock::Timeout=600 update
+        sudo apt-get -o DPkg::Lock::Timeout=600 install -y acl
         command -v docker >/dev/null 2>&1 || \
           sudo apt-get -o DPkg::Lock::Timeout=600 install -y docker.io
         docker compose version >/dev/null 2>&1 || \

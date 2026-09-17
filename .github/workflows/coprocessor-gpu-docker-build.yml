@@ -404,7 +404,6 @@ jobs:
           # Published for callers: the orchestrated e2e run needs the exact tag,
           # and it cannot compute it -- the CUDA version and the compute
           # capability are read off this build host.
-          echo "worker-version=${version}-${suffix}" >> "$GITHUB_OUTPUT"
           echo "runtime base: ${RUNTIME_BASE}; cuda ${CUDA_VERSION}; libs from ${CUDA_LIBDIR}"
 
           for service in tfhe-worker sns-worker zkproof-worker; do
@@ -458,6 +457,9 @@ jobs:
               echo "  built, not pushed (push=false)"
             fi
           done
+
+          # Only expose a usable bundle after every image and requested push succeeds.
+          echo "worker-version=${version}-${suffix}" >> "$GITHUB_OUTPUT"
 
       - name: Report what was produced
         if: ${{ always() }}

@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 const { selectImages } = require('../../../ci/preview-env/scripts/create-e2e-inputs.cjs') as {
   selectImages(input: {
-    buildResults: Record<string, { outputs: Record<string, string> }>;
+    buildResults: Record<string, { result?: string; outputs: Record<string, string> }>;
     headTag: string;
     gpuWorkerTag?: string;
   }): {
@@ -32,11 +32,13 @@ function successfulBuilds() {
     'gateway-contracts-docker-build': [''],
     'host-contracts-docker-build': [''],
     'test-suite-docker-build': [''],
+    'gpu-worker-build': [],
   };
   return Object.fromEntries(
     Object.entries(jobs).map(([job, services]) => [
       job,
       {
+        result: 'success',
         outputs: Object.fromEntries(
           services.map((service) => [`${service ? `${service}_` : ''}build_result`, 'success']),
         ),
@@ -45,7 +47,7 @@ function successfulBuilds() {
   );
 }
 
-for (const gpuWorkerTag of [undefined, 'abcdef0-cuda-sm90']) {
+for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
   test(`endpoint tags and registry checks are selected (GPU=${!!gpuWorkerTag})`, () => {
     const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
     expect(JSON.parse(selected.outputs['connector-versions'])).toEqual({
@@ -86,10 +88,10 @@ test('GPU override selects exact worker tags without requiring CPU worker builds
   const builds = successfulBuilds();
   for (const worker of ['tfhe', 'sns', 'zkproof'])
     delete builds['coprocessor-docker-build'].outputs[`${worker}_worker_build_result`];
-  const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag: 'abcdef0-cuda-sm90' });
+  const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag: 'abcdef0-cuda12.8-sm90' });
   for (const worker of ['tfhe', 'sns', 'zkproof']) {
-    expect(selected.outputs[`coprocessor-${worker}-worker-version`]).toBe('abcdef0-cuda-sm90');
-    expect(selected.built).toContainEqual({ repo: `fhevm/coprocessor/${worker}-worker`, tag: 'abcdef0-cuda-sm90' });
+    expect(selected.outputs[`coprocessor-${worker}-worker-version`]).toBe('abcdef0-cuda12.8-sm90');
+    expect(selected.built).toContainEqual({ repo: `fhevm/coprocessor/${worker}-worker`, tag: 'abcdef0-cuda12.8-sm90' });
   }
   expect(selected.outputs['coprocessor-host-listener-version']).toBe('abcdef0');
   expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0' })).toThrow('worker_build_result');
@@ -98,5 +100,37 @@ test('GPU override selects exact worker tags without requiring CPU worker builds
 test('empty GPU tag cannot fall back to CPU or baseline workers', () => {
   expect(() => selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag: '' })).toThrow(
     'no tag',
+  );
+});
+
+for (const job of ['gpu-worker-build', 'coprocessor-docker-build', 'kms-connector-docker-build']) {
+  for (const result of ['failure', 'cancelled', 'skipped', 'missing']) {
+    test(`${job} ${result} rejects a populated GPU tag and successful child outputs`, () => {
+      const builds = successfulBuilds();
+      if (result === 'missing') delete builds[job];
+      else builds[job].result = result;
+      expect(() =>
+        selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag: 'abcdef0-cuda12.8-sm90' }),
+      ).toThrow(`${job}=${result}`);
+    });
+  }
+}
+
+test('failed parent cannot disguise a build-check failure as skipped unchanged images', () => {
+  const builds = successfulBuilds();
+  builds['kms-connector-docker-build'].result = 'failure';
+  for (const key of Object.keys(builds['kms-connector-docker-build'].outputs)) {
+    builds['kms-connector-docker-build'].outputs[key] = 'skipped';
+  }
+  expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0' })).toThrow(
+    'kms-connector-docker-build=failure',
+  );
+});
+
+test('CPU selection does not require a GPU producer', () => {
+  const builds = successfulBuilds();
+  delete builds['gpu-worker-build'];
+  expect(selectImages({ buildResults: builds, headTag: 'abcdef0' }).outputs['coprocessor-tfhe-worker-version']).toBe(
+    'abcdef0',
   );
 });

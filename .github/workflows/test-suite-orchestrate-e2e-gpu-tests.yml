@@ -62,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to verify published baseline images
     outputs:
       lock-artifact-name: ${{ steps.resolve-baseline.outputs.lock-artifact-name }}
     steps:
@@ -100,9 +101,13 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           BASE_SHA: ${{ steps.diff-base.outputs.base-sha }}
+          GH_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          REQUIRE_PUBLISHED_IMAGE_CHECK: "true"
         run: |
           set -euo pipefail
-          lock_path="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset | tail -n 1)"
+          resolve_out="$(./fhevm-cli resolve --target sha --sha "$BASE_SHA" --reset)"
+          printf '%s\n' "$resolve_out"
+          lock_path="$(printf '%s\n' "$resolve_out" | tail -n 1)"
           artifact_name="fhevm-base-lock-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           echo "lock-path=$lock_path" >> "$GITHUB_OUTPUT"
           echo "lock-artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
