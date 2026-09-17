@@ -2826,6 +2826,24 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.checkHandleType(bytes32(0), FheType.Bool);
     }
 
+    function test_CheckHandleTypeAcceptsLastEnumMember() public {
+        bytes32 handle = _generateMockHandle(type(FheType).max);
+        fhevmExecutor.checkHandleType(handle, type(FheType).max);
+        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        fhevmExecutor.checkHandleType(handle, FheType.Bool);
+    }
+
+    function test_CheckHandleTypeRejectsEveryOutOfRangeTypeByte() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            for (uint256 expected; expected < types.length; ++expected) {
+                vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                fhevmExecutor.checkHandleType(handle, types[expected]);
+            }
+        }
+    }
+
     function test_ShiftCountsAndExclusiveRandomBoundRemainValid() public {
         bytes32 lhs = fhevmExecutor.trivialEncrypt(1, FheType.Uint8);
         fhevmExecutor.fheShl(lhs, bytes32(uint256(255)), 0x01);
