@@ -771,16 +771,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function trivialEncrypt(uint256 pt, FheType toType) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
-
-        if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
+        /// @dev trivialEncrypt supports all currently supported FHE types, i.e those accepted by _checkScalarRange, so no separate type check is needed.
         _checkScalarRange(pt, toType);
         result = keccak256(
             abi.encodePacked(
@@ -918,6 +909,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
 
+    /**
+     * @dev Checks that the scalar fits a supported type. Overrides must preserve rejection of
+     *      unsupported types with UnsupportedType and out-of-range scalars with ScalarOutOfRange.
+     */
     function _checkScalarRange(uint256 scalar, FheType scalarType) internal pure virtual {
         uint256 maxValue;
         if (scalarType == FheType.Bool) maxValue = 1;
