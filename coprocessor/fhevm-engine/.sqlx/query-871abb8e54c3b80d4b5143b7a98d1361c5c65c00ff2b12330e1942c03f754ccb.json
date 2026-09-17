@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE public.drifted_handle SET is_contained = TRUE WHERE id = ANY($1) AND NOT is_contained",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "871abb8e54c3b80d4b5143b7a98d1361c5c65c00ff2b12330e1942c03f754ccb"
+}
