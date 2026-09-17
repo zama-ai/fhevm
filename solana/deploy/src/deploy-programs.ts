@@ -130,6 +130,10 @@ export const deployProgramArtifacts = async (parameters: {
       '--upgrade-authority',
       parameters.deployerKeypairPath,
       '--use-rpc',
+      // ~800 write transactions for a 700 KB program; the default 5 re-sign rounds fail on
+      // devnet with "Data writes to account failed: Max retries exceeded".
+      '--max-sign-attempts',
+      '100',
       '--program-id',
       parameters.programKeypairPaths[program] ?? ids[program]!,
       path.join(parameters.artifactsDir, `${program}.so`),
