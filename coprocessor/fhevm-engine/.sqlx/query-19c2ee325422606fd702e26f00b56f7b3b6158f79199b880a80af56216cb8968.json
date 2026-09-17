@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n          FROM block_manifest_verification_task\n         WHERE state = 'pending'\n           AND consensus_epoch = $1\n           AND required_quorum IS NULL\n           AND next_attempt_at <= NOW()\n         ORDER BY next_attempt_at, id\n         FOR UPDATE SKIP LOCKED\n         LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "19c2ee325422606fd702e26f00b56f7b3b6158f79199b880a80af56216cb8968"
+}
