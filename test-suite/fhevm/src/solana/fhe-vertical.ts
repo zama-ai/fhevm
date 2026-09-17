@@ -16,7 +16,6 @@ import { getAddressEncoder, type Address } from '@solana/kit';
 import {
   fetchSolanaEncryptedStore,
   encryptedStoreHandle,
-  type SolanaEncryptedStore,
 } from '@fhevm/sdk/solana';
 import type { MmrProof } from '@fhevm/sdk/solana';
 import { publicProof } from '@demo-dapp/vault/internal/publicProof.js';
@@ -55,19 +54,21 @@ export type FheVerticalConfig = {
   readonly gatewayDecryptionContract: `0x${string}`;
 };
 
-/** Reads an `EncryptedStore` account at `confirmed`, asserting the host program owns it. */
-export const readEncryptedValueState = (
-  context: SolanaProvisioningContext,
-  encryptedStore: Address,
-): Promise<SolanaEncryptedStore> =>
-  fetchSolanaEncryptedStore(context.rpc, encryptedStore, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
-
 /** The current handle bytes of an encrypted value at `confirmed`. */
 export const currentHandle = async (
   context: SolanaProvisioningContext,
   encryptedStore: Address,
   key: Uint8Array,
-): Promise<Uint8Array> => encryptedStoreHandle(await readEncryptedValueState(context, encryptedStore), key);
+): Promise<Uint8Array> =>
+  encryptedStoreHandle(
+    await fetchSolanaEncryptedStore(
+      context.rpc,
+      encryptedStore,
+      { commitment: 'confirmed' },
+      ZAMA_HOST_PROGRAM_ADDRESS,
+    ),
+    key,
+  );
 
 /** A certified public decrypt: the interpreted cleartext plus the raw KMS certificate. */
 export type PublicDecryptOutcome = {

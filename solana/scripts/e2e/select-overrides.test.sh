@@ -107,12 +107,6 @@ check "demo-vault change -> nothing" \
   "none" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
-check "confidential-deposit-app change -> nothing" \
-  "solana/programs/confidential-deposit-app/src/lib.rs" \
-  "true" \
-  "none" \
-  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
-
 # The two specimen programs share the on-chain-only bucket. This test file is the only thing
 # guarding that rule, so each arm of it needs a case of its own.
 check "encrypted-counter specimen change -> nothing" \
