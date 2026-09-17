@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, consensus_epoch, coprocessor_context_id, host_chain_id,\n                  handle, block_number, block_hash, is_contained\n             FROM public.drifted_handle\n            WHERE reason = 'ct64_mismatch' AND healed_at IS NULL AND is_contained = false\n            ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_contained",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "72fd0f7ce36b50212593ef04c55f24bade14a626c1272cdd160d459479c42cba"
+}

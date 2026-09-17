@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE computations\n           SET schedule_order = $1\n           WHERE transaction_id = ANY($2) AND is_completed = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "14575dc6c43bc2511fb1c90c6eef20a8f9dbc020290ef8c3335ac96c8be3d74b"
+}

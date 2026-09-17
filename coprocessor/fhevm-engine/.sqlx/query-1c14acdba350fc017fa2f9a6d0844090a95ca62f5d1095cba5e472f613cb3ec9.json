@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SHOW transaction_isolation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_isolation",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1c14acdba350fc017fa2f9a6d0844090a95ca62f5d1095cba5e472f613cb3ec9"
+}

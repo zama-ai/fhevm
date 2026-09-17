@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n                SELECT 1 FROM computations c\n                 WHERE c.host_chain_id = $1\n                   AND c.block_number >= $2\n                   AND $3 = ANY(c.dependencies)\n           ) AS \"consumed!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consumed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "350f144fc74fcfa9273b55c0a889c8bfffbf2c444590a8c00b971f60b95a5454"
+}
