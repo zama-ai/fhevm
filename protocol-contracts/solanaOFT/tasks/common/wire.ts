@@ -35,7 +35,7 @@ import type { SignAndSendTaskArgs } from '@layerzerolabs/devtools-evm-hardhat/ta
 interface Args {
     logLevel: LogLevel
     multisigKey?: PublicKey
-    isSolanaInitConfig: boolean // For internal use only. This helps us to control which code runs depdending on whether the task ran is wire or init-config
+    isSolanaInitConfig: boolean // For internal use only. This helps us to control which code runs depending on whether the task ran is wire or init-config
     oappConfig: string
     internalConfigurator?: OAppConfigurator
     dryRun?: boolean

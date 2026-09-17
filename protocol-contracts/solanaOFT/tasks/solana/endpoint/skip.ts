@@ -49,7 +49,7 @@ task('lz:oft:solana:skip', 'Skip a message on Solana')
         if (BigInt(nonce) <= inboundNonce) {
             throw new Error('Nonce must be greater than inboundNonce')
         }
-        // throw if nonce is greather than sliding window
+        // throw if nonce is greater than sliding window
         const PENDING_INBOUND_NONCE_MAX_LEN = BigInt(256)
         if (BigInt(nonce) > inboundNonce + PENDING_INBOUND_NONCE_MAX_LEN) {
             throw new Error('Nonce must not be greater than inboundNonce + sliding window range (256)')

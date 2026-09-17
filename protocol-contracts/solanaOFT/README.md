@@ -132,7 +132,7 @@ You can then check on [`https://explorer.solana.com/`](https://explorer.solana.c
 
 Let's suppose you already have deployed a Squads Multisig on Solana. Carefully note its **Vault id**, not to be confused with the Multisig Account id. Let's note it `SQUADS_VAULT_ID`. This is the value that we will use to transfer privileged roles from our hot wallet to the Squads Multisig.
 
-From the 7 privileged roles of a Solana OFT listed in [Solana docs](https://docs.layerzero.network/v2/developers/solana/technical-reference/solana-guidance#transferring-oft-ownership-on-solana), we will transfer 5 of them because 2 are not applicalbe: mint authority is the OFT Store PDA, so no trasfer is needed, and freeze authority is `None`. You can verify this by using: `npx hardhat lz:oft:solana:debug`.
+From the 7 privileged roles of a Solana OFT listed in [Solana docs](https://docs.layerzero.network/v2/developers/solana/technical-reference/solana-guidance#transferring-oft-ownership-on-solana), we will transfer 5 of them because 2 are not applicable: mint authority is the OFT Store PDA, so no transfer is needed, and freeze authority is `None`. You can verify this by using: `npx hardhat lz:oft:solana:debug`.
 
 The 5 applicable roles to be transferred are:
 
