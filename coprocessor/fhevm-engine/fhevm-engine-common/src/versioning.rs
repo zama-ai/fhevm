@@ -151,43 +151,69 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
 /// Fallback poll interval: a missed NOTIFY costs one tick.
 const STACK_MODE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
-/// on every notification, and on a fallback poll. Runs until `cancel` fires;
-/// logs and retries on listener errors. Spawn this once per service after
-/// startup.
+/// Terminal outcome of [`run_stack_version_listener`]: the pool it was handed
+/// has been closed.
+///
+/// The listener binds to one `Pool` clone for its lifetime and sqlx re-acquires
+/// through that pool on every reconnect, so a closed pool can never serve this
+/// task again. Callers that replace their pool rather than repair it — the
+/// host-listener's `Database::reconnect` closes the pool it displaces — must
+/// re-spawn the listener against the current pool; callers with a single
+/// long-lived pool should treat it as fatal.
+#[derive(Debug, thiserror::Error)]
+#[error("stack-version listener pool was closed")]
+pub struct ListenerPoolClosed;
+
+/// Listen for version upgrades, reconciling after every subscription and notification
+/// and on a fallback poll for missed notifications.
+///
+/// Transient connection and query failures are retried until cancellation. A closed
+/// pool returns [`ListenerPoolClosed`]; callers that replace pools must rebind.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
-    info!(
-        channel = EVENT_STACK_VERSION_UPGRADED,
-        "stack-version-upgraded listener started"
-    );
-    // First tick is immediate: catches a cutover that committed before LISTEN.
-    let mut poll = tokio::time::interval(STACK_MODE_POLL_INTERVAL);
-    loop {
-        tokio::select! {
-            _ = cancel.cancelled() => return Ok(()),
-            _ = poll.tick() => {
-                if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
-                    warn!(error = %e, "poll reconcile of stack mode failed");
-                }
-            }
-            recv = listener.recv() => match recv {
-                Ok(_) => {
-                    if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
-                        warn!(error = %e, "failed to reconcile stack mode after version upgrade");
+    let listen = async {
+        loop {
+            let result: anyhow::Result<()> = async {
+                let mut listener = PgListener::connect_with(&pool).await?;
+                listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
+                // Subscribe before reading: NOTIFY is not durable, and a cutover
+                // may have committed while this connection was unavailable.
+                reconcile_stack_mode(&pool, &mode).await?;
+                info!(
+                    channel = EVENT_STACK_VERSION_UPGRADED,
+                    "stack-version listener subscribed"
+                );
+                let mut poll = tokio::time::interval(STACK_MODE_POLL_INTERVAL);
+                loop {
+                    // recv() hides reconnects and can wait forever for a notification
+                    // that was lost during the outage. Re-subscribe and reconcile on
+                    // None, and retry reconciliation errors instead of losing the event.
+                    tokio::select! {
+                        _ = poll.tick() => reconcile_stack_mode(&pool, &mode).await?,
+                        recv = listener.try_recv() => match recv? {
+                            Some(_) => reconcile_stack_mode(&pool, &mode).await?,
+                            None => return Ok(()),
+                        }
                     }
                 }
-                Err(e) => {
-                    warn!(error = %e, "stack-version listener recv error; sleeping before retry");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
             }
+            .await;
+            if let Err(error) = result {
+                warn!(%error, "stack-version listener failed; retrying subscription");
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    };
+    // Cancellation and pool closure must also interrupt startup, reconciliation,
+    // and retry backoff, not just a blocked notification receive.
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Ok(()),
+        _ = pool.close_event() => Err(ListenerPoolClosed.into()),
+        result = listen => result,
     }
 }
 
@@ -567,7 +593,54 @@ mod tests {
     use super::{
         consensus_is_newer_than, consensus_is_older_than, consensus_matches, parse_version,
     };
+    use super::{run_stack_version_listener, ListenerPoolClosed, StackMode};
     use crate::STACK_VERSION;
+    use tokio_util::sync::CancellationToken;
+
+    /// A closed pool is terminal for the listener, and it has to say so with a
+    /// distinguishable error: the host-listener replaces its pool on every
+    /// ingestion retry, and the difference between "rebind to the new pool" and
+    /// "the database is broken" is the difference between recovering and
+    /// warning once a second forever (the D-2 regression).
+    #[tokio::test]
+    async fn closed_pool_is_terminal_for_the_stack_version_listener() {
+        // Lazy: no connection is attempted until the listener acquires one, so
+        // this needs no database.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .expect("lazy pool");
+        pool.close().await;
+
+        let err = run_stack_version_listener(pool, StackMode::new(false), CancellationToken::new())
+            .await
+            .expect_err("a closed pool cannot serve the listener");
+
+        assert!(
+            err.is::<ListenerPoolClosed>(),
+            "expected ListenerPoolClosed, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_initial_pool_acquisition() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_secs(60))
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(run_stack_version_listener(
+            pool,
+            StackMode::new(false),
+            cancel.clone(),
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancel.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("cancellation must interrupt startup")
+            .unwrap()
+            .unwrap();
+    }
 
     #[test]
     fn parses_loose_versions() {
