@@ -19,3 +19,6 @@ ignition/deployments/chain-31337
 
 # transient output of `make check-selectors`
 selectors.actual
+
+# Foundry build output
+out/
