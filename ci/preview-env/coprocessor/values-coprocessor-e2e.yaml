@@ -181,6 +181,11 @@ zkProofWorker:
   extraArgs:
     - --pg-listen-channel=event_zkpok_new_work
     - --pg-notify-channel=event_zkpok_computed
+  # Chart default (512Mi) OOMs on envs that generate Default FHE parameters, whose CRS is far
+  # larger than the test one. 4Gi still OOMed during startup; 8Gi is stable.
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "4", memory: 8Gi}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
