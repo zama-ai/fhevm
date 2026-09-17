@@ -437,8 +437,9 @@ fn mollusk_set_eip712_domain_persists_zeros() {
 
 // ---- close_owned_accounts (admin-sweep) ----
 
-/// The shipped artifact lacks `close_owned_accounts`. check-zama-host-idl.sh builds the
-/// `admin-sweep` feature set as `zama_host_admin_sweep.so` for these tests alone.
+/// The default-feature artifact (localnet and every profile except preview-env) lacks
+/// `close_owned_accounts`. check-zama-host-idl.sh builds the `admin-sweep` feature set as
+/// `zama_host_admin_sweep.so` for these tests alone.
 fn sweep_context(payer: Pubkey, seeded_accounts: Vec<(Pubkey, Account)>) -> Ctx {
     let mut accounts = std::collections::HashMap::from([(payer, funded_system_account())]);
     accounts.extend(seeded_accounts);
@@ -513,24 +514,33 @@ fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
 
 #[test]
 fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
-    // wipe.ts sends TARGETS_PER_TRANSACTION = 25 targets per transaction with no compute-budget
-    // instruction, so a full batch must fit the default 200k-unit transaction budget.
+    // wipe.ts sends this many targets per transaction with no compute-budget instruction, so a
+    // full batch must fit both the 1232-byte packet and the default 200k-unit transaction budget.
+    const TARGETS_PER_TRANSACTION: usize = 25; // mirrors solana/deploy/src/wipe.ts
     let admin = Pubkey::new_unique();
     let (program_data, program_data_acct) = program_data_account(Some(admin));
-    let targets: Vec<Pubkey> = (0..25).map(|_| Pubkey::new_unique()).collect();
+    let targets: Vec<Pubkey> = (0..TARGETS_PER_TRANSACTION)
+        .map(|_| Pubkey::new_unique())
+        .collect();
     let mut seeded = vec![(program_data, program_data_acct)];
     seeded.extend(targets.iter().map(|t| (*t, program_owned_account())));
     let context = sweep_context(admin, seeded);
     let admin_before = read_lamports(&context, admin);
+    let ix = close_owned_accounts_ix(admin, &targets);
 
-    let result = context.process_and_validate_instruction(
-        &close_owned_accounts_ix(admin, &targets),
-        &[Check::success()],
+    let message = solana_sdk::message::Message::new(&[ix.clone()], Some(&admin));
+    let transaction_bytes =
+        1 + 64 * usize::from(message.header.num_required_signatures) + message.serialize().len();
+    assert!(
+        transaction_bytes <= solana_packet::PACKET_DATA_SIZE,
+        "a full sweep transaction is {transaction_bytes} bytes"
     );
+
+    let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     assert!(
         result.compute_units_consumed < 200_000,
-        "25 targets used {} compute units",
+        "a full sweep used {} compute units",
         result.compute_units_consumed
     );
     assert!(targets
@@ -538,14 +548,15 @@ fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
         .all(|t| account_is_system_owned_and_empty(&context, *t)));
     assert_eq!(
         read_lamports(&context, admin),
-        admin_before + 25 * program_owned_account().lamports
+        admin_before + targets.len() as u64 * program_owned_account().lamports
     );
 }
 
 #[test]
 fn mollusk_default_artifact_rejects_close_owned_accounts() {
-    // The feature gate is the whole point: the shipped `zama_host.so` must not dispatch the
-    // sweep discriminator, so this test loads the default artifact rather than the sweep build.
+    // The feature gate is the whole point: the default-feature `zama_host.so` must not dispatch
+    // the sweep discriminator, so this test loads that artifact rather than the sweep build. A
+    // default build that grew the feature would dispatch and succeed, failing the error check.
     let admin = Pubkey::new_unique();
     let owned = Pubkey::new_unique();
     let (program_data, program_data_acct) = program_data_account(Some(admin));
@@ -562,10 +573,6 @@ fn mollusk_default_artifact_rejects_close_owned_accounts() {
         &[anchor_framework_error_check(
             anchor_lang::error::ErrorCode::InstructionFallbackNotFound,
         )],
-    );
-    assert_eq!(
-        read_lamports(&context, owned),
-        program_owned_account().lamports
     );
 }
 
