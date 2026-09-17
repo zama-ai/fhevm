@@ -6,11 +6,8 @@ This document is the stable rationale index for the Solana FHEVM PoC: why the cu
 Older entries keep the rationale as it stood when they were adopted. For the current account, permission, disclosure
 model read DD-049; it supersedes DD-032/033/036/039/045/047/048 on those points. DD-050 defines
 transaction composition, transient store, operand origins and HCU on top of that Store model. DD-046 keeps the
-allocator decision, restated against the current resource limits. DD-052 is the Solana chain id:
-layout, published table, and who may invent or check the number. It supersedes the bit-63 marker
-in DD-026, the bit-63 detector in DD-027, and the open-product sentinel under #1635. For the EVM
-mapping see [`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see
-[`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
+allocator decision, restated against the current resource limits. For the EVM mapping see
+[`EVM_PARITY.md`](./EVM_PARITY.md); for forward requirements see [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md).
 
 Status meanings:
 
@@ -2493,8 +2490,10 @@ do not need a schema change. RFC 035 and RFC 036 do not change.
 
 ## DD-052: A Solana chain id is type byte `0x01` plus a published cluster tag
 
-Status: **adopted** for the definition. The tree still uses `SOLANA_POC_CHAIN_ID = (1 << 63) | 12345`
-and `is_solana_host_chain_id` still tests bit 63.
+Status: adopted
+
+This entry fixes the target, not the current code. The tree still uses
+`SOLANA_POC_CHAIN_ID = (1 << 63) | 12345`, and `is_solana_host_chain_id` still tests bit 63.
 
 `chain_id` names the Solana cluster (DD-051), not a Zama. Preview on Solana devnet uses the
 solana-devnet row. Two Zamas on one cluster share the number and differ by `program_id`.
@@ -2523,15 +2522,17 @@ travel as `bigint` or hex.
 | solana-testnet | genesis `4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY` | `0x013a132ece10305e` |
 | localnet | pinned `12345`, not a hash | `0x0100000000003039` |
 
-This table is the only assignment. It is not a file in the tree yet. Env or Helm will select
-the row name (`solana-devnet`) and must not invent a second integer.
+This table is the only assignment, and no file in the tree holds it yet. The deploy workflow
+selects a row by its name, such as `solana-devnet`, and passes that one integer to
+`initialize_host_config`, the listener and the connector. Nothing invents a second integer.
 
 `initialize_host_config` today requires bit 63 set on the host `chain_id` and clear on
 `gateway_chain_id`. After the follow-up it will require type byte `0x01` and `0x00`.
 HostConfig then holds the chosen row. The listener, connector and relayer must use that
 same value. The listener today takes `chain_id` from its config and does not compare it to
-HostConfig (#1972). A named public row may also compare RPC `getGenesisHash` to the hash
-above. That is a check, not a definition.
+HostConfig (#1972). A deployment on a named public row may also compare RPC `getGenesisHash`
+with the hash above to confirm it is on the intended cluster, without that comparison defining
+the id.
 
 #1880 proposed this type byte and the genesis recipe. This entry accepts both and writes
 the numbers down. It rejects deriving localnet from RPC at boot, and it rejects treating
