@@ -39,6 +39,28 @@ chains=(sepolia)
 hh_network() { case "$1" in sepolia) echo sepolia ;; amoy) echo polygonAmoy ;; esac; }
 wf_release() { case "$1" in sepolia) echo test-suite-workflow ;; amoy) echo test-suite-workflow-polygon ;; esac; }
 pod_name() { echo "bg-traffic-$1"; }
+chain_id() { case "$1" in sepolia) echo 11155111 ;; amoy) echo 80002 ;; esac; }
+
+# Run one query against party 1's coprocessor DB, empty on any error.
+copro_psql() {
+  kubectl exec -n "${NAMESPACE}" postgres-coprocessor-1-0 -- \
+    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "$1" 2>/dev/null | tr -d '\r' | head -1
+}
+
+# First block of this chain's upgrade window, 0 when no proposal exists.
+window_start_block() {
+  local v
+  v=$(copro_psql "SELECT COALESCE(start_block,0) FROM upgrade_state
+                   WHERE stack_role='GCS' AND host_chain_id=$(chain_id "$1") LIMIT 1;")
+  echo "${v:-0}"
+}
+
+# When the flip completed, empty while the upgrade has not cut over. NOT the window's end_block,
+# which is the planned end and sits hours past the cutover.
+cutover_at() {
+  copro_psql "SELECT to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')
+                FROM upgrade_state WHERE state='LIVE' AND status='completed' LIMIT 1;"
+}
 
 # Loop parameters forwarded into the pod.
 traffic_env=(
@@ -231,9 +253,14 @@ status)
   fi
   ;;
 verify)
+  # Current balances, plus - once a proposal exists - every handle the round wrote, with the ones
+  # inside the upgrade window flagged. Before the proposal there is no window and this is the
+  # quick snapshot check.
   rc=0
   for c in "${chains[@]}"; do
-    run_traffic "${c}" verify 2>&1 | grep -E "\[traffic|Error" || rc=1
+    run_traffic "${c}" verify \
+      "TRAFFIC_WINDOW_START=$(window_start_block "${c}")" "TRAFFIC_CUTOVER_AT=$(cutover_at)" 2>&1 \
+      | grep -E "\[traffic|Error" || rc=1
   done
   [[ "${rc}" == "0" ]] || fail "verify failed on at least one chain"
   ;;

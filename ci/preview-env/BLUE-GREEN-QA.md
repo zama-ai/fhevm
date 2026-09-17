@@ -221,7 +221,7 @@ bash ci/preview-env/scripts/bg-traffic.sh status
 
 **Expect:** `loop running`, the counters increasing, and `mismatches 0  failures 0`.
 
-### Step A4. Snapshot 1 — everything works on the old contracts
+### Step A4. Check everything works before you change anything
 
 Pause the traffic:
 
@@ -315,7 +315,7 @@ kubectl get pods -n $NAMESPACE | grep gcs
 environment, including one `consensus-detector` and one `upgrade-controller`. Those two decide the
 upgrade.
 
-### Step A8. Restart traffic and take snapshot 2
+### Step A8. Restart traffic and check the contract upgrade broke nothing
 
 ```bash
 bash ci/preview-env/scripts/bg-traffic.sh start
@@ -719,6 +719,13 @@ bash ci/preview-env/scripts/bg-traffic.sh verify
 
 **Expect:** every line ends in `OK`, on both chains, and `0 mismatches, 0 failures`.
 
+Every balance handle the round wrote is decrypted here, not just the three current ones. Lines
+marked `[in upgrade window, before the flip]` are the handles written after the window opened and
+before the cutover completed — those are the ones a cutover can damage, and they are superseded
+within seconds, so nothing else ever reads them again.
+
+This takes a few minutes: each handle is a separate user decryption.
+
 **This is the test that matters most.** These balances were created by the old coprocessor and are
 being read by the new one. If any line says `MISMATCH`, or the command hangs and never finishes,
 you have found a real bug. Report it, and **do not reset the environment**, so it can be
@@ -741,7 +748,8 @@ All of these must be true:
 - [ ] Version changed to `v0.15.0`.
 - [ ] `cutover` passed.
 - [ ] `post` passed.
-- [ ] Final `verify`: every line `OK`, on both chains.
+- [ ] Final `verify`: every line `OK` on both chains, including the handles marked
+      `[in upgrade window, before the flip]`.
 
 If all of these are ticked, the upgrade is good.
 

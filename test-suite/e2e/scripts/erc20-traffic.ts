@@ -8,7 +8,12 @@
 //         encrypted amount (input proof + FHE ops), every TRAFFIC_MINT_EVERY steps a mint, every
 //         TRAFFIC_DECRYPT_EVERY steps a user decryption of the next holder's balance compared to
 //         the expected value. Failures are retried, then counted; the loop never stops on its own.
-// verify  decrypt every holder's balance and read totalSupply; exit 1 on any mismatch
+// verify  decrypt the current balances and read totalSupply. Once TRAFFIC_WINDOW_START is set -
+//         i.e. a proposal exists, so this is the post-cutover check - also decrypt EVERY balance
+//         handle the round ever wrote. Handles written after the window opened and before
+//         TRAFFIC_CUTOVER_AT are flagged: they are what a cutover can damage, and they are
+//         superseded within seconds so nothing else ever reads them again. Exit 1 on any
+//         mismatch.
 //
 // State (contract, expected balances, counters) lives in TRAFFIC_STATE_FILE, so the same token is
 // used across coprocessor resets and the expectation survives the whole round.
@@ -25,6 +30,15 @@ import { waitForTransactionReceipt } from '../test/utils';
 type Holder = 'alice' | 'bob' | 'carol';
 const HOLDERS: Holder[] = ['alice', 'bob', 'carol'];
 
+type HistoryEntry = {
+  iteration: number;
+  block: number;
+  at: string; // ISO timestamp, used to place the handle relative to the cutover
+  holder: Holder;
+  handle: string;
+  expected: string; // bigint as decimal string
+};
+
 type State = {
   network: string;
   chainId: number;
@@ -32,6 +46,10 @@ type State = {
   owner: string;
   holders: Record<Holder, string>;
   expected: Record<Holder, string>; // bigint as decimal string
+  // Every balance handle ever written, so the post-cutover check can decrypt all of them and not
+  // just the three that happen to be current. Handles written inside the upgrade window are the
+  // ones an upgrade is most likely to damage, and they are superseded within seconds.
+  history: HistoryEntry[];
   mintedTotal: string;
   counters: {
     iterations: number;
@@ -71,7 +89,9 @@ const fileExists = async (p: string) => fs.access(p).then(() => true, () => fals
 
 const loadState = async (): Promise<State | undefined> => {
   if (!(await fileExists(stateFile))) return undefined;
-  return JSON.parse(await fs.readFile(stateFile, 'utf8')) as State;
+  const state = JSON.parse(await fs.readFile(stateFile, 'utf8')) as State;
+  state.history ??= []; // state files written before handle history existed
+  return state;
 };
 // Write via a temp file so a reader never sees a half-written state.
 const saveState = async (state: State): Promise<void> => {
@@ -136,7 +156,7 @@ const transfer = async (ctx: Ctx, from: Holder, to: Holder, amount: bigint) => {
     contractAddress: ctx.state.contractAddress,
     userAddress: ctx.signers[from].address,
   });
-  await sendAndWait(
+  const receipt = await sendAndWait(
     ctx.token
       .connect(ctx.signers[from])
       ['transfer(address,bytes32,bytes)'](ctx.signers[to].address, enc.handles[0], enc.inputProof),
@@ -144,13 +164,24 @@ const transfer = async (ctx: Ctx, from: Holder, to: Holder, amount: bigint) => {
   ctx.state.expected[from] = (BigInt(ctx.state.expected[from]) - amount).toString();
   ctx.state.expected[to] = (BigInt(ctx.state.expected[to]) + amount).toString();
   ctx.state.counters.transfers += 1;
+  return receipt;
 };
 
 const mint = async (ctx: Ctx, amount: bigint) => {
-  await sendAndWait(ctx.token.connect(ctx.signers.alice).mint(amount));
+  const receipt = await sendAndWait(ctx.token.connect(ctx.signers.alice).mint(amount));
   ctx.state.expected.alice = (BigInt(ctx.state.expected.alice) + amount).toString();
   ctx.state.mintedTotal = (BigInt(ctx.state.mintedTotal) + amount).toString();
   ctx.state.counters.mints += 1;
+  return receipt;
+};
+
+// Record the handle each changed balance now points at, with the value it should decrypt to.
+const recordHandles = async (ctx: Ctx, iteration: number, block: number, holders: Holder[]) => {
+  for (const holder of holders) {
+    const handle = await ctx.token.balanceOf(ctx.signers[holder].address);
+    if (handle === ZERO_HANDLE) continue;
+    ctx.state.history.push({ iteration, block, at: now(), holder, handle, expected: ctx.state.expected[holder] });
+  }
 };
 
 // Deterministic-but-varied pick: the sender rotates over the holders that have a balance, the
@@ -197,6 +228,7 @@ const setup = async () => {
     owner: signers.alice.address,
     holders: { alice: signers.alice.address, bob: signers.bob.address, carol: signers.carol.address },
     expected: { alice: '0', bob: '0', carol: '0' },
+    history: [],
     mintedTotal: '0',
     counters: { iterations: 0, transfers: 0, mints: 0, decrypts: 0, decryptMismatches: 0, retries: 0, failures: 0 },
     running: false,
@@ -205,6 +237,7 @@ const setup = async () => {
   await mint(ctx, initialMint);
   const balance = await decryptBalance(ctx, 'alice');
   if (balance !== initialMint) throw new Error(`setup: alice decrypts to ${balance}, expected ${initialMint}`);
+  await recordHandles(ctx, 0, Number(await ethers.provider.getBlockNumber()), ['alice']);
   ctx.state.counters.decrypts += 1;
   await saveState(state);
   log(`setup: token ${state.contractAddress} deployed by ${state.owner}, minted ${initialMint}, alice balance decrypts OK`);
@@ -225,12 +258,14 @@ const loop = async () => {
     const i = state.counters.iterations + 1;
     try {
       if (i % mintEvery === 0) {
-        await withRetries(state, `#${i} mint`, () => mint(ctx, mintAmount));
+        const receipt = await withRetries(state, `#${i} mint`, () => mint(ctx, mintAmount));
+        await recordHandles(ctx, i, Number(receipt.blockNumber), ['alice']);
         log(`#${i} mint ${mintAmount} -> alice=${state.expected.alice} total=${state.mintedTotal}`);
       } else {
         const pick = pickTransfer(state, i);
         if (!pick) throw new Error('no holder has a balance to transfer');
-        await withRetries(state, `#${i} transfer`, () => transfer(ctx, pick.from, pick.to, pick.amount));
+        const receipt = await withRetries(state, `#${i} transfer`, () => transfer(ctx, pick.from, pick.to, pick.amount));
+        await recordHandles(ctx, i, Number(receipt.blockNumber), [pick.from, pick.to]);
         log(`#${i} transfer ${pick.from}->${pick.to} ${pick.amount} -> ${pick.from}=${state.expected[pick.from]} ${pick.to}=${state.expected[pick.to]}`);
       }
       if (i % decryptEvery === 0) {
@@ -270,10 +305,8 @@ const loop = async () => {
   );
 };
 
-const verify = async () => {
-  const state = await loadState();
-  if (!state) throw new Error(`verify: no state at ${stateFile}`);
-  const ctx = await buildCtx(state);
+// Current balances read live from the chain, plus the plaintext supply and the counters.
+const verifyCurrent = async (ctx: Ctx, state: State): Promise<boolean> => {
   let ok = true;
   for (const holder of HOLDERS) {
     const expected = BigInt(state.expected[holder]);
@@ -288,7 +321,54 @@ const verify = async () => {
   log(`verify totalSupply: on-chain=${supply} expected=${state.mintedTotal} ${supplyOk ? 'OK' : 'MISMATCH'}`);
   const c = state.counters;
   log(`verify counters: ${c.iterations} iterations, ${c.transfers} transfers, ${c.mints} mints, ${c.decrypts} decrypts, ${c.decryptMismatches} mismatches, ${c.failures} failures`);
-  if (!ok) throw new Error('verify: balances do not match the tracked expectation');
+  return ok;
+};
+
+
+const verify = async () => {
+  const state = await loadState();
+  if (!state) throw new Error(`verify: no state at ${stateFile}`);
+  const ctx = await buildCtx(state);
+  // Current balances first: they read the chain directly, so they catch a write the history never
+  // recorded, and they fail in seconds rather than after the whole sweep.
+  let ok = await verifyCurrent(ctx, state);
+  // The full sweep only runs once a proposal exists. Before that the checks are a quick health
+  // gate and every handle is still current or trivially recent.
+  const windowStart = Number(process.env.TRAFFIC_WINDOW_START ?? '0');
+  const cutoverAt = process.env.TRAFFIC_CUTOVER_AT ?? '';
+  if (windowStart === 0 || state.history.length === 0) {
+    if (!ok) throw new Error('verify: balances do not match the tracked expectation');
+    return;
+  }
+  // At risk = written after the window opened and before the flip completed. The window's
+  // end_block is the PLANNED end, hours past the cutover, so it cannot be used for this.
+  const atRisk = (e: HistoryEntry) =>
+    e.block >= windowStart && (cutoverAt === '' || e.at <= cutoverAt);
+
+  let checked = 0;
+  let windowChecked = 0;
+  for (const entry of state.history) {
+    const mark = atRisk(entry) ? ' [in upgrade window, before the flip]' : '';
+    let value: bigint;
+    try {
+      value = await ctx.instances[entry.holder].userDecryptSingleHandle({
+        handle: entry.handle,
+        contractAddress: state.contractAddress,
+        signer: ctx.signers[entry.holder],
+      });
+    } catch (err) {
+      ok = false;
+      log(`verify #${entry.iteration} ${entry.holder} block ${entry.block}${mark}: FAILED ${err instanceof Error ? err.message : String(err)}`);
+      continue;
+    }
+    checked += 1;
+    if (atRisk(entry)) windowChecked += 1;
+    const match = value === BigInt(entry.expected);
+    ok = ok && match;
+    log(`verify #${entry.iteration} ${entry.holder} block ${entry.block}${mark}: decrypted=${value} expected=${entry.expected} ${match ? 'OK' : 'MISMATCH'}`);
+  }
+  log(`verify: ${checked}/${state.history.length} handles decrypted, ${windowChecked} written in the upgrade window before the flip`);
+  if (!ok) throw new Error('verify: at least one balance or handle failed to decrypt or did not match');
 };
 
 const main = async () => {
