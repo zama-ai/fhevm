@@ -117,6 +117,12 @@ spec:
             {{- if not (has "manifest-verification-retry-count" $disabled) }}
             - --manifest-verification-retry-count={{ $component.config.manifestVerificationRetryCount }}
             {{- end }}
+            {{- if not (has "manifest-healing-batch-size" $disabled) }}
+            - --manifest-healing-batch-size={{ $component.config.manifestHealingBatchSize }}
+            {{- end }}
+            {{- if not (has "manifest-healing-poll-interval" $disabled) }}
+            - --manifest-healing-poll-interval={{ $component.config.manifestHealingPollInterval }}
+            {{- end }}
             {{- if not (has "incomplete-block-timeout" $disabled) }}
             - --incomplete-block-timeout={{ $component.config.incompleteBlockTimeout }}
             {{- end }}

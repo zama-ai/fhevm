@@ -211,6 +211,32 @@ async fn optimistic_then_guaranteed_pass_catches_late_outputs_and_is_idempotent(
 
 #[tokio::test]
 #[serial(db)]
+async fn inferred_insert_notifies_healing() {
+    let (_db, pool) = setup().await;
+    root(&pool, 1).await;
+    computation(&pool, 2, 1, 2, true, true).await;
+    let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+        .await
+        .unwrap();
+    listener
+        .listen(crate::manifest_consensus::healing::EVENT_HEALING_WORK)
+        .await
+        .unwrap();
+    assert!(
+        enforce_guaranteed_containment(&pool)
+            .await
+            .unwrap()
+            .inferred_handles
+            > 0
+    );
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("inferred drifted_handle insert should NOTIFY event_healing_work")
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn same_block_consumer_listed_before_producer_is_inferred() {
     let (_db, pool) = setup().await;
     root(&pool, 1).await;

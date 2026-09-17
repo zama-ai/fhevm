@@ -30,6 +30,12 @@ pub(crate) struct DriftHandleFinding {
     local: Option<BlockCiphertextDescriptor>,
     observed: Option<BlockCiphertextDescriptor>,
     observed_has_quorum: bool,
+    /// Quorum publishers and their pinned registry S3 URLs. Empty when the
+    /// observed group does not have quorum.
+    peer_sources: Vec<(Address, String)>,
+    /// Registry pin and quorum statements for the target digest. None when no
+    /// computed ct64 quorum target exists.
+    target_evidence: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,17 +46,29 @@ pub(crate) struct DriftLocalization {
     pub findings: Vec<DriftHandleFinding>,
 }
 
+/// Pinned GatewayConfig snapshot recorded with a target digest.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TargetEvidencePin {
+    pub required_quorum: usize,
+    pub registered_coprocessor_count: usize,
+    pub gateway_chain_id: i64,
+    pub gateway_config_address: Address,
+    pub registry_block_number: i64,
+    pub registry_block_hash: B256,
+}
+
 pub(crate) struct DriftLocalizationContext<'a> {
     pub(crate) peer_publishers: &'a [Address],
-    pub(crate) required_quorum: usize,
+    pub(crate) peer_bucket_urls: &'a [(Address, String)],
+    pub(crate) registry: TargetEvidencePin,
     pub(crate) completed_history: &'a HashSet<CommitmentScope>,
 }
 
 /// Atomically maintains the local drift inventory alongside a completed
 /// verification decision. One row per handle; `target_*` is the quorum
-/// descriptor when a computed threshold group exists.
-/// Later concordance does not close rows: healing decides per handle, and
-/// unresolved verified findings stay for inspection or delayed cleanup.
+/// descriptor when a computed threshold group exists. Later concordance does
+/// not close rows: healing decides per handle, and unresolved findings stay
+/// for inspection or delayed cleanup.
 pub(crate) async fn apply_evaluation_to_drift_handles(
     trx: &mut Transaction<'_, Postgres>,
     task_id: i64,
@@ -79,7 +97,8 @@ pub(crate) async fn apply_evaluation_to_drift_handles(
         manifests,
         local_publisher,
         context.peer_publishers,
-        context.required_quorum,
+        context.peer_bucket_urls,
+        context.registry,
         &without_completed_history(evaluation, context.completed_history),
     )
     .await?;
@@ -109,14 +128,16 @@ async fn attributed_findings(
     manifests: &[AuthenticatedManifest],
     local_publisher: Address,
     peer_publishers: &[Address],
-    required_quorum: usize,
+    peer_bucket_urls: &[(Address, String)],
+    registry: TargetEvidencePin,
     evaluation: &QuorumEvaluation,
 ) -> Result<(Vec<DriftHandleFinding>, bool), ExecutionError> {
     let mut scanner = HistoricalScanner {
         trx,
         local_publisher,
         peer_publishers,
-        required_quorum,
+        peer_bucket_urls,
+        registry,
         visited: HashSet::new(),
     };
     let mut result = scanner
@@ -186,7 +207,8 @@ struct HistoricalScanner<'transaction, 'connection, 'peers> {
     trx: &'transaction mut Transaction<'connection, Postgres>,
     local_publisher: Address,
     peer_publishers: &'peers [Address],
-    required_quorum: usize,
+    peer_bucket_urls: &'peers [(Address, String)],
+    registry: TargetEvidencePin,
     visited: HashSet<(B256, HistoricalWindow)>,
 }
 
@@ -223,7 +245,7 @@ impl HistoricalScanner<'_, '_, '_> {
                         if !observed_has_quorum {
                             continue;
                         }
-                        result.findings.extend(detailed_findings(
+                        let mut findings = detailed_findings(
                             manifests,
                             self.local_publisher,
                             &scope_evaluation.scope,
@@ -231,7 +253,21 @@ impl HistoricalScanner<'_, '_, '_> {
                             observed_group,
                             true,
                             scope_window,
-                        )?);
+                        )?;
+                        let sources =
+                            quorum_peer_sources(&observed_group.publishers, self.peer_bucket_urls);
+                        for finding in &mut findings {
+                            finding.peer_sources = sources.clone();
+                            finding.target_evidence = manifest_target_evidence(
+                                self.registry,
+                                &observed_group.publishers,
+                                finding
+                                    .observed
+                                    .as_ref()
+                                    .and_then(BlockCiphertextDescriptor::ct64_digest),
+                            );
+                        }
+                        result.findings.extend(findings);
                     }
                 }
                 CommitmentScope::Historical { .. } => {
@@ -367,7 +403,7 @@ impl HistoricalScanner<'_, '_, '_> {
             let comparison = evaluate_quorum(
                 &comparison_manifests,
                 self.local_publisher,
-                self.required_quorum,
+                self.registry.required_quorum,
             );
             if comparison.outcome == VerificationOutcome::Drift {
                 let mut result =
@@ -640,6 +676,8 @@ fn compare_blocks<'a>(
                 local: local_descriptor.cloned(),
                 observed: observed_descriptor.cloned(),
                 observed_has_quorum,
+                peer_sources: Vec::new(),
+                target_evidence: None,
             });
         }
     }
@@ -732,6 +770,11 @@ async fn upsert_finding(
     let context = payload.coprocessor_context_id.to_be_bytes::<32>();
     let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
     let reason = drift_reason(local, observed);
+    let sources_json = peer_sources_json(&finding.peer_sources);
+    let evidence_json = finding
+        .target_evidence
+        .as_ref()
+        .map(|evidence| serde_json::to_string(evidence).expect("target_evidence is a JSON object"));
     sqlx::query!(
         r#"
         INSERT INTO drifted_handle (
@@ -741,11 +784,11 @@ async fn upsert_finding(
             local_ct64_digest, quorum_ct64_digest,
             local_ct128_digest, quorum_ct128_digest, local_ct128_format,
             quorum_ct128_format,
-            last_quorum_task_id, reason
+            last_quorum_task_id, reason, peer_sources, target_evidence
         ) VALUES (
             $1, $2, $3, $4, $5, $6, 'unresolved',
             $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-            $17, $18
+            $17, $18, $19::jsonb, $20::jsonb
         )
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
@@ -799,7 +842,12 @@ async fn upsert_finding(
             resolved_task_id = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.resolved_task_id
                 ELSE NULL
-            END
+            END,
+            peer_sources = CASE
+                WHEN drifted_handle.peer_sources = '[]'::jsonb THEN EXCLUDED.peer_sources
+                ELSE drifted_handle.peer_sources
+            END,
+            target_evidence = COALESCE(drifted_handle.target_evidence, EXCLUDED.target_evidence)
         WHERE drifted_handle.healed_at IS NULL
           AND (drifted_handle.last_quorum_task_id IS NULL
                OR drifted_handle.last_quorum_task_id <= EXCLUDED.last_quorum_task_id)
@@ -811,11 +859,69 @@ async fn upsert_finding(
         local_ct64_digest, observed_ct64_digest,
         local_ct128_digest, observed_ct128_digest, local_ct128_format,
         observed_ct128_format,
-        task_id, reason,
+        task_id, reason, &sources_json, evidence_json.as_deref(),
     )
     .execute(trx.as_mut())
     .await?;
     Ok(())
+}
+
+fn quorum_peer_sources(
+    publishers: &[Address],
+    bucket_urls: &[(Address, String)],
+) -> Vec<(Address, String)> {
+    publishers
+        .iter()
+        .filter_map(|publisher| {
+            bucket_urls.iter().find_map(|(address, url)| {
+                (address == publisher && !url.is_empty()).then(|| (*publisher, url.clone()))
+            })
+        })
+        .collect()
+}
+
+fn manifest_target_evidence(
+    registry: TargetEvidencePin,
+    publishers: &[Address],
+    ct64_digest: Option<B256>,
+) -> Option<serde_json::Value> {
+    let ct64_digest = ct64_digest?;
+    if publishers.is_empty() {
+        return None;
+    }
+    Some(serde_json::json!({
+        "required_quorum": registry.required_quorum,
+        "registered_coprocessor_count": registry.registered_coprocessor_count,
+        "gateway_chain_id": registry.gateway_chain_id,
+        "gateway_config_address": registry.gateway_config_address.to_string(),
+        "registry_block_number": registry.registry_block_number,
+        "registry_block_hash": registry.registry_block_hash.to_string(),
+        "source": "manifest",
+        "statements": publishers
+            .iter()
+            .map(|publisher| {
+                serde_json::json!({
+                    "publisher": publisher.to_string(),
+                    "ct64_digest": ct64_digest.to_string(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    }))
+}
+
+fn peer_sources_json(sources: &[(Address, String)]) -> String {
+    serde_json::to_string(
+        &sources
+            .iter()
+            .map(|(publisher, url)| {
+                serde_json::json!({
+                    "publisher": publisher.to_string(),
+                    "s3_bucket_url": url,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("peer_sources is a JSON array of objects")
 }
 
 fn u256_bytes(value: Option<U256>) -> Option<Vec<u8>> {
@@ -839,6 +945,60 @@ mod reason_tests {
     use super::*;
     use block_manifest::CiphertextFormat;
 
+    #[test]
+    fn quorum_peer_sources_keep_group_order_and_skip_unusable() {
+        let a = Address::repeat_byte(1);
+        let b = Address::repeat_byte(2);
+        let c = Address::repeat_byte(3);
+        let urls = [
+            (b, "s3://b".into()),
+            (a, "s3://a".into()),
+            (c, String::new()),
+        ];
+        assert_eq!(
+            quorum_peer_sources(&[a, c, b], &urls),
+            vec![(a, "s3://a".into()), (b, "s3://b".into())]
+        );
+    }
+
+    #[test]
+    fn manifest_target_evidence_records_the_vote_for_one_digest() {
+        let a = Address::repeat_byte(1);
+        let b = Address::repeat_byte(2);
+        let digest = B256::repeat_byte(9);
+        let registry = TargetEvidencePin {
+            required_quorum: 3,
+            registered_coprocessor_count: 5,
+            gateway_chain_id: 54321,
+            gateway_config_address: Address::repeat_byte(0x10),
+            registry_block_number: 100,
+            registry_block_hash: B256::repeat_byte(0x20),
+        };
+        let evidence = manifest_target_evidence(registry, &[a, b], Some(digest)).unwrap();
+        assert_eq!(evidence["source"], "manifest");
+        assert_eq!(evidence["required_quorum"], 3);
+        assert_eq!(evidence["registered_coprocessor_count"], 5);
+        assert_eq!(evidence["gateway_chain_id"], 54321);
+        assert_eq!(
+            evidence["gateway_config_address"],
+            Address::repeat_byte(0x10).to_string()
+        );
+        assert_eq!(evidence["registry_block_number"], 100);
+        assert_eq!(
+            evidence["registry_block_hash"],
+            B256::repeat_byte(0x20).to_string()
+        );
+        assert_eq!(
+            evidence["statements"],
+            serde_json::json!([
+                { "publisher": a.to_string(), "ct64_digest": digest.to_string() },
+                { "publisher": b.to_string(), "ct64_digest": digest.to_string() },
+            ])
+        );
+        assert!(manifest_target_evidence(registry, &[a], None).is_none());
+        assert!(manifest_target_evidence(registry, &[], Some(digest)).is_none());
+    }
+
     fn handle_finding(handle: u8, quorum: bool) -> DriftHandleFinding {
         DriftHandleFinding {
             consensus_epoch: "legacy".into(),
@@ -848,6 +1008,8 @@ mod reason_tests {
             local: None,
             observed: None,
             observed_has_quorum: quorum,
+            peer_sources: Vec::new(),
+            target_evidence: None,
         }
     }
 

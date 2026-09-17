@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT dh.id,\n               dh.handle,\n               dh.host_chain_id,\n               dh.coprocessor_context_id,\n               dh.quorum_ct64_digest,\n               dh.peer_sources::text AS \"peer_sources!\",\n               dh.target_evidence::text AS \"target_evidence?\"\n          FROM drifted_handle dh\n          JOIN (\n                SELECT DISTINCT ON (cand.host_chain_id, cand.coprocessor_context_id, cand.handle)\n                       cand.id,\n                       COALESCE(demand.tx_unlock_potential, 0) AS unlock\n                  FROM drifted_handle cand\n                  LEFT JOIN drifted_handle_demand demand\n                    ON demand.handle = cand.handle\n                 WHERE cand.healed_at IS NULL\n                   AND cand.reason IN (\n                        'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'\n                   )\n                   AND cand.consensus_epoch = $1\n                   AND (cand.next_retry_at IS NULL OR cand.next_retry_at <= NOW())\n                   AND NOT EXISTS (\n                        SELECT 1\n                          FROM drifted_handle other\n                         WHERE other.consensus_epoch = cand.consensus_epoch\n                           AND other.coprocessor_context_id = cand.coprocessor_context_id\n                           AND other.host_chain_id = cand.host_chain_id\n                           AND other.handle = cand.handle\n                           AND other.healed_at IS NULL\n                           AND other.quorum_ct64_digest IS DISTINCT FROM cand.quorum_ct64_digest\n                   )\n                 ORDER BY cand.host_chain_id,\n                          cand.coprocessor_context_id,\n                          cand.handle,\n                          cand.block_number ASC,\n                          cand.id ASC\n               ) picked ON picked.id = dh.id\n         ORDER BY picked.unlock DESC, dh.block_number ASC, dh.id ASC\n         LIMIT $2\n         FOR UPDATE OF dh\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "quorum_ct64_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "peer_sources!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "target_evidence?",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "ffe2b6d144c78ab1cbca56a95085072ab7708fe83a9cc0c9b5d01d8ad75c8297"
+}

@@ -818,15 +818,26 @@ become inferred findings. TFHE batches hold the shared containment barrier and
 check a frozen inventory before scheduling and result persistence.
 Mismatch kind and per-field differences are derived from the two stored descriptors.
 
-The same row carries healing state: `detection_kind`, `tx_unlock_potential`,
+The same row carries healing state: `detection_kind`,
 `target_evidence`, `peer_sources`, `next_retry_at`, `claimed_by`,
 `claim_expires_at`, and `healed_at`. Evidence is a JSON object containing the pinned
 registry/quorum and authenticated statements; sources are a JSON array of publisher
-identities and download locations. Their population and the healing worker remain
-planned. `tx_unlock_potential` is an EMA of per-batch unlock share: each stalled
+identities and download locations. The healing worker LISTENs on `event_healing_work`
+and polls on `--manifest-healing-poll-interval` (default **30s**), picks up to
+`--manifest-healing-batch-size` (default **8**) due `can_be_healed` rows, and
+downloads matching ct64 from those sources concurrently. A pass that
+installs at least one handle NOTIFYs `work_available` once.
+Verification fills `peer_sources` from the quorum group's
+pinned registry S3 URLs (the same URLs used for manifest download). It fills
+the quorum descriptor (`quorum_ct64_digest`, and computed `quorum_keyset_id` /
+`quorum_ct128_*` when the threshold group has ciphertext material) and
+`target_evidence` with the pinned registry snapshot and the quorum publishers'
+ct64 statements for that one digest (`source: manifest`). A matching download
+installs the ct64 and sets `healed_at` in one transaction.
+`tx_unlock_potential` lives on `drifted_handle_demand`, one EMA per handle: each stalled
 transaction contributes `1/k` to every drifted handle that transitively blocks it.
-Only handles seen as blockers are updated. Concurrent workers serialize on the
-row update.
+Only handles seen as blockers are updated. That table is separate so TFHE samples
+do not lock `drifted_handle` rows healing is picking.
 
 `detection_kind` is never NULL and is either `verified` (direct peer comparison)
 or `inferred` (contaminated input). Verified does not itself mean quorum-backed.

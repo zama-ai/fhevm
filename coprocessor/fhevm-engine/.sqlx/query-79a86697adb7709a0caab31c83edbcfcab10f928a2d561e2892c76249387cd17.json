@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $2),\n               target_evidence = COALESCE(target_evidence, $3::jsonb),\n               peer_sources = CASE\n                 WHEN peer_sources = '[]'::jsonb THEN $4::jsonb\n                 ELSE peer_sources\n               END\n         WHERE id = $1\n           AND healed_at IS NULL\n           AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79a86697adb7709a0caab31c83edbcfcab10f928a2d561e2892c76249387cd17"
+}

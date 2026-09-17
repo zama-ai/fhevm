@@ -5,7 +5,7 @@ mod localization_cache;
 mod quorum_coverage;
 pub(crate) mod metrics;
 pub(crate) mod peer_downloader;
-mod peer_manifest_source;
+pub(crate) mod peer_manifest_source;
 mod verification_evidence;
 mod verification_queue;
 mod verification_schedule;

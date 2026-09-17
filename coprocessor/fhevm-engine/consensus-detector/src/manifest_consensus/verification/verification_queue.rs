@@ -35,6 +35,11 @@ pub(crate) struct VerificationClaim {
     pub(super) attempt: i32,
     pub(super) lease_duration: Duration,
     pub(super) required_quorum: usize,
+    pub(super) registered_coprocessor_count: usize,
+    pub(super) gateway_chain_id: i64,
+    pub(super) gateway_config_address: Address,
+    pub(super) registry_block_number: i64,
+    pub(super) registry_block_hash: B256,
     pub(super) scope: VerificationScope,
     pub(super) peers: Vec<ClaimedPeer>,
 }
@@ -318,6 +323,11 @@ pub(super) async fn claim_verification_task(
                   target.consensus_epoch,
                   target.attempt_count + 1 AS "attempt!",
                   target.required_quorum AS "required_quorum!",
+                  target.registered_coprocessor_count AS "registered_coprocessor_count!",
+                  target.gateway_chain_id AS "gateway_chain_id!",
+                  target.gateway_config_address AS "gateway_config_address!",
+                  target.registry_block_number AS "registry_block_number!",
+                  target.registry_block_hash AS "registry_block_hash!",
                   manifest.publisher AS "local_publisher!",
                   manifest.version AS "version!",
                   manifest.coprocessor_context_id AS "coprocessor_context_id!",
@@ -397,6 +407,18 @@ pub(super) async fn claim_verification_task(
         lease_duration: claim_duration,
         required_quorum: usize::try_from(row.required_quorum)
             .map_err(|_| internal("required quorum is negative"))?,
+        registered_coprocessor_count: usize::try_from(row.registered_coprocessor_count)
+            .map_err(|_| internal("registered coprocessor count is negative"))?,
+        gateway_chain_id: row.gateway_chain_id,
+        gateway_config_address: address(
+            "verification task gateway config address",
+            &row.gateway_config_address,
+        )?,
+        registry_block_number: row.registry_block_number,
+        registry_block_hash: b256(
+            "verification task registry block hash",
+            &row.registry_block_hash,
+        )?,
         scope,
         peers,
     }))

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET healed_at = NOW(),\n               claimed_by = NULL,\n               claim_expires_at = NULL,\n               next_retry_at = NULL\n         WHERE consensus_epoch = $1\n           AND coprocessor_context_id = $2\n           AND host_chain_id = $3\n           AND handle = $4\n           AND healed_at IS NULL\n           AND can_be_healed\n           AND quorum_ct64_digest = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7dd5217069e96e86e82faebe2bf07bdf114a89845e3d516b9b4a49007e7c3b95"
+}
