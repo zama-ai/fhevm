@@ -1,15 +1,15 @@
-# Solana fhevm (POC)
+# Solana fhevm
 
 This workspace ports the Zama fhevm host to Solana. It keeps the EVM fhevm
 trust model — input verification and threshold-KMS
 decryption — and re-expresses it in Solana idiom (accounts, PDAs, CPI, signer
 propagation) instead of transliterating Solidity.
 
-It is a proof of concept with one production-shaped vertical: encrypt an
-input, execute FHE ops as one atomic execution, and decrypt the result publicly or
-per-user, end to end against the real coprocessor, gateway, and a threshold
-KMS. The final product shape is deliberately not settled here — see
-[`docs/FUTURE_DESIGN.md`](docs/FUTURE_DESIGN.md).
+It covers one production-shaped vertical end to end against the real coprocessor,
+gateway and a threshold KMS: encrypt an input, execute FHE ops as one atomic
+execution, and decrypt the result publicly or per user. The proof of concept was
+validated on localnet; the port is now being hardened for production. The product
+decisions still open are in [`docs/FUTURE_DESIGN.md`](docs/FUTURE_DESIGN.md).
 
 Vocabulary in this file and everywhere else follows
 [`docs/GLOSSARY.md`](docs/GLOSSARY.md), which is normative. The guarantees the
@@ -38,13 +38,13 @@ calls anything off-chain — every off-chain component observes it.
 
 Each component owns exactly one kind of trust decision:
 
-| Component | Where | Decides |
-|---|---|---|
-| `zama-host` program | `solana/programs/zama-host` | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates + MMR proofs, HCU caps. |
-| Coprocessor listener + workers | `coprocessor/fhevm-engine` | Nothing. It reconstructs executions and MMR leaves from transaction bytes, schedules FHE compute eagerly, and serves leaf proofs from its record; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31). |
-| Gateway + relayer | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42). |
-| KMS connector | `kms-connector/` | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
-| KMS core | `zama-ai/kms` repo | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key. |
+| Component                      | Where                            | Decides                                                                                                                                                                                                                                                                                                              |
+| ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zama-host` program            | `solana/programs/zama-host`      | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates + MMR proofs, HCU caps.                                                                                                                                        |
+| Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. It reconstructs executions and MMR leaves from transaction bytes, schedules FHE compute eagerly, and serves leaf proofs from its record; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
+| Gateway + relayer              | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42).                                                                                                                                                                                |
+| KMS connector                  | `kms-connector/`                 | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
+| KMS core                       | `zama-ai/kms` repo               | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key.                                                                                                                                                                                                            |
 
 The division worth remembering: the host program is the authorization
 authority on-chain, the KMS connectors are the authorization authority for
@@ -225,12 +225,12 @@ that payer by the final close. Its fixed capacity is 112 result occurrences and
 - [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — normative vocabulary.
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the guarantee register
   (what the system guarantees, then sizes, limits, and how it is run).
-- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — numbered decisions
-  with status and rationale.
+- [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — the numbered decisions
+  the code follows, with an index by status; replaced ones are in
+  [`docs/DESIGN_HISTORY.md`](docs/DESIGN_HISTORY.md).
 - [`docs/EVM_PARITY.md`](docs/EVM_PARITY.md) — EVM capability mapping.
 - [`docs/FUTURE_DESIGN.md`](docs/FUTURE_DESIGN.md) — forward requirements and
   open decisions.
-- [`docs/TESTING.md`](docs/TESTING.md) / [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md)
-  — test layers and evidence.
+- [`docs/TESTING.md`](docs/TESTING.md) — test layers, commands and evidence.
 - Rustdoc in `programs/*` is authoritative for account layouts, roles, PDA
   seeds, and instruction invariants.
