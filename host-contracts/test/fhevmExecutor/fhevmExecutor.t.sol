@@ -1960,6 +1960,65 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
+    function test_FheDivAndRemRejectOutOfRangeDivisorsWithNonzeroLowBits() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            // 2^width + 1 would truncate to one, but must still fail the range check.
+            bytes32 rhs = bytes32(_maxScalar(types[t]) + 2);
+
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheDiv(lhs, rhs, 0x01);
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheRem(lhs, rhs, 0x01);
+        }
+    }
+
+    function test_FheDivAndRemRejectMalformedScalarFlagsBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        bytes1[2] memory scalarFlags = [bytes1(0x02), bytes1(0xff)];
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < scalarFlags.length; ++f) {
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    fhevmExecutor.fheDiv(lhs, divisors[d], scalarFlags[f]);
+                    vm.expectRevert(FHEVMExecutor.IsNotScalar.selector);
+                    fhevmExecutor.fheRem(lhs, divisors[d], scalarFlags[f]);
+                }
+            }
+        }
+    }
+
+    function test_FheDivAndRemCheckACLBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                lhs,
+                address(this)
+            );
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheDiv(lhs, divisors[d], 0x01);
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheRem(lhs, divisors[d], 0x01);
+            }
+        }
+    }
+
     function test_RevertsIfFheDivRHSIsNotScalar() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint16);
         bytes32 rhs = _generateMockHandle(FheType.Uint16);
