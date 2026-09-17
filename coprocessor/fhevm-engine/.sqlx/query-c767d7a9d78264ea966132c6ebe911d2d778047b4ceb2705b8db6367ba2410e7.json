@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE drifted_handle\n               SET peer_sources = CASE\n                     WHEN peer_sources = '[]'::jsonb THEN $1::jsonb\n                     ELSE peer_sources\n                   END,\n                   target_evidence = COALESCE(target_evidence, $2::jsonb)\n             WHERE consensus_epoch = $3\n               AND coprocessor_context_id = $4\n               AND host_chain_id = $5\n               AND block_hash = $6\n               AND handle = $7\n               AND observed_commitment_digest = $8\n               AND healed_at IS NULL\n               AND detection_kind <> 'inferred'\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c767d7a9d78264ea966132c6ebe911d2d778047b4ceb2705b8db6367ba2410e7"
+}

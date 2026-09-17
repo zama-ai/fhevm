@@ -24,6 +24,7 @@ use fhevm_engine_common::versioning::{
 
 pub mod containment;
 pub(crate) mod db_error;
+pub(crate) mod healing;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
 pub(crate) mod publication;
@@ -289,13 +290,16 @@ pub(crate) async fn start(
     supervise("manifest publisher", handle, cancel.clone());
 
     let handle = verification::peer_downloader::spawn_peer_manifest_downloader(
-        pool,
+        pool.clone(),
         cancel.child_token(),
-        client,
-        work_gate,
+        Arc::clone(&client),
+        Arc::clone(&work_gate),
         config.manifest_consensus.verification_delay,
     );
-    supervise("peer manifest verifier", handle, cancel);
+    supervise("peer manifest verifier", handle, cancel.clone());
+
+    let handle = healing::spawn_healing_worker(pool, cancel.child_token(), client, work_gate);
+    supervise("healing worker", handle, cancel);
 
     Ok(())
 }

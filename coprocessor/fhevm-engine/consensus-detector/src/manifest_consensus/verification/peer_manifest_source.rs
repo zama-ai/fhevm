@@ -233,13 +233,13 @@ fn revision_below_prefix(key: &str, prefix: &str) -> Option<u64> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct S3BucketLocation {
-    pub(super) bucket: String,
+pub(crate) struct S3BucketLocation {
+    pub(crate) bucket: String,
     pub(super) key_prefix: String,
 }
 
 impl S3BucketLocation {
-    fn object_key(&self, suffix: &str) -> String {
+    pub(crate) fn object_key(&self, suffix: &str) -> String {
         if self.key_prefix.is_empty() {
             suffix.to_owned()
         } else {
@@ -262,7 +262,7 @@ impl S3BucketLocation {
 /// `s3://bucket/key`: the host is the bucket, including dots.
 /// Virtual-hosted HTTPS: bucket is the host prefix before the S3 endpoint.
 /// Path-style HTTP(S): first path segment is the bucket.
-pub(super) fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, ExecutionError> {
+pub(crate) fn s3_bucket_location(bucket_url: &str) -> Result<S3BucketLocation, ExecutionError> {
     let url = Url::parse(bucket_url)
         .map_err(|err| internal(format!("invalid peer S3 bucket URL {bucket_url}: {err}")))?;
     let host = url

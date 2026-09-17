@@ -13,6 +13,7 @@ aws-config = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 block-manifest = { path = "../../../shared/block-manifest" }
+ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
 dashmap = { workspace = true }
 futures = "0.3.31"
 hex = { workspace = true }

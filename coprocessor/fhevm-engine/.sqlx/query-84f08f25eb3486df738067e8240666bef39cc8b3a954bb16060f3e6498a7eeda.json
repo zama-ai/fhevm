@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE drifted_handle_demand AS d\n                  SET tx_unlock_potential = d.tx_unlock_potential + src.delta / 2.0\n                 FROM unnest($1::bytea[], $2::float8[]) AS src(handle, delta)\n                WHERE d.handle = src.handle",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "84f08f25eb3486df738067e8240666bef39cc8b3a954bb16060f3e6498a7eeda"
+}

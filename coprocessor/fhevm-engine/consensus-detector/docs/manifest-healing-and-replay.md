@@ -54,8 +54,10 @@ when uncontained ct64 findings remain, without awaiting it. No startup scan or p
 The detached task logs errors; they do not change the committed verification
 result or consume another verification attempt. TFHE batches participate in the shared barrier and check containment before
 scheduling and result persistence. Freeze records `tx_unlock_potential`, an EMA
-of the per-batch unlock share of each drifted handle. Evidence collection and
-local repair are not implemented.
+of the per-batch unlock share of each drifted handle. Verification stores the
+quorum group's pinned registry S3 URLs on `peer_sources` and records the
+registry pin plus quorum ct64 statements on `target_evidence`. Local repair
+is not implemented.
 
 An interrupted or failed call can leave additional contaminated computations.
 This is an accepted containment delay: all outputs remain subject to manifest

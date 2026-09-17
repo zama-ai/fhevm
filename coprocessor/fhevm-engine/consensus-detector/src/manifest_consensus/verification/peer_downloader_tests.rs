@@ -1800,8 +1800,7 @@ async fn concurrent_one_drifter_replay_keeps_exact_handle_findings() {
 
     let rows = sqlx::query(
         r#"
-        SELECT finding.version,
-               finding.coprocessor_context_id,
+        SELECT finding.coprocessor_context_id,
                finding.host_chain_id,
                finding.block_number,
                finding.block_hash,
@@ -1820,6 +1819,8 @@ async fn concurrent_one_drifter_replay_keeps_exact_handle_findings() {
                finding.observed_ct128_format,
                finding.observed_commitment_digest,
                finding.target_ct64_digest,
+               finding.peer_sources,
+               finding.target_evidence,
                finding.last_observed_task_id,
                finding.resolved_task_id,
                finding.healed_at IS NULL AS resolution_missing,
@@ -1843,7 +1844,6 @@ async fn concurrent_one_drifter_replay_keeps_exact_handle_findings() {
         .zip(&drifted_manifests)
         .map(|((row, block), local_manifest)| (row, block, local_manifest))
     {
-        assert_eq!(row.try_get::<i16, _>("version").unwrap(), 1);
         assert_eq!(
             row.try_get::<Vec<u8>, _>("coprocessor_context_id").unwrap(),
             TEST_CONTEXT_ID.to_be_bytes::<32>()
@@ -1871,6 +1871,29 @@ async fn concurrent_one_drifter_replay_keeps_exact_handle_findings() {
         assert_eq!(
             row.try_get::<Vec<u8>, _>("observed_keyset_id").unwrap(),
             quorum_keyset_id.to_be_bytes::<32>()
+        );
+        let sources = row.try_get::<serde_json::Value, _>("peer_sources").unwrap();
+        let entries = sources.as_array().expect("peer_sources is a JSON array");
+        assert_eq!(entries.len(), signers.len() - 1, "{sources}");
+        for (index, signer) in signers.iter().enumerate().skip(1) {
+            let expected_url = format!("http://localhost:4566/peer-{index}");
+            let expected_publisher = signer.address().to_string();
+            assert!(
+                entries.iter().any(|entry| {
+                    entry.get("publisher").and_then(|value| value.as_str())
+                        == Some(expected_publisher.as_str())
+                        && entry.get("s3_bucket_url").and_then(|value| value.as_str())
+                            == Some(expected_url.as_str())
+                }),
+                "{sources} missing {expected_publisher} at {expected_url}"
+            );
+        }
+        assert_manifest_target_evidence(
+            &row.try_get::<serde_json::Value, _>("target_evidence")
+                .unwrap(),
+            &signers,
+            3,
+            B256::repeat_byte(block.material),
         );
         assert_eq!(
             row.try_get::<Vec<u8>, _>("local_gateway_key_id").unwrap(),
@@ -2264,6 +2287,47 @@ fn test_signers() -> [PrivateKeySigner; 3] {
 
 fn five_test_signers() -> [PrivateKeySigner; 5] {
     std::array::from_fn(|_| PrivateKeySigner::random())
+}
+
+fn assert_manifest_target_evidence(
+    evidence: &serde_json::Value,
+    signers: &[PrivateKeySigner],
+    threshold: i64,
+    digest: B256,
+) {
+    let config = Address::repeat_byte(0x10).to_string();
+    let registry_hash = B256::repeat_byte(0x20).to_string();
+    let digest_hex = digest.to_string();
+    assert_eq!(evidence["source"], "manifest", "{evidence}");
+    assert_eq!(evidence["required_quorum"].as_i64(), Some(threshold));
+    assert_eq!(
+        evidence["registered_coprocessor_count"].as_i64(),
+        Some(i64::try_from(signers.len()).unwrap())
+    );
+    assert_eq!(evidence["gateway_chain_id"].as_i64(), Some(54321));
+    assert_eq!(
+        evidence["gateway_config_address"].as_str(),
+        Some(config.as_str())
+    );
+    assert_eq!(evidence["registry_block_number"].as_i64(), Some(100));
+    assert_eq!(
+        evidence["registry_block_hash"].as_str(),
+        Some(registry_hash.as_str())
+    );
+    let statements = evidence["statements"]
+        .as_array()
+        .expect("statements is a JSON array");
+    assert_eq!(statements.len(), signers.len() - 1, "{evidence}");
+    for signer in &signers[1..] {
+        let publisher = signer.address().to_string();
+        assert!(
+            statements.iter().any(|statement| {
+                statement["publisher"].as_str() == Some(publisher.as_str())
+                    && statement["ct64_digest"].as_str() == Some(digest_hex.as_str())
+            }),
+            "{evidence} missing {publisher}"
+        );
+    }
 }
 
 async fn seed_registry(pool: &PgPool, signers: &[PrivateKeySigner], threshold: i64) {
@@ -2781,6 +2845,28 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
             .fetch_one(&pool)
             .await
             .unwrap();
+    let verified_sources: serde_json::Value =
+        sqlx::query_scalar("SELECT peer_sources FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let verified_urls: Vec<&str> = verified_sources
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| entry.get("s3_bucket_url").and_then(|url| url.as_str()))
+        .collect();
+    assert_eq!(verified_urls.len(), 2, "{verified_sources}");
+    assert!(verified_urls.contains(&"http://localhost:4566/peer-1"));
+    assert!(verified_urls.contains(&"http://localhost:4566/peer-2"));
+    let verified_evidence: serde_json::Value =
+        sqlx::query_scalar("SELECT target_evidence FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_manifest_target_evidence(&verified_evidence, &signers, 2, B256::repeat_byte(9));
     // Inferred findings do not invent peer evidence or require completed SNS.
     let inferred: i64 = sqlx::query_scalar("INSERT INTO drifted_handle (consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, handle, detection_kind, reason, local_present, observed_present)
         SELECT consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, $2, 'inferred', 'ct64_mismatch', TRUE, FALSE FROM drifted_handle WHERE id = $1 RETURNING id")
@@ -2828,11 +2914,17 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     .unwrap()
     .unwrap();
     assert_eq!(result.outcome, VerificationOutcome::Consensus);
-    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, claimed_by, target_ct64_digest FROM drifted_handle WHERE id = $1")
+    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, claimed_by, target_ct64_digest, target_evidence FROM drifted_handle WHERE id = $1")
         .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(row.get::<String, _>("detection_kind"), "verified");
     assert!(row.get::<bool, _>("can_be_healed"));
     assert!(row.get::<bool, _>("pending"));
+    assert_manifest_target_evidence(
+        &row.get::<serde_json::Value, _>("target_evidence"),
+        &signers,
+        2,
+        B256::repeat_byte(9),
+    );
     let demand: f64 = sqlx::query_scalar("SELECT d.tx_unlock_potential FROM drifted_handle_demand d JOIN drifted_handle h ON h.handle = d.handle WHERE h.id = $1")
         .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(demand, 3.0);
