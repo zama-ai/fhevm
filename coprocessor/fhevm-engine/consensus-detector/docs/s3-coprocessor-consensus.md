@@ -42,6 +42,29 @@ and peer verification.
 | External output | Signed manifests | Signed consensus summaries, public drift reports, and status tags |
 | Operations | Structured logs, durable audit state, publication/download/verification counters, queue and drift gauges, and registry-refresh health metrics | Alert definitions, cleanup, and production replay controls |
 
+## Detection time
+
+With the default cadence table, listed chains publish about once a minute
+(`K` × block time). A computed block is therefore in a local manifest within
+about one publication period, then S3 put and archive.
+
+Verification does not start at that put. The task is eligible
+`--manifest-verification-delay` later (helm `manifestVerificationDelay`,
+default **10s**) so peers can upload the same height. The verifier poller
+then wakes about every **10s** on an empty queue (the same delay plus 100 ms);
+already-due work waits only that 100 ms slack.
+
+If some coprocessors are still finishing the block, retries keep looking for
+quorum every `--manifest-verification-retry-delay` (default **10s**), up to
+`--manifest-verification-retry-count` extra attempts (default **59**). That is
+a nominal **ten-minute** window after the first attempt
+(`10 s + 59 × 10 s`), not counting attempt runtime. Consensus stops retries
+immediately. If a coprocessor still has not finished after that window, this
+task is exhausted; the next published manifest starts the same delay and
+retry schedule, and its first attempt fetches covering history for scopes
+still missing. Drift is recorded when a completed attempt sees a difference;
+containment runs after that commit.
+
 ## Runtime flow
 
 ### 1. Synchronize the publisher registry
@@ -165,17 +188,16 @@ block_number mod K == 0
 
 The initial chain table is:
 
-| Chain | Chain ID | `K` |
-| --- | ---: | ---: |
-| Ethereum mainnet | 1 | 5 |
-| Sepolia | 11155111 | 5 |
-| Hoodi | 560048 | 5 |
-| Polygon mainnet | 137 | 30 |
-| Polygon Amoy | 80002 | 30 |
-| Unknown chain | any other ID | 30 |
+| Chain | Chain ID | `K` | ≈ interval |
+| --- | ---: | ---: | --- |
+| Ethereum mainnet | 1 | 5 | ~1 min (12s blocks) |
+| Sepolia | 11155111 | 5 | ~1 min (12s blocks) |
+| Hoodi | 560048 | 5 | ~1 min (12s blocks) |
+| Polygon mainnet | 137 | 30 | ~1 min (2s blocks) |
+| Polygon Amoy | 80002 | 30 | ~1 min (2s blocks) |
+| Unknown chain | any other ID | 30 | 30 × block time |
 
-This targets roughly one manifest per minute for the listed chains. Ethereum L1
-(~12s) uses `K = 5`; Polygon L2 (~2s) uses `K = 30`. Repeatable
+Listed chains target roughly one manifest per minute. Repeatable
 `--manifest-publication-cadence CHAIN_ID:CADENCE` overlays replace K for that
 chain only (helm `manifestPublicationCadence`). The override is insert-time:
 already stored rows keep their cadence, and every coprocessor in the fleet must
