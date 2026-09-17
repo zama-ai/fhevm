@@ -98,7 +98,6 @@ The checks have five phases, run at different moments:
 | Phase | When to run it |
 | --- | --- |
 | `baseline` | Before you change anything |
-| `dry-run` | While Green is shadowing, before the cutover |
 | `window-timing` | Optional, any time after the proposal; reports block times and clock skew |
 | `cutover` | Straight after the version changes |
 | `post` | A few minutes after the cutover |
@@ -109,24 +108,27 @@ The checks have five phases, run at different moments:
 
 Green needs to know which build of the new coprocessor to run. This is called `GCS_IMAGE_TAG`.
 
-Get it like this:
+The coprocessor is only rebuilt when your branch changes something under `coprocessor/`. Check:
+
+```bash
+git diff --name-only $(git merge-base HEAD origin/main) HEAD | grep '^coprocessor/'
+```
+
+**Nothing printed** — use the base commit:
+
+```bash
+git merge-base HEAD origin/main | cut -c1-7
+```
+
+**Files printed** — use the tag the environment already runs:
 
 ```bash
 kubectl get deploy -n $NAMESPACE listener-1-host \
   -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://'
 ```
 
-Write down what it prints, for example `cc9ac24`.
-
-**Important.** That tag only works if the coprocessor was actually built for your branch. If your
-branch only changed CI files or contracts, it was not built, and the Green migration will fail with
-an image pull error (see *Problem 1* in section 11). In that case use the base commit instead:
-
-```bash
-git merge-base HEAD origin/main | cut -c1-7
-```
-
-Use whichever tag is correct in every `GCS_IMAGE_TAG=...` command below.
+Use that value in every `GCS_IMAGE_TAG=...` and `TARGET_TAG=...` command below. If it is wrong the
+Green migration just fails to pull the image — see *Problem 1*.
 
 ---
 
@@ -253,6 +255,9 @@ bash ci/preview-env/scripts/bg-contracts.sh upgrade
 **Expect:** it finishes without error and reports which contracts were upgraded. Not all contracts
 change in every release; the script skips the ones that did not change, and that is correct.
 
+**This takes 10-15 minutes.** It compiles the contracts in a pod before upgrading them, so it looks
+idle for a long time. Leave it alone until it prints `contracts upgrade done`.
+
 **This step cannot be undone.** Contract upgrades are one-way. Once you have run it, this
 environment can only be used for Case B.
 
@@ -264,7 +269,11 @@ environment can only be used for Case B.
 TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg-stack.sh upgrade
 ```
 
-**Expect:** the final status list shows relayer, KMS connector and test-suite on the new tag.
+**Expect:** all the KMS connector lines show the new tag.
+
+Relayer and test-suite usually stay on the old version and the command ends with a `401
+unauthorized` on their chart. **That is fine** — the connector is the one that matters, and it is
+already upgraded by then.
 
 **Why this matters:** the old (v0.14) KMS connector checks decryption against a value recorded on
 the blockchain. The cutover changes the encrypted data behind that value. With the old connector,
@@ -272,11 +281,10 @@ any balance written in the last seconds before the cutover becomes **permanently
 v0.15 connector does not have that problem. If you leave the connector on v0.14 you will see
 decryptions that hang forever after the cutover.
 
-If the command fails on the relayer or test-suite saying it cannot pull a chart, you are missing
-registry credentials on your laptop. Upgrade just the connector, which is the important one:
+Check what is deployed at any time with:
 
 ```bash
-TARGET_TAG=<your Green tag> COMPONENTS="kms-connector" bash ci/preview-env/scripts/bg-stack.sh upgrade
+TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg-stack.sh status
 ```
 
 ### Step A7. Start Green
@@ -303,8 +311,9 @@ Check the Green pods are healthy:
 kubectl get pods -n $NAMESPACE | grep gcs
 ```
 
-**Expect:** all `Running`, restart count `0`. There should be about 11 per operator, including one
-`consensus-detector` and one `upgrade-controller`. Those two are the ones that decide the upgrade.
+**Expect:** all `Running`, restart count `0`. There are 12 per operator on a two-chain
+environment, including one `consensus-detector` and one `upgrade-controller`. Those two decide the
+upgrade.
 
 ### Step A8. Restart traffic and take snapshot 2
 
@@ -487,11 +496,7 @@ Then follow section 9 exactly as usual.
 ### What to look for
 
 - The upgrade must still reach the cutover. **This is the whole point of the case.** If the version
-  never changes to `v0.15.0`, that is a real bug. Report it with the output of
-  `bash ci/preview-env/scripts/bg-checkpoints.sh dry-run`.
-- In the dry-run check, the line `synthetic host anchors injected = 1` must appear for each chain,
-  and `synthetic gateway input ... = 1` for each operator. With no traffic these synthetic items are
-  the *only* work, so they matter more here than anywhere else.
+  never changes to `v0.15.0`, that is a real bug.
 - After the cutover, the balances you created before the quiet period must still decrypt:
 
 ```bash
@@ -609,7 +614,7 @@ bash ci/preview-env/scripts/bg-propose.sh send -- --use-internal-proxy-address t
 ```
 
 A longer `WINDOW_DURATION` does **not** delay the cutover, which fires as soon as the operators
-agree. Raise `START_LEAD_SECS` if you want more time to get the dry-run check ready.
+agree.
 
 ---
 
@@ -652,27 +657,13 @@ You will see it move through these stages:
 2. `DryRunStarted`, `anchors` becomes 1 on each chain — the window is open. **This is your moment.**
 3. `LIVE` / `completed` — the cutover has happened.
 
-### Step 3. Run the dry-run check while the window is open
-
-Have this command already typed in a third terminal. Run it the moment you see `DryRunStarted`
-**with anchors = 1 on both chains**:
-
-```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh dry-run
-```
-
-**Expect:** all `[PASS]`. It checks that both operators see the same proposal, that Green is doing
-shadow work, and that the fingerprints match across operators.
-
-If the cutover happens before you manage to run it, you will see an error about a missing
-`gcs-0.15.0` schema. **That is not a product failure**, only a measurement you missed. Write it
-down and carry on.
-
-Optional, any time after the proposal, and not time-critical:
+### Step 3. Check the window timing (optional)
 
 ```bash
 bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
 ```
+
+Reports each chain's block times and how much of the window is left. Not time-critical.
 
 ### Step 4. Wait for the cutover
 
@@ -714,6 +705,15 @@ bash ci/preview-env/scripts/bg-checkpoints.sh post
 
 ```bash
 bash ci/preview-env/scripts/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg-traffic.sh status
+```
+
+**Wait until `status` says `loop not running` for both chains.** `stop` only takes effect between
+iterations, and verifying while a loop is still going reports a `MISMATCH` that is not real.
+
+Then check every balance:
+
+```bash
 bash ci/preview-env/scripts/bg-traffic.sh verify
 ```
 
@@ -738,7 +738,6 @@ All of these must be true:
 - [ ] Snapshot 2: every line `OK` — **Case A only**.
 - [ ] Traffic was running during the whole window — **Case A and B**.
 - [ ] No traffic was running during the window, and the cutover still happened — **Case C**.
-- [ ] `dry-run` passed, or was missed because the window was too short (note which).
 - [ ] Version changed to `v0.15.0`.
 - [ ] `cutover` passed.
 - [ ] `post` passed.
@@ -833,11 +832,11 @@ bash ci/preview-env/scripts/bg-propose.sh calldata
 
 Look at the **Cross-chain alignment** part of the output.
 
-**Expect:** a start skew of a few seconds, and no `WARN` lines.
+**Expect:** a start skew of a few seconds — a healthy two-chain round shows about 14s.
 
-A skew of minutes, or a warning saying `block-time sampling failed` or
-`observed block time drifted >20% from fallback`, means the estimate is not reliable. Report it,
-and do not send the proposal — the round would most likely be wasted.
+`WARN: observed block time drifted >20% from fallback` is normal, ignore it. A skew of minutes, or
+`block-time sampling failed`, means the windows may not overlap: report it and do not send the
+proposal.
 
 After sending, check the real blocks matched the estimate:
 
