@@ -257,7 +257,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
+        if (scalarByte != 0x01) {
+            // Distinguish malformed flags from valid non-scalar mode.
+            _checkBoolean(scalarByte);
+            revert IsNotScalar();
+        }
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
@@ -277,7 +281,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
+        if (scalarByte != 0x01) {
+            // Distinguish malformed flags from valid non-scalar mode.
+            _checkBoolean(scalarByte);
+            revert IsNotScalar();
+        }
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
