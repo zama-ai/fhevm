@@ -34,6 +34,8 @@ case "${CHAIN_MODE}" in
       echo "GATEWAY_WS=ws://anvil-gateway-anvil-node:8546"
       echo "HOST_CHAIN_ID=12345"
       echo "GATEWAY_CHAIN_ID=54321"
+      echo "POLYGON_HTTP=http://anvil-host-polygon-anvil-node:8545"
+      echo "POLYGON_CHAIN_ID=80002"
       echo "HOST_FAUCET="
       echo "GATEWAY_FAUCET="
       echo "HEAD_BLOCK=0"
@@ -91,10 +93,16 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # One pod waits for BOTH ceremonies (60m keygen + 40m crsgen, see
-      # apply-chain-env.sh), so helm must outlast their sum plus the hardhat compile.
+      # Test-parameter keygen + crsgen on Sepolia (~43 min + ~25 min) plus
+      # compile. GPU overwrites KEYGEN_TIMEOUT to 310m after this case.
       echo "KEYGEN_TIMEOUT=110m"
     } >> "${GITHUB_ENV}"
-    echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
+      echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
 esac
+
+# Default-parameter DKG (GPU only) needs a Helm wait that outlasts 4h keygen + 1h
+# crsgen plus compile, still under the six-hour deploy-job cap.
+if [[ "${GPU:-false}" == "true" ]]; then
+  echo "KEYGEN_TIMEOUT=310m" >> "${GITHUB_ENV}"
+fi
