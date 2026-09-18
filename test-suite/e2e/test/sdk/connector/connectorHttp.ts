@@ -49,7 +49,11 @@ export interface RequestValidity {
   durationSeconds: number;
 }
 
-/** The RFC 016 protocol inputs. All fields except `handles` are signed over. */
+/**
+ * The RFC 016 protocol inputs.
+ * All fields except `handles` are signed over, per `UserDecryptRequestVerification` in Decryption.sol.
+ * `handles` are still included here because the `decryption_id` is derived from the entire payload.
+ */
 export interface UserDecryptionPayload {
   handles: HandleEntry[];
   userAddress: string;
