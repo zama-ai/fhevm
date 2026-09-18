@@ -1,0 +1,71 @@
+name: zama-relayer-http
+log:                        # optional: without this block the process logs JSON lines (production defaults)
+  format: "pretty"          # json (default), pretty, or compact; the level filter is RUST_LOG (default "warn,relayer_http=info")
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+  show_target: true
+http:
+  endpoint: "0.0.0.0:8080"     # the API and the probes (/liveness, /healthz) on one port
+  max_body_bytes: 2097152      # 2 MiB; bigger request bodies are answered 400 malformed
+  supported_chain_ids: [1, 137]   # host chain ids a ciphertext handle may carry (bytes 22..30 of the handle)
+kms_aggregator:
+  allow_insecure_http: false   # local/compose only: allows plain http and `auth: none` to non-loopback hosts (an api_key over http travels in clear)
+  max_concurrent_calls: 64     # HTTP calls in flight at once, all aggregations together (>= number of endpoints)
+  call:
+    timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
+    retries:                   # retryable connector errors only; a retry never starts past the deadline
+      max_retries: 0           # retries after the first attempt; 0 = single attempt; the deadline is the real bound
+      delay: 500ms             # retry k waits min(delay * 2^(k-1), backoff_max)
+      backoff_max: 4s          # cap of the exponential delay; <= call.timeout
+  public_decrypt:
+    threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13) (t + 1)
+  user_decrypt:
+    threshold: 9               # shares needed; protocol config value (9 at n = 13) (2t + 1)
+    checks:                    # optional response checks, all off by default
+      decryption_id_match: false     # reject a response whose decryptionId is not the request's content hash
+      decryption_id_majority: false  # count and return only the shares carrying the majority decryptionId
+  endpoints:                   # one entry per KMS node; `auth` is required
+    - name: kms_00
+      url: "https://kms-00.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_00_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_01
+      url: "https://kms-01.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_01_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_02
+      url: "https://kms-02.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_02_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_03
+      url: "https://kms-03.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_03_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_04
+      url: "https://kms-04.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_04_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_05
+      url: "https://kms-05.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_05_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_06
+      url: "https://kms-06.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_06_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_07
+      url: "https://kms-07.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_07_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_08
+      url: "https://kms-08.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_08_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_09
+      url: "https://kms-09.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_09_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_10
+      url: "https://kms-10.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_10_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_11
+      url: "https://kms-11.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_11_API_KEY }   # sent as `authorization: Bearer <key>`
+    - name: kms_12
+      url: "https://kms-12.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
+      auth: { type: api_key, value_env: KMS_12_API_KEY }   # sent as `authorization: Bearer <key>`
+    # Local connector without authentication (loopback: allowed without allow_insecure_http):
+    #   - name: kms_local
+    #     url: "http://localhost:3002"
+    #     auth: { type: none }
