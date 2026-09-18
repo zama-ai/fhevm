@@ -20,10 +20,11 @@ for program in "$@"; do
   esac
 done
 bash scripts/install-sbf-tools.sh
-# build.rs reads the program ids from the environment file; its cargo features come from the same file.
+# build.rs reads the program ids from the environment file; each program's cargo features come from
+# the same file (`features.<program>`).
 export PROGRAM_ENVIRONMENT="$environment"
-features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", [])))' "$environment_file")
 for program in "$@"; do
+  features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
   args=(build --ignore-keys --no-idl -p "$program")
   if [[ -n "$features" ]]; then args+=(-- --features "$features"); fi
   anchor "${args[@]}"

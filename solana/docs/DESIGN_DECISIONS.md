@@ -2560,7 +2560,7 @@ environment. A `build.rs` in each program (`crates/program-environment`) writes 
 line from the file named by `PROGRAM_ENVIRONMENT` and falls back to `localnet` when it is unset.
 Plain `cargo` and `anchor build` therefore produce the localnet program, as before. The deployer
 image and CI set one environment before building; `scripts/build-programs.sh` also enables the
-cargo features the file lists.
+cargo features the file lists per program (`features.zama_host`).
 
 ```text
 solana/environments/localnet.json      committed test identities; the default

@@ -7,5 +7,5 @@
     "confidential_batcher": "A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da"
   },
   "deployer": "3VbwWz9pfrhqE7Xb65AdSVef2jfZoHd4rQWcZdzVm85f",
-  "features": ["admin-sweep"]
+  "features": { "zama_host": ["admin-sweep"] }
 }
