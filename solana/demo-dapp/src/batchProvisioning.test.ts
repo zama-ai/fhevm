@@ -8,11 +8,14 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getAccountInfoSend: vi.fn(),
+  getBalanceSend: vi.fn(),
   getSlotSend: vi.fn(),
   sendTransaction: vi.fn(),
+  getBatcher: vi.fn(),
   getBatchByIndex: vi.fn(),
   getCurrentBatch: vi.fn(),
   openBatchForBatcher: vi.fn(),
+  reclaim: vi.fn((input: { batch: string }) => ({ kind: 'reclaim', ...input })),
   deactivate: vi.fn((input: { lookupTable: string }) => ({ kind: 'deactivate', ...input })),
   close: vi.fn((input: { lookupTable: string }) => ({ kind: 'close', ...input })),
   extend: vi.fn((input: { lookupTable: string }) => [{ kind: 'extend', ...input }]),
@@ -23,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 const rpc = {
   getAccountInfo: (address: string) => ({ send: () => mocks.getAccountInfoSend(address) }),
+  getBalance: (address: string) => ({ send: () => mocks.getBalanceSend(address) }),
   getSlot: () => ({ send: () => mocks.getSlotSend() }),
 };
 
@@ -38,6 +42,8 @@ vi.mock('./vault/index.js', () => ({
   getCloseLookupTableInstruction: mocks.close,
   getDeactivateLookupTableInstruction: mocks.deactivate,
   getExtendLookupTableInstructions: mocks.extend,
+  buildReclaimBatchAuthorityInstruction: mocks.reclaim,
+  getBatcher: mocks.getBatcher,
   getBatchByIndex: mocks.getBatchByIndex,
   getCurrentBatch: mocks.getCurrentBatch,
   openBatchForBatcher: mocks.openBatchForBatcher,
@@ -51,7 +57,7 @@ vi.mock('node:fs/promises', () => ({
   rename: mocks.rename,
 }));
 
-import { prepareNextBatch } from './batchProvisioning';
+import { prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { BatchStatus } from './batchTypes';
 
@@ -134,6 +140,9 @@ const closedTables = (): string[] =>
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getSlotSend.mockResolvedValue(10_000n);
+  // The authority-reclaim pass is covered on its own below; the table tests run it over no batches.
+  mocks.getBatcher.mockResolvedValue({ nextBatchIndex: 0n });
+  mocks.getBalanceSend.mockResolvedValue({ value: 0n });
   mocks.sendTransaction.mockResolvedValue('signature');
   mocks.readFile.mockRejectedValue(Object.assign(new Error('no registry yet'), { code: 'ENOENT' }));
   mocks.writeFile.mockResolvedValue(undefined);
@@ -210,6 +219,60 @@ describe('the lookup-table crank retries what settlement could not finish', () =
     expect(Object.values(registry).flatMap((entry) => [entry.table, ...(entry.retired ?? [])])).toContain(
       'table-stubborn',
     );
+  });
+});
+
+describe('the authority-reclaim crank drains every finished batch once', () => {
+  const batches: Record<string, { status: BatchStatus; lamports: bigint }> = {
+    '0': { status: BatchStatus.Settled, lamports: 0n },
+    '1': { status: BatchStatus.Canceled, lamports: 50_000n },
+    '2': { status: BatchStatus.Refunding, lamports: 70_000n },
+    '3': { status: BatchStatus.Dispatched, lamports: 100_000_000n },
+    '4': { status: BatchStatus.Pending, lamports: 100_000_000n },
+  };
+
+  beforeEach(() => {
+    mocks.getBatcher.mockResolvedValue({ nextBatchIndex: 5n });
+    mocks.getBatchByIndex.mockImplementation((_rpc: unknown, _roots: unknown, index: bigint) =>
+      Promise.resolve({
+        index,
+        addresses: { batch: `batch-${index}`, batchAuthority: `authority-${index}` },
+        state: { status: batches[index.toString()]!.status },
+      }),
+    );
+    mocks.getBalanceSend.mockImplementation((address: string) =>
+      Promise.resolve({ value: batches[address.slice('authority-'.length)]!.lamports }),
+    );
+  });
+
+  const reclaimedBatches = (): string[] =>
+    mocks.sendTransaction.mock.calls
+      .flatMap((call) => call[2] as { kind: string; batch?: string }[])
+      .filter((instruction) => instruction.kind === 'reclaim')
+      .map((instruction) => instruction.batch!);
+
+  test('reclaims finished batches that still hold funding and skips live or drained ones', async () => {
+    // Settled-and-drained (0) is idempotently skipped; dispatched (3) and pending (4) still need
+    // their authority to pay settle's rent, so only the canceled and refunding batches are drained.
+    await expect(reclaimFinishedBatchAuthorities(config, keeper, 'deposit')).resolves.toBe(2);
+    expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
+    expect(mocks.reclaim).toHaveBeenCalledWith(
+      expect.objectContaining({ authority: keeper, batcher: 'batcher-1', batch: 'batch-1', batchAuthority: 'authority-1' }),
+    );
+  });
+
+  test('a reclaim that throws is skipped and left for the next crank', async () => {
+    mocks.sendTransaction.mockImplementation((_config: unknown, _keeper: unknown, instructions: { batch?: string }[]) => {
+      if (instructions.some((instruction) => instruction.batch === 'batch-1')) throw new Error('blockhash expired');
+      return Promise.resolve('signature');
+    });
+    await expect(reclaimFinishedBatchAuthorities(config, keeper, 'deposit')).resolves.toBe(1);
+    expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
+  });
+
+  test('prepareNextBatch runs the reclaim pass after the table crank', async () => {
+    await prepare({ 'table-fresh': { value: null } });
+    expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
   });
 });
 

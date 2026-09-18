@@ -8,9 +8,11 @@
 
 export * from './cancelDispatch.js';
 export * from './claim.js';
+export * from './closeJoinRecord.js';
 export * from './dispatch.js';
 export * from './initializeBatcher.js';
 export * from './join.js';
 export * from './openBatch.js';
 export * from './quit.js';
+export * from './reclaimBatchAuthority.js';
 export * from './settle.js';

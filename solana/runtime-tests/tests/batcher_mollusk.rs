@@ -926,6 +926,63 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
     )
 }
 
+fn reclaim_batch_authority_ix(
+    fixture: &BatcherFixture,
+    keys: &BatchKeys,
+    authority: Pubkey,
+) -> Instruction {
+    anchor_ix(
+        batcher::id(),
+        batcher::accounts::ReclaimBatchAuthority {
+            authority,
+            batcher: fixture.batcher,
+            batch: keys.batch,
+            batch_authority: keys.batch_authority,
+            join_confidential_mint: fixture.join_mint().mint,
+            system_program: system_program::ID,
+        },
+        batcher::instruction::ReclaimBatchAuthority {},
+    )
+}
+
+fn close_join_record_ix(keys: &BatchKeys, user: Pubkey) -> Instruction {
+    anchor_ix(
+        batcher::id(),
+        batcher::accounts::CloseJoinRecord {
+            user,
+            batch: keys.batch,
+            join_record: keys.join_record(user),
+        },
+        batcher::instruction::CloseJoinRecord {},
+    )
+}
+
+fn lamports_of(context: &Ctx, address: Pubkey) -> u64 {
+    context
+        .account_store
+        .borrow()
+        .get(&address)
+        .map_or(0, |account| account.lamports)
+}
+
+/// Reclaims the batch authority funding as the join mint's wrapper authority (the fixture payer)
+/// and asserts every lamport moved.
+fn run_reclaim_batch_authority(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) {
+    let funding = lamports_of(context, keys.batch_authority);
+    assert!(
+        funding > 0,
+        "the batch authority holds its funding until reclaimed"
+    );
+    let before = lamports_of(context, fixture.payer);
+    check_batcher_instruction(
+        context,
+        &reclaim_batch_authority_ix(fixture, keys, fixture.payer),
+        &[Check::success()],
+    );
+    assert_eq!(lamports_of(context, keys.batch_authority), 0);
+    assert_eq!(lamports_of(context, fixture.payer), before + funding);
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle drivers
 // ---------------------------------------------------------------------------
@@ -1199,6 +1256,12 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Dispatched
     );
+    // The authority funding stays with a live batch: settle still charges the authority.
+    check_batcher_instruction(
+        &context,
+        &reclaim_batch_authority_ix(&fixture, &keys, fixture.payer),
+        &[batcher_error(batcher::BatcherError::BatchStillLive)],
+    );
 
     // Settle: the KMS certifies 800; the vault (empty, 1:1) mints 800 shares;
     // the informational rate lands at exactly RATE_SCALE.
@@ -1222,8 +1285,31 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         800
     );
 
+    // A record is spent only once its payout is claimed.
+    check_batcher_instruction(
+        &context,
+        &close_join_record_ix(&keys, fixture.alice.user),
+        &[batcher_error(batcher::BatcherError::JoinRecordStillLive)],
+    );
+
     // Claims: each user receives their exact proportional encrypted shares.
     run_claim(&context, &fixture, &keys, &fixture.alice, &mut ledger);
+
+    // Once settled, the operator takes the unspent authority funding back. A stranger cannot, and
+    // Bob's claim afterwards shows claims pay their own rent: the drained authority only signs.
+    let stranger = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(stranger, system_account(1_000_000_000));
+    check_batcher_instruction(
+        &context,
+        &reclaim_batch_authority_ix(&fixture, &keys, stranger),
+        &[batcher_error(
+            batcher::BatcherError::ReclaimAuthorityMismatch,
+        )],
+    );
+    run_reclaim_batch_authority(&context, &fixture, &keys);
     run_claim(&context, &fixture, &keys, &fixture.bob, &mut ledger);
     assert_eq!(
         ledger.u64_in_state(
@@ -1246,6 +1332,19 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         0
     );
     assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
+    assert!(read_join_record(&context, keys.join_record(fixture.bob.user)).claimed);
+
+    // Alice closes her spent record and gets its rent back; Bob's stays until he does the same.
+    let record = keys.join_record(fixture.alice.user);
+    let rent = lamports_of(&context, record);
+    let before = lamports_of(&context, fixture.alice.user);
+    check_batcher_instruction(
+        &context,
+        &close_join_record_ix(&keys, fixture.alice.user),
+        &[Check::success()],
+    );
+    assert_eq!(lamports_of(&context, record), 0);
+    assert_eq!(lamports_of(&context, fixture.alice.user), before + rent);
     assert!(read_join_record(&context, keys.join_record(fixture.bob.user)).claimed);
 }
 
@@ -1606,6 +1705,16 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         account.data = serialized_account(config);
     }
 
+    // Refunding is final for the authority's spending too: its funding goes back to the operator
+    // before the refunds, which pay their own rent. The record still authorizes the quit, so it
+    // cannot be closed.
+    run_reclaim_batch_authority(&context, &fixture, &keys);
+    check_batcher_instruction(
+        &context,
+        &close_join_record_ix(&keys, fixture.alice.user),
+        &[batcher_error(batcher::BatcherError::JoinRecordStillLive)],
+    );
+
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(ledger.evaluate_fhe_cpis(&context, &result), 2);
@@ -1663,6 +1772,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
     assert_eq!(batch.status, batcher::BatchStatus::Canceled);
     assert_eq!(batch.payout_rate, 0);
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 0);
+    run_reclaim_batch_authority(&context, &fixture, &keys);
 
     // The next batch opens against the canceled one.
     let next = BatchKeys::new(&fixture, 1);
@@ -2772,6 +2882,18 @@ fn snapshot_lifecycle(
     let claim_result = check_batcher_instruction(context, &claim.clone(), &[Check::success()]);
     ledger.evaluate_fhe_cpis(context, &claim_result);
     assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
+
+    let reclaim = reclaim_batch_authority_ix(fixture, &keys, fixture.payer);
+    let reclaim_result = check_batcher_instruction(context, &reclaim, &[Check::success()]);
+    assert_batcher_cost(
+        &format!("{prefix}reclaim_batch_authority"),
+        &reclaim,
+        &reclaim_result,
+    );
+
+    let close = close_join_record_ix(&keys, fixture.alice.user);
+    let close_result = check_batcher_instruction(context, &close, &[Check::success()]);
+    assert_batcher_cost(&format!("{prefix}close_join_record"), &close, &close_result);
 }
 
 #[test]

@@ -3,9 +3,11 @@ import { createSolanaRpc, getAddressEncoder, type Address, type TransactionSigne
 import {
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
   LOOKUP_TABLE_STILL_ACTIVE,
+  buildReclaimBatchAuthorityInstruction,
   decodeLookupTableDeactivationSlot,
   getCloseLookupTableInstruction,
   getBatchByIndex,
+  getBatcher,
   getCurrentBatch,
   getDeactivateLookupTableInstruction,
   getExtendLookupTableInstructions,
@@ -19,6 +21,7 @@ import { vaultRoots } from './vaultRoots';
 
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 800_000;
 const LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 300_000;
+export const RECLAIM_BATCH_AUTHORITY_COMPUTE_UNIT_LIMIT = 50_000;
 const LOOKUP_TABLE_HEADER_BYTES = 56;
 const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
 
@@ -257,6 +260,58 @@ const retireFinishedLookupTables = async (
   }
 };
 
+/**
+ * The other half of rent hygiene, next to the lookup-table crank: every batch's authority PDA is
+ * funded at open (and again at cancel/settle) to pay the rent token CPIs charge to the account
+ * owner, and keeps whatever is left. Once the batch is settled, canceled or refunding nothing
+ * charges the authority any more, so the operator takes the remainder back with
+ * `reclaim_batch_authority`. `settleVaultBatch` reclaims eagerly on the happy path; this pass
+ * catches every batch that finished another way (a canceled dispatch, a zero-total cancel at
+ * settle, a process that exited between settle and reclaim) and is idempotent: a drained
+ * authority is skipped. One batch read and one balance read per batch the direction has opened.
+ * Returns how many batches were reclaimed; failures are logged and retried by a later prepare.
+ */
+export const reclaimFinishedBatchAuthorities = async (
+  config: DemoConfig,
+  keeper: TransactionSigner,
+  direction: VaultDirection,
+): Promise<number> => {
+  const rpc = createSolanaRpc(config.rpcUrl);
+  const roots = vaultRoots(config, direction);
+  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
+  let reclaimed = 0;
+  for (let index = 0n; index < batcher.nextBatchIndex; index += 1n) {
+    try {
+      const batch = await getBatchByIndex(rpc, roots, index, { commitment: 'confirmed' });
+      if (!isBatchFinished(batch.state.status)) continue;
+      const { value: lamports } = await rpc
+        .getBalance(batch.addresses.batchAuthority, { commitment: 'confirmed' })
+        .send();
+      if (lamports === 0n) continue;
+      await sendTransaction(
+        config,
+        keeper,
+        [
+          await buildReclaimBatchAuthorityInstruction({
+            authority: keeper,
+            batcher: roots.batcher,
+            batch: batch.addresses.batch,
+            batchAuthority: batch.addresses.batchAuthority,
+            joinConfidentialMint: roots.joinConfidentialMint,
+          }),
+        ],
+        RECLAIM_BATCH_AUTHORITY_COMPUTE_UNIT_LIMIT,
+      );
+      reclaimed += 1;
+    } catch (error) {
+      console.warn(
+        `reclaiming the authority funding of ${direction} batch ${index} failed (a later prepare retries): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return reclaimed;
+};
+
 export type PreparedBatch = {
   readonly batchIndex: bigint;
   readonly batch: Address;
@@ -343,8 +398,10 @@ export const prepareNextBatch = async (
     );
   }
 
-  // Rent hygiene: retire this direction's finished tables while we are here.
+  // Rent hygiene: retire this direction's finished tables and drain its finished batch
+  // authorities while we are here.
   await retireFinishedLookupTables(config, keeper, direction, registryPath, lookupTable);
+  await reclaimFinishedBatchAuthorities(config, keeper, direction);
   return {
     batchIndex,
     batch,

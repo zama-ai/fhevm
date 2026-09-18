@@ -83,8 +83,8 @@ pub mod confidential_batcher {
     /// batcher's batches never overlap while pending; the other direction's
     /// batcher is independent). `authority_funding_lamports` is moved from
     /// the payer to the batch authority PDA, which pays the rent the token
-    /// CPIs charge to the account owner. Unspent funding stays on the PDA and
-    /// is unrecoverable by design in this PoC (no sweep instruction).
+    /// CPIs charge to the account owner. Unspent funding stays on the PDA until
+    /// the batch is finished and `reclaim_batch_authority` returns it.
     pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> Result<()> {
         instructions::open_batch(ctx, authority_funding_lamports)
     }
@@ -158,5 +158,19 @@ pub mod confidential_batcher {
     /// account. Permissionless pull — anyone can trigger a user's claim.
     pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         instructions::claim(ctx)
+    }
+
+    /// Returns a finished batch's (settled, canceled or refunding) unspent
+    /// authority funding to the join mint's wrapper authority, the operator
+    /// role that funds batches. Claims and quits pay their own rent, so the
+    /// authority needs no lamports after this point.
+    pub fn reclaim_batch_authority(ctx: Context<ReclaimBatchAuthority>) -> Result<()> {
+        instructions::reclaim_batch_authority(ctx)
+    }
+
+    /// Closes the user's spent join record (payout claimed, or batch
+    /// canceled), returning its rent to the user. User-signed.
+    pub fn close_join_record(ctx: Context<CloseJoinRecord>) -> Result<()> {
+        instructions::close_join_record(ctx)
     }
 }

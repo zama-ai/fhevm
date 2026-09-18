@@ -136,3 +136,25 @@ pub struct PayoutClaimed {
     /// Calculated entitlement, distinct from the token transfer event's paid handle.
     pub claim_handle: [u8; 32],
 }
+
+/// Emitted when a finished batch's unspent authority funding returns to the operator.
+#[event]
+pub struct BatchAuthorityReclaimed {
+    /// Event schema version.
+    pub version: u8,
+    /// Batch account.
+    pub batch: Pubkey,
+    /// Lamports moved from the batch authority to the join mint's wrapper authority.
+    pub lamports: u64,
+}
+
+/// Emitted when a user closes their spent join record.
+#[event]
+pub struct JoinRecordClosed {
+    /// Event schema version.
+    pub version: u8,
+    /// Batch account.
+    pub batch: Pubkey,
+    /// User whose record was closed; received its rent.
+    pub user: Pubkey,
+}
