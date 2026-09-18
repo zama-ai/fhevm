@@ -11,7 +11,9 @@ import {
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
   kmsRenderOptionsFor,
+  kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
+  renderThresholdGenKeysConfig,
   renderThresholdPeers,
   renderThresholdSpareConfig,
   thresholdCoreEnv,
@@ -171,6 +173,23 @@ describe("buildKmsThresholdOverride", () => {
     expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
+    // Config-based cores (v0.14.1+) take the other branch of the same probe.
+    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+  });
+
+  test("config-based keygen keeps each party's storage and identity separate", () => {
+    const config = renderThresholdGenKeysConfig(3, RENDER_OPTS);
+    expect(config).toContain('prefix = "PUB-p3"');
+    expect(config).toContain('prefix = "PRIV-p3"');
+    expect(config).toContain("my_id = 3");
+    expect(config).toContain('tls_subject = "kms-core-3"');
+  });
+
+  test("gen-keys mounts one config per party", () => {
+    const volumes = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].volumes);
+    for (const partyId of [1, 2, 3, 4]) {
+      expect(volumes).toContain(kmsThresholdGenKeysConfigName(partyId));
+    }
   });
 
   test("rejects a non-threshold topology", () => {
