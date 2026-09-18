@@ -31,7 +31,7 @@ const operatorProxy = async (): Promise<ProxyOptions> => {
   };
 };
 
-export default defineConfig(async ({ mode }) => ({
+export default defineConfig(async ({ command, mode }) => ({
   server: {
     host: '127.0.0.1',
     port: Number(dappUrl.port),
@@ -42,8 +42,9 @@ export default defineConfig(async ({ mode }) => ({
         target: relayerUrl,
         rewrite: (requestPath: string) => requestPath.replace(/^\/api\/relayer/, ''),
       },
-      // Vitest needs only transforms; the proxy (and its capability) exists only for a served page.
-      ...(mode === 'test' ? {} : { '/api': await operatorProxy() }),
+      // The proxy (and the capability it reads) exists only for a served page: `vite build` and
+      // vitest run without a demo boot.
+      ...(command === 'serve' && mode !== 'test' ? { '/api': await operatorProxy() } : {}),
     },
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
