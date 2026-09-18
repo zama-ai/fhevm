@@ -200,7 +200,9 @@ const runPlan = (flags: Flags) => {
   >();
   for (const entry of selection.cases) {
     assertCiLeg(entry.ci.leg);
-    const shard = "all";
+    const shard = entry.id === "DEG-06-GW-LISTENER-INFLIGHT" ? "gateway" : entry.ci.leg !== "failure-matrix" ? "all" :
+      entry.acceptance === "smoke" ? "smoke" :
+      /FM-(RELAYER|KMS|OBJECT|BROKER)/.test(entry.id) ? "dependencies" : "workers";
     const key = `${entry.ci.leg}|${entry.topology.scenario}|${entry.ci.backend}|${shard}`;
     const job = jobs.get(key) ?? {
       leg: entry.ci.leg,

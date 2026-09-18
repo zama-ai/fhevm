@@ -29,7 +29,7 @@ function execute(statements: readonly ts.Statement[], bindings: Record<string, u
 
 const address = `0x${'ab'.repeat(20)}`;
 const configuration = { GATEWAY_RPC_URL: 'http://gateway:8546', GATEWAY_CONFIG_ADDRESS: address, CIPHERTEXT_COMMITS_ADDRESS: address };
-const suites = ['reorgConsensus.ts'];
+const suites = ['crashRetryConsensus.ts', 'reorgConsensus.ts', 'requestRecovery.ts'];
 
 describe('Required quorum is an executed suite gate', () => {
   for (const file of suites) {
@@ -40,9 +40,9 @@ describe('Required quorum is an executed suite gate', () => {
         const fields = { ...configuration, [missing]: '' };
         let failure: unknown;
         try {
-          await execute(callbackStatements(file, 'before'), {
+          await execute(callbackStatements(file, file === 'requestRecovery.ts' ? 'it' : 'before'), {
             ...fields, ENABLE: true, ENABLE_REORG_CONSENSUS: true, VICTIM: 1, COPROCESSOR_COUNT: 3,
-            process: { env: { ...fields } }, requireQuorumConfiguration,
+            process: { env: { ...fields, RUN_REQUEST_RECOVERY: '1' } }, requireQuorumConfiguration,
             getCoprocessorDbUrls: forbidden, require: forbidden,
           });
         } catch (error) { failure = error; }
@@ -53,7 +53,7 @@ describe('Required quorum is an executed suite gate', () => {
     }
   }
 
-  for (const file of suites) {
+  for (const file of suites.slice(0, 2)) {
     it(`${file} cannot publish completion while required quorum is pending or rejected`, async () => {
       const statements = callbackStatements(file, 'it');
       const start = statements.findIndex((statement) => statement.getText().includes('readGatewayMembership('));

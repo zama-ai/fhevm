@@ -1,5 +1,35 @@
 import { successfulForkReceipt } from './forkRecovery';
 import { expect } from 'chai';
+import { assertRepairDisabledControl, assertReplayHasEffects, assertReplayAttempts } from './forkRecovery';
+
+describe('fork fault controls', () => {
+  const stranded = { status: 'updated', dependencyCount: 1, owned: false, unprocessedProducers: 0 };
+  it('rejects a child that completed through ordinary parent release', () => {
+    expect(() => assertRepairDisabledControl({ ...stranded, status: 'processed', dependencyCount: 0 }, 1)).to.throw('genuinely stranded');
+  });
+  it('rejects a gate still waiting on a live producer', () => {
+    expect(() => assertRepairDisabledControl({ ...stranded, unprocessedProducers: 1 }, 1)).to.throw('genuinely stranded');
+  });
+  it('requires the disabled repair to have actually been attempted', () => {
+    expect(() => assertRepairDisabledControl(stranded, 0)).to.throw('never attempted');
+    expect(() => assertRepairDisabledControl(stranded, 1)).not.to.throw();
+  });
+  it('rejects the empty-block replay that previously passed', () => {
+    expect(() => assertReplayHasEffects({ computations: 0, allows: 0, chains: 0 })).to.throw('identified graph');
+  });
+  it('requires every claimed replay effect to be present', () => {
+    for (const field of ['computations', 'allows', 'chains']) {
+      expect(() => assertReplayHasEffects({ computations: 2, allows: 2, chains: 2, [field]: 0 })).to.throw();
+    }
+    expect(() => assertReplayHasEffects({ computations: 2, allows: 2, chains: 2 })).not.to.throw();
+  });
+  it('rejects cursor-only progress without committed attempts for every event', () => {
+    for (const attempts of [[], [1], [0, 0], [1, 0]]) {
+      expect(() => assertReplayAttempts(attempts, 2)).to.throw('every selected replay event');
+    }
+    expect(() => assertReplayAttempts([1, 1], 2)).not.to.throw();
+  });
+});
 
 describe('Fork branch inclusion evidence', () => {
   it('waits for the exact receipt before permitting a branch state read', async () => {

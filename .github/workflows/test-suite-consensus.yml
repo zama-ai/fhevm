@@ -50,14 +50,18 @@ on:
           - rust-regression
           # The core byte oracle on one CPU stack.
           - smoke
-          # All consensus cases that run without GPU hardware.
+          # Everything that runs on CPU stacks without hardware.
           - standard
-          # Every required consensus case, including the
+          # Every required case, including the isolated database jobs and the
           # GPU legs. The only selection that can satisfy the delivery gate.
           - full
           # Individual legs.
           - byte-agreement
+          - degraded
           - fork
+          - leg:failure-matrix
+          - failure-matrix-db
+          - crash-retry
           - gpu
       build:
         description: "Build repo-owned images from the checked out branch"
@@ -175,6 +179,13 @@ jobs:
 
       - name: Install standalone comparator dependencies
         run: npm ci --ignore-scripts --workspace @fhevm/e2e-suite
+
+      - name: Exercise committed fault audit SQL in disposable PostgreSQL
+        working-directory: test-suite/e2e
+        env:
+          CONSENSUS_ORACLE_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres
+          TS_NODE_TRANSPILE_ONLY: "true"
+        run: npx --no-install mocha --require ts-node/register test/consensus/faultAuditDatabase.test.ts
 
       - name: Typecheck and unit test the CLI
         working-directory: test-suite/fhevm
@@ -387,9 +398,20 @@ jobs:
       - name: Boot the stack
         working-directory: test-suite/fhevm
         run: |
+          if [[ " ${CAPABILITIES:-} " == *" failpoints "* ]]; then
+            export FHEVM_CONSENSUS_TEST_FEATURES=tfhe-worker/test-failpoints
+          fi
+          boot_scenario="$SCENARIO"
+          if [[ " $CASES " == *" DEG-06-GW-LISTENER-INFLIGHT "* ]]; then
+            # DEG06 must observe the conflicting event without reverting the fleet.
+            # Persist the existing per-instance env override in the boot scenario.
+            boot_scenario="$(mktemp /tmp/consensus-degraded-XXXXXX.yaml)"
+            bun scripts/prepare-degraded-scenario.ts "$SCENARIO" > "$boot_scenario"
+          fi
           build_mode=published
-          args=(--scenario "$SCENARIO" --lock-file "$LOCK_FILE")
-          if [ "$BUILD" = "true" ]; then
+          args=(--scenario "$boot_scenario" --lock-file "$LOCK_FILE")
+          if [ "$BUILD" = "true" ] || [[ " ${CAPABILITIES:-} " == *" failpoints "* ]]; then
+            # Deterministic crash boundaries require the opt-in test binary.
             args+=(--build)
             build_mode=checkout
           else
@@ -429,10 +451,56 @@ jobs:
         working-directory: test-suite/fhevm
         run: ./scripts/run-materialization-consensus.sh --suite reorg
 
-      - name: Fork topology — competing branches and orphan authorization
+      - name: Degraded cluster — quorum, backlog and in-flight gateway events
+        if: ${{ matrix.leg == 'degraded' }}
+        working-directory: test-suite/fhevm
+        run: |
+          if [[ " $CASES " == *" DEG-06-GW-LISTENER-INFLIGHT "* ]]; then
+            ./scripts/run-degraded-consensus.sh --case gw
+          else
+            ./scripts/run-degraded-consensus.sh --case core
+          fi
+
+      - name: Fork topology — competing branches, orphans, stale gates, replay
         if: ${{ matrix.leg == 'fork' }}
         working-directory: test-suite/fhevm
-        run: ./scripts/run-fork-consensus.sh --case main
+        run: ./scripts/run-fork-consensus.sh --case all
+
+      - name: Crash-retry — interruption at three boundaries
+        # Interrupts a worker that has DEMONSTRABLY acquired identified work,
+        # rather than at the first sign of any pending row anywhere.
+        if: ${{ matrix.leg == 'crash-retry' }}
+        working-directory: test-suite/fhevm
+        run: |
+          if [[ " $CASES " =~ (CR-01-INTERRUPT-BEFORE-COMMIT|REG-03-SUPERVISED-DAEMON-RECOVERY|FM-TFHE-CRASH) ]]; then
+            ./scripts/run-crash-retry-consensus.sh --victim 1 --boundary before-commit
+          fi
+          if [[ " $CASES " == *" CR-02-INTERRUPT-AFTER-COMMIT "* ]]; then
+            ./scripts/run-crash-retry-consensus.sh --victim 1 --boundary after-commit
+          fi
+          if [[ " $CASES " == *" CR-03-EXPIRED-LEASE-RECLAIM "* ]]; then
+            ./scripts/run-crash-retry-consensus.sh --victim 1 --boundary expired-lease
+          fi
+
+      - name: Failure matrix — service-specific workloads
+        if: ${{ matrix.leg == 'failure-matrix' }}
+        working-directory: test-suite/fhevm
+        run: |
+          failed=0
+          for case_id in $CASES; do
+            args=(--case "$case_id")
+            if [ "$case_id" = "FM-SMOKE-CELLS" ]; then args+=(--column smoke); fi
+            ./scripts/run-failure-matrix.sh "${args[@]}" || failed=1
+          done
+          exit "$failed"
+
+      - name: Failure matrix — shared database, isolated
+        # Its own job in the plan: taking the shared database away affects every
+        # operator at once, so a wedged stack here must not contaminate results
+        # that were otherwise going to complete.
+        if: ${{ matrix.leg == 'failure-matrix-db' }}
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-failure-matrix.sh --column db --keep-going
 
       - name: Lock-extension validity gate
         # Reported for every leg, whatever the leg's own outcome: a green that
@@ -638,6 +706,16 @@ jobs:
           echo "CONSENSUS_BUILD_MODE=checkout" >> "$GITHUB_ENV"
           echo "CONSENSUS_SOFTWARE_CLASS=checkout:${GITHUB_SHA}" >> "$GITHUB_ENV"
 
+      - name: Verify GPU02 cancellation across Docker and PostgreSQL
+        working-directory: test-suite/fhevm
+        timeout-minutes: 5
+        run: |
+          docker pull postgres:15.7
+          export GPU02_DOCKER_TESTS=1
+          GPU02_TEST_NODE_IMAGE="$(docker inspect -f '{{.Image}}' fhevm-test-suite-e2e-debug)"
+          export GPU02_TEST_NODE_IMAGE
+          bun test src/consensus/gpu02-transport.test.ts src/consensus/gpu02-postgres.test.ts
+
       - name: Build the GPU worker binaries
         working-directory: test-suite/fhevm
         run: ./scripts/gpu-consensus-workers.sh build
@@ -667,6 +745,17 @@ jobs:
           receipt_identity=$(bun scripts/checkout-build-receipt.ts attach /tmp/consensus-build-receipt.json /tmp/consensus-artifacts/run-identity.env)
           printf '%s\n' "$receipt_identity" >> /tmp/consensus-artifacts/run-identity.env
           echo "CONSENSUS_ARTIFACT_IDENTITIES_FILE=/tmp/consensus-artifacts/run-identity.env" >> "$GITHUB_ENV"
+
+      - name: Lifecycle cases GPU-01, GPU-03, GPU-02, GPU-04
+        # One runner, because each of these needs a structured result and not
+        # merely a green step: `fhevm-cli test --profile
+        # coprocessor-db-state-revert` exits 0 whether or not it stopped the
+        # writers first, which is the defect GPU-02 exists to catch, so the
+        # record requires the quiescence line too. Ordered by the runner:
+        # GPU-01's deliberate split runs while the fleet is idle, and GPU-04's
+        # window covers the cases before it.
+        working-directory: test-suite/fhevm
+        run: ./scripts/run-gpu-lifecycle-cases.sh --case all --operator 1
 
       - name: Heterogeneous scheduling agreement (SCH-01)
         # `--heterogeneous` is a flag, not an environment variable: the script

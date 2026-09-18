@@ -53,7 +53,7 @@ the active three-coprocessor consensus topology. All operators use
 GPU_CONSENSUS_DEVICE (default 0) so the test has one homogeneous H100 class.
 
 Optional tuning variables:
-  GPU_CONSENSUS_TEST_FAILPOINTS=0  # this consensus layer uses production workers
+  GPU_CONSENSUS_TEST_FAILPOINTS=0  # use 1 explicitly for fault-hook campaigns
   GPU_CONSENSUS_DEVICE=0
   GPU_CONSENSUS_STREAMS_PER_DEVICE=16
   GPU_CONSENSUS_COMPONENTS_PER_BATCH=20
@@ -415,7 +415,7 @@ build() {
 test_features() {
   case "$TEST_FAILPOINTS" in
     0) printf '' ;;
-    1) die "fault-hook builds are introduced by the subsequent failure-mode coverage branch" ;;
+    1) printf 'tfhe-worker/test-failpoints' ;;
     *) die "GPU_CONSENSUS_TEST_FAILPOINTS must be 0 (production) or 1 (fault hooks)" ;;
   esac
 }

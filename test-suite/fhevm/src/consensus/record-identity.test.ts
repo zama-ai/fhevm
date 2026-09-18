@@ -9,11 +9,11 @@ test("record preserves complete process identities and assertion details contain
     const before = "container=coprocessor1-tfhe-worker pid=100 started=before restarts=0";
     const after = "container=coprocessor1-tfhe-worker pid=200 started=after restarts=1";
     const result = Bun.spawnSync([process.execPath, "scripts/consensus-inventory.ts", "record",
-      "--case", "REORG-01-REPLACEMENT-BLOCK", "--run", "record-test", "--state", "PASS",
+      "--case", "CR-01-INTERRUPT-BEFORE-COMMIT", "--run", "record-test", "--state", "PASS",
       "--revision", "test-revision", "--scenario", "three-of-three", "--operators", "3", "--threshold", "3",
       "--workload", "identified-work", "--fault-observed-at", "2026-09-13T00:00:05Z", "--cleanup", "ok",
       "--assert", "replacement=pass:old=100 new=200",
-      "--assert", "precondition=pass", "--assert", "quorum=pass", "--assert", "fault=pass", "--assert", "liveness=pass", "--assert", "bytes=pass", "--assert", "safety=pass", "--assert", "provenance=pass", "--process-before", `worker=${before}`,
+      "--assert", "precondition=pass", "--assert", "quorum=pass", "--assert", "fault=pass", "--assert", "liveness=pass", "--assert", "bytes=pass", "--assert", "safety=pass", "--process-before", `worker=${before}`,
       "--process-after", `worker=${after}`, "--results-dir", directory,
     ], {cwd: path.resolve(import.meta.dir, "../..")});
     expect(result.exitCode, result.stderr.toString()).toBe(0);
