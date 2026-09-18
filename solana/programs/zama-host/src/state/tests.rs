@@ -458,7 +458,7 @@ fn handle_derivation_binds_the_program_id() {
     let rand = |program_id| computed_rand_handle([1; 16], 5, program_id, 13);
     let rand_bounded =
         |program_id| computed_rand_bounded_handle([10; 32], [1; 16], 5, program_id, 13);
-    // Two deployments never share a handle for the same inputs (eval and both rand regimes).
+    // Two deployments never share a handle for the same inputs (trivial encrypt and both rand regimes).
     assert_ne!(trivial(crate::ID), trivial(other));
     assert_ne!(rand(crate::ID), rand(other));
     assert_ne!(rand_bounded(crate::ID), rand_bounded(other));
