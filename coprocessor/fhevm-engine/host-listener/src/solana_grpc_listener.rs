@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use tonic::metadata::{Ascii, MetadataValue};
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
@@ -255,11 +255,11 @@ pub async fn run(
             Err(err) => match err.downcast::<FatalListenerError>() {
                 Ok(fatal) => {
                     let err = fatal.into_inner();
-                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
+                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
                     return Err(err);
                 }
                 Err(err) => {
-                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
+                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
                     tokio::select! {
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -384,6 +384,15 @@ async fn subscribe_loop(
 ) -> Result<()> {
     let endpoint = Channel::from_shared(config.grpc_url.clone())
         .context("invalid grpc url")?;
+    // from_shared leaves tls unset. Attach rustls when the parsed URI is https so hosted
+    // Yellowstone handshakes; plaintext http (local e2e geyser) stays as-is.
+    let endpoint = if endpoint.uri().scheme_str() == Some("https") {
+        endpoint
+            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .context("configure grpc tls")?
+    } else {
+        endpoint
+    };
     let channel = tokio::select! {
         _ = cancel.cancelled() => return Ok(()),
         result = endpoint.connect() => result.context("connect grpc endpoint")?,

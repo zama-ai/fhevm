@@ -12905,11 +12905,13 @@ dependencies = [
  "socket2 0.6.5",
  "sync_wrapper",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower 0.5.2",
  "tower-layer",
  "tower-service",
  "tracing",
+ "webpki-roots 1.0.2",
  "zstd",
 ]
 
