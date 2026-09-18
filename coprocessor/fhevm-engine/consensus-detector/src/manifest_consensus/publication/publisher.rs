@@ -423,7 +423,13 @@ async fn progress_locked_block(
         if !is_block_manifest_ready(trx, block).await? && !allow_uncomputed {
             return Ok(PublicationProgress::Waiting);
         }
-        let descriptors = load_manifest_descriptors(trx, block, allow_uncomputed).await?;
+        let descriptors = load_manifest_descriptors(
+            trx,
+            block,
+            allow_uncomputed,
+            consensus.dangerous_drift_injection.as_ref(),
+        )
+        .await?;
         seal_block_content(trx, block, COPROCESSOR_CONTEXT_ID_1, &descriptors).await?;
         let discovered = discover_children_of(trx, block).await?;
         debug!(
@@ -472,7 +478,14 @@ pub(crate) async fn publish_block_manifest(
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
 ) -> Result<(), ExecutionError> {
-    let prepared = prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await?;
+    let prepared = prepare_manifest(
+        trx,
+        block,
+        COPROCESSOR_CONTEXT_ID_1,
+        signer.address(),
+        consensus.dangerous_drift_injection.as_ref(),
+    )
+    .await?;
     let frontier_range_count = prepared.history_frontier.as_slice().len();
     let signed = prepared
         .payload

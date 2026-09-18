@@ -1,6 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
+import { runManifestLifecycleProfile } from "./manifest-lifecycle";
 import { compatPolicyForState, supportsConnectorEndpoint, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
@@ -67,6 +68,7 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "manifest-lifecycle",
   "blue-green",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
@@ -102,6 +104,7 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-gateway-contracts": "gateway",
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
+  "manifest-lifecycle": "Publish a signed manifest fault and verify containment and independent progress (requires --scenario manifest-lifecycle).",
   light: "Run the lightweight smoke suite.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
@@ -1704,6 +1707,19 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const runProfile = async (name: string) => {
+    if (name === "manifest-lifecycle") {
+      return runLogged(name, Date.now(), () => runManifestLifecycleProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest lifecycle ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
+        },
+      ));
+    }
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }

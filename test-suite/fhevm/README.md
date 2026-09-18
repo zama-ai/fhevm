@@ -583,3 +583,39 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+
+### Manifest publication and containment
+
+Build a fresh local three-coprocessor stack and run the opt-in profile:
+
+```sh
+./fhevm-cli up --target latest-main --scenario manifest-lifecycle --build
+./fhevm-cli test manifest-lifecycle
+```
+
+The scenario gives only coprocessor 2 a read-only directory mount and
+`--dangerous-drift-injection=/manifest-drift/injection.json`. The directory starts
+empty. The profile waits for publication readiness, stops that detector, submits
+a fresh `root -> child` fixture, writes the selected root handle to the file,
+and starts the same container. No ciphertext/digest/finding database rows are
+modified by the test.
+
+The profile checks actual S3 manifest bytes, the injected descriptor versus the
+two matching publishers, authenticated quorum verification, direct/inferred
+containment, unchanged local ciphertext material, and continued independent work
+in a transaction whose dependent computation remains frozen on coprocessor 2.
+It does not assume that healthy observers cannot record non-quorum differences:
+current drift inventory conservatively records observed disagreements.
+
+On normal success or failure, cleanup stops the detector, removes the injection
+file, and starts it normally. Reports and failure logs are written beneath
+`$FHEVM_STATE_DIR/runtime/config/manifest-drift/2/` (default `.fhevm` at the repo
+root). Cleanup preserves signed manifests and drift findings; use a disposable
+stack for this exercise. If the runner is forcibly killed, stop the target,
+remove `injection.json` from that directory, then restart it before other tests.
+
+This profile covers publication, verification, and containment. Healing
+installation is not implemented yet; it does not claim to verify repair or
+unfreezing. Once installation is enabled, a healing gate and separate repair
+assertions are needed to observe the frozen state deterministically.

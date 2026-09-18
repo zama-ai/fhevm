@@ -1331,3 +1331,24 @@ test.each([
     expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
   });
 });
+
+test("manifest lifecycle mounts an initially empty injection directory only on the target", async () => {
+  const { MANIFEST_INJECTION_PATH, manifestInjectionDir, manifestInjectionMount } = await import("./manifest-drift");
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) await writeFile(envPath(name), "CHAIN_ID=12345\n");
+    const scenarioPath = path.join(import.meta.dir, "../scenarios/manifest-lifecycle.yaml");
+    const manifestState: State = { ...state, overrides: [{ group: "coprocessor" }],
+      scenario: resolveScenarioFile(scenarioPath, parseCoprocessorScenario(await readFile(scenarioPath, "utf8"))) };
+    await generateComposeOverrides(manifestState, stackSpecForState(manifestState));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    const target = doc.services["coprocessor2-consensus-detector"];
+    expect(target.command).toContain(`--dangerous-drift-injection=${MANIFEST_INJECTION_PATH}`);
+    expect(target.volumes).toContainEqual(manifestInjectionMount(2));
+    expect(await readdir(manifestInjectionDir(2))).toEqual([]);
+    for (const name of ["coprocessor-consensus-detector", "coprocessor1-consensus-detector"]) {
+      expect(doc.services[name].command.some((arg: string) => arg.startsWith("--dangerous-drift-injection"))).toBe(false);
+      expect(doc.services[name].volumes ?? []).not.toContainEqual(manifestInjectionMount(2));
+    }
+  });
+});

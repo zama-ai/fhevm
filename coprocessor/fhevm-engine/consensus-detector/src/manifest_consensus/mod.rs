@@ -24,6 +24,7 @@ use fhevm_engine_common::versioning::{
 
 pub mod containment;
 pub(crate) mod db_error;
+pub mod drift_injection;
 pub(crate) mod healing;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
@@ -95,6 +96,8 @@ impl From<ExecutionError> for fhevm_engine_common::pg_pool::ServiceError {
 /// Publication and verification policy owned by consensus-detector.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// Startup-loaded, explicitly enabled manifest-only fault injection.
+    pub dangerous_drift_injection: Option<drift_injection::DriftInjection>,
     /// Publisher tick: discover host blocks, then seal and publish already
     /// tracked work. Must be greater than zero.
     pub discovery_interval: Duration,
@@ -118,6 +121,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            dangerous_drift_injection: None,
             discovery_interval: Duration::from_secs(10),
             publication_retry_delay: Duration::from_secs(60),
             publication_retry_count: 30,
