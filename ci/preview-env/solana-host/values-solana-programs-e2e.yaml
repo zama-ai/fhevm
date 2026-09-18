@@ -50,8 +50,12 @@ scDeploy:
           key: zama_host.json
           optional: true
     # deploy-preview.sh appends KMS_THRESHOLD and COPROCESSOR_THRESHOLD from the party counts.
+  # Each preview namespace binds HostConfig to its own Gateway, and every branch head brings
+  # different bytecode to the same program id (DD-051). Close the previous namespace's accounts,
+  # then deploy or upgrade in place.
   deployCommands:
-    - node /app/cli.mjs host deploy
+    - node /app/cli.mjs host wipe
+    - node /app/cli.mjs host deploy --allow-upgrade
   verifyContracts: false
 nodeSelector:
   kubernetes.io/arch: amd64

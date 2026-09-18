@@ -24,7 +24,7 @@ scDeploy:
         secretKeyRef: {name: solana-deployer, key: confidential_batcher.json, optional: true}
     - {name: SOLANA_ENVIRONMENT, value: preview-env}
   deployCommands:
-    - node /app/cli.mjs demos deploy
+    - node /app/cli.mjs demos deploy --allow-upgrade
   verifyContracts: false
 nodeSelector:
   kubernetes.io/arch: amd64

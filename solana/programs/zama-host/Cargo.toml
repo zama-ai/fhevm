@@ -46,6 +46,5 @@ borsh = "1"
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 [dev-dependencies]
-serde_json = "1"
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 sha2 = "0.10"

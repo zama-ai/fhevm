@@ -69,6 +69,7 @@ bun install --cwd solana/deploy --frozen-lockfile
 bash solana/scripts/build-programs.sh localnet zama_host confidential_token
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy --allow-upgrade
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host upgrade
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host wipe
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> demos deploy
@@ -98,6 +99,7 @@ requires rebuilding. Private keys are never build inputs.
 | Program absent | Deploy and initialize the host |
 | Same bytecode and matching host configuration | Return existing addresses without uploading |
 | Different bytecode with `deploy` | Fail; require explicit `upgrade` |
+| `deploy --allow-upgrade` | Deploy an absent program; upgrade different bytecode when the deployer is the authority (preview only) |
 | Existing program with `upgrade` | Validate bindings and authority, then upgrade at the same address |
 | Incompatible host configuration | Fail before modifying bytecode |
 
@@ -107,7 +109,8 @@ deployer keypair. The instruction it sends, `close_owned_accounts`, exists only 
 so the command fails against a localnet or production program.
 
 Kubernetes teardown does not close those accounts. Destroy and deploy's namespace reset only
-helm-uninstall and delete the namespace. Run `host wipe` before the next `host deploy`, which
+helm-uninstall and delete the namespace. The preview deploy Job runs `host wipe` before
+`host deploy --allow-upgrade`; elsewhere run `host wipe` before the next `host deploy`, which
 refuses a HostConfig bound to a different Gateway or committee. Wipe can run as a Job while the
 namespace still has `solana-rpc` / `solana-deployer`, or with the docker command above after
 destroy — those keypairs survive in AWS / 1Password.
@@ -147,5 +150,5 @@ The preview launch checks listener checkpoint progress; a live computation/decry
 smoke test is still required to validate provider delivery and internal routing together.
 Every FHE handle hashes the host program id. The listener derives with the id it is
 configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
-the listener image needs no `preview-env` feature. If handles still mismatch, compare the
+the listener image is built for localnet and needs no environment. If handles still mismatch, compare the
 listener's `--program-id` with the deployed program before suspecting the sysvars.

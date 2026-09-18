@@ -16,7 +16,7 @@ cd "$ROOT"
 build_log="$(mktemp)"
 trap 'rm -f "$build_log"' EXIT
 bash "$ROOT/scripts/install-sbf-tools.sh"
-# `close_owned_accounts` exists only behind `admin-sweep` (part of the preview-env profile).
+# `close_owned_accounts` exists only behind `admin-sweep` (enabled by `preview-env.json`).
 # Mollusk covers it from this artifact alone; every other suite runs the default build below.
 NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --features admin-sweep 2>&1 | tee "$build_log"
 mv target/deploy/zama_host.so target/deploy/zama_host_admin_sweep.so

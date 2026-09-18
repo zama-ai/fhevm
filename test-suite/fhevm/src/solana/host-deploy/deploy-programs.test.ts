@@ -103,6 +103,17 @@ test('explicit upgrade deploys different bytecode', async () => {
   await deployProgramArtifacts({ ...parameters, upgrade: true });
   expect(await calls()).toBe('program show\nprogram dump\nprogram deploy\nprogram show\n');
 });
+test('deploy --allow-upgrade deploys an absent program and upgrades different bytecode', async () => {
+  await deployProgramArtifacts({ ...(await fixture()), allowUpgrade: true });
+  expect(await calls()).toBe('program deploy\nprogram show\n');
+  await deployProgramArtifacts({ ...(await fixture({ exists: true, changed: true })), allowUpgrade: true });
+  expect(await calls()).toBe('program show\nprogram dump\nprogram deploy\nprogram show\n');
+});
+test('deploy --allow-upgrade still refuses another authority', async () => {
+  const parameters = await fixture({ exists: true, wrongAuthority: true, changed: true });
+  await expect(deployProgramArtifacts({ ...parameters, allowUpgrade: true })).rejects.toThrow('authority');
+  expect(await calls()).toBe('program show\nprogram dump\n');
+});
 test('wrong authority fails before uploading bytecode', async () => {
   const parameters = await fixture({ exists: true, wrongAuthority: true, changed: true });
   await expect(deployProgramArtifacts({ ...parameters, upgrade: true })).rejects.toThrow('authority');

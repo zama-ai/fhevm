@@ -126,16 +126,16 @@ describe("demo lifecycle collision policy", () => {
   });
 
   test("committed program keypairs match declared program identities", async () => {
+    const root = path.join(import.meta.dir, "../../../solana");
+    const environment = JSON.parse(
+      await fs.readFile(path.join(root, "environments/localnet.json"), "utf8"),
+    );
     for (const program of [
       "zama-host",
       "confidential-token",
       "demo-vault",
       "confidential-batcher",
     ]) {
-      const root = path.join(import.meta.dir, "../../../solana");
-      const environment = JSON.parse(
-        await fs.readFile(path.join(root, "environments/localnet.json"), "utf8"),
-      );
       const programKey = program.replaceAll("-", "_");
       const declaredId = environment.programs[programKey];
       if (typeof declaredId !== "string") {

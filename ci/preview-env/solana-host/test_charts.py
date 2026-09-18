@@ -22,9 +22,9 @@ def render(release, chart, values, *options):
 
 class SolanaCharts(unittest.TestCase):
     def test_host_and_demos_are_separate_jobs(self):
-        for release, filename, operation in [
-            ("solana-host", "values-solana-programs-e2e.yaml", "host deploy"),
-            ("solana-demos", "values-solana-demos-e2e.yaml", "demos deploy"),
+        for release, filename, operations in [
+            ("solana-host", "values-solana-programs-e2e.yaml", ["host wipe", "host deploy --allow-upgrade"]),
+            ("solana-demos", "values-solana-demos-e2e.yaml", ["demos deploy --allow-upgrade"]),
         ]:
             documents = render(release, "contracts", [VALUES / filename])
             job = next(d for d in documents if d and d["kind"] == "Job")
@@ -32,7 +32,9 @@ class SolanaCharts(unittest.TestCase):
             container = job["spec"]["template"]["spec"]["containers"][0]
             self.assertEqual(container["command"], ["/app/deploy-contracts.sh"])
             config = next(d for d in documents if d and d["kind"] == "ConfigMap")
-            self.assertIn("node /app/cli.mjs " + operation, config["data"]["deploy-contracts.sh"])
+            script = config["data"]["deploy-contracts.sh"]
+            positions = [script.index("node /app/cli.mjs " + operation) for operation in operations]
+            self.assertEqual(positions, sorted(positions))  # wipe runs before deploy
             if release == "solana-host":
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 

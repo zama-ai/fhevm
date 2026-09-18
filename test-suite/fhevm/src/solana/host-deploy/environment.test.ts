@@ -68,10 +68,6 @@ test('preview-env enables admin-sweep on zama-host only', async () => {
   );
   expect(preview.features).toEqual({ zama_host: ['admin-sweep'] });
   expect(localnet.features).toEqual({});
-  for (const program of PROGRAMS) {
-    if (program === 'zama_host') continue;
-    expect(preview.features[program] ?? []).toEqual([]);
-  }
 });
 
 test('the workspace pins PROGRAM_ENVIRONMENT to localnet so a shell export is inert', async () => {

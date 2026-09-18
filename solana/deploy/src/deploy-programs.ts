@@ -59,6 +59,8 @@ export const deployProgramArtifacts = async (parameters: {
   readonly programKeypairPaths: Readonly<Partial<Record<SolanaDeployProgram, string>>>;
   readonly programs: readonly SolanaDeployProgram[];
   readonly upgrade?: boolean;
+  /** Deploy absent programs and upgrade ones whose bytecode differs, when the deployer is the authority. */
+  readonly allowUpgrade?: boolean;
   readonly environment?: SolanaEnvironment;
 }): Promise<Partial<Record<SolanaDeployProgram, string>>> => {
   parameters.signal?.throwIfAborted();
@@ -110,7 +112,9 @@ export const deployProgramArtifacts = async (parameters: {
           deployedBytes.subarray(expectedBytes.length).every((byte) => byte === 0);
         if (unchanged) console.log(`    ${program}=${programId} unchanged`);
         else {
-          if (!parameters.upgrade) throw new Error(`${program} bytecode differs; explicit upgrade required`);
+          if (!parameters.upgrade && !parameters.allowUpgrade) {
+            throw new Error(`${program} bytecode differs; explicit upgrade required`);
+          }
           if (info.authority !== authority) throw new Error(`${program} upgrade authority does not match deployer`);
           pending.push(program);
         }

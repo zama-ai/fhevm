@@ -79,6 +79,7 @@ are written as one narrative instead.
 | [DD-050](#dd-050-transient-storage-shared-across-the-transaction)                                                                         | adopted                                  | Transient Storage Shared Across The Transaction                                                                                 |
 | [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted                                  | A Zama Is One Host Program ID                                                                                                   |
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
+| [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1843,7 +1844,7 @@ checks. The branch retains current slot publication and PendingBurn semantics; h
 
 Status: adopted
 
-Adopted for identity. zama-host closes its accounts through `close_owned_accounts` (`admin-sweep` builds only) and the deployer's `host wipe`. Wiring the wipe into the preview-env workflows is follow-up.
+Adopted for identity. zama-host closes its accounts through `close_owned_accounts` (`admin-sweep` builds only) and the deployer's `host wipe`. The preview deploy runs `host wipe` before `host deploy --allow-upgrade`; wiping from the destroy workflow is follow-up.
 
 HostConfig is that program's singleton `PDA("host-config")`. Four public `zama-host` program IDs:
 
@@ -1875,7 +1876,7 @@ the Solana RPC credentials, and the deployer keypair. The preview-env GitHub Act
 the only intended writers of `DPq5y89…`. Durable zama-devnet, zama-testnet and mainnet are later
 GitOps environments on the other three IDs.
 
-### Preview-env wipe (workflow wiring is follow-up)
+### Preview-env wipe
 
 Only one preview namespace should use `DPq5y89…` at a time. Each namespace deploys its own Anvil
 Gateway, and HostConfig stores that Gateway's chain id, InputVerification address, Decryption
@@ -1883,8 +1884,8 @@ address and coprocessor signers, so leftover HostConfig from the previous namesp
 the next one.
 
 `destroy_kms_context` only sets `destroyed = true`, and no production instruction closes HostConfig
-or EncryptedStores. `close_owned_accounts`, compiled only behind the `admin-sweep` feature that the
-`preview-env` profile enables, takes raw account addresses as remaining accounts, skips the ones
+or EncryptedStores. `close_owned_accounts`, compiled only behind the `admin-sweep` feature that
+`preview-env.json` enables, takes raw account addresses as remaining accounts, skips the ones
 this program does not own, and returns the rent to the signer, who must be the program's upgrade
 authority. The accounts are untyped because an old byte layout would fail to deserialize, and that
 leftover is what the wipe must delete. Solana has no parent account: closing HostConfig leaves
@@ -1893,8 +1894,9 @@ of them, so the deployer's `host wipe` closes everything `getProgramAccounts` li
 anything remains. `initialize_host_config` also creates the rand nonce, so both addresses must be
 empty or the next init fails. Accounts owned by the shared demo programs are not covered.
 
-`preview-env-deploy.yml` will run `host wipe`, upload this `.so` when the bytecode differs, then run
-`initialize_host_config` and `define_kms_context` for this Gateway. `preview-env-destroy.yml` will
+`preview-env-deploy.yml` runs `host wipe`, then `host deploy --allow-upgrade`, which uploads this
+`.so` when the bytecode differs and runs `initialize_host_config` and `define_kms_context` for this
+Gateway; a plain `host deploy` refuses differing bytecode. `preview-env-destroy.yml` will
 close those accounts again before it deletes the namespace and will not initialize. If that
 namespace uploaded a different `.so`, destroy will write the pinned baseline `.so` back.
 Pull-request CI stays on localnet and does not touch `DPq5y89…`. Durable GitOps environments will
@@ -1972,8 +1974,11 @@ This entry fixes how that id reaches the build.
 The id is read at build time from `solana/environments/<name>.json`, one file per deployed
 environment. A `build.rs` in each program (`crates/program-environment`) writes the `declare_id!`
 line from the file named by `PROGRAM_ENVIRONMENT`. `.cargo/config.toml` pins that variable to
-`localnet` (`force = true`), so a shell export cannot change what a build compiles; only the
-`--config` override that `scripts/build-programs.sh` passes does, and such a build warns.
+`localnet` (`force = true`), so for cargo invoked in this workspace a shell export cannot change
+what a build compiles; only the `--config` override that `scripts/build-programs.sh` passes does,
+and such a build warns. Cargo reads config from the invocation directory, so a build of
+`zama-host` as a path dependency from another workspace (the coprocessor images) is not pinned;
+no off-chain code reads the compiled id, so those images' id is not load-bearing.
 Plain `cargo` and `anchor build` therefore produce the localnet program, as before. The deployer
 image and CI set one environment before building; `scripts/build-programs.sh` also enables the
 cargo features the file lists per program (`features.zama_host`).
@@ -1997,7 +2002,10 @@ Why not the alternatives:
 
 Off-chain code never needs the id at build time. The connector, relayer and SDK derive PDAs from
 configured ids, and the listener hashes handles with the `--program-id` it follows (#4043). Adding a
-Zama is a new JSON file plus deployer keypairs. No Rust change.
+Zama is a new JSON file, its entry in `SOLANA_ENVIRONMENTS` (`deploy/src/environment.ts`, a static
+import because the deployer ships as one bundle) and deployer keypairs. No Rust change. A wrong id
+in the file flows consistently into the `.so` and the deployer and stops at deploy time, where the
+deployer refuses a program keypair whose pubkey differs from `declare_id!`.
 
 ## Open product decisions
 
@@ -2010,7 +2018,9 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,
-  not a liveness one.
+  not a liveness one. The off-chain leaf history the listener keeps for proofs is not bounded
+  (about 370 bytes per leaf per coprocessor, never pruned); fhevm-internal#2060 tracks row
+  shrinking and per-Store cold archival.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK and transciphering behind the input attestation
   (both are shortcuts today, DD-028).

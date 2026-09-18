@@ -5000,7 +5000,6 @@ dependencies = [
  "bytemuck",
  "k256",
  "program-environment",
- "serde_json",
  "sha2 0.10.9",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",

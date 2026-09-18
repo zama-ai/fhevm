@@ -16,7 +16,7 @@ import { wipeZamaHost } from './wipe';
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 
-const USAGE = 'usage: host deploy|upgrade|wipe; demos deploy|upgrade; coprocessor register';
+const USAGE = 'usage: host deploy [--allow-upgrade]|upgrade|wipe; demos deploy [--allow-upgrade]|upgrade; coprocessor register';
 const KEYPAIR_DIR = process.env.SOLANA_KEYPAIR_DIR ?? '/tmp/solana-deploy-keypairs';
 const ARTIFACTS_DIR = process.env.SOLANA_ARTIFACTS_DIR ?? '/app/programs';
 const ADDRESSES_DIR = process.env.ADDRESSES_DIR ?? '/app/addresses';
@@ -57,7 +57,13 @@ const main = async () => {
   const environment = readSolanaEnvironment();
   const programIds = programIdsFor(environment);
 
-  const [target, action] = process.argv.slice(2);
+  const [target, action, ...flags] = process.argv.slice(2);
+  // Disposable environments redeploy every branch head onto the same program ids, so their
+  // deploy may upgrade in place; durable ones keep deploy and upgrade separate.
+  const allowUpgrade = flags.includes('--allow-upgrade');
+  if (flags.some((flag) => flag !== '--allow-upgrade') || (allowUpgrade && action !== 'deploy')) {
+    throw new Error(USAGE);
+  }
   if (target === 'coprocessor' && action === 'register') {
     const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
       input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID')),
@@ -84,6 +90,7 @@ const main = async () => {
       deployerKeypairPath: await resolveDeployerKeypairPath(),
       artifactsDir: ARTIFACTS_DIR,
       upgrade: action === 'upgrade',
+      allowUpgrade,
       environment,
     };
     let ids;
