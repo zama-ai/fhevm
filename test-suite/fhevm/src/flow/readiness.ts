@@ -1,7 +1,7 @@
 import {
   bootstrapUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -36,15 +36,15 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
-/** gw-listener / kms-worker / tx-sender (+ endpoint when the bundle ships it) health containers across every KMS party. */
+/** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
 export const kmsConnectorHealthContainers = (state: State): string[] => {
   const containers: string[] = [];
-  const includeEndpoint = supportsConnectorEndpoint(state);
+  const includeHttp = supportsConnectorHttp(state);
   for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
     const prefix = kmsConnectorPrefix(party);
     containers.push(`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`);
-    if (includeEndpoint) {
-      containers.push(`${prefix}-endpoint`);
+    if (includeHttp) {
+      containers.push(`${prefix}-endpoint`, `${prefix}-proxy`);
     }
   }
   return containers;
@@ -535,8 +535,9 @@ export const waitForKmsConnectorParty = async (
   await waitForContainer(`${prefix}-gw-listener`, readiness);
   await waitForContainer(`${prefix}-kms-worker`, readiness);
   await waitForContainer(`${prefix}-tx-sender`, readiness);
-  if (supportsConnectorEndpoint(state)) {
+  if (supportsConnectorHttp(state)) {
     await waitForContainer(`${prefix}-endpoint`, readiness);
+    await waitForContainer(`${prefix}-proxy`, readiness);
   }
   if (usesHostKmsGeneration) {
     await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);

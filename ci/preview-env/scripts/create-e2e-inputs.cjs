@@ -105,6 +105,13 @@ const mappings = [
     'fhevm/kms-connector/endpoint',
     'CONNECTOR_ENDPOINT_VERSION',
   ],
+  [
+    'kms-connector-docker-build',
+    'proxy_build_result',
+    'connector-proxy-version',
+    'fhevm/kms-connector/proxy',
+    'CONNECTOR_PROXY_VERSION',
+  ],
   ['gateway-contracts-docker-build', 'build_result', 'gateway-version', 'fhevm/gateway-contracts', 'GATEWAY_VERSION'],
   ['host-contracts-docker-build', 'build_result', 'host-version', 'fhevm/host-contracts', 'HOST_VERSION'],
   [
@@ -164,7 +171,7 @@ function selectImages({ buildResults, headTag, gpuWorkerTag }) {
 
   outputs['connector-versions'] = JSON.stringify(
     Object.fromEntries(
-      ['db-migration', 'gw-listener', 'kms-worker', 'tx-sender', 'endpoint'].map((name) => [
+      ['db-migration', 'gw-listener', 'kms-worker', 'tx-sender', 'endpoint', 'proxy'].map((name) => [
         name,
         outputs[`connector-${name}-version`],
       ]),

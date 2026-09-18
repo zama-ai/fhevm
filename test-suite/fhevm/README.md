@@ -251,6 +251,7 @@ CONNECTOR_GW_LISTENER_VERSION
 CONNECTOR_KMS_WORKER_VERSION
 CONNECTOR_TX_SENDER_VERSION
 CONNECTOR_ENDPOINT_VERSION   # optional: omitted when the resolved images predate the connector HTTP endpoint
+CONNECTOR_PROXY_VERSION      # optional: omitted when the resolved images predate the connector proxy
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
@@ -478,7 +479,7 @@ Available runtime suffixes:
 | Group           | Suffixes                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`                                                                        |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`, `proxy`                |
 | `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides

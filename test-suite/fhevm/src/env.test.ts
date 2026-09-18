@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
@@ -48,7 +49,7 @@ describe("env", () => {
     expect(rendered.componentEnvs["gateway-sc"].HOST_CHAIN_WEBSITE_1).toBe("https://host-chain-1.com");
   });
 
-  test("points the e2e suite at one connector endpoint per committee party, only when the bundle ships it", async () => {
+  test("points the e2e suite at one connector TLS proxy per committee party, only when the bundle ships the HTTP path", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
         COMPONENTS.map(async (component) => [
@@ -78,8 +79,17 @@ describe("env", () => {
     };
 
     const centralized = await renderEnvMaps({ discovery: undefined }, stackSpecForState(baseState), templateEnvs, deriveWallet);
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("http://kms-connector-endpoint:8080");
+    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("https://kms-connector-proxy:8443");
+    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
+    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
+    expect(centralized.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/tls.crt");
     expect(centralized.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("0");
+    // The proxy forwards to its own party's endpoint.
+    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
+
+    // The digest the proxies check is the sha256 of the key the e2e suite sends.
+    const digest = createHash("sha256").update(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).digest("hex");
+    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_API_KEY_DIGEST).toBe(`0x${digest}`);
 
     const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(withoutEndpoint), templateEnvs, deriveWallet);
     expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("");
@@ -92,13 +102,15 @@ describe("env", () => {
     const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(threshold), templateEnvs, deriveWallet);
     expect(rendered.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(
       [
-        "http://kms-connector-endpoint:8080",
-        "http://kms-connector-2-endpoint:8080",
-        "http://kms-connector-3-endpoint:8080",
-        "http://kms-connector-4-endpoint:8080",
+        "https://kms-connector-proxy:8443",
+        "https://kms-connector-2-proxy:8443",
+        "https://kms-connector-3-proxy:8443",
+        "https://kms-connector-4-proxy:8443",
       ].join(","),
     );
     expect(rendered.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
+    expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
+    expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
   test("projects custom primary host settings into runtime envs", async () => {
