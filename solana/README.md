@@ -203,9 +203,9 @@ The transaction owner creates the context once, forwards its accounts to all app
 builders, and wraps the complete body before signing:
 
 ```ts
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { createSolanaFheTransaction, solanaHostProgram } from '@fhevm/sdk/solana';
 
-const fhe = await createSolanaFheTransaction({ payer });
+const fhe = await createSolanaFheTransaction({ payer, programAddress: solanaHostProgram(chain) });
 const initialize = await buildInitialize({ ...inputs, fhe: fhe.accounts });
 const join = await buildJoin({ ...inputs, fhe: fhe.accounts });
 const instructions = fhe.wrap([initialize, join]);

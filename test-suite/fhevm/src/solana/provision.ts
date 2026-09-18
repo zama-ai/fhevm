@@ -242,7 +242,7 @@ export const createConfidentialMint = async (
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
   const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.authority });
+  const fhe = await createSolanaFheTransaction({ payer: params.authority, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   await context.sendTransaction(params.authority, fhe.wrap([
     await vault.buildInitializeMintInstruction({
       fhe: fhe.accounts,
@@ -269,7 +269,7 @@ export const initializeConfidentialTokenAccount = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.payer });
+  const fhe = await createSolanaFheTransaction({ payer: params.payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
     fhe: fhe.accounts,
     payer: params.payer,
@@ -292,7 +292,7 @@ export const wrapUnderlying = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.owner });
+  const fhe = await createSolanaFheTransaction({ payer: params.owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   await context.sendTransaction(params.owner, fhe.wrap([
     await vault.buildWrapUsdcInstruction({
       fhe: fhe.accounts,

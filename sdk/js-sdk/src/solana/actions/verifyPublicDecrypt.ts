@@ -57,7 +57,8 @@ export function verifyPublicDecryptArgsFromClaim(
 export type SolanaVerifyPublicDecryptAccounts = {
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address | undefined;
-  readonly programAddress?: Address | undefined;
+  /** The zama-host program id of the deployment (`solanaHostProgram(chain)`). */
+  readonly programAddress: Address;
   /** KMS context PDA for the id the certificate commits to (any live, non-destroyed context). */
   readonly kmsContext: Address;
   /** The encrypted store account the inclusion proof is checked against. */
@@ -90,6 +91,6 @@ export async function buildVerifyPublicDecryptInstruction(
       leafIndex: args.leafIndex,
       siblings: [...args.siblings],
     },
-    accounts.programAddress === undefined ? undefined : { programAddress: accounts.programAddress },
+    { programAddress: accounts.programAddress },
   );
 }

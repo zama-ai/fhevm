@@ -39,7 +39,7 @@ const validResponse = {
       batcher: '11111111111111111111111111111111',
       token: '11111111111111111111111111111111',
       vault: '11111111111111111111111111111111',
-      host: '11111111111111111111111111111111',
+      host: '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
     },
     mints: {
       joinUnderlying: '11111111111111111111111111111111',
@@ -87,6 +87,17 @@ describe('parseDemoSessionResponse', () => {
 
   test('parses public configuration without burner key material', () => {
     expect(parseDemoConfigResponse({ config: validResponse.config })).toEqual(validResponse.config);
+  });
+
+  test('rejects a host program spelled differently as bytes32 and base58', () => {
+    expect(() =>
+      parseDemoConfigResponse({
+        config: {
+          ...validResponse.config,
+          programs: { ...validResponse.config.programs, host: '11111111111111111111111111111111' },
+        },
+      }),
+    ).toThrow('aclProgram and demo config.programs.host name different programs');
   });
 
   test('binds the lifecycle boot to a seeded runtime config', () => {

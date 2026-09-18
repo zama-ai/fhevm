@@ -60,7 +60,7 @@ describe('buildClaimInstruction', () => {
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
-    const fhe = await createSolanaFheTransaction({ payer });
+    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = await buildClaimInstruction({
       fhe: fhe.accounts,
       payer,
@@ -147,7 +147,7 @@ describe('buildClaimInstruction', () => {
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildClaimInstruction({
-      fhe: (await createSolanaFheTransaction({ payer })).accounts,
+      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
       payer,
       user,
       batcher,

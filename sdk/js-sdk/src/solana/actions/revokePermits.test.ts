@@ -30,19 +30,19 @@ const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 
 describe('solanaPermitInvalidationAddress', () => {
   it('derives the canonical watermark address the host program derives', async () => {
-    expect(await solanaPermitInvalidationAddress(user)).toBe(WATERMARK_ADDRESS);
+    expect(await solanaPermitInvalidationAddress(user, ZAMA_HOST_PROGRAM_ADDRESS)).toBe(WATERMARK_ADDRESS);
   });
 });
 
 describe('buildRevokePermitsInstruction', () => {
   it('builds the exact bytes the host program decodes', async () => {
-    const instruction = await buildRevokePermitsInstruction({ user });
+    const instruction = await buildRevokePermitsInstruction({ user, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     expect(instruction.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(hex(instruction.data!)).toBe(REVOKE_PERMITS_DATA);
   });
 
   it('names the three accounts in program order with their roles', async () => {
-    const instruction = await buildRevokePermitsInstruction({ user });
+    const instruction = await buildRevokePermitsInstruction({ user, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     expect(instruction.accounts?.map((account) => [account.address, account.role])).toEqual([
       [user, AccountRole.WRITABLE_SIGNER],
       [WATERMARK_ADDRESS, AccountRole.WRITABLE],

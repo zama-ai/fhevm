@@ -88,14 +88,26 @@ import { getHostConfigEncoder, type HostConfigArgs } from '../internal/generated
 import { getKmsContextEncoder, type KmsContextArgs } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
+import { getAddressEncoder } from '@solana/kit';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import * as certificateModule from './publicDecryptCertificate.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const contextId = new Uint8Array(32).fill(0x44);
 const store = new Uint8Array(32).fill(0x44);
-const chain = { id: 72057594037940281n, fhevm: { relayerUrl: 'https://relayer.example.test' } };
+const chain = {
+  id: 72057594037940281n,
+  fhevm: {
+    relayerUrl: 'https://relayer.example.test',
+    programs: {
+      host: {
+        address: asBytes32Hex(bytesToHex(new Uint8Array(getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS)))),
+      },
+    },
+  },
+};
 
 async function accountFixture() {
   const [configAddress, configBump] = await findHostConfigPda();
@@ -194,6 +206,16 @@ describe('public decrypt client account-to-plaintext flow', () => {
     expect(value.value).toBe(42n);
     expect(f.rpc.getMultipleAccounts).toHaveBeenCalledWith([f.configAddress, f.contextAddress], expect.anything());
     expect(f.request).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contextId }));
+  });
+  it("reads accounts under the chain's host program, not the bundled one", async () => {
+    const f = await accountFixture();
+    // Same RPC and fixture accounts (owned by the generated id); only the chain names another host.
+    const other = {
+      ...chain,
+      fhevm: { ...chain.fhevm, programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } } },
+    };
+    const client = createFhevmPublicDecryptClient({ chain: other, rpc: f.rpc });
+    await expect(client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow('Invalid host account');
   });
   it.each(['destroyed', 'context', 'bump', 'chain', 'domain', 'zero-domain'])(
     'rejects %s changed while waiting for the certificate',

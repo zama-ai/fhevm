@@ -29,6 +29,8 @@ import {
   type VaultDemoRoots,
 } from './derive.js';
 import { getCurrentBatch } from './reads.js';
+// The token client pins the host program it was compiled against; the vault module targets that pair.
+import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 
 const ZERO_HANDLE = new Uint8Array(32);
 
@@ -118,7 +120,7 @@ export async function settleBatch(
     );
   }
 
-  const fhe = await createSolanaFheTransaction({ payer: keeper });
+  const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   const settleInstruction = await getSettleInstructionAsync({
     ...fhe.accounts,
     payer: keeper,

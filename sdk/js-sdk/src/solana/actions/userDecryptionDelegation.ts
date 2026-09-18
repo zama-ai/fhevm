@@ -21,16 +21,13 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import { getDelegateForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/delegateForUserDecryption.js';
 import { getRevokeDelegationForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/revokeDelegationForUserDecryption.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
 /**
- * Which zama-host deployment to address. Every entry point of this module defaults to the
- * canonical deployment id; a deployment not at that address (a local validator, a fork) passes
- * its configured id — the same value the decrypt path takes as `chain.fhevm.verifyingProgramId`.
+ * Which zama-host deployment to address: the program id the chain definition names as
+ * `fhevm.programs.host.address`, in base58 (`solanaHostProgram(chain)`).
  */
 export type SolanaZamaHostAddressConfig = {
-  /** The zama-host program id; defaults to [`ZAMA_HOST_PROGRAM_ADDRESS`]. */
-  readonly programAddress?: Address | undefined;
+  readonly programAddress: Address;
 };
 
 /** Seed of the user-decryption delegation record PDA. */
@@ -94,9 +91,9 @@ async function solanaUserDecryptionDelegationPda(
 /** The canonical delegation record address of a tuple — the address the Connector reads. */
 export async function solanaUserDecryptionDelegationAddress(
   tuple: SolanaUserDecryptionDelegationTuple,
-  config?: SolanaZamaHostAddressConfig,
+  config: SolanaZamaHostAddressConfig,
 ): Promise<Address> {
-  const [derived] = await solanaUserDecryptionDelegationPda(tuple, config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS);
+  const [derived] = await solanaUserDecryptionDelegationPda(tuple, config.programAddress);
   return derived;
 }
 
@@ -172,7 +169,7 @@ export type SolanaDelegateForUserDecryptionParameters = Omit<SolanaUserDecryptio
 export async function buildDelegateForUserDecryptionInstruction(
   params: SolanaDelegateForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+  const { programAddress } = params;
   const tuple: SolanaUserDecryptionDelegationTuple = {
     delegator: resolvedAddress(params.delegator),
     delegate: params.delegate,
@@ -221,7 +218,7 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
 export async function buildRevokeDelegationForUserDecryptionInstruction(
   params: SolanaRevokeDelegationForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+  const { programAddress } = params;
   const tuple: SolanaUserDecryptionDelegationTuple = {
     delegator: resolvedAddress(params.delegator),
     delegate: params.delegate,
@@ -372,17 +369,17 @@ export interface SolanaUserDecryptionDelegationRows {
  * @param rpc - The Solana RPC to read through.
  * @param tuple - The delegation tuple.
  * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`, plus the
- * optional `programAddress` of a deployment not at the canonical id.
+ * `programAddress` of the deployment.
  * @throws If an existing zama-host-owned account does not decode as a delegation record of the
  * queried tuple with the canonical bump.
  */
 export async function fetchSolanaUserDecryptionDelegation(
   rpc: SolanaRpc,
   tuple: SolanaUserDecryptionDelegationTuple,
-  config?: FetchAccountConfig & SolanaZamaHostAddressConfig,
+  config: FetchAccountConfig & SolanaZamaHostAddressConfig,
 ): Promise<SolanaUserDecryptionDelegationRows> {
   // Split off before the fetch: `programAddress` is this module's key, not RPC passthrough.
-  const { programAddress = ZAMA_HOST_PROGRAM_ADDRESS, ...fetchConfig } = config ?? {};
+  const { programAddress, ...fetchConfig } = config;
   const wildcardTuple: SolanaUserDecryptionDelegationTuple = {
     ...tuple,
     encryptedStoreAuthority: SOLANA_WILDCARD_AUTHORITY,

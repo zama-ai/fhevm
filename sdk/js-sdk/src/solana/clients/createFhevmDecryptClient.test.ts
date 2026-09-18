@@ -13,11 +13,13 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import { describe, expect, it } from 'vitest';
 import { createFhevmPublicDecryptClient } from './createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://localhost:3000',
+    programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
   },
 } as const satisfies FhevmSolanaChain;
 

@@ -9,6 +9,7 @@ import {
   publicDecryptCertificate,
   type SolanaPublicDecryptCertificateParameters,
 } from './publicDecryptCertificate.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const handle = new Uint8Array(32);
 handle[22] = 0x01;
@@ -25,7 +26,10 @@ const parameters = (): SolanaPublicDecryptCertificateParameters => ({
 const context = {
   chain: {
     id: 0x0100000000000000n,
-    fhevm: { relayerUrl: 'https://relayer.example.com' },
+    fhevm: {
+      relayerUrl: 'https://relayer.example.com',
+      programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
+    },
   },
   runtime: { config: { auth: { type: 'ApiKeyHeader', value: 'test' } } } as FhevmRuntime,
 };

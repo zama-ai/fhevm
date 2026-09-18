@@ -6,7 +6,6 @@ import type { MmrProof } from '../proof.js';
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
 import { getVerifyPublicDecryptInstructionDataDecoder } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -72,13 +71,14 @@ describe('buildVerifyPublicDecryptInstruction', () => {
     const kmsContext = addr(2);
     const encryptedStore = addr(3);
     const hostConfig = addr(4);
+    const programAddress = addr(9);
     const instruction = await buildVerifyPublicDecryptInstruction(
-      { hostConfig, kmsContext, encryptedStore },
+      { hostConfig, kmsContext, encryptedStore, programAddress },
       claim(),
       inclusionProof,
     );
 
-    expect(instruction.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(instruction.programAddress).toBe(programAddress);
     expect(instruction.accounts?.map((a: { readonly address: Address }) => a.address)).toEqual([
       hostConfig,
       kmsContext,

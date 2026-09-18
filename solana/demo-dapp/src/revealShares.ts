@@ -14,7 +14,7 @@ import type { DemoSession } from './demoSession';
 import { permitSessionFor } from './permitCache';
 import { recordDecryptionEvidence } from './evidenceStore';
 
-type Bytes32Hex = NonNullable<Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['verifyingProgramId']>;
+type Bytes32Hex = Parameters<typeof defineFhevmSolanaChain>[0]['fhevm']['programs']['host']['address'];
 
 export type RevealedBalance = {
   readonly handle: string;
@@ -74,7 +74,7 @@ const revealConfidentialBalance = async (
     id: BigInt(session.config.chainId),
     fhevm: {
       relayerUrl: session.config.relayerUrl,
-      verifyingProgramId: session.config.aclProgram as Bytes32Hex,
+      programs: { host: { address: session.config.aclProgram as Bytes32Hex } },
     },
   });
   const supportsThreads = globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
@@ -150,7 +150,7 @@ const createReadClient = (session: DemoSession) => createFhevmBaseClient({
   rpc: createSolanaRpc(session.config.rpcUrl),
   chain: defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl, verifyingProgramId: session.config.aclProgram as Bytes32Hex },
+    fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   }),
 });
 

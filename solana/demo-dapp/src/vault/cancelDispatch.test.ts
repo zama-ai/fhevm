@@ -36,7 +36,7 @@ describe('buildCancelDispatchInstruction', () => {
     const mint = addr(4);
     const hostConfig = addr(5);
     const instruction = await buildCancelDispatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer })).accounts,
+      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
       payer,
       batcher,
       batch,

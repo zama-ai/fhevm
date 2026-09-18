@@ -1,4 +1,5 @@
 import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { address } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -42,7 +43,7 @@ const config = {
   rpcUrl: 'http://127.0.0.1:8899',
   wsUrl: 'ws://127.0.0.1:8900',
   hostConfig: address('SysvarS1otHashes111111111111111111111111111'),
-  programs: { token: tokenProgram },
+  programs: { token: tokenProgram, host: ZAMA_HOST_PROGRAM_ADDRESS },
   mints: {
     joinUnderlying: address('SysvarStakeHistory1111111111111111111111111'),
     payoutUnderlying: address('Stake11111111111111111111111111111111111111'),
@@ -62,7 +63,7 @@ let closeInstruction: unknown;
 
 describe('sponsored payout claim', () => {
   beforeEach(async () => {
-    [openInstruction, closeInstruction] = (await createSolanaFheTransaction({ payer: keeper as never })).wrap([]);
+    [openInstruction, closeInstruction] = (await createSolanaFheTransaction({ payer: keeper as never, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).wrap([]);
     vi.clearAllMocks();
     mocks.getBatch.mockResolvedValue({ index: 1n, addresses: { batch }, state: { status: 2 } });
     mocks.getJoinRecord.mockResolvedValue({ batch, user, claimed: false });

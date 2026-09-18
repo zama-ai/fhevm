@@ -125,7 +125,7 @@ const writeSpecimenValue = async (
   value: SpecimenValue,
   buildInstruction: (fhe: SolanaFheTransactionAccounts) => Promise<Instruction>,
 ): Promise<SpecimenHandle> => {
-  const fhe = await createSolanaFheTransaction({ payer: owner });
+  const fhe = await createSolanaFheTransaction({ payer: owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await buildInstruction(fhe.accounts);
   await context.sendTransaction(owner, fhe.wrap([instruction]), { skipPreflight: true });
   return { value, handle: await currentHandle(context, value.encryptedStore, value.key) };

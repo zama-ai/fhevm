@@ -194,7 +194,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       };
 
 
-      const aliceFhe = await createSolanaFheTransaction({ payer: alice });
+      const aliceFhe = await createSolanaFheTransaction({ payer: alice, programAddress: config.programs.host });
       // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
       // cShares (payout mint) for the claim phase: claim.rs requires the user's payout account to
       // ALREADY exist (nothing creates it on the fly), so it is provisioned here with the same
@@ -269,7 +269,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
       const chain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: asBytes32Hex(config.aclProgram) },
+        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
       }) as FhevmSolanaChain;
       const encryptClient = solanaSdk.createFhevmEncryptClient({ chain, rpc });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
@@ -356,7 +356,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // encrypted value accounts, event authorities — from these five roots (its unit test pins each derivation
       // against dispatch.rs), so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
-      const keeperFhe = await createSolanaFheTransaction({ payer: keeper });
+      const keeperFhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
       await send(
         keeper,
         keeperFhe.wrap([
@@ -489,7 +489,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = solanaSdk.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, verifyingProgramId: asBytes32Hex(config.aclProgram) },
+        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
       });
       const decryptClient = solanaSdk.createFhevmDecryptClient({
         chain: decryptChain,

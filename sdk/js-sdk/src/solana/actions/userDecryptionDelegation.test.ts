@@ -50,21 +50,20 @@ const GRANT_DATA =
 const REVOKE_DATA = '931b7e35412576e1';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 
-// A deployment not at the canonical id — what `chain.fhevm.verifyingProgramId` names on a local
-// validator or a fork.
+// A second deployment is a different host program id.
 const OTHER_PROGRAM = addr(0x66);
+const HOST = { programAddress: ZAMA_HOST_PROGRAM_ADDRESS };
 
 describe('solanaUserDecryptionDelegationAddress', () => {
   it('derives the canonical record address the host program derives', async () => {
-    const derived = await solanaUserDecryptionDelegationAddress({
-      delegator,
-      delegate,
-      encryptedStoreAuthority: authority,
-    });
+    const derived = await solanaUserDecryptionDelegationAddress(
+      { delegator, delegate, encryptedStoreAuthority: authority },
+      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
+    );
     expect(derived).toBe(RECORD_ADDRESS);
   });
 
-  it('derives under the configured program id, not the canonical one, when overridden', async () => {
+  it('derives under the configured program id', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
       { delegator, delegate, encryptedStoreAuthority: authority },
       { programAddress: OTHER_PROGRAM },
@@ -76,6 +75,7 @@ describe('solanaUserDecryptionDelegationAddress', () => {
 describe('buildDelegateForUserDecryptionInstruction', () => {
   const build = () =>
     buildDelegateForUserDecryptionInstruction({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       payer,
       delegator,
       delegate,
@@ -108,6 +108,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
   it('carries a passed TransactionSigner through to the signer metas', async () => {
     const delegatorSigner = await generateKeyPairSigner();
     const instruction = await buildDelegateForUserDecryptionInstruction({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       payer: delegatorSigner,
       delegator: delegatorSigner,
       delegate,
@@ -122,6 +123,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
   it('mixes a signing payer with an address-only delegator, deriving from the address', async () => {
     const payerSigner = await generateKeyPairSigner();
     const instruction = await buildDelegateForUserDecryptionInstruction({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       payer: payerSigner,
       delegator,
       delegate,
@@ -161,6 +163,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
 describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
   const build = () =>
     buildRevokeDelegationForUserDecryptionInstruction({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       delegator,
       delegate,
       encryptedStoreAuthority: authority,
@@ -185,6 +188,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
   it('carries a passed TransactionSigner through to the delegator meta', async () => {
     const delegatorSigner = await generateKeyPairSigner();
     const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       delegator: delegatorSigner,
       delegate,
       encryptedStoreAuthority: authority,
@@ -327,7 +331,11 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   }
 
   it('reads the authority-specific row', async () => {
-    const rows = await fetchSolanaUserDecryptionDelegation(rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX }), tuple);
+    const rows = await fetchSolanaUserDecryptionDelegation(
+      rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX }),
+      tuple,
+      HOST,
+    );
     expect(rows.exact?.delegationCounter).toBe(7n);
     expect(rows.wildcard).toBeNull();
   });
@@ -363,6 +371,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     const rows = await fetchSolanaUserDecryptionDelegation(
       rpcWith({ [wildcardRow.address]: wildcardRow.bytesHex }),
       tuple,
+      HOST,
     );
     expect(rows.exact).toBeNull();
     expect(rows.wildcard?.delegationCounter).toBe(7n);
@@ -373,25 +382,25 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   // Only the host program can write these bytes, so a contradiction is its defect — an error,
   // not a delegation of the queried tuple and not a silent absence.
   it('throws on a record naming a tuple other than the one its address derives from', async () => {
-    const wildcardAddress = await solanaUserDecryptionDelegationAddress({
-      ...tuple,
-      encryptedStoreAuthority: SOLANA_WILDCARD_AUTHORITY,
-    });
+    const wildcardAddress = await solanaUserDecryptionDelegationAddress(
+      { ...tuple, encryptedStoreAuthority: SOLANA_WILDCARD_AUTHORITY },
+      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
+    );
     // The exact-tuple record (authority 0x33) sitting at the wildcard address.
     await expect(
-      fetchSolanaUserDecryptionDelegation(rpcWith({ [wildcardAddress]: RECORD_BYTES_HEX }), tuple),
+      fetchSolanaUserDecryptionDelegation(rpcWith({ [wildcardAddress]: RECORD_BYTES_HEX }), tuple, HOST),
     ).rejects.toThrow('tuple other than');
   });
 
   it('throws on a record storing a bump that is not the canonical one of its address', async () => {
     const withWrongBump = RECORD_BYTES_HEX.slice(0, -2) + 'fd';
     await expect(
-      fetchSolanaUserDecryptionDelegation(rpcWith({ [RECORD_ADDRESS]: withWrongBump }), tuple),
+      fetchSolanaUserDecryptionDelegation(rpcWith({ [RECORD_ADDRESS]: withWrongBump }), tuple, HOST),
     ).rejects.toThrow('canonical bump');
   });
 
   it('reports the delegation as absent when neither row exists', async () => {
-    const rows = await fetchSolanaUserDecryptionDelegation(rpcWith({}), tuple);
+    const rows = await fetchSolanaUserDecryptionDelegation(rpcWith({}), tuple, HOST);
     expect(rows.exact).toBeNull();
     expect(rows.wildcard).toBeNull();
   });
@@ -402,6 +411,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     const rows = await fetchSolanaUserDecryptionDelegation(
       rpcWith({ [RECORD_ADDRESS]: { data: '', owner: SYSTEM_PROGRAM } }),
       tuple,
+      HOST,
     );
     expect(rows.exact).toBeNull();
     expect(rows.wildcard).toBeNull();

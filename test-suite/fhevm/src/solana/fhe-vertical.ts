@@ -89,6 +89,7 @@ export const certifiedPublicDecrypt = async (
   const certificate = await runSolanaPublicDecrypt({
     PD_RPC_URL: config.rpcUrl,
     PD_RELAYER_URL: config.relayerUrl,
+    PD_VERIFYING_PROGRAM_ID: config.verifyingProgramId,
     PD_CONTRACTS_CHAIN_ID: config.chainId.toString(),
     PD_HANDLE: hex(params.handle),
     PD_CONTEXT_ID: config.publicDecryptContextId,
