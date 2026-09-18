@@ -31,6 +31,7 @@ import {
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { waitForSnsCommit } from "../../src/solana/sns";
+import { solanaDemoSmokeMarkerPath } from "../../src/layout";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
@@ -108,8 +109,6 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
 const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
 
-/** Written by the arc on success; `demo:smoke` requires it back so a skipped suite cannot pass. */
-export const DEMO_SMOKE_MARKER = "/tmp/fhevm-demo-smoke-ran";
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
   test(
@@ -572,7 +571,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // side of the gate above would silently retire this whole arc with CI still green. The
       // script deletes this marker, runs the suite, and then requires it back; nothing but this
       // arc completing can produce it.
-      await Bun.write(DEMO_SMOKE_MARKER, new Date().toISOString());
+      await Bun.write(solanaDemoSmokeMarkerPath, new Date().toISOString());
     },
     SCENARIO_TIMEOUT_MS,
   );

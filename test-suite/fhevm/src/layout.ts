@@ -23,6 +23,9 @@ const statePaths = (root: string) => {
   const envDir = path.join(runtimeDir, "env");
   const generatedConfigDir = path.join(runtimeDir, "config");
   const addressDir = path.join(runtimeDir, "addresses");
+  // Everything the Solana demo writes lives under one runtime subtree, so a preview namespace or a
+  // test swaps it wholesale with FHEVM_STATE_DIR like the rest of the layout.
+  const solanaRuntimeDir = path.join(runtimeDir, "solana");
   return {
     STATE_DIR: stateDir,
     PERSISTED_STATE_DIR: persistedStateDir,
@@ -38,6 +41,15 @@ const statePaths = (root: string) => {
     kmsCoreConfigPath: path.join(generatedConfigDir, "kms-core.toml"),
     kmsGenKeysConfigPath: path.join(generatedConfigDir, "kms-gen-keys.toml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
+    SOLANA_RUNTIME_DIR: solanaRuntimeDir,
+    /** The seeded demo config (`demo:seed` writes it; faucet, dapp, operator and smoke read it). */
+    solanaDemoConfigPath: path.join(solanaRuntimeDir, "demo-config.json"),
+    /** Lifecycle-owned demo boots: manifest, lock, one directory per boot id. */
+    SOLANA_DEMO_DIR: path.join(solanaRuntimeDir, "demo"),
+    /** Settle lookup tables the keeper opened per batch, until their rent is reclaimed. */
+    solanaBatchLookupTablesPath: path.join(solanaRuntimeDir, "batch-lookup-tables.json"),
+    /** Written by the deposit-arc smoke on success; `demo:smoke` requires it back. */
+    solanaDemoSmokeMarkerPath: path.join(solanaRuntimeDir, "demo-smoke-ran"),
   };
 };
 let currentStatePaths = statePaths(process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR);
@@ -55,6 +67,11 @@ export let relayerConfigPath = currentStatePaths.relayerConfigPath;
 export let kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
 export let kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
+export let SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
+export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
+export let SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
+export let solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
+export let solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
   currentStatePaths.ADDRESS_DIR,
@@ -77,6 +94,11 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
   kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
+  SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
+  solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
+  SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
+  solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
+  solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
     currentStatePaths.ADDRESS_DIR,
@@ -120,6 +142,7 @@ if (
   );
 }
 export const PROJECT = configuredComposeProject ?? "fhevm";
+export const RELAYER_PORT = 3000;
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
@@ -128,8 +151,17 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
+// Solana side of the local stack: the test validator, the native host listener (leaf-proof HTTP and
+// gRPC), and the demo's own processes. `src/solana/endpoints.ts` turns these into loopback URLs.
+export const SOLANA_VALIDATOR_RPC_PORT = 8899;
+export const SOLANA_VALIDATOR_WS_PORT = 8900;
+export const SOLANA_LEAF_PROOF_PORT = 8080;
+export const SOLANA_LISTENER_GRPC_PORT = 10000;
+export const DEMO_FAUCET_PORT = 8090;
+export const DEMO_OPERATOR_PORT = 8091;
+export const DEMO_DAPP_PORT = 5173;
 export const PORTS = [
-  3000,
+  RELAYER_PORT,
   3001,
   POSTGRES_PORT,
   5433,

@@ -11,6 +11,7 @@
 
 import { address, type Address } from "@solana/kit";
 
+import { DEMO_FAUCET_PORT } from "../src/layout";
 import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
 const DEFAULT_AIRDROP_SOL = 5;
@@ -148,11 +149,12 @@ export const serveFaucet = (options: ServeFaucetOptions): { port: number; stop: 
     authorization: options.authorization,
     allowedOrigin: options.allowedOrigin,
   });
+  const port = options.port ?? DEMO_FAUCET_PORT;
   const server = Bun.serve({
-    port: options.port ?? 8090,
+    port,
     hostname: options.hostname ?? "127.0.0.1",
     fetch: handler,
   });
   // A bound TCP listener always has a numeric port; fall back to the requested one to satisfy the type.
-  return { port: server.port ?? options.port ?? 8090, stop: () => server.stop(true) };
+  return { port: server.port ?? port, stop: () => server.stop(true) };
 };

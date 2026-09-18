@@ -29,8 +29,9 @@
 import os from "node:os";
 import path from "node:path";
 
-import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from "../../src/generate/solana";
+import { SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 import { coprocessorDbPsql, SOLANA_ACL_PROGRAM } from "../../src/layout";
+import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 
 export type Capabilities = {
   /** Can fund actors with SOL (local validator airdrop). Local: true. Devnet/mainnet: false. */
@@ -103,19 +104,19 @@ type TestEnvOverrides = {
   deployerKeypairPath: string;
 };
 
-// The local clean-e2e stack. The endpoints are local-stack facts; the protocol identities
-// (ACL program, user-decrypt context, coprocessor DB container) are imported from the CLI's config
-// module so there is exactly one source of truth shared with the transfer orchestrator.
+// The local clean-e2e stack. Endpoints come from the one local definition (`src/solana/endpoints.ts`);
+// the protocol identities (ACL program, coprocessor DB container) from the CLI's config module, so
+// there is exactly one source of truth shared with the transfer orchestrator.
 const LOCAL_DEFAULTS = {
-  rpcUrl: "http://127.0.0.1:8899",
-  wsUrl: "ws://127.0.0.1:8900",
-  relayerUrl: "http://127.0.0.1:3000",
-  gatewayRpcUrl: "http://127.0.0.1:8546",
-  hostRpcUrl: "http://127.0.0.1:8545",
+  rpcUrl: LOCAL_SOLANA_ENDPOINTS.validatorRpc,
+  wsUrl: LOCAL_SOLANA_ENDPOINTS.validatorWs,
+  relayerUrl: LOCAL_SOLANA_ENDPOINTS.relayer,
+  gatewayRpcUrl: LOCAL_SOLANA_ENDPOINTS.gatewayRpc,
+  hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc,
   chainId: "72057594037940281",
   aclProgram: SOLANA_ACL_PROGRAM,
   coprocessorDbPsql: coprocessorDbPsql(),
-  leafProofUrl: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
+  leafProofUrl: LOCAL_SOLANA_ENDPOINTS.leafProof,
   leafProofApiKey: SOLANA_LEAF_PROOF_API_KEY,
 } as const;
 

@@ -1085,8 +1085,13 @@ describe("demo lifecycle ownership primitives", () => {
       "DEMO_ALLOWED_ORIGIN",
       "DEMO_AUTH_TOKEN_FILE",
       "DEMO_BOOT_ID",
+      "DEMO_CONFIG_PATH",
+      "DEMO_DAPP_URL",
+      "DEMO_FAUCET_URL",
       "DEMO_PROOF_API_KEY",
       "DEMO_PROOF_URL",
+      "DEMO_RELAYER_URL",
+      "FHEVM_STATE_DIR",
     ]);
     expect(Object.values(env)).not.toContain(second.authorization.token);
     expect(Object.keys(env)).not.toContain("DEMO_LIFECYCLE_MANIFEST");

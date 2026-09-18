@@ -18,6 +18,8 @@ import path from "node:path";
 
 import { address, type Address } from "@solana/kit";
 
+import { solanaDemoConfigPath } from "../src/layout";
+
 import type { SolanaNetwork } from "../e2e/harness/loadEnv";
 
 /**
@@ -44,14 +46,11 @@ export type VaultDemoRoots = {
   readonly kmsContext: Address;
 };
 
-/** Absolute artifact path shared by seed, lifecycle, faucet, smoke, and dApp, unless explicitly overridden. */
-export const DEMO_CONFIG_DEFAULT_PATH = path.resolve(import.meta.dir, "../../..", ".fhevm/runtime/solana-demo.json");
-
 /**
- * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the repo-root
- * absolute default. Resolved at call time so the environment is read live.
+ * The config path every producer/consumer honors: `DEMO_CONFIG_PATH` if set, else the layout's
+ * `solanaDemoConfigPath` under the current FHEVM_STATE_DIR. Resolved at call time so both are read live.
  */
-export const resolveDemoConfigPath = (): string => process.env.DEMO_CONFIG_PATH ?? DEMO_CONFIG_DEFAULT_PATH;
+export const resolveDemoConfigPath = (): string => process.env.DEMO_CONFIG_PATH ?? solanaDemoConfigPath;
 
 /** Roots for one batcher instance: its account plus the settle lookup table `open_batch` created. */
 export type DemoBatcher = {

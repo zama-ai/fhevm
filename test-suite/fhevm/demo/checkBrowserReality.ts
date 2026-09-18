@@ -7,15 +7,16 @@
 // exits non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
 // because the header assertions are logic.
 //
-// Reads the seeded demo-config for the relayer URL; the faucet and dApp use their lifecycle-owned
-// loopback ports. The browser origin is deliberately the exact Vite origin.
+// Reads the seeded demo-config for the relayer URL; the faucet and dApp URLs come from the lifecycle
+// env (local defaults from `src/solana/endpoints.ts`). The browser origin is the exact dApp origin.
 
+import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import { readDemoConfig } from "./config";
 import { readDemoAuthorization } from "./lifecycle";
 
-const ORIGIN = "http://127.0.0.1:5173";
-const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? "http://127.0.0.1:8090";
-const DAPP_URL = "http://127.0.0.1:5173";
+const DAPP_URL = process.env.DEMO_DAPP_URL ?? LOCAL_SOLANA_ENDPOINTS.demoDapp;
+const ORIGIN = DAPP_URL;
+const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? LOCAL_SOLANA_ENDPOINTS.demoFaucet;
 
 type Check = { readonly name: string; readonly run: () => Promise<void> };
 

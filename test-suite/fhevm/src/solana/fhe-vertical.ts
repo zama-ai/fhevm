@@ -19,7 +19,8 @@ import {
 } from '@fhevm/sdk/solana';
 import type { MmrProof } from '@fhevm/sdk/solana';
 import { publicProof } from '@demo-dapp/vault/internal/publicProof.js';
-import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
+import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
+import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 
 import { runSolanaCurrentUserDecrypt } from './current-user-decrypt';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
@@ -134,7 +135,7 @@ export const userDecryptExpect = (
 
 /** The local stack's leaf-proof endpoint; a preview namespace passes its own. */
 export const LOCAL_LEAF_PROOF_ENDPOINT = {
-  url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
+  url: LOCAL_SOLANA_ENDPOINTS.leafProof,
   apiKey: SOLANA_LEAF_PROOF_API_KEY,
 } as const;
 

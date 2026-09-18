@@ -112,8 +112,12 @@ receive only the boot ID, token-file path, and allowed loopback origin. Open
 context and forwards privileged faucet calls with its server-held capability. Reloading the page
 requires no recovery step. `down` removes the exact boot's token file.
 
-Lifecycle state is under `.fhevm/runtime/solana-demo/`. Each boot gets its own ledger and logs. The
-published config has one absolute path: `.fhevm/runtime/solana-demo.json`.
+All demo state lives under the fhevm layout root (`FHEVM_STATE_DIR`, default `.fhevm`), in
+`runtime/solana/`: the published config `demo-config.json`, lifecycle boots under `demo/` (manifest,
+lock, one directory per boot with its logs), the keeper's settle lookup tables in
+`batch-lookup-tables.json` and the smoke marker. Only the validator ledger stays under `/tmp`, because
+the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview namespace state dir,
+a test's temp dir) and every producer and consumer follows.
 
 On Apple Silicon, the generated compose override runs only centralized `kms-core` as
 `linux/amd64`, because that pinned image has no arm64 manifest. The validator, Yellowstone plugin,
