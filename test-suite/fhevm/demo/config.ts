@@ -74,7 +74,7 @@ export type DemoPersonas = {
  */
 export type SolanaDemoConfig = {
   readonly source: "demo-config";
-  /** RFC-021 Solana host chain id, as an unsigned decimal string (`9223372036854788153`). */
+  /** RFC-021 Solana host chain id, as an unsigned decimal string (`72057594037940281`). */
   readonly chainId: string;
   readonly rpcUrl: string;
   readonly wsUrl: string;

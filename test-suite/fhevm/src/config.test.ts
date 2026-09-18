@@ -144,7 +144,7 @@ describe("config", () => {
     acl_address: "0xtemplate"
 `,
       {
-        hostChains: [{ key: "solana", type: "solana", chainId: "9223372036854788153", rpcPort: 8899 }],
+        hostChains: [{ key: "solana", type: "solana", chainId: "72057594037940281", rpcPort: 8899 }],
       },
     );
     const parsed = YAML.parse(rendered) as { solana_proof?: unknown };

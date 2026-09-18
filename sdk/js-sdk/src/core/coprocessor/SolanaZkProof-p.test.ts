@@ -3,9 +3,9 @@ import type { EncryptionBits } from '../types/fheType.js';
 import { describe, it, expect } from 'vitest';
 
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
-import { SOLANA_CHAIN_TYPE_BIT } from './buildInputProofMetaData-p.js';
+import { solanaHostChainId } from '../chains/utilsSolana.js';
 
-const CHAIN_ID = SOLANA_CHAIN_TYPE_BIT | 12345n;
+const CHAIN_ID = solanaHostChainId(12345n);
 const ACL = `0x${'33'.repeat(32)}`;
 const CONTRACT = `0x${'11'.repeat(32)}`;
 const USER = `0x${'22'.repeat(32)}`;
@@ -34,7 +34,7 @@ describe('SolanaZkProof', () => {
     expect(handles.length).toBe(1);
 
     const handle = handles[0]!;
-    // Trailing handle metadata is what zama-host checks: the chain-type high bit
+    // Trailing handle metadata is what zama-host checks: the type byte
     // survives, fhe type is euint64, index 0, version 0.
     expect(handle.chainId).toBe(CHAIN_ID);
     expect(handle.fheTypeId).toBe(5);

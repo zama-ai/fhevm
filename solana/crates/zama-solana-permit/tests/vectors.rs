@@ -22,7 +22,7 @@
 //!   dropping a class during a regeneration fails the suite instead of silently
 //!   shrinking coverage.
 //!
-//! The chain-id derivation is settled (`zama-solana-chain-id-v1`) and these records
+//! The chain-id derivation is settled (`0x01 || genesis[0..7]`) and these records
 //! carry ids derived by it — see `chain_id_derivation.rs` for the rule and its parity
 //! with the public cluster registry. With the derivation settled and the transport
 //! key in its canonical container representation, this set is byte-frozen: a
@@ -744,13 +744,11 @@ fn build_vector_file() -> PermitVectorFile {
             chain_id_decimal: CHAIN_ID.to_string(),
             chain_id_hex: format!("{CHAIN_ID:#018x}"),
             chain_id_be_bytes: to_hex(&CHAIN_ID.to_be_bytes()),
-            chain_id_derivation: "zama-solana-chain-id-v1: digest = SHA-256(ASCII(\
-                                  \"zama-solana-chain-id-v1\") || genesis_hash); chain_id \
-                                  = 0x8000000000000000 | (be_u64(digest[0..8]) & \
-                                  0x7fffffffffffffff). Applied once per cluster at \
-                                  deployment; running components read the id from \
-                                  configuration and check only the chain-kind bit."
-                .to_string(),
+            chain_id_derivation:
+                "type-byte encoding: chain_id = be_u64(0x01 || genesis_hash[0..7]). \
+                                  Applied once per cluster at deployment; running components read \
+                                  the id from configuration and check only the type byte."
+                    .to_string(),
         },
         transport_keys: builder.transport_keys,
         vectors: builder.vectors,

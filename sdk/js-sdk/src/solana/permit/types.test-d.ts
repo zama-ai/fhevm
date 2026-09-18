@@ -23,7 +23,7 @@ const wire = {
   startTimestamp: 1_767_229_380n,
   durationSeconds: 604_800n,
   verifyingProgramId: identity,
-  chainId: '10037641751006774702',
+  chainId: '91542930698168068',
   extraData: new Uint8Array(65),
 } as const satisfies SolanaPermitWireFields;
 
@@ -36,7 +36,7 @@ expectTypeOf<SolanaPermitWireFields['startTimestamp']>().toEqualTypeOf<bigint | 
 expectTypeOf<SolanaPermitWireFields['durationSeconds']>().toEqualTypeOf<bigint | string>();
 
 // @ts-expect-error A chain id above 2^53 loses value as a number, so no number is accepted at all.
-decodeSolanaPermitFields({ ...wire, chainId: 10037641751006774702 });
+decodeSolanaPermitFields({ ...wire, chainId: 91542930698168068 });
 
 // @ts-expect-error Same for the window start.
 decodeSolanaPermitFields({ ...wire, startTimestamp: 1767229380 });

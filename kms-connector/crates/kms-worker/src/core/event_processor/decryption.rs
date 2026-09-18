@@ -911,6 +911,7 @@ impl UserDecryptionExtraData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::solana_host_chain_id;
     use crate::core::event_processor::ProcessingErrorKind;
     use crate::core::solana::proof::HttpHostProofReader;
     use crate::core::solana::request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
@@ -1024,8 +1025,7 @@ mod tests {
                 chain_id,
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
                     deployment: crate::core::solana::deployment::DeploymentIdentity::resolve(
-                        [7; 32],
-                        chain_id | crate::core::config::SOLANA_CHAIN_TYPE_BIT,
+                        [7; 32], chain_id,
                     )
                     .expect("fixture deployment resolves"),
                     reader: crate::core::solana::snapshot::RpcHostStateReader::new(
@@ -1815,7 +1815,7 @@ mod tests {
         const AUTHORITY: [u8; 32] = [2; 32];
         const SCOPE: [u8; 32] = [3; 32];
         const LABEL: [u8; 32] = *b"balance_________________________";
-        const CHAIN_ID: u64 = crate::core::config::SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
+        const CHAIN_ID: u64 = solana_host_chain_id(0x0123_4567_89ab_cdef);
         const FHE_TYPE_UINT64: u8 = 5;
 
         // A handle of this cluster: chain id big-endian at [22..30], FHE type at [30], version at
@@ -2131,9 +2131,15 @@ mod tests {
         );
     }
 
+    fn rand_solana_handle() -> B256 {
+        let mut bytes = *rand_handle();
+        bytes[22..30].copy_from_slice(&solana_host_chain_id(12345).to_be_bytes());
+        bytes.into()
+    }
+
     #[tokio::test]
     async fn public_decryption_dispatches_to_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
 
@@ -2157,7 +2163,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_user_decryption_rejects_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
 
@@ -2175,7 +2181,7 @@ mod tests {
 
     #[tokio::test]
     async fn rfc016_user_decryption_rejects_solana_backend() {
-        let handle = rand_handle();
+        let handle = rand_solana_handle();
         let processor =
             setup_test_processor_with_backend(Asserter::new(), handle, TestHostBackend::Solana);
         let signer = PrivateKeySigner::random();

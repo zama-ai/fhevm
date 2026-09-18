@@ -18,7 +18,7 @@
 
 use kms_worker::core::solana::{
     delegation::WILDCARD_AUTHORITY,
-    deployment::{DeploymentIdentity, SOLANA_CHAIN_TYPE_BIT},
+    deployment::{DeploymentIdentity, solana_host_chain_id},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
     request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
@@ -49,9 +49,9 @@ pub const PROGRAM_ID: SolanaPubkeyBytes = [7; 32];
 /// cluster [`CHAIN_ID`] belongs to, and no check in the authorization path reads it — the rule that
 /// ties a cluster to its chain id is applied once per cluster at deployment, not per request.
 pub const GENESIS_HASH: [u8; 32] = [9; 32];
-/// The chain id of the fixture cluster, carrying the chain-kind high bit as every Solana host
+/// The chain id of the fixture cluster, carrying type byte `0x01` as every Solana host
 /// chain id must.
-pub const CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 0x0123_4567_89ab_cdef;
+pub const CHAIN_ID: u64 = solana_host_chain_id(0x0123_4567_89ab_cdef);
 
 /// The application program of the default encrypted store.
 pub const APP_PROGRAM: SolanaPubkeyBytes = [1; 32];

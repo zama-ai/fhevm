@@ -4,7 +4,7 @@ import type { Bytes32Hex } from './primitives.js';
  * A Solana host chain definition: the deployment's identity and where to reach it.
  *
  * - `id` — the Solana host chain id embedded in each ciphertext handle (`contracts_chain_id`).
- *   It is a `bigint`: the RFC-021 Solana host id (e.g. `9223372036854788153n`) exceeds
+ *   It is a `bigint`: the RFC-021 Solana host id (e.g. `72057594037940281n`) exceeds
  *   `Number.MAX_SAFE_INTEGER`, so a `number` would silently lose precision.
  * - `relayerUrl` — the relayer base URL requests are POSTed to.
  * - `verifyingProgramId` — the 32-byte host program id permits are signed for: the deployment

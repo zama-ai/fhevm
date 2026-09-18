@@ -38,7 +38,7 @@ mod schema;
 
 use kms_worker::core::solana::{
     delegation::DelegationFailure,
-    deployment::{DeploymentFailure, SOLANA_CHAIN_TYPE_BIT},
+    deployment::{DeploymentFailure, solana_host_chain_id},
     encrypted_store::EncryptedStoreFailure,
     failure::{AuthorizationFailure, FailureClass as ConnectorClass},
     handle_binding::HandleBindingFailure,
@@ -575,7 +575,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         world.clone(),
     ));
 
-    let other_chain = SOLANA_CHAIN_TYPE_BIT | 0xdead_beef;
+    let other_chain = solana_host_chain_id(0xdead_beef);
     let other_chain_handle = handle_on_chain(0x11, FHE_TYPE_UINT64, other_chain);
     let other_chain_encrypted_store =
         EncryptedStoreFixture::allowing(other_chain_handle, wallet.pubkey());
@@ -596,7 +596,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             .with_watermark(wallet.pubkey(), 0),
     ));
 
-    let foreign_chain = SOLANA_CHAIN_TYPE_BIT | 0x1234;
+    let foreign_chain = solana_host_chain_id(0x1234);
     out.push(Scenario::rejected(
         "mixed-embedded-chain-ids",
         "Handles of one request must embed one chain id. A mixed batch is refused rather than \
@@ -1527,14 +1527,12 @@ fn build_file() -> ConnectorAuthVectorFile {
             chain_id_decimal: CHAIN_ID.to_string(),
             chain_id_hex: format!("{CHAIN_ID:#018x}"),
             chain_id_be_bytes: to_hex(&CHAIN_ID.to_be_bytes()),
-            chain_id_derivation: "deployment-time rule: chain_id = 0x8000000000000000 | \
-                                  (be_u64(SHA-256(\"zama-solana-chain-id-v1\" || genesis_hash)[0..8]) \
-                                  & 0x7fffffffffffffff), applied once per cluster and configured \
-                                  everywhere. Nothing in the authorization path recomputes it, so \
-                                  this set's pair is a synthetic cluster: the chain id below is not \
-                                  the rule applied to the genesis hash below, and no check reads \
-                                  the genesis hash at all. Vectors for the rule itself live with \
-                                  the permit fixtures."
+            chain_id_derivation: "deployment-time rule: chain_id = be_u64(0x01 || genesis_hash[0..7]), \
+                                  applied once per cluster and configured everywhere. Nothing in the \
+                                  authorization path recomputes it, so this set's pair is a synthetic \
+                                  cluster: the chain id below is not the rule applied to the genesis \
+                                  hash below, and no check reads the genesis hash at all. Vectors for \
+                                  the rule itself live with the permit fixtures."
                 .to_owned(),
         },
         transport_keys: BTreeMap::from([(TRANSPORT_KEY_NAME.to_owned(), to_hex(&transport_key))]),

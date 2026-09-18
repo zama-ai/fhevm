@@ -34,7 +34,7 @@ const addressHex = (value: Address): string => hex(addressBytes(value));
 export type FheVerticalConfig = {
   readonly rpcUrl: string;
   readonly relayerUrl: string;
-  /** The Solana host chain id (`HostConfig.chain_id`, high bit set). */
+  /** The Solana host chain id (`HostConfig.chain_id`, type byte `0x01`). */
   readonly chainId: bigint;
   /** KMS public-decrypt context id, 0x-hex bytes32. */
   readonly publicDecryptContextId: string;

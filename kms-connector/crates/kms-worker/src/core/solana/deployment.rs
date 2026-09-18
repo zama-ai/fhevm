@@ -19,17 +19,17 @@
 //! the first request.
 //!
 //! One thing about the value is still checked here, because it is cheap and because handles cannot
-//! route without it: the chain-kind high bit.
+//! route without it: the chain-type byte.
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
 
-/// The chain-kind high bit: set for a Solana host chain, clear for an EVM one.
-pub use crate::core::config::SOLANA_CHAIN_TYPE_BIT;
+/// Solana type-byte helpers. Re-exported so tests share the worker's definition.
+pub use crate::core::config::{SOLANA_CHAIN_TYPE, is_solana_host_chain_id, solana_host_chain_id};
 
 /// The Connector's own deployment identity.
 ///
 /// No public constructor: the only way to obtain one is [`DeploymentIdentity::resolve`], so a
-/// chain id that never passed the chain-kind check cannot enter through a struct literal.
+/// chain id that never passed the type-byte check cannot enter through a struct literal.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct DeploymentIdentity {
     program_id: SolanaPubkeyBytes,
@@ -39,16 +39,14 @@ pub struct DeploymentIdentity {
 impl DeploymentIdentity {
     /// Resolves the identity at startup from configuration.
     ///
-    /// The one rejection is a chain id without the chain-kind bit, and it stops the process rather
-    /// than each request: handles embed the chain id and routing reads the bit out of it, so an
-    /// identity missing it matches no handle of any Solana cluster and every rejection downstream
-    /// would look like a user error.
+    /// The one rejection is a chain id whose high byte is not `0x01`, and it stops the process rather
+    /// than each request: handles embed the chain id and routing reads the type byte out of it.
     pub fn resolve(
         program_id: SolanaPubkeyBytes,
         chain_id: u64,
     ) -> Result<Self, DeploymentIdentityError> {
-        if chain_id & SOLANA_CHAIN_TYPE_BIT == 0 {
-            return Err(DeploymentIdentityError::ChainKindBitMissing { chain_id });
+        if !is_solana_host_chain_id(chain_id) {
+            return Err(DeploymentIdentityError::ChainTypeByteInvalid { chain_id });
         }
 
         Ok(Self {
@@ -142,10 +140,11 @@ pub fn embedded_chain_id(handle: &[u8; 32]) -> u64 {
 /// Why an identity could not be resolved at startup.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DeploymentIdentityError {
-    /// The configured chain id does not carry the Solana chain-kind bit, so handles of this
-    /// cluster could not route.
-    #[error("configured chain id {chain_id} does not carry the Solana chain-kind bit")]
-    ChainKindBitMissing {
+    /// The configured chain id does not have Solana type byte `0x01`.
+    #[error(
+        "configured chain id {chain_id} is not a Solana host chain id (high byte must be 0x01)"
+    )]
+    ChainTypeByteInvalid {
         /// The configured value.
         chain_id: u64,
     },

@@ -7,7 +7,7 @@ import { createFhevmBaseClient } from './createFhevmBaseClient.js';
 const rpc = createSolanaRpc('http://localhost:8899');
 
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://localhost:3000',
   },
@@ -26,9 +26,9 @@ describe('createFhevmBaseClient', () => {
     await expect(client.ready).resolves.toBeUndefined();
   });
 
-  it.each([0n, 12345n, 1n << 64n])('rejects invalid Solana chain id %s', (id) => {
+  it.each([0n, 12345n, 1n << 63n, 1n << 64n])('rejects invalid Solana chain id %s', (id) => {
     expect(() => createFhevmBaseClient({ rpc, chain: { ...chain, id } })).toThrow(
-      'Solana chain id must be a u64 bigint with bit 63 set',
+      'Solana chain id must be a u64 bigint with type byte 0x01',
     );
   });
 });

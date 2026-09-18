@@ -15,7 +15,7 @@ import { createFhevmPublicDecryptClient } from './createFhevmPublicDecryptClient
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://localhost:3000',
   },

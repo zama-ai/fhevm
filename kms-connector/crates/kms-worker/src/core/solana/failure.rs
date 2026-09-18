@@ -356,7 +356,7 @@ impl DeploymentIdentityError {
     /// Startup failures are terminal by construction: the process must not run.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::ChainKindBitMissing { .. } => FailureClass::Terminal,
+            Self::ChainTypeByteInvalid { .. } => FailureClass::Terminal,
         }
     }
 }

@@ -21,7 +21,7 @@ import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
-import { SOLANA_HOST_CHAIN_ID, SOLANA_HOST_CHAIN_ID_I64, readGatewayBootstrapInputs } from './addresses';
+import { SOLANA_HOST_CHAIN_ID, readGatewayBootstrapInputs } from './addresses';
 import {
   SOLANA_E2E_PROGRAMS,
   VALIDATOR_RPC_URL,
@@ -323,7 +323,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   });
 
   console.log(
-    `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID} (i64 ${SOLANA_HOST_CHAIN_ID_I64})`,
+    `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID}`,
   );
   return { zamaHostId };
 };

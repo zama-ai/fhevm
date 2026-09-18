@@ -40,7 +40,7 @@ use user_decryption_signature::{
     UserDecryptRequestVerification, compute_user_decrypt_digest, default_user_decrypt_domain,
 };
 
-/// The host chain id of the frozen fixture. An EVM chain id: the chain-kind high bit is clear.
+/// The host chain id of the frozen fixture. An EVM chain id: type byte 0x00.
 const CHAIN_ID: u64 = 31_337;
 
 /// The Gateway `Decryption` contract of the frozen fixture.

@@ -35,7 +35,7 @@ import {
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
-const CHAIN_ID = (1n << 63n) | 12345n;
+const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));
 const SIGNATURE = `0x${'44'.repeat(65)}` as const;
 

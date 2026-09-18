@@ -1169,7 +1169,7 @@ if (Symbol.dispose) UserDecryptionResponsePayload.prototype[Symbol.dispose] = Us
  * * `solana_request` - the Solana-owned request fields, as one named object:
  * `{ user_pubkey, host_chain_id, verifying_program_id }`, in exactly the shape
  * [process_user_decryption_resp_solana_from_js] takes them. Identities are 32-byte hex strings;
- * `host_chain_id` is a decimal string, because a Solana chain id sets bit 63 and does not fit a
+ * `host_chain_id` is a decimal string, because a Solana chain id has type byte `0x01` and does not fit a
  * JS number.
  *
  * * `handles` - the ciphertext handles as an array of hex strings (with or without a leading
@@ -1543,7 +1543,7 @@ export function process_user_decryption_resp_from_js(client, request, eip712_dom
  * * `solana_request` - the Solana-owned request fields, as one named object:
  * `{ user_pubkey, host_chain_id, verifying_program_id }`.
  * Identities are 32-byte hex strings; `host_chain_id` is a decimal string, the vector-set
- * convention, because a Solana chain id sets bit 63 and does not fit a JS number.
+ * convention, because a Solana chain id has type byte `0x01` and does not fit a JS number.
  *
  * * `eip712_domain` - the EIP-712 domain a KMS node produced the response's `external_signature`
  * under, in the same JS shape [process_user_decryption_resp_from_js] takes it. A wasm response

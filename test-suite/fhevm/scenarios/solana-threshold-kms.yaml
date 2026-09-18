@@ -36,7 +36,7 @@ hostChains:
     rpcPort: 8545
   - key: solana
     type: solana
-    chainId: "9223372036854788153"
+    chainId: "72057594037940281"
     rpcPort: 8899
 topology:
   count: 1

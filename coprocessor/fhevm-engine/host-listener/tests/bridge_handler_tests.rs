@@ -156,7 +156,7 @@ async fn bridge_handle_with_out_of_range_dst_chain_id_is_ignored() {
     // ignored, not cause an insert error that stalls the block forever.
     let inserted = ingest(
         &db,
-        bridge_handle_event(src_handle, 1u64 << 63, guid),
+        bridge_handle_event(src_handle, 0x8000_0000_0000_0000, guid),
         FixedBytes::ZERO,
         None,
     )

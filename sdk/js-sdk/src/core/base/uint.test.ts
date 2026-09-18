@@ -35,6 +35,7 @@ import {
   uint64ToBytes32,
   uint256ToBytes32,
   uintToHex0x,
+  u64ToHex0x,
   uintToBytesHex,
   uintToBytesHexNo0x,
 } from './uint.js';
@@ -1280,6 +1281,13 @@ describe('uintToHex', () => {
     for (const [input, expected] of testCases) {
       expect(uintToHex0x(asUint(input))).toBe(expected);
     }
+  });
+});
+
+describe('u64ToHex0x', () => {
+  it('pads a type-byte Solana chain id to 16 nibbles', () => {
+    expect(u64ToHex0x(asUint(72057594037940281n))).toBe('0x0100000000003039');
+    expect(uintToHex0x(asUint(72057594037940281n))).toBe('0x100000000003039');
   });
 });
 
