@@ -73,7 +73,8 @@ solana-sdk = "3.0"
 
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
 # TLS is needed for hosted Yellowstone endpoints (https://); the local plugin in e2e is plaintext.
-tonic = { workspace = true, optional = true, features = ["tls-ring", "tls-webpki-roots"] }
+# aws-lc is the rustls provider the rest of the workspace uses (rustls, reqwest, sqlx).
+tonic = { workspace = true, optional = true, features = ["tls-aws-lc", "tls-webpki-roots"] }
 # Pinned to the SAME tag as the plugin solana/geyser/build-yellowstone-plugin.sh fetches, so the
 # client proto and the server proto are generated from the same file. The geyser plugin has no
 # stable ABI, so that tag also tracks the agave line the validator runs — 4.1 today.
