@@ -741,31 +741,6 @@ async fn upsert_finding(
         .and_then(BlockCiphertextDescriptor::ct128_format)
         .map(|format| format as u8 as i16);
     let reason = drift_reason(local, observed);
-    if let Some(target) = target_ct64_digest.as_ref() {
-        let pinned = sqlx::query!(
-            r#"
-            UPDATE drifted_handle
-               SET target_ct64_digest = COALESCE(target_ct64_digest, $1)
-             WHERE consensus_epoch = $2
-               AND coprocessor_context_id = $3
-               AND host_chain_id = $4
-               AND block_hash = $5
-               AND handle = $6
-               AND detection_kind = 'inferred'
-            "#,
-            target,
-            finding.consensus_epoch,
-            context.as_slice(),
-            host_chain_id,
-            finding.block_hash.as_slice(),
-            finding.handle.as_slice(),
-        )
-        .execute(trx.as_mut())
-        .await?;
-        if pinned.rows_affected() > 0 {
-            return Ok(());
-        }
-    }
     sqlx::query!(
         r#"
         INSERT INTO drifted_handle (
@@ -785,28 +760,71 @@ async fn upsert_finding(
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
         DO UPDATE SET
-            status = 'unresolved',
-            reason = EXCLUDED.reason,
-            local_present = EXCLUDED.local_present,
-            observed_present = EXCLUDED.observed_present,
-            local_keyset_id = EXCLUDED.local_keyset_id,
-            observed_keyset_id = EXCLUDED.observed_keyset_id,
-            local_ct64_digest = EXCLUDED.local_ct64_digest,
-            observed_ct64_digest = EXCLUDED.observed_ct64_digest,
-            local_ct128_digest = EXCLUDED.local_ct128_digest,
-            observed_ct128_digest = EXCLUDED.observed_ct128_digest,
-            local_ct128_format = EXCLUDED.local_ct128_format,
-            observed_ct128_format = EXCLUDED.observed_ct128_format,
+            status = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.status
+                ELSE 'unresolved'
+            END,
+            reason = CASE
+                WHEN drifted_handle.reason = 'ct64_mismatch' THEN drifted_handle.reason
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.reason
+                ELSE EXCLUDED.reason
+            END,
+            local_present = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_present
+                ELSE EXCLUDED.local_present
+            END,
+            observed_present = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_present
+                ELSE EXCLUDED.observed_present
+            END,
+            local_keyset_id = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_keyset_id
+                ELSE EXCLUDED.local_keyset_id
+            END,
+            observed_keyset_id = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_keyset_id
+                ELSE EXCLUDED.observed_keyset_id
+            END,
+            local_ct64_digest = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct64_digest
+                ELSE EXCLUDED.local_ct64_digest
+            END,
+            observed_ct64_digest = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct64_digest
+                ELSE EXCLUDED.observed_ct64_digest
+            END,
+            local_ct128_digest = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_digest
+                ELSE EXCLUDED.local_ct128_digest
+            END,
+            observed_ct128_digest = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct128_digest
+                ELSE EXCLUDED.observed_ct128_digest
+            END,
+            local_ct128_format = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_format
+                ELSE EXCLUDED.local_ct128_format
+            END,
+            observed_ct128_format = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct128_format
+                ELSE EXCLUDED.observed_ct128_format
+            END,
+            observed_commitment_digest = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_commitment_digest
+                ELSE EXCLUDED.observed_commitment_digest
+            END,
             target_ct64_digest = COALESCE(drifted_handle.target_ct64_digest, EXCLUDED.target_ct64_digest),
             target_keyset_id = COALESCE(drifted_handle.target_keyset_id, EXCLUDED.target_keyset_id),
             target_ct128_digest = COALESCE(drifted_handle.target_ct128_digest, EXCLUDED.target_ct128_digest),
             target_ct128_format = COALESCE(drifted_handle.target_ct128_format, EXCLUDED.target_ct128_format),
-            last_observed_task_id = EXCLUDED.last_observed_task_id,
-            resolved_task_id = NULL
-        WHERE drifted_handle.last_observed_task_id <= EXCLUDED.last_observed_task_id
-          AND drifted_handle.detection_kind <> 'inferred'
-          AND NOT drifted_handle.can_be_healed
-          AND drifted_handle.healed_at IS NULL
+            last_observed_task_id = COALESCE(EXCLUDED.last_observed_task_id, drifted_handle.last_observed_task_id),
+            resolved_task_id = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.resolved_task_id
+                ELSE NULL
+            END
+        WHERE drifted_handle.healed_at IS NULL
+          AND (drifted_handle.last_observed_task_id IS NULL
+               OR drifted_handle.last_observed_task_id <= EXCLUDED.last_observed_task_id)
         "#,
         finding.consensus_epoch,
         context.as_slice(), host_chain_id, finding.block_number,
