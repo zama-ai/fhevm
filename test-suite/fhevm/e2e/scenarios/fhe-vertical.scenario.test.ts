@@ -26,6 +26,7 @@ import path from 'node:path';
 
 import { restartDemoSolanaListener } from '../../demo/lifecycle';
 import { REPO_ROOT } from '../../src/layout';
+import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../../solana/deploy/src/environment';
 import { readGatewayBootstrapInputs } from '../../src/solana/addresses';
 import { userDecryptExpect } from '../../src/solana/fhe-vertical';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
@@ -112,7 +113,7 @@ test(
       await stack.waitForSnsCommit(hex(original.handle));
       await rollout(artifactsDir, false);
       await cp(path.join(artifactsDir, 'zama_host.so'), path.join(directory, 'zama_host.so'));
-      await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
+      await runStreaming(['bash', 'scripts/build-programs.sh', DEFAULT_SOLANA_ENVIRONMENT, 'zama_host'], {
         cwd: path.join(REPO_ROOT, 'solana'),
         env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2', SBF_OUT_PATH: path.join(directory, 'upgrade') },
       });
