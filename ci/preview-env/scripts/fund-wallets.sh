@@ -49,6 +49,9 @@ print("\n".join(out))
 PY
 )
 
+# Role #3 is the relayer's gateway signer (apply-chain-env.sh) and the only heavy gateway spender.
+relayer_address=$(python3 -c 'import json,os; print(json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]["3"]["address"])')
+
 fund_targets="host,gateway"
 if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # HOST_HTTP/POLYGON_HTTP were read from Secret `rpc` by deploy-rpc-secret.sh.
@@ -84,16 +87,19 @@ if [[ "${CHAIN_MODE}" == "testnets" ]]; then
   # Polygon's canonical-snapshot flow deploys the empty-proxy set TWICE - once as a
   # throwaway, then again once the canonical ProtocolConfig snapshot is written - on top
   # of the 9 implementations. Measured at 69 gwei: 5.5M gas (0.38 POL) for a single
-  # contract and ~2.5 POL for the whole deploy, so the old 2.0 floor died two
-  # implementations from the end. 6.0 absorbs a spike to ~165 gwei. A floor has to cover
-  # the worst gas the run might meet, so it over-funds by design; sweep-wallets.sh
-  # returns the remainder at teardown, which is what keeps that margin affordable.
+  # contract and ~2.5 POL for the whole deploy, i.e. ~36M gas end to end. The floor must
+  # therefore track the gas PRICE, not the gas: 6.0 covered ~165 gwei and died on
+  # 2026-09-15 when Amoy sat at 400-475 gwei (the deploy needs ~15-17 POL there, and the
+  # run failed with 1.0 POL left against a single 2.6 POL contract). 20.0 covers ~550
+  # gwei. A floor has to cover the worst gas the run might meet, so it over-funds by
+  # design; sweep-wallets.sh returns the remainder at teardown, which is what keeps that
+  # margin affordable.
   # The test signers need headroom too: one e2e fixture deploy on Amoy was measured at
-  # 0.3 POL, so the 0.2 default drains them partway through the suite and every later
-  # job dies on "insufficient funds" instead of exercising anything.
+  # 0.3 POL at 69 gwei, so ~2 POL apiece at today's prices; 10.0 leaves room for a suite
+  # of them. If Amoy ever settles back down these can come back to 6.0/2.0.
   ADDRESSES="${role_addresses}" DEPLOYER_ADDRESS="${deployer}" \
-    FLOOR_WEI="6000000000000000000" \
-    DEPLOYER_FLOOR_WEI="6000000000000000000" \
+    FLOOR_WEI="10000000000000000000" \
+    DEPLOYER_FLOOR_WEI="20000000000000000000" \
     FUNDER_PRIVATE_KEY="${POLYGON_FUNDER_PRIVATE_KEY}" CHAINS_JSON="${amoy_json}" \
     node "${script_dir}/fund-wallets-treasury.cjs"
   # Only the Nitro gateway has a faucet on this path.
@@ -140,7 +146,9 @@ spec:
             - name: HOST_FLOOR_WEI
               value: "500000000000000000"
             - name: GATEWAY_FLOOR_WEI
-              value: "1000000000000000000"
+              value: "200000000000000000"
+            - name: GATEWAY_FLOOR_OVERRIDES
+              value: "${relayer_address}:1000000000000000000"
             - name: MAX_CLAIMS_PER_ADDR
               value: "12"
           volumeMounts:

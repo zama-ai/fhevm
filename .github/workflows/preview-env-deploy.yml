@@ -15,20 +15,29 @@ name: preview-env-deploy
 #     gitops sync-secrets chart (no GitHub secrets). Implies deploy_polygon; slow (12s blocks), real testnet gas.
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
-# Three PR labels control deployment (see check-labels below):
+# Four PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
 #     fresh from the PR HEAD (only changed components; the rest resolve to the
 #     change-detection base commit's images). In-repo charts (charts/*) install
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
+#   - preview-env-gpu: with preview-env-e2e-tests, request one GPU for each FHE
+#     worker and place them on the coprocessor-gpu nodepool. Combines with
+#     preview-env-e2e (HEAD workers) or preview-env-blue-green (Green/GCS
+#     workers; Blue/BCS stays CPU). Does nothing without preview-env-e2e-tests.
+#     Dispatch opt-in is enable_gpu=true (CLI --gpu); Default FHE params are
+#     generated only on this path.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
 #     only). With preview-env-e2e-tests (or automated_tests): propose after
 #     relayer, hold consensus-detector so the first e2e stays on blue (assert
 #     GCS computations > 0), enable the detector, wait for versioning=v0.15,
-#     then run e2e again on green. Incompatible with deploy_polygon and N=1.
+#     then run e2e again on green. Without automated_tests: manual QA mode,
+#     Blue only and no proposal; Green, the proposal and the checks come from
+#     ci/preview-env/scripts/bg-*.sh. With deploy_polygon the upgrade spans
+#     both host chains. N=1 is rejected.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -66,7 +75,15 @@ on:
           - "3"
           - "5"
       enable_blue_green:
-        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Incompatible with deploy_polygon (and so with chain_mode=testnets). PR label preview-env-blue-green is the other gate."
+        description: "RFC-021 BCS+GCS on each identity. Forces nb_coprocessor=2 when N=1. Without automated_tests deploys Blue only (manual QA mode). With deploy_polygon (so with chain_mode=testnets) the upgrade spans both host chains. PR label preview-env-blue-green is the other gate."
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      enable_gpu:
+        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each) and generate Default FHE parameters. PR path still requires preview-env-gpu + preview-env-e2e-tests. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU."
         required: true
         type: choice
         default: "false"
@@ -172,10 +189,10 @@ env:
 
 jobs:
   ##########################################################################
-  # Gate: PRs labeled preview-env-e2e(-tests) or preview-env-blue-green get a
-  # preview. On PRs images are always built fresh from the PR branch.
-  # workflow_dispatch always deploys (the dispatch itself is the request);
-  # build_images comes from its input.
+  # Gate: preview labels are evaluated here. preview-env-gpu only enables GPU
+  # scheduling when preview-env-e2e-tests is also present. workflow_dispatch
+  # always deploys (the dispatch itself is the request); GPU comes from
+  # enable_gpu, build_images from its input.
   ##########################################################################
   check-labels:
     name: check-labels
@@ -185,12 +202,14 @@ jobs:
       github.event.action != 'labeled' ||
       github.event.label.name == 'preview-env-e2e' ||
       github.event.label.name == 'preview-env-e2e-tests' ||
+      github.event.label.name == 'preview-env-gpu' ||
       github.event.label.name == 'preview-env-blue-green'
     outputs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       build_images: ${{ steps.check.outputs.build_images }}
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
       automated_tests: ${{ steps.check.outputs.automated_tests }}
+      gpu: ${{ steps.check.outputs.gpu }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
@@ -231,23 +250,28 @@ jobs:
           DISPATCH_OBSERVABILITY: ${{ inputs.observability }}
           DISPATCH_NB_COPROCESSOR: ${{ inputs.nb_coprocessor || '1' }}
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
+          DISPATCH_ENABLE_GPU: ${{ inputs.enable_gpu || 'false' }}
           DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           # build_test_suite_only is a dispatch-only knob; label-triggered runs
           # never set it (always build everything they're allowed to).
-          echo "build_test_suite_only=false" >> "$GITHUB_OUTPUT"
           # automated_tests defaults off; dispatch reads its input, PR runs opt
           # in via the preview-env-e2e-tests label (handled below).
-          echo "automated_tests=false" >> "$GITHUB_OUTPUT"
-          # observability is a dispatch-only knob for now (no PR label), off by
-          # default.
-          echo "observability=false" >> "$GITHUB_OUTPUT"
+          # GPU scheduling: dispatch enable_gpu, or preview-env-gpu with
+          # preview-env-e2e-tests. observability is a dispatch-only knob for
+          # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
           # is two-party consensus). PRs: preview-env-blue-green label, N=2.
-          echo "blue_green=false" >> "$GITHUB_OUTPUT"
-          echo "nb_coprocessor=1" >> "$GITHUB_OUTPUT"
-          echo "chain_mode=anvil" >> "$GITHUB_OUTPUT"
+          {
+            echo "build_test_suite_only=false"
+            echo "automated_tests=false"
+            echo "gpu=false"
+            echo "observability=false"
+            echo "blue_green=false"
+            echo "nb_coprocessor=1"
+            echo "chain_mode=anvil"
+          } >> "$GITHUB_OUTPUT"
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -257,14 +281,17 @@ jobs:
                 nb_coprocessor=2
               fi
             fi
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            echo "build_images=${DISPATCH_BUILD_IMAGES}" >> "$GITHUB_OUTPUT"
-            echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}" >> "$GITHUB_OUTPUT"
-            echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}" >> "$GITHUB_OUTPUT"
-            echo "observability=${DISPATCH_OBSERVABILITY:-false}" >> "$GITHUB_OUTPUT"
-            echo "blue_green=${blue_green}" >> "$GITHUB_OUTPUT"
-            echo "nb_coprocessor=${nb_coprocessor}" >> "$GITHUB_OUTPUT"
-            echo "chain_mode=${DISPATCH_CHAIN_MODE:-anvil}" >> "$GITHUB_OUTPUT"
+            {
+              echo "should_deploy=true"
+              echo "build_images=${DISPATCH_BUILD_IMAGES}"
+              echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}"
+              echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
+              echo "gpu=${DISPATCH_ENABLE_GPU:-false}"
+              echo "observability=${DISPATCH_OBSERVABILITY:-false}"
+              echo "blue_green=${blue_green}"
+              echo "nb_coprocessor=${nb_coprocessor}"
+              echo "chain_mode=${DISPATCH_CHAIN_MODE:-anvil}"
+            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "PR labels: $PR_LABELS"
@@ -275,6 +302,7 @@ jobs:
           should_deploy=false
           build_images=false
           automated_tests=false
+          gpu=false
           blue_green=false
           chain_mode=anvil
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -283,6 +311,10 @@ jobs:
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests")' > /dev/null; then
             automated_tests=true
             should_deploy=true
+          fi
+          if [[ "${automated_tests}" == "true" ]] &&
+             echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-gpu")' > /dev/null; then
+            gpu=true
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e")' > /dev/null; then
             should_deploy=true
@@ -305,6 +337,7 @@ jobs:
             echo "should_deploy=${should_deploy}"
             echo "build_images=${build_images}"
             echo "automated_tests=${automated_tests}"
+            echo "gpu=${gpu}"
             echo "blue_green=${blue_green}"
             echo "nb_coprocessor=${nb_coprocessor}"
             echo "chain_mode=${chain_mode}"
@@ -463,7 +496,9 @@ jobs:
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success' &&
-      (needs.check-labels.outputs.blue_green != 'true' || needs.build-coprocessor.result == 'success')
+      (needs.check-labels.outputs.blue_green != 'true' ||
+       needs.build-coprocessor.result == 'success' ||
+       needs.build-coprocessor.result == 'skipped')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
     # (8 tests, each recompiling contracts). Blue-green + tests runs that DAG
@@ -479,6 +514,7 @@ jobs:
       # Gate for the automated e2e test workflow (see the test-suite-workflow
       # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
+      GPU: ${{ needs.check-labels.outputs.gpu }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
@@ -497,8 +533,8 @@ jobs:
       KMS_REPO_REF: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_repo_ref }}
       KMS_CORE_TAG: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_core_version }}
       REDIS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).redis_chart_version }}
-      # Previous-release pin for the BCS fleet (compiled STACK_VERSION=0.14.0).
-      BCS_IMAGE_TAG: "v0.14.0-7"
+      # Previous-release pin for the BCS fleet.
+      BCS_IMAGE_TAG: "v0.14.1"
       # Release the GCS fleet is compiled at; names the proposal and the
       # gcs-<release> schema the assertions read.
       GCS_VERSION: v${{ needs.check-labels.outputs.stack_version }}
@@ -533,10 +569,6 @@ jobs:
           fi
           if [[ "${NB_COPROCESSOR}" == "1" ]]; then
             echo "::error::RFC-021 blue-green requires nb_coprocessor > 1 (unanimity across N operators)."
-            exit 1
-          fi
-          if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
-            echo "::error::RFC-021 first-iteration blue-green is single-chain: incompatible with deploy_polygon (and with chain_mode=testnets, which implies it)."
             exit 1
           fi
           gcs=$(jq -r .coprocessor_tfhe_worker <<<"${TAGS_JSON}")
@@ -994,6 +1026,14 @@ jobs:
         if: env.DEPLOY_POLYGON == 'true'
         run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer
 
+      - name: Deploy polygon GCS consumer (per-party Polygon consumer, green fleet)
+        # The consumer is per fleet: GCS gets its own Polygon consumer (coprocessor-polygon-<i>-gcs) beside the BCS one above.
+        # Automated path only: the manual QA mode starts Green later with bg-green.sh.
+        if: env.DEPLOY_POLYGON == 'true' && env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
+        env:
+          GCS_STACK_VERSION: ${{ needs.check-labels.outputs.stack_version }}
+        run: bash ci/preview-env/scripts/deploy-coprocessor-sidecars.sh polygon-consumer-gcs
+
       - name: Deploy coprocessor-poller (per-party key/CRS activation)
         # One poller release PER COPROCESSOR PARTY (coprocessor-poller-<i>), the
         # DB-side background processor that, on a pending kms_key_activation /
@@ -1072,7 +1112,8 @@ jobs:
       # Propose only after the relayer can serve traffic, so the upgrade
       # window covers in-window e2e instead of helm install time.
       - name: Propose coprocessor upgrade (RFC-021)
-        if: env.BLUE_GREEN == 'true'
+        # Automated path only: in the manual QA mode the operator proposes by hand.
+        if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         env:
           PROPOSAL_ID: ${{ github.run_id }}
         run: |

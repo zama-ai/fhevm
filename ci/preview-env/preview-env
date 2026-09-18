@@ -42,13 +42,17 @@ preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
 launch options:
   --ref <branch>            required (must be pushed to origin)
   --parties 1|2|3|5         identities (default 1). 2 is two-party, not blue-green
-  --blue-green              enable_blue_green=true and nb_coprocessor=2
+  --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
+                            automated RFC-021 round, without it Blue only (manual QA mode)
+  --gpu                     enable_gpu=true: GPU workers + Default FHE params (Test params
+                            stay on CPU). Combines with --testnets, --blockchain-dev, and
+                            --blue-green (Green/GCS GPU; Blue stays CPU)
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
                             (implies --polygon; RPC URLs + funder key come from AWS
                             Secrets Manager via ExternalSecret)
   --tests                   automated_tests=true
-  --polygon                 second Polygon host (incompatible with blue-green)
+  --polygon                 second Polygon host (with --blue-green: two-chain RFC-021)
   --observability           in-namespace Prometheus/Grafana/Jaeger
   --no-build                build_images=false
   --test-suite-only         build only the e2e test-suite image
@@ -162,7 +166,7 @@ wait_for_new_run() {
 }
 
 cmd_launch() {
-  local ref="" parties="1" blue_green="false" chain_mode="anvil"
+  local ref="" parties="1" blue_green="false" gpu="false" chain_mode="anvil"
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
   local do_watch="false"
@@ -173,6 +177,7 @@ cmd_launch() {
       --ref) ref="${2:-}"; shift 2 ;;
       --parties) parties="${2:-}"; shift 2 ;;
       --blue-green) blue_green="true"; shift ;;
+      --gpu) gpu="true"; shift ;;
       --blockchain-dev) chain_mode="blockchain-dev"; shift ;;
       --testnets) chain_mode="testnets"; shift ;;
       --tests) tests="true"; shift ;;
@@ -201,16 +206,12 @@ cmd_launch() {
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
-  if [[ "${blue_green}" == "true" && "${polygon}" == "true" ]]; then
-    die "--blue-green is incompatible with --polygon"
-  fi
   if [[ "${chain_mode}" == "blockchain-dev" && "${polygon}" == "true" ]]; then
     die "--blockchain-dev is incompatible with --polygon"
   fi
   if [[ "${chain_mode}" == "testnets" ]]; then
-    # Amoy is the second host chain on this path; blue-green is single-chain today.
+    # Amoy is the second host chain on this path.
     polygon="true"
-    [[ "${blue_green}" != "true" ]] || die "--testnets is incompatible with --blue-green (multi-chain blue-green is not wired yet)"
   fi
 
   local overrides="{}"
@@ -235,7 +236,7 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} chain_mode=${chain_mode} tests=${tests} polygon=${polygon}"
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} chain_mode=${chain_mode} tests=${tests} polygon=${polygon}"
   echo "  overrides=${overrides}"
 
   gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
@@ -245,6 +246,7 @@ print(json.dumps(out, separators=(",", ":")))
     -f "observability=${observability}" \
     -f "nb_coprocessor=${parties}" \
     -f "enable_blue_green=${blue_green}" \
+    -f "enable_gpu=${gpu}" \
     -f "nb_kms_core=${kms_parties}" \
     -f "deploy_polygon=${polygon}" \
     -f "chain_mode=${chain_mode}" \

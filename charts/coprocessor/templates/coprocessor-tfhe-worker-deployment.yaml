@@ -151,13 +151,7 @@ spec:
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
-          resources:
-            requests:
-              cpu: {{ .Values.tfheWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.tfheWorker.resources.requests.memory | default "256Mi" }}
-            limits:
-              cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
+          {{- include "coprocessor.containerResources" .Values.tfheWorker.resources | nindent 10 }}
           {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.liveness.enabled }}
           livenessProbe:
             {{- toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}

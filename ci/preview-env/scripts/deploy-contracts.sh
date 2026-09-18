@@ -6,7 +6,12 @@
 set -euo pipefail
 
 deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
-keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
+# GPU Default-parameter DKG is multi-hour; CPU Test params finish in tens of minutes.
+if [[ "${GPU:-false}" == "true" ]]; then
+  keygen_timeout="${KEYGEN_TIMEOUT:-310m}"
+else
+  keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
+fi
 
 kind="${1:?kind}"
 case "${kind}" in

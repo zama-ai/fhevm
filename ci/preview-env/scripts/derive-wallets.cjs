@@ -20,6 +20,8 @@ for (let i = 0; i < n; i++) {
   const path = `m/44'/60'/0'/0/${offset + i}`;
   const wallet = ethers.HDNodeWallet.fromMnemonic(mnemonic, path);
   wallets.push({ party, address: wallet.address, privateKey: wallet.privateKey });
+  // Mask first: steps pass the JSON via env and Actions prints step env unmasked otherwise.
+  console.log(`::add-mask::${wallet.privateKey}`);
 }
 console.log(
   `Derived ${n} ${label} wallets:`,
