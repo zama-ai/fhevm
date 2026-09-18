@@ -8,7 +8,7 @@ describe("loadEnv", () => {
     expect(env.source).toBe("local");
     expect(env.rpcUrl).toBe("http://127.0.0.1:8899");
     expect(env.relayerUrl).toBe("http://127.0.0.1:3000");
-    expect(env.chainId).toBe(9223372036854788153n);
+    expect(env.chainId).toBe(72057594037940281n);
     expect(env.aclProgram).toMatch(/^0x[0-9a-f]{64}$/);
     expect(env.capabilities).toEqual({ faucet: true, freshMints: true, fastSlots: true });
     expect(env.roots.deployerKeypairPath).toContain(".config/solana/id.json");
@@ -24,7 +24,7 @@ describe("loadEnv", () => {
   });
 
   test("rejects a non-Solana (low-bit) chain id", () => {
-    expect(() => resolveEnv({ chainId: "12345" })).toThrow(/not a Solana high-bit chain id/);
+    expect(() => resolveEnv({ chainId: "12345" })).toThrow(/not a Solana type-byte chain id/);
   });
 
   test("rejects a malformed ACL program identity", () => {

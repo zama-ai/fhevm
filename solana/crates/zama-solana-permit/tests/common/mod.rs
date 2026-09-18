@@ -9,9 +9,10 @@
 //!   itself would change if anyone ever sorted the list as strings;
 //! * the verifying program id is the real host program id, so the golden text looks
 //!   like a permit a wallet would actually be shown;
-//! * the chain id is derived from a fixture genesis hash by a stand-in derivation.
-//!   The real derivation is still an open protocol question, so goldens deliberately
-//!   pin a fixed test chain id rather than a derivation result.
+//! * the chain id is derived from a fixture genesis hash by the settled type-byte
+//!   encoding (`0x01` plus the first seven genesis bytes). Goldens pin that result
+//!   as a literal so a drifting derivation surfaces here instead of silently
+//!   rewriting every golden.
 
 // Each integration binary compiles this module and uses a different subset of it.
 #![allow(dead_code)]
@@ -41,22 +42,17 @@ pub const GENESIS_HASH_HEX: &str =
 /// Fixture chain id: `derive_chain_id` applied to [`GENESIS_HASH_HEX`], written out as a
 /// literal so a drifting derivation surfaces here instead of silently rewriting every
 /// golden. The tie is asserted in `chain_id_derivation.rs`.
-pub const CHAIN_ID: u64 = 10_037_641_751_006_774_702;
+pub const CHAIN_ID: u64 = 0x0145_39cf_79f6_6704;
 
-/// The settled chain-id derivation, `zama-solana-chain-id-v1`:
-/// `0x8000000000000000 | (be_u64(SHA-256(tag ‖ genesis_hash)[0..8]) & 0x7fff…)`.
+/// The settled chain-id encoding: type byte `0x01` plus the first seven bytes of genesis.
 ///
 /// A deployment-time rule: no running component recomputes it — production reads the
-/// chain id from configuration and checks only the chain-kind bit. It lives here, in
-/// test code, because the fixture generator is the one place that plays the deployer.
+/// chain id from configuration and checks only the type byte.
 pub fn derive_chain_id(genesis_hash: &[u8; 32]) -> u64 {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(b"zama-solana-chain-id-v1");
-    hasher.update(genesis_hash);
-    let digest = hasher.finalize();
-    let leading = u64::from_be_bytes(digest[..8].try_into().expect("eight digest bytes"));
-    0x8000_0000_0000_0000 | (leading & 0x7fff_ffff_ffff_ffff)
+    let mut bytes = [0u8; 8];
+    bytes[0] = 0x01;
+    bytes[1..].copy_from_slice(&genesis_hash[..7]);
+    u64::from_be_bytes(bytes)
 }
 /// Fixture KMS context id.
 pub const KMS_CONTEXT_ID_HEX: &str =
@@ -82,25 +78,25 @@ pub const DURATION_SECONDS: u64 = 604_800;
 
 /// Digest of the reference permit's envelope.
 pub const REFERENCE_ENVELOPE_DIGEST_HEX: &str =
-    "8b6cf9cfe5de67523d5e9f5b776ae81d483e976f5728a562a26c7b07ce9416f4";
+    "4f91093320897b3ede16d21e52dd7d3501ca0ec795ca5134029f49ff8cc1ad29";
 /// Signature over the reference envelope, from the independent implementation.
 pub const REFERENCE_SIGNATURE_HEX: &str = concat!(
-    "9a3f07a2c4e9b37ad8373a184dd5f48bb411456d3f698eaa5993576bc87d3661",
-    "1063375a24b999321e77da46d2b464b714c8888db5e4d624f0f53196dd1ad40d"
+    "f849f4c85c976de683e2d272e5d7f99f7efc37068af3412ec686e0727c69dbf8",
+    "6c2c1b8e56374553f69bdcba36f541c147c19c90ac6c163553014fbe453e110e"
 );
 /// The same signature with its scalar replaced by `S + L`: a second encoding of the
 /// same signature, which a lax verifier accepts and a strict one rejects.
 pub const NON_CANONICAL_SIGNATURE_HEX: &str = concat!(
-    "9a3f07a2c4e9b37ad8373a184dd5f48bb411456d3f698eaa5993576bc87d3661",
-    "fd362db73e1cac8af413d2e9b0ae43cc14c8888db5e4d624f0f53196dd1ad41d"
+    "f849f4c85c976de683e2d272e5d7f99f7efc37068af3412ec686e0727c69dbf8",
+    "590011eb709a57abcc38d45d15ef20d647c19c90ac6c163553014fbe453e111e"
 );
 /// Digest of the permissive permit's envelope.
 pub const PERMISSIVE_ENVELOPE_DIGEST_HEX: &str =
-    "6162200c92c19a76d857be05c130c9a32c220b604e3babd55e56c95bbe2aab7d";
+    "73ef40cf9cb7cf9cd7d553a73ec91542c798fe1c64e93546a613d8e8abee2197";
 /// Signature over the permissive permit's envelope.
 pub const PERMISSIVE_SIGNATURE_HEX: &str = concat!(
-    "02ae45904abcd75fe444b0690a218879220380013c8c43c6b2ed3a74c4b142f2",
-    "006abb83cd8b214bed6379cffb85fb9da2d7aea075de2efc19b2003aa7936b04"
+    "e609ad49f344490796abf910b24ee4347439511b3157f272701466a815e0943c",
+    "a5655b3a7623fab49da249eecc9f4fbca39aa9b3f902246ca35aaa679deb7c04"
 );
 /// Fingerprint of the reference transport key, computed outside this crate.
 pub const REFERENCE_FINGERPRINT_HEX: &str =

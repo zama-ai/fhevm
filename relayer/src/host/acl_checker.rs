@@ -92,7 +92,7 @@ struct SolanaHostChain {
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
-    /// RFC-021 Solana host chains (chain-type high bit), keyed by chain id. A Solana
+    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id. A Solana
     /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
     /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
     /// Direct entries and public decrypts are not pre-checked here — their authorization
@@ -123,7 +123,7 @@ impl HostAclChecker {
             })?;
 
         for hc in host_chains {
-            // The chain id is the sole chain-kind discriminator. Settings validation
+            // The type byte on the chain id is the sole discriminator. Settings validation
             // enforces the matching address encoding; keep this constructor fail-closed
             // for direct callers too.
             if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
@@ -148,6 +148,13 @@ impl HostAclChecker {
                     },
                 );
                 continue;
+            }
+            if !crate::core::event::is_evm_host_chain_id(hc.chain_id) {
+                return Err(anyhow::anyhow!(
+                    "unsupported chain type byte 0x{:02x} for chain {} (expected 0x00 EVM or 0x01 Solana)",
+                    crate::core::event::chain_type_byte(hc.chain_id),
+                    hc.chain_id
+                ));
             }
 
             let url = Url::parse(&hc.url).map_err(|e| {
@@ -1079,8 +1086,8 @@ mod tests {
     async fn solana_host_starts_and_skips_evm_precheck() {
         use crate::config::settings::HostChainConfig;
 
-        // RFC-021 Solana host: chain-type high bit + base58 acl_address (zama-host program).
-        let solana_chain_id = (1u64 << 63) | 12345;
+        // RFC-021 Solana host: type byte 0x01 + base58 acl_address (zama-host program).
+        let solana_chain_id = crate::core::event::solana_host_chain_id(12345);
         let host_chains = vec![HostChainConfig {
             chain_id: solana_chain_id,
             url: "http://127.0.0.1:8899".to_string(),
@@ -1115,9 +1122,10 @@ mod tests {
         let evm_address = "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836";
         let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
-        for (chain_id, acl_address) in
-            [((1u64 << 63) | 12345, evm_address), (12345, solana_address)]
-        {
+        for (chain_id, acl_address) in [
+            (crate::core::event::solana_host_chain_id(12345), evm_address),
+            (12345, solana_address),
+        ] {
             let result = HostAclChecker::new(
                 &[HostChainConfig {
                     chain_id,
@@ -1149,7 +1157,7 @@ mod tests {
 
         let checker = HostAclChecker::new(
             &[HostChainConfig {
-                chain_id: (1u64 << 63) | 12345,
+                chain_id: crate::core::event::solana_host_chain_id(12345),
                 url: format!("http://{addr}"),
                 acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
             }],

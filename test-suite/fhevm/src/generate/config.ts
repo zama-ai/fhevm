@@ -83,7 +83,7 @@ const rewriteHostChains = (
   if (!Array.isArray(config.host_chains)) return config;
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
     if (chain.type === "solana") {
-      // RFC-021 ids exceed i64::MAX; the relayer config parser accepts them only as strings (YAML
+      // RFC-021 ids exceed Number.MAX_SAFE_INTEGER; the relayer config parser accepts them only as strings (YAML
       // quotes a JS string). acl_address = zama-host program (base58): the Solana-host
       // discriminant, and the program the delegation rows are read under. `url` must be a live
       // Solana RPC: the relayer's advisory pre-check of delegated user-decrypt entries reads

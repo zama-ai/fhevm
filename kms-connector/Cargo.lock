@@ -2068,7 +2068,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=0ead5f7403a8fe6e171734c9ec81d0de039ac1cb#0ead5f7403a8fe6e171734c9ec81d0de039ac1cb"
+source = "git+https://github.com/zama-ai/kms.git?rev=6b36473c7bc2720fa0d4d3d735c3e6b213931e3b#6b36473c7bc2720fa0d4d3d735c3e6b213931e3b"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3868,6 +3868,10 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+ "allocator-api2",
+]
 
 [[package]]
 name = "hashbrown"
@@ -4554,7 +4558,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=0ead5f7403a8fe6e171734c9ec81d0de039ac1cb#0ead5f7403a8fe6e171734c9ec81d0de039ac1cb"
+source = "git+https://github.com/zama-ai/kms.git?rev=6b36473c7bc2720fa0d4d3d735c3e6b213931e3b#6b36473c7bc2720fa0d4d3d735c3e6b213931e3b"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5607,7 +5611,7 @@ dependencies = [
  "arrayvec",
  "async-channel",
  "flurry",
- "hashbrown 0.17.0",
+ "hashbrown 0.14.5",
  "log",
  "parking_lot",
  "rand 0.8.6",
@@ -7944,7 +7948,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=0ead5f7403a8fe6e171734c9ec81d0de039ac1cb#0ead5f7403a8fe6e171734c9ec81d0de039ac1cb"
+source = "git+https://github.com/zama-ai/kms.git?rev=6b36473c7bc2720fa0d4d3d735c3e6b213931e3b#6b36473c7bc2720fa0d4d3d735c3e6b213931e3b"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -7957,7 +7961,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.15.0-0"
-source = "git+https://github.com/zama-ai/kms.git?rev=0ead5f7403a8fe6e171734c9ec81d0de039ac1cb#0ead5f7403a8fe6e171734c9ec81d0de039ac1cb"
+source = "git+https://github.com/zama-ai/kms.git?rev=6b36473c7bc2720fa0d4d3d735c3e6b213931e3b#6b36473c7bc2720fa0d4d3d735c3e6b213931e3b"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8962,7 +8966,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

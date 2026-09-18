@@ -12,7 +12,7 @@ import {
 import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const handle = new Uint8Array(32);
-handle[22] = 0x80;
+handle[22] = 0x01;
 const account = new Uint8Array(32).fill(4);
 const contextId = new Uint8Array(32).fill(5);
 
@@ -25,7 +25,7 @@ const parameters = (): SolanaPublicDecryptCertificateParameters => ({
 
 const context = {
   chain: {
-    id: 0x8000000000000000n,
+    id: 0x0100000000000000n,
     fhevm: {
       relayerUrl: 'https://relayer.example.com',
       programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },

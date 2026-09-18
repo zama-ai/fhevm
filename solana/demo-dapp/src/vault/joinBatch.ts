@@ -116,7 +116,7 @@ export async function joinBatch(
   const inputHandle = handles[inputIndex];
   if (inputHandle === undefined) throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
   if (inputHandle.fheType !== 'euint64') throw new Error('join amount must be euint64');
-  if ((inputProof.chainId & (1n << 63n)) === 0n) throw new Error('join requires a Solana chain id');
+  if (((inputProof.chainId >> 56n) & 0xffn) !== 0x01n) throw new Error('join requires a Solana chain id');
   if (inputProof.chainId !== fhevm.solanaChain.id)
     throw new Error('input proof chain id does not match the client chain');
   if (base58.encode(hexToBytes(inputProof.aclContractAddress)) !== zamaHostProgramAddress) {

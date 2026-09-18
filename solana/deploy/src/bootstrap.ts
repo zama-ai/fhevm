@@ -97,8 +97,8 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > params.gateway.coprocessorSigners.length) {
     throw new Error('coprocessor threshold must be between 1 and signer count');
   }
-  if (params.gateway.gatewayChainId < 0n || params.gateway.gatewayChainId >= 1n << 63n) {
-    throw new Error('gateway chain id must be an EVM u64 with the chain-type bit clear');
+  if (params.gateway.gatewayChainId < 0n || ((params.gateway.gatewayChainId >> 56n) & 0xffn) !== 0n) {
+    throw new Error('gateway chain id must be a uint64-padded EVM id (high byte 0x00)');
   }
   if (
     [params.gateway.decryptionContract, params.gateway.inputVerificationContract].some(

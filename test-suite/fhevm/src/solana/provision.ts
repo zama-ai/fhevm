@@ -308,7 +308,7 @@ export const wrapUnderlying = async (
 
 /**
  * Reads `HostConfig.chain_id` from the on-chain singleton (discriminator-checked at its pinned
- * layout offset) and asserts the Solana high bit — the chain-id fact every decrypt request and
+ * layout offset) and asserts the Solana type byte — the chain-id fact every decrypt request and
  * handle cross-check binds to.
  */
 export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
@@ -324,8 +324,8 @@ export const readHostChainId = async (context: SolanaProvisioningContext): Promi
   // Decoded by the generated Codama client, so the field layout tracks the committed IDL instead
   // of a hand-maintained byte offset. The discriminator constant is generated from it too.
   const { data: config } = decodeHostConfig(configInfo);
-  if ((config.chainId & (1n << 63n)) === 0n) {
-    throw new Error('HostConfig chain id is missing the Solana high bit');
+  if (((config.chainId >> 56n) & 0xffn) !== 0x01n) {
+    throw new Error('HostConfig chain id is missing the Solana type byte');
   }
   return config.chainId;
 };
@@ -353,7 +353,7 @@ export type BalanceStore = {
  * - the current handle is a version-0 euint64 handle (all-zero rejected: type 0 is not euint64);
  * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
  *   `readHostChainId` — which itself checks the account discriminator, the pinned layout offset,
- *   and the Solana high bit.
+ *   and the Solana type byte.
  * The retired Rust probe additionally re-read all three accounts in one `getMultipleAccounts` to
  * guard against the token account's balance pointer moving between reads; here every address is
  * derived client-side rather than followed from a pointer, so there is no indirection to race —

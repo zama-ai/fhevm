@@ -1,7 +1,6 @@
-// RFC-021 Solana host chain id: the chain-type high bit ORed over 12345. The coprocessor DB
-// stores chain ids as PostgreSQL BIGINT, so the same bit pattern reads back as the negative i64.
-export const SOLANA_HOST_CHAIN_ID = 9223372036854788153n;
-export const SOLANA_HOST_CHAIN_ID_I64 = SOLANA_HOST_CHAIN_ID - (1n << 64n);
+// Localnet Solana host chain id: type byte `0x01` plus cluster tag 12345.
+// Fits in PostgreSQL BIGINT as a positive i64.
+export const SOLANA_HOST_CHAIN_ID = 72057594037940281n;
 
 /**
  * Bring-up KMS context id. Same 32-byte tagged gateway uint256 as

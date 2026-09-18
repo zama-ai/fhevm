@@ -352,7 +352,7 @@ describe('the host chain', () => {
   // A handle of another chain cannot be authorized under this permit, and the relayer would refuse it
   // on the chain id it embeds. Refusing locally is what keeps that from costing a round trip.
   it('names the handle that belongs to another host chain', () => {
-    const foreign = handleOf(EBOOL_TYPE_ID, 0x8000_0000_0000_0001n);
+    const foreign = handleOf(EBOOL_TYPE_ID, 0x0100_0000_0000_0001n);
     expect(
       failureOf(() =>
         buildSolanaUserDecryptRequest({
@@ -360,6 +360,6 @@ describe('the host chain', () => {
           entries: [entryFor(handleOf(EBOOL_TYPE_ID)), entryFor(foreign)],
         }),
       ),
-    ).toEqual({ reason: 'foreign-host-chain', index: 1, chainId: 0x8000_0000_0000_0001n });
+    ).toEqual({ reason: 'foreign-host-chain', index: 1, chainId: 0x0100_0000_0000_0001n });
   });
 });

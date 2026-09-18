@@ -19,7 +19,7 @@ import { setFhevmRuntimeConfig } from '../../internal/config.js';
 const rpc = createSolanaRpc('http://localhost:8899');
 
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
     programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },

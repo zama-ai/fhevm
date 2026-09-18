@@ -18,7 +18,7 @@ const addr = (fill: number): string => getAddressDecoder().decode(new Uint8Array
 
 const sampleConfig = (): SolanaDemoConfig => ({
   source: "demo-config",
-  chainId: "9223372036854788153",
+  chainId: "72057594037940281",
   rpcUrl: "http://127.0.0.1:8899",
   wsUrl: "ws://127.0.0.1:8900",
   relayerUrl: "http://127.0.0.1:3000",

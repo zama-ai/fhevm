@@ -11,7 +11,7 @@ import { asBytes32Hex } from '../../core/base/bytes.js';
 const rpc = createSolanaRpc('http://localhost:8899');
 
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://localhost:3000',
     programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },

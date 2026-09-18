@@ -228,7 +228,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                     // This listener only reacts to proof requests. Other known InputVerification
                                     // events are expected when multiple coprocessors interact with the gateway.
                                     // EVM hosts emit VerifyProofRequest (address identities); Solana hosts
-                                    // (RFC-021) emit VerifyProofRequestSolana (bytes32 identities, high-bit chain id).
+                                    // (RFC-021) emit VerifyProofRequestSolana (bytes32 identities, type-byte chain id).
                                     match event.data {
                                         InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
                                             self.verify_proof_request(db_pool, request, log.clone()).await.
@@ -567,10 +567,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 
     /// Solana (RFC-021) counterpart of [`Self::verify_proof_request`]: the gateway emits
-    /// `VerifyProofRequestSolana` with bytes32 host identities and a chain id carrying the
-    /// chain-type high bit (decoded via `from_canonical_u64`, stored as its i64 bit-pattern).
+    /// `VerifyProofRequestSolana` with bytes32 host identities and a chain id carrying
+    /// type byte `0x01` (decoded via `from_canonical_u64`, stored as its i64 bit-pattern).
     /// The verify_proofs row is otherwise identical; the zkproof-worker selects the 128-byte
-    /// aux + 32-byte identity layout from the chain-type bit.
+    /// aux + 32-byte identity layout from the type byte.
     async fn verify_proof_request_solana(
         &self,
         db_pool: &Pool<Postgres>,

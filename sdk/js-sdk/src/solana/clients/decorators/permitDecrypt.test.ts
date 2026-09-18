@@ -37,7 +37,7 @@ const MINT_A = asBytes32Hex(`0x${'0a'.repeat(32)}`);
 const MINT_B = asBytes32Hex(`0x${'0b'.repeat(32)}`);
 
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
     programs: { host: { address: PROGRAM_ID } },
@@ -261,7 +261,7 @@ describe('running a user decryption through the client', () => {
   // A well-formed handle: bytes 22..30 embed the host chain id big-endian, byte 30 is the FHE
   // type (5 = euint64), byte 31 the handle version.
   const HANDLE = new Uint8Array(32).fill(0xab);
-  HANDLE.set([0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x39], 22); // 9223372036854788153
+  HANDLE.set([0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x39], 22); // 72057594037940281
   HANDLE[30] = 5;
   HANDLE[31] = 0;
   const ENCRYPTED_VALUE_ACCOUNT = new Uint8Array(32).fill(0xcd);

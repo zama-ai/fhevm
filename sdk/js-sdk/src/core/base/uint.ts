@@ -212,6 +212,11 @@ export function uintToHex0x(uint: Uint): Hex0x {
   return `0x${uint.toString(16)}` as Hex0x;
 }
 
+/** Eight-byte hex. Type-byte Solana ids drop a leading nibble without this pad. */
+export function u64ToHex0x(uint: Uint): Hex0x {
+  return `0x${uint.toString(16).padStart(16, '0')}` as Hex0x;
+}
+
 export function uintToBytesHex(uint: Uint): BytesHex {
   const hex = uint.toString(16);
   return (hex.length % 2 !== 0 ? `0x0${hex}` : `0x${hex}`) as BytesHex;

@@ -5,10 +5,10 @@ use anchor_lang::prelude::*;
 use super::common::*;
 use super::set_host_pause::HostAdmin;
 use crate::errors::ZamaHostError;
-use crate::state::SOLANA_CHAIN_TYPE_BIT;
+use crate::state::is_evm_host_chain_id;
 
 /// Sets `gateway_chain_id`, `input_verification_contract`, and `decryption_contract`
-/// together. Zeros are legal. The gateway chain id must leave the Solana chain-type bit clear.
+/// together. Zeros are legal. The gateway chain id must be a uint64-padded EVM id.
 pub fn set_eip712_domain(
     ctx: Context<HostAdmin>,
     gateway_chain_id: u64,
@@ -18,8 +18,8 @@ pub fn set_eip712_domain(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     require!(
-        gateway_chain_id & SOLANA_CHAIN_TYPE_BIT == 0,
-        ZamaHostError::InvalidChainTypeBit
+        is_evm_host_chain_id(gateway_chain_id),
+        ZamaHostError::InvalidChainTypeByte
     );
     let config = &ctx.accounts.host_config;
     if config.gateway_chain_id == gateway_chain_id

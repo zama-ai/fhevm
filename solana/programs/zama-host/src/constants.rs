@@ -2,15 +2,35 @@
 
 /// Version byte written to every host protocol event.
 pub const EVENT_VERSION: u8 = 1;
-/// RFC-021 reserves the high bit (bit 63) of the u64 chain id as the host
-/// `chain_type` marker: when set, the host chain is Solana rather than an EVM
-/// chain. EVM chain ids keep this bit clear. The remaining 63 bits carry the
-/// logical chain id.
-pub const SOLANA_CHAIN_TYPE_BIT: u64 = 1 << 63;
-/// PoC Solana host chain id used by tests and helpers that do not receive host
-/// config. Carries the RFC-021 chain-type high bit so it satisfies the
-/// repository-wide invariant that every Solana host chain id sets bit 63.
-pub const SOLANA_POC_CHAIN_ID: u64 = SOLANA_CHAIN_TYPE_BIT | 12345;
+/// High byte of the eight-byte chain-id field (handle bytes 22–29).
+///
+/// `0x00` is EVM: the host writes `uint64(chainId)`, which zero-extends, so a minted
+/// EVM handle always has this byte clear. `0x01` is Solana. Any other value is refused.
+pub const EVM_CHAIN_TYPE: u8 = 0x00;
+pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
+const CHAIN_TYPE_SHIFT: u32 = 56;
+pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+
+/// High byte of `chain_id` (bits 56..63).
+pub const fn chain_type_byte(chain_id: u64) -> u8 {
+    (chain_id >> CHAIN_TYPE_SHIFT) as u8
+}
+
+pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == EVM_CHAIN_TYPE
+}
+
+pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
+    chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
+}
+
+/// A Solana host chain id: type byte `0x01` plus a 56-bit cluster tag.
+pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
+    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
+}
+
+/// Localnet sentinel used by tests and helpers that do not receive host config.
+pub const SOLANA_POC_CHAIN_ID: u64 = solana_host_chain_id(12345);
 /// Seed for the singleton host config PDA — the shared crate's constant, so the program and the
 /// off-chain readers of the pause switch cannot drift on the seed.
 pub use zama_solana_acl::HOST_CONFIG_SEED;

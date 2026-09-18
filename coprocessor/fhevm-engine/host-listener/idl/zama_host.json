@@ -2185,8 +2185,8 @@
     },
     {
       "code": 6057,
-      "name": "InvalidChainTypeBit",
-      "msg": "host chain id must set the Solana chain-type high bit and the gateway chain id must not"
+      "name": "InvalidChainTypeByte",
+      "msg": "host chain id must have type byte 0x01 and the gateway chain id must have type byte 0x00"
     },
     {
       "code": 6058,

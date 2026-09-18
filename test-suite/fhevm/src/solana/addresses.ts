@@ -18,7 +18,6 @@ import { readEnvFile } from "../utils/fs";
 export {
   BRINGUP_KMS_CONTEXT_ID,
   SOLANA_HOST_CHAIN_ID,
-  SOLANA_HOST_CHAIN_ID_I64,
 } from "../../../../solana/deploy/src/constants";
 export { evmAddressBytes, type GatewayBootstrapInputs };
 

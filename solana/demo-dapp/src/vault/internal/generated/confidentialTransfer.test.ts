@@ -52,7 +52,7 @@ describe('generated confidentialTransfer instruction', () => {
         handleIndex: 0,
         userAddress: base58.decode(owner.address),
         contractAddress: new Uint8Array(32).fill(12),
-        contractChainId: (1n << 63n) | 12345n,
+        contractChainId: 72057594037940281n,
         extraData: new Uint8Array([0]),
         signatures: [new Uint8Array(65).fill(13)],
       },

@@ -45,7 +45,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                       ? Buffer.from(
                           getHostConfigEncoder().encode({
                             admin: payer,
-                            chainId: 9223372036854788153n,
+                            chainId: 72057594037940281n,
                             gatewayChainId: gateway.gatewayChainId,
                             inputVerificationContract: gateway.inputVerificationContract,
                             decryptionContract: gateway.decryptionContract,
@@ -146,7 +146,7 @@ describe('bootstrapZamaHost', () => {
     const programData = await zamaHostProgramDataAddress();
     expect(initialize.accounts?.some((account) => account.address === programData)).toBe(true);
     const initializeData = getInitializeHostConfigInstructionDataDecoder().decode(initialize.data ?? new Uint8Array());
-    expect(initializeData.chainId).toBe(9223372036854788153n);
+    expect(initializeData.chainId).toBe(72057594037940281n);
     expect(initializeData.gatewayChainId).toBe(55555n);
     expect(initializeData.coprocessorThreshold).toBe(1);
     expect(initializeData.grantDenyListEnabled).toBe(false);

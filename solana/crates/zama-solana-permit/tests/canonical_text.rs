@@ -61,7 +61,7 @@ fn fixture_scope_pair_has_opposite_byte_and_string_order() {
 const REFERENCE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v2\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
-Chain id: 10037641751006774702\n\
+Chain id: 91542930698168068\n\
 Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\
@@ -74,7 +74,7 @@ Scopes (2):\n\
 const PERMISSIVE_TEXT: &str = "Zama fhevm Solana user-decrypt permit v2\n\
 User: Dzo7VaLffWBjA59P59wUCbRupUFKLts9BjFeTpM8G2EA\n\
 Verifying program: 6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu\n\
-Chain id: 10037641751006774702\n\
+Chain id: 91542930698168068\n\
 Transport key (SHAKE-256): CvgsmpoXufMbtBHn3zSjKjn6V2b2tNvrL6HJnZdwWnu4\n\
 KMS context: DcvW9UCt85BDoYYoLtJkXamSPU11M6kF6auXdnu5H3BD\n\
 KMS epoch: 93H5dJNEzmALYsPvnAD4zjKgaHjyqKNNovckD9AoPjK7\n\

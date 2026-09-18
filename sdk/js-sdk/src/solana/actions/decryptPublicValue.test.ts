@@ -10,7 +10,7 @@ import { verifyPublicDecryptSignatures } from './decryptPublicValue.js';
 const alice = privateKeyToAccount(`0x${'11'.repeat(32)}`);
 const bob = privateKeyToAccount(`0x${'22'.repeat(32)}`);
 const outsider = privateKeyToAccount(`0x${'33'.repeat(32)}`);
-const handle = toFhevmHandle(`0x${'ab'.repeat(22)}80000000000030390500`);
+const handle = toFhevmHandle(`0x${'ab'.repeat(22)}01000000000030390500`);
 const message = createKmsPublicDecryptEip712({
   chainId: 31337n,
   verifyingContractAddressDecryption: '0x0000000000000000000000000000000000000042',
@@ -52,7 +52,7 @@ describe('Solana public decryption authentication', () => {
         chainId: field === 'chain' ? 31338n : 31337n,
         verifyingContractAddressDecryption:
           field === 'contract' ? '0x0000000000000000000000000000000000000043' : signingDomain.verifyingContract,
-        handles: field === 'handle' ? [toFhevmHandle(`0x${'cd'.repeat(22)}80000000000030390500`)] : [handle],
+        handles: field === 'handle' ? [toFhevmHandle(`0x${'cd'.repeat(22)}01000000000030390500`)] : [handle],
         decryptedResult: field === 'cleartext' ? `0x${'00'.repeat(31)}2b` : message.message.decryptedResult,
         extraData:
           field === 'store'
@@ -98,7 +98,7 @@ import { asBytes32Hex } from '../../core/base/bytes.js';
 const contextId = new Uint8Array(32).fill(0x44);
 const store = new Uint8Array(32).fill(0x44);
 const chain = {
-  id: 9223372036854788153n,
+  id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
     programs: {

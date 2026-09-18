@@ -400,7 +400,7 @@ describe("resumeRepairStep", () => {
     state.scenario.hostChains.push({
       key: "solana",
       type: "solana",
-      chainId: "9223372036854788153",
+      chainId: "72057594037940281",
       rpcPort: 8899,
     });
     const running = [
