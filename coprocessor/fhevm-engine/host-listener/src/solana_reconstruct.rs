@@ -295,8 +295,12 @@ pub fn reconstruct_fhe_execute(
                     .iter()
                     .find(|entry| entry.step_index == op_index)?
                     .seed;
-                let result =
-                    computed_rand_handle(seed, *fhe_type, ctx.chain_id);
+                let result = computed_rand_handle(
+                    seed,
+                    *fhe_type,
+                    ctx.program_id,
+                    ctx.chain_id,
+                );
                 produced.push(result);
                 produced_in_tx.insert(result);
                 SolanaHostRecord::FheRand(FheRand {
@@ -342,6 +346,7 @@ pub fn reconstruct_fhe_execute(
                     *upper_bound,
                     seed,
                     *fhe_type,
+                    ctx.program_id,
                     ctx.chain_id,
                 );
                 produced.push(result);
@@ -540,6 +545,7 @@ mod tests {
 
     fn ctx() -> ReconstructContext {
         ReconstructContext {
+            program_id: zama_host::ID,
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: [3u8; 32],
             unix_timestamp: 1_700_000_000,
@@ -931,6 +937,7 @@ mod tests {
                         ub,
                         random_seed,
                         5,
+                        cx.program_id,
                         cx.chain_id
                     )
                 );

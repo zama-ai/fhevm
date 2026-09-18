@@ -551,12 +551,18 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
     result[31] = HANDLE_VERSION;
 }
 
-/// Slot and chain context bound into every content-addressed handle
-/// derivation. Passing it as one value keeps `previous_bank_hash` unswappable
-/// with operand handles — three same-repr `[u8; 32]` values meet at these call
-/// sites otherwise.
+/// Deployment, slot and chain context bound into every content-addressed
+/// handle derivation. Passing it as one value keeps `previous_bank_hash`
+/// unswappable with operand handles — three same-repr `[u8; 32]` values meet at
+/// these call sites otherwise.
+///
+/// `program_id` is an input, not `crate::ID`: the program passes its own id, and
+/// an off-chain reconstruction passes the id of the deployment it follows. A
+/// binary compiled for one deployment (`declare_id!` differs per cargo profile)
+/// can then still derive the handles of another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HandleDerivationContext {
+    pub program_id: Pubkey,
     pub chain_id: u64,
     pub previous_bank_hash: [u8; 32],
     pub unix_timestamp: i64,
@@ -588,6 +594,7 @@ pub fn computed_eval_handle(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -603,7 +610,7 @@ pub fn computed_eval_handle(
         &rhs,
         &scalar_byte,
         &operand_boundary_mask,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
@@ -625,6 +632,7 @@ pub fn computed_eval_ternary_handle(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -639,7 +647,7 @@ pub fn computed_eval_ternary_handle(
         &if_true,
         &if_false,
         &operand_boundary_mask,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
@@ -657,6 +665,7 @@ pub fn computed_eval_trivial_handle(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -668,7 +677,7 @@ pub fn computed_eval_trivial_handle(
         b"FHE_eval_trivial",
         &plaintext,
         &fhe_type_bytes,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
@@ -692,6 +701,7 @@ pub fn computed_eval_rand_seed(
     ctx: &HandleDerivationContext,
 ) -> [u8; 16] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -706,7 +716,7 @@ pub fn computed_eval_rand_seed(
         &op_index_bytes,
         app.program.as_ref(),
         &app.scope,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
@@ -725,6 +735,7 @@ pub fn computed_eval_sum_handle<'a>(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -739,7 +750,7 @@ pub fn computed_eval_sum_handle<'a>(
         preimage.push(h.as_ref());
     }
     preimage.push(&operand_boundary_mask);
-    preimage.push(crate::ID.as_ref());
+    preimage.push(program_id.as_ref());
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
@@ -757,6 +768,7 @@ pub fn computed_eval_is_in_handle<'a>(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -771,7 +783,7 @@ pub fn computed_eval_is_in_handle<'a>(
         preimage.push(h.as_ref());
     }
     preimage.push(&operand_boundary_mask);
-    preimage.push(crate::ID.as_ref());
+    preimage.push(program_id.as_ref());
     preimage.push(&chain_id_bytes);
     preimage.push(&previous_bank_hash);
     preimage.push(&timestamp_bytes);
@@ -791,6 +803,7 @@ pub fn computed_eval_mul_div_handle(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -805,7 +818,7 @@ pub fn computed_eval_mul_div_handle(
         &divisor,
         &scalar_byte,
         &operand_boundary_mask,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,
@@ -816,7 +829,12 @@ pub fn computed_eval_mul_div_handle(
 }
 
 /// Deterministically derives a random-ciphertext handle from the emitted seed.
-pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8; 32] {
+pub fn computed_rand_handle(
+    seed: [u8; 16],
+    fhe_type: u8,
+    program_id: Pubkey,
+    chain_id: u64,
+) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
     let mut result = keccak_hashv(&[
@@ -824,7 +842,7 @@ pub fn computed_rand_handle(seed: [u8; 16], fhe_type: u8, chain_id: u64) -> [u8;
         &[3],
         &fhe_type_bytes,
         &seed,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
     ])
     .to_bytes();
@@ -838,6 +856,7 @@ pub fn computed_rand_bounded_handle(
     upper_bound: [u8; 32],
     seed: [u8; 16],
     fhe_type: u8,
+    program_id: Pubkey,
     chain_id: u64,
 ) -> [u8; 32] {
     let chain_id_bytes = chain_id.to_be_bytes();
@@ -848,7 +867,7 @@ pub fn computed_rand_bounded_handle(
         &upper_bound,
         &fhe_type_bytes,
         &seed,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
     ])
     .to_bytes();
@@ -866,6 +885,7 @@ pub fn computed_eval_unary_handle(
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
     let HandleDerivationContext {
+        program_id,
         chain_id,
         previous_bank_hash,
         unix_timestamp,
@@ -881,7 +901,7 @@ pub fn computed_eval_unary_handle(
     }
     parts.extend_from_slice(&[
         &operand_boundary_mask,
-        crate::ID.as_ref(),
+        program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,
         &timestamp_bytes,

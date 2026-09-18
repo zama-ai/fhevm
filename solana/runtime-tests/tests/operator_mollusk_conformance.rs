@@ -618,6 +618,7 @@ fn expected_rand_seed(app: AppScope) -> [u8; 16] {
         app,
         0,
         &host::HandleDerivationContext {
+            program_id: host::ID,
             chain_id: host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: PREVIOUS_BANK_HASH,
             unix_timestamp: UNIX_TIMESTAMP,

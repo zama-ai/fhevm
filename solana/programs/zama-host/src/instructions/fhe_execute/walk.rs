@@ -284,8 +284,12 @@ pub(super) fn walk_steps<'info>(
             FheExecuteStep::Rand { fhe_type } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 let seed = handle_context.rand_seed(op_index)?;
-                let result =
-                    computed_rand_handle(seed, *fhe_type, handle_context.derivation.chain_id);
+                let result = computed_rand_handle(
+                    seed,
+                    *fhe_type,
+                    handle_context.derivation.program_id,
+                    handle_context.derivation.chain_id,
+                );
                 execution.accept_output(result, hcu::rand_hcu(*fhe_type)?, &[])?;
             }
             FheExecuteStep::Unary {
@@ -318,6 +322,7 @@ pub(super) fn walk_steps<'info>(
                     *upper_bound,
                     seed,
                     *fhe_type,
+                    handle_context.derivation.program_id,
                     handle_context.derivation.chain_id,
                 );
                 execution.accept_output(result, hcu::rand_bounded_hcu(*fhe_type)?, &[])?;

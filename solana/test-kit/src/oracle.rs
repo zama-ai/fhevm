@@ -206,7 +206,12 @@ fn reconstruct_handles(
                     .iter()
                     .find(|seed| usize::from(seed.step_index) == step_index)?
                     .seed;
-                zama_host::computed_rand_handle(seed, *fhe_type, context.chain_id)
+                zama_host::computed_rand_handle(
+                    seed,
+                    *fhe_type,
+                    context.program_id,
+                    context.chain_id,
+                )
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
@@ -220,6 +225,7 @@ fn reconstruct_handles(
                     *upper_bound,
                     seed,
                     *fhe_type,
+                    context.program_id,
                     context.chain_id,
                 )
             }
@@ -848,6 +854,7 @@ impl CleartextLedger {
                 .map(|(_, hash)| hash.to_bytes())
                 .expect("test runtime must contain a previous bank hash");
             let handle_context = HandleDerivationContext {
+                program_id: zama_host::ID,
                 chain_id: zama_host::SOLANA_POC_CHAIN_ID,
                 previous_bank_hash,
                 unix_timestamp: context.mollusk.sysvars.clock.unix_timestamp,
