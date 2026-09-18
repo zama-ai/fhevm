@@ -1194,6 +1194,16 @@ export const readCurrentDemoAuthorization = async () => {
   });
 };
 
+/**
+ * The boot capability for scenarios and checks. A process that was started with the capability in
+ * its environment (a faucet and dapp run against a remote stack, as CI's preview namespace) uses it
+ * directly; otherwise it belongs to the running lifecycle-owned boot.
+ */
+export const readDemoAuthorization = async () =>
+  process.env[DEMO_BOOT_ID_ENV] !== undefined && process.env[DEMO_AUTH_TOKEN_FILE_ENV] !== undefined
+    ? readDemoAuthorizationFromEnv()
+    : readCurrentDemoAuthorization();
+
 const validatorHealthy = async (): Promise<boolean> => {
   const response = await fetch("http://127.0.0.1:8899", {
     method: "POST",

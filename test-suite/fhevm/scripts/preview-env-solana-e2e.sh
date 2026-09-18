@@ -8,7 +8,16 @@
 # `up` writes <state-dir>/preview.env; load it and run the usual commands:
 #   set -a; source <state-dir>/preview.env; set +a
 #   bun test e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
-#   bun run demo:seed && bun run demo:faucet          # then the dapp's `npm run dev`
+#   bun run demo:seed                                 # once per namespace deployment
+#   bun run demo:faucet &                             # loopback 8090
+#   (cd ../../solana/demo-dapp && npm run dev)        # http://127.0.0.1:5173/
+#   bun run demo:smoke                                # the deposit arc, against the faucet + namespace
+#
+# The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the faucet and dapp dev server
+# authorize each other with) is created under <state-dir> in place of the local lifecycle's
+# owned boot, and reused across `up` runs. The seeded personas keep their SOL between runs; the
+# arc tops them up from the deployer wallet and the keeper pays each batch's authority funding,
+# so refill those two devnet wallets when a run stops on "insufficient lamports".
 #
 # What it gathers from the namespace, and why:
 #   - gateway/host contract addresses (configmaps) into the fhevm-cli address layout under
@@ -62,6 +71,15 @@ up)
   rpc_url=$(secret_value solana-rpc 'rpc-url')
   proof_api_key=$(secret_value solana-proof-api 'api-key')
 
+  # Demo boot capability: a UUID boot id and a 256-bit base64url token in a 0600 file (the shape
+  # `demo/authorization.ts` validates), kept across `up` runs so the seeded runtime config stays valid.
+  if [[ ! -f "$state/demo-boot-id" ]]; then
+    python3 -c 'import uuid; print(uuid.uuid4())' >"$state/demo-boot-id"
+    (umask 077 && python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip("="))' \
+      >"$state/demo-authorization-token")
+  fi
+  demo_boot_id=$(<"$state/demo-boot-id")
+
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
   forward "${relayer:-svc/relayer}" 3000:3000
   forward svc/anvil-gateway-anvil-node 8546:8546
@@ -87,6 +105,9 @@ up)
     env_line SOLANA_LEAF_PROOF_API_KEY "$proof_api_key"
     env_line DEMO_PROOF_URL http://127.0.0.1:18080
     env_line DEMO_PROOF_API_KEY "$proof_api_key"
+    env_line DEMO_BOOT_ID "$demo_boot_id"
+    env_line DEMO_AUTH_TOKEN_FILE "$state/demo-authorization-token"
+    env_line DEMO_ALLOWED_ORIGIN http://127.0.0.1:5173
   } >"$state/preview.env"
   chmod 600 "$state/preview.env"
   echo "env written to $state/preview.env (secrets inside; not echoed)"

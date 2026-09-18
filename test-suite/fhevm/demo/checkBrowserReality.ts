@@ -11,7 +11,7 @@
 // loopback ports. The browser origin is deliberately the exact Vite origin.
 
 import { readDemoConfig } from "./config";
-import { readCurrentDemoAuthorization } from "./lifecycle";
+import { readDemoAuthorization } from "./lifecycle";
 
 const ORIGIN = "http://127.0.0.1:5173";
 const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? "http://127.0.0.1:8090";
@@ -86,7 +86,7 @@ const preflightAllowsOrigin = async (
 const main = async (): Promise<void> => {
   const [config, authorization] = await Promise.all([
     readDemoConfig(),
-    readCurrentDemoAuthorization(),
+    readDemoAuthorization(),
   ]);
   const authorizationHeaders = {
     authorization: `Bearer ${authorization.token}`,

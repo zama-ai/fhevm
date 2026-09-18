@@ -153,7 +153,7 @@ const decimalString = (value: string, name: string): string => {
 };
 
 /** Reads TestEnv overrides from the process environment (the "now" source). */
-const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
+export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
   const pick = <K extends keyof TestEnvOverrides>(key: K, name: string): Partial<Pick<TestEnvOverrides, K>> => {
     const value = env[name];
     return value === undefined || value === "" ? {} : ({ [key]: value } as Pick<TestEnvOverrides, K>);

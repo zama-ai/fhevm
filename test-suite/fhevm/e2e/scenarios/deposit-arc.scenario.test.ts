@@ -1,12 +1,12 @@
 import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import { encryptedStoreHandle } from "@fhevm/sdk/solana";
-import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Live vault deposit: fund → wrap → join → dispatch → public decrypt → settle → claim → user decrypt.
 // Run through `demo:smoke` against a seeded demo with its faucet running. On-chain assertions
 // check each transition; the final KMS/WASM decrypt checks the encrypted payout amount.
 
 import fs from "node:fs/promises";
+import path from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
@@ -31,9 +31,11 @@ import {
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { waitForSnsCommit } from "../../src/solana/sns";
-import { depositRoots, type VaultDemoRoots } from "../../demo/config";
-import { readCurrentDemoAuthorization } from "../../demo/lifecycle";
+import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
+import { readDemoAuthorization } from "../../demo/lifecycle";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
+import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
+import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 
 // A live batcher arc waits on slot age + SNS commit + settle certificate + the decrypt roundtrip.
 // The bounded waits below sum to ~17.5 min worst case (health 3.5 + join visibility 1 + slot age 2
@@ -114,7 +116,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
     "deposit arc (full arc): alice funds, initializes her confidential accounts, wraps mock USDC, and joins the pending deposit batch with a coprocessor-attested amount; the keeper dispatches the aged batch and settles it with the KMS burn certificate; alice claims her payout and user-decrypts the exact amount",
     async () => {
       const { env, config } = await loadDemoEnv();
-      const authorization = await readCurrentDemoAuthorization();
+      const authorization = await readDemoAuthorization();
 
       // Personas: the keeper is the operator that plays dispatch + settle; alice is the depositing
       // end-user. Both load from committed demo keypairs (pubkeys cross-checked against the config).
@@ -200,22 +202,27 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // ALREADY exist (nothing creates it on the fly), so it is provisioned here with the same
       // one-time initialization the join mint gets, keeping the claim phase a pure claim. initialize
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
-      await send(alice, aliceFhe.wrap([
-        await vault.buildInitializeTokenAccountInstruction({
-          fhe: aliceFhe.accounts,
-          payer: alice,
-          owner: alice.address,
-          mint: config.mints.joinConfidential,
-          hostConfig: config.hostConfig,
-        }),
-        await vault.buildInitializeTokenAccountInstruction({
-          fhe: aliceFhe.accounts,
-          payer: alice,
-          owner: alice.address,
-          mint: config.mints.payoutConfidential,
-          hostConfig: config.hostConfig,
-        }),
-      ]));
+      // On a persistent cluster (devnet behind a preview namespace) the accounts outlive the run
+      // that created them, so only the missing ones are initialized.
+      const missingTokenAccountMints: Address[] = [];
+      for (const mint of [config.mints.joinConfidential, config.mints.payoutConfidential]) {
+        const tokenAccount = await vault.tokenAccountAddress(mint, alice.address);
+        const existing = await rpc.getAccountInfo(tokenAccount, { encoding: "base64", commitment: "confirmed" }).send();
+        if (existing.value === null) missingTokenAccountMints.push(mint);
+      }
+      if (missingTokenAccountMints.length > 0) {
+        await send(alice, aliceFhe.wrap(
+          await Promise.all(missingTokenAccountMints.map((mint) =>
+            vault.buildInitializeTokenAccountInstruction({
+              fhe: aliceFhe.accounts,
+              payer: alice,
+              owner: alice.address,
+              mint,
+              hostConfig: config.hostConfig,
+            }),
+          )),
+        ));
+      }
 
       // Step 3: wrap the funded mock USDC into alice's confidential cUSDC balance. wrap_usdc escrows a
       // PUBLIC amount and needs no input proof, which is why it wires cheaply here.
@@ -245,18 +252,41 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Step 5: precondition for the join phase — join targets the batcher's current batch, which
       // must still be Pending (the seeder opens batch 0 that way). Fail here with a reason instead
-      // of an opaque on-chain BatchNotPending revert. A rerun against a stack whose batch this test
-      // already dispatched/settled fails here by design — the arc needs a fresh Pending batch, and
-      // CI always seeds a fresh stack.
+      // of an opaque on-chain BatchNotPending revert. A fresh seed leaves batch 0 Pending; on a
+      // persistent cluster the previous run settled its batch, so the keeper opens the next one the
+      // way the demo page does (the dapp's batch provisioning, which also stands up its settle
+      // lookup table). A Dispatched batch is left alone: it is mid-settlement and an operator
+      // settles it (demo page or /api/demo-operator) before the arc can run again.
       const roots = depositRoots(config);
+      const dappConfig = parseRuntimeDemoConfig(
+        JSON.parse(await fs.readFile(resolveDemoConfigPath(), "utf8")) as unknown,
+        authorization.bootId,
+      );
+      const batchRegistryPath = path.resolve(import.meta.dir, "../../../../.fhevm/runtime/solana-demo-batch-alts.json");
+      const currentBatch = await vault.getCurrentBatch(rpc, roots);
+      if (currentBatch.state.status === BATCH_STATUS_DISPATCHED) {
+        throw new Error(
+          `deposit batch ${currentBatch.index} (${currentBatch.addresses.batch}) is Dispatched and awaits ` +
+            "settlement; settle it through the demo operator before rerunning the arc.",
+        );
+      }
+      if (currentBatch.state.status !== BATCH_STATUS_PENDING) {
+        console.log(`deposit-arc: batch ${currentBatch.index} is finished (status ${currentBatch.state.status}); opening the next one...`);
+        await prepareNextBatch(dappConfig, keeper, "deposit", batchRegistryPath);
+      }
       const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
       if (batchBeforeJoin.state.status !== BATCH_STATUS_PENDING) {
         throw new Error(
           `deposit batch ${batchBeforeJoin.index} (${batchBeforeJoin.addresses.batch}) is not joinable: ` +
-            `status ${batchBeforeJoin.state.status} != Pending(${BATCH_STATUS_PENDING}); the stack has ` +
-            "moved past the seeded pending batch — rerun demo:seed on a fresh stack.",
+            `status ${batchBeforeJoin.state.status} != Pending(${BATCH_STATUS_PENDING})`,
         );
       }
+      const settleLookupTable = await lookupTableForBatch(
+        dappConfig,
+        "deposit",
+        { batchIndex: batchBeforeJoin.index, batch: batchBeforeJoin.addresses.batch },
+        batchRegistryPath,
+      );
 
       // SDK client setup + the derivations the join, dispatch and settle phases share. All of this is
       // pure/local (no network), so it sits OUTSIDE the fetch patch below — dispatch and settle run
@@ -408,10 +438,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await vault.settleBatch(publicDecryptClient, keeper, {
         rpc,
         rpcSubscriptions,
-        proofService: { url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`, apiKey: SOLANA_LEAF_PROOF_API_KEY },
+        proofService: env.leafProof,
         roots,
         contextId: asBytes32BigEndian(config.userDecryptContextId),
-        lookupTableAddress: config.batchers.deposit.lookupTable,
+        lookupTableAddress: settleLookupTable,
         authorityFundingLamports: BigInt(config.authorityFundingLamports),
       });
 
@@ -440,10 +470,54 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(verifiedTotal.value as bigint).toBe(wrapBaseUnits);
 
 
-      // Claim into Alice's initially empty payout balance, then decrypt that balance to verify
-      // the transfer credited the full proportional payout. No separate claim output is stored.
+      // Claim into Alice's payout balance, then decrypt that balance to verify the transfer
+      // credited the full proportional payout. No separate claim output is stored, and the balance
+      // is cumulative (a persistent cluster carries her earlier claims), so the assertion is on the
+      // delta: the balance is decrypted before and after the claim.
       const payoutMint = config.mints.payoutConfidential;
       const claimValueAccount = await vault.tokenStateAddress(payoutMint, await vault.tokenAccountAddress(payoutMint, alice.address));
+      const balanceHandleKey = new TextEncoder().encode("balance_________________________");
+      const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
+      const decryptChain = solanaSdk.defineFhevmSolanaChain({
+        id: BigInt(config.chainId),
+        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
+      });
+      const decryptClient = solanaSdk.createFhevmDecryptClient({
+        chain: decryptChain,
+        rpc,
+        trust: {
+          // Party ids follow the registry order — the same assumption the EVM SDK path makes.
+          kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
+          kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`),
+          kmsEpochId: asBytes32Hex(config.kmsEpochId),
+          fheParameter: config.fheParameter,
+          gatewayEip712Domain: {
+            name: "Decryption",
+            version: "1",
+            chainId: BigInt(config.gatewayChainId),
+            verifyingContract: config.gatewayDecryptionContract,
+          },
+        },
+      });
+      await decryptClient.ready;
+      const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
+      /** Alice's clear payout balance through the signed permit and Connector proof path; 0 before her first claim. */
+      const decryptPayoutBalance = async (): Promise<bigint> => {
+        const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount).catch(() => null);
+        if (state === null) return 0n;
+        const handle = encryptedStoreHandle(state, balanceHandleKey);
+        if (handle.every((byte) => byte === 0)) return 0n;
+        const clearValues = await decryptClient.decryptValues({
+          session: permitSession,
+          entries: [{ handle, encryptedStore: addressBytes(claimValueAccount) }],
+          options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
+        });
+        expect(clearValues.length).toBe(1);
+        const value = clearValues[0]!.value;
+        expect(typeof value).toBe("bigint");
+        return value as bigint;
+      };
+      const payoutBalanceBefore = await decryptPayoutBalance();
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,
@@ -476,54 +550,22 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(joinRecordAfterClaim.claimed).toBe(true);
       // getEncryptedStore throws while the account is missing and reads at the RPC default
       // `finalized`; until() swallows probe errors until its deadline, so poll it.
-      const claimValueState = await until(
+      await until(
         async () => {
           const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount);
-          return encryptedStoreHandle(state, new TextEncoder().encode("balance_________________________")).some((byte) => byte !== 0) ? state : false;
+          return encryptedStoreHandle(state, balanceHandleKey).some((byte) => byte !== 0);
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
 
-      // Decrypt the credited balance through the signed permit and Connector proof path.
       console.log("deposit-arc decrypt: alice user-decrypting her claimed payout (KMS roundtrip)...");
-      const aliceWallet = solanaSdk.solanaPermitWalletFromSecretKey(aliceKeypairBytes);
-      const decryptChain = solanaSdk.defineFhevmSolanaChain({
-        id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
-      });
-      const decryptClient = solanaSdk.createFhevmDecryptClient({
-        chain: decryptChain,
-        rpc,
-        trust: {
-          // Party ids follow the registry order — the same assumption the EVM SDK path makes.
-          kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
-          kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`),
-          kmsEpochId: asBytes32Hex(config.kmsEpochId),
-          fheParameter: config.fheParameter,
-          gatewayEip712Domain: {
-            name: "Decryption",
-            version: "1",
-            chainId: BigInt(config.gatewayChainId),
-            verifyingContract: config.gatewayDecryptionContract,
-          },
-        },
-      });
-      await decryptClient.ready;
-      const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
-      const clearValues = await decryptClient.decryptValues({
-        session: permitSession,
-        entries: [{ handle: encryptedStoreHandle(claimValueState, new TextEncoder().encode("balance_________________________")), encryptedStore: addressBytes(claimValueAccount) }],
-        options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
-      });
+      const payoutBalanceAfter = await decryptPayoutBalance();
 
       // Alice is the batch's sole joiner, so totalJoined == her joined amount and the claim's
       // floor(joined x payoutReceived / totalJoined) is EXACTLY payoutReceived: assert equality,
       // not just "> 0" — this is the one place the arc proves the encrypted plumbing carried the
       // right number end to end.
-      expect(clearValues.length).toBe(1);
-      const payout = clearValues[0]!.value;
-      expect(typeof payout).toBe("bigint");
-      expect(payout === batchAfterSettle.state.payoutReceived).toBe(true);
+      expect(payoutBalanceAfter - payoutBalanceBefore === batchAfterSettle.state.payoutReceived).toBe(true);
 
       // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
       // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either
