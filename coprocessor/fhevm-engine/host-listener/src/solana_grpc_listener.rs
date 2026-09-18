@@ -384,9 +384,9 @@ async fn subscribe_loop(
 ) -> Result<()> {
     let endpoint = Channel::from_shared(config.grpc_url.clone())
         .context("invalid grpc url")?;
-    // tonic does not infer TLS from the scheme; without this an https:// endpoint gets a
-    // plaintext HTTP/2 connection that the server closes at the first request.
-    let endpoint = if config.grpc_url.starts_with("https://") {
+    // from_shared leaves tls unset. Attach rustls when the parsed URI is https so hosted
+    // Yellowstone handshakes; plaintext http (local e2e geyser) stays as-is.
+    let endpoint = if endpoint.uri().scheme_str() == Some("https") {
         endpoint
             .tls_config(ClientTlsConfig::new().with_webpki_roots())
             .context("configure grpc tls")?
