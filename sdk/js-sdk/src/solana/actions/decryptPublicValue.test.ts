@@ -207,6 +207,16 @@ describe('public decrypt client account-to-plaintext flow', () => {
     expect(f.rpc.getMultipleAccounts).toHaveBeenCalledWith([f.configAddress, f.contextAddress], expect.anything());
     expect(f.request).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contextId }));
   });
+  it("reads accounts under the chain's host program, not the bundled one", async () => {
+    const f = await accountFixture();
+    // Same RPC and fixture accounts (owned by the generated id); only the chain names another host.
+    const other = {
+      ...chain,
+      fhevm: { ...chain.fhevm, programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } } },
+    };
+    const client = createFhevmPublicDecryptClient({ chain: other, rpc: f.rpc });
+    await expect(client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow('Invalid host account');
+  });
   it.each(['destroyed', 'context', 'bump', 'chain', 'domain', 'zero-domain'])(
     'rejects %s changed while waiting for the certificate',
     async (field) => {
