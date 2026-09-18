@@ -32,7 +32,7 @@ pub async fn public_decrypt(
 ) -> Result<HttpResponse, ErrorResponse> {
     let request = body.into_inner();
     validate_public_decryption(&request, &state.config)
-        .map_err(|e| ErrorResponse::new(ErrorCode::Malformed, e.to_string(), None))?;
+        .map_err(|e| ErrorResponse::new(e.code(), e.to_string(), None))?;
     let id = request.id();
     tracing::Span::current().record("decryption_id", id.to_string());
 
