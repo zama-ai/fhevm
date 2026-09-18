@@ -1,0 +1,24 @@
+[package]
+name = "oft"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "oft"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "oapp/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = "0.31.1"
+oapp = { package = "oapp-latest", git = "https://github.com/LayerZero-Labs/LayerZero-v2.git", rev = "c09287a" }
+utils = { package = "utils-latest", git = "https://github.com/LayerZero-Labs/LayerZero-v2.git", rev = "c09287a" }
+solana-helper = "0.1.0"
