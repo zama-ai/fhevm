@@ -2,6 +2,7 @@ import type { Signer, TransactionReceipt, TransactionResponse } from 'ethers';
 import { ethers } from 'hardhat';
 
 import { waitForPendingTransactions, waitForTransactionReceipt } from '../utils';
+import { consensusHostRpcUrl, rememberMiningState, restoreMiningState } from './abortRecovery';
 
 export type ContractTxOverrides = { readonly gasLimit: bigint | number };
 
@@ -88,6 +89,8 @@ export interface AliasSameBlockRun {
  */
 export async function runAliasSameBlock(contract: AliasFixtureContract): Promise<AliasSameBlockRun> {
   let receipts: readonly TransactionReceipt[];
+  const rpcUrl = consensusHostRpcUrl();
+  await rememberMiningState(ethers.provider, rpcUrl);
   await ethers.provider.send('evm_setIntervalMining', [0]);
   await ethers.provider.send('evm_setAutomine', [false]);
   try {
@@ -103,8 +106,7 @@ export async function runAliasSameBlock(contract: AliasFixtureContract): Promise
       ),
     );
   } finally {
-    await ethers.provider.send('evm_setAutomine', [true]);
-    await ethers.provider.send('evm_setIntervalMining', [1]);
+    await restoreMiningState(ethers.provider, rpcUrl);
   }
 
   const blockHash = receipts![0].blockHash;
