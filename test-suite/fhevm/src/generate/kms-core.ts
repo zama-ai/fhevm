@@ -26,6 +26,7 @@
  *     docker service name.
  */
 import path from "node:path";
+import { kmsCoreImageForVersion } from "../compat/compat";
 
 import type { ComposeDoc } from "./compose";
 import {
@@ -53,10 +54,10 @@ export type KmsRenderOptions = {
 /** Render options from the resolved core image version + fhevm minio defaults
  * (the static test credentials from templates/env/.env.minio).
  *
- * The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
+ * The test build allows no `[threshold.tls]` config; older releases used the unsuffixed image name.
  */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
-  coreImage: `ghcr.io/zama-ai/kms/core-service-insecure:${coreVersion}`,
+  coreImage: kmsCoreImageForVersion(coreVersion),
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",

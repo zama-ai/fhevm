@@ -224,6 +224,22 @@ describe("buildKmsThresholdOverride", () => {
     expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
   });
 
+  test.each(["v0.14.0-1", "v0.14.1"])("uses the legacy image family for %s", (version) => {
+    expect(kmsRenderOptionsFor(version).coreImage).toBe(`ghcr.io/zama-ai/kms/core-service:${version}`);
+  });
+
+  test.each(["v0.15.0-0", "v0.15.0", "main", "c57f52f"])("uses the modern test image family for %s", (version) => {
+    expect(kmsRenderOptionsFor(version).coreImage).toBe(`ghcr.io/zama-ai/kms/core-service-insecure:${version}`);
+  });
+
+  test("selects the image family per node during the KMS upgrade", () => {
+    const services = buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor("v0.14.1"), { 2: "v0.15.0-0" }).services;
+    for (const name of ["kms-core", "kms-core-3", "kms-core-4", "kms-core-gen-keys", "kms-core-init"]) {
+      expect(services[name].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.1");
+    }
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service-insecure:v0.15.0-0");
+  });
+
   test("cores publish no host ports (everything dials them over the docker network)", () => {
     const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
     for (const name of ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"]) {
