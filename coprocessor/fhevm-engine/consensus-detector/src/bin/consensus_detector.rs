@@ -35,8 +35,8 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size.
-    #[arg(long, default_value_t = 4)]
+    /// Postgres pool size, including four persistent listeners (five on Green).
+    #[arg(long, default_value_t = consensus_detector::DEFAULT_DATABASE_POOL_SIZE)]
     database_pool_size: u32,
 
     /// Gateway RPC URL (websocket).

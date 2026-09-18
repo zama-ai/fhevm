@@ -32,6 +32,20 @@ export function validateFixture(value: Fixture): Fixture {
   return value;
 }
 
+export type PublicationReadiness = {
+  published: boolean;
+  registryCount: number;
+  minThreshold: number | null;
+  maxThreshold: number | null;
+  epoch: string | null;
+  manifestRows: number;
+  lastPublicationError: string | null;
+};
+
+export const publicationReady = (value: PublicationReadiness) =>
+  value.published && value.epoch === "legacy" && value.registryCount === 3
+  && value.minThreshold === 2 && value.maxThreshold === 2;
+
 export function flippedDigest(digest: string): string {
   assert(HEX32.test(digest), "invalid ct64 digest");
   const bytes = Buffer.from(digest.slice(2), "hex");
@@ -86,9 +100,17 @@ export async function runManifestLifecycleProfile(
   let f: Fixture | undefined;
   try {
     for (const index of [0, 1, 2]) {
-      await waitForManifestCondition(`node ${index} publication readiness`, () => q(index,
-        `SELECT EXISTS(SELECT 1 FROM block_manifest_state WHERE host_chain_id=${chainId} AND consensus_epoch='legacy' AND manifest_published)
-          AND (SELECT count(*)=3 AND min(coprocessor_threshold)=2 AND max(coprocessor_threshold)=2 FROM public.gateway_config_coprocessors)`), value => value === "t");
+      await waitForManifestCondition(`node ${index} publication readiness`, () => json<PublicationReadiness>(index,
+        `SELECT json_build_object(
+          'published', EXISTS(SELECT 1 FROM block_manifest_state WHERE host_chain_id=${chainId} AND consensus_epoch='legacy' AND manifest_published),
+          'registryCount', (SELECT count(*) FROM public.gateway_config_coprocessors),
+          'minThreshold', (SELECT min(coprocessor_threshold) FROM public.gateway_config_coprocessors),
+          'maxThreshold', (SELECT max(coprocessor_threshold) FROM public.gateway_config_coprocessors),
+          'epoch', (SELECT consensus_epoch FROM blue_green_consensus_epoch WHERE singleton),
+          'manifestRows', (SELECT count(*) FROM block_manifest_state WHERE host_chain_id=${chainId}),
+          'lastPublicationError', (SELECT publication_last_error FROM block_manifest_state
+            WHERE host_chain_id=${chainId} AND publication_last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 1)
+        )::text`), publicationReady);
     }
     await run(["docker", "stop", DETECTOR]);
     stopped = true;
