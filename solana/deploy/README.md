@@ -22,7 +22,8 @@ This creates the usual preview namespace, Gateway, KMS and coprocessors, then ad
 
 Set `deploy_example_programs=true` to also deploy confidential-token, demo-vault and
 confidential-batcher. They use the same image's `demos deploy` command; deploying
-programs does not create test users, balances or application fixtures.
+programs does not create test users, balances or application fixtures. Confidential
+transfer scenarios call `confidential_token`, so they need this flag.
 
 The first integration supports the preview's Anvil Gateway and canonical EVM host.
 Solana uses the public Solana devnet cluster. Polygon, blockchain-dev and blue-green combinations are
@@ -102,6 +103,12 @@ which must be the program's upgrade authority. In the image it needs only `SOLAN
 deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `preview-env` builds,
 so the command fails against a localnet or production program.
 
+Kubernetes teardown does not close those accounts. Destroy and deploy's namespace reset only
+helm-uninstall and delete the namespace. Run `host wipe` before the next `host deploy`, which
+refuses a HostConfig bound to a different Gateway or committee. Wipe can run as a Job while the
+namespace still has `solana-rpc` / `solana-deployer`, or with the docker command above after
+destroy — those keypairs survive in AWS / 1Password.
+
 `coprocessor register` is an internal deployment command that associates the Solana
 host with the canonical host's key material in PostgreSQL. It shares registration SQL
 with the local harness; it is not a new top-level fhevm-cli command.
@@ -110,8 +117,8 @@ with the local harness; it is not a new top-level fhevm-cli command.
 
 1. Stop traffic before upgrading; stop the listener too if its decoder must change.
 2. For a compatible change, upgrade the program, then update the affected infrastructure.
-3. For a breaking change, run `gh workflow run preview-env-destroy.yml -f namespace=<namespace>`.
-4. Run `host wipe`, then upgrade the program and recreate the preview with fresh application state and matching host bindings; Kubernetes teardown does not erase Solana accounts.
+3. For a breaking change, run `host wipe` before the next deploy. Destroy and deploy's namespace reset do not erase Solana accounts.
+4. Recreate the preview (`preview-env-destroy.yml` if the namespace is still up, then deploy, or re-dispatch deploy) with fresh application state and matching host bindings.
 5. Resume traffic when the listener is ingesting and a computation/decryption smoke test passes.
 
 An existing HostConfig/KMS context cannot be silently rebound to a new Gateway or
@@ -135,3 +142,7 @@ registration against PostgreSQL. CI also runs it through the packaged image. The
 upgrade scenario also checks old-value decryption after host upgrade and listener restart.
 The preview launch checks listener checkpoint progress; a live computation/decryption
 smoke test is still required to validate provider delivery and internal routing together.
+Every FHE handle hashes the host program id. The listener derives with the id it is
+configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
+the listener image needs no `preview-env` feature. If handles still mismatch, compare the
+listener's `--program-id` with the deployed program before suspecting the sysvars.
