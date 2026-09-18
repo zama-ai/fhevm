@@ -14,7 +14,7 @@ the demo only ever runs against a fresh local `solana-test-validator` bound to l
 | `keeper.json` | Operator that plays `dispatch` + `settle` (settle must read as an operator action, not a user button). |
 | `alice.json` | End-user persona that deposits and redeems. |
 | `bob.json` | Second end-user persona. |
-| `mint-authority.json` | SPL mint authority for the mock-USDC faucet (`demo:faucet` mints from this key). |
+| `mint-authority.json` | SPL mint authority for the mock-USDC faucet (`demo:operator` mints from this key). |
 
 The demo-config JSON carries only the **pubkeys** of these; the keys sign from these files, so a
 scenario cross-checks the loaded key against the published address. `test-suite/fhevm/demo/loadDemoEnv.ts`

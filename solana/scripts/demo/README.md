@@ -16,7 +16,7 @@ bun run demo doctor
 bun run demo up
 bun run demo serve
 bun run demo status
-bun run demo logs [validator|listener|faucet|dapp|owned-container-name|all] [--no-follow]
+bun run demo logs [validator|listener|operator|dapp|owned-container-name|all] [--no-follow]
 bun run demo reseed [--direct]
 bun run demo down
 ```
@@ -70,7 +70,7 @@ before restarting with a different mode. Prometheus data belongs to that boot an
 preserves background processes. Use `serve` for browser automation and other command runners that
 reap descendant processes when a command returns. It performs the same idempotent `up`, then stays
 in the foreground and fails if an owned native process exits. While `serve` is active, `reseed`
-delegates through its mode-0600, boot-authorized Unix socket so replacement faucet and dApp
+delegates through its mode-0600, boot-authorized Unix socket so replacement operator and dApp
 processes remain children of the supervisor. Run `down` from another terminal to stop the exact
 owned stack and let `serve` exit cleanly.
 
@@ -82,7 +82,7 @@ shell or CI runner that is known to preserve descendants after the command retur
 when the manifest's exact process start identities and Docker container IDs are still healthy.
 `doctor` also checks Docker CPU/memory, the pinned kms-core image manifest, committed demo
 keypairs, and runtime-directory writability. `status` probes the validator, listener process,
-faucet, dApp, KMS, and relayer readiness, plus the Docker state/health of every
+operator, dApp, KMS, and relayer readiness, plus the Docker state/health of every
 container captured for the scenario. `logs` resolves every Docker alias from those exact owned
 container IDs; the optional `fhevm-` name prefix may be omitted.
 
@@ -106,11 +106,14 @@ so treat it as Solana-specific only on an isolated Solana demo boot with no othe
 traffic.
 
 Each `up` or `reseed` creates a fresh mode-0600 boot capability. The raw token is never stored in the
-manifest, passed in an environment variable, or exposed to the browser; faucet and dApp processes
-receive only the boot ID, token-file path, and allowed loopback origin. Open
-`http://127.0.0.1:5173/`: the dApp server validates the exact same-origin, loopback-only browser
-context and forwards privileged faucet calls with its server-held capability. Reloading the page
-requires no recovery step. `down` removes the exact boot's token file.
+manifest, passed in an environment variable, or exposed to the browser; the operator and dApp
+processes receive only the boot ID, token-file path, and allowed loopback origin. Open
+`http://127.0.0.1:5173/`: the page is static, and the dApp dev server proxies its `/api` calls to
+the operator (`test-suite/fhevm/demo/operator-server.ts`, loopback, the only holder of the keeper
+key, the proof token and the mock-USDC mint authority), adding the capability on the way. The
+operator also accepts the identity header `tailscale serve` injects for logins listed in
+`DEMO_OPERATOR_TAILSCALE_LOGINS`. Reloading the page requires no recovery step. `down` removes the
+exact boot's token file.
 
 All demo state lives under the fhevm layout root (`FHEVM_STATE_DIR`, default `.fhevm`), in
 `runtime/solana/`: the published config `demo-config.json`, lifecycle boots under `demo/` (manifest,

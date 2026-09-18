@@ -1,12 +1,11 @@
 // The local Solana stack's endpoints, derived once from the port definitions in `layout.ts`. Every
-// consumer (harness env defaults, lifecycle health checks, faucet, operator, scripts) reads them from
+// consumer (harness env defaults, lifecycle health checks, operator, scripts) reads them from
 // here; a remote stack (preview namespace) overrides each through the environment instead of
 // relying on any port coincidence.
 import {
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
   DEMO_DAPP_PORT,
-  DEMO_FAUCET_PORT,
   DEMO_OPERATOR_PORT,
   RELAYER_PORT,
   SOLANA_LEAF_PROOF_PORT,
@@ -26,7 +25,6 @@ export const LOCAL_SOLANA_ENDPOINTS = {
   /** The first coprocessor's host listener: leaf proofs over HTTP, and its gRPC port. */
   leafProof: loopback(SOLANA_LEAF_PROOF_PORT),
   listenerGrpc: loopback(SOLANA_LISTENER_GRPC_PORT),
-  demoFaucet: loopback(DEMO_FAUCET_PORT),
   demoOperator: loopback(DEMO_OPERATOR_PORT),
   demoDapp: loopback(DEMO_DAPP_PORT),
 } as const;

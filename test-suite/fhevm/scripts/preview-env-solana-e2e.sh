@@ -9,12 +9,12 @@
 #   set -a; source <state-dir>/preview.env; set +a
 #   bun test e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
 #   bun run demo:seed                                 # once per namespace deployment
-#   bun run demo:faucet &                             # loopback 8090
+#   bun run demo:operator &                           # DEMO_OPERATOR_URL, default http://127.0.0.1:8091
 #   (cd ../../solana/demo-dapp && npm run dev)        # DEMO_DAPP_URL, default http://127.0.0.1:5173/
-#   bun run demo:smoke                                # the deposit arc, against the faucet + namespace
+#   bun run demo:smoke                                # the deposit arc, against the operator + namespace
 #
-# The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the faucet and dapp dev server
-# authorize each other with) is created under <state-dir> in place of the local lifecycle's
+# The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the dapp dev server presents to
+# the operator) is created under <state-dir> in place of the local lifecycle's
 # owned boot, and reused across `up` runs. The seeded personas keep their SOL between runs; the
 # arc tops them up from the deployer wallet and the keeper pays each batch's authority funding,
 # so refill those two devnet wallets when a run stops on "insufficient lamports".
@@ -25,7 +25,7 @@
 #   - the devnet RPC URL (secret `solana-rpc`; the websocket URL is the same endpoint over wss);
 #   - the deployer keypair (secret `solana-deployer`) unless SOLANA_DEPLOYER_KEYPAIR already
 #     names a funded devnet wallet; it funds every scenario actor by transfer;
-#   - the listener proof endpoint bearer token (secret `solana-proof-api`) for the dapp dev server.
+#   - the listener proof endpoint bearer token (secret `solana-proof-api`) for the demo operator.
 # The relayer, both anvil chains and the first coprocessor's proof endpoint are port-forwarded to
 # the loopback ports the local stack uses, so no default URL changes.
 set -euo pipefail
@@ -87,6 +87,7 @@ up)
   host_port=${PREVIEW_HOST_RPC_PORT:-8545}
   leaf_proof_port=${PREVIEW_LEAF_PROOF_PORT:-18080}
   dapp_port=${PREVIEW_DAPP_PORT:-5173}
+  operator_port=${PREVIEW_OPERATOR_PORT:-8091}
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
   forward "${relayer:-svc/relayer}" "$relayer_port:3000"
   forward svc/anvil-gateway-anvil-node "$gateway_port:8546"
@@ -116,6 +117,7 @@ up)
     env_line DEMO_BOOT_ID "$demo_boot_id"
     env_line DEMO_AUTH_TOKEN_FILE "$state/demo-authorization-token"
     env_line DEMO_DAPP_URL "http://127.0.0.1:$dapp_port"
+    env_line DEMO_OPERATOR_URL "http://127.0.0.1:$operator_port"
     env_line DEMO_ALLOWED_ORIGIN "http://127.0.0.1:$dapp_port"
   } >"$state/preview.env"
   chmod 600 "$state/preview.env"

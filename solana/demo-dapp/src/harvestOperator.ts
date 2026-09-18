@@ -1,4 +1,4 @@
-import { createSolanaRpc, type TransactionSigner } from "@solana/kit";
+import { createSolanaRpc, type Address, type TransactionSigner } from "@solana/kit";
 import { buildHarvestInstruction, getVaultMetrics } from "./vault/index.js";
 
 import type { DemoConfig } from "./demoConfig";
@@ -26,38 +26,20 @@ export const readDemoVaultMetrics = async (config: DemoConfig): Promise<VaultMet
   return { totalAssets: metrics.totalAssets, totalShares: metrics.totalShares };
 };
 
-export type DemoAuthorizationHeaders = Readonly<{
-  authorization: string;
-  "x-fhevm-demo-boot-id": string;
-}>;
-
-const fundDonation = async (
-  keeper: TransactionSigner,
-  baseUnits: bigint,
-  authorizationHeaders: DemoAuthorizationHeaders,
-): Promise<void> => {
-  const response = await fetch("http://127.0.0.1:8090/mint-usdc", {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "http://127.0.0.1:5173", ...authorizationHeaders },
-    body: JSON.stringify({ address: keeper.address, amount: Number(baseUnits) / 1_000_000 }),
-  });
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;
-    throw new Error(body?.error ?? `demo faucet failed with HTTP ${response.status}`);
-  }
-};
+/** Mints `baseUnits` of the vault's underlying to `recipient` (the operator's mock-USDC minter). */
+export type UnderlyingMinter = (recipient: Address, baseUnits: bigint) => Promise<string>;
 
 /** Adds one year of illustrative 7% yield to the current vault assets. */
 export const harvestDemoVault = async (
   config: DemoConfig,
   keeper: TransactionSigner,
-  authorizationHeaders: DemoAuthorizationHeaders,
+  mintUnderlying: UnderlyingMinter,
 ): Promise<{ readonly before: VaultMetrics; readonly after: VaultMetrics }> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const before = await readDemoVaultMetrics(config);
   const donation = donationForOneYear(before);
 
-  await fundDonation(keeper, donation, authorizationHeaders);
+  await mintUnderlying(keeper.address, donation);
   await sendTransaction(
     config,
     keeper,

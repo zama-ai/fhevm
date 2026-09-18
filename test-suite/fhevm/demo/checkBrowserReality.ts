@@ -1,14 +1,16 @@
 // checkBrowserReality — acceptance #5, run as a step of the solana-e2e workflow's demo phase.
 //
-// A Vite-origin dApp (#1761) reaches the relayer and the faucet with browser fetch(), so each
-// must answer the exact dApp origin's CORS preflight (OPTIONS), and the protected
-// faucet must accept only the current lifecycle boot capability, while the dApp session must be
-// same-origin and expose that same boot. This exercises exactly that, from a browser Origin, and
-// exits non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
+// The page (#1761) reaches the relayer with browser fetch(), so the relayer must answer the exact
+// dApp origin's CORS preflight (OPTIONS). The page reaches the operator through its own origin: the
+// dev server proxies `/api` and adds the boot capability, so the proxied config must carry the
+// current boot and no key material, while the operator itself must refuse a request without the
+// capability and answer one with it. This exercises exactly that, from a browser Origin, and exits
+// non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
 // because the header assertions are logic.
 //
-// Reads the seeded demo-config for the relayer URL; the faucet and dApp URLs come from the lifecycle
-// env (local defaults from `src/solana/endpoints.ts`). The browser origin is the exact dApp origin.
+// Reads the seeded demo-config for the relayer URL; the operator and dApp URLs come from the
+// lifecycle env (local defaults from `src/solana/endpoints.ts`). The browser origin is the exact
+// dApp origin.
 
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import { readDemoConfig } from "./config";
@@ -16,7 +18,7 @@ import { readDemoAuthorization } from "./lifecycle";
 
 const DAPP_URL = process.env.DEMO_DAPP_URL ?? LOCAL_SOLANA_ENDPOINTS.demoDapp;
 const ORIGIN = DAPP_URL;
-const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? LOCAL_SOLANA_ENDPOINTS.demoFaucet;
+const OPERATOR_URL = process.env.DEMO_OPERATOR_URL ?? LOCAL_SOLANA_ENDPOINTS.demoOperator;
 
 type Check = { readonly name: string; readonly run: () => Promise<void> };
 
@@ -99,38 +101,39 @@ const main = async (): Promise<void> => {
     // this preflight is what proves the demo bring-up wired that env through to the relayer service.
     { name: "relayer", run: () => preflightAllowsOrigin("relayer", `${config.relayerUrl}/v2/input-proof`) },
     {
-      name: "faucet preflight",
+      name: "operator preflight",
       run: () =>
-        preflightAllowsOrigin("faucet", `${FAUCET_URL}/mint-usdc`, {
-          requestHeaders: [
-            "authorization",
-            "content-type",
-            "x-fhevm-demo-boot-id",
-          ],
+        preflightAllowsOrigin("operator", `${OPERATOR_URL}/demo-faucet/mint-usdc`, {
+          requestHeaders: ["authorization", "content-type", "x-fhevm-demo-boot-id"],
           requireExactOrigin: true,
         }),
     },
     {
       // Public health remains browser-readable, but only from the exact dApp origin.
-      name: "faucet reachable cross-origin",
+      name: "operator reachable cross-origin",
       run: async () => {
-        const response = await fetch(`${FAUCET_URL}/health`, { headers: { origin: ORIGIN } });
-        if (!response.ok) throw new Error(`faucet /health returned ${response.status}`);
+        const response = await fetch(`${OPERATOR_URL}/health`, { headers: { origin: ORIGIN } });
+        if (!response.ok) throw new Error(`operator /health returned ${response.status}`);
         if (response.headers.get("access-control-allow-origin") !== ORIGIN) {
-          throw new Error("faucet /health did not return the exact dApp access-control-allow-origin");
+          throw new Error("operator /health did not return the exact dApp access-control-allow-origin");
         }
       },
     },
     {
-      name: "faucet current boot authorization",
+      name: "operator refuses a request without the capability",
       run: async () => {
-        const response = await fetch(`${FAUCET_URL}/mint-usdc`, {
+        const response = await fetch(`${OPERATOR_URL}/demo-config`);
+        if (response.status !== 401) {
+          throw new Error(`unauthenticated operator request returned ${response.status}, expected 401`);
+        }
+      },
+    },
+    {
+      name: "operator current boot authorization",
+      run: async () => {
+        const response = await fetch(`${OPERATOR_URL}/demo-faucet/mint-usdc`, {
           method: "POST",
-          headers: {
-            ...authorizationHeaders,
-            "content-type": "application/json",
-            origin: ORIGIN,
-          },
+          headers: { ...authorizationHeaders, "content-type": "application/json", origin: ORIGIN },
           body: "{}",
         });
         if (response.status !== 400) {
@@ -139,27 +142,18 @@ const main = async (): Promise<void> => {
       },
     },
     {
-      name: "dApp current boot session",
+      // The page calls its own origin with no credentials; the dev server adds the capability.
+      name: "dApp proxied current boot config",
       run: async () => {
-        const response = await fetch(`${DAPP_URL}/api/demo-session`, {
-          headers: {
-            referer: `${ORIGIN}/`,
-            "sec-fetch-dest": "empty",
-            "sec-fetch-site": "same-origin",
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`same-origin demo session returned ${response.status}`);
-        }
-        const body = (await response.json()) as {
-          readonly aliceKeypair?: unknown;
-          readonly config?: { readonly demoBootId?: unknown };
-        };
-        if (!Array.isArray(body.aliceKeypair) || body.aliceKeypair.length !== 64) {
-          throw new Error("same-origin demo session did not return the burner wallet");
-        }
+        const response = await fetch(`${DAPP_URL}/api/demo-config`);
+        if (!response.ok) throw new Error(`proxied demo config returned ${response.status}`);
+        const text = await response.text();
+        const body = JSON.parse(text) as { readonly config?: { readonly demoBootId?: unknown } };
         if (body.config?.demoBootId !== authorization.bootId) {
-          throw new Error("same-origin demo session did not return the current boot");
+          throw new Error("proxied demo config did not return the current boot");
+        }
+        if (/keypair/i.test(text) || text.includes(authorization.token)) {
+          throw new Error("proxied demo config leaked key material or the capability");
         }
       },
     },

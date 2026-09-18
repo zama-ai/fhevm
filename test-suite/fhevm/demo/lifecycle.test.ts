@@ -167,7 +167,7 @@ describe("demo lifecycle collision policy", () => {
     const health = {
       validator: true,
       listener: true,
-      faucet: false,
+      operator: false,
       dapp: false,
       kmsCore: true,
       relayer: true,
@@ -482,8 +482,8 @@ describe("demo lifecycle collision policy", () => {
     // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
     // through tsconfig paths), which node's type-stripping cannot resolve.
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
-    expect(demoViteConfig).toContain("'@fhevm/sdk'");
-    expect(demoViteConfig).toContain("'@fhevm/confidential-token'");
+    // The dev server serves a static page and proxies `/api`; no keeper code runs under Vite SSR.
+    expect(demoViteConfig).not.toContain("ssrLoadModule");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     // Both consumers must reach the SDK through a symlink into its live source tree: bun installs
@@ -641,7 +641,7 @@ describe("demo lifecycle collision policy", () => {
         new Map([
           ["validator", true],
           ["listener", true],
-          ["faucet", true],
+          ["operator", true],
           ["dapp", true],
         ]),
       ),
@@ -818,7 +818,7 @@ describe("demo lifecycle ownership primitives", () => {
       supervisedBootAction({
         expectedBootId: running.bootId,
         manifest: { ...running, state: "stopped" },
-        stoppedProcesses: ["validator", "listener", "faucet", "dapp"],
+        stoppedProcesses: ["validator", "listener", "operator", "dapp"],
         lockState: "absent",
         stoppedMarker: false,
       }),
@@ -1101,7 +1101,7 @@ describe("demo lifecycle ownership primitives", () => {
       "DEMO_BOOT_ID",
       "DEMO_CONFIG_PATH",
       "DEMO_DAPP_URL",
-      "DEMO_FAUCET_URL",
+      "DEMO_OPERATOR_URL",
       "DEMO_PROOF_API_KEY",
       "DEMO_PROOF_URL",
       "DEMO_RELAYER_URL",

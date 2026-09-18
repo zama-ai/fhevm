@@ -1,4 +1,5 @@
 import { asBytes32Hex } from '@fhevm/sdk/base';
+import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 import { encryptedStoreHandle } from "@fhevm/sdk/solana";
 // Live vault deposit: fund → wrap → join → dispatch → public decrypt → settle → claim → user decrypt.
@@ -46,10 +47,9 @@ import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 // a hung RPC read is ultimately caught by this scenario timeout.
 const SCENARIO_TIMEOUT_MS = 30 * 60_000;
 
-// The lifecycle-owned demo faucet binds loopback on 8090 and is health-gated before this runs.
-// The endpoint remains overridable for a non-default run.
-const FAUCET_URL = process.env.DEMO_FAUCET_URL ?? "http://127.0.0.1:8090";
-// Mock USDC decimals (matches the seeded SPL mint and the faucet).
+// The lifecycle-owned demo operator (loopback, health-gated before this runs) mints the mock USDC.
+const OPERATOR_URL = process.env.DEMO_OPERATOR_URL ?? LOCAL_SOLANA_ENDPOINTS.demoOperator;
+// Mock USDC decimals (matches the seeded SPL mint and the operator's faucet).
 const USDC_DECIMALS = 6;
 // USDC the persona wraps. The workflow passes DEMO_DEPOSIT_AMOUNT (fresh per run avoids PDA reuse);
 // default matches the faucet's default drip.
@@ -147,7 +147,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // Preconditions: the suite may run right after a relayer (re)start. Gate on its health
       // endpoint before submitting (same gate as the confidential-transfer scenario), plus the
-      // faucet the persona funds through. Every probe carries a per-request abort timeout:
+      // operator the persona funds through. Every probe carries a per-request abort timeout:
       // until() checks its deadline only between attempts, so a hanging TCP connect would otherwise
       // stall the whole test to the runner's limit.
       await until(
@@ -155,25 +155,24 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         { description: "relayer liveness", timeoutMs: 60_000 },
       );
       await until(
-        async () => (await fetch(`${FAUCET_URL}/health`, { signal: AbortSignal.timeout(10_000) })).ok,
-        { description: "demo faucet health", timeoutMs: 30_000 },
+        async () => (await fetch(`${OPERATOR_URL}/health`, { signal: AbortSignal.timeout(10_000) })).ok,
+        { description: "demo operator health", timeoutMs: 30_000 },
       );
 
-      // Step 1: fund alice — SOL through the persona/faucet capability, mock USDC through the faucet's
-      // mint-to-ATA endpoint (the ATA is created idempotently by the faucet).
+      // Step 1: fund alice — SOL through the persona/faucet capability, mock USDC through the
+      // operator's faucet endpoint (the ATA is created idempotently there).
       await personas.fund(alicePersona);
-      const mintUsdc = await fetch(`${FAUCET_URL}/mint-usdc`, {
+      const mintUsdc = await fetch(`${OPERATOR_URL}/demo-faucet/mint-usdc`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${authorization.token}`,
           "content-type": "application/json",
-          origin: "http://127.0.0.1:5173",
           "x-fhevm-demo-boot-id": authorization.bootId,
         },
         body: JSON.stringify({ address: alice.address, amount: DEPOSIT_USDC }),
       });
       if (!mintUsdc.ok) {
-        throw new Error(`faucet /mint-usdc failed (${mintUsdc.status}): ${await mintUsdc.text()}`);
+        throw new Error(`operator /demo-faucet/mint-usdc failed (${mintUsdc.status}): ${await mintUsdc.text()}`);
       }
 
       const rpc = createSolanaRpc(env.rpcUrl);

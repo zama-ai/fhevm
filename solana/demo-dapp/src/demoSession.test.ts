@@ -12,7 +12,6 @@ import {
   assertWalletAccountCapabilities,
   describeWalletError,
   parseDemoConfigResponse,
-  parseDemoSessionResponse,
   permitWalletFromWalletAccount,
   planDemoFunding,
   readExactMessageSignature,
@@ -66,30 +65,18 @@ const validResponse = {
       alice: '11111111111111111111111111111111',
     },
   },
-  aliceKeypair: Array.from({ length: 64 }, (_, index) => index),
 };
 
-describe('parseDemoSessionResponse', () => {
-  test('accepts a seeded localnet session', () => {
-    expect(parseDemoSessionResponse(validResponse)).toEqual(validResponse);
-  });
-
-  test('rejects a non-local RPC before exposing the burner', () => {
+describe('parseDemoConfigResponse', () => {
+  test('rejects a non-local RPC on localnet', () => {
     expect(() =>
-      parseDemoSessionResponse({
-        ...validResponse,
+      parseDemoConfigResponse({
         config: { ...validResponse.config, rpcUrl: 'https://api.mainnet-beta.solana.com' },
       }),
     ).toThrow('must use http://127.0.0.1');
   });
 
-  test('rejects malformed key material', () => {
-    expect(() => parseDemoSessionResponse({ ...validResponse, aliceKeypair: [1, 2, 3] })).toThrow(
-      'must contain exactly 64 bytes',
-    );
-  });
-
-  test('parses public configuration without burner key material', () => {
+  test('parses the public configuration', () => {
     expect(parseDemoConfigResponse({ config: validResponse.config })).toEqual(validResponse.config);
   });
 

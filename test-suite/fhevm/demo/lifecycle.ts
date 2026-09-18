@@ -113,7 +113,7 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];
-const PROCESS_NAMES = ["validator", "listener", "faucet", "dapp"] as const;
+const PROCESS_NAMES = ["validator", "listener", "operator", "dapp"] as const;
 const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
@@ -1053,7 +1053,7 @@ export const terminateUntrackedChild = async (
 };
 
 const startOwnedProcess = async (
-  name: "faucet" | "dapp",
+  name: "operator" | "dapp",
   command: readonly string[],
   cwd: string,
   env: Record<string, string>,
@@ -1113,7 +1113,7 @@ const lifecycleEnv = (
   DEMO_CONFIG_PATH,
   DEMO_MANIFEST_PATH,
   SOLANA_RPC_URL: LOCAL_SOLANA_ENDPOINTS.validatorRpc,
-  DEMO_FAUCET_URL: LOCAL_SOLANA_ENDPOINTS.demoFaucet,
+  DEMO_OPERATOR_URL: LOCAL_SOLANA_ENDPOINTS.demoOperator,
   [DEMO_BOOT_ID_ENV]: path.basename(runtimeDir),
   DEMO_LIFECYCLE_DIR: runtimeDir,
   [FHEVM_COMPOSE_PROJECT_ENV]: composeProject,
@@ -1132,7 +1132,7 @@ export const authorizedServiceEnv = (
   DEMO_PROOF_API_KEY: SOLANA_LEAF_PROOF_API_KEY,
   [DEMO_ALLOWED_ORIGIN_ENV]: LOCAL_SOLANA_ENDPOINTS.demoDapp,
   DEMO_DAPP_URL: LOCAL_SOLANA_ENDPOINTS.demoDapp,
-  DEMO_FAUCET_URL: LOCAL_SOLANA_ENDPOINTS.demoFaucet,
+  DEMO_OPERATOR_URL: LOCAL_SOLANA_ENDPOINTS.demoOperator,
   DEMO_RELAYER_URL: LOCAL_SOLANA_ENDPOINTS.relayer,
   [DEMO_AUTH_TOKEN_FILE_ENV]: tokenFile,
   [DEMO_BOOT_ID_ENV]: bootId,
@@ -1206,7 +1206,7 @@ export const readCurrentDemoAuthorization = async () => {
 
 /**
  * The boot capability for scenarios and checks. A process that was started with the capability in
- * its environment (a faucet and dapp run against a remote stack, as CI's preview namespace) uses it
+ * its environment (an operator and dapp run against a remote stack, as CI's preview namespace) uses it
  * directly; otherwise it belongs to the running lifecycle-owned boot.
  */
 export const readDemoAuthorization = async () =>
@@ -1382,7 +1382,7 @@ const dockerLogContains = async (
 type DemoHealth = {
   readonly validator: boolean;
   readonly listener: boolean;
-  readonly faucet: boolean;
+  readonly operator: boolean;
   readonly dapp: boolean;
   readonly kmsCore: boolean;
   readonly relayer: boolean;
@@ -1414,7 +1414,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   );
   const [
     validator,
-    faucet,
+    operator,
     dapp,
     kmsReady,
     relayerEndpoint,
@@ -1425,7 +1425,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     jaeger,
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
-    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.demoFaucet}/health`),
+    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`),
     demoDappHealthy(),
     dockerLogContains(
       manifest,
@@ -1457,7 +1457,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   return {
     validator: exactEndpointReady(exact.get("validator") === true, validator),
     listener: exact.get("listener") === true,
-    faucet: exactEndpointReady(exact.get("faucet") === true, faucet),
+    operator: exactEndpointReady(exact.get("operator") === true, operator),
     dapp: exactEndpointReady(exact.get("dapp") === true, dapp),
     kmsCore: containerReady("kms-core") && kmsReady,
     relayer: containerReady("fhevm-relayer") && relayerEndpoint,
@@ -1476,7 +1476,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
 const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.validator &&
   health.listener &&
-  health.faucet &&
+  health.operator &&
   health.dapp &&
   health.kmsCore &&
   health.relayer &&
@@ -1504,7 +1504,7 @@ const assertDemoHealthReady = (health: DemoHealth): void => {
   const serviceNames = [
     "validator",
     "listener",
-    "faucet",
+    "operator",
     "dapp",
     "kmsCore",
     "relayer",
@@ -1668,16 +1668,16 @@ export const upDemo = async ({
         processes: { validator, listener },
       };
       await writeDemoManifest(manifest);
-      const faucet = await startOwnedProcess(
-        "faucet",
-        ["bun", "run", "demo:faucet"],
+      const operator = await startOwnedProcess(
+        "operator",
+        ["bun", "run", "demo:operator"],
         path.join(REPO_ROOT, "test-suite/fhevm"),
         serviceEnv,
-        path.join(logsDir, "faucet.log"),
+        path.join(logsDir, "operator.log"),
       );
-      manifest = { ...manifest, processes: { ...manifest.processes, faucet } };
+      manifest = { ...manifest, processes: { ...manifest.processes, operator } };
       await writeDemoManifest(manifest);
-      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoFaucet}/health`, "demo faucet");
+      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`, "demo operator");
       const dapp = await startOwnedProcess(
         "dapp",
         ["bun", "run", "dev"],
@@ -2181,7 +2181,7 @@ export const reseedDemo = async ({
     let nextManifest = manifest;
     try {
       await stopOwnedProcess("dapp", manifest.processes.dapp);
-      await stopOwnedProcess("faucet", manifest.processes.faucet);
+      await stopOwnedProcess("operator", manifest.processes.operator);
       nextManifest = {
         ...manifest,
         state: "starting",
@@ -2229,19 +2229,19 @@ export const reseedDemo = async ({
           NODE_PATH: path.join(REPO_ROOT, "solana/demo-dapp/node_modules"),
         },
       });
-      const faucet = await startOwnedProcess(
-        "faucet",
-        ["bun", "run", "demo:faucet"],
+      const operator = await startOwnedProcess(
+        "operator",
+        ["bun", "run", "demo:operator"],
         path.join(REPO_ROOT, "test-suite/fhevm"),
         serviceEnv,
-        path.join(logsDir, "faucet.log"),
+        path.join(logsDir, "operator.log"),
       );
       nextManifest = {
         ...nextManifest,
-        processes: { ...nextManifest.processes, faucet },
+        processes: { ...nextManifest.processes, operator },
       };
       await writeDemoManifest(nextManifest);
-      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoFaucet}/health`, "demo faucet");
+      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`, "demo operator");
       const dapp = await startOwnedProcess(
         "dapp",
         ["bun", "run", "dev"],
@@ -2335,7 +2335,7 @@ export const statusDemo = async (): Promise<boolean> => {
   for (const [service, ready] of [
     ["validator", serviceHealth.validator],
     ["listener", serviceHealth.listener],
-    ["faucet", serviceHealth.faucet],
+    ["operator", serviceHealth.operator],
     ["dapp", serviceHealth.dapp],
     ["kmsCore", serviceHealth.kmsCore],
     ["relayer", serviceHealth.relayer],

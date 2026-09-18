@@ -264,7 +264,7 @@ compromised authorized service behaved honestly.
 | The key service stops after a batch closes | Settlement waits; the demo has no timeout recovery after closing |
 | Rounding distributes too much | Deposit, redeem, and per-user payout calculations round down |
 | A tiny deposit rounds to zero shares at a very high share price | The vault rejects it; recovery of an already closed batch is not implemented |
-| A demo control is exposed | Controls listen only locally and require the current run's token |
+| A demo control is exposed | The operator listens only locally and requires the current run's token or an allow-listed Tailscale identity |
 | The centralized key service is compromised | It can expose values and sign accepted results; production should spread the key across several holders |
 | The input signer is compromised | It can approve invalid encrypted inputs; production should require several independent signers |
 | The encrypted math worker is compromised | It can corrupt or withhold encrypted results, but cannot change operations or result IDs recorded on Solana |
@@ -285,7 +285,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | Closing, settlement, and claims | Local keeper |
 | Metrics and traces | Local Prometheus and Jaeger |
 
-Yield is different: the demo faucet mints test USDC and a demo-only vault instruction donates it.
+Yield is different: the demo operator mints test USDC and a demo-only vault instruction donates it.
 This proves share-price accounting, not a connection to a real yield strategy.
 
 Expand **Developer evidence** in the app to copy transaction signatures, compute use,
