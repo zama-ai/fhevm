@@ -19,6 +19,6 @@ bash "$SOLANA/scripts/build-programs.sh" localnet confidential_token demo_vault 
 SOLANA_RPC_URL="$VALIDATOR_RPC" \
 SOLANA_DEPLOYER_KEYPAIR="$DEPLOYER_KEYPAIR" \
 SOLANA_ARTIFACTS_DIR="$SOLANA/target/deploy" \
-SOLANA_PROGRAM_PROFILE=localnet \
+SOLANA_ENVIRONMENT=localnet \
 ADDRESSES_DIR="$SOLANA/target/deploy" \
 bun run "$ROOT/solana/deploy/src/cli.ts" demos "${1:-deploy}"

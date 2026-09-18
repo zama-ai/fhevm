@@ -35,6 +35,7 @@ jobs:
               # host-listener's solana-reconstruct feature compiles these three as path
               # dependencies, so editing them can break a clippy lane that no other filter watches.
               - solana/programs/zama-host/**
+              - solana/environments/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
   cargo-clippy:

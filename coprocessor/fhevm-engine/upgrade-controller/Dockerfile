@@ -18,6 +18,7 @@ COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY solana/Cargo.toml ./solana/Cargo.toml
 COPY solana/crates ./solana/crates
 COPY solana/programs ./solana/programs
+COPY solana/environments ./solana/environments
 COPY solana/runtime-tests ./solana/runtime-tests
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 

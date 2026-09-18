@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { deployProgramArtifacts } from '../../../../../solana/deploy/src/deploy-programs';
-import { programIdsFor } from '../../../../../solana/deploy/src/program-profile';
+import { programIdsFor } from '../../../../../solana/deploy/src/environment';
 
 const originalPath = process.env.PATH;
 let directory: string | undefined;
@@ -65,7 +65,7 @@ if [ "$2" = dump ]; then printf '${options.changed ? 'different' : 'fixture\\000
     artifactsDir: directory,
     programKeypairPaths: { zama_host: path.join(directory, 'host.json') },
     programs: ['zama_host'] as const,
-    profile: 'preview-env' as const,
+    environment: 'preview-env' as const,
   };
 };
 const calls = () => readFile(path.join(directory!, 'calls'), 'utf8');
@@ -102,6 +102,17 @@ test('explicit upgrade deploys different bytecode', async () => {
   const parameters = await fixture({ exists: true, changed: true });
   await deployProgramArtifacts({ ...parameters, upgrade: true });
   expect(await calls()).toBe('program show\nprogram dump\nprogram deploy\nprogram show\n');
+});
+test('deploy --allow-upgrade deploys an absent program and upgrades different bytecode', async () => {
+  await deployProgramArtifacts({ ...(await fixture()), allowUpgrade: true });
+  expect(await calls()).toBe('program deploy\nprogram show\n');
+  await deployProgramArtifacts({ ...(await fixture({ exists: true, changed: true })), allowUpgrade: true });
+  expect(await calls()).toBe('program show\nprogram dump\nprogram deploy\nprogram show\n');
+});
+test('deploy --allow-upgrade still refuses another authority', async () => {
+  const parameters = await fixture({ exists: true, wrongAuthority: true, changed: true });
+  await expect(deployProgramArtifacts({ ...parameters, allowUpgrade: true })).rejects.toThrow('authority');
+  expect(await calls()).toBe('program show\nprogram dump\n');
 });
 test('wrong authority fails before uploading bytecode', async () => {
   const parameters = await fixture({ exists: true, wrongAuthority: true, changed: true });

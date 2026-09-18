@@ -1,0 +1,10 @@
+[package]
+name = "program-environment"
+version = "0.1.0"
+description = "Build-script helper: emits declare_id! for the program id of the selected environment file"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde_json = "1"

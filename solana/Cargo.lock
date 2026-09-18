@@ -995,6 +995,7 @@ dependencies = [
  "anchor-spl",
  "confidential-token",
  "demo-vault",
+ "program-environment",
  "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
@@ -1006,6 +1007,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "program-environment",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-sha256-hasher",
@@ -1217,6 +1219,7 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
+ "program-environment",
 ]
 
 [[package]]
@@ -2442,6 +2445,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "program-environment"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -4989,6 +4999,7 @@ dependencies = [
  "borsh",
  "bytemuck",
  "k256",
+ "program-environment",
  "sha2 0.10.9",
  "solana-ed25519-instruction",
  "solana-instructions-sysvar",

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
-import { PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/program-profile';
+import { programIdsFor } from '../../../../solana/deploy/src/environment';
 import { getHostConfigEncoder } from '../../../../solana/deploy/src/generated/zamaHost/accounts/hostConfig';
 import { KMS_CONTEXT_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/kmsContext';
 import {
@@ -166,7 +166,7 @@ describe('bootstrapZamaHost', () => {
   test('preview bootstrap derives the randomness account under the preview host', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
-    const programAddress = PREVIEW_ENV_ZAMA_HOST_PROGRAM_ADDRESS;
+    const programAddress = programIdsFor('preview-env').zamaHost;
     await bootstrapZamaHost(context, { payer, gateway, programAddress });
     const [previewNonce] = await findRandNoncePda({ programAddress });
     const [localNonce] = await findRandNoncePda();

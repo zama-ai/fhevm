@@ -40,6 +40,7 @@ jobs:
               # and this workflow ran only because the same PR also touched coprocessor/.
               - solana/programs/zama-host/**
               - solana/programs/confidential-token/**
+              - solana/environments/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**

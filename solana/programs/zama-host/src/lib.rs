@@ -51,10 +51,8 @@ pub use state::*;
 
 use instructions::*;
 
-#[cfg(not(feature = "preview-env"))]
-declare_id!("6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu");
-#[cfg(feature = "preview-env")]
-declare_id!("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
+// Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
+include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
 /// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]

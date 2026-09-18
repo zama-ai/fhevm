@@ -6,16 +6,16 @@ import path from 'node:path';
 
 import { type SolanaDeployProgram } from './constants';
 import localnet from './generated/program-ids.json';
-import { type SolanaProgramProfile, programIdsFor } from './program-profile';
+import { type SolanaEnvironment, programIdsFor } from './environment';
 
-const declaredProgramId = (profile: SolanaProgramProfile): Partial<Record<SolanaDeployProgram, string>> => {
-  const ids = programIdsFor(profile);
+const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => {
+  const ids = programIdsFor(environment);
   return {
     zama_host: ids.zamaHost,
     confidential_token: ids.confidentialToken,
     demo_vault: ids.demoVault,
     confidential_batcher: ids.confidentialBatcher,
-    ...(profile === 'localnet'
+    ...(environment === 'localnet'
       ? {
           encrypted_counter: localnet.encrypted_counter,
           dep_chain: localnet.dep_chain,
@@ -59,10 +59,12 @@ export const deployProgramArtifacts = async (parameters: {
   readonly programKeypairPaths: Readonly<Partial<Record<SolanaDeployProgram, string>>>;
   readonly programs: readonly SolanaDeployProgram[];
   readonly upgrade?: boolean;
-  readonly profile?: SolanaProgramProfile;
+  /** Deploy absent programs and upgrade ones whose bytecode differs, when the deployer is the authority. */
+  readonly allowUpgrade?: boolean;
+  readonly environment?: SolanaEnvironment;
 }): Promise<Partial<Record<SolanaDeployProgram, string>>> => {
   parameters.signal?.throwIfAborted();
-  const declared = declaredProgramId(parameters.profile ?? 'localnet');
+  const declared = declaredProgramId(parameters.environment ?? 'localnet');
   const rpc = createSolanaRpc(parameters.rpcUrl);
   const authority = await addressOf(parameters.deployerKeypairPath);
   const command = (args: string[]) =>
@@ -75,11 +77,11 @@ export const deployProgramArtifacts = async (parameters: {
     const keypairPath = parameters.programKeypairPaths[program];
     await access(soPath);
     const expected = declared[program];
-    if (!expected) throw new Error(`${program} is unavailable in profile ${parameters.profile}`);
+    if (!expected) throw new Error(`${program} is unavailable in environment ${parameters.environment}`);
     const programId = keypairPath ? await addressOf(keypairPath) : expected;
     if (programId !== expected) {
       throw new Error(
-        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for profile ${parameters.profile ?? 'localnet'}`,
+        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for environment ${parameters.environment ?? 'localnet'}`,
       );
     }
     let exists: boolean;
@@ -110,7 +112,9 @@ export const deployProgramArtifacts = async (parameters: {
           deployedBytes.subarray(expectedBytes.length).every((byte) => byte === 0);
         if (unchanged) console.log(`    ${program}=${programId} unchanged`);
         else {
-          if (!parameters.upgrade) throw new Error(`${program} bytecode differs; explicit upgrade required`);
+          if (!parameters.upgrade && !parameters.allowUpgrade) {
+            throw new Error(`${program} bytecode differs; explicit upgrade required`);
+          }
           if (info.authority !== authority) throw new Error(`${program} upgrade authority does not match deployer`);
           pending.push(program);
         }

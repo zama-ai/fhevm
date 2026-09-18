@@ -1,5 +1,5 @@
 // Closes every account the host program owns so the next deployment starts from nothing.
-// `close_owned_accounts` exists only in `admin-sweep` builds (the preview-env profile), so it is
+// `close_owned_accounts` exists only in `admin-sweep` builds (`preview-env.json` enables it), so it is
 // absent from the vendored IDL and the Codama client. Its wire format is pinned by
 // solana/runtime-tests/tests/host_admin_mollusk.rs.
 import {
@@ -29,7 +29,7 @@ export type WipeZamaHostParams = {
 /**
  * Fails unless the program is deployed and `payer` is its upgrade authority. The instruction
  * enforces the same, but a wipe that finds zero accounts never sends it, so an undeployed program
- * id or a program held by another authority (a wrong profile or cluster) must not print a clean
+ * id or a program held by another authority (a wrong environment or cluster) must not print a clean
  * sweep. A deployed program with this authority and zero accounts still does; nothing here
  * proves that its bytecode carries the instruction.
  */

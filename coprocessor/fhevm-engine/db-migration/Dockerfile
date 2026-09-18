@@ -99,6 +99,7 @@ COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY solana/Cargo.toml ./solana/Cargo.toml
 COPY solana/crates ./solana/crates
 COPY solana/programs ./solana/programs
+COPY solana/environments ./solana/environments
 COPY solana/runtime-tests ./solana/runtime-tests
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations ./migrations

@@ -69,6 +69,7 @@ bun install --cwd solana/deploy --frozen-lockfile
 bash solana/scripts/build-programs.sh localnet zama_host confidential_token
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
+docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy --allow-upgrade
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host upgrade
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host wipe
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> demos deploy
@@ -86,25 +87,30 @@ Build scripts install Anchor's pinned SBF tools v1.52 before compiling. This avo
 If an earlier build mixed tool versions, run `cargo clean --target sbpf-solana-solana`
 once from `solana/` before rebuilding; ordinary builds retain their cache.
 
-The image defaults to the `preview-env` program IDs. The `localnet` build profile uses
-the repository's test identities. Profiles select compiled addresses, not RPC networks:
-changing an address requires rebuilding. Private keys are never build inputs.
+The image is built for one environment: `PROGRAM_ENVIRONMENT` selects
+`solana/environments/<name>.json`, which lists the four program ids and the build features.
+`localnet` is the repository's test identities and the default for plain `anchor build`;
+`preview-env` is the disposable devnet host. Environments select compiled program ids, not
+RPC networks: the same `preview-env` image can point at any RPC URL, and changing an id
+requires rebuilding. Private keys are never build inputs.
 
 | State | Behavior |
 | --- | --- |
 | Program absent | Deploy and initialize the host |
 | Same bytecode and matching host configuration | Return existing addresses without uploading |
 | Different bytecode with `deploy` | Fail; require explicit `upgrade` |
+| `deploy --allow-upgrade` | Deploy an absent program; upgrade different bytecode when the deployer is the authority (preview only) |
 | Existing program with `upgrade` | Validate bindings and authority, then upgrade at the same address |
 | Incompatible host configuration | Fail before modifying bytecode |
 
 `host wipe` closes every account the host program owns and returns the rent to the deployer,
 which must be the program's upgrade authority. In the image it needs only `SOLANA_RPC_URL` and the
-deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `preview-env` builds,
+deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `admin-sweep` builds (the `preview-env` environment),
 so the command fails against a localnet or production program.
 
 Kubernetes teardown does not close those accounts. Destroy and deploy's namespace reset only
-helm-uninstall and delete the namespace. Run `host wipe` before the next `host deploy`, which
+helm-uninstall and delete the namespace. The preview deploy Job runs `host wipe` before
+`host deploy --allow-upgrade`; elsewhere run `host wipe` before the next `host deploy`, which
 refuses a HostConfig bound to a different Gateway or committee. Wipe can run as a Job while the
 namespace still has `solana-rpc` / `solana-deployer`, or with the docker command above after
 destroy — those keypairs survive in AWS / 1Password.
@@ -144,5 +150,5 @@ The preview launch checks listener checkpoint progress; a live computation/decry
 smoke test is still required to validate provider delivery and internal routing together.
 Every FHE handle hashes the host program id. The listener derives with the id it is
 configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
-the listener image needs no `preview-env` feature. If handles still mismatch, compare the
+the listener image is built for localnet and needs no environment. If handles still mismatch, compare the
 listener's `--program-id` with the deployed program before suspecting the sysvars.

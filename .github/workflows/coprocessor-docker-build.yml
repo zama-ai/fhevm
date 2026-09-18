@@ -169,6 +169,7 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - solana/programs/zama-host/**
+          - solana/environments/**
           - solana/crates/**
           - solana/Cargo.*
 

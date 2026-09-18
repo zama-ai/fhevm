@@ -558,7 +558,7 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
 ///
 /// `program_id` is an input, not `crate::ID`: the program passes its own id, and
 /// an off-chain reconstruction passes the id of the deployment it follows
-/// (`declare_id!` differs per cargo profile).
+/// (`declare_id!` differs per environment file).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HandleDerivationContext {
     pub program_id: Pubkey,

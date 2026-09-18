@@ -2,10 +2,11 @@
 # Compile selected programs with the same pinned toolchain in CI, Docker and local tests.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-profile="${1:?usage: build-programs.sh localnet|preview-env PROGRAM...}"
+environment="${1:?usage: build-programs.sh ENVIRONMENT PROGRAM...}"
 shift
 [[ "$#" -gt 0 ]] || { echo 'select at least one program' >&2; exit 1; }
-case "$profile" in localnet|preview-env) ;; *) echo "unknown program profile: $profile" >&2; exit 1;; esac
+environment_file="environments/$environment.json"
+[[ -f "$environment_file" ]] || { echo "unknown environment: $environment (no $environment_file)" >&2; exit 1; }
 anchor_version=$(sed -n 's/^anchor_version = "\([^"]*\)"/\1/p' Anchor.toml)
 solana_version=$(sed -n 's/^solana_version = "\([^"]*\)"/\1/p' Anchor.toml)
 [[ "$(anchor --version)" == "anchor-cli $anchor_version" ]] || { echo "Anchor $anchor_version required" >&2; exit 1; }
@@ -14,13 +15,21 @@ solana_version=$(sed -n 's/^solana_version = "\([^"]*\)"/\1/p' Anchor.toml)
 for program in "$@"; do
   case "$program" in
     zama_host|confidential_token|demo_vault|confidential_batcher) ;;
-    encrypted_counter|dep_chain) [[ "$profile" == localnet ]] || { echo 'specimens are local-only' >&2; exit 1; } ;;
+    encrypted_counter|dep_chain) [[ "$environment" == localnet ]] || { echo 'specimens are local-only' >&2; exit 1; } ;;
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
 bash scripts/install-sbf-tools.sh
+# build.rs reads the program ids from the environment file; each program's cargo features come from
+# the same file (`features.<program>`). The environment is passed as cargo config, not a shell
+# variable: .cargo/config.toml pins PROGRAM_ENVIRONMENT to localnet so a stray export cannot leak
+# into other builds, and this command-line value overrides that pin for this build only.
+# `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
+cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')
 for program in "$@"; do
-  args=(build --ignore-keys --no-idl -p "$program")
-  if [[ "$profile" == preview-env ]]; then args+=(-- --features preview-env); fi
+  features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
+  args=(build --ignore-keys --no-idl -p "$program" --)
+  if [[ -n "$features" ]]; then args+=(--features "$features"); fi
+  args+=(-- "${cargo_config[@]}")
   anchor "${args[@]}"
 done

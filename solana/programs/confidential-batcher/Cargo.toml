@@ -12,7 +12,6 @@ name = "confidential_batcher"
 
 [features]
 default = []
-preview-env = ["zama-host/preview-env", "confidential-token/preview-env", "demo-vault/preview-env"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []
@@ -23,6 +22,9 @@ idl-build = [
     "demo-vault/idl-build",
     "zama-host/idl-build",
 ]
+
+[build-dependencies]
+program-environment = { path = "../../crates/program-environment" }
 
 [dependencies]
 anchor-lang = { version = "1.1.2", features = ["init-if-needed"] }

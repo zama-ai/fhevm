@@ -73,6 +73,7 @@ COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gat
 COPY solana/Cargo.toml ./solana/Cargo.toml
 COPY solana/crates ./solana/crates
 COPY solana/programs ./solana/programs
+COPY solana/environments ./solana/environments
 COPY solana/runtime-tests ./solana/runtime-tests
 
 WORKDIR /app/coprocessor/fhevm-engine
