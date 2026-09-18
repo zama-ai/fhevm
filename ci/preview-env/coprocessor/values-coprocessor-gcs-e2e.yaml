@@ -8,7 +8,7 @@
 # HEAD migrator on top as a Helm hook (deploy-coprocessor.sh) so the 0.15
 # columns exist before the fleet starts. Control-plane binaries run only here.
 commonConfig:
-  stackVersion: "0.15.0"
+  stackVersion: "0.15.1"
   extraSelectorLabels:
     fhevm.zama.ai/fleet: gcs
   canonicalProtocolConfigChainId: "12345"

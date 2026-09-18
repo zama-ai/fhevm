@@ -17,7 +17,7 @@ CHAIN_MODE="${CHAIN_MODE:-anvil}"
 # Anvil Foundry account #9 (host/ACL owner). External chains overwrite via
 # generate-mnemonic.cjs (DEPLOYER_KEY_9 on GITHUB_ENV).
 DEPLOYER_KEY_9="${DEPLOYER_KEY_9:-0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6}"
-GCS_VERSION="${GCS_VERSION:-v0.15.0}"
+GCS_VERSION="${GCS_VERSION:-v0.15.1}"
 # Caller-supplied; contract does not enforce uniqueness. Default the Actions
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
