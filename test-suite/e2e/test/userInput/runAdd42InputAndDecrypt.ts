@@ -27,9 +27,29 @@ export const runAdd42InputAndDecrypt = async function (this: Mocha.Context) {
     }),
   );
 
-  const tx = await traceInputFlowStage('submit add42 transaction', () =>
-    this.contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof),
-  );
+  const tx = await traceInputFlowStage('submit add42 transaction', async () => {
+    try {
+      return await this.contract.add42ToInput64(encryptedInput.handles[0], encryptedInput.inputProof);
+    } catch (error) {
+      // Estimation failures have no transaction hash. Trace the same call on
+      // Anvil so a missing selector can be distinguished from proof rejection.
+      try {
+        const call = await this.contract.add42ToInput64.populateTransaction(
+          encryptedInput.handles[0],
+          encryptedInput.inputProof,
+        );
+        const trace = await this.signers.alice.provider.send('debug_traceCall', [
+          { from: this.signers.alice.address, to: call.to, data: call.data },
+          'latest',
+          { tracer: 'callTracer' },
+        ]);
+        console.error('[input-flow] add42 call trace:', JSON.stringify(trace));
+      } catch (traceError) {
+        console.error('[input-flow] call trace unavailable:', traceError);
+      }
+      throw error;
+    }
+  });
   console.log(`[input-flow] add42 transaction hash: ${tx.hash}`);
   const receipt = await traceInputFlowStage('wait for add42 transaction receipt', () => tx.wait());
   expect(receipt.status).to.equal(1);

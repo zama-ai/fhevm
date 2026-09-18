@@ -12,6 +12,7 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   MINIO_EXTERNAL_URL,
+  REPO_ROOT,
   TEST_SUITE_CONTAINER,
 } from "../../src/layout";
 import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds, kmsPublicPrefix } from "../../src/kms-party";
@@ -62,6 +63,30 @@ const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`
 
 const predecessorImage = (image: string, tag: string) =>
   `ghcr.io/zama-ai/fhevm/coprocessor/${image}:${tag}`;
+
+const buildRolloutTestImage = async (hostRef: string): Promise<string> => {
+  const head = (await run(["git", "rev-parse", "HEAD"])).stdout.trim();
+  const libraryHead = (await run(["git", "rev-parse", `${hostRef}^{commit}`])).stdout.trim();
+  const tag = `rfc029-${head.slice(0, 12)}-${libraryHead.slice(0, 12)}`;
+  const tempRoot = await mkdtemp(path.join(tmpdir(), "rfc029-solidity-"));
+  try {
+    const archive = path.join(tempRoot, "library.tar");
+    await run(["git", "archive", `--output=${archive}`, libraryHead, "library-solidity"], { cwd: REPO_ROOT });
+    await run(["tar", "-xf", archive, "-C", tempRoot]);
+    // Keep today's tests/SDK, but compile applications for the oldest host
+    // they must run on. Keep those same artifacts through both upgrades.
+    console.log(`[rollout test image] tests=${head} solidity=${libraryHead} image=${tag}`);
+    await runStreaming([
+      "docker", "buildx", "build", "--load", "--platform", "linux/amd64",
+      "--file", "test-suite/e2e/Dockerfile",
+      "--build-context", `solidity-library=${path.join(tempRoot, "library-solidity")}`,
+      "--tag", `ghcr.io/zama-ai/fhevm/test-suite/e2e:${tag}`, ".",
+    ], { cwd: REPO_ROOT });
+    return tag;
+  } finally {
+    await rm(tempRoot, { force: true, recursive: true });
+  }
+};
 
 const buildPredecessorImages = async (ref: string, tag: string) => {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "rfc029-v015-"));
@@ -505,8 +530,9 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
 /** Executes the complete 0.14 to 0.15 rollout and returns the continuity probe. */
 export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Promise<string> => {
   const versions = migrationVersions();
+  const testSuiteTag = await buildRolloutTestImage(versions.baseline.HOST_VERSION);
   const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
-    versions: versions.baseline,
+    versions: { ...versions.baseline, TEST_SUITE_VERSION: testSuiteTag },
     sources: versionSources,
   });
   const targetSnapshotLock = await ctx.resolveVersionLock("rfc029-target-snapshot", {
@@ -547,7 +573,6 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await ctx.up({
     lockFile: baselineLock,
     scenario,
-    overrides: [{ group: "test-suite" }],
   });
   await assertGreenAbsent();
   await assertActiveImageTag(versions.baselineTag);

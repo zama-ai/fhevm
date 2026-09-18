@@ -101,6 +101,7 @@ describe("RFC 029 rollout gates", () => {
     };
     const target = {
       ...baseline,
+      TEST_SUITE_VERSION: "main-test-suite",
       CORE_VERSION: "main-core",
       HOST_VERSION: "main-host",
       GATEWAY_VERSION: "main-gateway",
@@ -126,7 +127,9 @@ describe("RFC 029 rollout gates", () => {
     expect(phases.blue.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.15.0-0");
     expect(phases.blue.CORE_VERSION).toBe("main-core");
     expect(phases.blue.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
-    expect(phases.connector.TEST_SUITE_VERSION).toBe("baseline-test-suite");
+    for (const phase of Object.values(phases)) {
+      expect(phase.TEST_SUITE_VERSION).toBe("baseline-test-suite");
+    }
   });
 
   test("blocks a mixed connector deployment", () => {
