@@ -46,8 +46,8 @@ function computeContextInfoHash(
 
 // Reads canonical's active KMS context as `mirrorKmsContextAndEpoch` args. The node/software-version/
 // PCR data only exists in the `NewKmsContext` event, so this reads the event at the block the context
-// anchor records and verifies its hash against the anchor. Thresholds come from live state, because
-// governance can update them after the event without touching the anchor.
+// anchor records and verifies its hash against the anchor. Thresholds come from the same event: they
+// are fixed at context creation, and the anchor hash check covers them too.
 export async function readCanonicalContextSwitch(
   hre: HardhatRuntimeEnvironment,
   options: {
@@ -124,7 +124,7 @@ export async function readCanonicalContextSwitch(
     contextId: snapshot.currentKmsContextId,
     epochId: snapshot.currentEpochId,
     kmsNodeParams,
-    thresholds: snapshot.thresholds,
+    thresholds: eventThresholds,
     softwareVersion,
     pcrValues,
   };
