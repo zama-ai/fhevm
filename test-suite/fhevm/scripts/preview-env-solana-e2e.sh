@@ -60,6 +60,7 @@ up)
     (umask 077 && secret_value solana-deployer 'deployer\.json' >"$deployer")
   fi
   rpc_url=$(secret_value solana-rpc 'rpc-url')
+  proof_api_key=$(secret_value solana-proof-api 'api-key')
 
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
   forward "${relayer:-svc/relayer}" 3000:3000
@@ -81,8 +82,11 @@ up)
     env_line COPROCESSOR_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
     env_line SOLANA_DEPLOYER_KEYPAIR "$deployer"
     env_line DEMO_CONFIG_PATH "$state/runtime/solana-demo.json"
+    # The same endpoint for the harness (SOLANA_*) and the dapp dev server (DEMO_*).
+    env_line SOLANA_LEAF_PROOF_URL http://127.0.0.1:18080
+    env_line SOLANA_LEAF_PROOF_API_KEY "$proof_api_key"
     env_line DEMO_PROOF_URL http://127.0.0.1:18080
-    env_line DEMO_PROOF_API_KEY "$(secret_value solana-proof-api 'api-key')"
+    env_line DEMO_PROOF_API_KEY "$proof_api_key"
   } >"$state/preview.env"
   chmod 600 "$state/preview.env"
   echo "env written to $state/preview.env (secrets inside; not echoed)"

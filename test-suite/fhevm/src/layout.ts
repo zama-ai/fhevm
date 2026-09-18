@@ -1,9 +1,11 @@
 /**
  * Defines CLI filesystem layout, compose and template locations, override groups, and named test profile metadata.
  */
+import { getAddressEncoder } from "@solana/kit";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { programIdsFor, readSolanaEnvironment } from "../../../solana/deploy/src/environment";
 import type {
   HostChainScenario,
   HostChainType,
@@ -153,9 +155,11 @@ export const coprocessorDbPsql = (container = COPROCESSOR_DB_CONTAINER): readonl
   "-d",
   "coprocessor",
 ];
-// Solana host program id as bytes32 — the Solana ACL identity. Single source for the transfer
-// orchestrator and the e2e harness's loadEnv default.
-export const SOLANA_ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";
+// Solana host program id as bytes32 — the Solana ACL identity the SDK binds into input proofs.
+// Single source for the transfer orchestrator and the e2e harness's loadEnv default.
+export const SOLANA_ACL_PROGRAM: `0x${string}` = `0x${Buffer.from(
+  getAddressEncoder().encode(programIdsFor(readSolanaEnvironment()).zamaHost),
+).toString("hex")}`;
 // Default public-decrypt context id: the 32-byte BE gateway KMS context (`RequestType.KmsContext`
 // tag 0x07 in the high byte ‖ u64 context id 1 in the low 8 bytes). This is the `extraData` a
 // certificate request carries minus its 0x01 version byte, and the id bring-up stores in the
