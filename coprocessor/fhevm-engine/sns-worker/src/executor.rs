@@ -79,7 +79,6 @@ pub struct SwitchNSquashService {
     /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
     /// green stack in its dry-run window and suppresses S3 uploads + GC.
     mode: Arc<StackMode>,
-    force_legacy_server_key: bool,
 
     /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
     /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
@@ -150,8 +149,7 @@ impl SwitchNSquashService {
         mode: Arc<StackMode>,
         start_block_state: Arc<AtomicI64>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
-        let force_legacy_server_key =
-            fhevm_engine_common::db_keys::force_legacy_server_key_from_env()?;
+        fhevm_engine_common::db_keys::reject_legacy_server_key_override()?;
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
             conf,
@@ -161,7 +159,6 @@ impl SwitchNSquashService {
             tx,
             events_tx,
             mode,
-            force_legacy_server_key,
             start_block_state,
         })
     }
@@ -178,7 +175,6 @@ impl SwitchNSquashService {
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
             let mode = self.mode.clone();
-            let force_legacy_server_key = self.force_legacy_server_key;
             let start_block_state = self.start_block_state.clone();
 
             async move {
@@ -191,7 +187,6 @@ impl SwitchNSquashService {
                     keys_cache,
                     events_tx,
                     mode,
-                    force_legacy_server_key,
                     start_block_state,
                 )
                 .await
@@ -207,9 +202,8 @@ impl SwitchNSquashService {
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
-    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    fetch_latest_keyset(&keys_cache, &pool, force_legacy).await
+    fetch_latest_keyset(&keys_cache, &pool).await
 }
 
 /// Executes the worker logic for the SnS task.
@@ -223,16 +217,12 @@ pub(crate) async fn run_loop(
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
     mode: Arc<StackMode>,
-    force_legacy_server_key: bool,
     start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    info!(
-        force_legacy_server_key,
-        "Connected to PostgresDB with server-key safeguard"
-    );
+    info!("Connected to PostgresDB");
 
     listener
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
@@ -247,18 +237,7 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
-        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            info!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
-            tokio::select! {
-                _ = token.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
-            }
-            continue;
-        }
-
-        let latest_keys =
-            get_keyset(pool.clone(), keys_cache.clone(), force_legacy_server_key).await?;
+        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
             let key_changed = keys
                 .as_ref()
@@ -277,6 +256,17 @@ pub(crate) async fn run_loop(
             tokio::time::sleep(Duration::from_secs(5)).await;
             if token.is_cancelled() {
                 return Ok(());
+            }
+            continue;
+        }
+
+        // Validate and cache the key before parking Green. This proves that the
+        // deferred worker can serve after cutover without processing any task early.
+        if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+            info!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            tokio::select! {
+                _ = token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
             }
             continue;
         }
