@@ -129,8 +129,11 @@ jobs:
 
       - name: Show what this selection omits
         working-directory: test-suite/fhevm
+        env:
+          SELECTION_PARTIAL: ${{ steps.resolve.outputs.partial }}
+          BUILD_REQUESTED: ${{ inputs.build }}
         run: |
-          if [ "${{ steps.resolve.outputs.partial }}" = "true" ] || [ "${{ inputs.build }}" = "false" ]; then
+          if [ "$SELECTION_PARTIAL" = "true" ] || [ "$BUILD_REQUESTED" = "false" ]; then
             echo "::warning::This selection is PARTIAL: it omits required inventory cases and cannot"
             echo "::warning::satisfy the branch delivery gate. Use 'full' with build=true for that."
           fi
@@ -147,7 +150,7 @@ jobs:
     timeout-minutes: 20
     services:
       oracle-postgres:
-        image: postgres:15.7
+        image: postgres:15.7@sha256:68b988a164c8bdf0752fa7a4ae2d4b34a058e21c6327e69f741c081a38e97254
         env:
           POSTGRES_HOST_AUTH_METHOD: trust
         ports:
@@ -406,6 +409,8 @@ jobs:
       # published-image results as branch-built code.
       - name: Record the run's code identity
         working-directory: test-suite/fhevm
+        env:
+          CONSENSUS_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p /tmp/consensus-artifacts
           ./scripts/record-run-identity.sh | tee /tmp/consensus-artifacts/run-identity.env
@@ -413,7 +418,7 @@ jobs:
           printf '%s\n' "$receipt_identity" >> /tmp/consensus-artifacts/run-identity.env
           echo "CONSENSUS_ARTIFACT_IDENTITIES_FILE=/tmp/consensus-artifacts/run-identity.env" >> "$GITHUB_ENV"
           echo "CONSENSUS_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-          echo "CONSENSUS_RUN_ID=${{ github.run_id }}-${LEG}-${SCENARIO}-${{ matrix.shard }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "CONSENSUS_RUN_ID=${GITHUB_RUN_ID}-${LEG}-${SCENARIO}-${CONSENSUS_SHARD}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
       # Every leg below asserts over bytes. The suites run their own validity
       # gates in `before`, so a stack that came up unprovisioned fails here
