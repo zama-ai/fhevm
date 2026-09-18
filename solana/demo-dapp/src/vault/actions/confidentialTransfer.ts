@@ -115,7 +115,7 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
-  const fhe = await createSolanaFheTransaction({ payer: feePayer });
+  const fhe = await createSolanaFheTransaction({ payer: feePayer, programAddress: zamaHostProgramAddress });
   const transferInstruction = getConfidentialTransferInstruction({
     ...fhe.accounts,
     owner,

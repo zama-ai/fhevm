@@ -278,7 +278,7 @@ export const prepareNextBatch = async (
 
   const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
   const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
-  const fhe = await createSolanaFheTransaction({ payer: keeper });
+  const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
   const prepared = await openBatchForBatcher({
     fhe: fhe.accounts,
     roots,

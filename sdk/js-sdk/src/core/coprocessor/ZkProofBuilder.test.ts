@@ -569,7 +569,13 @@ it('builds a Solana proof without EVM contracts and preserves its exact chain id
     extraData: '0x00',
   });
   const context: SolanaProofContext = {
-    chain: { id: chainId, fhevm: { relayerUrl: 'http://solana-relayer' } },
+    chain: {
+      id: chainId,
+      fhevm: {
+        relayerUrl: 'http://solana-relayer',
+        programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
+      },
+    },
     aclProgramAddress: asBytes32Hex(`0x${'33'.repeat(32)}`),
     runtime: { encrypt: { buildWithProofPacked } } as unknown as SolanaProofContext['runtime'],
     tfheVersion: DEFAULT_TFHE_VERSION,

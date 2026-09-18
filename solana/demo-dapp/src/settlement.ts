@@ -116,7 +116,7 @@ export const dispatchVaultBatch = async (
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
-  const fhe = await createSolanaFheTransaction({ payer: session.keeper });
+  const fhe = await createSolanaFheTransaction({ payer: session.keeper, programAddress: session.config.programs.host });
   return sendTransaction(
     session.config,
     session.keeper,
@@ -159,7 +159,7 @@ export const settleVaultBatch = async (
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'local' } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl, verifyingProgramId: session.config.aclProgram as Bytes32Hex },
+    fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
   const signature = await settleBatch(publicDecryptClient, session.keeper, {

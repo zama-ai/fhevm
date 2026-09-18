@@ -14,7 +14,6 @@ import {
   OPEN_TRANSIENT_STORE_DISCRIMINATOR,
   getOpenTransientStoreInstruction,
 } from './internal/generated/zamaHost/instructions/openTransientStore.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
 
 /** Forward these accounts through every FHE instruction and CPI in the transaction. */
 export type SolanaFheTransactionAccounts = {
@@ -35,9 +34,10 @@ export type SolanaFheTransaction = {
  */
 export async function createSolanaFheTransaction(parameters: {
   readonly payer: TransactionSigner;
-  readonly programAddress?: Address | undefined;
+  /** The zama-host program id of the deployment (`solanaHostProgram(chain)`). */
+  readonly programAddress: Address;
 }): Promise<SolanaFheTransaction> {
-  const programAddress = parameters.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+  const { programAddress } = parameters;
   const [transientStore] = await getProgramDerivedAddress({
     programAddress,
     seeds: [new TextEncoder().encode('transient'), getAddressEncoder().encode(parameters.payer.address)],

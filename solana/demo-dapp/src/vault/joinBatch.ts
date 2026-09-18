@@ -139,7 +139,7 @@ export async function joinBatch(
   const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
   const joinStore = await joinStoreAddress(parameters.batch, user.address);
-  const fhe = await createSolanaFheTransaction({ payer: parameters.payer });
+  const fhe = await createSolanaFheTransaction({ payer: parameters.payer, programAddress: zamaHostProgramAddress });
   const instruction = await getJoinInstructionAsync({
     user,
     payer: parameters.payer,

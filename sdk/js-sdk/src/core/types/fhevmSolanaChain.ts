@@ -1,16 +1,17 @@
 import type { Bytes32Hex } from './primitives.js';
 
 /**
- * A Solana host chain definition: the deployment's identity and where to reach it.
+ * A Solana host chain definition: the deployment's identity and where to reach it, the Solana
+ * counterpart of `FhevmChain`.
  *
  * - `id` — the Solana host chain id embedded in each ciphertext handle (`contracts_chain_id`).
  *   It is a `bigint`: the RFC-021 Solana host id (e.g. `9223372036854788153n`) exceeds
  *   `Number.MAX_SAFE_INTEGER`, so a `number` would silently lose precision.
  * - `relayerUrl` — the relayer base URL requests are POSTed to.
- * - `verifyingProgramId` — the 32-byte host program id permits are signed for: the deployment
- *   identity, the Solana analogue of a `verifyingContract`. Used for account ownership, PDA
- *   derivation and input proofs; required explicitly for permit signing. Other actions default
- *   to the program address in the bundled host IDL.
+ * - `programs.host.address` — the zama-host program id of the deployment as a canonical 32-byte
+ *   identity, the analogue of the EVM chain's `contracts.acl.address`. Every action derives PDAs,
+ *   checks account ownership and signs permits (`verifyingProgramId`) against it; nothing falls
+ *   back to the program id of the bundled IDL.
  *
  * Everything here describes *where* a deployment is, never *whom to trust* — the trust
  * configuration (KMS signer set, routing, gateway domain) travels separately, as a client
@@ -21,6 +22,10 @@ export type FhevmSolanaChain = {
   readonly id: bigint;
   readonly fhevm: {
     readonly relayerUrl: string;
-    readonly verifyingProgramId?: Bytes32Hex | undefined;
+    readonly programs: {
+      readonly host: {
+        readonly address: Bytes32Hex;
+      };
+    };
   };
 };

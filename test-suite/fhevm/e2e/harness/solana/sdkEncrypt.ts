@@ -12,7 +12,7 @@ import { hostReachableMaterialUrl } from "../../../src/utils/fs";
 /** The SDK encrypt surface the scenarios drive (untyped: runtime dynamic-import seam). */
 export type SolanaSdkEncryptSurface = {
   setFhevmRuntimeConfig(config: { auth: { type: "ApiKeyHeader"; value: string } }): void;
-  defineFhevmSolanaChain(definition: { id: bigint; fhevm: { relayerUrl: string; verifyingProgramId: `0x${string}` } }): unknown;
+  defineFhevmSolanaChain(definition: { id: bigint; fhevm: { relayerUrl: string; programs: { host: { address: `0x${string}` } } } }): unknown;
   createFhevmEncryptClient(parameters: { chain: unknown; rpc: Rpc<SolanaRpcApi> }): {
     generateZkProof(parameters: {
       contractAddress: `0x${string}`;
@@ -68,7 +68,7 @@ export const submitUint64InputProof = async (parameters: {
   solanaSdk.setFhevmRuntimeConfig({
     auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
   });
-  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, verifyingProgramId: parameters.aclProgramAddress } });
+  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, programs: { host: { address: parameters.aclProgramAddress } } } });
   const encryptClient = solanaSdk.createFhevmEncryptClient({
     chain,
     rpc: createSolanaRpc(parameters.rpcUrl),

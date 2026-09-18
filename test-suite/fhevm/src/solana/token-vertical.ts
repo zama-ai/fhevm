@@ -84,7 +84,7 @@ export const confidentialBurn = async (
   const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: params.mint });
-  const fhe = await createSolanaFheTransaction({ payer: params.owner });
+  const fhe = await createSolanaFheTransaction({ payer: params.owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await getConfidentialBurnInstructionAsync({
     ...fhe.accounts,
     owner: params.owner,

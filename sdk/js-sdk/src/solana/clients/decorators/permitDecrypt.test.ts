@@ -40,7 +40,7 @@ const chain = {
   id: 9223372036854788153n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
-    verifyingProgramId: PROGRAM_ID,
+    programs: { host: { address: PROGRAM_ID } },
   },
 } as const satisfies FhevmSolanaChain;
 
@@ -133,13 +133,6 @@ describe('assembling the permit-path client', () => {
         },
       }),
     ).toThrow('Missing required field: trust.gatewayEip712Domain');
-  });
-  it('refuses at construction a chain without verifyingProgramId', () => {
-    setFhevmRuntimeConfig({});
-    const { verifyingProgramId: _omitted, ...fhevm } = chain.fhevm;
-    expect(() => createFhevmDecryptClient({ rpc, chain: { ...chain, fhevm }, trust })).toThrow(
-      'Missing required field: chain.fhevm.verifyingProgramId',
-    );
   });
 });
 

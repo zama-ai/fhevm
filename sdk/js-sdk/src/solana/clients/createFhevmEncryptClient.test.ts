@@ -7,8 +7,15 @@ import { createSolanaRpc } from '@solana/kit';
 import { createFhevmEncryptClient } from './createFhevmEncryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import type { FheEncryptionKeyBytes } from '../../core/types/fheEncryptionKey.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 
-const chain = { id: 9223372036854788153n, fhevm: { relayerUrl: 'https://relayer.example.test' } };
+const chain = {
+  id: 9223372036854788153n,
+  fhevm: {
+    relayerUrl: 'https://relayer.example.test',
+    programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
+  },
+};
 const rpc = createSolanaRpc('http://localhost:8899');
 
 afterEach(() => vi.restoreAllMocks());

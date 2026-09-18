@@ -15,7 +15,6 @@ import {
   type SolanaUserDecryptionDelegationTuple,
 } from '../actions/userDecryptionDelegation.js';
 import { fetchSolanaPermitInvalidation } from '../actions/revokePermits.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
 export type SolanaClientParameters<C extends FhevmSolanaChain = FhevmSolanaChain> = {
   readonly chain: C;
@@ -44,10 +43,9 @@ export function createSolanaCore<C extends FhevmSolanaChain>(
   });
 }
 
+/** The chain's zama-host program id as a base58 address, for PDA derivation and account reads. */
 export function solanaHostProgram(chain: FhevmSolanaChain): Address {
-  return chain.fhevm.verifyingProgramId === undefined
-    ? ZAMA_HOST_PROGRAM_ADDRESS
-    : getAddressDecoder().decode(hexToBytes32(chain.fhevm.verifyingProgramId));
+  return getAddressDecoder().decode(hexToBytes32(chain.fhevm.programs.host.address));
 }
 
 export function solanaClientSurface<C extends FhevmSolanaChain>(

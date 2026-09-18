@@ -75,7 +75,7 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
   const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({
     id: input.chainId,
-    fhevm: { relayerUrl: input.relayerUrl, verifyingProgramId: input.verifyingProgramId },
+    fhevm: { relayerUrl: input.relayerUrl, programs: { host: { address: input.verifyingProgramId } } },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
   const client = solana.createFhevmDecryptClient({ chain, rpc, trust: input.trust });

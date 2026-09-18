@@ -92,10 +92,18 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/progra
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import * as certificateModule from './publicDecryptCertificate.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const contextId = new Uint8Array(32).fill(0x44);
 const store = new Uint8Array(32).fill(0x44);
-const chain = { id: 9223372036854788153n, fhevm: { relayerUrl: 'https://relayer.example.test' } };
+const chain = {
+  id: 9223372036854788153n,
+  // The bytes32 form of `ZAMA_HOST_PROGRAM_ADDRESS`, the owner of the fixture accounts below.
+  fhevm: {
+    relayerUrl: 'https://relayer.example.test',
+    programs: { host: { address: asBytes32Hex('0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee') } },
+  },
+};
 
 async function accountFixture() {
   const [configAddress, configBump] = await findHostConfigPda();

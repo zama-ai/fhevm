@@ -11,7 +11,6 @@ import {
 } from '@solana/kit';
 
 import { getRevokePermitsInstruction } from '../internal/generated/zamaHost/instructions/revokePermits.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 
 /** Seed of the per-user permit invalidation watermark PDA. */
 export const SOLANA_PERMIT_INVALIDATION_SEED = new TextEncoder().encode('permit-invalidation');
@@ -20,10 +19,7 @@ export const SOLANA_PERMIT_INVALIDATION_SEED = new TextEncoder().encode('permit-
  * The canonical permit invalidation watermark address of a user. A missing account reads as
  * watermark zero: a user who has never revoked anything simply has no account.
  */
-export async function solanaPermitInvalidationAddress(
-  user: Address,
-  programAddress: Address = ZAMA_HOST_PROGRAM_ADDRESS,
-): Promise<Address> {
+export async function solanaPermitInvalidationAddress(user: Address, programAddress: Address): Promise<Address> {
   const [derived] = await getProgramDerivedAddress({
     programAddress,
     seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],
@@ -43,7 +39,8 @@ export async function buildRevokePermitsInstruction(params: {
   readonly user: Address;
   /** The watermark address; defaults to the canonical PDA of the user when omitted. */
   readonly invalidation?: Address | undefined;
-  readonly programAddress?: Address | undefined;
+  /** The zama-host program id of the deployment. */
+  readonly programAddress: Address;
 }): Promise<Instruction> {
   const invalidation =
     params.invalidation ?? (await solanaPermitInvalidationAddress(params.user, params.programAddress));
@@ -52,7 +49,7 @@ export async function buildRevokePermitsInstruction(params: {
       user: createNoopSigner(params.user),
       invalidation,
     },
-    { programAddress: params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS },
+    { programAddress: params.programAddress },
   );
 }
 
@@ -60,9 +57,9 @@ export async function buildRevokePermitsInstruction(params: {
 export async function fetchSolanaPermitInvalidation(
   rpc: SolanaRpc,
   user: Address,
-  config?: FetchAccountConfig & { readonly programAddress?: Address | undefined },
+  config: FetchAccountConfig & { readonly programAddress: Address },
 ): Promise<bigint> {
-  const { programAddress = ZAMA_HOST_PROGRAM_ADDRESS, ...fetchConfig } = config ?? {};
+  const { programAddress, ...fetchConfig } = config;
   const [address, bump] = await getProgramDerivedAddress({
     programAddress,
     seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],

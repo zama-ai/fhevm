@@ -179,7 +179,7 @@ const main = async (): Promise<void> => {
     }),
   ]);
 
-  const mintFhe = await createSolanaFheTransaction({ payer: deployer });
+  const mintFhe = await createSolanaFheTransaction({ payer: deployer, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
   // 3. Confidential mints: cUSDC wraps mock USDC, cShares wraps the share mint.
   await send(deployer, mintFhe.wrap([
     await vault.buildInitializeMintInstruction({
@@ -275,7 +275,7 @@ const main = async (): Promise<void> => {
   // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
   const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
     const recentSlot = await rpc.getSlot({ commitment: "finalized" }).send();
-    const fhe = await createSolanaFheTransaction({ payer: keeper });
+    const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
     const opened = await vault.openBatchForBatcher({
       fhe: fhe.accounts,
       roots,

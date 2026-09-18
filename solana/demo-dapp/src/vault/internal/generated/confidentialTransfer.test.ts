@@ -1,4 +1,5 @@
 import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, it } from 'vitest';
 
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
@@ -28,7 +29,7 @@ describe('generated confidentialTransfer instruction', () => {
     const underlyingMint = key(14);
     const fromAta = key(15);
     const toAta = key(15);
-    const fhe = await createSolanaFheTransaction({ payer });
+    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = getConfidentialTransferInstruction({
       ...fhe.accounts,
       owner,
