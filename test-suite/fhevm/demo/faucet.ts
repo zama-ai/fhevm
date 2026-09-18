@@ -21,8 +21,11 @@ const DEFAULT_USDC_AMOUNT = 1_000n;
 /** Mints `baseUnits` of mock USDC to `recipient`'s ATA, creating the ATA if needed. */
 export type UsdcMinter = (recipient: Address, baseUnits: bigint) => Promise<string>;
 
-/** Gives `recipient` `sol` SOL and resolves with the confirmed signature (`SolanaProvisioningContext.fundSol`). */
-export type SolFunder = (recipient: Address, sol: number) => Promise<string>;
+/**
+ * Brings `recipient` to at least `sol` SOL and resolves with the confirmed signature, or null when
+ * the recipient already held it (`SolanaProvisioningContext.fundSol`).
+ */
+export type SolFunder = (recipient: Address, sol: number) => Promise<string | null>;
 
 export type FaucetConfig = {
   readonly fundSol: SolFunder;

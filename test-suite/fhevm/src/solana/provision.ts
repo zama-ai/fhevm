@@ -115,10 +115,12 @@ export type SolanaProvisioningContext = {
     options?: SendTransactionOptions,
   ): Promise<void>;
   /**
-   * Gives `recipient` `sol` SOL and waits for the confirmation: a validator airdrop when the
-   * context has no funder, otherwise a System transfer signed by the funder (live clusters).
+   * Brings `recipient` to at least `sol` SOL and waits for the confirmation: a validator airdrop of
+   * the full amount when the context has no funder, otherwise a System transfer of the shortfall
+   * signed by the funder (live clusters, where the funder's balance is finite and the personas
+   * keep their SOL between runs). Resolves null when no transfer was needed.
    */
-  fundSol(recipient: Address, sol: number): Promise<string>;
+  fundSol(recipient: Address, sol: number): Promise<string | null>;
 };
 
 export type ProvisioningContextOptions = {
@@ -172,7 +174,10 @@ export const createProvisioningContext = (
     const amount = solToLamports(sol);
     const funder = contextOptions.funder;
     if (funder) {
-      return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: amount })]);
+      const { value: balance } = await rpc.getBalance(recipient, { commitment: 'confirmed' }).send();
+      if (balance >= amount) return null;
+      const shortfall = amount - balance;
+      return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: shortfall })]);
     }
     const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'confirmed' }).send();
     const deadline = Date.now() + 30_000;
