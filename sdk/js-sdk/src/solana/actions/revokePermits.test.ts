@@ -24,7 +24,7 @@ function hex(bytes: Iterable<number>): string {
 // revoke_permits_bytes` in solana/runtime-tests/tests/user_decryption_delegation_mollusk.rs),
 // asserted there against the host program's own derivation and codec.
 const user = addr(0x44);
-const WATERMARK_ADDRESS = '9mDnXemtzZPxnmXJ6ocXABXsmfXwATkWQC9basgU5q2U';
+const WATERMARK_ADDRESS = '37au5bsVuGt2JKKPQLE8hAdkcXf2LjfnmRKBvxt5Yzep';
 const REVOKE_PERMITS_DATA = '3319597d7d5ac882';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 

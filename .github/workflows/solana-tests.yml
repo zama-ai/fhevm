@@ -380,10 +380,6 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-deployer == 'true' }}
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: [localnet, preview-env]
     permissions:
       contents: read
     steps:
@@ -395,15 +391,12 @@ jobs:
         with:
           bun-version: "1.3.14"
       - name: Build deployer without private program keys
-        env:
-          PROGRAM_ENVIRONMENT: ${{ matrix.environment }}
         run: |
           docker buildx build --platform linux/amd64 --load \
-            -f solana/deploy/Dockerfile --build-arg "PROGRAM_ENVIRONMENT=$PROGRAM_ENVIRONMENT" -t solana-programs:ci .
+            -f solana/deploy/Dockerfile -t solana-programs:ci .
           docker run --rm solana-programs:ci --help
 
       - name: Install pinned native validator and Anchor
-        if: matrix.environment == 'localnet'
         run: |
           curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/solana-install.sh
           sh /tmp/solana-install.sh
@@ -413,7 +406,6 @@ jobs:
           chmod +x "$HOME/.local/bin/anchor"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Exercise packaged CLI against a disposable validator
-        if: matrix.environment == 'localnet'
         env:
           SOLANA_DEPLOY_TEST_IMAGE: solana-programs:ci
         run: |

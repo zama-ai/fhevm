@@ -71,7 +71,7 @@ export type BootstrapZamaHostParams = {
   readonly coprocessorThreshold?: number;
   /** KMS corruption threshold t; 0 is the centralized PoC default. */
   readonly kmsCorruptionThreshold?: number;
-  /** Program id to bootstrap. Defaults to the localnet/generated id. */
+  /** Program id to bootstrap. Defaults to the generated client's id. */
   readonly programAddress?: Address;
   /** Validate existing bindings without sending initialization transactions. */
   readonly validateOnly?: boolean;

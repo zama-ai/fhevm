@@ -14,15 +14,15 @@ solana_version=$(sed -n 's/^solana_version = "\([^"]*\)"/\1/p' Anchor.toml)
 [[ "$(solana --version)" == "solana-cli $solana_version "* ]] || { echo "Solana $solana_version required" >&2; exit 1; }
 for program in "$@"; do
   case "$program" in
-    zama_host|confidential_token|demo_vault|confidential_batcher) ;;
-    encrypted_counter|dep_chain) [[ "$environment" == localnet ]] || { echo 'specimens are local-only' >&2; exit 1; } ;;
+    # The specimens carry their own fixed test ids; they compile the same under every environment.
+    zama_host|confidential_token|demo_vault|confidential_batcher|encrypted_counter|dep_chain) ;;
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
 bash scripts/install-sbf-tools.sh
 # build.rs reads the program ids from the environment file; each program's cargo features come from
 # the same file (`features.<program>`). The environment is passed as cargo config, not a shell
-# variable: .cargo/config.toml pins PROGRAM_ENVIRONMENT to localnet so a stray export cannot leak
+# variable: .cargo/config.toml pins PROGRAM_ENVIRONMENT to preview-env so a stray export cannot leak
 # into other builds, and this command-line value overrides that pin for this build only.
 # `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
 cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')

@@ -20,16 +20,9 @@ The demo-config JSON carries only the **pubkeys** of these; the keys sign from t
 scenario cross-checks the loaded key against the published address. `test-suite/fhevm/demo/loadDemoEnv.ts`
 (`DEMO_KEYPAIRS`) points at this directory.
 
-## Program keypairs (in `../../e2e/test-keypairs/`)
+## Program keypairs
 
-The two demo programs deploy from committed program keypairs alongside the other PoC program keys:
-
-| File | Program |
-| --- | --- |
-| `demo_vault-keypair.json` | `demo_vault` (its pubkey is the program id, pinned in `declare_id!`). |
-| `confidential_batcher-keypair.json` | `confidential_batcher` (pubkey = program id, pinned in `declare_id!`). |
-
-`deploy-demo-programs.sh` seeds `target/deploy/` from there so `anchor build --ignore-keys` +
-`solana program deploy` produce programs at exactly the `declare_id!` ids the SDK/config expect —
-the same pattern the e2e side-stack setup (`test-suite/fhevm/src/solana/validator.ts`
-`seedProgramKeypairs`) uses for `zama_host` / `confidential_token`.
+None. `demo_vault` and `confidential_batcher` have one program id on every cluster
+(`solana/environments/preview-env.json`); the local validator loads their build at genesis with the
+deployer wallet as upgrade authority (`test-suite/fhevm/src/solana/validator.ts`
+`genesisDeployedPrograms`), and `deploy-demo-programs.sh` only checks or upgrades bytecode.

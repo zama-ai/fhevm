@@ -26,11 +26,12 @@ import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenAccounts.js';
 
 const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
-const CANONICAL_ACL = asBytes32Hex(bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu')));
+const CANONICAL_ACL = asBytes32Hex(bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS)));
 const SIGNATURE = asBytes65Hex(`0x${'44'.repeat(65)}`);
 
 function key(fill: number): Address {

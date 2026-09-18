@@ -115,21 +115,6 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
 const PROCESS_NAMES = ["validator", "listener", "faucet", "dapp"] as const;
 const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
-  ...[
-    "confidential_batcher",
-    "confidential_token",
-    "demo_vault",
-    "zama_host",
-  ].map((name) =>
-    path.join(
-      REPO_ROOT,
-      "solana",
-      "scripts",
-      "e2e",
-      "test-keypairs",
-      `${name}-keypair.json`,
-    ),
-  ),
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
     path.join(
       REPO_ROOT,
@@ -2122,12 +2107,12 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
     }
     // Bootstrap commands must load before the stack installs its Solana dependency graph.
     const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
-    const { programIdsFor } = await import("../../../solana/deploy/src/environment");
+    const { programIdsFor, readSolanaEnvironment } = await import("../../../solana/deploy/src/environment");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);
     await startHostListener({
-      zamaHostId: programIdsFor('localnet').zamaHost,
+      zamaHostId: programIdsFor(readSolanaEnvironment()).zamaHost,
       databaseUrl: await readCoprocessorDatabaseUrl(),
       grpcUrl: process.env.GRPC_URL ?? 'http://127.0.0.1:10000',
       logDir,

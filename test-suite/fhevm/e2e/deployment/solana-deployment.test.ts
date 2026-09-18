@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/hostConfig';
-import { programIdsFor } from '../../../../solana/deploy/src/environment';
+import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
+import { solanaProgramIdFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';
 import { validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
@@ -42,8 +43,6 @@ const deploy = (action = 'deploy', overrides: Record<string, string> = {}, targe
           `${process.getuid!()}:${process.getgid!()}`,
           '-v',
           `${directory}:${directory}`,
-          '-v',
-          `${solana}/scripts/e2e/test-keypairs:${solana}/scripts/e2e/test-keypairs:ro`,
           ...Object.keys(variables).flatMap((name) => ['-e', name]),
           image,
           target,
@@ -76,7 +75,7 @@ beforeAll(async () => {
   } else {
     await cp(path.join(solana, 'target/deploy/zama_host.so'), path.join(directory, 'A/zama_host.so'));
   }
-  await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
+  await runStreaming(['bash', 'scripts/build-programs.sh', DEFAULT_SOLANA_ENVIRONMENT, 'zama_host'], {
     cwd: solana,
     env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2', SBF_OUT_PATH: path.join(directory, 'B') },
   });
@@ -84,9 +83,21 @@ beforeAll(async () => {
     await readFile(path.join(directory, 'B/zama_host.so')),
   );
   await run(['solana-keygen', 'new', '--no-bip39-passphrase', '--silent', '-o', path.join(directory, 'payer.json')]);
+  // As on a public cluster, the program exists before the deployer runs: bytecode A at its one id,
+  // upgradeable by the payer. The deployer has no program keypair and never needs one.
   validator = Bun.spawn(
     [
-      ...validatorStartArgs({ ledgerDir: path.join(directory, 'ledger'), rpcPort: 18999 }),
+      ...validatorStartArgs({
+        ledgerDir: path.join(directory, 'ledger'),
+        rpcPort: 18999,
+        genesisUpgradeablePrograms: [
+          {
+            address: programIdsFor(DEFAULT_SOLANA_ENVIRONMENT).zamaHost,
+            soPath: path.join(directory, 'A/zama_host.so'),
+            authority: solanaProgramIdFromKeypairFile(path.join(directory, 'payer.json')),
+          },
+        ],
+      }),
       '--quiet',
       '--faucet-port',
       '19900',
@@ -145,9 +156,8 @@ beforeAll(async () => {
   env = {
     SOLANA_RPC_URL: rpcUrl,
     SOLANA_DEPLOYER_KEYPAIR: path.join(directory, 'payer.json'),
-    SOLANA_ZAMA_HOST_KEYPAIR: path.join(solana, 'scripts/e2e/test-keypairs/zama_host-keypair.json'),
     SOLANA_ARTIFACTS_DIR: path.join(directory, 'A'),
-    SOLANA_ENVIRONMENT: 'localnet',
+    SOLANA_ENVIRONMENT: DEFAULT_SOLANA_ENVIRONMENT,
     ADDRESSES_DIR: path.join(directory, 'addresses'),
     GATEWAY_RPC_URL: gateway.url.toString(),
     GATEWAY_CONFIG_ADDRESS: `0x${'1'.repeat(40)}`,
@@ -169,16 +179,18 @@ afterAll(async () => {
 });
 
 test(
-  'deploy, verified no-op, explicit compatible upgrade, and persistent HostConfig',
+  'bootstrap of the genesis program, verified no-op, explicit compatible upgrade, and persistent HostConfig',
   async () => {
     for (const name of ['INPUT_VERIFICATION_ADDRESS', 'DECRYPTION_ADDRESS']) {
       const invalid = await deploy('deploy', { [name]: `0x${'0'.repeat(40)}` });
       expect(invalid.code).not.toBe(0);
       expect(invalid.stderr).toContain('nonzero 20-byte addresses');
-      expect((await rpc.getAccountInfo(programIdsFor('localnet').zamaHost).send()).value).toBeNull();
+      expect(await hostData()).toBeUndefined();
     }
     const first = await deploy();
     expect(first.code, first.stderr).toBe(0);
+    expect(first.stdout).toContain('unchanged');
+    expect(first.stdout).toContain('OK initialize');
     const before = await hostData();
     expect(before).toBeDefined();
     const again = await deploy();
@@ -228,7 +240,7 @@ test('coprocessor register connects to PostgreSQL and preserves registration on 
     expect(result.code, result.stderr).toBe(0);
   }
   expect((await sql('SELECT acl_contract_address FROM host_chains')).stdout.trim()).toBe(
-    programIdsFor('localnet').zamaHost,
+    programIdsFor(DEFAULT_SOLANA_ENVIRONMENT).zamaHost,
   );
   expect((await sql('SELECT count(*) FROM keys WHERE chain_id <> 12345')).stdout.trim()).toBe('1');
   expect((await sql("SELECT encode(pks_key,'hex') FROM keys WHERE chain_id <> 12345")).stdout.trim()).toBe('03');

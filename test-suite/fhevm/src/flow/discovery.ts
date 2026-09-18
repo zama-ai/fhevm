@@ -6,7 +6,6 @@ import {
   requiresModernHostAddressArtifacts,
 } from "../compat/compat";
 import { PreflightError } from "../errors";
-import { solanaProgramIdFromKeypairFile } from "../generate/solana";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
   MINIO_EXTERNAL_URL,
@@ -17,8 +16,7 @@ import {
   hostChainAddressesPath,
 } from "../layout";
 
-/** The committed, deterministic zama-host program keypair — the Solana host's ACL identity. */
-const SOLANA_ZAMA_HOST_KEYPAIR = path.join(REPO_ROOT, "solana/scripts/e2e/test-keypairs/zama_host-keypair.json");
+import { programIdsFor, readSolanaEnvironment } from "../../../../solana/deploy/src/environment";
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
@@ -109,9 +107,9 @@ export const discoverContracts = async (state: Pick<State, "scenario">) => {
       await Promise.all(
         hostChains.map(async (chain) => {
           // Solana hosts have no EVM address artifacts; their ACL identity is the zama-host program
-          // id, deterministic from the committed keypair (resolved without deploying).
+          // id, the same on every cluster (resolved without deploying).
           if (chain.type === "solana") {
-            return [chain.key, { ACL_CONTRACT_ADDRESS: solanaProgramIdFromKeypairFile(SOLANA_ZAMA_HOST_KEYPAIR) }] as const;
+            return [chain.key, { ACL_CONTRACT_ADDRESS: programIdsFor(readSolanaEnvironment()).zamaHost }] as const;
           }
           return [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const;
         }),

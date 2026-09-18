@@ -124,12 +124,12 @@ describe('buildDispatchBatchInstruction', () => {
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[7]).toBe('W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK'); // totalSupplyAuthority
-    expect(addresses[8]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchJoinTokenAccount
-    expect(addresses[9]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchBalanceValue
-    expect(addresses[10]).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD'); // totalSupplyStore
+    expect(addresses[7]).toBe('2K4784bFHReRcc7juUMW2N12NQbxMsL35i33Hcxy4zGk'); // totalSupplyAuthority
+    expect(addresses[8]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchJoinTokenAccount
+    expect(addresses[9]).toBe('4pn8uFyj9EnVWa8g8YGQedU4sCLBCNEQnhcJBZRnkwtw'); // batchBalanceValue
+    expect(addresses[10]).toBe('5fZHscRuBSv8Kxnt1cCkBZC1zGX21eJhPar216jZMupZ'); // totalSupplyStore
     // addresses[11] = batchBurnedAmountValue; addresses[12] = pendingBurn
-    expect(addresses[12]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[17]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[12]).toBe('CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp'); // zamaEventAuthority
+    expect(addresses[17]).toBe('FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp'); // tokenEventAuthority
   });
 });

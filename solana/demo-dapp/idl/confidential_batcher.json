@@ -1,5 +1,5 @@
 {
-  "address": "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG",
+  "address": "DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb",
   "metadata": {
     "name": "confidential_batcher",
     "version": "0.1.0",
@@ -128,7 +128,7 @@
           "docs": [
             "ZamaHost program."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "confidential_token_event_authority"
@@ -138,7 +138,7 @@
           "docs": [
             "Confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -327,7 +327,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -340,7 +340,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -475,7 +475,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -488,7 +488,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -753,7 +753,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -766,7 +766,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -1041,7 +1041,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -1054,7 +1054,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "token_program",
@@ -1251,7 +1251,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -1264,7 +1264,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -1552,7 +1552,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "confidential_token_event_authority"
@@ -1562,14 +1562,14 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "demo_vault_program",
           "docs": [
             "demo-vault program composed via CPI."
           ],
-          "address": "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
+          "address": "DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH"
         },
         {
           "name": "token_program",

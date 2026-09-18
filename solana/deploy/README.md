@@ -65,7 +65,7 @@ responsibility. No separate coordination database is required.
 
 ```sh
 bun install --cwd solana/deploy --frozen-lockfile
-bash solana/scripts/build-programs.sh localnet zama_host confidential_token
+bash solana/scripts/build-programs.sh preview-env zama_host confidential_token
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy
 docker run --rm --env-file /path/to/deployment.env solana-programs:<sha> host deploy --allow-upgrade
@@ -88,10 +88,11 @@ once from `solana/` before rebuilding; ordinary builds retain their cache.
 
 The image is built for one environment: `PROGRAM_ENVIRONMENT` selects
 `solana/environments/<name>.json`, which lists the four program ids and the build features.
-`localnet` is the repository's test identities and the default for plain `anchor build`;
-`preview-env` is the disposable devnet host. Environments select compiled program ids, not
-RPC networks: the same `preview-env` image can point at any RPC URL, and changing an id
-requires rebuilding. Private keys are never build inputs.
+`preview-env` is the only environment today and the default: its ids are the ids on every
+cluster, including the local test validator, which loads the same build at genesis. A durable
+Zama is a further file. Environments select compiled program ids, not RPC networks: the same
+image can point at any RPC URL, and changing an id requires rebuilding. Private keys are never
+build inputs.
 
 | State | Behavior |
 | --- | --- |
@@ -105,7 +106,7 @@ requires rebuilding. Private keys are never build inputs.
 `host wipe` closes every account the host program owns and returns the rent to the deployer,
 which must be the program's upgrade authority. In the image it needs only `SOLANA_RPC_URL` and the
 deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `admin-sweep` builds (the `preview-env` environment),
-so the command fails against a localnet or production program.
+so the command fails against a program built without that feature.
 
 Kubernetes teardown does not close those accounts. Destroy and deploy's namespace reset only
 helm-uninstall and delete the namespace. The preview deploy Job runs `host wipe` before
@@ -137,7 +138,7 @@ updates; verify the provider's retention rather than assuming archive recovery.
 ```sh
 bun test --cwd test-suite/fhevm src
 python3 ci/preview-env/solana-host/test_charts.py
-bash solana/scripts/build-programs.sh localnet zama_host
+bash solana/scripts/build-programs.sh preview-env zama_host
 bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts
 ```
 
@@ -149,5 +150,5 @@ The preview launch checks listener checkpoint progress; a live computation/decry
 smoke test is still required to validate provider delivery and internal routing together.
 Every FHE handle hashes the host program id. The listener derives with the id it is
 configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
-the listener image is built for localnet and needs no environment. If handles still mismatch, compare the
+the listener image needs no environment. If handles still mismatch, compare the
 listener's `--program-id` with the deployed program before suspecting the sysvars.
