@@ -58,7 +58,7 @@ const main = async () => {
 
   const [target, action, ...flags] = process.argv.slice(2);
   // Disposable environments redeploy every branch head onto the same program ids, so their
-  // deploy may upgrade in place; durable ones keep deploy and upgrade separate.
+  // deploy may upgrade in place; persistent ones keep deploy and upgrade separate.
   const allowUpgrade = flags.includes('--allow-upgrade');
   if (flags.some((flag) => flag !== '--allow-upgrade') || (allowUpgrade && action !== 'deploy')) {
     throw new Error(USAGE);
