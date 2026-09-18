@@ -51,8 +51,8 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
   );
   return {
     env,
-    // Bound to the environment's container so the `COPROCESSOR_DB_CONTAINER` override reaches the
+    // Bound to the environment's psql command so the `COPROCESSOR_DB_*` overrides reach the
     // probe; unbound, setting it silently sent every wait at the hardcoded default.
-    waitForSnsCommit: (handle: string) => waitForSnsCommit(handle, env.coprocessorDbContainer),
+    waitForSnsCommit: (handle: string) => waitForSnsCommit(handle, env.coprocessorDbPsql),
   };
 };

@@ -63,7 +63,7 @@ export type WrapUsdcInstruction<
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
-  TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+  TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
@@ -338,7 +338,7 @@ export async function getWrapUsdcInstructionAsync<
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -587,7 +587,7 @@ export function getWrapUsdcInstruction<
   // Resolve default values.
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =

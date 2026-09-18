@@ -2,6 +2,6 @@
 import type { Address } from '@solana/kit';
 
 export const CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS =
-  'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>;
+  'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
 export const ZAMA_HOST_PROGRAM_ADDRESS =
-  '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+  'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;

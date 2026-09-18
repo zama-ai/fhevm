@@ -94,7 +94,6 @@ TS_ROOTS=(
   solana/deploy/src
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
-  solana/demo-dapp/demoServerPlugin.ts
   test-suite/fhevm
 )
 

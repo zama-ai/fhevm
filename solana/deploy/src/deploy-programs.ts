@@ -5,24 +5,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type SolanaDeployProgram } from './constants';
-import localnet from './generated/program-ids.json';
-import { type SolanaEnvironment, programIdsFor } from './environment';
+import generated from './generated/program-ids.json';
+import { DEFAULT_SOLANA_ENVIRONMENT, type SolanaEnvironment, deployedProgramIds } from './environment';
 
-const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => {
-  const ids = programIdsFor(environment);
-  return {
-    zama_host: ids.zamaHost,
-    confidential_token: ids.confidentialToken,
-    demo_vault: ids.demoVault,
-    confidential_batcher: ids.confidentialBatcher,
-    ...(environment === 'localnet'
-      ? {
-          encrypted_counter: localnet.encrypted_counter,
-          dep_chain: localnet.dep_chain,
-        }
-      : {}),
-  };
-};
+const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => ({
+  ...deployedProgramIds(environment),
+  // The e2e specimens exist only on the test validator; their ids come from the committed IDLs.
+  encrypted_counter: generated.encrypted_counter,
+  dep_chain: generated.dep_chain,
+});
 
 const run = (argv: string[], signal?: AbortSignal): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -64,7 +55,7 @@ export const deployProgramArtifacts = async (parameters: {
   readonly environment?: SolanaEnvironment;
 }): Promise<Partial<Record<SolanaDeployProgram, string>>> => {
   parameters.signal?.throwIfAborted();
-  const declared = declaredProgramId(parameters.environment ?? 'localnet');
+  const declared = declaredProgramId(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT);
   const rpc = createSolanaRpc(parameters.rpcUrl);
   const authority = await addressOf(parameters.deployerKeypairPath);
   const command = (args: string[]) =>
@@ -81,7 +72,7 @@ export const deployProgramArtifacts = async (parameters: {
     const programId = keypairPath ? await addressOf(keypairPath) : expected;
     if (programId !== expected) {
       throw new Error(
-        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for environment ${parameters.environment ?? 'localnet'}`,
+        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for environment ${parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT}`,
       );
     }
     let exists: boolean;

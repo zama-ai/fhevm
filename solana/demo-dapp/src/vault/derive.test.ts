@@ -105,40 +105,40 @@ describe('settle lookup-table addresses', () => {
     //   batchJoinUnderlying, batchPayoutUnderlying, zamaEventAuthority, confidentialTokenEventAuthority
     const GOLDEN_LOOKUP_TABLE_ADDRESSES = [
       '8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR',
-      'Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX',
+      '6qzexx3j3oQraXoc1Ji8SdrKBLZaorG8HxtPZtprtoUN',
       'GgBaCs3NCBuZN12kCJgAW63ydqohFkHEdfdEXBPzLHq',
-      '4v6SNfKuPWbh2GoS3M4fzDAL21GR3YmS2SXri7XqwP3b',
+      '6hQX1zWjYGzzKyP9PmVF7wPkWmLKjN1tHyKfB1HAWXc7',
       'LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY',
-      '8u7FMwPBNrQreRM2x2BM8rcxaKTSWKhf1zT7BcTjZfUs',
-      '2zVia6PtH7dX6JPRMkykuv2V8ZXRWwBn1vzYtfUMKLD2',
-      '4aCDtDK9NkErDbMH3A2feik1QVNjiT2eQ8EPvCWcow4C',
-      '7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k',
+      'HapWyaFR2h7fotmqC738BWnrjUCG2afpNy8i6GzcJyqg',
+      'BBwwKFwNxKrxBmSD6ey2cJ1VJYVkFhJAoBovc38ACjhk',
+      'BFahaYhwFQvt2cHGeHg4ujaWcC52RWgHdiEQuV7PT2oA',
+      'BgV6GmgySEincRffgdRA8qLX8nUxpuSfjRF76WGrTAPy',
       'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf',
       'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
       'gBxS1f6uyyGPuW5MzGBukidSb71jdsCb5fZaoSzULE5',
-      '8CsPLFTubdWkuhEqa2LUL7kyy8mbY3z8DWhU3vkZtFWk',
-      'CmLufny5KwimzbUb38r3v7SS9jqMoM7GPoWEfW4Q11JM',
+      'CxnAjXqMPmT5xT8dmsFbMgVNgA8HPVa4WVWhCm3gZNL9',
+      '3kdEZ36hPkUH2Hq2XhjBCdKVn7xBbpWLtbd9ePxSBf1o',
       'swqrv48gsrwpBFbftEwnP2vB4jckpvfGJfXkwaniLCC',
       'ws91DX9HBAAxGW77BZs5FogRDwpRtcUpiLBpKdPTfWu',
-      '8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z',
-      'HE7TPXRx8Dy4AZ2tuVV767SknKGXWHqPRDmXc836ZYe6',
-      'DYpWU6FKz9dkW4a9HuqvBtDKgdnxD5fbtxaGuGevvDyr',
-      'W4dfnWqZVyik2iMYeP2jHGDfRJbZxzbXfgysxQS1VYK',
-      'Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B',
-      'DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD',
-      'HVSpNqexGkvHFHmgir3t3Ws8CWpHU5VvhxrEd4cDVpFG',
-      'EYedNuDRWj7r2uTjNS2hFEvmGcv87bZ5RG4qTZBkyJw2',
-      '3kMiJNxeTvc3fRwgzpUCRu7Cc5PviMnB1rodpMXowHq5',
-      '7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog',
-      '2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U',
+      '33Z5S6e7F6Cc9JpJ4aA5sFTSmD63QcJtd4rqgkAquhXQ',
+      '3FZcScRdyGQQ79qGdRpke9TukYVHZEsqm1AWpDG15cmd',
+      '6AeDKTasqPbqrhTCPpf5GKYdKogjycpAZyevFQRNP6kr',
+      '2K4784bFHReRcc7juUMW2N12NQbxMsL35i33Hcxy4zGk',
+      'yjr2mdF8iyACXP41AAugk3NqyTmfa8HqjtRaNYQTj56',
+      '5fZHscRuBSv8Kxnt1cCkBZC1zGX21eJhPar216jZMupZ',
+      '7r6dp55LMSc1dKRiMzgizmrogFcB4bkkbC7ia9jpk1Fo',
+      'Gv5fMGCo3efrXa83JnBJf1jTE2sJqvmDp4wSDAT16U4C',
+      'CW2QJ6TvQLBzm9T8zT26YMPZZMvC1pwkEUh2zGV7qUAp',
+      'CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp',
+      'FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp',
     ];
     expect(settleAccountsToLookupTableAddresses(accounts)).toEqual(GOLDEN_LOOKUP_TABLE_ADDRESSES);
 
     // A couple of derived PDAs pinned individually, so a derivation-logic change (not just field
     // order) is caught with a named field rather than only as a list diff.
-    expect(batch.batch).toBe('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
-    expect(accounts.batchBurnedAmountStore).toBe('4aCDtDK9NkErDbMH3A2feik1QVNjiT2eQ8EPvCWcow4C');
-    expect(accounts.pendingBurn).toBe('7araYGSRKDQdWTX2DhPZPM17HeZzesvpogxKbdAAaX8k');
-    expect(accounts.payoutTotalSupplyStore).toBe('DrFSFawwrBQYoX7SiF3dbV3U9TFJNeJvZsQWVA2uKuKD');
+    expect(batch.batch).toBe('6qzexx3j3oQraXoc1Ji8SdrKBLZaorG8HxtPZtprtoUN');
+    expect(accounts.batchBurnedAmountStore).toBe('BFahaYhwFQvt2cHGeHg4ujaWcC52RWgHdiEQuV7PT2oA');
+    expect(accounts.pendingBurn).toBe('BgV6GmgySEincRffgdRA8qLX8nUxpuSfjRF76WGrTAPy');
+    expect(accounts.payoutTotalSupplyStore).toBe('5fZHscRuBSv8Kxnt1cCkBZC1zGX21eJhPar216jZMupZ');
   });
 });

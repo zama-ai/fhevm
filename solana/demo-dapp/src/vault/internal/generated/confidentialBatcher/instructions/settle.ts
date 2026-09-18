@@ -85,10 +85,11 @@ export type SettleInstruction<
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
-  TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+  TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
-  TAccountConfidentialTokenProgram extends string | AccountMeta<string> = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg',
-  TAccountDemoVaultProgram extends string | AccountMeta<string> = '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9',
+  TAccountConfidentialTokenProgram extends string | AccountMeta<string> =
+    'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
+  TAccountDemoVaultProgram extends string | AccountMeta<string> = 'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH',
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -583,15 +584,15 @@ export async function getSettleInstructionAsync<
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =
-      'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>;
+      'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
   }
   if (!accounts.demoVaultProgram.value) {
     accounts.demoVaultProgram.value =
-      '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>;
+      'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH' as Address<'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -1019,15 +1020,15 @@ export function getSettleInstruction<
   // Resolve default values.
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =
-      'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>;
+      'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
   }
   if (!accounts.demoVaultProgram.value) {
     accounts.demoVaultProgram.value =
-      '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>;
+      'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH' as Address<'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH'>;
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =

@@ -1,6 +1,6 @@
 # The program id each Solana program compiles in comes from solana/environments/<name>.json,
 # chosen by PROGRAM_ENVIRONMENT (DD-053). `force = true` makes a leftover shell export inert:
-# every build in this workspace is localnet unless it passes `--config` on the command line,
+# every build in this workspace is preview-env unless it passes `--config` on the command line,
 # which is what scripts/build-programs.sh does.
 [env]
-PROGRAM_ENVIRONMENT = { value = "localnet", force = true }
+PROGRAM_ENVIRONMENT = { value = "preview-env", force = true }

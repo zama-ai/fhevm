@@ -86,7 +86,7 @@ export const readDemoAuthorizationFromEnv = async (
   };
 };
 
-/** Loads the one browser origin allowed to call the cross-origin local faucet. */
+/** Loads the one browser origin the operator answers, and the page's own origin. */
 export const readDemoAllowedOriginFromEnv = (env: NodeJS.ProcessEnv = process.env): string => {
   const value = env[DEMO_ALLOWED_ORIGIN_ENV];
   if (value === undefined) throw new Error(`${DEMO_ALLOWED_ORIGIN_ENV} is required`);

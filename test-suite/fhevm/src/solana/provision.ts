@@ -8,6 +8,8 @@
 // `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
+import fs from 'node:fs/promises';
+
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -16,6 +18,7 @@ import {
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   fetchEncodedAccount,
+  getSignatureFromTransaction,
   generateKeyPairSigner,
   getAddressEncoder,
   getProgramDerivedAddress,
@@ -45,6 +48,7 @@ import {
   initializeMint2Instruction,
   mintToInstruction,
   setComputeUnitLimitInstruction,
+  transferSolInstruction,
 } from './spl';
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
@@ -110,53 +114,102 @@ export type SolanaProvisioningContext = {
     instructions: readonly Instruction[],
     options?: SendTransactionOptions,
   ): Promise<void>;
-  /** Airdrops `sol` SOL to `recipient` and waits for the confirmation. Local validators only. */
-  airdropSol(recipient: Address, sol: bigint): Promise<void>;
+  /**
+   * Brings `recipient` to at least `sol` SOL and waits for the confirmation: a validator airdrop of
+   * the full amount when the context has no funder, otherwise a System transfer of the shortfall
+   * signed by the funder (live clusters, where the funder's balance is finite and the personas
+   * keep their SOL between runs). Resolves null when no transfer was needed.
+   */
+  fundSol(recipient: Address, sol: number): Promise<string | null>;
+  /**
+   * Moves `from`'s whole balance minus the transaction fee to `to`, leaving the account empty (and
+   * so deleted): a wallet a run generated gives its unspent SOL back on a live cluster. Resolves
+   * null when the balance does not cover the fee.
+   */
+  sweepSol(from: TransactionSigner, to: Address): Promise<string | null>;
 };
 
-/** Binds RPC endpoints into the send/confirm/airdrop closures every provisioning step shares. */
+/**
+ * Base fee of a one-signature transaction; a sweep leaves exactly this much to pay for itself.
+ * Holds while `sendAndConfirmSigned` sets no compute-unit price: a priority fee would need
+ * `getFeeForMessage` here instead.
+ */
+const TRANSACTION_FEE_LAMPORTS = 5_000n;
+
+export type ProvisioningContextOptions = {
+  readonly computeUnitLimit?: number;
+  /** The wallet `fundSol` transfers from. Absent, `fundSol` airdrops (local validators only). */
+  readonly funder?: TransactionSigner;
+};
+
+/** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
+export const loadKeypairSigner = async (keypairPath: string): Promise<TransactionSigner> => {
+  const bytes = Uint8Array.from(JSON.parse(await fs.readFile(keypairPath, 'utf8')) as number[]);
+  return createKeyPairSignerFromBytes(bytes);
+};
+
+const solToLamports = (sol: number): bigint => BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)));
+
+/** Binds RPC endpoints into the send/confirm/fund closures every provisioning step shares. */
 export const createProvisioningContext = (
   rpcUrl: string,
   wsUrl: string,
-  contextOptions: { readonly computeUnitLimit?: number } = {},
+  contextOptions: ProvisioningContextOptions = {},
 ): SolanaProvisioningContext => {
   const computeUnitLimit = contextOptions.computeUnitLimit ?? PROVISIONING_COMPUTE_UNIT_LIMIT;
   const rpc = createSolanaRpc(rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-  return {
-    rpc,
-    async sendTransaction(payer, instructions, options = {}) {
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-      const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-      const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-      const message = appendTransactionMessageInstructions(
-        [setComputeUnitLimitInstruction(computeUnitLimit), ...instructions],
-        withLifetime,
-      );
-      const signedTransaction = await signTransactionMessageWithSigners(message);
-      assertIsTransactionWithBlockhashLifetime(signedTransaction);
-      await sendAndConfirm(signedTransaction, {
-        commitment: 'confirmed',
-        ...(options.skipPreflight ? { skipPreflight: true } : {}),
-      });
-    },
-    async airdropSol(recipient, sol) {
-      const signature = await rpc
-        .requestAirdrop(recipient, lamports(sol * LAMPORTS_PER_SOL), { commitment: 'confirmed' })
-        .send();
-      const deadline = Date.now() + 30_000;
-      for (;;) {
-        const { value } = await rpc.getSignatureStatuses([signature]).send();
-        const status = value[0];
-        if (status?.err) throw new Error(`airdrop to ${recipient} failed: ${JSON.stringify(status.err)}`);
-        const level = status?.confirmationStatus;
-        if (level === 'confirmed' || level === 'finalized') return;
-        if (Date.now() >= deadline) throw new Error(`airdrop to ${recipient} did not confirm within 30s`);
-        await Bun.sleep(500);
-      }
-    },
+  const sendAndConfirmSigned = async (
+    payer: TransactionSigner,
+    instructions: readonly Instruction[],
+    options: SendTransactionOptions = {},
+  ): Promise<string> => {
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+    const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
+    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
+    const message = appendTransactionMessageInstructions(
+      [setComputeUnitLimitInstruction(computeUnitLimit), ...instructions],
+      withLifetime,
+    );
+    const signedTransaction = await signTransactionMessageWithSigners(message);
+    assertIsTransactionWithBlockhashLifetime(signedTransaction);
+    await sendAndConfirm(signedTransaction, {
+      commitment: 'confirmed',
+      ...(options.skipPreflight ? { skipPreflight: true } : {}),
+    });
+    return getSignatureFromTransaction(signedTransaction);
   };
+  const sendTransaction: SolanaProvisioningContext['sendTransaction'] = async (payer, instructions, options) => {
+    await sendAndConfirmSigned(payer, instructions, options);
+  };
+  const fundSol: SolanaProvisioningContext['fundSol'] = async (recipient, sol) => {
+    const amount = solToLamports(sol);
+    const funder = contextOptions.funder;
+    if (funder) {
+      const { value: balance } = await rpc.getBalance(recipient, { commitment: 'confirmed' }).send();
+      if (balance >= amount) return null;
+      const shortfall = amount - balance;
+      return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: shortfall })]);
+    }
+    const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'confirmed' }).send();
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      const { value } = await rpc.getSignatureStatuses([signature]).send();
+      const status = value[0];
+      if (status?.err) throw new Error(`airdrop to ${recipient} failed: ${JSON.stringify(status.err)}`);
+      const level = status?.confirmationStatus;
+      if (level === 'confirmed' || level === 'finalized') return signature;
+      if (Date.now() >= deadline) throw new Error(`airdrop to ${recipient} did not confirm within 30s`);
+      await Bun.sleep(500);
+    }
+  };
+  const sweepSol: SolanaProvisioningContext['sweepSol'] = async (from, to) => {
+    const { value: balance } = await rpc.getBalance(from.address, { commitment: 'confirmed' }).send();
+    if (balance <= TRANSACTION_FEE_LAMPORTS) return null;
+    return sendAndConfirmSigned(from, [transferSolInstruction({ from, to, lamports: balance - TRANSACTION_FEE_LAMPORTS })]);
+  };
+  return { rpc, sendTransaction, fundSol, sweepSol };
 };
 
 export type GeneratedKeypair = {

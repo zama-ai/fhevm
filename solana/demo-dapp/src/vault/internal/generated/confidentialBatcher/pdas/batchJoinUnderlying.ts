@@ -23,7 +23,7 @@ export async function findBatchJoinUnderlyingPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = 'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG' as Address<'Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG'>,
+    programAddress = 'DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb' as Address<'DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb'>,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

@@ -1,20 +1,16 @@
-# PoC program keypairs (well-known dev-only test keys)
+# Specimen program keypairs (well-known dev-only test keys)
 
-These are **throwaway, publicly-known test keypairs** for the Solana PoC programs — the
-Solana equivalent of Anvil's well-known dev accounts. They are **safe to commit**:
+Throwaway, publicly-known program keypairs for the two e2e specimen programs, `encrypted_counter`
+and `dep_chain`: their public keys are the program ids (pinned in each `declare_id!`), and the
+private keys are only the upgrade authority on a fresh local `solana-test-validator`. They hold no
+funds and are never deployed to a public cluster. The side-stack setup
+(`test-suite/fhevm/src/solana/validator.ts` `seedProgramKeypairs`) copies them into `target/deploy/`
+so `solana program deploy` produces the specimens at the ids their generated clients expect.
 
-- They are **program keypairs**: their public keys are the program IDs (pinned in each
-  program's `declare_id!`), and their private keys are only the *upgrade authority* of the
-  programs **on a fresh local `solana-test-validator`**.
-- They hold **no funds** and are **never deployed to any public cluster** (devnet/testnet/
-  mainnet). The PoC validator is reset (`--reset`) on every run and bound to localhost.
-- Committing them makes the e2e self-reproducible: the side-stack setup
-  (`test-suite/fhevm/src/solana/validator.ts`) seeds
-  `target/deploy/` from here so `cargo build-sbf` + `solana program deploy` produce programs
-  at exactly the `declare_id!` IDs the harness/SDK expect. This covers the host and the
-  confidential token as well as the two specimen programs (`encrypted_counter`, `dep_chain`) the
-  e2e scenarios drive as the wallet-facing writers of encrypted values.
+The four deployed programs (`zama_host`, `confidential_token`, `demo_vault`, `confidential_batcher`)
+have no keypair here. They have one id on every cluster (`solana/environments/preview-env.json`),
+their private keys live in the preview environment's secret store, and the test validator loads
+their build at genesis with the deployer wallet as upgrade authority (`genesisDeployedPrograms`).
 
-Do NOT reuse these keys for anything other than the local PoC. To rotate: regenerate with
-`solana-keygen new -o <name>-keypair.json`, update each `declare_id!` + the hardcoded
-`ACL`/`CONTRACT` constants to the new pubkeys, and rebuild.
+To rotate a specimen: `solana-keygen new -o <name>-keypair.json`, update its `declare_id!`, rebuild,
+and run `solana/scripts/sync-zama-host-idl.sh` then the SDK's `npm run codegen:solana`.

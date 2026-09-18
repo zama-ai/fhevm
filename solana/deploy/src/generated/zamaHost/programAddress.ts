@@ -2,4 +2,4 @@
 import type { Address } from '@solana/kit';
 
 export const ZAMA_HOST_PROGRAM_ADDRESS =
-  '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+  'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;

@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { address, getAddressEncoder } from "@solana/kit";
+import { address, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 
-import { REPO_ROOT, SOLANA_ACL_PROGRAM } from "../layout";
+import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
+import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
 import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
@@ -13,13 +14,16 @@ import {
   createSplMint,
   generateSolanaKeypair,
   initializeConfidentialTokenAccount,
+  loadKeypairSigner,
   mintSplTo,
   readTokenBalanceStore,
   wrapUnderlying,
   type BalanceStore,
+  type SolanaProvisioningContext,
 } from "./provision";
 import { waitForSnsCommit } from "./sns";
 import { run } from "../utils/process";
+import { timed } from "../utils/timing";
 
 export type { BalanceStore };
 
@@ -27,11 +31,11 @@ export const SOLANA_TWO_HOLDER_TRANSFER_PROFILE = "solana-two-holder-transfer";
 export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
   "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
 
-const RPC_URL = "http://127.0.0.1:8899";
-const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
-const HOST_RPC_URL = "http://127.0.0.1:8545";
-const WS_URL = "ws://127.0.0.1:8900";
-const RELAYER_URL = "http://127.0.0.1:3000";
+const RPC_URL = LOCAL_SOLANA_ENDPOINTS.validatorRpc;
+const GATEWAY_RPC_URL = LOCAL_SOLANA_ENDPOINTS.gatewayRpc;
+const HOST_RPC_URL = LOCAL_SOLANA_ENDPOINTS.hostRpc;
+const WS_URL = LOCAL_SOLANA_ENDPOINTS.validatorWs;
+const RELAYER_URL = LOCAL_SOLANA_ENDPOINTS.relayer;
 const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
 const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
 const CLI_DIR = path.join(REPO_ROOT, "test-suite/fhevm");
@@ -64,6 +68,12 @@ export type TwoHolderConfig = {
    * actually serves.
    */
   readonly userDecryptContext: string | undefined;
+  /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
+  readonly funding: { readonly primarySol: number; readonly secondarySol: number };
+  /** Command prefix that opens the coprocessor database, where the SNS-commit wait polls. */
+  readonly coprocessorDbPsql: readonly string[];
+  /** Wallet the holders are funded from by transfer; absent, they are airdropped (local validators). */
+  readonly funderKeypairPath: string | undefined;
 };
 
 export type TwoHolderDependencies = {
@@ -117,14 +127,28 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   hostRpcUrl: config.hostRpcUrl ?? HOST_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
   userDecryptContext: config.userDecryptContext,
+  funding: config.funding ?? { primarySol: 10, secondarySol: 5 },
+  funderKeypairPath: config.funderKeypairPath,
+  coprocessorDbPsql: config.coprocessorDbPsql ?? coprocessorDbPsql(),
 });
 
 export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
   const cfg = resolveConfig(config);
-  const context = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl);
+  let provisioned: SolanaProvisioningContext | undefined;
+  const context = (): SolanaProvisioningContext => {
+    if (!provisioned) throw new Error("two-holder transfer: provision() must run first");
+    return provisioned;
+  };
   let scenarioDir: string | undefined;
+  // The holders' signers, kept so cleanup can return their SOL to the funder on a live cluster.
+  const holders: TransactionSigner[] = [];
+  let funderAddress: Address | undefined;
   return {
     async provision() {
+      const funder = cfg.funderKeypairPath === undefined ? undefined : await loadKeypairSigner(cfg.funderKeypairPath);
+      funderAddress = funder?.address;
+      provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
+      const context = provisioned;
       scenarioDir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-solana-two-holder-"));
       // Both holders are fresh keypairs written under the scenario dir: the SDK transfer worker
       // subprocess loads Alice's file, and the user-decrypt secret is the 32-byte seed.
@@ -137,14 +161,15 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           keypairPath,
           secretKey: `0x${Buffer.from(bytes.subarray(0, 32)).toString("hex")}`,
         };
+        holders.push(signer);
         return { signer, holder };
       };
       const alice = await createHolder("alice");
       const bob = await createHolder("bob");
       // Alice pays every provisioning rent + fee (mints, escrow, wrap, later the transfer itself);
       // Bob only pays his own confidential token account.
-      await context.airdropSol(alice.signer.address, 10n);
-      await context.airdropSol(bob.signer.address, 5n);
+      await context.fundSol(alice.signer.address, cfg.funding.primarySol);
+      await context.fundSol(bob.signer.address, cfg.funding.secondarySol);
 
       // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority, funded
       // well past the 1000 base units the wrap below rotates into her confidential balance.
@@ -162,10 +187,10 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       return { mint, underlyingMint, alice: alice.holder, bob: bob.holder };
     },
     async readBalance(scenario, holder) {
-      return readTokenBalanceStore(context, { mint: address(scenario.mint), owner: address(holder.owner) });
+      return readTokenBalanceStore(context(), { mint: address(scenario.mint), owner: address(holder.owner) });
     },
     async waitForHandle(handle) {
-      await waitForSnsCommit(handle);
+      await waitForSnsCommit(handle, cfg.coprocessorDbPsql);
     },
     async transfer(scenario, alice, bob) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");
@@ -223,6 +248,14 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     async cleanup() {
       if (scenarioDir) await fs.rm(scenarioDir, { recursive: true, force: true });
       scenarioDir = undefined;
+      // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).
+      if (funderAddress !== undefined && provisioned !== undefined) {
+        for (const holder of holders.splice(0)) {
+          await provisioned.sweepSol(holder, funderAddress).catch((error: unknown) => {
+            console.warn(`sweeping ${holder.address} back to the funder failed: ${String(error)}`);
+          });
+        }
+      }
     },
   };
 };
@@ -231,24 +264,27 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
 export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies = createRealTwoHolderDependencies()) => {
   let scenario: TwoHolderScenario | undefined;
   try {
-    scenario = await dependencies.provision();
-    const initialAlice = await dependencies.readBalance(scenario, scenario.alice);
-    const initialBob = await dependencies.readBalance(scenario, scenario.bob);
+    const provisioned = await timed("provision two holders (mints, wrap 1000)", () => dependencies.provision());
+    scenario = provisioned;
+    const initialAlice = await dependencies.readBalance(provisioned, provisioned.alice);
+    const initialBob = await dependencies.readBalance(provisioned, provisioned.bob);
     await dependencies.waitForHandle(initialAlice.currentHandle);
     await dependencies.waitForHandle(initialBob.currentHandle);
-    await dependencies.decrypt(scenario, scenario.alice, initialAlice, 1000n);
-    await dependencies.decrypt(scenario, scenario.bob, initialBob, 0n);
+    await timed("user decrypt alice=1000", () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, 1000n));
+    await timed("user decrypt bob=0", () => dependencies.decrypt(provisioned, provisioned.bob, initialBob, 0n));
 
-    await dependencies.transfer(scenario, initialAlice, initialBob);
-    const finalAlice = await dependencies.readBalance(scenario, scenario.alice);
-    const finalBob = await dependencies.readBalance(scenario, scenario.bob);
+    await timed("encrypt + input proof + confidential transfer(400)", () =>
+      dependencies.transfer(provisioned, initialAlice, initialBob),
+    );
+    const finalAlice = await dependencies.readBalance(provisioned, provisioned.alice);
+    const finalBob = await dependencies.readBalance(provisioned, provisioned.bob);
     if (finalAlice.currentHandle === initialAlice.currentHandle || finalBob.currentHandle === initialBob.currentHandle) {
       throw new Error("confidential transfer did not rotate both current balance handles");
     }
     await dependencies.waitForHandle(finalAlice.currentHandle);
     await dependencies.waitForHandle(finalBob.currentHandle);
-    await dependencies.decrypt(scenario, scenario.alice, finalAlice, 600n);
-    await dependencies.decrypt(scenario, scenario.bob, finalBob, 400n);
+    await timed("user decrypt alice=600", () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, 600n));
+    await timed("user decrypt bob=400", () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, 400n));
     console.log("[solana-two-holder-transfer] Alice=600 Bob=400");
   } finally {
     await dependencies.cleanup(scenario);

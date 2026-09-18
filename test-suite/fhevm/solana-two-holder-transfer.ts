@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 
 import { defineFhevmSolanaChain } from '@fhevm/sdk/chains';
 import { createFhevmEncryptClient, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, confidentialTransfer, TOKEN_PROGRAM_ADDRESS } from '@demo-dapp/vault/index.js';
 import {
@@ -17,7 +18,7 @@ import {
   getProgramDerivedAddress,
 } from '@solana/kit';
 
-const HOST_PROGRAM = address('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu');
+const HOST_PROGRAM = ZAMA_HOST_PROGRAM_ADDRESS;
 const HOST_CONFIG_SEED = new TextEncoder().encode('host-config');
 
 function required(name: string): string {

@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn solana_pda_derivations_match_the_host_program_fixtures() {
         let program_id = crate::http::utils::solana_address::decode_solana_address(
-            "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu",
+            "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
         )
         .expect("the zama-host program id");
         let as_base58 =
@@ -804,11 +804,11 @@ mod tests {
             solana_delegation_row_addresses(&[0x11; 32], &[0x22; 32], &[0x33; 32], program_id);
         assert_eq!(
             as_base58(exact_row),
-            "5bK6ZBSpCgC13c5JT5g2LHjRfTjBM6Fjaybcv8tQqUUX"
+            "GtmmNNN2djBNk8JaFbD2vER8eDzmE4CdL6SBz65cFwgo"
         );
         assert_eq!(
             as_base58(wildcard_row),
-            "DjwWqTLQmSDxxCEXS8KmJBqvvmjhYTWKGsZyh343cKJJ"
+            "F5qWQMxdZTvH4QFYHepDM2k8jgVZUDXW3atJe9qSDFKm"
         );
     }
 }

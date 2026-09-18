@@ -8,7 +8,7 @@
 
 import path from "node:path";
 
-import { resolveEnv, type TestEnv } from "../e2e/harness/loadEnv";
+import { envOverrides, resolveEnv, type TestEnv } from "../e2e/harness/loadEnv";
 import { readDemoConfig, resolveDemoConfigPath, type SolanaDemoConfig } from "./config";
 
 /** Repo root, resolved from this file's location (test-suite/fhevm/demo → repo root). */
@@ -37,11 +37,18 @@ const toOverrides = (config: SolanaDemoConfig) => ({
   userDecryptContextId: config.userDecryptContextId,
 });
 
-/** Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config. */
+/**
+ * Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config.
+ * The seeded config decides every endpoint and identity it carries; what it cannot carry because it
+ * is local to the machine (deployer keypair path, coprocessor psql, leaf-proof endpoint) comes from
+ * the process environment, as it does for `loadEnv`, so an operator or scenario started against a
+ * remote stack funds and probes through the same roots the seed used.
+ */
 export const loadDemoEnv = async (
   configPath = resolveDemoConfigPath(),
+  processEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<{ env: TestEnv; config: SolanaDemoConfig }> => {
   const config = await readDemoConfig(configPath);
-  const env = resolveEnv(toOverrides(config), "demo-config");
+  const env = resolveEnv({ ...envOverrides(processEnv), ...toOverrides(config) }, "demo-config", config.network);
   return { env, config };
 };

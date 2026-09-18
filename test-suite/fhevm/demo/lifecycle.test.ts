@@ -4,10 +4,15 @@ import os from "node:os";
 import path from "node:path";
 
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
-import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
+import { solanaPubkeyFromKeypairFile } from "../src/generate/solana";
+import {
+  DEFAULT_SOLANA_ENVIRONMENT,
+  programIdsFor,
+} from "../../../solana/deploy/src/environment";
 import { gatewayAddHostChainArgs } from "../src/solana/deploy";
 import {
-  SOLANA_E2E_PROGRAMS,
+  SOLANA_SPECIMEN_PROGRAMS,
+  genesisDeployedPrograms,
   seedProgramKeypairs,
 } from "../src/solana/validator";
 import { createDemoAuthorizationFile } from "./authorization";
@@ -83,30 +88,19 @@ describe("demo lifecycle collision policy", () => {
     expect(demoSolanaLedgerPath(manifest().bootId)).toBe(ledgerPath);
   });
 
-  test("deployment overwrites stale target program identities", async () => {
-    const demoDeploy = await fs.readFile(
-      path.join(
-        import.meta.dir,
-        "../../../solana/scripts/demo/deploy-demo-programs.sh",
-      ),
-      "utf8",
-    );
-    expect(demoDeploy).toContain(
-      'cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json"',
-    );
-    expect(demoDeploy).not.toContain("cp -n");
-    // The e2e side, behaviorally: seed into a temp deploy dir that already holds a STALE keypair
-    // (another branch's program identity) and require the committed identity to overwrite it.
+  test("specimen seeding overwrites stale target program identities", async () => {
+    // Seed into a temp deploy dir that already holds a STALE keypair (another branch's program
+    // identity) and require the committed identity to overwrite it.
     const deployDir = await fs.mkdtemp(
       path.join(os.tmpdir(), "seed-keypairs-"),
     );
     try {
       await fs.writeFile(
-        path.join(deployDir, "zama_host-keypair.json"),
+        path.join(deployDir, "dep_chain-keypair.json"),
         JSON.stringify(Array(64).fill(0)),
       );
       await seedProgramKeypairs(deployDir);
-      for (const program of SOLANA_E2E_PROGRAMS) {
+      for (const program of SOLANA_SPECIMEN_PROGRAMS) {
         const seeded = await fs.readFile(
           path.join(deployDir, `${program}-keypair.json`),
           "utf8",
@@ -125,31 +119,47 @@ describe("demo lifecycle collision policy", () => {
     }
   });
 
-  test("committed program keypairs match declared program identities", async () => {
+  test("committed specimen keypairs match the ids their generated clients carry", async () => {
     const root = path.join(import.meta.dir, "../../../solana");
-    const environment = JSON.parse(
-      await fs.readFile(path.join(root, "environments/localnet.json"), "utf8"),
-    );
-    for (const program of [
-      "zama-host",
-      "confidential-token",
-      "demo-vault",
-      "confidential-batcher",
-    ]) {
-      const programKey = program.replaceAll("-", "_");
-      const declaredId = environment.programs[programKey];
-      if (typeof declaredId !== "string") {
-        throw new Error(`localnet.json has no programs.${programKey}`);
-      }
+    const generated = JSON.parse(
+      await fs.readFile(
+        path.join(root, "deploy/src/generated/program-ids.json"),
+        "utf8",
+      ),
+    ) as Record<string, string>;
+    for (const program of SOLANA_SPECIMEN_PROGRAMS) {
       expect(
-        solanaProgramIdFromKeypairFile(
-          path.join(
-            root,
-            "scripts/e2e/test-keypairs",
-            `${programKey}-keypair.json`,
-          ),
+        solanaPubkeyFromKeypairFile(
+          path.join(root, "scripts/e2e/test-keypairs", `${program}-keypair.json`),
         ),
-      ).toBe(declaredId);
+      ).toBe(generated[program]!);
+    }
+  });
+
+  test("the deployed programs load at genesis, upgradeable by the deployer wallet", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "genesis-programs-"));
+    try {
+      const deployer = path.join(directory, "deployer.json");
+      await fs.writeFile(deployer, JSON.stringify(Array.from({ length: 64 }, (_, i) => i)));
+      const programs = genesisDeployedPrograms(deployer, "/deploy");
+      const ids = programIdsFor(DEFAULT_SOLANA_ENVIRONMENT);
+      expect(programs.map((program) => program.address)).toEqual([
+        ids.zamaHost,
+        ids.confidentialToken,
+        ids.demoVault,
+        ids.confidentialBatcher,
+      ]);
+      expect(programs.map((program) => program.soPath)).toEqual([
+        "/deploy/zama_host.so",
+        "/deploy/confidential_token.so",
+        "/deploy/demo_vault.so",
+        "/deploy/confidential_batcher.so",
+      ]);
+      expect(new Set(programs.map((program) => program.authority))).toEqual(
+        new Set([solanaPubkeyFromKeypairFile(deployer)]),
+      );
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
     }
   });
 
@@ -157,7 +167,7 @@ describe("demo lifecycle collision policy", () => {
     const health = {
       validator: true,
       listener: true,
-      faucet: false,
+      operator: false,
       dapp: false,
       kmsCore: true,
       relayer: true,
@@ -465,7 +475,8 @@ describe("demo lifecycle collision policy", () => {
     // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
     // through tsconfig paths), which node's type-stripping cannot resolve.
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
-    expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
+    // The dev server serves a static page and proxies `/api`; no keeper code runs under Vite SSR.
+    expect(demoViteConfig).not.toContain("ssrLoadModule");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     // Both consumers must reach the SDK through a symlink into its live source tree: bun installs
@@ -617,7 +628,7 @@ describe("demo lifecycle collision policy", () => {
         new Map([
           ["validator", true],
           ["listener", true],
-          ["faucet", true],
+          ["operator", true],
           ["dapp", true],
         ]),
       ),
@@ -794,7 +805,7 @@ describe("demo lifecycle ownership primitives", () => {
       supervisedBootAction({
         expectedBootId: running.bootId,
         manifest: { ...running, state: "stopped" },
-        stoppedProcesses: ["validator", "listener", "faucet", "dapp"],
+        stoppedProcesses: ["validator", "listener", "operator", "dapp"],
         lockState: "absent",
         stoppedMarker: false,
       }),
@@ -1075,8 +1086,13 @@ describe("demo lifecycle ownership primitives", () => {
       "DEMO_ALLOWED_ORIGIN",
       "DEMO_AUTH_TOKEN_FILE",
       "DEMO_BOOT_ID",
+      "DEMO_CONFIG_PATH",
+      "DEMO_DAPP_URL",
+      "DEMO_OPERATOR_URL",
       "DEMO_PROOF_API_KEY",
       "DEMO_PROOF_URL",
+      "DEMO_RELAYER_URL",
+      "FHEVM_STATE_DIR",
     ]);
     expect(Object.values(env)).not.toContain(second.authorization.token);
     expect(Object.keys(env)).not.toContain("DEMO_LIFECYCLE_MANIFEST");

@@ -1270,7 +1270,7 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let (address, _) = host::user_decryption_delegation_address(delegator, delegate, authority);
     assert_eq!(
         address.to_string(),
-        "5bK6ZBSpCgC13c5JT5g2LHjRfTjBM6Fjaybcv8tQqUUX"
+        "GtmmNNN2djBNk8JaFbD2vER8eDzmE4CdL6SBz65cFwgo"
     );
 
     let grant = host::instruction::DelegateForUserDecryption {
@@ -1326,14 +1326,14 @@ fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {
     let (wildcard_row, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
     assert_eq!(
         wildcard_row.to_string(),
-        "DjwWqTLQmSDxxCEXS8KmJBqvvmjhYTWKGsZyh343cKJJ"
+        "F5qWQMxdZTvH4QFYHepDM2k8jgVZUDXW3atJe9qSDFKm"
     );
 
     let (value_address, _) =
         host::encrypted_store_address(Pubkey::new_from_array([0x33; 32]), delegator, [0x55; 32]);
     assert_eq!(
         value_address.to_string(),
-        "84mjyLg88hbMzH6suJKBS29kUPSc11D6MDPBnrRXDik3"
+        "5Z8RtcTxGQdTxEZVbyF9T8CF7mMbCFTn8xwhdJ4knso8"
     );
 }
 
@@ -1344,7 +1344,7 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
     let (address, _) = host::permit_invalidation_address(user);
     assert_eq!(
         address.to_string(),
-        "9mDnXemtzZPxnmXJ6ocXABXsmfXwATkWQC9basgU5q2U"
+        "37au5bsVuGt2JKKPQLE8hAdkcXf2LjfnmRKBvxt5Yzep"
     );
 
     let revoke_permits = host::instruction::RevokePermits {}.data();
