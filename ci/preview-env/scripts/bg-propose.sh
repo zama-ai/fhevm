@@ -30,10 +30,18 @@ extra_args="${PROPOSE_EXTRA_ARGS:-}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 fail() { echo "::error::$*" >&2; exit 1; }
 
-secret_val() { kubectl get secret -n "${NAMESPACE}" "$1" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d; }
+secret_val() { kubectl get secret -n "${NAMESPACE}" "$1" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d 2>/dev/null || true; }
 psql1() { kubectl exec -n "${NAMESPACE}" postgres-coprocessor-1-0 -- env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "$1"; }
 
-host_http=$(secret_val rpc ethereum-rpc-url);  [[ -n "${host_http}" ]] || fail "the rpc Secret has no ethereum-rpc-url"
+# The rpc Secret is the testnets source of truth, so it stays first and testnets behaviour is
+# unchanged. Off testnets there is no such Secret, and the idle test-suite Job carries the host
+# chain's RPC in every mode.
+job_env() {
+  kubectl get job -n "${NAMESPACE}" test-suite -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name=='$1')].value}" 2>/dev/null
+}
+host_http="${HOST_HTTP:-$(secret_val rpc ethereum-rpc-url)}"
+[[ -n "${host_http}" ]] || host_http=$(job_env RPC_URL)
+[[ -n "${host_http}" ]] || fail "could not resolve the host RPC (no rpc Secret and no test-suite Job RPC_URL)"
 polygon_http=$(secret_val rpc polygon-rpc-url)
 # The coprocessor talks to the gateway over ws://<host>:8548; the tool needs the http port on the same host.
 gateway_ws=$(kubectl get deploy -n "${NAMESPACE}" coprocessor-1-gw-listener \
@@ -42,10 +50,18 @@ gateway_ws=$(kubectl get deploy -n "${NAMESPACE}" coprocessor-1-gw-listener \
 gateway_http="${GATEWAY_HTTP:-$(sed -E 's#^ws://#http://#; s#:8548$#:8547#' <<<"${gateway_ws}")}"
 
 chains=$(psql1 "SELECT chain_id FROM host_chains ORDER BY chain_id;" | tr '\n' ' ')
-grep -qE '(^| )11155111( |$)' <<<"${chains}" || fail "host_chains has no 11155111 (chains: ${chains})"
 deploy_polygon=false
 grep -qE '(^| )80002( |$)' <<<"${chains}" && deploy_polygon=true
 [[ "${deploy_polygon}" != "true" || -n "${polygon_http}" ]] || fail "host_chains has 80002 but the rpc Secret has no polygon-rpc-url"
+# The host chain is the one that is not Polygon; its id decides the chain mode the tool runs in.
+host_chain_id="${HOST_CHAIN_ID:-$(tr ' ' '\n' <<<"${chains}" | grep -E '^[0-9]+$' | grep -vx 80002 | head -1)}"
+[[ -n "${host_chain_id}" ]] || fail "could not determine the host chain from host_chains (chains: ${chains})"
+case "${host_chain_id}" in
+  12345) chain_mode=anvil; external_chains=false ;;
+  1337) chain_mode=blockchain-dev; external_chains=true ;;
+  11155111) chain_mode=testnets; external_chains=true ;;
+  *) fail "chain ${host_chain_id}: unknown host chain, cannot pick a chain mode" ;;
+esac
 
 mnemonic=$(secret_val preview-wallets-mnemonic mnemonic); [[ -n "${mnemonic}" ]] || fail "preview-wallets-mnemonic not found"
 owner_key=$(cast wallet private-key --mnemonic "${mnemonic}" --mnemonic-index 9)
@@ -61,8 +77,8 @@ gcs_version="${GCS_VERSION:-v$(yq -r '.commonConfig.stackVersion' "${root}/ci/pr
 proposal_id="${PROPOSAL_ID:-$(date -u +%s)}"
 
 common=(
-  NAMESPACE="${NAMESPACE}" NB_COPROCESSOR="${nb}" CHAIN_MODE=testnets EXTERNAL_CHAINS=true
-  HOST_HTTP="${host_http}" GATEWAY_HTTP="${gateway_http}" HOST_CHAIN_ID=11155111
+  NAMESPACE="${NAMESPACE}" NB_COPROCESSOR="${nb}" CHAIN_MODE="${chain_mode}" EXTERNAL_CHAINS="${external_chains}"
+  HOST_HTTP="${host_http}" GATEWAY_HTTP="${gateway_http}" HOST_CHAIN_ID="${host_chain_id}"
   DEPLOY_POLYGON="${deploy_polygon}" POLYGON_HTTP="${polygon_http}" POLYGON_CHAIN_ID=80002
   DEPLOYER_KEY_9="${owner_key}" HOST_CONTRACTS_IMAGE="${host_image}"
   PROPOSAL_ID="${proposal_id}" GCS_VERSION="${gcs_version}"
@@ -70,7 +86,7 @@ common=(
   BUFFER="${BUFFER:-0}" TIMEOUT_SECS="${TIMEOUT_SECS:-900}"
   PROPOSE_EXTRA_ARGS="${extra_args}"
 )
-echo "== bg-propose ${verb}: ${NAMESPACE}, ${nb} operators, chains ${chains}, proposal ${proposal_id}, version ${gcs_version}"
+echo "== bg-propose ${verb}: ${NAMESPACE}, ${nb} operators, ${chain_mode} chains ${chains}, proposal ${proposal_id}, version ${gcs_version}"
 echo "   host ${host_http%%\?*} | polygon ${polygon_http%%\?*} | gateway ${gateway_http} | tool ${host_image##*/}"
 
 case "${verb}" in
