@@ -88,6 +88,7 @@ import { getHostConfigEncoder, type HostConfigArgs } from '../internal/generated
 import { getKmsContextEncoder, type KmsContextArgs } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
+import { getAddressEncoder } from '@solana/kit';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
@@ -100,8 +101,9 @@ const chain = {
   id: 9223372036854788153n,
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
-    // The bytes32 form of `ZAMA_HOST_PROGRAM_ADDRESS`, the owner of the fixture accounts below.
-    programs: { host: { address: asBytes32Hex('0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee') } },
+    programs: {
+      host: { address: asBytes32Hex(bytesToHex(getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS))) },
+    },
   },
 };
 
