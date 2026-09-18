@@ -34,6 +34,8 @@ export interface EnvironmentDef {
 // called via devnet or testnet, so reused.
 const PUBLIC_SEPOLIA_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
 const PUBLIC_AMOY_RPC = 'https://rpc-amoy.polygon.technology';
+const PUBLIC_HOODI_RPC = 'https://ethereum-hoodi-rpc.publicnode.com';
+const PUBLIC_BNB_TESTNET_RPC = 'https://bsc-testnet-rpc.publicnode.com';
 
 export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
   devnet: {
@@ -51,6 +53,20 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
+      },
+      {
+        chainId: 560048,
+        label: 'hoodi',
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'HOODI_RPC_URL',
+        defaultRpcUrl: PUBLIC_HOODI_RPC,
+      },
+      {
+        chainId: 97,
+        label: 'bnb-testnet',
+        fallbackBlockTimeSeconds: 0.45,
+        rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
+        defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
       },
     ],
     // Devnet gateway is a Zama-internal endpoint — no public default; env var required.
@@ -72,6 +88,20 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
       },
+      {
+        chainId: 560048,
+        label: 'hoodi',
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'HOODI_RPC_URL',
+        defaultRpcUrl: PUBLIC_HOODI_RPC,
+      },
+      {
+        chainId: 97,
+        label: 'bnb-testnet',
+        fallbackBlockTimeSeconds: 0.45,
+        rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
+        defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
+      },
     ],
     gateway: {
       label: 'gateway-testnet',
@@ -85,6 +115,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
     chains: [
       { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL' },
       { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
+      { chainId: 56, label: 'bnb', fallbackBlockTimeSeconds: 0.45, rpcUrlEnv: 'BNB_MAINNET_RPC_URL' },
     ],
     gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
   },
