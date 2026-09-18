@@ -42,7 +42,7 @@ const statePaths = (root: string) => {
     kmsGenKeysConfigPath: path.join(generatedConfigDir, "kms-gen-keys.toml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
     SOLANA_RUNTIME_DIR: solanaRuntimeDir,
-    /** The seeded demo config (`demo:seed` writes it; faucet, dapp, operator and smoke read it). */
+    /** The seeded demo config (`demo:seed` writes it; the operator, dapp and smoke read it). */
     solanaDemoConfigPath: path.join(solanaRuntimeDir, "demo-config.json"),
     /** Lifecycle-owned demo boots: manifest, lock, one directory per boot id. */
     SOLANA_DEMO_DIR: path.join(solanaRuntimeDir, "demo"),
@@ -157,7 +157,6 @@ export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_LEAF_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
-export const DEMO_FAUCET_PORT = 8090;
 export const DEMO_OPERATOR_PORT = 8091;
 export const DEMO_DAPP_PORT = 5173;
 export const PORTS = [

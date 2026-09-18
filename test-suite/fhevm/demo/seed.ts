@@ -15,7 +15,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
-//      `demo:faucet` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
+//      `demo:operator` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
@@ -99,7 +99,7 @@ const main = async (): Promise<void> => {
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
-  // authority backs the faucet, and Alice/Bob are end users.
+  // authority backs the operator's faucet, and Alice/Bob are end users.
   const deployer = await loadKeypairSigner(env.roots.deployerKeypairPath);
   const mintAuthority = await loadKeypairSigner(DEMO_KEYPAIRS.mintAuthority);
   const keeper = await loadKeypairSigner(DEMO_KEYPAIRS.keeper);
@@ -108,8 +108,8 @@ const main = async (): Promise<void> => {
 
   // Fund the personas before provisioning so every subsequent step has fees available. A local
   // validator airdrops the deployer first; on devnet the deployer is the funder and pays from its
-  // own balance. The mint authority is funded too: `demo:faucet` makes it the fee payer AND the ATA
-  // rent payer for every /mint-usdc, so an unfunded mint authority fails the first faucet drip.
+  // own balance. The mint authority is funded too: `demo:operator` makes it the fee payer AND the ATA
+  // rent payer for every mint-usdc, so an unfunded mint authority fails the first faucet drip.
   if (env.capabilities.faucet) await provisioning.fundSol(deployer.address, 100);
   for (const actor of [mintAuthority, keeper, alice, bob]) {
     await provisioning.fundSol(actor.address, env.funding.primarySol);

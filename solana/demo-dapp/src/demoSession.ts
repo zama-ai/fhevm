@@ -15,8 +15,9 @@ import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
 
-import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
-import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
+import { loadOrCreateBurnerSecretKey } from './burnerWallet';
+import { demoFaucetFetch } from './demoAuthorization';
+import { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
 export { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
@@ -36,11 +37,6 @@ export type DemoSession = {
     | { readonly kind: 'wallet-standard'; readonly name: string; readonly accountKey: string };
   readonly isActive: () => boolean;
   readonly assertActive: () => void;
-};
-
-export type DemoSessionResponse = {
-  readonly config: DemoConfig;
-  readonly aliceKeypair: number[];
 };
 
 const LAMPORTS_PER_SOL = 1_000_000_000n;
@@ -81,27 +77,6 @@ export const planDemoFunding = (
     ...(usdcBaseUnits < requiredUsdcBaseUnits
       ? { usdc: Number(targetUsdcBalance - usdcBaseUnits) / Number(USDC_BASE_UNITS) }
       : {}),
-  };
-};
-
-const object = (value: unknown, name: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null) throw new Error(`${name} must be an object`);
-  return value as Record<string, unknown>;
-};
-
-export const parseDemoSessionResponse = (value: unknown): DemoSessionResponse => {
-  const root = object(value, 'demo session');
-  const candidate = root.aliceKeypair;
-  if (
-    !Array.isArray(candidate) ||
-    candidate.length !== 64 ||
-    candidate.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)
-  ) {
-    throw new Error('demo session aliceKeypair must contain exactly 64 bytes');
-  }
-  return {
-    config: parseDemoConfig(root.config),
-    aliceKeypair: candidate as number[],
   };
 };
 
@@ -282,12 +257,9 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
   const assertActive = (): void => {
     if (!isActive()) throw new Error('Demo wallet session is no longer active');
   };
-  const response = await demoApiFetch('/api/demo-session');
-  const { config, aliceKeypair } = parseDemoSessionResponse(await responseJson(response, 'demo session'));
-  const signer = await createKeyPairSignerFromBytes(Uint8Array.from(aliceKeypair));
-  if (signer.address !== config.personas.alice) {
-    throw new Error(`burner signer ${signer.address} does not match seeded Alice ${config.personas.alice}`);
-  }
+  // This browser's own burner: generated here, kept in local storage, funded through the faucet.
+  const [config, secretKey] = await Promise.all([loadDemoConfig(), loadOrCreateBurnerSecretKey(window.localStorage)]);
+  const signer = await createKeyPairSignerFromBytes(secretKey);
   await ensureDemoFunding(config, signer.address);
   assertActive();
   return {
@@ -305,7 +277,7 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
     },
     wallet: { kind: 'burner', name: 'Demo wallet' },
     // The burner key doubles as a conforming sRFC-38 wallet: the permit path's one channel.
-    permitWallet: solanaPermitWalletFromSecretKey(Uint8Array.from(aliceKeypair)),
+    permitWallet: solanaPermitWalletFromSecretKey(secretKey),
     isActive,
     assertActive,
   };
