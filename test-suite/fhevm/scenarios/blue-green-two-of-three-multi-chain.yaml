@@ -25,7 +25,8 @@ hostChains:
 bcs:
   source:
     mode: registry
-    tag: v0.14.0-7
+    # 0.15.0 from main, not the 0.14 release: this round is 0.15.0 -> 0.15.1 (consensus 2 -> 3).
+    tag: c3115a0
 
 gcs:
   source:

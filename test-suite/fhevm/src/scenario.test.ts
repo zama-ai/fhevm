@@ -172,7 +172,7 @@ topology:
       const scenario = await loadBlueGreenScenario("blue-green");
       expect(scenario.kind).toBe("blue-green");
       expect(scenario.name).toBe("Blue-Green Upgrade");
-      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-7" });
+      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "c3115a0" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
       expect(scenario.hostChains).toHaveLength(1);
       // Default topology = single-operator dev flow.
@@ -369,7 +369,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
       }
     });
 
@@ -380,7 +380,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
       }
     });
 
@@ -391,7 +391,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e" });
       }
     });
 
