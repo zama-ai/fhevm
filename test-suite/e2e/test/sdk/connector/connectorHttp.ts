@@ -1,5 +1,5 @@
 // Minimal client for the kms-connector HTTP decryption endpoint (RFC 033):
-// `GET /v1/version`, `POST /v1/public-decrypt`, `POST /v1/user-decrypt`.
+// `GET /version`, `POST /v1/public-decrypt`, `POST /v1/user-decrypt`.
 import type { Signer } from 'ethers';
 import { getBytes, hexlify } from 'ethers';
 
@@ -10,7 +10,7 @@ import { backdatedStartTimestamp, signRequest } from '../unified/unifiedUserDecr
 // Configuration
 ////////////////////////////////////////////////////////////////////////////////
 
-export const VERSION_ROUTE = '/v1/version';
+export const VERSION_ROUTE = '/version';
 export const PUBLIC_DECRYPT_ROUTE = '/v1/public-decrypt';
 export const USER_DECRYPT_ROUTE = '/v1/user-decrypt';
 
