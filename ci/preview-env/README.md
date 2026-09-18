@@ -421,6 +421,37 @@ on every party), scale the detector back up, wait for
 `versioning=v0.15`, then run the same DAG again on green. A deploy without
 auto-tests still proposes and waits for `DryRunStarted` only.
 
+## kms-connector HTTP decryption path (endpoint + proxy)
+
+Each `kms-connector-<i>` release also deploys the two new services: the **endpoint**
+and the **proxy** in front of it.
+The two out-of-chart inputs the proxy needs are produced at deploy time by
+`scripts/deploy-kms-connector.sh` instead of being checked in:
+
+- **TLS**: one self-signed P-256 certificate per namespace (`openssl` on the runner,
+  30-day lifetime), SANs = every party's proxy Service name, stored as the
+  `kubernetes.io/tls` Secret `kms-connector-proxy-tls` that all N releases mount
+  (`kmsConnectorProxy.tls.secretName`). Create-if-missing, so a re-run does not
+  rotate the cert under proxies that only read it at startup. The compose path's
+  checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
+  reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
+- **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
+  `.env.test-suite`); its digest is inline in `values-kms-connector-e2e.yaml`
+  (`kmsConnectorProxy.apiKeyDigest.value`), no Secret.
+- **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
+  (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
+  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' cert). The idle Job and the
+  `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
+  `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
+  their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
+  extra CAs from a file, and the generic `common` chart gives a one-shot Job no
+  ConfigMap volume). Their DAG's last task, `connector-http`, runs the
+  `Connector HTTP *` suites (`test-suite/e2e/test/connectorHttp/`) against every
+  party; an empty `KMS_CONNECTOR_ENDPOINT_URLS` makes them skip rather than fail.
+  The `@zama-fhe/relayer-sdk` workflow is left untouched on purpose: those suites
+  use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
+  SDK, so re-running them there would only duplicate the same code path.
+
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
 `preview-env-deploy.yml` takes a `deploy_polygon` input (default `false`) that adds a
