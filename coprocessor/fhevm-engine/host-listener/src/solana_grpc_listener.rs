@@ -7,11 +7,10 @@
 //!   work scheduled from a minority fork is wasted, never reverted. This is safe only because
 //!   scheduling is decoupled from authorization — the KMS re-checks live on-chain state before
 //!   releasing any plaintext (INVARIANTS #31/#32).
-//! - **Version pairing.** Handle re-derivation is byte-identical to the program because the
-//!   listener links the program crate itself (INVARIANTS #28) — which silently assumes the
-//!   deployed program and the running listener were built from the same revision. There is no
-//!   runtime handshake; the operational rule is to deploy both from the same rev
-//!   (INVARIANTS #33).
+//! - **Version pairing.** Handle re-derivation uses the program crate's `computed_*` functions
+//!   (INVARIANTS #28) and hashes the followed `--program-id`, not the crate's compiled
+//!   `declare_id!`. Instruction layout still has no runtime handshake: deploy the listener from
+//!   the same rev as the program (INVARIANTS #33).
 //!
 //! Each sealed block is applied in one database transaction: its compute rows, the
 //! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
@@ -140,7 +139,8 @@ pub struct SolanaGrpcListenerConfig {
     pub grpc_url: String,
     /// Optional `x-token` auth metadata (None for a local validator).
     pub x_token: Option<String>,
-    /// Base58 zama-host program id whose instructions are reconstructed.
+    /// Base58 zama-host program id to follow: instruction filter and the id hashed into
+    /// reconstructed handles (not the id this crate was compiled with).
     pub program_id: String,
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
