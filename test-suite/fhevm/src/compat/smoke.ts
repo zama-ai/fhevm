@@ -10,6 +10,7 @@ import {
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
   GROUP_BUILD_SERVICES,
+  KMS_CONNECTOR_HTTP_SERVICES,
   MINIO_PORT,
   STATE_DIR,
   TEMPLATE_ENV_DIR,
@@ -18,7 +19,7 @@ import {
   envPath,
 } from "../layout";
 import {
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -181,7 +182,7 @@ const main = async () => {
       ),
       "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
         (name) =>
-          !name.endsWith("db-migration") && (name !== "kms-connector-endpoint" || supportsConnectorEndpoint(state)),
+          !name.endsWith("db-migration") && (!KMS_CONNECTOR_HTTP_SERVICES.includes(name) || supportsConnectorHttp(state)),
       ),
     } as const;
     for (const component of COMPAT_COMPONENTS) {

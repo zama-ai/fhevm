@@ -140,6 +140,7 @@ describe("stack", () => {
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
       "kms-connector-endpoint",
+      "kms-connector-proxy",
     ]);
   });
 
@@ -171,6 +172,7 @@ describe("stack", () => {
       "CONNECTOR_KMS_WORKER_VERSION",
       "CONNECTOR_TX_SENDER_VERSION",
       "CONNECTOR_ENDPOINT_VERSION",
+      "CONNECTOR_PROXY_VERSION",
     ]);
     expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
     expect(plan.runtimeServices).toEqual([
@@ -179,10 +181,11 @@ describe("stack", () => {
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
       "kms-connector-endpoint",
+      "kms-connector-proxy",
     ]);
   });
 
-  test("version-lock upgrade plans leave the kms-connector endpoint out when the bundle predates it", () => {
+  test("version-lock upgrade plans leave the kms-connector endpoint and proxy out when the bundle predates them", () => {
     const versions = {
       target: "latest-supported" as const,
       lockName: "latest-supported.json",
@@ -196,11 +199,12 @@ describe("stack", () => {
       "kms-connector-tx-sender",
     ]);
     const modern = resolveUpgradePlan(
-      { overrides: [], scenario: defaultScenario, versions: { ...versions, env: { ...versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } } },
+      { overrides: [], scenario: defaultScenario, versions: { ...versions, env: { ...versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" } } },
       "kms",
       { lockFile: true },
     );
     expect(modern.runtimeServices).toContain("kms-connector-endpoint");
+    expect(modern.runtimeServices).toContain("kms-connector-proxy");
   });
 
   test("upgrade plan supports listener-core version-lock upgrades", () => {
@@ -382,6 +386,7 @@ describe("stack", () => {
           "kms-connector-kms-worker",
           "kms-connector-tx-sender",
           "kms-connector-endpoint",
+          "kms-connector-proxy",
         ],
       },
     ]);
@@ -477,13 +482,13 @@ describe("stack", () => {
     });
 
     expect(calls).toEqual([
-      "schema:false:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint",
+      "schema:false:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
       "save:true",
       "generate:true",
-      "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint",
-      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint:true:true",
+      "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
+      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy:true:true",
       "ready:true",
-      "health:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint",
+      "health:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
       "save:undefined",
     ]);
     expect(persisted?.overrides.at(-1)).toEqual({
@@ -493,6 +498,7 @@ describe("stack", () => {
         "kms-connector-kms-worker",
         "kms-connector-tx-sender",
         "kms-connector-endpoint",
+        "kms-connector-proxy",
       ],
     });
     expect(persisted?.e2eKmsConnectorRuntimeAdoptionPending).toBeUndefined();
@@ -608,6 +614,7 @@ describe("stack", () => {
         "kms-connector-kms-worker",
         "kms-connector-tx-sender",
         "kms-connector-endpoint",
+        "kms-connector-proxy",
       ],
     });
 
@@ -640,8 +647,8 @@ describe("stack", () => {
       "schema",
       "save:true",
       "generate",
-      "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint",
-      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint:true:true",
+      "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
+      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy:true:true",
       "ready",
       "health",
       "save:undefined",
@@ -679,14 +686,17 @@ describe("stack", () => {
       "kms-connector-kms-worker",
       "kms-connector-tx-sender",
       "kms-connector-endpoint",
+      "kms-connector-proxy",
       "kms-connector-2-gw-listener",
       "kms-connector-2-kms-worker",
       "kms-connector-2-tx-sender",
       "kms-connector-2-endpoint",
+      "kms-connector-2-proxy",
       "kms-connector-3-gw-listener",
       "kms-connector-3-kms-worker",
       "kms-connector-3-tx-sender",
       "kms-connector-3-endpoint",
+      "kms-connector-3-proxy",
     ]);
   });
 });

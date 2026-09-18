@@ -21,7 +21,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -463,20 +463,36 @@ describe("compat", () => {
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
   });
 
-  test("enables the kms-connector endpoint only when its image is pinned or locally built", () => {
+  test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
     const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
       versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
       overrides,
     });
-    // Pinned profiles and shas that predate the endpoint image omit the (optional) key.
-    expect(supportsConnectorEndpoint(stateFor({}))).toBe(false);
-    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }))).toBe(true);
-    expect(supportsConnectorEndpoint(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0" }))).toBe(true);
-    // A local kms-connector override builds the endpoint from the working tree.
-    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector" }]))).toBe(true);
-    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]))).toBe(true);
-    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }]))).toBe(false);
-    expect(supportsConnectorEndpoint(stateFor({}, [{ group: "coprocessor" }]))).toBe(false);
+    // Pinned profiles and shas that predate the endpoint/proxy images omit the (optional) keys.
+    expect(supportsConnectorHttp(stateFor({}))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0", CONNECTOR_PROXY_VERSION: "v0.14.0" }))).toBe(true);
+    // Separate images with separate tags: the path needs both, a bundle with only one gates it out.
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0", CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    // A whole-group kms-connector override builds both from the working tree.
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector" }]))).toBe(true);
+    // A single-service override only supplies that service; the other must still be pinned.
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-proxy"] }]))).toBe(false);
+    expect(
+      supportsConnectorHttp(
+        stateFor({ CONNECTOR_PROXY_VERSION: "02f6cc0" }, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]),
+      ),
+    ).toBe(true);
+    expect(
+      supportsConnectorHttp(
+        stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }, [{ group: "kms-connector", services: ["kms-connector-proxy"] }]),
+      ),
+    ).toBe(true);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }]))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "coprocessor" }]))).toBe(false);
   });
 
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {

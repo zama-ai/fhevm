@@ -26,7 +26,7 @@ function successfulBuilds() {
       'consensus_detector',
       'upgrade_controller',
     ],
-    'kms-connector-docker-build': ['db_migration', 'gw_listener', 'kms_worker', 'tx_sender', 'endpoint'],
+    'kms-connector-docker-build': ['db_migration', 'gw_listener', 'kms_worker', 'tx_sender', 'endpoint', 'proxy'],
     'relayer-docker-build': ['relayer_migrate', 'relayer'],
     'listener-docker-build': [''],
     'gateway-contracts-docker-build': [''],
@@ -48,7 +48,7 @@ function successfulBuilds() {
 }
 
 for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
-  test(`endpoint tags and registry checks are selected (GPU=${!!gpuWorkerTag})`, () => {
+  test(`connector tags and registry checks are selected (GPU=${!!gpuWorkerTag})`, () => {
     const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
     expect(JSON.parse(selected.outputs['connector-versions'])).toEqual({
       'db-migration': 'abcdef0',
@@ -56,32 +56,35 @@ for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
       'kms-worker': 'abcdef0',
       'tx-sender': 'abcdef0',
       endpoint: 'abcdef0',
+      proxy: 'abcdef0',
     });
     expect(selected.built).toContainEqual({ repo: 'fhevm/kms-connector/endpoint', tag: 'abcdef0' });
+    expect(selected.built).toContainEqual({ repo: 'fhevm/kms-connector/proxy', tag: 'abcdef0' });
   });
 
-  for (const result of ['failure', 'cancelled', 'missing']) {
-    test(`endpoint ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+  for (const service of ['endpoint', 'proxy'] as const) {
+    const envKey = `CONNECTOR_${service.toUpperCase()}_VERSION`;
+
+    for (const result of ['failure', 'cancelled', 'missing']) {
+      test(`${service} ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+        const builds = successfulBuilds();
+        if (result === 'missing') delete builds['kms-connector-docker-build'].outputs[`${service}_build_result`];
+        else builds['kms-connector-docker-build'].outputs[`${service}_build_result`] = result;
+        expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(
+          `${service}_build_result`,
+        );
+      });
+    }
+
+    test(`skipped ${service} is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
       const builds = successfulBuilds();
-      if (result === 'missing') delete builds['kms-connector-docker-build'].outputs.endpoint_build_result;
-      else builds['kms-connector-docker-build'].outputs.endpoint_build_result = result;
-      expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(
-        'endpoint_build_result',
-      );
+      builds['kms-connector-docker-build'].outputs[`${service}_build_result`] = 'skipped';
+      const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
+      expect(JSON.parse(selected.outputs['connector-versions'])[service]).toBe('');
+      expect(selected.skipped).toContainEqual({ repo: `fhevm/kms-connector/${service}`, envKey });
+      expect(selected.built.some(({ repo }) => repo === `fhevm/kms-connector/${service}`)).toBe(false);
     });
   }
-
-  test(`skipped endpoint is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
-    const builds = successfulBuilds();
-    builds['kms-connector-docker-build'].outputs.endpoint_build_result = 'skipped';
-    const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
-    expect(JSON.parse(selected.outputs['connector-versions']).endpoint).toBe('');
-    expect(selected.skipped).toContainEqual({
-      repo: 'fhevm/kms-connector/endpoint',
-      envKey: 'CONNECTOR_ENDPOINT_VERSION',
-    });
-    expect(selected.built.some(({ repo }) => repo === 'fhevm/kms-connector/endpoint')).toBe(false);
-  });
 }
 
 test('GPU override selects exact worker tags without requiring CPU worker builds', () => {

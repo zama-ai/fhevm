@@ -74,6 +74,7 @@ const REPO_PACKAGES = {
   CONNECTOR_KMS_WORKER_VERSION: "fhevm%2Fkms-connector%2Fkms-worker",
   CONNECTOR_TX_SENDER_VERSION: "fhevm%2Fkms-connector%2Ftx-sender",
   CONNECTOR_ENDPOINT_VERSION: "fhevm%2Fkms-connector%2Fendpoint",
+  CONNECTOR_PROXY_VERSION: "fhevm%2Fkms-connector%2Fproxy",
   RELAYER_VERSION: "fhevm%2Frelayer",
   RELAYER_MIGRATE_VERSION: "fhevm%2Frelayer-migrate",
   TEST_SUITE_VERSION: "fhevm%2Ftest-suite%2Fe2e",
@@ -86,6 +87,7 @@ export const OPTIONAL_REPO_KEYS = new Set([
   "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   "CONNECTOR_ENDPOINT_VERSION",
+  "CONNECTOR_PROXY_VERSION",
 ]);
 
 export const PACKAGE_TO_REPOSITORY = {
@@ -106,6 +108,7 @@ export const PACKAGE_TO_REPOSITORY = {
   CONNECTOR_KMS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/kms-worker",
   CONNECTOR_TX_SENDER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/tx-sender",
   CONNECTOR_ENDPOINT_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/endpoint",
+  CONNECTOR_PROXY_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/proxy",
   CORE_VERSION: "ghcr.io/zama-ai/kms/core-service-enclave",
   RELAYER_VERSION: "ghcr.io/zama-ai/console/relayer",
   RELAYER_MIGRATE_VERSION: "ghcr.io/zama-ai/console/relayer-migrate",
@@ -373,8 +376,9 @@ const bundleFromFiles = async (
         CONNECTOR_GW_LISTENER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_GW_LISTENER_VERSION"),
         CONNECTOR_KMS_WORKER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_KMS_WORKER_VERSION"),
         CONNECTOR_TX_SENDER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_TX_SENDER_VERSION"),
-        // GitOps YAMLs don't deploy the connector HTTP endpoint yet; leave CONNECTOR_ENDPOINT_VERSION
-        // unset so the compat layer gates the service out (optional repo key).
+        // GitOps YAMLs don't deploy the connector HTTP endpoint and proxy yet; leave
+        // CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION unset so the compat layer gates the
+        // services out (optional repo keys).
         CORE_VERSION: findImageTag(parsed, "kmsCore", "CORE_VERSION"),
         RELAYER_VERSION: findImageTag(parsed, "relayer", "RELAYER_VERSION"),
         RELAYER_MIGRATE_VERSION: findImageTag(parsed, "relayer", "RELAYER_MIGRATE_VERSION"),

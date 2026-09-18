@@ -184,7 +184,7 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBe("relayer");
   });
 
-  test("expects the kms-connector endpoint only when the bundle pins its image", () => {
+  test("expects the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const running = [
       "fhevm-minio",
       "coprocessor-and-kms-db",
@@ -210,15 +210,19 @@ describe("resumeRepairStep", () => {
       "fhevm-relayer",
       "fhevm-test-suite-e2e-debug",
     ];
-    // completeState() carries no CONNECTOR_ENDPOINT_VERSION: the endpoint is not expected.
+    // completeState() carries no CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION: neither is expected.
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
     const base = completeState();
-    const withEndpoint = {
+    const withHttp = {
       ...base,
-      versions: { ...base.versions, env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+      versions: {
+        ...base.versions,
+        env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
     };
-    expect(resumeRepairStep(withEndpoint, running)).toBe("kms-connector");
-    expect(resumeRepairStep(withEndpoint, [...running, "kms-connector-endpoint"])).toBeUndefined();
+    expect(resumeRepairStep(withHttp, running)).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint"])).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
   test("returns nothing when every steady-state service is present", () => {

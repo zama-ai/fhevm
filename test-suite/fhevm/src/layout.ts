@@ -200,6 +200,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "kms-connector-kms-worker",
     "kms-connector-tx-sender",
     "kms-connector-endpoint",
+    "kms-connector-proxy",
   ],
   "listener-core": ["listener-publisher-for-anvil"],
   "relayer": [
@@ -247,6 +248,10 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
   ]),
 ) as Record<OverrideGroup, string[]>;
 
+/** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
+export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
+
+/** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {
   "coprocessor-host-listener": ["coprocessor-host-listener-poller"],
   "coprocessor-host-listener-poller": ["coprocessor-host-listener"],
