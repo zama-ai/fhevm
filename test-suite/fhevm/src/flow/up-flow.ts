@@ -2,6 +2,8 @@
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
 
+import { delaysManifestDetectors, startManifestRuntime } from "./manifest-startup";
+
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -1145,7 +1147,15 @@ export const runStep = async (state: State, step: StepName) => {
         await stepComposeUp("coprocessor", state, migrationServices);
         await waitForCoprocessorDbMigrations(state);
       }
-      await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
+      if (delaysManifestDetectors(state)) {
+        await startManifestRuntime(runtimeServices, {
+          start: services => stepComposeUp("coprocessor", state, services, { noDeps: true }),
+          waitForListener: service => waitForContainer(service, "running"),
+          sleep: milliseconds => Bun.sleep(milliseconds),
+        });
+      } else {
+        await stepComposeUp("coprocessor", state, runtimeServices, { noDeps: true });
+      }
       await waitForCoprocessorServices(state, true);
       if (requiresLegacyHostChainSeedShim(state)) {
         await applyLegacyHostChainSeedShim(state);
