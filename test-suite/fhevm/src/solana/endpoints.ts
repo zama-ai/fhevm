@@ -29,4 +29,3 @@ export const LOCAL_SOLANA_ENDPOINTS = {
   demoDapp: loopback(DEMO_DAPP_PORT),
 } as const;
 
-export type SolanaEndpointName = keyof typeof LOCAL_SOLANA_ENDPOINTS;

@@ -129,7 +129,11 @@ export type SolanaProvisioningContext = {
   sweepSol(from: TransactionSigner, to: Address): Promise<string | null>;
 };
 
-/** Base fee of a one-signature transaction; a sweep leaves exactly this much to pay for itself. */
+/**
+ * Base fee of a one-signature transaction; a sweep leaves exactly this much to pay for itself.
+ * Holds while `sendAndConfirmSigned` sets no compute-unit price: a priority fee would need
+ * `getFeeForMessage` here instead.
+ */
 const TRANSACTION_FEE_LAMPORTS = 5_000n;
 
 export type ProvisioningContextOptions = {

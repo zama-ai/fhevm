@@ -21,7 +21,7 @@ import {
 } from '@fhevm/sdk/solana/host';
 
 import { loadOrCreateBurnerSecretKey } from './burnerWallet';
-import { demoFaucetFetch } from './demoAuthorization';
+import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
 import { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
 export { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
@@ -196,7 +196,7 @@ const responseJson = async (response: Response, name: string): Promise<unknown> 
 };
 
 export const loadDemoConfig = async (): Promise<DemoConfig> =>
-  parseDemoConfigResponse(await responseJson(await fetch('/api/demo-config'), 'demo config'));
+  parseDemoConfigResponse(await responseJson(await demoApiFetch('/api/demo-config'), 'demo config'));
 
 export const readExactMessageSignature = (
   message: Uint8Array,

@@ -1,4 +1,4 @@
-// operator — the demo's one privileged HTTP service: the keeper's keys, the proof-service token and
+// operator — the demo's one privileged HTTP service: the keeper's keys, the host listener's leaf-proof token and
 // the mock-USDC faucet live here and nowhere in the browser or the dev server.
 //
 // Routes (JSON in, JSON out; every route but /health carries the boot authorization):
@@ -15,19 +15,21 @@
 //
 // Authorization is the lifecycle's boot capability (`authorizeDemoHeaders`): the dapp dev server
 // adds it to every `/api` call it proxies, the smoke and browser-reality checks carry it directly.
-// Behind `tailscale serve`, a request may instead carry the identity header Tailscale injects for
-// an allow-listed login. CORS is exact-origin for the one dapp origin. Concurrency: one keeper
-// action per batch at a time, batch preparation serialized per registry, one harvest at a time.
+// A direct caller on the tailnet (a teammate's script or curl through `tailscale serve`, which
+// sets the identity header and strips a client's own) is accepted for an allow-listed login; the
+// page itself never calls the operator cross-origin, it goes through its own origin's proxy. CORS
+// is exact-origin for the one dapp origin. Concurrency: one keeper action per batch at a time,
+// batch preparation serialized per registry, one harvest at a time.
 //
 // `createOperator` is transport-free (a `Request -> Response` function over injected actions) so
 // it is unit-tested with stubs; `operator-server.ts` binds it to the live stack.
 
 import { address, type Address } from "@solana/kit";
 
-import type { VaultMetrics } from "@demo-dapp/batchTypes";
-import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest, type OperatorRequest } from "@demo-dapp/demoApi";
 import type { PreparedBatch } from "@demo-dapp/batchProvisioning";
-import type { VaultDirection } from "@demo-dapp/batchTypes";
+import type { VaultDirection, VaultMetrics } from "@demo-dapp/batchTypes";
+import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest, type OperatorRequest } from "@demo-dapp/demoApi";
+import type { UnderlyingMinter } from "@demo-dapp/harvestOperator";
 import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
 const DEFAULT_AIRDROP_SOL = 5;
@@ -37,9 +39,6 @@ const DEFAULT_USDC_AMOUNT = 1_000;
 const MAX_JSON_BODY_BYTES = 8_192;
 /** The identity header `tailscale serve` sets on requests it forwards (and strips from clients). */
 export const TAILSCALE_LOGIN_HEADER = "tailscale-user-login";
-
-/** Mints `baseUnits` of mock USDC to `recipient`'s ATA, creating the ATA if needed. */
-export type UsdcMinter = (recipient: Address, baseUnits: bigint) => Promise<string>;
 
 /**
  * Brings `recipient` to at least `sol` SOL and resolves with the confirmed signature, or null when
@@ -58,7 +57,8 @@ export type DemoEncryptionKey = {
 /** What the operator does when a route is called; the server wires these to the live stack. */
 export type OperatorActions = {
   readonly fundSol: SolFunder;
-  readonly mintUsdc: UsdcMinter;
+  /** Mints mock USDC (the vault's underlying) to a recipient's ATA, creating it if needed. */
+  readonly mintUsdc: UnderlyingMinter;
   /** The public configuration the page boots from, `relayerUrl` and `demoBootId` already set. */
   readonly readConfig: () => Promise<Record<string, unknown>>;
   readonly encryptionKeyFingerprint: () => Promise<string>;

@@ -119,7 +119,7 @@ All demo state lives under the fhevm layout root (`FHEVM_STATE_DIR`, default `.f
 `runtime/solana/`: the published config `demo-config.json`, lifecycle boots under `demo/` (manifest,
 lock, one directory per boot with its logs), the keeper's settle lookup tables in
 `batch-lookup-tables.json` and the smoke marker. Only the validator ledger stays under `/tmp`, because
-the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview namespace state dir,
+the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
 a test's temp dir) and every producer and consumer follows.
 
 On Apple Silicon, the generated compose override runs only centralized `kms-core` as

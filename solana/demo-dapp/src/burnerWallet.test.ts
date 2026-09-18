@@ -19,7 +19,7 @@ describe('the demo burner wallet', () => {
     expect(first).toHaveLength(64);
     // kit verifies that the public half matches the seed; a wrong layout throws here.
     const signer = await createKeyPairSignerFromBytes(first);
-    expect(signer.address).toHaveLength(44);
+    expect(signer.address).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 
     const second = await loadOrCreateBurnerSecretKey(storage);
     expect(second).toEqual(first);

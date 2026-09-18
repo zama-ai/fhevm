@@ -21,7 +21,13 @@ import { vaultRoots } from './vaultRoots';
 
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 800_000;
 const LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 300_000;
-export const RECLAIM_BATCH_AUTHORITY_COMPUTE_UNIT_LIMIT = 50_000;
+const RECLAIM_BATCH_AUTHORITY_COMPUTE_UNIT_LIMIT = 50_000;
+/**
+ * How many of the most recent batches the reclaim pass inspects. It runs on the page's join path
+ * (two RPC reads per batch), so it is bounded; settle reclaims eagerly, and a batch that finishes
+ * later than this window (a long-canceled straggler) is reclaimed by hand.
+ */
+export const RECLAIM_SCAN_WINDOW = 8n;
 const LOOKUP_TABLE_HEADER_BYTES = 56;
 const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
 
@@ -268,8 +274,9 @@ const retireFinishedLookupTables = async (
  * `reclaim_batch_authority`. `settleVaultBatch` reclaims eagerly on the happy path; this pass
  * catches every batch that finished another way (a canceled dispatch, a zero-total cancel at
  * settle, a process that exited between settle and reclaim) and is idempotent: a drained
- * authority is skipped. One batch read and one balance read per batch the direction has opened.
- * Returns how many batches were reclaimed; failures are logged and retried by a later prepare.
+ * authority is skipped. One batch read and one balance read per batch in the last
+ * `RECLAIM_SCAN_WINDOW` the direction has opened. Returns how many batches were reclaimed;
+ * failures are logged and retried by a later prepare.
  */
 export const reclaimFinishedBatchAuthorities = async (
   config: DemoConfig,
@@ -280,7 +287,8 @@ export const reclaimFinishedBatchAuthorities = async (
   const roots = vaultRoots(config, direction);
   const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
   let reclaimed = 0;
-  for (let index = 0n; index < batcher.nextBatchIndex; index += 1n) {
+  const first = batcher.nextBatchIndex > RECLAIM_SCAN_WINDOW ? batcher.nextBatchIndex - RECLAIM_SCAN_WINDOW : 0n;
+  for (let index = first; index < batcher.nextBatchIndex; index += 1n) {
     try {
       const batch = await getBatchByIndex(rpc, roots, index, { commitment: 'confirmed' });
       if (!isBatchFinished(batch.state.status)) continue;

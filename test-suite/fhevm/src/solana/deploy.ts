@@ -16,7 +16,8 @@ import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/copr
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
-import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from '../generate/solana';
+import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
+import { SOLANA_LEAF_PROOF_PORT } from '../layout';
 import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';

@@ -250,7 +250,11 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       scenarioDir = undefined;
       // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).
       if (funderAddress !== undefined && provisioned !== undefined) {
-        for (const holder of holders.splice(0)) await provisioned.sweepSol(holder, funderAddress);
+        for (const holder of holders.splice(0)) {
+          await provisioned.sweepSol(holder, funderAddress).catch((error: unknown) => {
+            console.warn(`sweeping ${holder.address} back to the funder failed: ${String(error)}`);
+          });
+        }
       }
     },
   };

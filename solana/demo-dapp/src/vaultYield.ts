@@ -15,7 +15,7 @@ const responseJson = async (response: Response): Promise<unknown> => {
 };
 
 export const readDemoVaultMetrics = async (): Promise<VaultMetrics> =>
-  parseVaultMetrics(await responseJson(await fetch('/api/demo-vault-metrics')));
+  parseVaultMetrics(await responseJson(await demoApiFetch('/api/demo-vault-metrics')));
 
 export const harvestDemoVault = async (): Promise<{
   readonly before: VaultMetrics;
