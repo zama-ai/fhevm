@@ -273,6 +273,40 @@ const injectCiphertextDrift = async (options: {
   }
 };
 
+/** True when the versioning row names the release this binary was built from. Exact once the row
+ *  carries a full x.y.z, so 0.15.1 residue is still caught against a 0.15.0 BCS; the 0.14 bootstrap
+ *  stored a truncated "v0.14", which only major.minor can match. */
+const versioningMatchesRelease = (stored: string, release: string): boolean => {
+  const a = stored.replace(/^v/, "");
+  const b = release.replace(/^v/, "");
+  if (a.split(".").length >= 3) return a === b;
+  return a.split(".").slice(0, 2).join(".") === b.split(".").slice(0, 2).join(".");
+};
+
+/** The release BCS was built from, read from the running binary rather than assumed. */
+const bcsBinaryRelease = async (): Promise<string> => {
+  const ps = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+  if (ps.code !== 0) {
+    throw new PreflightError(ps.stderr.trim() || "docker ps failed");
+  }
+  const container = ps.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^coprocessor(\d+)?-host-listener$/.test(line));
+  if (!container) {
+    throw new Error("no BCS host-listener container is running");
+  }
+  const result = await run(
+    ["docker", "exec", container, "/usr/local/bin/host_listener", "--stack-version"],
+    { allowFailure: true },
+  );
+  const release = result.stdout.trim();
+  if (result.code !== 0 || release === "") {
+    throw new Error(`could not read the release from ${container}: ${result.stderr.trim()}`);
+  }
+  return release;
+};
+
 /** The release the green binaries were built as, read from a running GCS service. */
 const gcsBinaryRelease = async (): Promise<string> => {
   const ps = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
@@ -1032,10 +1066,15 @@ const runBlueGreenProfile = async (
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
   console.log(`\n[1/11] verify initial state`);
+  // Compared against the BCS binary, not a hardcoded release: the scenario decides which version
+  // BCS runs, and the two bootstrap paths store different forms ("v0.14" vs "0.15.0").
+  const bcsStackVersion = await bcsBinaryRelease();
   for (const db of operatorDatabases) {
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}", expected "v0.14" (prior test residue?)`);
+    if (!versioningMatchesRelease(version, bcsStackVersion)) {
+      throw new Error(
+        `${db}.versioning = "${version}", expected the BCS release ${bcsStackVersion} (prior test residue?)`,
+      );
     }
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
@@ -1049,7 +1088,9 @@ const runBlueGreenProfile = async (
       throw new Error(`${db} missing schema "gcs-${gcsStackVersion}" (GCS upgrade-controller didn't create it)`);
     }
   }
-  console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  console.log(
+    `OK:   ${opCount} DB(s) at ${bcsStackVersion}, empty upgrade_state, gcs-${gcsStackVersion} schema present`,
+  );
 
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
 
@@ -1192,8 +1233,10 @@ const runBlueGreenProfile = async (
       );
     }
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
-    if (version !== "v0.14") {
-      throw new Error(`${db}.versioning = "${version}" after failed upgrade, expected "v0.14"`);
+    if (!versioningMatchesRelease(version, bcsStackVersion)) {
+      throw new Error(
+        `${db}.versioning = "${version}" after failed upgrade, expected the BCS release ${bcsStackVersion}`,
+      );
     }
     const schema = await psqlQuery(
       db,
@@ -1210,7 +1253,9 @@ const runBlueGreenProfile = async (
     if (residue !== "0") {
       throw new Error(`${db} gcs schema not reset: ${residue} residual computations/state_hash rows`);
     }
-    console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
+    console.log(
+      `OK:   ${db}  PAUSED/failed, latches cleared, ${bcsStackVersion} kept, gcs schema recreated empty`,
+    );
   }
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
