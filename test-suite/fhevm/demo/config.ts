@@ -18,6 +18,8 @@ import path from "node:path";
 
 import { address, type Address } from "@solana/kit";
 
+import type { SolanaNetwork } from "../e2e/harness/loadEnv";
+
 /**
  * Structural mirror of the demo dapp's normative `VaultDemoRoots`
  * (`solana/demo-dapp/src/vault/derive.ts`, importable here as `@demo-dapp/vault/index.js`).
@@ -74,6 +76,8 @@ export type DemoPersonas = {
  */
 export type SolanaDemoConfig = {
   readonly source: "demo-config";
+  /** The cluster the seed ran on; consumers derive funding (airdrop vs transfer) and URL policy from it. */
+  readonly network: SolanaNetwork;
   /** RFC-021 Solana host chain id, as an unsigned decimal string (`72057594037940281`). */
   readonly chainId: string;
   readonly rpcUrl: string;
@@ -162,6 +166,11 @@ const asDecimal = (value: unknown, field: string): string => {
   return s;
 };
 
+const asNetwork = (value: unknown, field: string): SolanaNetwork => {
+  if (value !== "localnet" && value !== "devnet") throw new Error(`demo-config: ${field} must be "localnet" or "devnet"`);
+  return value;
+};
+
 const asBytes32Hex = (value: unknown, field: string): `0x${string}` => {
   const s = asString(value, field);
   if (!/^0x[0-9a-f]{64}$/i.test(s)) throw new Error(`demo-config: ${field} must be 0x-prefixed 32-byte hex, got ${s}`);
@@ -187,6 +196,7 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
   const personas = obj(o.personas, "personas");
   return {
     source: "demo-config",
+    network: asNetwork(o.network, "network"),
     chainId: asDecimal(o.chainId, "chainId"),
     rpcUrl: asString(o.rpcUrl, "rpcUrl"),
     wsUrl: asString(o.wsUrl, "wsUrl"),

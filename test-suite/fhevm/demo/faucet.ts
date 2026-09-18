@@ -1,18 +1,18 @@
 // faucet — the minimal HTTP faucet the demo dApp's "get funds" button calls (#1760/#1761).
 //
-// Localnet-only, boot-authorized, exact-origin CORS. Two funding endpoints plus public health:
-//   POST /airdrop-sol   { address, sol? }       -> native validator airdrop (kit requestAirdrop)
+// Boot-authorized, exact-origin CORS. Two funding endpoints plus public health:
+//   POST /airdrop-sol   { address, sol? }       -> SOL through the injected funder (validator airdrop
+//                                                  on localnet, transfer from the deployer on devnet)
 //   POST /mint-usdc     { address, amount? }    -> mints mock USDC to the recipient's ATA
 //   GET  /health                                 -> { ok: true }
 //
 // The mint authority is a committed demo keypair. `createFaucet` returns the request handler (pure,
 // unit-testable with a stub RPC + minter); `serveFaucet` wraps it in Bun.serve.
 
-import { address, createSolanaRpc, lamports, type Address, type Commitment, type Lamports } from "@solana/kit";
+import { address, type Address } from "@solana/kit";
 
 import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
-const LAMPORTS_PER_SOL = 1_000_000_000n;
 const DEFAULT_AIRDROP_SOL = 5;
 /** Mock USDC has 6 decimals (matches the seeded SPL mint); the default drip is 1,000 USDC. */
 const USDC_DECIMALS = 6;
@@ -21,17 +21,11 @@ const DEFAULT_USDC_AMOUNT = 1_000n;
 /** Mints `baseUnits` of mock USDC to `recipient`'s ATA, creating the ATA if needed. */
 export type UsdcMinter = (recipient: Address, baseUnits: bigint) => Promise<string>;
 
-/** The only RPC capability the faucet needs — narrowed from the full `Rpc` so it is trivial to stub. */
-export type AirdropRpc = {
-  requestAirdrop(
-    recipient: Address,
-    amount: Lamports,
-    config: { readonly commitment: Commitment },
-  ): { send(): Promise<string> };
-};
+/** Gives `recipient` `sol` SOL and resolves with the confirmed signature (`SolanaProvisioningContext.fundSol`). */
+export type SolFunder = (recipient: Address, sol: number) => Promise<string>;
 
 export type FaucetConfig = {
-  readonly rpc: AirdropRpc;
+  readonly fundSol: SolFunder;
   readonly mintUsdc: UsdcMinter;
   readonly authorization: DemoAuthorization;
   readonly allowedOrigin: string;
@@ -108,11 +102,7 @@ export const createFaucet = (config: FaucetConfig): ((request: Request) => Promi
       if (url.pathname === "/airdrop-sol") {
         const recipient = parseRecipient(body.address);
         const sol = parsePositiveNumber(body.sol, "sol", DEFAULT_AIRDROP_SOL);
-        const signature = await config.rpc
-          .requestAirdrop(recipient, lamports(BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)))), {
-            commitment: "confirmed",
-          })
-          .send();
+        const signature = await config.fundSol(recipient, sol);
         return json(request, config.allowedOrigin, 200, { signature, address: recipient, sol });
       }
 
@@ -139,7 +129,7 @@ export const createFaucet = (config: FaucetConfig): ((request: Request) => Promi
 };
 
 export type ServeFaucetOptions = {
-  readonly rpcUrl: string;
+  readonly fundSol: SolFunder;
   readonly mintUsdc: UsdcMinter;
   readonly authorization: DemoAuthorization;
   readonly allowedOrigin: string;
@@ -147,10 +137,10 @@ export type ServeFaucetOptions = {
   readonly hostname?: string;
 };
 
-/** Starts the faucet on a local validator. Binds loopback by default (same-machine demo boundary). */
+/** Starts the faucet. Binds loopback by default (same-machine demo boundary). */
 export const serveFaucet = (options: ServeFaucetOptions): { port: number; stop: () => void } => {
   const handler = createFaucet({
-    rpc: createSolanaRpc(options.rpcUrl),
+    fundSol: options.fundSol,
     mintUsdc: options.mintUsdc,
     authorization: options.authorization,
     allowedOrigin: options.allowedOrigin,

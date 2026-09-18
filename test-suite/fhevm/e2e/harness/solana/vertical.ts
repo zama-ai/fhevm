@@ -12,13 +12,13 @@ import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from "../../../src/layout";
 import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "../../../src/solana/addresses";
 import type { FheVerticalConfig } from "../../../src/solana/fhe-vertical";
 import {
-  createProvisioningContext,
   generateSolanaKeypair,
   readHostChainId,
   type GeneratedKeypair,
   type SolanaProvisioningContext,
 } from "../../../src/solana/provision";
 import { loadEnv, type TestEnv } from "../loadEnv";
+import { openProvisioning } from "./provisioning";
 import { ensureUp, type SolanaStack } from "./stack";
 
 export type VerticalTestSetup = {
@@ -37,9 +37,9 @@ export type VerticalTestSetup = {
 export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const env = loadEnv();
   const stack = await ensureUp(env);
-  const context = createProvisioningContext(env.rpcUrl, env.wsUrl);
+  const context = await openProvisioning(env);
   const wallet = await generateSolanaKeypair();
-  await context.airdropSol(wallet.signer.address, 10n);
+  await context.fundSol(wallet.signer.address, env.funding.primarySol);
   // The permit path's trust inputs, read live from the deployed stack: the signer set and
   // Decryption contract from the gateway (party ids follow this registry order), the active KMS
   // context/epoch pair from the primary host chain's ProtocolConfig — the same source the KMS

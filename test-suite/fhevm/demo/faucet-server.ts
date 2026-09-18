@@ -30,10 +30,10 @@ import {
   type Address,
 } from "@solana/kit";
 
+import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
-import { readDemoConfig } from "./config";
 import { serveFaucet, type UsdcMinter } from "./faucet";
-import { DEMO_KEYPAIRS } from "./loadDemoEnv";
+import { DEMO_KEYPAIRS, loadDemoEnv } from "./loadDemoEnv";
 import {
   associatedTokenAddress,
   createIdempotentAtaInstruction,
@@ -79,7 +79,10 @@ const buildUsdcMinter = async (options: {
 const main = async (): Promise<void> => {
   const authorization = await readDemoAuthorizationFromEnv();
   const allowedOrigin = readDemoAllowedOriginFromEnv();
-  const config = await readDemoConfig();
+  // The seeded network decides how SOL is dripped: airdrop on a local validator, transfer from the
+  // deployer wallet on devnet.
+  const { env, config } = await loadDemoEnv();
+  const { fundSol } = await openProvisioning(env);
   const mintUsdc = await buildUsdcMinter({
     rpcUrl: config.rpcUrl,
     wsUrl: config.wsUrl,
@@ -87,7 +90,7 @@ const main = async (): Promise<void> => {
     mint: address(config.mints.joinUnderlying),
     mintAuthorityKeypairPath: DEMO_KEYPAIRS.mintAuthority,
   });
-  const { port } = serveFaucet({ rpcUrl: config.rpcUrl, mintUsdc, authorization, allowedOrigin });
+  const { port } = serveFaucet({ fundSol, mintUsdc, authorization, allowedOrigin });
   console.log(`demo faucet listening on http://127.0.0.1:${port} (mock USDC mint ${config.mints.joinUnderlying})`);
 };
 

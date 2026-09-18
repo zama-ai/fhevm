@@ -105,6 +105,26 @@ export const createAccountInstruction = (parameters: {
   };
 };
 
+/** System `Transfer` (index 2): moves `lamports` from the signing `from` to `to`. */
+export const transferSolInstruction = (parameters: {
+  readonly from: TransactionSigner;
+  readonly to: Address;
+  readonly lamports: bigint;
+}): Instruction => {
+  const data = new Uint8Array(4 + 8);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, parameters.lamports, true);
+  return {
+    programAddress: SYSTEM_PROGRAM_ADDRESS,
+    accounts: [
+      signerMeta(parameters.from, AccountRole.WRITABLE_SIGNER),
+      { address: parameters.to, role: AccountRole.WRITABLE },
+    ],
+    data,
+  };
+};
+
 /** SPL Token `InitializeMint2` (tag 20): sets decimals + mint authority, no freeze authority. */
 export const initializeMint2Instruction = (parameters: {
   readonly mint: Address;

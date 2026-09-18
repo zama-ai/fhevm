@@ -34,7 +34,6 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import fs from "node:fs/promises";
 
 import {
-  createKeyPairSignerFromBytes,
   generateKeyPairSigner,
   getAddressEncoder,
   getProgramDerivedAddress,
@@ -43,14 +42,15 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
-import { resolveEnv } from "../e2e/harness/loadEnv";
+import { loadEnv } from "../e2e/harness/loadEnv";
+import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import {
   BRINGUP_KMS_CONTEXT_ID,
   bytes32HexFromId,
   readActiveKmsPair,
   readGatewayBootstrapInputs,
 } from "../src/solana/addresses";
-import { createProvisioningContext, hostConfigAddress } from "../src/solana/provision";
+import { hostConfigAddress, loadKeypairSigner } from "../src/solana/provision";
 import {
   SPL_MINT_ACCOUNT_SPACE,
   SPL_TOKEN_PROGRAM_ADDRESS,
@@ -79,15 +79,10 @@ const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
-/** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
-const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
-  const bytes = Uint8Array.from(JSON.parse(await fs.readFile(keypairPath, "utf8")) as number[]);
-  return createKeyPairSignerFromBytes(bytes);
-};
 
 
 const main = async (): Promise<void> => {
-  const env = resolveEnv();
+  const env = loadEnv();
   const configPath = resolveDemoConfigPath();
 
   // Remove any prior config up front: it is written only at the very end (step 7), so its presence
@@ -96,32 +91,29 @@ const main = async (): Promise<void> => {
   // of the file is the honest signal that no usable stack was seeded.
   await fs.rm(configPath, { force: true });
 
-  // The shared provisioning send/confirm/airdrop closures, at the seeder's own CU ceiling.
-  const provisioning = createProvisioningContext(env.rpcUrl, env.wsUrl, {
-    computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT,
-  });
+  // The shared provisioning send/confirm/fund closures, at the seeder's own CU ceiling.
+  const provisioning = await openProvisioning(env, { computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT });
   const { rpc } = provisioning;
   const send = (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> =>
     provisioning.sendTransaction(payer, instructions);
-  const airdrop = provisioning.airdropSol;
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
   // authority backs the faucet, and Alice/Bob are end users.
-  const deployer = await loadSigner(env.roots.deployerKeypairPath);
-  const mintAuthority = await loadSigner(DEMO_KEYPAIRS.mintAuthority);
-  const keeper = await loadSigner(DEMO_KEYPAIRS.keeper);
-  const alice = await loadSigner(DEMO_KEYPAIRS.alice);
-  const bob = await loadSigner(DEMO_KEYPAIRS.bob);
+  const deployer = await loadKeypairSigner(env.roots.deployerKeypairPath);
+  const mintAuthority = await loadKeypairSigner(DEMO_KEYPAIRS.mintAuthority);
+  const keeper = await loadKeypairSigner(DEMO_KEYPAIRS.keeper);
+  const alice = await loadKeypairSigner(DEMO_KEYPAIRS.alice);
+  const bob = await loadKeypairSigner(DEMO_KEYPAIRS.bob);
 
-  // Fund the payer + personas before provisioning so every subsequent step has fees available. The
-  // mint authority is funded too: `demo:faucet` makes it the fee payer AND the ATA rent payer for
-  // every /mint-usdc, so an unfunded mint authority fails the first faucet drip (and the smoke).
-  await airdrop(deployer.address, 100n);
-  await airdrop(mintAuthority.address, 10n);
-  await airdrop(keeper.address, 10n);
-  await airdrop(alice.address, 10n);
-  await airdrop(bob.address, 10n);
+  // Fund the personas before provisioning so every subsequent step has fees available. A local
+  // validator airdrops the deployer first; on devnet the deployer is the funder and pays from its
+  // own balance. The mint authority is funded too: `demo:faucet` makes it the fee payer AND the ATA
+  // rent payer for every /mint-usdc, so an unfunded mint authority fails the first faucet drip.
+  if (env.capabilities.faucet) await provisioning.fundSol(deployer.address, 100);
+  for (const actor of [mintAuthority, keeper, alice, bob]) {
+    await provisioning.fundSol(actor.address, env.funding.primarySol);
+  }
 
   // Fresh accounts created by this run.
   const mockUsdcMint = await generateKeyPairSigner();
@@ -314,6 +306,7 @@ const main = async (): Promise<void> => {
   // a malformed assembly fails at write with a named field rather than later inside an SDK call.
   const config: SolanaDemoConfig = {
     source: "demo-config",
+    network: env.network,
     chainId: env.chainId.toString(),
     rpcUrl: env.rpcUrl,
     wsUrl: env.wsUrl,

@@ -12,6 +12,7 @@ const addr = (fill: number): string => getAddressDecoder().decode(new Uint8Array
 
 const sampleConfig = (): SolanaDemoConfig => ({
   source: "demo-config",
+  network: "localnet",
   chainId: "72057594037940281",
   rpcUrl: "http://127.0.0.1:9999",
   wsUrl: "ws://127.0.0.1:9998",

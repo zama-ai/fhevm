@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 
-import { getAddressDecoder, type Address, type Lamports } from "@solana/kit";
+import { getAddressDecoder, type Address } from "@solana/kit";
 
 import type { DemoAuthorization } from "./authorization";
 import { createFaucet, type FaucetConfig } from "./faucet";
@@ -12,24 +12,22 @@ const AUTHORIZATION: DemoAuthorization = {
   token: Buffer.alloc(32, 7).toString("base64url"),
 };
 
-const stubRpc = (signature: string) => ({
-  requestAirdrop: mock((_recipient: Address, _amount: Lamports) => ({ send: async () => signature })),
-});
+const stubFunder = (signature: string) => mock(async (_recipient: Address, _sol: number) => signature);
 
 const faucet = (
   overrides: Partial<FaucetConfig> = {},
 ): {
-  readonly rpc: ReturnType<typeof stubRpc>;
+  readonly fundSol: ReturnType<typeof stubFunder>;
   readonly mintUsdc: ReturnType<typeof mock<(recipient: Address, baseUnits: bigint) => Promise<string>>>;
   readonly handler: ReturnType<typeof createFaucet>;
 } => {
-  const rpc = stubRpc("sig-air");
+  const fundSol = stubFunder("sig-air");
   const mintUsdc = mock(async (_recipient: Address, _baseUnits: bigint) => "sig-mint");
   return {
-    rpc,
+    fundSol,
     mintUsdc,
     handler: createFaucet({
-      rpc,
+      fundSol,
       mintUsdc,
       authorization: AUTHORIZATION,
       allowedOrigin: ALLOWED_ORIGIN,
@@ -56,14 +54,12 @@ const post = (
   });
 
 describe("faucet handler", () => {
-  test("airdrops SOL, converting whole SOL to lamports", async () => {
-    const { handler, rpc } = faucet();
+  test("funds SOL through the injected funder", async () => {
+    const { handler, fundSol } = faucet();
     const res = await handler(post("/airdrop-sol", { address: RECIPIENT, sol: 2 }));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ signature: "sig-air", sol: 2 });
-    const [addr, lamps] = rpc.requestAirdrop.mock.calls[0]!;
-    expect(addr).toBe(RECIPIENT as Address);
-    expect(lamps).toBe(2_000_000_000n as Lamports);
+    expect(fundSol).toHaveBeenCalledWith(RECIPIENT as Address, 2);
   });
 
   test("mints USDC in base units (6 decimals) to the recipient", async () => {
@@ -103,18 +99,18 @@ describe("faucet handler", () => {
   });
 
   test("rejects foreign origin before authentication or backend work", async () => {
-    const { handler, rpc, mintUsdc } = faucet();
+    const { handler, fundSol, mintUsdc } = faucet();
     const res = await handler(
       post("/airdrop-sol", { address: RECIPIENT }, { origin: "http://localhost:5173" }),
     );
     expect(res.status).toBe(403);
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
-    expect(rpc.requestAirdrop).not.toHaveBeenCalled();
+    expect(fundSol).not.toHaveBeenCalled();
     expect(mintUsdc).not.toHaveBeenCalled();
   });
 
   test("rejects missing or incorrect bearer credentials before backend work", async () => {
-    const { handler, rpc, mintUsdc } = faucet();
+    const { handler, fundSol, mintUsdc } = faucet();
     const missing = await handler(
       post("/airdrop-sol", { address: RECIPIENT }, { authorization: "", "x-fhevm-demo-boot-id": "" }),
     );
@@ -123,12 +119,12 @@ describe("faucet handler", () => {
       post("/mint-usdc", { address: RECIPIENT }, { authorization: "Bearer wrong" }),
     );
     expect(wrong.status).toBe(401);
-    expect(rpc.requestAirdrop).not.toHaveBeenCalled();
+    expect(fundSol).not.toHaveBeenCalled();
     expect(mintUsdc).not.toHaveBeenCalled();
   });
 
   test("rejects a stale boot before backend work", async () => {
-    const { handler, rpc, mintUsdc } = faucet();
+    const { handler, fundSol, mintUsdc } = faucet();
     const res = await handler(
       post("/airdrop-sol", { address: RECIPIENT }, {
         "x-fhevm-demo-boot-id": "c4ef95ed-2ca7-4d83-8d00-b547023ac9e2",
@@ -136,19 +132,19 @@ describe("faucet handler", () => {
     );
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ error: "stale demo boot; reopen the launch URL" });
-    expect(rpc.requestAirdrop).not.toHaveBeenCalled();
+    expect(fundSol).not.toHaveBeenCalled();
     expect(mintUsdc).not.toHaveBeenCalled();
   });
 
   test("rejects a bad address with a 400 and does not touch the RPC", async () => {
-    const { handler, rpc } = faucet();
+    const { handler, fundSol } = faucet();
     const res = await handler(post("/airdrop-sol", { address: "not-an-address" }));
     expect(res.status).toBe(400);
-    expect(rpc.requestAirdrop).not.toHaveBeenCalled();
+    expect(fundSol).not.toHaveBeenCalled();
   });
 
   test("keeps health public and adds CORS only for the exact browser origin", async () => {
-    const { handler, rpc, mintUsdc } = faucet();
+    const { handler, fundSol, mintUsdc } = faucet();
     const direct = await handler(new Request("http://127.0.0.1:8090/health"));
     expect(direct.status).toBe(200);
     expect(await direct.json()).toEqual({ ok: true });
@@ -159,7 +155,7 @@ describe("faucet handler", () => {
     );
     expect(browser.status).toBe(200);
     expect(browser.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
-    expect(rpc.requestAirdrop).not.toHaveBeenCalled();
+    expect(fundSol).not.toHaveBeenCalled();
     expect(mintUsdc).not.toHaveBeenCalled();
   });
 });
