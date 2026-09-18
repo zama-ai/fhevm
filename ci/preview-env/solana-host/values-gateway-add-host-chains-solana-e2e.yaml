@@ -5,7 +5,7 @@
 # GatewayConfig.HostChain.aclAddress / fhevmExecutorAddress are EVM `address` fields, so they
 # cannot hold a Solana program id. Local e2e (test-suite/fhevm/src/solana/deploy.ts) registers
 # zeros here; the coprocessor DB row (later, not this Job) stores the zama_host program id as
-# acl_contract_address. Chain id MUST stay a quoted string: 9223372036854788153 is above
+# acl_contract_address. Chain id MUST stay a quoted string: 72057594037940281 is above
 # JS MAX_SAFE_INTEGER.
 #
 # task:addHostChainsToGatewayConfig is additive. This Job appends the Solana chain without
@@ -32,7 +32,7 @@ scDeploy:
     - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
     - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
     - {name: NUM_HOST_CHAINS, value: "1"}
-    - {name: HOST_CHAIN_CHAIN_ID_0, value: "9223372036854788153"}
+    - {name: HOST_CHAIN_CHAIN_ID_0, value: "72057594037940281"}
     - {name: HOST_CHAIN_NAME_0, value: "fhevm-ci solana host chain"}
     - {name: HOST_CHAIN_WEBSITE_0, value: "https://example.invalid"}
     - {name: HOST_CHAIN_FHEVM_EXECUTOR_ADDRESS_0, value: "0x0000000000000000000000000000000000000000"}
