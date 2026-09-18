@@ -134,6 +134,7 @@ pub fn fhe_execute<'info>(
     let previous_bank_hash = previous_bank_hash(clock.slot)?;
     let handle_context = ExecutionHandleContext {
         derivation: HandleDerivationContext {
+            program_id: crate::ID,
             chain_id: ctx.accounts.host_config.chain_id,
             previous_bank_hash,
             unix_timestamp: clock.unix_timestamp,

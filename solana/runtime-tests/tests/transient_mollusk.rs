@@ -686,6 +686,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
     ]);
     let svm = host_svm();
     let context = host::HandleDerivationContext {
+        program_id: host::ID,
         chain_id: host::SOLANA_POC_CHAIN_ID,
         previous_bank_hash: svm
             .sysvars
@@ -1003,6 +1004,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
             config_account.data = serialized_account(settings);
             let svm = host_svm();
             let context = host::HandleDerivationContext {
+                program_id: host::ID,
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 previous_bank_hash: svm
                     .sysvars
@@ -1225,11 +1227,13 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
     let replay = ledger.replay_fhe_cpis(&context, &result);
     assert_eq!(replay.executions, 1);
     assert_eq!(replay.persistent_outputs, 0);
-    let first = host::computed_rand_handle(event.seeds[0].seed, 5, host::SOLANA_POC_CHAIN_ID);
+    let first =
+        host::computed_rand_handle(event.seeds[0].seed, 5, host::ID, host::SOLANA_POC_CHAIN_ID);
     let second = host::computed_rand_bounded_handle(
         zama_solana_test_kit::u256_be(16),
         event.seeds[1].seed,
         5,
+        host::ID,
         host::SOLANA_POC_CHAIN_ID,
     );
     ledger.u64_for_handle(first);

@@ -240,8 +240,10 @@ Delegation emits no event; readers read the record (DD-044).
 
 **28. [HOLDS]** Handles the listener re-derives are byte-identical to the
 on-chain ones, because the listener imports the program's own derivation
-functions and argument types rather than reimplementing them (fixtures and
-the e2e derivation check this too).
+functions and argument types rather than reimplementing them, and supplies
+the followed program id (`--program-id`) as `HandleDerivationContext.program_id`
+instead of hashing the crate's compiled `declare_id!` (fixtures and the e2e
+derivation check this too).
 
 **29. [HOLDS]** Every transaction is independently interpretable: replay from
 instruction bytes alone reconstructs full history with zero account reads
@@ -261,9 +263,11 @@ plaintext.
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
 rolled back (safe only because of #31).
 
-**33. [RISK]** Nothing pins a deployed program build to the listener build; the
-shared-crate identicality guarantee (#28) silently assumes matching
-versions.
+**33. [RISK]** Nothing pins a deployed program build to the listener build.
+#28 now takes the followed program id as an input, so a listener compiled
+for one `declare_id!` can still derive another deployment's handles.
+Instruction layout and decoder types still silently assume matching crate
+revisions.
 
 ## F. Admin, config & custody
 

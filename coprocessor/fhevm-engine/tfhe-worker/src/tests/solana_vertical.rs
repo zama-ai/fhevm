@@ -166,6 +166,7 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         0,
         boundary_mask,
         &host::HandleDerivationContext {
+            program_id: host::ID,
             chain_id: host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: PREVIOUS_BANK_HASH,
             unix_timestamp: FIXTURE_UNIX_TIMESTAMP,
@@ -312,6 +313,7 @@ fn reconstruct_transfer_events(
         &batch,
         &[],
         &ReconstructContext {
+            program_id: host::ID,
             chain_id: host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: PREVIOUS_BANK_HASH,
             unix_timestamp: clock.unix_timestamp,
