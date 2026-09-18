@@ -24,8 +24,8 @@ format is not forward-compatible across minor versions:
 
 The SDK no longer picks a `tfhe.wasm` version per chain. Each release targets
 exactly one protocol line and bundles exactly one `tfhe.wasm` and one
-`tkms.wasm` build for it — currently protocol `0.15.0`, `tfhe.wasm@1.6.2`, and
-`tkms.wasm@0.14.0-1` (see [Off-chain components](#off-chain-components)).
+`tkms.wasm` build for it — currently protocol `0.15.0`, `tfhe.wasm@1.8.1`, and
+`tkms.wasm@0.15.0-0` (see [Off-chain components](#off-chain-components)).
 There is no version-negotiation table, no per-chain fallback, and no runtime
 option to override it (the old `moduleVersions` runtime-config field is gone —
 see [Runtime configuration](runtime-configuration.md)).
@@ -89,9 +89,9 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025.
 | `0.10.0` | `0.2.0` | `0.1.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   |
 | `0.11.0` | `0.2.0` | `0.2.0`       | `0.1.0`     | `0.2.0`       | `0.1.0`  | -              | `0.1.0`   |
 | `0.12.0` | `0.3.0` | `0.3.0`       | `0.2.0`     | `0.2.0`       | `0.2.0`  | -              | `0.1.0`   |
-| `0.13.0` | `0.4.0` | `0.4.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`        | `0.1.0`   |
-| `0.14.0` | `0.5.0` | `0.5.0`       | `0.4.0`     | `0.2.0`       | `0.4.0`  | `0.2.0`        | `0.1.0`   |
-| `0.15.0` | ?       | ?             | ?           | ?             | ?        | ?              | ?         |
+| `0.13.0` | `0.4.0` | `0.5.0`       | `0.3.0`     | `0.2.0`       | `0.3.0`  | `0.1.0`        | `0.1.0`   |
+| `0.14.0` | `0.5.0` | `0.6.0`       | `0.4.0`     | `0.2.0`       | `0.4.0`  | `0.2.0`        | `0.1.0`   |
+| `0.15.0` | `0.5.0` | ?             | `0.4.0`     | `0.2.0`       | `0.4.0`  | `0.3.0`        | `0.1.0`   |
 
 ### Off-chain components
 
@@ -102,7 +102,7 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025.
 | `0.12.0` | `1.5.4`         | `0.13.10`   | `v1`       |
 | `0.13.0` | `1.6.1`         | `0.13.20-0` | `v1`       |
 | `0.14.0` | `1.6.2`         | `0.14.0-1`  | `v2`       |
-| `0.15.0` | ?               | ?           | ?          |
+| `0.15.0` | `1.8.1`         | `0.15.0-0`  | `v2`       |
 
 ## PubKey/CRS versions on deployed chains and TFHE readability
 

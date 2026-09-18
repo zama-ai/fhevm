@@ -6,15 +6,48 @@
 
 #### Added
 
-- **Protocol `0.15.0` support.** `SDK_PROTOCOL_API_MINOR_VERSION` moves from `14` to `15` — the
-  SDK now natively speaks FHEVM protocol v11 through v15 on-chain APIs, and stays compatible with
-  v16+ chains via the protocol's backward-compatibility guarantee.
+- **Protocol `0.15.0` support.** `SDK_PROTOCOL_API_MINOR_VERSION` moves from `14` to `15`.
+  **Breaking:** this SDK release only supports FHEVM protocol `0.15.0` through `0.17.0` — older
+  protocol lines are no longer supported. Upgrade your host chain to protocol `>= 0.15.0` before
+  upgrading to this SDK version.
 
 #### Changed
 
 - **Smaller npm package.** The `tkms` WASM version directories are now excluded from the
   published tarball the same way the `tfhe` ones already were (`files` in `src/package.json`),
   on top of the base64 WASM-payload deduplication shipped in `v0.14.1-0`.
+- **Breaking: multi-version WASM support removed.** The SDK now bundles and supports exactly one
+  `tfhe` and one `tkms` WASM build — bumped to `tfhe` `v1.8.1` (from `v1.6.2`) and `kms_lib`
+  `v0.15.0-0` (from `v0.14.0-1`) — instead of resolving among several. The `moduleVersions` option
+  is removed from `FhevmOptions`, `FhevmEncryptOptions`, `FhevmDecryptOptions`, and
+  `ResolvedFhevmOptions`; `ModuleVersionCompatibilityCheck` and the per-mode
+  `FhevmEncryptModuleVersions`/`FhevmDecryptModuleVersions`/`FhevmModuleVersions` types are gone.
+  If you were pinning an explicit `tfhe`/`kms` version via `moduleVersions`, remove that option —
+  the SDK now always uses its single bundled build. `TfheVersion`/`TkmsVersion` remain exported
+  (they now each admit only one value).
+- The ERC-1271 `isValidSignature` STATICCALL gas cap (`ERC1271_GAS_LIMIT`) is raised from `100_000`
+  to `250_000`, matching the relayer/KMS default — a nested Safe (a Safe owning a Safe) alone costs
+  ~91k gas, so the old cap could reject valid nested-multisig signatures.
+
+#### Fixed
+
+- **Hardened `hexToBytes`.** It now rejects non-hexadecimal characters instead of silently
+  coercing them to `0` via `NaN`, and strips a `0x`/`0X` prefix case-insensitively instead of only
+  the lowercase form.
+- Fixed an `abortableSleep` listener leak: the abort listener stayed attached to the `AbortSignal`
+  after a sleep resolved normally (only removed on actual abort), leaking listeners on long-lived
+  or reused `AbortController` instances.
+- The relayer's `no_attestation_consensus` (500) error label is now recognized and surfaced as a
+  proper `RelayerResponseApiError` instead of a generic `RelayerResponseInvalidBodyError`.
+- `setFhevmRuntimeConfig` (ethers and viem) now also compares `auth` across repeated calls and
+  throws on a mismatch, as already documented — a second call with different `auth` previously
+  silently kept the first one instead of throwing.
+- Fixed the `@fhevm/sdk/chains` subpath's `package.json` pointing its `types`/`module`/`main`
+  fields at a nonexistent `_types/chains/…` (etc.) path instead of `_types/core/chains/…`,
+  breaking type resolution for that import under some `moduleResolution` settings. Added a
+  `typesVersions` map covering all subpaths (`base`, `chains`, `types`, `actions/base`,
+  `actions/chain`, `actions/decrypt`, `actions/encrypt`, `actions/host`) for compatibility with
+  the classic (`node`) TypeScript module-resolution mode.
 
 ### Internal
 
@@ -24,10 +57,26 @@
 - Fixed `test/browser-smoke/playwright.config.ts` resolving `vite.config.ts` relative to the
   wrong root under Vite, breaking `test:browser-smoke`; it now resolves an absolute path via
   `import.meta.url`.
-- `contracts/scripts/fhetest-deploy.sh` now tolerates chains where `ProtocolConfig` isn't deployed
-  (`localstack_v11`, `localstack_v12`, pre-v0.13.0), printing a placeholder instead of failing.
+- `contracts/scripts/fhetest-deploy.sh` now tolerates chains where `ProtocolConfig` isn't deployed,
+  printing a placeholder instead of failing.
 - `test/fheTest/setupCommon.ts`: Foundry `cast` invocations now enforce a 30s timeout so a
   stalled local Anvil RPC call fails fast instead of hanging the test run.
+- Large removal of the multi-version WASM machinery: `HyperWasmSolver` is replaced by a
+  single-version `WasmVersions-p.ts`/`ProtocolVersionResolver-p.ts` targeting one fixed protocol
+  version, the now-dead `tfheModuleVersion-p.ts`/`tkmsModuleVersion-p.ts`/
+  `getKmsContextSignersAndThreshold-p.ts` are removed, the `test/multi-wasm/` Playwright suite and
+  its planning notes are deleted, the dev/prod WASM build-profile distinction (`BUILD_PROFILE`) is
+  dropped, and `wasm:install` now prunes any installed `src/wasm/<lib>/v*` directory no longer
+  listed in the manifest (opt out with `--no-prune`). Legacy localstack test-chain support tied to
+  older protocol lines is also removed.
+- `install-tfhe.sh`/`install-from-manifest.mjs` now install the `tfhe-rs` client WASM build from
+  the `tfhe-client` npm package for `tfhe` `>= 1.7.0` (which split it out of `tfhe`), keeping the
+  old `tfhe` package for earlier versions.
+- Added a standalone memory-leak stress harness (`test/memleaks/`, `npm run test:memleaks`) that
+  runs long encrypt/decrypt/serialize stress loops against a real localstack stack and samples
+  process/WASM memory across six scenarios (client reuse/churn, full roundtrip, value churn,
+  permit churn, provider churn) to classify each metric as plateauing or growing. Not wired into
+  CI yet — thresholds are placeholders pending tuning.
 
 ---
 
