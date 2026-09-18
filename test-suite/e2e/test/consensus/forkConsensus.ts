@@ -534,7 +534,7 @@ describe('Fork byte consensus', function () {
     emitFaultObservation('FORK-03-ORPHAN-ALLOW-INERT', [forkOnlyHandle, canonicalHandle, recoveryHandle], {
       replacement_block: recoveryReceipt.blockHash, sentinel_transaction: recoveryReceipt.hash,
     });
-    emitAssertions('FORK-03-ORPHAN-ALLOW-INERT', ['fault'], 'Forked operator ingested the exact canonical replacement block and completed its fresh sentinel transaction and handle.');
+    emitAssertions('FORK-03-ORPHAN-ALLOW-INERT', ['fault'], 'Forked operator ingested the receipt-identified canonical sentinel block and completed its fresh sentinel transaction and handle.');
 
     // The safety property. Two halves, and the previous version had only the
     // first: absence of quorum says nothing about authorization.

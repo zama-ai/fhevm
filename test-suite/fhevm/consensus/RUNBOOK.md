@@ -5,7 +5,8 @@ one software, backend and hardware class. The [inventory](inventory.yaml) is the
 case contract; the [workflow](../../../.github/workflows/test-suite-consensus.yml)
 defines which backend CI requires for each case. A green campaign covers that
 inventory at the recorded revision and topology, not every failure mode of the
-coprocessor fleet.
+coprocessor fleet. Campaign results are recorded separately from these contracts;
+see the [validation notes for e9180f14c](VALIDATION-e9180f14c.md).
 
 ## What the cases establish
 
@@ -18,7 +19,7 @@ coprocessor fleet.
 | REORG-01 | Receipt-identified replacement blocks differ, preserve sourcing, are ingested by every operator, and retain matching bytes and authorized quorum. | Controlled local Anvil replacement, not arbitrary reorg depth or production network behavior. |
 | FORK-01 | Different branch blocks share the EVM-visible handle preimage, mint the same handle, agree on bytes/digests, and reach distinct authorized-member quorum. | Cross-branch provenance is deliberately excluded: producing blocks/transactions legitimately differ. |
 | FORK-02 | Successful branch receipts mint different handles. Canonical operators pass a later sentinel without acquiring the fork-only handle. | Absence is bounded by observed ingestion progress; it is not a claim about all future history. |
-| FORK-03 | The forked operator first observes an orphan-only allow, then ingests the exact canonical replacement block and completes a fresh sentinel transaction/handle. The orphan handle has no quorum during the observation window and canonical decryption rejects it at the ACL check; a canonical positive control decrypts correctly. | Does not claim that orphan ACL rows are physically deleted, or test stale-child repair/replay. F2 supplies the orphan handle, but F3 must produce its own recovery evidence. |
+| FORK-03 | The forked operator first observes an orphan-only allow, then ingests the receipt-identified block containing a fresh sentinel on canonical history and completes that exact transaction/handle. The orphan handle has no quorum during the observation window and canonical decryption rejects it at the ACL check; a canonical positive control decrypts correctly. | The block check identifies the later sentinel block, not the initial replacement block. Does not claim that orphan ACL rows are physically deleted, or test stale-child repair/replay. F2 supplies the orphan handle, but F3 must produce its own recovery evidence. |
 | SCH-01 | All materialization checks run under deliberately different scheduling settings. Running configuration and executed batch/window measurements must demonstrate diversity; bytes/digests must still agree. | One GPU is sufficient. No multi-device coverage, throughput guarantee, or exhaustive scheduling interleaving coverage is claimed. |
 | REG-01 / REG-02 | Selected Rust regressions exercise listener pool rebinding/reconciliation and daemon error exit behavior. | These runs do **not** revert production fixes. They make no mutation-sensitivity claim. |
 | HAR-02 / HAR-03 | Inventory/result aggregation and readiness contracts. | Unit/contract coverage does not replace a fresh stack boot or live ownership/readiness checks. |
@@ -125,10 +126,16 @@ revision records with new ones to fill missing cases.
 
 ## Failure attribution and recovery
 
-Results remain staged until EXIT cleanup finishes. An individual recorded
-FAIL/INVALID/NOT_RUN keeps successful siblings intact when shared gates and
-cleanup succeeded; the overall run still fails. A failed shared hook, validity
-gate, refused record, or failed recovery invalidates provisional sibling passes.
+Results remain staged until EXIT cleanup finishes. Finalization preserves
+already-staged sibling PASS records when a separate FAIL/INVALID/NOT_RUN
+represents the runner's error and shared gates and cleanup succeeded. The fork
+runner uses this for individually attributed case failures. Materialization
+treats any nonzero suite exit as a shared failure and marks all its cases
+unsuccessful; it does not preserve passing bodies from that failed suite.
+Materialization can preserve siblings when the suite exits successfully but a
+case marker is missing and gets its own NOT_RUN record. The overall run still
+fails in either situation. A failed shared hook, validity gate, refused record,
+or failed recovery invalidates provisional sibling passes.
 A killed process that never publishes results is missing coverage, not success.
 F1, F2 and F3 carry separate workload, block and observation-time receipts; F1's
 receipt cannot stand in for either later case.

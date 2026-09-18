@@ -204,7 +204,7 @@ cases:
     fault: { mechanism: branch-replacement, stage: after the orphan allow was ingested, observation: the forked operator follows canonical history and processes a canonical sentinel }
     participants: { compute: all, submit: all, quorum: forbidden }
     assertions:
-      - fault: the forked operator ingests the exact replacement block and completes a fresh canonical sentinel
+      - fault: the forked operator ingests the receipt-identified canonical sentinel block and completes that fresh sentinel
       - safety: the orphan handle does not reach quorum
       - safety: a real decryption request for the orphan handle is REJECTED through the authorization interface
       - liveness: the canonical control decrypts successfully through the same interface
