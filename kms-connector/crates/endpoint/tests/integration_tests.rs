@@ -20,9 +20,10 @@ use connector_utils::{
 };
 use endpoint::core::{Config, Endpoint};
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, HandleEntry, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
-    PublicDecryptionResponse, RequestValidity, USER_DECRYPTION_ROUTE, UserDecryptionRequest,
-    UserDecryptionResponse, VERSION_ROUTE, VersionResponse,
+    AttestationType, ErrorCode, ErrorResponse, HandleEntry, PUBLIC_DECRYPTION_ROUTE,
+    PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity, USER_DECRYPTION_ROUTE,
+    UserDecryptionPayload, UserDecryptionRequest, UserDecryptionResponse, VERSION_ROUTE,
+    VersionResponse,
 };
 use rstest::rstest;
 use sqlx::{Pool, Postgres, Row};
@@ -105,6 +106,7 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
 
     info!("Checking the stored RFC016 request row...");
     let row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
+    let payload = &request.payload;
     assert_eq!(row.get::<RequestSource, _>("source"), RequestSource::Http);
     assert_eq!(
         row.get::<OperationStatus, _>("status"),
@@ -112,35 +114,35 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
     );
     assert_eq!(
         row.get::<Vec<Vec<u8>>, _>("ct_handles"),
-        vec![request.handles[0].handle.to_vec()]
+        vec![payload.handles[0].handle.to_vec()]
     );
     assert_eq!(
         row.get::<Vec<Vec<u8>>, _>("handle_owner_addresses"),
-        vec![request.handles[0].ownerAddress.to_vec()]
+        vec![payload.handles[0].ownerAddress.to_vec()]
     );
     assert_eq!(
         row.get::<Vec<Vec<u8>>, _>("handle_contract_addresses"),
-        vec![request.handles[0].contractAddress.to_vec()]
+        vec![payload.handles[0].contractAddress.to_vec()]
     );
     assert_eq!(
         row.get::<Vec<Vec<u8>>, _>("allowed_contracts"),
-        vec![request.allowedContracts[0].to_vec()]
+        vec![payload.allowedContracts[0].to_vec()]
     );
     assert_eq!(
         row.get::<Vec<u8>, _>("user_address"),
-        request.userAddress.to_vec()
+        payload.userAddress.to_vec()
     );
     assert_eq!(
         row.get::<Vec<u8>, _>("public_key"),
-        request.publicKey.to_vec()
+        payload.publicKey.to_vec()
     );
     assert_eq!(
         row.get::<i64, _>("start_timestamp"),
-        request.requestValidity.startTimestamp as i64
+        payload.requestValidity.startTimestamp as i64
     );
     assert_eq!(
         row.get::<i64, _>("duration_seconds"),
-        request.requestValidity.durationSeconds as i64
+        payload.requestValidity.durationSeconds as i64
     );
     assert_eq!(
         row.get::<Option<Vec<u8>>, _>("signature"),
@@ -473,7 +475,7 @@ async fn test_client_disconnect_releases_permit() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {
-        max_body_bytes: 512,
+        max_body_bytes: 1024,
         ..config
     })
     .await?;
@@ -525,13 +527,23 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let body = error_body(response).await;
     assert_eq!(body.code, ErrorCode::Malformed);
     assert!(body.message.contains("unsupported chain id"));
-    let response = endpoint
-        .post_user(&UserDecryptionRequest {
-            handles: vec![],
-            ..user_request()
-        })
-        .await;
+
+    // Empty handle list.
+    let mut request = user_request();
+    request.payload.handles.clear();
+    let response = endpoint.post_user(&request).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(error_body(response).await.code, ErrorCode::Malformed);
+
+    // Unsupported attestation type.
+    let mut request = user_request();
+    request.attestationType = "random_attestation_type".to_owned();
+    let response = endpoint.post_user(&request).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = error_body(response).await;
+    assert_eq!(body.code, ErrorCode::UnsupportedAttestationType);
+    assert!(!body.retryable);
+    assert_eq!(body.decryption_id, None);
 
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
@@ -768,20 +780,23 @@ fn public_request() -> PublicDecryptionRequest {
 
 fn user_request() -> UserDecryptionRequest {
     UserDecryptionRequest {
-        handles: vec![HandleEntry {
-            handle: rand_handle(CHAIN_ID),
-            contractAddress: Address::repeat_byte(0x33),
-            ownerAddress: Address::repeat_byte(0x44),
-        }],
-        userAddress: Address::repeat_byte(0x55),
-        publicKey: Bytes::from(vec![0x20; 32]),
-        allowedContracts: vec![Address::repeat_byte(0x33)],
-        requestValidity: RequestValidity {
-            startTimestamp: 1_770_000_000,
-            durationSeconds: 300,
+        attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+        payload: UserDecryptionPayload {
+            handles: vec![HandleEntry {
+                handle: rand_handle(CHAIN_ID),
+                contractAddress: Address::repeat_byte(0x33),
+                ownerAddress: Address::repeat_byte(0x44),
+            }],
+            userAddress: Address::repeat_byte(0x55),
+            publicKey: Bytes::from(vec![0x20; 32]),
+            allowedContracts: vec![Address::repeat_byte(0x33)],
+            requestValidity: RequestValidity {
+                startTimestamp: 1_770_000_000,
+                durationSeconds: 300,
+            },
+            extraData: Bytes::from(vec![0x00]),
         },
         signature: Bytes::from(vec![0x66; 65]),
-        extraData: Bytes::from(vec![0x00]),
     }
 }
 
