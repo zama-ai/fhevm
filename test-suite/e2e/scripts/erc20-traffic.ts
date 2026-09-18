@@ -15,6 +15,10 @@
 //         superseded within seconds so nothing else ever reads them again. Exit 1 on any
 //         mismatch.
 //
+// TRAFFIC_BURST_FILE present -> the loop waits TRAFFIC_BURST_INTERVAL_SECS (default 10) between
+// steps instead of TRAFFIC_INTERVAL_SECS. Turn it on around the proposal so several balances land
+// inside the upgrade window, which lasts about a minute.
+//
 // State (contract, expected balances, counters) lives in TRAFFIC_STATE_FILE, so the same token is
 // used across coprocessor resets and the expectation survives the whole round.
 import fs from 'node:fs/promises';
@@ -71,7 +75,11 @@ const cmd = process.env.TRAFFIC_CMD ?? '';
 const dir = process.env.TRAFFIC_DIR ?? '/data/erc20-traffic';
 const stateFile = process.env.TRAFFIC_STATE_FILE ?? path.join(dir, `${network.name}.json`);
 const stopFile = process.env.TRAFFIC_STOP_FILE ?? path.join(dir, `${network.name}.stop`);
+// While this file exists the loop uses the burst interval instead. Used to pack more writes into
+// the upgrade window, which lasts about a minute and is otherwise easy to miss entirely.
+const burstFile = process.env.TRAFFIC_BURST_FILE ?? path.join(dir, `${network.name}.burst`);
 const intervalSecs = Number(process.env.TRAFFIC_INTERVAL_SECS ?? '60');
+const burstIntervalSecs = Number(process.env.TRAFFIC_BURST_INTERVAL_SECS ?? '10');
 const maxIterations = Number(process.env.TRAFFIC_MAX_ITERATIONS ?? '0'); // 0 = until stop file
 const initialMint = BigInt(process.env.TRAFFIC_INITIAL_MINT ?? '1000000');
 const mintAmount = BigInt(process.env.TRAFFIC_MINT_AMOUNT ?? '100000');
@@ -251,7 +259,7 @@ const loop = async () => {
   state.running = true;
   state.startedAt = now();
   await saveState(state);
-  log(`loop: token ${state.contractAddress}, interval ${intervalSecs}s, mint every ${mintEvery}, decrypt every ${decryptEvery}`);
+  log(`loop: token ${state.contractAddress}, interval ${intervalSecs}s (burst ${burstIntervalSecs}s), mint every ${mintEvery}, decrypt every ${decryptEvery}`);
 
   let decryptCursor = 0;
   while (!(await fileExists(stopFile)) && (maxIterations === 0 || state.counters.iterations < maxIterations)) {
@@ -291,8 +299,10 @@ const loop = async () => {
     state.counters.iterations = i;
     state.lastIterationAt = now();
     await saveState(state);
-    // Sleep in short slices so a stop request is honored within a few seconds.
-    for (let waited = 0; waited < intervalSecs && !(await fileExists(stopFile)); waited += 2) {
+    // Sleep in short slices so a stop request is honored within a few seconds. The burst file is
+    // re-read every iteration, so it can be turned on and off while the loop runs.
+    const sleepSecs = (await fileExists(burstFile)) ? burstIntervalSecs : intervalSecs;
+    for (let waited = 0; waited < sleepSecs && !(await fileExists(stopFile)); waited += 2) {
       await sleep(2000);
     }
   }

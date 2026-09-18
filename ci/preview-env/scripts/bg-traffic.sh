@@ -19,7 +19,7 @@
 #      GATEWAY_RPC_URL (optional, for the gateway balances in `status`).
 set -euo pipefail
 
-verb="${1:?usage: bg-traffic.sh setup|start|status|verify|stop|teardown}"
+verb="${1:?usage: bg-traffic.sh setup|start|status|verify|burst on|burst off|stop|teardown}"
 : "${NAMESPACE:?}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 script_src="${root}/test-suite/e2e/scripts/erc20-traffic.ts"
@@ -69,6 +69,7 @@ traffic_env=(
   "TRAFFIC_MINT_EVERY=${TRAFFIC_MINT_EVERY:-10}"
   "TRAFFIC_MAX_TRANSFER=${TRAFFIC_MAX_TRANSFER:-1000}"
   "TRAFFIC_MAX_ITERATIONS=${TRAFFIC_MAX_ITERATIONS:-0}"
+  "TRAFFIC_BURST_INTERVAL_SECS=${TRAFFIC_BURST_INTERVAL_SECS:-10}"
 )
 
 # Run erc20-traffic.ts in the chain's pod with TRAFFIC_CMD=$2 (+ extra env words).
@@ -200,7 +201,7 @@ case "${verb}" in
 setup)
   for c in "${chains[@]}"; do
     ensure_pod "${c}"
-    run_traffic "${c}" setup 2>&1 | grep -E "\[traffic|Error|error" || true
+    run_traffic "${c}" setup 2>&1 | grep --line-buffered -E "\[traffic|Error|error" || true
     snapshot_state "${c}"
   done
   ;;
@@ -260,9 +261,30 @@ verify)
   for c in "${chains[@]}"; do
     run_traffic "${c}" verify \
       "TRAFFIC_WINDOW_START=$(window_start_block "${c}")" "TRAFFIC_CUTOVER_AT=$(cutover_at)" 2>&1 \
-      | grep -E "\[traffic|Error" || rc=1
+      | grep --line-buffered -E "\[traffic|Error" || rc=1
   done
   [[ "${rc}" == "0" ]] || fail "verify failed on at least one chain"
+  ;;
+burst)
+  # More writes per minute while the upgrade window is open, so several balances land inside it.
+  # The loop re-reads the flag every iteration, so this works on a running loop.
+  case "${2:-on}" in
+  on)
+    for c in "${chains[@]}"; do
+      kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- \
+        touch "/data/erc20-traffic/$(hh_network "${c}").burst"
+      echo "== ${c}: burst on (${TRAFFIC_BURST_INTERVAL_SECS:-10}s between steps)"
+    done
+    ;;
+  off)
+    for c in "${chains[@]}"; do
+      kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- \
+        rm -f "/data/erc20-traffic/$(hh_network "${c}").burst"
+      echo "== ${c}: burst off"
+    done
+    ;;
+  *) fail "usage: bg-traffic.sh burst on|off" ;;
+  esac
   ;;
 stop)
   for c in "${chains[@]}"; do

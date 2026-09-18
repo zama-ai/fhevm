@@ -369,6 +369,11 @@ See what it would do, without doing it:
 DRY_RUN=true bash ci/preview-env/scripts/bg-reset.sh
 ```
 
+**Wait about two minutes after stopping traffic.** The reset refuses to run while the environment
+is still busy, and it looks back 120 seconds, so it will reject you even once the loops are
+stopped: `party 1 received N op(s)/input(s) in the last 120s`. That is the guard working. Wait and
+run it again rather than reaching for `FORCE=true`.
+
 Then do it:
 
 ```bash
@@ -622,7 +627,19 @@ agree.
 
 Same for both cases. **Read it through before you start, the interesting part is short.**
 
-### Step 1. Send it
+### Step 1. Turn on burst traffic, then send it
+
+The window is only open for about a minute. At the normal rate of one transaction per minute per
+chain, often nothing at all is written while it is open. Speed the loop up first:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh burst on
+```
+
+**Expect:** `burst on (10s between steps)` for each chain. The loop re-reads this every step, so it
+takes effect immediately without restarting anything. Turn it off again in step 5.
+
+Then send the proposal:
 
 ```bash
 bash ci/preview-env/scripts/bg-propose.sh send
@@ -684,7 +701,15 @@ kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
 
 **Expect:** `v0.15.0`. Before the cutover it says `0.14.0`.
 
-### Step 5. Confirm the cutover
+### Step 5. Turn burst off and confirm the cutover
+
+The window is closed, so put the traffic loop back to its normal rate:
+
+```bash
+bash ci/preview-env/scripts/bg-traffic.sh burst off
+```
+
+Then check the cutover itself:
 
 ```bash
 bash ci/preview-env/scripts/bg-checkpoints.sh cutover
@@ -743,7 +768,7 @@ All of these must be true:
 - [ ] Relayer / KMS connector / test-suite on the new version **before** the cutover.
 - [ ] Green started, all its pods `Running` with 0 restarts, including the consensus detector.
 - [ ] Snapshot 2: every line `OK` — **Case A only**.
-- [ ] Traffic was running during the whole window — **Case A and B**.
+- [ ] Traffic was running during the whole window, with burst on — **Case A and B**.
 - [ ] No traffic was running during the window, and the cutover still happened — **Case C**.
 - [ ] Version changed to `v0.15.0`.
 - [ ] `cutover` passed.
