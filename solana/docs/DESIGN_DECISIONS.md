@@ -2574,11 +2574,11 @@ Why not the alternatives:
 
 | Option | Why not |
 |---|---|
-| `#[cfg(feature = "<env>")]` per Zama (the tree before this entry) | The id lived in `lib.rs` × 4, `Anchor.toml` and the deployer. Any crate linking `zama-host` inherited whichever feature was on; the host-listener derived handles under the wrong id until #4043. Each Zama added `#[cfg]` lines to four crates. |
+| `#[cfg(feature = "<env>")]` per Zama (the tree before this entry) | The id lived in `lib.rs` × 4, `Anchor.toml` and the deployer. Any crate linking `zama-host` inherited whichever feature was on, so a listener built without the preview feature reconstructed handles under the localnet id. Each Zama added `#[cfg]` lines to four crates. |
 | `anchor keys sync` | Rewrites source in CI, and `Anchor.toml` is keyed by cluster. zama-devnet, zama-testnet and preview share Solana devnet, so they collide. |
 | One id on every cluster (Token-program style) | Zero build variance and the Solana idiom, but one Zama per cluster. Preview runs on public devnet to exercise the Yellowstone and RPC path, so it needs its own id there. Revisit if preview moves to an in-namespace validator. |
 | Zama identity in HostConfig, one program id | Rejected in DD-051: tenants under one program share handle space and PDA seeds. |
 
-Off-chain code never needs the id at build time. The listener passes its configured
-`--program-id` into handle derivation (#4043); the connector, relayer and SDK derive PDAs from
-configured ids. Adding a Zama is a new JSON file plus deployer keypairs. No Rust change.
+Off-chain code never needs the id at build time. The connector, relayer and SDK derive PDAs from
+configured ids. Handle reconstruction still hashes the compiled `zama-host` id (#4043). Adding a
+Zama is a new JSON file plus deployer keypairs. No Rust change.

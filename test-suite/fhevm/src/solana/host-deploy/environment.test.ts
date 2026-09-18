@@ -51,10 +51,26 @@ test('every environment file names the four programs; Anchor.toml matches localn
   const localnetSection = anchor.split('[programs.localnet]')[1]!.split('[')[0]!;
   for (const environment of SOLANA_ENVIRONMENTS) {
     const file = JSON.parse(await readFile(path.join(REPO_ROOT, 'solana/environments', `${environment}.json`), 'utf8'));
+    expect(Object.keys(file).sort()).toEqual(['features', 'programs']);
     expect(Object.keys(file.programs).sort()).toEqual([...PROGRAMS].sort());
     if (environment === 'localnet') {
       for (const program of PROGRAMS) expect(localnetSection).toContain(`${program} = "${file.programs[program]}"`);
     }
+  }
+});
+
+test('preview-env enables admin-sweep on zama-host only', async () => {
+  const preview = JSON.parse(
+    await readFile(path.join(REPO_ROOT, 'solana/environments/preview-env.json'), 'utf8'),
+  );
+  const localnet = JSON.parse(
+    await readFile(path.join(REPO_ROOT, 'solana/environments/localnet.json'), 'utf8'),
+  );
+  expect(preview.features).toEqual({ zama_host: ['admin-sweep'] });
+  expect(localnet.features).toEqual({});
+  for (const program of PROGRAMS) {
+    if (program === 'zama_host') continue;
+    expect(preview.features[program] ?? []).toEqual([]);
   }
 });
 

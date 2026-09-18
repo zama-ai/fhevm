@@ -44,7 +44,7 @@ if [[ "${INCLUDE_DEMOS:-false}" == true ]]; then
   pull confidential_batcher "${KEYPAIR_DIR}/confidential_batcher-keypair.json"
 fi
 
-echo "wrote keypairs to ${PROFILE_DIR} (gitignored)"
+echo "wrote keypairs to ${KEYPAIR_DIR} (gitignored)"
 if command -v solana-keygen >/dev/null; then
   echo "  zama_host:           $(solana-keygen pubkey "${KEYPAIR_DIR}/zama_host-keypair.json")"
   echo "  confidential_token:  $(solana-keygen pubkey "${KEYPAIR_DIR}/confidential_token-keypair.json")"

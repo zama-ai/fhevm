@@ -133,20 +133,20 @@ describe("demo lifecycle collision policy", () => {
       "confidential-batcher",
     ]) {
       const root = path.join(import.meta.dir, "../../../solana");
-      const source = await fs.readFile(
-        path.join(root, "programs", program, "src/lib.rs"),
-        "utf8",
+      const environment = JSON.parse(
+        await fs.readFile(path.join(root, "environments/localnet.json"), "utf8"),
       );
-      const declaredId = source.match(/declare_id!\("([^"]+)"\)/)?.[1];
-      if (declaredId === undefined) {
-        throw new Error(`${program} has no declare_id!`);
+      const programKey = program.replaceAll("-", "_");
+      const declaredId = environment.programs[programKey];
+      if (typeof declaredId !== "string") {
+        throw new Error(`localnet.json has no programs.${programKey}`);
       }
       expect(
         solanaProgramIdFromKeypairFile(
           path.join(
             root,
             "scripts/e2e/test-keypairs",
-            `${program.replaceAll("-", "_")}-keypair.json`,
+            `${programKey}-keypair.json`,
           ),
         ),
       ).toBe(declaredId);
