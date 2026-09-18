@@ -557,9 +557,8 @@ fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_t
 /// these call sites otherwise.
 ///
 /// `program_id` is an input, not `crate::ID`: the program passes its own id, and
-/// an off-chain reconstruction passes the id of the deployment it follows. A
-/// binary compiled for one deployment (`declare_id!` differs per cargo profile)
-/// can then still derive the handles of another.
+/// an off-chain reconstruction passes the id of the deployment it follows
+/// (`declare_id!` differs per cargo profile).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HandleDerivationContext {
     pub program_id: Pubkey,

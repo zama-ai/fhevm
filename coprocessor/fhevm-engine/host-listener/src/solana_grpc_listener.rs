@@ -1404,7 +1404,7 @@ mod fhe_execute_acl_tests {
 
     // A valid pubkey that is not the compiled-in `zama_host::ID`: derivation must follow the
     // configured deployment.
-    const ZAMA_HOST: &str = "75hbt6uvDqjPZ9WgFtMhBnTeyHw7cinoHiz4FD2vEz2d";
+    const ZAMA_HOST: &str = "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
     const STATE: [u8; 32] = [0x22; 32];
 
     fn config() -> SolanaGrpcListenerConfig {

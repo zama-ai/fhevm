@@ -28,9 +28,11 @@ use zama_host::EVENT_VERSION;
 use anchor_lang::{AnchorDeserialize, Discriminator};
 
 /// Block + config context the deterministic handle derivation needs, taken from
-/// the transaction's slot/block (`previous_bank_hash`, `unix_timestamp`) and the
-/// host's on-chain config (`chain_id`). This IS the program's own derivation
-/// context type — re-exported so reconstruction cannot drift from it.
+/// the transaction's slot/block (`previous_bank_hash`, `unix_timestamp`), the
+/// host's on-chain config (`chain_id`) and the listener's own `--program-id`
+/// (`program_id`: the deployment followed, not the id this crate was compiled
+/// with). This IS the program's own derivation context type — re-exported so
+/// reconstruction cannot drift from it.
 pub use zama_host::state::HandleDerivationContext as ReconstructContext;
 
 pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
@@ -545,7 +547,10 @@ mod tests {
 
     fn ctx() -> ReconstructContext {
         ReconstructContext {
-            program_id: zama_host::ID,
+            // Not the compiled-in id: every expected handle below must follow this one.
+            program_id: "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3"
+                .parse()
+                .unwrap(),
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
             previous_bank_hash: [3u8; 32],
             unix_timestamp: 1_700_000_000,
