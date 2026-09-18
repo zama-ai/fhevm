@@ -42,6 +42,6 @@ export const loadDemoEnv = async (
   configPath = resolveDemoConfigPath(),
 ): Promise<{ env: TestEnv; config: SolanaDemoConfig }> => {
   const config = await readDemoConfig(configPath);
-  const env = resolveEnv(toOverrides(config), "demo-config");
+  const env = resolveEnv(toOverrides(config), "demo-config", config.network);
   return { env, config };
 };

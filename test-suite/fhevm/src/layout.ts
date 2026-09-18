@@ -142,6 +142,17 @@ export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
 export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
+/** Command prefix that opens `psql` on the local coprocessor database. */
+export const coprocessorDbPsql = (container = COPROCESSOR_DB_CONTAINER): readonly string[] => [
+  "docker",
+  "exec",
+  container,
+  "psql",
+  "-U",
+  "postgres",
+  "-d",
+  "coprocessor",
+];
 // Solana host program id as bytes32 — the Solana ACL identity. Single source for the transfer
 // orchestrator and the e2e harness's loadEnv default.
 export const SOLANA_ACL_PROGRAM = "0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee";

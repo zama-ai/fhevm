@@ -395,7 +395,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // itself, so nothing else has to catch up first.
       const burnedHandleHex = `0x${Buffer.from(batchAfterDispatch.state.burnedTotalHandle).toString("hex")}`;
       console.log("deposit-arc settle: waiting for the SNS commit of the burned total handle...");
-      await waitForSnsCommit(burnedHandleHex, env.coprocessorDbContainer);
+      await waitForSnsCommit(burnedHandleHex, env.coprocessorDbPsql);
 
       // Step 13: settle. One SDK call runs both off-chain phases (the MMR inclusion proof rebuilt
       // from the burned value's account history, and the KMS burn certificate — its runtime

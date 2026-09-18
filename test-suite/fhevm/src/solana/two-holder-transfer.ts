@@ -13,10 +13,12 @@ import {
   createSplMint,
   generateSolanaKeypair,
   initializeConfidentialTokenAccount,
+  loadKeypairSigner,
   mintSplTo,
   readTokenBalanceStore,
   wrapUnderlying,
   type BalanceStore,
+  type SolanaProvisioningContext,
 } from "./provision";
 import { waitForSnsCommit } from "./sns";
 import { run } from "../utils/process";
@@ -64,6 +66,10 @@ export type TwoHolderConfig = {
    * actually serves.
    */
   readonly userDecryptContext: string | undefined;
+  /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
+  readonly funding: { readonly primarySol: number; readonly secondarySol: number };
+  /** Wallet the holders are funded from by transfer; absent, they are airdropped (local validators). */
+  readonly funderKeypairPath: string | undefined;
 };
 
 export type TwoHolderDependencies = {
@@ -117,14 +123,23 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   hostRpcUrl: config.hostRpcUrl ?? HOST_RPC_URL,
   aclProgram: config.aclProgram ?? ACL_PROGRAM,
   userDecryptContext: config.userDecryptContext,
+  funding: config.funding ?? { primarySol: 10, secondarySol: 5 },
+  funderKeypairPath: config.funderKeypairPath,
 });
 
 export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
   const cfg = resolveConfig(config);
-  const context = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl);
+  let provisioned: SolanaProvisioningContext | undefined;
+  const context = (): SolanaProvisioningContext => {
+    if (!provisioned) throw new Error("two-holder transfer: provision() must run first");
+    return provisioned;
+  };
   let scenarioDir: string | undefined;
   return {
     async provision() {
+      const funder = cfg.funderKeypairPath === undefined ? undefined : await loadKeypairSigner(cfg.funderKeypairPath);
+      provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
+      const context = provisioned;
       scenarioDir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-solana-two-holder-"));
       // Both holders are fresh keypairs written under the scenario dir: the SDK transfer worker
       // subprocess loads Alice's file, and the user-decrypt secret is the 32-byte seed.
@@ -143,8 +158,8 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       const bob = await createHolder("bob");
       // Alice pays every provisioning rent + fee (mints, escrow, wrap, later the transfer itself);
       // Bob only pays his own confidential token account.
-      await context.airdropSol(alice.signer.address, 10n);
-      await context.airdropSol(bob.signer.address, 5n);
+      await context.fundSol(alice.signer.address, cfg.funding.primarySol);
+      await context.fundSol(bob.signer.address, cfg.funding.secondarySol);
 
       // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority, funded
       // well past the 1000 base units the wrap below rotates into her confidential balance.
@@ -162,7 +177,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       return { mint, underlyingMint, alice: alice.holder, bob: bob.holder };
     },
     async readBalance(scenario, holder) {
-      return readTokenBalanceStore(context, { mint: address(scenario.mint), owner: address(holder.owner) });
+      return readTokenBalanceStore(context(), { mint: address(scenario.mint), owner: address(holder.owner) });
     },
     async waitForHandle(handle) {
       await waitForSnsCommit(handle);

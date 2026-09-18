@@ -91,7 +91,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
     async sendTransaction(_payer: TransactionSigner, instructions: readonly Instruction[]) {
       sent.push([...instructions]);
     },
-    async airdropSol() {},
+    async fundSol() {},
   } as unknown as SolanaProvisioningContext;
   return { context, sent };
 };
