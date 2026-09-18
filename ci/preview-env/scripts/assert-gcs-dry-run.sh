@@ -8,7 +8,7 @@ set -euo pipefail
 : "${NAMESPACE:?}"
 : "${NB_COPROCESSOR:?}"
 
-GCS_VERSION="${GCS_VERSION:-v0.15.0}"
+GCS_VERSION="${GCS_VERSION:-v0.15.1}"
 schema="gcs-${GCS_VERSION#v}"
 
 psql_party() {
