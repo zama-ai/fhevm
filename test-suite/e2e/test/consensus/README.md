@@ -4,6 +4,10 @@ This layer checks canonical byte and digest agreement within one software,
 backend and hardware class. CPU and CUDA bytes are not compared with each other;
 expected decrypted plaintext provides the correctness oracle on each backend.
 
+See the [campaign runbook](../../../fhevm/consensus/RUNBOOK.md) for case-by-case
+claims and limits, CPU/GPU CI scope, source identity, cleanup, and shared CLI
+readiness behavior.
+
 ## Cases
 
 - Materialization across same-block and cross-block transaction boundaries,

@@ -593,6 +593,9 @@ materialization, alias, replacement-block, competing-branch and scheduling gates
 `smoke` selects CPU byte agreement, `standard` adds the harness, production
 regressions and fork cases, and `full` also requires single-GPU scheduling.
 See [the consensus suite documentation](../e2e/test/consensus/README.md).
+The [campaign runbook](consensus/RUNBOOK.md) explains each case's evidence and
+limits, CI backend coverage, recovery, and readiness changes affecting ordinary
+`fhevm-cli up` users.
 
 The GPU consensus launcher uses host systemd workers; the ordinary GPU E2E CI
 workflow uses GPU containers. Always restore a host-worker session with
