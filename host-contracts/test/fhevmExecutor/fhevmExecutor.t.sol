@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, stdError} from "forge-std/Test.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -228,8 +228,16 @@ contract MockHCULimit {
 
 /// @dev Exposes internal choke points of FHEVMExecutor for direct unit tests.
 contract FHEVMExecutorHarness is FHEVMExecutor {
-    function consumeOperand(bytes32 ct, uint256 position) external view returns (uint256) {
+    function consumeOperand(bytes32 ct, uint8 position) external view returns (uint256) {
         return _consumeOperand(ct, position);
+    }
+
+    function narySum(bytes32[] calldata values, FheType resultType) external returns (bytes32) {
+        return _naryOp(Operators.fheSum, values, resultType);
+    }
+
+    function naryIsIn(bytes32 value, bytes32[] calldata values) external returns (bytes32) {
+        return _naryOp(Operators.fheIsIn, value, values, FheType.Bool);
     }
 }
 
@@ -350,7 +358,10 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     ///      mark in testMinted. Must be called under the consuming prank. The
     ///      plaintext comes from a counter so every call yields a distinct
     ///      handle (trivialEncrypt's preimage has no counter of its own).
+    ///      Bool uses randomness so fresh handles do not require plaintexts
+    ///      outside its 0..1 range.
     function _mintedHandle(FheType fheType) internal returns (bytes32 handle) {
+        if (fheType == FheType.Bool) return _mirrorMint(fhevmExecutor.fheRand(fheType));
         handle = _mirrorMint(fhevmExecutor.trivialEncrypt(mintedHandleCounter++, fheType));
     }
 
@@ -541,14 +552,14 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.6.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.7.0")));
     }
 
-    /// @dev Exercises reinitializeV6() the way the production upgrade tooling
+    /// @dev Exercises reinitializeV7() the way the production upgrade tooling
     ///      calls it (inside upgradeToAndCall on a proxy pinned at the previous
-    ///      release's initialized version, 6), so an off-by-one in
+    ///      release's initialized version, 7), so an off-by-one in
     ///      REINITIALIZER_VERSION fails here instead of in the governance tx.
-    function test_reinitializeV6SucceedsOnUpgradePath() public {
+    function test_reinitializeV7SucceedsOnUpgradePath() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -556,23 +567,23 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, address(new FHEVMExecutor()), "", owner);
 
         /// @dev Pin the proxy to the initialized version the previous release
-        /// left behind on mainnet (6), as EmptyUUPSProxy.initialize leaves it at 1.
+        /// used (7), as EmptyUUPSProxy.initialize leaves it at 1.
         /// The pre-store assertion proves this hardcoded slot is where OZ's
         /// Initializable actually writes; if the namespace ever moves, the test
         /// fails here instead of passing vacuously against a dead slot.
         bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
         assertEq(uint256(vm.load(proxyWithoutInitCall, initializableStorage)), 1);
-        vm.store(proxyWithoutInitCall, initializableStorage, bytes32(uint256(6)));
+        vm.store(proxyWithoutInitCall, initializableStorage, bytes32(uint256(7)));
 
-        FHEVMExecutor(proxyWithoutInitCall).reinitializeV6();
+        FHEVMExecutor(proxyWithoutInitCall).reinitializeV7();
 
-        /// @dev The call must land exactly on version 7: a REINITIALIZER_VERSION
-        /// skip (8+) would succeed from 6 too, silently burning a version.
-        assertEq(uint256(vm.load(proxyWithoutInitCall, initializableStorage)), 7);
+        /// @dev The call must land exactly on version 8: a REINITIALIZER_VERSION
+        /// skip (9+) would succeed from 7 too, silently burning a version.
+        assertEq(uint256(vm.load(proxyWithoutInitCall, initializableStorage)), 8);
 
         /// @dev A second call must revert: the proxy is now at REINITIALIZER_VERSION.
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        FHEVMExecutor(proxyWithoutInitCall).reinitializeV6();
+        FHEVMExecutor(proxyWithoutInitCall).reinitializeV7();
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -610,7 +621,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -638,7 +649,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -666,7 +677,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -750,7 +761,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -778,7 +789,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -806,7 +817,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -834,7 +845,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -862,7 +873,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -890,7 +901,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -918,7 +929,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -947,7 +958,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -976,7 +987,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1005,7 +1016,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1034,7 +1045,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1063,7 +1074,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1092,7 +1103,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1120,7 +1131,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1148,7 +1159,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1636,24 +1647,54 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.clearMockedCalls();
     }
 
-    /// @dev Direct pin of the _consumeOperand width backstop: position 255 is
-    ///      the last representable boundary bit; 256 must revert rather than
-    ///      silently dropping the bit (EVM SHL past the word yields 0).
-    function test_ConsumeOperandRevertsPastBoundaryBitWord() public {
+    /// @dev Position 255 is the last representable boundary bit and must be preserved.
+    function test_ConsumeOperandSupportsHighestBoundaryBitPosition() public {
         FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
         address sender = address(123);
         bytes32 handle = _persistedHandle(FheType.Uint64, sender);
 
-        vm.startPrank(sender);
+        vm.prank(sender);
         assertEq(harness.consumeOperand(handle, 255), 1 << 255);
-        vm.expectRevert(abi.encodeWithSelector(FHEVMExecutor.BoundaryBitPositionOverflow.selector, 256));
-        harness.consumeOperand(handle, 256);
+    }
+
+    /// @dev Exercise both internal loops at the largest uint8 collection cap.
+    function test_NaryOpsSupportMaximumCollectionLength() public {
+        FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
+        address sender = address(123);
+        bytes32 handle = _persistedHandle(FheType.Uint64, sender);
+        bytes32[] memory values = new bytes32[](255);
+        for (uint256 i = 0; i < values.length; i++) {
+            values[i] = handle;
+        }
+
+        vm.startPrank(sender);
+        assertEq(harness.narySum(values, FheType.Uint64), _computeExpectedResultFheSum(values, FheType.Uint64));
+        assertEq(harness.naryIsIn(handle, values), _computeExpectedResultFheIsIn(handle, values));
+        vm.stopPrank();
+    }
+
+    /// @dev A derived caller bypassing the public size checks must revert before positions wrap.
+    function test_NaryOpsRejectBoundaryPositionOverflow() public {
+        FHEVMExecutorHarness harness = new FHEVMExecutorHarness();
+        address sender = address(123);
+        bytes32 handle = _persistedHandle(FheType.Uint64, sender);
+        bytes32[] memory values = new bytes32[](256);
+        for (uint256 i = 0; i < values.length; i++) {
+            values[i] = handle;
+        }
+
+        vm.startPrank(sender);
+        vm.expectRevert(stdError.arithmeticError);
+        harness.narySum(values, FheType.Uint64);
+        vm.expectRevert(stdError.arithmeticError);
+        harness.naryIsIn(handle, values);
         vm.stopPrank();
     }
 
     function test_TrivialEncryptSupportedTypesWorkAsExpected(uint256 pt, uint8 fheType) public {
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesTrivialEncrypt));
+        pt = bound(pt, 0, _maxScalar(FheType(fheType)));
         address sender = address(123);
 
         bytes32 expectedResult = _computeExpectedResultTrivialEncrypt(pt, FheType(fheType));
@@ -1720,7 +1761,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1737,7 +1778,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1754,7 +1795,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1805,7 +1846,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1822,7 +1863,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1839,7 +1880,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1856,7 +1897,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1873,7 +1914,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1890,7 +1931,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1907,7 +1948,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1924,7 +1965,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1941,7 +1982,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1958,7 +1999,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1975,7 +2016,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -1992,7 +2033,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -2009,7 +2050,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -2026,7 +2067,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -2043,7 +2084,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         address sender = address(123);
 
         bytes32 lhs = _generateMockHandle(FheType(fheType));
-        bytes32 rhs = _generateMockHandle(FheType(fheType));
+        bytes32 rhs = scalarBool ? bytes32(uint256(1)) : _generateMockHandle(FheType(fheType));
 
         _approveHandleInACL(lhs, sender);
         _approveHandleInACL(rhs, sender);
@@ -2303,26 +2344,85 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheDivScalarTruncatesToZero() public {
+    function test_RevertsIfFheDivScalarIsOutOfRange() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint8);
         bytes32 rhs = bytes32(uint256(1 << 8));
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
-        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
         vm.prank(account);
         fhevmExecutor.fheDiv(lhs, rhs, 0x01);
     }
 
-    function test_RevertsIfFheRemScalarTruncatesToZero() public {
+    function test_RevertsIfFheRemScalarIsOutOfRange() public {
         bytes32 lhs = _generateMockHandle(FheType.Uint8);
         bytes32 rhs = bytes32(uint256(1 << 8));
         address account = address(123);
         _approveHandleInACL(lhs, account);
 
-        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
         vm.prank(account);
         fhevmExecutor.fheRem(lhs, rhs, 0x01);
+    }
+
+    function test_FheDivAndRemRejectOutOfRangeDivisorsWithNonzeroLowBits() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            // 2^width + 1 would truncate to one, but must still fail the range check.
+            bytes32 rhs = bytes32(_maxScalar(types[t]) + 2);
+
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheDiv(lhs, rhs, 0x01);
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheRem(lhs, rhs, 0x01);
+        }
+    }
+
+    function test_FheDivAndRemRejectMalformedScalarFlagsBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        bytes1[2] memory scalarFlags = [bytes1(0x02), bytes1(0xff)];
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < scalarFlags.length; ++f) {
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+                    fhevmExecutor.fheDiv(lhs, divisors[d], scalarFlags[f]);
+                    vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+                    fhevmExecutor.fheRem(lhs, divisors[d], scalarFlags[f]);
+                }
+            }
+        }
+    }
+
+    function test_FheDivAndRemCheckACLBeforeDivisorValidation() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            if (!_isTypeSupported(types[t], supportedTypesFheDiv)) continue;
+            bytes32 lhs = _generateMockHandle(types[t]);
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                lhs,
+                address(this)
+            );
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheDiv(lhs, divisors[d], 0x01);
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheRem(lhs, divisors[d], 0x01);
+            }
+        }
     }
 
     function test_RevertsIfFheDivRHSIsNotScalar() public {
@@ -2388,6 +2488,24 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes32 rhs = _generateMockHandle(FheType(5));
         vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
         fhevmExecutor.fheMul(lhs, rhs, 0x42);
+    }
+
+    function test_FheDivRevertsIfScalarByteIsNotBoolean() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint16);
+        bytes32 rhs = bytes32(uint256(1));
+        _approveHandleInACL(lhs, address(this));
+
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheDiv(lhs, rhs, 0x02);
+    }
+
+    function test_FheRemRevertsIfScalarByteIsNotBoolean() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint16);
+        bytes32 rhs = bytes32(uint256(1));
+        _approveHandleInACL(lhs, address(this));
+
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheRem(lhs, rhs, 0x02);
     }
 
     function test_FheRandBoundedAboveMaxTypeValueRevertAsExpected() public {
@@ -2660,7 +2778,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes1 scalarByte = FHE_MUL_DIV_FACTOR2_SCALAR;
 
         bytes32 factor1 = _generateMockHandle(FheType(fheType));
-        bytes32 factor2 = bytes32(uint256(300)); // scalar factor2 = 300
+        bytes32 factor2 = bytes32(uint256(123)); // fits every supported operand type
         bytes32 divisor = bytes32(uint256(3)); // scalar divisor = 3
 
         _approveHandleInACL(factor1, sender);
@@ -2786,10 +2904,9 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
-    function test_RevertsIfFheMulDivScalarDivisorTruncatesToZero(uint8 fheType) public {
-        // Picks a divisor that is non-zero as uint256 but truncates to zero at the
-        // operand width. `_isScalarZeroForType` must catch this for every supported
-        // type, not just Uint8.
+    function test_RevertsIfFheMulDivScalarDivisorIsOutOfRange(uint8 fheType) public {
+        // A divisor above the operand width is out of range, even when truncating
+        // it would produce zero.
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMulDiv));
 
@@ -2808,7 +2925,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         _approveHandleInACL(factor2, account);
 
         vm.prank(account);
-        vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
         fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
     }
 
@@ -2826,5 +2943,330 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.prank(account);
         vm.expectRevert(FHEVMExecutor.UnsupportedType.selector);
         fhevmExecutor.fheMulDiv(factor1, factor2, divisor, FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+    }
+
+    function _mulDivTestTypes() internal pure returns (FheType[4] memory) {
+        return [FheType.Uint8, FheType.Uint16, FheType.Uint32, FheType.Uint64];
+    }
+
+    function test_FheMulDivScalarBoundaries() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 encryptedFactor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            _approveHandleInACL(encryptedFactor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+
+            for (uint256 mode; mode < 2; ++mode) {
+                bytes1 scalarByte = mode == 0 ? FHE_MUL_DIV_FACTOR2_ENCRYPTED : FHE_MUL_DIV_FACTOR2_SCALAR;
+                bytes32 factor2 = mode == 0 ? encryptedFactor2 : bytes32(maximum);
+                bytes32 result = fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(maximum), scalarByte);
+                assertEq(
+                    result,
+                    _computeExpectedResultFheMulDiv(factor1, factor2, bytes32(maximum), scalarByte, types[t])
+                );
+                assertEq(uint8(result[30]), uint8(types[t]));
+                assertTrue(acl.isAllowed(result, address(this)));
+
+                fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(uint256(1)), scalarByte);
+                vm.expectRevert(FHEVMExecutor.DivisionByZero.selector);
+                fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(0), scalarByte);
+                // Cover both a value truncating to zero and one truncating to a nonzero divisor.
+                vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+                fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(maximum + 1), scalarByte);
+                vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+                fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(maximum + 2), scalarByte);
+            }
+
+            // Zero is valid for the scalar multiplication factor, but not for the divisor.
+            fhevmExecutor.fheMulDiv(factor1, bytes32(0), bytes32(uint256(1)), FHE_MUL_DIV_FACTOR2_SCALAR);
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.fheMulDiv(factor1, bytes32(maximum + 1), bytes32(uint256(1)), FHE_MUL_DIV_FACTOR2_SCALAR);
+        }
+    }
+
+    function test_FheMulDivRejectsMalformedScalarFlagsBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        bytes1[3] memory scalarFlags = [bytes1(0x00), bytes1(0x02), bytes1(0xff)];
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            _approveHandleInACL(factor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < scalarFlags.length; ++f) {
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(FHEVMExecutor.InvalidMulDivScalarByte.selector);
+                    fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], scalarFlags[f]);
+                }
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor1ACLBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 encryptedFactor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(encryptedFactor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                factor1,
+                address(this)
+            );
+
+            for (uint256 mode; mode < 2; ++mode) {
+                bytes1 scalarByte = mode == 0 ? FHE_MUL_DIV_FACTOR2_ENCRYPTED : FHE_MUL_DIV_FACTOR2_SCALAR;
+                bytes32 factor2 = mode == 0 ? encryptedFactor2 : bytes32(uint256(1));
+                for (uint256 d; d < divisors.length; ++d) {
+                    vm.expectRevert(expectedError);
+                    fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], scalarByte);
+                }
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor2ACLBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+            bytes memory expectedError = abi.encodeWithSelector(
+                FHEVMExecutor.ACLNotAllowed.selector,
+                factor2,
+                address(this)
+            );
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(expectedError);
+                fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+            }
+        }
+    }
+
+    function test_FheMulDivChecksFactor2TypeBeforeDivisorValidation() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            bytes32 factor2 = _generateMockHandle(types[(t + 1) % types.length]);
+            _approveHandleInACL(factor1, address(this));
+            _approveHandleInACL(factor2, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[3] memory divisors = [bytes32(0), bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 d; d < divisors.length; ++d) {
+                vm.expectRevert(FHEVMExecutor.IncompatibleTypes.selector);
+                fhevmExecutor.fheMulDiv(factor1, factor2, divisors[d], FHE_MUL_DIV_FACTOR2_ENCRYPTED);
+            }
+        }
+    }
+
+    function test_FheMulDivChecksScalarFactorRangeBeforeZeroDivisor() public {
+        FheType[4] memory types = _mulDivTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 factor1 = _generateMockHandle(types[t]);
+            _approveHandleInACL(factor1, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            bytes32[2] memory invalidFactors = [bytes32(maximum + 1), bytes32(maximum + 2)];
+
+            for (uint256 f; f < invalidFactors.length; ++f) {
+                vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+                fhevmExecutor.fheMulDiv(factor1, invalidFactors[f], bytes32(0), FHE_MUL_DIV_FACTOR2_SCALAR);
+            }
+        }
+    }
+
+    function testFuzz_FheMulDivRejectsOutOfRangeScalars(uint8 typeIndex, uint256 scalar, bool scalarFactor2) public {
+        FheType fheType = _mulDivTestTypes()[bound(typeIndex, 0, 3)];
+        scalar = bound(scalar, _maxScalar(fheType) + 1, type(uint256).max);
+        bytes32 factor1 = _generateMockHandle(fheType);
+        _approveHandleInACL(factor1, address(this));
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+        fhevmExecutor.fheMulDiv(factor1, bytes32(scalar), bytes32(uint256(1)), FHE_MUL_DIV_FACTOR2_SCALAR);
+
+        bytes1 scalarByte = scalarFactor2 ? FHE_MUL_DIV_FACTOR2_SCALAR : FHE_MUL_DIV_FACTOR2_ENCRYPTED;
+        bytes32 factor2 = scalarFactor2 ? bytes32(uint256(1)) : factor1;
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+        fhevmExecutor.fheMulDiv(factor1, factor2, bytes32(scalar), scalarByte);
+    }
+
+    function _maxScalar(FheType fheType) internal pure returns (uint256) {
+        if (fheType == FheType.Bool) return 1;
+        if (fheType == FheType.Uint8) return type(uint8).max;
+        if (fheType == FheType.Uint16) return type(uint16).max;
+        if (fheType == FheType.Uint32) return type(uint32).max;
+        if (fheType == FheType.Uint64) return type(uint64).max;
+        if (fheType == FheType.Uint128) return type(uint128).max;
+        if (fheType == FheType.Uint160) return type(uint160).max;
+        if (fheType == FheType.Uint256) return type(uint256).max;
+        revert("Unsupported test type");
+    }
+
+    function _scalarTestTypes() internal pure returns (FheType[8] memory) {
+        return [
+            FheType.Bool,
+            FheType.Uint8,
+            FheType.Uint16,
+            FheType.Uint32,
+            FheType.Uint64,
+            FheType.Uint128,
+            FheType.Uint160,
+            FheType.Uint256
+        ];
+    }
+
+    function test_ScalarBoundariesForEveryBinaryOperator() public {
+        bytes4[20] memory selectors = [
+            FHEVMExecutor.fheAdd.selector,
+            FHEVMExecutor.fheSub.selector,
+            FHEVMExecutor.fheMul.selector,
+            FHEVMExecutor.fheDiv.selector,
+            FHEVMExecutor.fheRem.selector,
+            FHEVMExecutor.fheBitAnd.selector,
+            FHEVMExecutor.fheBitOr.selector,
+            FHEVMExecutor.fheBitXor.selector,
+            FHEVMExecutor.fheShl.selector,
+            FHEVMExecutor.fheShr.selector,
+            FHEVMExecutor.fheRotl.selector,
+            FHEVMExecutor.fheRotr.selector,
+            FHEVMExecutor.fheEq.selector,
+            FHEVMExecutor.fheNe.selector,
+            FHEVMExecutor.fheGe.selector,
+            FHEVMExecutor.fheGt.selector,
+            FHEVMExecutor.fheLe.selector,
+            FHEVMExecutor.fheLt.selector,
+            FHEVMExecutor.fheMin.selector,
+            FHEVMExecutor.fheMax.selector
+        ];
+        uint256[20] memory supported = [
+            supportedTypesFheAdd,
+            supportedTypesFheSub,
+            supportedTypesFheMul,
+            supportedTypesFheDiv,
+            supportedTypesFheRem,
+            supportedTypesFheBitAnd,
+            supportedTypesFheBitOr,
+            supportedTypesFheBitXor,
+            supportedTypesFheShl,
+            supportedTypesFheShr,
+            supportedTypesFheRotl,
+            supportedTypesFheRotr,
+            supportedTypesFheEq,
+            supportedTypesFheNe,
+            supportedTypesFheGe,
+            supportedTypesFheGt,
+            supportedTypesFheLe,
+            supportedTypesFheLt,
+            supportedTypesFheMin,
+            supportedTypesFheMax
+        ];
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256 maximum = _maxScalar(types[t]);
+            for (uint256 op; op < selectors.length; ++op) {
+                if (!_isTypeSupported(types[t], supported[op])) continue;
+                (bool success, bytes memory data) = address(fhevmExecutor).call(
+                    abi.encodeWithSelector(selectors[op], lhs, bytes32(maximum), bytes1(0x01))
+                );
+                assertTrue(success, "maximum scalar must fit the operand, including comparisons returning Bool");
+                assertEq(data.length, 32);
+                (success, data) = address(fhevmExecutor).call(
+                    abi.encodeWithSelector(selectors[op], lhs, bytes32(0), bytes1(0x01))
+                );
+                if (op == 3 || op == 4) {
+                    assertFalse(success);
+                    assertEq(data, abi.encodeWithSelector(FHEVMExecutor.DivisionByZero.selector));
+                } else {
+                    assertTrue(success, "zero scalar must fit");
+                }
+                if (maximum == type(uint256).max) continue;
+                (success, data) = address(fhevmExecutor).call(
+                    abi.encodeWithSelector(selectors[op], lhs, bytes32(maximum + 1), bytes1(0x01))
+                );
+                assertFalse(success, "first out-of-range scalar must revert");
+                assertEq(data, abi.encodeWithSelector(FHEVMExecutor.ScalarOutOfRange.selector));
+                // Also reject values whose low bits are nonzero, including divisors.
+                (success, data) = address(fhevmExecutor).call(
+                    abi.encodeWithSelector(selectors[op], lhs, bytes32(maximum + 2), bytes1(0x01))
+                );
+                assertFalse(success, "out-of-range scalar must not be truncated");
+                assertEq(data, abi.encodeWithSelector(FHEVMExecutor.ScalarOutOfRange.selector));
+            }
+        }
+    }
+
+    function testFuzz_ScalarAndTrivialEncryptRejectOutOfRange(uint8 typeIndex, uint256 scalar) public {
+        FheType fheType = _scalarTestTypes()[bound(typeIndex, 0, 6)];
+        uint256 maximum = _maxScalar(fheType);
+        scalar = bound(scalar, maximum + 1, type(uint256).max);
+        bytes32 lhs = _generateMockHandle(fheType);
+        _approveHandleInACL(lhs, address(this));
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+        fhevmExecutor.fheEq(lhs, bytes32(scalar), 0x01);
+        vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+        fhevmExecutor.trivialEncrypt(scalar, fheType);
+    }
+
+    function test_TrivialEncryptBoundaries() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 i; i < types.length; ++i) {
+            uint256 maximum = _maxScalar(types[i]);
+            assertEq(uint8(fhevmExecutor.trivialEncrypt(0, types[i])[30]), uint8(types[i]));
+            assertEq(uint8(fhevmExecutor.trivialEncrypt(maximum, types[i])[30]), uint8(types[i]));
+            if (maximum == type(uint256).max) continue;
+            vm.expectRevert(FHEVMExecutor.ScalarOutOfRange.selector);
+            fhevmExecutor.trivialEncrypt(maximum + 1, types[i]);
+        }
+    }
+
+    function test_CheckHandleTypeChecksExpectedTypeWithoutGrantingPermission() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 actual; actual < types.length; ++actual) {
+            bytes32 handle = _generateMockHandle(types[actual]);
+            for (uint256 expected; expected < types.length; ++expected) {
+                if (actual != expected) vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                fhevmExecutor.checkHandleType(handle, types[expected]);
+            }
+            assertFalse(acl.isAllowed(handle, address(this)));
+        }
+        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        fhevmExecutor.checkHandleType(bytes32(0), FheType.Bool);
+    }
+
+    function test_CheckHandleTypeAcceptsLastEnumMember() public {
+        bytes32 handle = _generateMockHandle(type(FheType).max);
+        fhevmExecutor.checkHandleType(handle, type(FheType).max);
+        vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+        fhevmExecutor.checkHandleType(handle, FheType.Bool);
+    }
+
+    function test_CheckHandleTypeRejectsEveryOutOfRangeTypeByte() public {
+        FheType[8] memory types = _scalarTestTypes();
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            for (uint256 expected; expected < types.length; ++expected) {
+                vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+                fhevmExecutor.checkHandleType(handle, types[expected]);
+            }
+        }
+    }
+
+    function test_ShiftCountsAndExclusiveRandomBoundRemainValid() public {
+        bytes32 lhs = fhevmExecutor.trivialEncrypt(1, FheType.Uint8);
+        fhevmExecutor.fheShl(lhs, bytes32(uint256(255)), 0x01);
+        fhevmExecutor.fheShr(lhs, bytes32(uint256(255)), 0x01);
+        fhevmExecutor.fheRotl(lhs, bytes32(uint256(255)), 0x01);
+        fhevmExecutor.fheRotr(lhs, bytes32(uint256(255)), 0x01);
+        assertEq(uint8(fhevmExecutor.fheRandBounded(256, FheType.Uint8)[30]), uint8(FheType.Uint8));
     }
 }
