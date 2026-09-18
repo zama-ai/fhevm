@@ -32,7 +32,7 @@ type PublicDecryptSdkInput = {
   rpcUrl: string;
   chainId: bigint;
   relayerUrl: string;
-  verifyingProgramId: string;
+  verifyingProgramId: Bytes32Hex;
   apiKey: string;
   request: PublicDecryptRequest;
 };
@@ -51,10 +51,10 @@ const bytes32 = (environment: Environment, name: string): Uint8Array => {
   return Uint8Array.from(Buffer.from(hex, 'hex'));
 };
 
-const bytes32Hex = (environment: Environment, name: string): string => {
+const bytes32Hex = (environment: Environment, name: string): Bytes32Hex => {
   const value = required(environment, name);
   if (!/^0x[0-9a-f]{64}$/i.test(value)) throw new PreflightError(`${name} must be a 0x-prefixed 32-byte hex value`);
-  return value;
+  return value as Bytes32Hex;
 };
 
 // Keep the dynamic import seam narrow: clean CLI checkouts do not contain the SDK's generated
@@ -65,7 +65,7 @@ const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
   const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: {
       relayerUrl: input.relayerUrl,
-      programs: { host: { address: input.verifyingProgramId as Bytes32Hex } },
+      programs: { host: { address: input.verifyingProgramId } },
     },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });

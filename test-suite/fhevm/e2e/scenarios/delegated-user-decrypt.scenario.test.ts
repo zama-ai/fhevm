@@ -25,7 +25,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
-import { createNoopSigner, getAddressDecoder, getAddressEncoder, type Address } from "@solana/kit";
+import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
 import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
@@ -60,6 +60,7 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 
 /** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
+type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
 
 type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
 const sdkSolana = async (): Promise<SdkSolanaModule> => {
@@ -99,7 +100,11 @@ describe("solana delegated user-decrypt", () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
       const solana = await sdkSolana();
-      const hostProgram = getAddressDecoder().decode(Buffer.from(config.verifyingProgramId.slice(2), "hex"));
+      const chain = solana.defineFhevmSolanaChain({
+        id: BigInt(config.chainId),
+        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+      });
+      const hostProgram = solana.solanaHostProgram(chain);
 
       // Two roles: the provisioning wallet is the delegator — it owns the counter, so the counter
       // program allows it on every handle it writes — and the delegate holds no access of its own;
@@ -141,11 +146,6 @@ describe("solana delegated user-decrypt", () => {
       // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
       // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
       // the same job id. The interception passes everything through untouched.
-      type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
-      const chain = solana.defineFhevmSolanaChain({
-        id: BigInt(config.chainId),
-        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
-      });
       solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
       const trust: SolanaDecryptTrust = {
         kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
@@ -231,7 +231,12 @@ describe("solana delegated user-decrypt", () => {
       const setup = await verticalSetup();
       const { env, stack, context, config } = setup;
       const solana = await sdkSolana();
-      const hostProgram = getAddressDecoder().decode(Buffer.from(config.verifyingProgramId.slice(2), "hex"));
+      const hostProgram = solana.solanaHostProgram(
+        solana.defineFhevmSolanaChain({
+          id: BigInt(config.chainId),
+          fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+        }),
+      );
       const connection = new Connection(env.rpcUrl, "confirmed");
       // The skip condition above proved only that the fixtures are on disk; this proves the
       // RUNNING validator was booted with them, failing legibly instead of deep in createSquad.

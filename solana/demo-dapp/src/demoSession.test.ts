@@ -89,6 +89,17 @@ describe('parseDemoSessionResponse', () => {
     expect(parseDemoConfigResponse({ config: validResponse.config })).toEqual(validResponse.config);
   });
 
+  test('rejects a host program spelled differently as bytes32 and base58', () => {
+    expect(() =>
+      parseDemoConfigResponse({
+        config: {
+          ...validResponse.config,
+          programs: { ...validResponse.config.programs, host: '11111111111111111111111111111111' },
+        },
+      }),
+    ).toThrow('aclProgram and demo config.programs.host name different programs');
+  });
+
   test('binds the lifecycle boot to a seeded runtime config', () => {
     const { demoBootId: _omitted, ...runtimeConfig } = validResponse.config;
     expect(parseRuntimeDemoConfig(runtimeConfig, 'current-boot')).toEqual({
