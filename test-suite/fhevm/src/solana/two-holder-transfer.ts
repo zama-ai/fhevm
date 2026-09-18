@@ -5,6 +5,7 @@ import path from "node:path";
 import { address, getAddressEncoder } from "@solana/kit";
 
 import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
+import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
 import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
@@ -30,11 +31,11 @@ export const SOLANA_TWO_HOLDER_TRANSFER_PROFILE = "solana-two-holder-transfer";
 export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
   "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
 
-const RPC_URL = "http://127.0.0.1:8899";
-const GATEWAY_RPC_URL = "http://127.0.0.1:8546";
-const HOST_RPC_URL = "http://127.0.0.1:8545";
-const WS_URL = "ws://127.0.0.1:8900";
-const RELAYER_URL = "http://127.0.0.1:3000";
+const RPC_URL = LOCAL_SOLANA_ENDPOINTS.validatorRpc;
+const GATEWAY_RPC_URL = LOCAL_SOLANA_ENDPOINTS.gatewayRpc;
+const HOST_RPC_URL = LOCAL_SOLANA_ENDPOINTS.hostRpc;
+const WS_URL = LOCAL_SOLANA_ENDPOINTS.validatorWs;
+const RELAYER_URL = LOCAL_SOLANA_ENDPOINTS.relayer;
 const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
 const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
 const CLI_DIR = path.join(REPO_ROOT, "test-suite/fhevm");

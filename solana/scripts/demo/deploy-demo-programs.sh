@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SOLANA="$ROOT/solana"
-VALIDATOR_RPC="http://127.0.0.1:8899"
+VALIDATOR_RPC="${SOLANA_RPC_URL:?missing validator RPC URL (the lifecycle sets SOLANA_RPC_URL)}"
 DEPLOYER_KEYPAIR="${SOLANA_DEPLOYER_KEYPAIR:-$HOME/.config/solana/id.json}"
 
 echo "==> [demo-deploy] build + deploy confidential_token, demo_vault, confidential_batcher"

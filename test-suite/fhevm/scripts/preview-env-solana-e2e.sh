@@ -10,7 +10,7 @@
 #   bun test e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
 #   bun run demo:seed                                 # once per namespace deployment
 #   bun run demo:faucet &                             # loopback 8090
-#   (cd ../../solana/demo-dapp && npm run dev)        # http://127.0.0.1:5173/
+#   (cd ../../solana/demo-dapp && npm run dev)        # DEMO_DAPP_URL, default http://127.0.0.1:5173/
 #   bun run demo:smoke                                # the deposit arc, against the faucet + namespace
 #
 # The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the faucet and dapp dev server
@@ -80,11 +80,18 @@ up)
   fi
   demo_boot_id=$(<"$state/demo-boot-id")
 
+  # Local ports for the forwards. The defaults mirror the local stack so a sourced preview.env needs
+  # no other change; override any of them (PREVIEW_*_PORT) when a local stack is up at the same time.
+  relayer_port=${PREVIEW_RELAYER_PORT:-3000}
+  gateway_port=${PREVIEW_GATEWAY_RPC_PORT:-8546}
+  host_port=${PREVIEW_HOST_RPC_PORT:-8545}
+  leaf_proof_port=${PREVIEW_LEAF_PROOF_PORT:-18080}
+  dapp_port=${PREVIEW_DAPP_PORT:-5173}
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
-  forward "${relayer:-svc/relayer}" 3000:3000
-  forward svc/anvil-gateway-anvil-node 8546:8546
-  forward svc/anvil-host-anvil-node 8545:8545
-  forward svc/coprocessor-1-solana-host-listener 18080:8080
+  forward "${relayer:-svc/relayer}" "$relayer_port:3000"
+  forward svc/anvil-gateway-anvil-node "$gateway_port:8546"
+  forward svc/anvil-host-anvil-node "$host_port:8545"
+  forward svc/coprocessor-1-solana-host-listener "$leaf_proof_port:8080"
   sleep 2
 
   # Every value is single-quoted so the file can be sourced (`set -a; . preview.env; set +a`).
@@ -93,21 +100,23 @@ up)
     env_line SOLANA_E2E_SOURCE devnet
     env_line SOLANA_RPC_URL "$rpc_url"
     env_line SOLANA_WS_URL "${rpc_url/https:/wss:}"
-    env_line SOLANA_RELAYER_URL http://127.0.0.1:3000
-    env_line GW_RPC http://127.0.0.1:8546
-    env_line HOST_RPC http://127.0.0.1:8545
+    env_line SOLANA_RELAYER_URL "http://127.0.0.1:$relayer_port"
+    env_line DEMO_RELAYER_URL "http://127.0.0.1:$relayer_port"
+    env_line GW_RPC "http://127.0.0.1:$gateway_port"
+    env_line HOST_RPC "http://127.0.0.1:$host_port"
+    # The seeded demo config, boots and batch tables land under FHEVM_STATE_DIR (src/layout.ts).
     env_line FHEVM_STATE_DIR "$state"
     env_line COPROCESSOR_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
     env_line SOLANA_DEPLOYER_KEYPAIR "$deployer"
-    env_line DEMO_CONFIG_PATH "$state/runtime/solana-demo.json"
     # The same endpoint for the harness (SOLANA_*) and the dapp dev server (DEMO_*).
-    env_line SOLANA_LEAF_PROOF_URL http://127.0.0.1:18080
+    env_line SOLANA_LEAF_PROOF_URL "http://127.0.0.1:$leaf_proof_port"
     env_line SOLANA_LEAF_PROOF_API_KEY "$proof_api_key"
-    env_line DEMO_PROOF_URL http://127.0.0.1:18080
+    env_line DEMO_PROOF_URL "http://127.0.0.1:$leaf_proof_port"
     env_line DEMO_PROOF_API_KEY "$proof_api_key"
     env_line DEMO_BOOT_ID "$demo_boot_id"
     env_line DEMO_AUTH_TOKEN_FILE "$state/demo-authorization-token"
-    env_line DEMO_ALLOWED_ORIGIN http://127.0.0.1:5173
+    env_line DEMO_DAPP_URL "http://127.0.0.1:$dapp_port"
+    env_line DEMO_ALLOWED_ORIGIN "http://127.0.0.1:$dapp_port"
   } >"$state/preview.env"
   chmod 600 "$state/preview.env"
   echo "env written to $state/preview.env (secrets inside; not echoed)"

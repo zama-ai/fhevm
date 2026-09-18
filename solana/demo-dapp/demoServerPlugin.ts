@@ -14,14 +14,14 @@ import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest } from './s
 
 const appDirectory = import.meta.dirname;
 const repoRoot = path.resolve(appDirectory, '../..');
-const runtimeConfigPath = path.resolve(
-  process.env.DEMO_CONFIG_PATH ?? path.join(repoRoot, '.fhevm/runtime/solana-demo.json'),
-);
+// The same layout test-suite/fhevm/src/layout.ts derives from FHEVM_STATE_DIR (runtime/solana/...).
+const solanaRuntimeDir = path.join(process.env.FHEVM_STATE_DIR ?? path.join(repoRoot, '.fhevm'), 'runtime/solana');
+const runtimeConfigPath = path.resolve(process.env.DEMO_CONFIG_PATH ?? path.join(solanaRuntimeDir, 'demo-config.json'));
 const aliceKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/alice.json');
 const keeperKeypairPath = path.join(repoRoot, 'solana/scripts/demo/demo-keypairs/keeper.json');
 const relayerKeyUrl = 'http://127.0.0.1:3000/v2/keyurl';
 const browserRelayerUrl = 'http://127.0.0.1:5173/api/relayer';
-const batchRegistryPath = path.join(repoRoot, '.fhevm/runtime/solana-demo-batch-alts.json');
+const batchRegistryPath = path.join(solanaRuntimeDir, 'batch-lookup-tables.json');
 
 type DemoEncryptionKey = {
   readonly fingerprint: string;

@@ -18,6 +18,7 @@ import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-pro
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY, SOLANA_LEAF_PROOF_PORT } from '../generate/solana';
 import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
+import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
@@ -299,7 +300,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   // failure or a wrong-signer-set incident this is the record of what was registered.
   console.log('==> [1/4] gather live gateway inputs');
   const gateway = await readGatewayBootstrapInputs({
-    gatewayRpcUrl: process.env.GW_RPC ?? 'http://127.0.0.1:8546',
+    gatewayRpcUrl: process.env.GW_RPC ?? LOCAL_SOLANA_ENDPOINTS.gatewayRpc,
   });
   console.log(`    gateway_chain_id=${gateway.gatewayChainId}`);
   console.log(`    input_verification=${evmHex(gateway.inputVerificationContract)}`);
@@ -328,7 +329,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   await startHostListener({
     zamaHostId,
     databaseUrl: await readCoprocessorDatabaseUrl(),
-    grpcUrl: process.env.GRPC_URL ?? 'http://127.0.0.1:10000',
+    grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
     logDir,
     lifecycleDir,
   });

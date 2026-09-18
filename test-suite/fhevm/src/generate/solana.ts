@@ -61,7 +61,8 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
  * them in the connector's host-chain entry. Passed explicitly rather than relying on the
  * binary's own default, so the two cannot drift apart silently.
  */
-export const SOLANA_LEAF_PROOF_PORT = 8080;
+import { SOLANA_LEAF_PROOF_PORT } from "../layout";
+export { SOLANA_LEAF_PROOF_PORT };
 export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 /**

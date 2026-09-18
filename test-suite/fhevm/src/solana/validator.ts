@@ -17,12 +17,13 @@ import { SOLANA_DEPLOY_PROGRAMS } from "../../../../solana/deploy/src/constants"
 import { DEFAULT_SOLANA_ENVIRONMENT, deployedProgramIds } from "../../../../solana/deploy/src/environment";
 import { solanaPubkeyFromKeypairFile } from "../generate/solana";
 import { REPO_ROOT } from "../layout";
+import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
 import { squadsGenesisExtras } from "./squads";
 import { run } from "../utils/process";
 import { until } from "../utils/until";
 
-export const VALIDATOR_RPC_URL = "http://127.0.0.1:8899";
-export const VALIDATOR_WS_URL = "ws://127.0.0.1:8900";
+export const VALIDATOR_RPC_URL = LOCAL_SOLANA_ENDPOINTS.validatorRpc;
+export const VALIDATOR_WS_URL = LOCAL_SOLANA_ENDPOINTS.validatorWs;
 /**
  * The e2e specimen programs: wallet-facing writers of encrypted values the scenarios drive. They
  * exist only on the test validator and deploy from the committed keypairs in
