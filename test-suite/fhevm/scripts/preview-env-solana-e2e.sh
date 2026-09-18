@@ -68,19 +68,21 @@ up)
   forward svc/coprocessor-1-solana-host-listener 18080:8080
   sleep 2
 
+  # Every value is single-quoted so the file can be sourced (`set -a; . preview.env; set +a`).
+  env_line() { printf "%s='%s'\n" "$1" "$2"; }
   {
-    echo "SOLANA_E2E_SOURCE=devnet"
-    echo "SOLANA_RPC_URL=$rpc_url"
-    echo "SOLANA_WS_URL=${rpc_url/https:/wss:}"
-    echo "SOLANA_RELAYER_URL=http://127.0.0.1:3000"
-    echo "GW_RPC=http://127.0.0.1:8546"
-    echo "HOST_RPC=http://127.0.0.1:8545"
-    echo "FHEVM_STATE_DIR=$state"
-    echo "COPROCESSOR_DB_PSQL=kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
-    echo "SOLANA_DEPLOYER_KEYPAIR=$deployer"
-    echo "DEMO_CONFIG_PATH=$state/runtime/solana-demo.json"
-    echo "DEMO_PROOF_URL=http://127.0.0.1:18080"
-    echo "DEMO_PROOF_API_KEY=$(secret_value solana-proof-api 'api-key')"
+    env_line SOLANA_E2E_SOURCE devnet
+    env_line SOLANA_RPC_URL "$rpc_url"
+    env_line SOLANA_WS_URL "${rpc_url/https:/wss:}"
+    env_line SOLANA_RELAYER_URL http://127.0.0.1:3000
+    env_line GW_RPC http://127.0.0.1:8546
+    env_line HOST_RPC http://127.0.0.1:8545
+    env_line FHEVM_STATE_DIR "$state"
+    env_line COPROCESSOR_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
+    env_line SOLANA_DEPLOYER_KEYPAIR "$deployer"
+    env_line DEMO_CONFIG_PATH "$state/runtime/solana-demo.json"
+    env_line DEMO_PROOF_URL http://127.0.0.1:18080
+    env_line DEMO_PROOF_API_KEY "$(secret_value solana-proof-api 'api-key')"
   } >"$state/preview.env"
   chmod 600 "$state/preview.env"
   echo "env written to $state/preview.env (secrets inside; not echoed)"
