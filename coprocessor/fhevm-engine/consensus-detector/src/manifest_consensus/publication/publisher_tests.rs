@@ -300,7 +300,7 @@ async fn readiness_includes_errored_handles_without_waiting_for_digests() {
     assert!(is_block_manifest_ready(&mut trx, &block)
         .await
         .expect("an errored handle must not keep the block unready"));
-    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
         .await
         .expect("load descriptors including the errored handle");
     assert_eq!(descriptors.len(), 2);
@@ -480,7 +480,7 @@ async fn readiness_seals_missing_handles_as_uncomputed_after_lag_and_timeout() {
     assert!(missing_handles_are_uncomputed(&mut trx, &block, &policy)
         .await
         .expect("lag and timeout both elapsed with no computed handle"));
-    let descriptors = load_manifest_descriptors(&mut trx, &block, true)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, true, None)
         .await
         .expect("load descriptors with uncomputed missing handle");
     assert_eq!(descriptors.len(), 2);
@@ -541,7 +541,7 @@ async fn late_ciphertext_discards_unpublished_uncomputed_seal() {
 
     let block = load_seeded_block(&pool, CHAIN_ID, block_hash).await;
     let mut trx = pool.begin().await.expect("begin uncomputed seal");
-    let descriptors = load_manifest_descriptors(&mut trx, &block, true)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, true, None)
         .await
         .expect("load uncomputed descriptors");
     assert!(descriptors
@@ -571,7 +571,7 @@ async fn late_ciphertext_discards_unpublished_uncomputed_seal() {
     assert!(sealed.block_content_digest.is_some());
     let signer = PrivateKeySigner::random();
     let mut trx = pool.begin().await.expect("begin stale-seal preparation");
-    let err = prepare_manifest(&mut trx, &sealed, U256::ONE, signer.address())
+    let err = prepare_manifest(&mut trx, &sealed, U256::ONE, signer.address(), None)
         .await
         .expect_err("live ciphertext must discard the uncomputed seal");
     assert!(
@@ -601,7 +601,7 @@ async fn late_ciphertext_discards_unpublished_uncomputed_seal() {
     assert!(is_block_manifest_ready(&mut trx, &unsealed)
         .await
         .expect("late ciphertext makes the block ready"));
-    let descriptors = load_manifest_descriptors(&mut trx, &unsealed, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &unsealed, false, None)
         .await
         .expect("load complete descriptors");
     assert!(descriptors
@@ -614,7 +614,7 @@ async fn late_ciphertext_discards_unpublished_uncomputed_seal() {
     resealed.block_content_digest = Some(digest.as_slice().to_vec());
     resealed.block_handle_count =
         Some(i64::try_from(descriptors.len()).expect("descriptor count fits BIGINT"));
-    prepare_manifest(&mut trx, &resealed, U256::ONE, signer.address())
+    prepare_manifest(&mut trx, &resealed, U256::ONE, signer.address(), None)
         .await
         .expect("publish from the resealed digest");
     trx.commit().await.expect("commit reseal");
@@ -695,7 +695,7 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
     let mut trx = pool.begin().await.expect("begin invalid descriptor check");
     // A computed handle with an unknown format is published as an invalid
     // descriptor carrying its digests, instead of stalling the chain.
-    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
         .await
         .expect("an unknown ciphertext format does not block the manifest");
     let invalid = descriptors
@@ -719,7 +719,7 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
     .execute(trx.as_mut())
     .await
     .expect("corrupt manifest ct64 digest length");
-    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
         .await
         .expect("a malformed digest does not block the manifest");
     let malformed = descriptors
@@ -766,7 +766,7 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
         .begin()
         .await
         .expect("begin corrupted manifest preparation");
-    let err = prepare_manifest(&mut trx, &block, U256::ONE, signer.address())
+    let err = prepare_manifest(&mut trx, &block, U256::ONE, signer.address(), None)
         .await
         .expect_err("corrupted sealed state must not be published");
     assert!(
@@ -867,7 +867,7 @@ async fn first_manifest_of_a_consensus_epoch_starts_a_new_history_lineage() {
     let target = load_seeded_block(&pool, CHAIN_ID, current_hash).await;
     let signer = PrivateKeySigner::random();
     let mut trx = pool.begin().await.expect("begin manifest preparation");
-    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address())
+    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address(), None)
         .await
         .expect("prepare first manifest of the new consensus_epoch");
     trx.rollback().await.expect("rollback manifest preparation");
@@ -1017,7 +1017,7 @@ async fn missing_in_consensus_epoch_parent_is_materialized_as_empty() {
     let target = load_seeded_block(&pool, CHAIN_ID, target_hash).await;
     let signer = PrivateKeySigner::random();
     let mut trx = pool.begin().await.expect("begin gap-filling prepare");
-    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address())
+    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address(), None)
         .await
         .expect("prepare manifest across an empty host gap");
     trx.commit().await.expect("commit gap-filling prepare");
@@ -1190,7 +1190,7 @@ async fn missing_in_consensus_epoch_parent_with_producers_is_inserted_unsealed()
         .expect("child is already sealed");
     let signer = PrivateKeySigner::random();
     let mut trx = pool.begin().await.expect("begin unsealed-parent prepare");
-    let error = prepare_manifest(&mut trx, &target, U256::ONE, signer.address())
+    let error = prepare_manifest(&mut trx, &target, U256::ONE, signer.address(), None)
         .await
         .expect_err("producer inventory must not empty-seal the parent");
     assert!(
@@ -1218,7 +1218,7 @@ async fn missing_in_consensus_epoch_parent_with_producers_is_inserted_unsealed()
     );
 
     let mut trx = pool.begin().await.expect("begin second unsealed prepare");
-    let error = prepare_manifest(&mut trx, &child, U256::ONE, signer.address())
+    let error = prepare_manifest(&mut trx, &child, U256::ONE, signer.address(), None)
         .await
         .expect_err("an already unsealed parent still blocks prepare");
     assert!(
@@ -1238,7 +1238,7 @@ async fn missing_in_consensus_epoch_parent_with_producers_is_inserted_unsealed()
     seal_seeded_block(&pool, CHAIN_ID, missing_hash, U256::ONE).await;
     let target = load_seeded_block(&pool, CHAIN_ID, target_hash).await;
     let mut trx = pool.begin().await.expect("begin prepare after parent seal");
-    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address())
+    let prepared = prepare_manifest(&mut trx, &target, U256::ONE, signer.address(), None)
         .await
         .expect("prepare after the producer parent is sealed");
     trx.commit()
@@ -1545,7 +1545,7 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
             .await
             .expect("begin blocked manifest preparation");
         let blocked = load_seeded_block(&pool, CHAIN_ID, blocked_hash).await;
-        let prepared = prepare_manifest(&mut trx, &blocked, context, signer.address())
+        let prepared = prepare_manifest(&mut trx, &blocked, context, signer.address(), None)
             .await
             .expect("prepare manifest used to derive blocked object key");
         trx.rollback()
@@ -1607,6 +1607,7 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
                         &consensus,
                         &ManifestWorkGate::always_enabled(),
                         block_manifest::LEGACY_CONSENSUS_EPOCH,
+                        true,
                     )
                     .await
                     .expect("progress competing manifest lineages"),
@@ -1675,6 +1676,7 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
                 &consensus,
                 &ManifestWorkGate::always_enabled(),
                 block_manifest::LEGACY_CONSENSUS_EPOCH,
+                true,
             )
             .await
             .expect("retry permanently conflicting manifest"),
@@ -1687,3 +1689,108 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
 mod support;
 
 use support::*;
+
+#[tokio::test]
+#[serial(db)]
+async fn drift_injection_seals_and_signs_consistently_without_changing_stored_digests() {
+    use crate::manifest_consensus::drift_injection::DriftInjection;
+    for fault in [
+        "ct64_digest_bit_flip",
+        "ct128_digest_bit_flip",
+        "keyset_id_bit_flip",
+        "missing_here",
+        "error_here",
+        "uncomputed_here",
+    ] {
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(3)
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let chain = 12345;
+        let block_hash = B256::repeat_byte(0x42);
+        let handle = B256::repeat_byte(0x51);
+        let original = B256::repeat_byte(0x64);
+        seed_revision_publication_block(
+            &pool,
+            chain,
+            42,
+            block_hash,
+            B256::repeat_byte(0x41),
+            handle,
+            handle,
+            handle,
+            B256::repeat_byte(0x11),
+            B256::repeat_byte(0x12),
+            original,
+            B256::repeat_byte(0x28),
+        )
+        .await;
+        let path = std::env::temp_dir().join(format!(
+            "manifest-fault-{}.json",
+            PrivateKeySigner::random().address()
+        ));
+        std::fs::write(
+            &path,
+            format!(
+                r#"{{"enabled":true,"chain_id":{chain},"handle":"{handle}","fault":"{fault}"}}"#
+            ),
+        )
+        .unwrap();
+        let injection = DriftInjection::load(&path).unwrap().unwrap();
+        let block = load_seeded_block(&pool, chain, block_hash).await;
+        let mut trx = pool.begin().await.unwrap();
+        let descriptors = load_manifest_descriptors(&mut trx, &block, false, Some(&injection))
+            .await
+            .unwrap();
+        let mut expected = load_manifest_descriptors(&mut trx, &block, false, None)
+            .await
+            .unwrap();
+        injection.apply(chain, &mut expected);
+        assert_eq!(descriptors, expected);
+        seal_block_content(&mut trx, &block, U256::ONE, &descriptors)
+            .await
+            .unwrap();
+        trx.commit().await.unwrap();
+
+        // Reload the startup file and persisted seal, as a restarted publisher does.
+        let injection = DriftInjection::load(&path).unwrap().unwrap();
+        std::fs::remove_file(path).unwrap();
+        let block = load_seeded_block(&pool, chain, block_hash).await;
+        let signer = PrivateKeySigner::random();
+        let mut first: Option<Vec<u8>> = None;
+        for _ in 0..2 {
+            let mut trx = pool.begin().await.unwrap();
+            let prepared = prepare_manifest(
+                &mut trx,
+                &block,
+                U256::ONE,
+                signer.address(),
+                Some(&injection),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                prepared.payload.detailed_range.blocks[0].ciphertexts,
+                expected
+            );
+            let signed = prepared.payload.sign(&signer).await.unwrap();
+            signed.verify().unwrap();
+            let body = serde_json::to_vec(&signed).unwrap();
+            if let Some(existing) = &first {
+                validate_existing_manifest(existing, &signed, "test", "test").unwrap();
+            } else {
+                first = Some(body);
+            }
+            trx.rollback().await.unwrap();
+        }
+        let stored: Vec<u8> =
+            sqlx::query_scalar("SELECT ciphertext FROM ciphertext_digest WHERE handle = $1")
+                .bind(handle.as_slice())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored, original.as_slice());
+    }
+}

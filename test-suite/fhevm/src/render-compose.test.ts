@@ -1617,3 +1617,22 @@ test.each([
     expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
   });
 });
+
+test("manifest lifecycle mounts a separate initially empty injection directory on each node", async () => {
+  const { MANIFEST_INJECTION_PATH, manifestInjectionDir, manifestInjectionMount } = await import("./manifest-drift");
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) await writeFile(envPath(name), "CHAIN_ID=12345\n");
+    const scenarioPath = path.join(import.meta.dir, "../scenarios/manifest-lifecycle.yaml");
+    const manifestState: State = { ...state, overrides: [{ group: "coprocessor" }],
+      scenario: resolveScenarioFile(scenarioPath, parseCoprocessorScenario(await readFile(scenarioPath, "utf8"))) };
+    await generateComposeOverrides(manifestState, stackSpecForState(manifestState));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    for (const [index, name] of ["coprocessor-consensus-detector", "coprocessor1-consensus-detector", "coprocessor2-consensus-detector"].entries()) {
+      const service = doc.services[name];
+      expect(service.command).toContain(`--dangerous-drift-injection=${MANIFEST_INJECTION_PATH}`);
+      expect(service.volumes).toContainEqual(manifestInjectionMount(index));
+      expect(await readdir(manifestInjectionDir(index))).toEqual([]);
+    }
+  });
+});

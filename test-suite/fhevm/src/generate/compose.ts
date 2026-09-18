@@ -6,6 +6,7 @@ import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
+import { MANIFEST_INJECTION_PATH, manifestInjectionDir, manifestInjectionMount } from "../manifest-drift";
 
 import {
   type CompatPolicy,
@@ -777,6 +778,11 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
+      if (name === "coprocessor-consensus-detector" && Array.isArray(adjusted.command)
+          && adjusted.command.includes(`--dangerous-drift-injection=${MANIFEST_INJECTION_PATH}`)) {
+        await ensureDir(manifestInjectionDir(instance.index));
+        adjusted.volumes = [...(Array.isArray(adjusted.volumes) ? adjusted.volumes : []), manifestInjectionMount(instance.index)];
+      }
       if (name === "coprocessor-db-migration") {
         if (isBlueGreen && instance.source.mode === "registry") {
           // The pinned BCS release creates the database so the seeded versions match

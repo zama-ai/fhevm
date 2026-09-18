@@ -111,6 +111,9 @@ const FHE_TRIVIAL_ENCRYPT_OPCODE: i16 = 24;
 /// exactly one) gives robustness if a single block stalls on one operator.
 const MAX_ANCHOR_CANDIDATES: i64 = 8;
 
+/// Four long-lived LISTEN connections on Blue, five on Green, plus worker queries.
+pub const DEFAULT_DATABASE_POOL_SIZE: u32 = 20;
+
 #[derive(Clone)]
 pub struct Config {
     pub service_name: String,
@@ -152,7 +155,7 @@ impl Default for Config {
         Self {
             service_name: "consensus-detector".to_owned(),
             database_url: DatabaseURL::default(),
-            database_pool_size: 4,
+            database_pool_size: DEFAULT_DATABASE_POOL_SIZE,
             gcs_mode: false,
             gateway_config_address: Address::ZERO,
             log_level: Level::INFO,
@@ -1012,6 +1015,42 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn default_pool_leaves_query_capacity_with_all_green_listeners() {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::SkipMigrations).await.unwrap();
+        let pool = PgPoolOptions::new()
+            .max_connections(Config::default().database_pool_size)
+            .acquire_timeout(Duration::from_secs(1))
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let mut listeners = Vec::new();
+        for channel in [
+            "state_hash",
+            "consensus",
+            "stack_version",
+            "healing",
+            "green_activation",
+        ] {
+            let mut listener = PgListener::connect_with(&pool).await.unwrap();
+            listener.listen(channel).await.unwrap();
+            listeners.push(listener);
+        }
+        // Hold a worker transaction while another worker acquires a connection.
+        let mut publication = pool.begin().await.unwrap();
+        sqlx::query("SELECT 1")
+            .execute(&mut *publication)
+            .await
+            .unwrap();
+        sqlx::query("SELECT 1").execute(&pool).await.unwrap();
+        publication.rollback().await.unwrap();
+        drop(listeners);
+        pool.close().await;
+    }
 
     const CT: Duration = Duration::from_secs(60);
 

@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use alloy::primitives::Address;
 use alloy::providers::{ProviderBuilder, WsConnect};
@@ -35,8 +35,8 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size.
-    #[arg(long, default_value_t = 4)]
+    /// Postgres pool size, including four persistent listeners (five on Green).
+    #[arg(long, default_value_t = consensus_detector::DEFAULT_DATABASE_POOL_SIZE)]
     database_pool_size: u32,
 
     /// Gateway RPC URL (websocket).
@@ -71,6 +71,12 @@ struct Args {
     /// This operator's S3 bucket, or `none` to explicitly disable uploads.
     #[arg(long)]
     my_bucket: String,
+
+    /// Read per-handle manifest faults and an optional healing pause once at startup.
+    /// An absent file disables injection; invalid or unreadable files fail startup.
+    /// Intended for controlled E2E/devnet/testnet exercises.
+    #[arg(long, value_name = "CONFIG_FILE")]
+    dangerous_drift_injection: Option<PathBuf>,
 
     /// S3 endpoint override (e.g. `http://minio:9000`).
     #[arg(long)]
@@ -218,6 +224,13 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(args.log_level)
         .init();
 
+    let dangerous_drift_injection = args
+        .dangerous_drift_injection
+        .as_deref()
+        .map(consensus_detector::manifest_consensus::drift_injection::DriftInjection::load)
+        .transpose()?
+        .flatten();
+
     let my_bucket = match args.my_bucket.as_str() {
         "none" => None,
         "" => anyhow::bail!("--my-bucket must name a bucket or be the literal `none`"),
@@ -262,6 +275,7 @@ async fn main() -> anyhow::Result<()> {
         s3_endpoint: args.s3_endpoint.clone(),
         state_hash_batch_limit: args.state_hash_batch_limit,
         manifest_consensus: consensus_detector::manifest_consensus::Config {
+            dangerous_drift_injection,
             discovery_interval: args.manifest_discovery_interval,
             publication_retry_delay: args.manifest_publication_retry_delay,
             publication_retry_count: args.manifest_publication_retry_count,

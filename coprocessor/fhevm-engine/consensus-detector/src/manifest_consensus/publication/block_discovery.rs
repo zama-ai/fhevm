@@ -278,6 +278,30 @@ async fn load_existing_frontiers(
         .collect())
 }
 
+/// Periodic diagnostics reuse discovery reads without changing publication state.
+pub(crate) async fn log_discovery_frontiers(
+    pool: &PgPool,
+    consensus_epoch: &str,
+) -> Result<(), ExecutionError> {
+    let frontiers = load_existing_frontiers(pool, consensus_epoch).await?;
+    let tips = load_latest_valid_blocks(pool).await?;
+    if tips.is_empty() {
+        tracing::info!(
+            consensus_epoch,
+            "Manifest discovery has no eligible host-chain blocks"
+        );
+    }
+    for tip in tips {
+        let frontier = frontiers.get(&tip.host_chain_id);
+        tracing::info!(consensus_epoch, host_chain_id = tip.host_chain_id,
+            host_tip = tip.block_number,
+            first_discovered = ?frontier.map(|f| f.first_block),
+            last_discovered = ?frontier.map(|f| f.last_block),
+            "Manifest discovery frontier");
+    }
+    Ok(())
+}
+
 async fn load_consensus_epoch_windows(
     pool: &PgPool,
     consensus_epoch: &str,

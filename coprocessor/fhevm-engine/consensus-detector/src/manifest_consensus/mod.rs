@@ -24,6 +24,7 @@ use fhevm_engine_common::versioning::{
 
 pub mod containment;
 pub(crate) mod db_error;
+pub mod drift_injection;
 pub(crate) mod healing;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
@@ -95,6 +96,8 @@ impl From<ExecutionError> for fhevm_engine_common::pg_pool::ServiceError {
 /// Publication and verification policy owned by consensus-detector.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
+    /// Startup-loaded, explicitly enabled manifest-only fault injection.
+    pub dangerous_drift_injection: Option<drift_injection::DriftInjection>,
     /// Publisher tick: discover host blocks, then seal and publish already
     /// tracked work. Must be greater than zero.
     pub discovery_interval: Duration,
@@ -126,6 +129,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            dangerous_drift_injection: None,
             discovery_interval: Duration::from_secs(10),
             publication_retry_delay: Duration::from_secs(60),
             publication_retry_count: 30,
@@ -310,19 +314,28 @@ pub(crate) async fn start(
     );
     supervise("peer manifest verifier", handle, cancel.clone());
 
-    let handle = healing::spawn_healing_worker(
-        pool,
-        cancel.child_token(),
-        client,
-        work_gate,
-        healing::HealingSettings {
-            batch_size: config.manifest_consensus.healing_batch_size,
-            poll_interval: config.manifest_consensus.healing_poll_interval,
-            containment_timeout: config.manifest_consensus.healing_containment_timeout,
-            max_attempts: config.manifest_consensus.healing_max_attempts,
-        },
-    );
-    supervise("healing worker", handle, cancel);
+    if config
+        .manifest_consensus
+        .dangerous_drift_injection
+        .as_ref()
+        .is_some_and(drift_injection::DriftInjection::pauses_healing)
+    {
+        tracing::warn!("DANGEROUS healing paused by startup drift configuration");
+    } else {
+        let handle = healing::spawn_healing_worker(
+            pool,
+            cancel.child_token(),
+            client,
+            work_gate,
+            healing::HealingSettings {
+                batch_size: config.manifest_consensus.healing_batch_size,
+                poll_interval: config.manifest_consensus.healing_poll_interval,
+                containment_timeout: config.manifest_consensus.healing_containment_timeout,
+                max_attempts: config.manifest_consensus.healing_max_attempts,
+            },
+        );
+        supervise("healing worker", handle, cancel);
+    }
 
     Ok(())
 }

@@ -1,3 +1,7 @@
+import { runManifestHealingStressProfile } from "./manifest-healing-stress";
+import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
+import { runManifestLifecycleProfile } from "./manifest-lifecycle";
+import { runManifestHealingProfile } from "./manifest-healing";
 import { runRetainedMaterial } from "../consensus/retained-material-run";
 import { withRolloutSupervisor } from "../consensus/rollout-supervision";
 import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDENCE_CLEANUP_SQL, DRY_RUN_EVIDENCE_INSTALL_SQL, DRY_RUN_EVIDENCE_CLEANUP_SQL, dryRunEvidenceReadinessSql } from "../../../e2e/test/consensus/upgradeEvidenceSql";
@@ -77,6 +81,10 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "manifest-lifecycle",
+  "manifest-lifecycle-no-drift",
+  "manifest-healing",
+  "manifest-healing-stress",
   "blue-green",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
@@ -112,6 +120,10 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-gateway-contracts": "gateway",
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
+  "manifest-lifecycle-no-drift": "Check healthy manifest publication, quorum, and continued computation without fault injection (requires --scenario manifest-lifecycle).",
+  "manifest-healing-stress": "Mix four computation chains with 25% database corruption on one node, then require healing convergence under continued traffic (requires --scenario manifest-lifecycle).",
+  "manifest-healing": "Exercise every drift reason, inferred containment, ct64 restoration, and computation recovery (requires --scenario manifest-lifecycle).",
+  "manifest-lifecycle": "Publish a signed manifest fault and verify containment and independent progress (requires --scenario manifest-lifecycle).",
   light: "Run the lightweight smoke suite.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
@@ -1858,6 +1870,46 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const runProfile = async (name: string) => {
+    if (name === "manifest-healing-stress") {
+      return runLogged(name, Date.now(), () => runManifestHealingStressProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing stress fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing stress ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing stress ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-healing") {
+      return runLogged(name, Date.now(), () => runManifestHealingProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-lifecycle" || name === "manifest-lifecycle-no-drift") {
+      const runManifestProfile = name === "manifest-lifecycle" ? runManifestLifecycleProfile : runManifestLifecycleNoDriftProfile;
+      return runLogged(name, Date.now(), () => runManifestProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest lifecycle ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
+        },
+      ));
+    }
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
