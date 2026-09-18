@@ -88,7 +88,7 @@ class SolanaCharts(unittest.TestCase):
         names = [e["name"] for e in env]
         self.assertLess(names.index("SOLANA_PROOF_API_KEY"), names.index("KMS_CONNECTOR_HOST_CHAINS"))
         value = next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS")
-        self.assertIn('"chainId":9223372036854788153', value)
+        self.assertIn('"chainId":72057594037940281', value)
         self.assertIn('"aclAddress"', value)
         self.assertIn('http://coprocessor-1-solana-host-listener:8080', value)
         self.assertIn('"solanaProofApiKey":"$(SOLANA_PROOF_API_KEY)"', value)
