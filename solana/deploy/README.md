@@ -142,6 +142,7 @@ registration against PostgreSQL. CI also runs it through the packaged image. The
 upgrade scenario also checks old-value decryption after host upgrade and listener restart.
 The preview launch checks listener checkpoint progress; a live computation/decryption
 smoke test is still required to validate provider delivery and internal routing together.
-The listener crate links `zama-host` without `preview-env`, so reconstruction hashes with
-the localnet program id while watching the preview program. That is why FHE handles currently
-mismatch; pointing SDK clients at the preview program cannot fix it.
+Every FHE handle hashes the host program id. The listener derives with the id it is
+configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
+the listener image needs no `preview-env` feature. If handles still mismatch, compare the
+listener's `--program-id` with the deployed program before suspecting the sysvars.
