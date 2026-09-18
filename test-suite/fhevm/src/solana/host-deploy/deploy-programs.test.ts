@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { deployProgramArtifacts } from '../../../../../solana/deploy/src/deploy-programs';
-import { programIdsFor } from '../../../../../solana/deploy/src/program-profile';
+import { programIdsFor } from '../../../../../solana/deploy/src/environment';
 
 const originalPath = process.env.PATH;
 let directory: string | undefined;
@@ -65,7 +65,7 @@ if [ "$2" = dump ]; then printf '${options.changed ? 'different' : 'fixture\\000
     artifactsDir: directory,
     programKeypairPaths: { zama_host: path.join(directory, 'host.json') },
     programs: ['zama_host'] as const,
-    profile: 'preview-env' as const,
+    environment: 'preview-env' as const,
   };
 };
 const calls = () => readFile(path.join(directory!, 'calls'), 'utf8');

@@ -6,13 +6,13 @@
 # Build from repo root:
 #   docker build --platform=linux/amd64 -f solana/deploy/Dockerfile -t ghcr.io/zama-ai/fhevm/solana-programs:local .
 
-ARG PROGRAM_PROFILE=preview-env
+ARG PROGRAM_ENVIRONMENT=preview-env
 ARG SOLANA_VERSION=4.1.2
 ARG ANCHOR_VERSION=1.1.2
 ARG KUBECTL_VERSION=v1.32.3
 
 FROM --platform=linux/amd64 ubuntu:24.04 AS sbf
-ARG PROGRAM_PROFILE
+ARG PROGRAM_ENVIRONMENT
 ARG SOLANA_VERSION
 ARG ANCHOR_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
@@ -36,14 +36,15 @@ RUN curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v$
 
 WORKDIR /src/solana
 COPY solana/Anchor.toml solana/Cargo.toml solana/Cargo.lock solana/rust-toolchain.toml ./
+COPY solana/environments/ environments/
 COPY solana/programs/ programs/
 COPY solana/crates/ crates/
 COPY solana/runtime-tests/ runtime-tests/
 COPY solana/test-kit/ test-kit/
 COPY solana/scripts/build-programs.sh solana/scripts/install-sbf-tools.sh scripts/
-# Preview-env profile: compile `declare_id!` behind `--features preview-env`.
+# The environment file fixes each program's compiled `declare_id!` and features (DD-053).
 # Program private keys are first-deploy runtime secrets (k8s / AWS), not a build input.
-RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_PROFILE" \
+RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_ENVIRONMENT" \
       zama_host confidential_token demo_vault confidential_batcher
 
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
@@ -51,12 +52,12 @@ WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production
 COPY solana/deploy/src ./src
-COPY solana/deploy/profiles/preview-env/program-ids.json /src/solana/deploy/profiles/preview-env/program-ids.json
+COPY solana/environments/ /src/solana/environments/
 # Bundle to one file so the runtime image does not need bun or a node_modules tree.
 RUN bun build src/cli.ts --target=node --outfile=/out/cli.mjs
 
 FROM --platform=linux/amd64 node:22-bookworm-slim AS prod
-ARG PROGRAM_PROFILE
+ARG PROGRAM_ENVIRONMENT
 ARG KUBECTL_VERSION
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl libssl3 libudev1 postgresql-client \
@@ -80,7 +81,7 @@ WORKDIR /app
 ENV HOME=/home/fhevm
 ENV SOLANA_ARTIFACTS_DIR=/app/programs
 ENV ADDRESSES_DIR=/app/addresses
-ENV SOLANA_PROGRAM_PROFILE=$PROGRAM_PROFILE
+ENV SOLANA_ENVIRONMENT=$PROGRAM_ENVIRONMENT
 # Compose uses this ENTRYPOINT (same as host-contracts). The Helm Job overrides `command` to
 # `/app/deploy-contracts.sh`, which then runs `deployCommands`.
 ENTRYPOINT ["node", "/app/cli.mjs"]

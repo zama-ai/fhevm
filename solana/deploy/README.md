@@ -85,9 +85,12 @@ Build scripts install Anchor's pinned SBF tools v1.52 before compiling. This avo
 If an earlier build mixed tool versions, run `cargo clean --target sbpf-solana-solana`
 once from `solana/` before rebuilding; ordinary builds retain their cache.
 
-The image defaults to the `preview-env` program IDs. The `localnet` build profile uses
-the repository's test identities. Profiles select compiled addresses, not RPC networks:
-changing an address requires rebuilding. Private keys are never build inputs.
+The image is built for one environment: `PROGRAM_ENVIRONMENT` selects
+`solana/environments/<name>.json`, which lists the four program ids and the build features.
+`localnet` is the repository's test identities and the default for plain `anchor build`;
+`preview-env` is the disposable devnet host. Environments select compiled program ids, not
+RPC networks: the same `preview-env` image can point at any RPC URL, and changing an id
+requires rebuilding. Private keys are never build inputs.
 
 | State | Behavior |
 | --- | --- |
@@ -99,7 +102,7 @@ changing an address requires rebuilding. Private keys are never build inputs.
 
 `host wipe` closes every account the host program owns and returns the rent to the deployer,
 which must be the program's upgrade authority. In the image it needs only `SOLANA_RPC_URL` and the
-deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `preview-env` builds,
+deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `admin-sweep` builds (the `preview-env` environment),
 so the command fails against a localnet or production program.
 
 `coprocessor register` is an internal deployment command that associates the Solana

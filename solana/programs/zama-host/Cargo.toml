@@ -26,11 +26,12 @@ decode = []
 encode = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build"]
-# `close_owned_accounts`, the preview-env wipe. No deployed `.so` outside that profile enables it;
+# `close_owned_accounts`, the preview-env wipe. Only solana/environments/preview-env.json enables it;
 # runtime-tests requests it, so the unification caveat on `decode` applies here too.
 admin-sweep = []
-# Public Solana **devnet** IDs for the persistent preview-env host (not local e2e).
-preview-env = ["admin-sweep"]
+
+[build-dependencies]
+program-environment = { path = "../../crates/program-environment" }
 
 [dependencies]
 anchor-lang = { version = "1.1.2", features = ["event-cpi"] }
@@ -45,5 +46,6 @@ borsh = "1"
 bytemuck = { version = "1", features = ["derive", "min_const_generics"] }
 
 [dev-dependencies]
+serde_json = "1"
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 sha2 = "0.10"

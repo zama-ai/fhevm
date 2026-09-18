@@ -16,7 +16,7 @@ scDeploy:
   env:
     - {name: SOLANA_ARTIFACTS_DIR, value: "/app/programs"}
     - {name: ADDRESSES_DIR, value: "/app/addresses"}
-    - {name: SOLANA_PROGRAM_PROFILE, value: "preview-env"}
+    - {name: SOLANA_ENVIRONMENT, value: "preview-env"}
     - name: SOLANA_RPC_URL
       valueFrom:
         secretKeyRef:

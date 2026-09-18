@@ -2449,10 +2449,10 @@ other's proofs. EncryptedStore addresses already seed the app program, authority
 scope under `crate::ID`. Putting HostConfig in those seeds would make a second config account a
 second Zama under one program ID, which this decision rejects.
 
-The program ID is compiled into the `.so` (`declare_id!`). The crate today has two: the default
-localnet id `6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu`, and `--features preview-env` for
+The program ID is compiled into the `.so` (`declare_id!`) from `solana/environments/<name>.json`
+(DD-053): `localnet` is `6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu`, `preview-env` is
 `DPq5y89…`. Mainnet, zama-devnet and zama-testnet will each need their own compiled id the same
-way, so shipping those Zamas is additional feature-gated builds, not a runtime switch, and CI
+way, so shipping those Zamas is one build per environment file, not a runtime switch, and CI
 does not generate the keypairs. Each deployed program will have its own upgrade authority, so a
 preview-env workflow cannot replace zama-testnet's bytecode.
 
@@ -2546,3 +2546,39 @@ RFC-021’s high-bit reservation as the long-term marker, and the open-product #
 sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt. DD-027 still
 owns EVM-strict vs Solana-relaxed validation. Both keep calling `is_solana_host_chain_id`;
 this entry is that predicate: high byte `0x01`.
+
+## DD-053: A program id is environment config, not a cargo feature
+
+Status: adopted
+
+An Anchor program checks its own id at the entrypoint (`declare_id!`), so one `.so` serves one
+program id. DD-051 makes each Zama one host program id. Together they mean one build per Zama.
+This entry fixes how that id reaches the build.
+
+The id is read at build time from `solana/environments/<name>.json`, one file per deployed
+environment. A `build.rs` in each program (`crates/program-environment`) writes the `declare_id!`
+line from the file named by `PROGRAM_ENVIRONMENT` and falls back to `localnet` when it is unset.
+Plain `cargo` and `anchor build` therefore produce the localnet program, as before. The deployer
+image and CI set one environment before building; `scripts/build-programs.sh` also enables the
+cargo features the file lists.
+
+```text
+solana/environments/localnet.json      committed test identities; the default
+solana/environments/preview-env.json   disposable host on Solana devnet; enables admin-sweep
+```
+
+The file holds program ids and build features only. Chain id, RPC and keypairs are runtime
+config and stay in Helm values and the environment's secret store (DD-052 for the chain id).
+
+Why not the alternatives:
+
+| Option | Why not |
+|---|---|
+| `#[cfg(feature = "<env>")]` per Zama (the tree before this entry) | The id lived in `lib.rs` × 4, `Anchor.toml` and the deployer. Any crate linking `zama-host` inherited whichever feature was on; the host-listener derived handles under the wrong id until #4043. Each Zama added `#[cfg]` lines to four crates. |
+| `anchor keys sync` | Rewrites source in CI, and `Anchor.toml` is keyed by cluster. zama-devnet, zama-testnet and preview share Solana devnet, so they collide. |
+| One id on every cluster (Token-program style) | Zero build variance and the Solana idiom, but one Zama per cluster. Preview runs on public devnet to exercise the Yellowstone and RPC path, so it needs its own id there. Revisit if preview moves to an in-namespace validator. |
+| Zama identity in HostConfig, one program id | Rejected in DD-051: tenants under one program share handle space and PDA seeds. |
+
+Off-chain code never needs the id at build time. The listener passes its configured
+`--program-id` into handle derivation (#4043); the connector, relayer and SDK derive PDAs from
+configured ids. Adding a Zama is a new JSON file plus deployer keypairs. No Rust change.

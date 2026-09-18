@@ -46,10 +46,8 @@ pub use instructions::{Deposit, Harvest, InitializeVault, Withdraw};
 /// Re-export the vault layout and share-price helpers.
 pub use state::*;
 
-#[cfg(not(feature = "preview-env"))]
-declare_id!("6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9");
-#[cfg(feature = "preview-env")]
-declare_id!("gjgLTv4tB3QBP4RCnHgZvL7GZWP198HuesTA4oM9EdE");
+// Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
+include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
 /// Anchor entrypoint module for the demo vault.
 #[program]

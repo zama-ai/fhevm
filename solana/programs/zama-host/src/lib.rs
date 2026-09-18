@@ -51,10 +51,23 @@ pub use state::*;
 
 use instructions::*;
 
-#[cfg(not(feature = "preview-env"))]
-declare_id!("6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu");
-#[cfg(feature = "preview-env")]
-declare_id!("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
+// Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
+include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
+
+#[cfg(test)]
+mod program_id_tests {
+    #[test]
+    fn id_is_the_selected_environments_zama_host() {
+        let name = std::env::var("PROGRAM_ENVIRONMENT").unwrap_or_else(|_| "localnet".to_owned());
+        let path = format!(
+            "{}/../../environments/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let environment: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(environment["programs"]["zama_host"], crate::ID.to_string());
+    }
+}
 
 /// Anchor entrypoint module generated into the ZamaHost IDL.
 #[program]

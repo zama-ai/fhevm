@@ -1,0 +1,15 @@
+[package]
+name = "program-environment"
+version = "0.1.0"
+description = "Build-script helper: emits declare_id! for the program id of the selected environment file"
+# Standalone (no workspace inheritance): the programs are `path` dependencies of the
+# coprocessor Docker builds, whose contexts do not include the solana workspace root.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[lib]
+name = "program_environment"
+
+[dependencies]
+serde_json = "1"

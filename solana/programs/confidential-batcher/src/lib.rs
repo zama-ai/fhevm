@@ -54,10 +54,8 @@ pub use instructions::{
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
 
-#[cfg(not(feature = "preview-env"))]
-declare_id!("Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG");
-#[cfg(feature = "preview-env")]
-declare_id!("A2akndg4KnaLBQM3giUrFh89V3c1BUKVinoT6X1179da");
+// Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
+include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
 /// Anchor entrypoint module for the confidential batcher.
 #[program]

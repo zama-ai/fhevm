@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/program-environment",
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
     "crates/zama-solana-acl",

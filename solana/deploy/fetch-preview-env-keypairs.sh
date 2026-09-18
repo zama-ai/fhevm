@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull preview-env keypairs from 1Password into the gitignored profile directory.
+# Pull preview-env keypairs from 1Password into the gitignored keypair directory.
 # Laptop-only (CI uses AWS Secrets Manager). Never prints JSON.
 #
 # Usage:
@@ -14,8 +14,8 @@ umask 077
 VAULT="${VAULT:-Preview Env}"
 TITLE="${TITLE:-preview-env - Solana host keypairs (public Solana cluster)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROFILE_DIR="${SCRIPT_DIR}/profiles/preview-env"
-mkdir -p "$PROFILE_DIR"
+KEYPAIR_DIR="${SCRIPT_DIR}/keypairs/preview-env"
+mkdir -p "$KEYPAIR_DIR"
 
 need() { command -v "$1" >/dev/null || { echo "missing $1" >&2; exit 1; }; }
 need op
@@ -35,18 +35,18 @@ pull() {
   chmod 600 "$dest"
 }
 
-pull zama_host "${PROFILE_DIR}/zama_host-keypair.json"
-pull confidential_token "${PROFILE_DIR}/confidential_token-keypair.json"
-pull deployer "${PROFILE_DIR}/deployer-keypair.json"
+pull zama_host "${KEYPAIR_DIR}/zama_host-keypair.json"
+pull confidential_token "${KEYPAIR_DIR}/confidential_token-keypair.json"
+pull deployer "${KEYPAIR_DIR}/deployer-keypair.json"
 # Optional until the demo keys have been added to the vault item.
 if [[ "${INCLUDE_DEMOS:-false}" == true ]]; then
-  pull demo_vault "${PROFILE_DIR}/demo_vault-keypair.json"
-  pull confidential_batcher "${PROFILE_DIR}/confidential_batcher-keypair.json"
+  pull demo_vault "${KEYPAIR_DIR}/demo_vault-keypair.json"
+  pull confidential_batcher "${KEYPAIR_DIR}/confidential_batcher-keypair.json"
 fi
 
 echo "wrote keypairs to ${PROFILE_DIR} (gitignored)"
 if command -v solana-keygen >/dev/null; then
-  echo "  zama_host:           $(solana-keygen pubkey "${PROFILE_DIR}/zama_host-keypair.json")"
-  echo "  confidential_token:  $(solana-keygen pubkey "${PROFILE_DIR}/confidential_token-keypair.json")"
-  echo "  deployer:            $(solana-keygen pubkey "${PROFILE_DIR}/deployer-keypair.json")"
+  echo "  zama_host:           $(solana-keygen pubkey "${KEYPAIR_DIR}/zama_host-keypair.json")"
+  echo "  confidential_token:  $(solana-keygen pubkey "${KEYPAIR_DIR}/confidential_token-keypair.json")"
+  echo "  deployer:            $(solana-keygen pubkey "${KEYPAIR_DIR}/deployer-keypair.json")"
 fi

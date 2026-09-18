@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/hostConfig';
-import { programIdsFor } from '../../../../solana/deploy/src/program-profile';
+import { programIdsFor } from '../../../../solana/deploy/src/environment';
 import { REPO_ROOT } from '../../src/layout';
 import { validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
@@ -147,7 +147,7 @@ beforeAll(async () => {
     SOLANA_DEPLOYER_KEYPAIR: path.join(directory, 'payer.json'),
     SOLANA_ZAMA_HOST_KEYPAIR: path.join(solana, 'scripts/e2e/test-keypairs/zama_host-keypair.json'),
     SOLANA_ARTIFACTS_DIR: path.join(directory, 'A'),
-    SOLANA_PROGRAM_PROFILE: 'localnet',
+    SOLANA_ENVIRONMENT: 'localnet',
     ADDRESSES_DIR: path.join(directory, 'addresses'),
     GATEWAY_RPC_URL: gateway.url.toString(),
     GATEWAY_CONFIG_ADDRESS: `0x${'1'.repeat(40)}`,

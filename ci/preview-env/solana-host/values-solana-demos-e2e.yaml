@@ -22,7 +22,7 @@ scDeploy:
     - name: SOLANA_CONFIDENTIAL_BATCHER_KEYPAIR_JSON
       valueFrom:
         secretKeyRef: {name: solana-deployer, key: confidential_batcher.json, optional: true}
-    - {name: SOLANA_PROGRAM_PROFILE, value: preview-env}
+    - {name: SOLANA_ENVIRONMENT, value: preview-env}
   deployCommands:
     - node /app/cli.mjs demos deploy
   verifyContracts: false

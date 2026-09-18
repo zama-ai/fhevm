@@ -2,7 +2,7 @@ import { bootstrapZamaHost } from './bootstrap';
 import { deployProgramArtifacts } from './deploy-programs';
 import type { GatewayBootstrapInputs } from './gateway';
 import { loadKeypairSigner } from './keypair';
-import { programIdsFor } from './program-profile';
+import { programIdsFor } from './environment';
 import { createHostDeployContext } from './send';
 
 /** The shared host lifecycle: validate bindings, deploy/upgrade, then complete initialization. */
@@ -14,7 +14,7 @@ export const deployHostProgram = async (
     readonly kmsCorruptionThreshold?: number;
   },
 ) => {
-  const programAddress = programIdsFor(parameters.profile ?? 'localnet').zamaHost;
+  const programAddress = programIdsFor(parameters.environment ?? 'localnet').zamaHost;
   const context = createHostDeployContext(parameters.rpcUrl, parameters.signal);
   const bootstrap = {
     payer: await loadKeypairSigner(parameters.deployerKeypairPath),

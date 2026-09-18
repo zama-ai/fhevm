@@ -10,7 +10,7 @@ import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
 import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './gateway';
 import { loadKeypairSigner, resolveKeypairPath } from './keypair';
-import { programIdsFor, readSolanaProgramProfile } from './program-profile';
+import { programIdsFor, readSolanaEnvironment } from './environment';
 import { createHostDeployContext } from './send';
 import { wipeZamaHost } from './wipe';
 
@@ -54,8 +54,8 @@ if (process.argv.includes('--help')) {
 }
 
 const main = async () => {
-  const profile = readSolanaProgramProfile();
-  const programIds = programIdsFor(profile);
+  const environment = readSolanaEnvironment();
+  const programIds = programIdsFor(environment);
 
   const [target, action] = process.argv.slice(2);
   if (target === 'coprocessor' && action === 'register') {
@@ -71,7 +71,7 @@ const main = async () => {
     const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
     const payer = await loadKeypairSigner(await resolveDeployerKeypairPath());
     const closed = await wipeZamaHost(context, { payer, programAddress: programIds.zamaHost });
-    console.log(`profile=${profile}; host=${programIds.zamaHost}; swept ${closed} program-owned accounts; none remain`);
+    console.log(`environment=${environment}; host=${programIds.zamaHost}; swept ${closed} program-owned accounts; none remain`);
   } else {
     if ((target !== 'host' && target !== 'demos') || (action !== 'deploy' && action !== 'upgrade')) {
       throw new Error(USAGE);
@@ -84,12 +84,12 @@ const main = async () => {
       deployerKeypairPath: await resolveDeployerKeypairPath(),
       artifactsDir: ARTIFACTS_DIR,
       upgrade: action === 'upgrade',
-      profile,
+      environment,
     };
     let ids;
     if (target === 'host') {
       const gateway = await readGatewayBootstrapInputsFromEnv();
-      console.log(`profile=${profile}; host=${programIds.zamaHost}; gateway_chain_id=${gateway.gatewayChainId}`);
+      console.log(`environment=${environment}; host=${programIds.zamaHost}; gateway_chain_id=${gateway.gatewayChainId}`);
       console.log(
         `coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}; kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`,
       );

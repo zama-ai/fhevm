@@ -13,7 +13,7 @@ services:
       context: ../../..
       dockerfile: solana/deploy/Dockerfile
       args:
-        PROGRAM_PROFILE: ${SOLANA_PROGRAM_PROFILE:-localnet}
+        PROGRAM_ENVIRONMENT: ${SOLANA_ENVIRONMENT:-localnet}
     environment:
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-http://host.docker.internal:8899}
       GATEWAY_RPC_URL: ${GATEWAY_RPC_URL:-http://host.docker.internal:8546}
@@ -27,7 +27,7 @@ services:
       SOLANA_CONFIDENTIAL_BATCHER_KEYPAIR_JSON: ${SOLANA_CONFIDENTIAL_BATCHER_KEYPAIR_JSON:-}
       KMS_THRESHOLD: ${KMS_THRESHOLD:-0}
       COPROCESSOR_THRESHOLD: ${COPROCESSOR_THRESHOLD:-1}
-      SOLANA_PROGRAM_PROFILE: ${SOLANA_PROGRAM_PROFILE:-localnet}
+      SOLANA_ENVIRONMENT: ${SOLANA_ENVIRONMENT:-localnet}
     command: ["host", "deploy"]
     volumes:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/addresses/solana:/app/addresses
