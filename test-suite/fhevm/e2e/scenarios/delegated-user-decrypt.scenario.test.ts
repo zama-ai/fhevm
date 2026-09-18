@@ -214,6 +214,7 @@ describe("solana delegated user-decrypt", () => {
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
         rejection: { label: "not_allowed_on_host_acl" },
       });
+      await setup.wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
@@ -243,11 +244,12 @@ describe("solana delegated user-decrypt", () => {
       await assertSquadsDeployed(connection);
 
       // Three members, threshold two: no single member can grant. Each pays their own fees.
-      const memberKeys = [await generateSolanaKeypair(), await generateSolanaKeypair(), await generateSolanaKeypair()];
+      const memberKeys = [
+        await setup.wallets.fresh(env.funding.secondarySol),
+        await setup.wallets.fresh(env.funding.secondarySol),
+        await setup.wallets.fresh(env.funding.secondarySol),
+      ];
       const members = memberKeys.map((keypair) => web3KeypairFromBytes(keypair.bytes));
-      for (const keypair of memberKeys) {
-        await context.fundSol(keypair.signer.address, env.funding.secondarySol);
-      }
       const squad = await createSquad(connection, { members, threshold: 2 });
       const vaultAddress = squad.vaultPda.toBase58() as Address;
       // The vault pays every rent inside the proposal executions — the counter, its value, the
@@ -333,6 +335,7 @@ describe("solana delegated user-decrypt", () => {
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
         rejection: { label: "not_allowed_on_host_acl" },
       });
+      await setup.wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
