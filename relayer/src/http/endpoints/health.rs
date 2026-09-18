@@ -25,7 +25,7 @@ pub struct HealthResponse {
 pub struct VersionResponse {
     #[schema(example = "fhevm-relayer")]
     name: String,
-    #[schema(example = "0.9.0")]
+    #[schema(example = json!(env!("CARGO_PKG_VERSION")))]
     version: String,
     #[schema(example = "a1b2c3d4-clean")]
     build: String,
