@@ -44,6 +44,24 @@ WORK_TABLES="ciphertexts, ciphertexts128, ciphertext_digest, computations, pbs_c
   coprocessor_settlement, bridge_handle_events, delegate_user_decrypt, drift_revert_signal,
   input_blobs"
 
+# This resets to Blue, so it always runs after a cutover - the live version alone proves nothing.
+# What it must not do is run on a *second-round* environment, where the roles are inverted: the
+# fleet it would keep as "Blue" is the newer one and the fleet it would uninstall is the live 0.15.
+# Compare the two binaries and refuse when Blue is not older than Green.
+binary_version() { # binary_version <release>   empty when the release has no consumer deployment
+  kubectl exec -n "${NAMESPACE}" "deploy/$1-host-listener-consumer" -- host_listener --stack-version \
+    2>/dev/null | tr -d '\r' || true
+}
+blue_v=$(binary_version "coprocessor-1")
+green_v=$(binary_version "coprocessor-1-gcs")
+if [[ -n "${blue_v}" && -n "${green_v}" ]]; then
+  # Sort -V puts the older first; if Blue is not strictly older the slots are inverted.
+  if [[ "$(printf '%s\n%s\n' "${blue_v}" "${green_v}" | sort -V | head -1)" != "${blue_v}" \
+     || "${blue_v}" == "${green_v}" ]]; then
+    fail "coprocessor-1 runs ${blue_v} and coprocessor-1-gcs runs ${green_v}: the slots are inverted, so this would uninstall the live fleet and keep the newer one as Blue. bg-reset only supports resetting a first round."
+  fi
+fi
+
 trap 'echo "::error::bg-reset aborted at line ${LINENO}. Blue may be scaled to zero: fix the cause and re-run (idempotent)." >&2' ERR
 
 fail() { echo "::error::$*" >&2; exit 1; }
