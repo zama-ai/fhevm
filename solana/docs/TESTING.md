@@ -230,11 +230,11 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
-  its `target/deploy/*-keypair.json`. The canonical keypairs aren't committed, so if those drift you
-  get a "Program ID mismatch" error. Fixes: `anchor keys sync` (rewrites the declared ids to match
-  the keypairs — then update the coprocessor's vendored `host-listener/idl/zama_host.json`
-  `"address"` to match, since that's the one external reference to the host id), or
-  `anchor build --ignore-keys` to skip the check entirely. The BPF compile itself is unaffected.
+  its `target/deploy/*-keypair.json`. The deployed programs' keypairs are not in the repository (one
+  id on every cluster, DD-053), so a plain `anchor build` reports "Program ID mismatch" against a
+  stale generated keypair. Always build with `anchor build --ignore-keys` (what
+  `scripts/build-programs.sh` and the IDL sync do); never `anchor keys sync`, which would rewrite
+  the shipped ids. The BPF compile itself is unaffected.
 - **Keep cargo verification mostly sequential.** The workspace and the BPF build share target dirs;
   running several cargo invocations at once causes build-lock waits, not speedups.
 - **Connector/coprocessor need `SQLX_OFFLINE=true`.** They have SQLx-checked queries; without the

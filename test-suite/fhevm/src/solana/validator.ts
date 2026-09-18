@@ -13,6 +13,9 @@ import { closeSync, openSync } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { SOLANA_DEPLOY_PROGRAMS } from "../../../../solana/deploy/src/constants";
+import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from "../../../../solana/deploy/src/environment";
+import { solanaProgramIdFromKeypairFile } from "../generate/solana";
 import { REPO_ROOT } from "../layout";
 import { squadsGenesisExtras } from "./squads";
 import { run } from "../utils/process";
@@ -20,10 +23,49 @@ import { until } from "../utils/until";
 
 export const VALIDATOR_RPC_URL = "http://127.0.0.1:8899";
 export const VALIDATOR_WS_URL = "ws://127.0.0.1:8900";
-/** The two PoC programs the side-stack deploys, in deploy order. */
-export const SOLANA_E2E_PROGRAMS = ["zama_host", "confidential_token", "encrypted_counter", "dep_chain"] as const;
+/**
+ * The e2e specimen programs: wallet-facing writers of encrypted values the scenarios drive. They
+ * exist only on the test validator and deploy from the committed keypairs in
+ * `scripts/e2e/test-keypairs`, so their ids stay stable for the generated clients.
+ */
+export const SOLANA_SPECIMEN_PROGRAMS = ["encrypted_counter", "dep_chain"] as const;
+/** Every program the side-stack builds: the four deployed programs plus the specimens. */
+export const SOLANA_E2E_PROGRAMS = [...SOLANA_DEPLOY_PROGRAMS, ...SOLANA_SPECIMEN_PROGRAMS] as const;
 
 const SOLANA_DIR = path.join(REPO_ROOT, "solana");
+const SOLANA_DEPLOY_DIR = path.join(SOLANA_DIR, "target", "deploy");
+
+export type GenesisUpgradeableProgram = {
+  readonly address: string;
+  readonly soPath: string;
+  /** Pubkey of the wallet that may upgrade the program later; the deployer wallet here. */
+  readonly authority: string;
+};
+
+/**
+ * The four deployed programs at their one id each, loaded at genesis with the deployer wallet as
+ * upgrade authority (the Solana idiom: the program id is the same on every cluster, and localnet
+ * never needs the program keypair). The deployer then finds the bytecode in place and only
+ * bootstraps, and `--allow-upgrade` / `upgrade` work exactly as on a public cluster.
+ */
+export const genesisDeployedPrograms = (
+  deployerKeypairPath: string,
+  deployDir: string = SOLANA_DEPLOY_DIR,
+): GenesisUpgradeableProgram[] => {
+  const authority = solanaProgramIdFromKeypairFile(deployerKeypairPath);
+  const ids = programIdsFor(DEFAULT_SOLANA_ENVIRONMENT);
+  const byProgram = {
+    zama_host: ids.zamaHost,
+    confidential_token: ids.confidentialToken,
+    demo_vault: ids.demoVault,
+    confidential_batcher: ids.confidentialBatcher,
+  } as const;
+  return SOLANA_DEPLOY_PROGRAMS.map((program) => ({
+    address: byProgram[program],
+    soPath: path.join(deployDir, `${program}.so`),
+    authority,
+  }));
+};
 
 /** Renders the committed Yellowstone config template against the resolved plugin cdylib path. */
 export const renderGeyserConfig = (template: string, pluginLibPath: string): string =>
@@ -57,6 +99,8 @@ export const validatorStartArgs = (parameters: {
    * program's keypair, which a mainnet program never gives us.
    */
   readonly genesisPrograms?: readonly { readonly address: string; readonly soPath: string }[];
+  /** Our own programs, loaded at genesis but upgradeable by `authority` (see genesisDeployedPrograms). */
+  readonly genesisUpgradeablePrograms?: readonly GenesisUpgradeableProgram[];
   /** Accounts loaded at genesis verbatim, in `solana account --output json` file shape. */
   readonly genesisAccounts?: readonly { readonly address: string; readonly jsonPath: string }[];
 }): string[] => [
@@ -75,6 +119,12 @@ export const validatorStartArgs = (parameters: {
   "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g",
   ...(parameters.geyserConfigPath ? ["--geyser-plugin-config", parameters.geyserConfigPath] : []),
   ...(parameters.genesisPrograms ?? []).flatMap((program) => ["--bpf-program", program.address, program.soPath]),
+  ...(parameters.genesisUpgradeablePrograms ?? []).flatMap((program) => [
+    "--upgradeable-program",
+    program.address,
+    program.soPath,
+    program.authority,
+  ]),
   ...(parameters.genesisAccounts ?? []).flatMap((account) => ["--account", account.address, account.jsonPath]),
 ];
 
@@ -117,6 +167,8 @@ export type ValidatorStartOptions = {
   readonly logDir: string;
   /** Resolved Yellowstone plugin cdylib; built on demand when omitted. */
   readonly pluginLibPath?: string;
+  /** The deployed programs to load at genesis (`genesisDeployedPrograms`); built before the start. */
+  readonly genesisUpgradeablePrograms?: readonly GenesisUpgradeableProgram[];
 };
 
 /**
@@ -197,11 +249,19 @@ export const startGeyserValidator = async (options: ValidatorStartOptions): Prom
       ? "    genesis extras: Squads v4 program + program config + treasury"
       : "    genesis extras: none (Squads fixtures absent — run solana/scripts/e2e/fetch-squads-fixtures.sh)",
   );
-  const proc = Bun.spawn(validatorStartArgs({ ledgerDir, geyserConfigPath, ...(squadsExtras ?? {}) }), {
-    stdin: "ignore",
-    stdout: logFd,
-    stderr: logFd,
-  });
+  const proc = Bun.spawn(
+    validatorStartArgs({
+      ledgerDir,
+      geyserConfigPath,
+      genesisUpgradeablePrograms: options.genesisUpgradeablePrograms,
+      ...(squadsExtras ?? {}),
+    }),
+    {
+      stdin: "ignore",
+      stdout: logFd,
+      stderr: logFd,
+    },
+  );
   proc.unref();
   closeSync(logFd);
   if (options.lifecycleDir) {
@@ -243,16 +303,14 @@ const isProcessAlive = (pid: number): boolean => {
 };
 
 /**
- * Seeds the committed well-known PoC program keypairs so the build reuses them and the deployed
- * program IDs match each `declare_id!` (see scripts/e2e/test-keypairs/README.md). Always
+ * Seeds the committed specimen program keypairs so `solana program deploy` produces the specimens
+ * at the ids their generated clients expect (see scripts/e2e/test-keypairs/README.md). Always
  * overwrites target artifacts: they may have been generated by an older branch with different
  * program IDs.
  */
-export const seedProgramKeypairs = async (
-  deployDir: string = path.join(SOLANA_DIR, "target", "deploy"),
-): Promise<void> => {
+export const seedProgramKeypairs = async (deployDir: string = SOLANA_DEPLOY_DIR): Promise<void> => {
   await mkdir(deployDir, { recursive: true });
-  for (const program of SOLANA_E2E_PROGRAMS) {
+  for (const program of SOLANA_SPECIMEN_PROGRAMS) {
     await copyFile(
       path.join(SOLANA_DIR, "scripts", "e2e", "test-keypairs", `${program}-keypair.json`),
       path.join(deployDir, `${program}-keypair.json`),

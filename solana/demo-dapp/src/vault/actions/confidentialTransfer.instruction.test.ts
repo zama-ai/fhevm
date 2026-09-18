@@ -72,7 +72,7 @@ describe('generated confidentialTransfer instruction', () => {
       [zamaEvent, AccountRole.READONLY],
       [transientStore.address, AccountRole.WRITABLE],
       [INSTRUCTIONS_SYSVAR_ADDRESS, AccountRole.READONLY],
-      ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
+      [ZAMA_HOST_PROGRAM_ADDRESS, AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
       ['11111111111111111111111111111111', AccountRole.READONLY],
       // HCU witnesses and the optional result State resolve to the program id.

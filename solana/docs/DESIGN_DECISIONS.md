@@ -1855,7 +1855,8 @@ zama-testnet   a second program on Solana devnet
 preview-env    DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ on Solana devnet
 ```
 
-Localnet e2e uses the committed throwaway keypairs. That is CI, not a fifth Zama.
+Localnet e2e loads the preview-env build at validator genesis under the same ids, with the
+deployer wallet as upgrade authority. That is CI, not a fifth Zama, and it needs no program keypair.
 
 A handle binds `(program_id, chain_id)` and every host PDA is derived under `program_id`.
 `program_id` is the Zama, compiled as `crate::ID`. `chain_id` is the Solana cluster and lives in
@@ -1865,11 +1866,13 @@ scope under `crate::ID`. Putting HostConfig in those seeds would make a second c
 second Zama under one program ID, which this decision rejects.
 
 The program ID is compiled into the `.so` (`declare_id!`) from `solana/environments/<name>.json`
-(DD-053): `localnet` is `6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu`, `preview-env` is
-`DPq5y89…`. Mainnet, zama-devnet and zama-testnet will each need their own compiled id the same
-way, so shipping those Zamas is one build per environment file, not a runtime switch, and CI
-does not generate the keypairs. Each deployed program will have its own upgrade authority, so a
-preview-env workflow cannot replace zama-testnet's bytecode.
+(DD-053): `preview-env` is `DPq5y89…`, and it is the one id the repository's clients carry, on
+Solana devnet and on the test validator alike. Mainnet, zama-devnet and zama-testnet will each
+need their own compiled id the same way, so shipping those Zamas is one build per environment
+file, not a runtime switch, and CI does not generate the keypairs. Each deployed program will have
+its own upgrade authority, so a preview-env workflow cannot replace zama-testnet's bytecode.
+Whether the durable Zamas should instead share the mainnet id per cluster, as public Solana
+programs do, is open (fhevm-internal#2055).
 
 `zama-zws/gitops` does not deploy the preview-env program. GitOps provides the Kubernetes cluster,
 the Solana RPC credentials, and the deployer keypair. The preview-env GitHub Actions workflows are
@@ -1899,8 +1902,8 @@ empty or the next init fails. Accounts owned by the shared demo programs are not
 Gateway; a plain `host deploy` refuses differing bytecode. `preview-env-destroy.yml` will
 close those accounts again before it deletes the namespace and will not initialize. If that
 namespace uploaded a different `.so`, destroy will write the pinned baseline `.so` back.
-Pull-request CI stays on localnet and does not touch `DPq5y89…`. Durable GitOps environments will
-upgrade bytecode in place on their own program IDs.
+Pull-request CI runs on the test validator and does not touch the `DPq5y89…` on Solana devnet.
+Durable GitOps environments will upgrade bytecode in place on their own program IDs.
 
 Coprocessor `host_chains` uses `chain_id BIGINT PRIMARY KEY`. That collides only if one
 coprocessor database indexes both zama-devnet and zama-testnet. Separate databases, one per Zama,
@@ -1974,19 +1977,27 @@ This entry fixes how that id reaches the build.
 The id is read at build time from `solana/environments/<name>.json`, one file per deployed
 environment. A `build.rs` in each program (`crates/program-environment`) writes the `declare_id!`
 line from the file named by `PROGRAM_ENVIRONMENT`. `.cargo/config.toml` pins that variable to
-`localnet` (`force = true`), so for cargo invoked in this workspace a shell export cannot change
+`preview-env` (`force = true`), so for cargo invoked in this workspace a shell export cannot change
 what a build compiles; only the `--config` override that `scripts/build-programs.sh` passes does,
 and such a build warns. Cargo reads config from the invocation directory, so a build of
 `zama-host` as a path dependency from another workspace (the coprocessor images) is not pinned;
 no off-chain code reads the compiled id, so those images' id is not load-bearing.
-Plain `cargo` and `anchor build` therefore produce the localnet program, as before. The deployer
-image and CI set one environment before building; `scripts/build-programs.sh` also enables the
-cargo features the file lists per program (`features.zama_host`).
+Plain `cargo` and `anchor build` therefore produce the shipped program. The deployer image and CI
+build the same environment; `scripts/build-programs.sh` also enables the cargo features the file
+lists per program (`features.zama_host`).
 
 ```text
-solana/environments/localnet.json      committed test identities; the default
-solana/environments/preview-env.json   disposable host on Solana devnet; enables admin-sweep
+solana/environments/preview-env.json   the one id set today: Solana devnet and the test validator; enables admin-sweep
 ```
+
+Localnet is not an environment. A Solana program has one id on every cluster, and the test
+validator loads the preview-env build at genesis (`solana-test-validator --upgradeable-program
+<id> <so> <deployer>`), so the deployer finds the bytecode in place, only bootstraps, and upgrades
+exactly as on devnet. The repository holds no keypair for the deployed programs; the generated
+clients, the IDLs and `Anchor.toml` carry the preview-env ids. The earlier tree compiled a second,
+localnet id set from committed keypairs, which made every client default to ids that existed only
+on the test validator and would have forced a program-id parameter through the demo vault module
+and the harness.
 
 The file holds program ids and build features only. Chain id, RPC and keypairs are runtime
 config and stay in Helm values and the environment's secret store (DD-052 for the chain id).
@@ -1997,7 +2008,7 @@ Why not the alternatives:
 |---|---|
 | `#[cfg(feature = "<env>")]` per Zama (the tree before this entry) | The id lived in `lib.rs` × 4, `Anchor.toml` and the deployer. Any crate linking `zama-host` inherited whichever feature was on, so a listener built without the preview feature reconstructed handles under the localnet id. Each Zama added `#[cfg]` lines to four crates. |
 | `anchor keys sync` | Rewrites source in CI, and `Anchor.toml` is keyed by cluster. zama-devnet, zama-testnet and preview share Solana devnet, so they collide. |
-| One id on every cluster (Token-program style) | Zero build variance and the Solana idiom, but one Zama per cluster. Preview runs on public devnet to exercise the Yellowstone and RPC path, so it needs its own id there. Revisit if preview moves to an in-namespace validator. |
+| One id on every cluster (Token-program style) | Adopted between localnet and preview-env. Across Zamas it means one Zama per cluster, and zama-devnet and zama-testnet both target Solana devnet, so they keep distinct ids (DD-051); fhevm-internal#2055 tracks whether that stays. |
 | Zama identity in HostConfig, one program id | Rejected in DD-051: tenants under one program share handle space and PDA seeds. |
 
 Off-chain code never needs the id at build time. The connector, relayer and SDK derive PDAs from

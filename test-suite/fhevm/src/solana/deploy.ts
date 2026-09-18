@@ -24,9 +24,11 @@ import { until } from '../utils/until';
 import { SOLANA_HOST_CHAIN_ID, readGatewayBootstrapInputs } from './addresses';
 import {
   SOLANA_E2E_PROGRAMS,
+  SOLANA_SPECIMEN_PROGRAMS,
   VALIDATOR_RPC_URL,
   airdropDeployFees,
   ensureDeployerWallet,
+  genesisDeployedPrograms,
   seedProgramKeypairs,
   startGeyserValidator,
 } from './validator';
@@ -36,29 +38,36 @@ export { bootstrapZamaHost, kmsCertificateThreshold } from '../../../../solana/d
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
 const ENGINE_DIR = path.join(REPO_ROOT, 'coprocessor', 'fhevm-engine');
 
-const buildAndDeployPrograms = async (
+const ARTIFACTS_DIR = path.join(SOLANA_DIR, 'target', 'deploy');
+
+/** Builds every program before the validator starts: the deployed four load at genesis. */
+const buildPrograms = async (): Promise<void> => {
+  await runStreaming(['bash', 'scripts/build-programs.sh', 'preview-env', ...SOLANA_E2E_PROGRAMS], { cwd: SOLANA_DIR });
+};
+
+/**
+ * The deployed programs are already in place at genesis, so the host step only checks bytecode and
+ * bootstraps HostConfig; the specimens deploy from their committed keypairs.
+ */
+const deployPrograms = async (
   deployerKeypairPath: string,
   gateway: Awaited<ReturnType<typeof readGatewayBootstrapInputs>>,
 ): Promise<string> => {
-  await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', ...SOLANA_E2E_PROGRAMS], { cwd: SOLANA_DIR });
-  const artifactsDir = path.join(SOLANA_DIR, 'target', 'deploy');
   const ids = await deployHostProgram({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
-    artifactsDir,
+    artifactsDir: ARTIFACTS_DIR,
     gateway,
     coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
     kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD', 0),
-    programKeypairPath: path.join(artifactsDir, 'zama_host-keypair.json'),
   });
-  const specimens = SOLANA_E2E_PROGRAMS.filter((program) => program !== 'zama_host');
   await deployProgramArtifacts({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
-    artifactsDir,
-    programs: specimens,
+    artifactsDir: ARTIFACTS_DIR,
+    programs: SOLANA_SPECIMEN_PROGRAMS,
     programKeypairPaths: Object.fromEntries(
-      specimens.map((program) => [program, path.join(artifactsDir, `${program}-keypair.json`)]),
+      SOLANA_SPECIMEN_PROGRAMS.map((program) => [program, path.join(ARTIFACTS_DIR, `${program}-keypair.json`)]),
     ),
   });
   return ids.zama_host!;
@@ -298,17 +307,19 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   console.log(`    coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}`);
   console.log(`    kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`);
 
-  console.log('==> [2/4] fresh validator (Yellowstone geyser) + program deploy and host bootstrap');
+  console.log('==> [2/4] program build, fresh validator (Yellowstone geyser) with the programs at genesis, host bootstrap');
   await seedProgramKeypairs();
   await ensureDeployerWallet(deployerKeypairPath);
+  await buildPrograms();
   await startGeyserValidator({
     lifecycleDir,
     ledgerDir: process.env.SOLANA_LEDGER_DIR,
     logDir,
     pluginLibPath: process.env.PLUGIN_LIB || undefined,
+    genesisUpgradeablePrograms: genesisDeployedPrograms(deployerKeypairPath),
   });
   await airdropDeployFees(deployerKeypairPath);
-  const zamaHostId = await buildAndDeployPrograms(deployerKeypairPath, gateway);
+  const zamaHostId = await deployPrograms(deployerKeypairPath, gateway);
 
   console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });

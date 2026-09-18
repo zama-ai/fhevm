@@ -1,14 +1,17 @@
 import type { Address } from '@solana/kit';
 
-import localnet from '../../environments/localnet.json';
 import previewEnv from '../../environments/preview-env.json';
 
-/** Deployed environments: `solana/environments/<name>.json`, also the programs' compiled ids. */
-export const SOLANA_ENVIRONMENTS = ['localnet', 'preview-env'] as const;
+/**
+ * Deployed environments: `solana/environments/<name>.json`, also the programs' compiled ids.
+ * One id per program serves every cluster (the local test validator loads the same build at
+ * genesis); a further Zama is a further file (DD-051, DD-053).
+ */
+export const SOLANA_ENVIRONMENTS = ['preview-env'] as const;
 export type SolanaEnvironment = (typeof SOLANA_ENVIRONMENTS)[number];
+export const DEFAULT_SOLANA_ENVIRONMENT: SolanaEnvironment = 'preview-env';
 
 const ENVIRONMENTS: Record<SolanaEnvironment, { programs: Record<string, string> }> = {
-  localnet,
   'preview-env': previewEnv,
 };
 
@@ -30,7 +33,7 @@ export const programIdsFor = (environment: SolanaEnvironment): SolanaProgramIds 
 };
 
 export const readSolanaEnvironment = (): SolanaEnvironment => {
-  const raw = process.env.SOLANA_ENVIRONMENT ?? 'localnet';
+  const raw = process.env.SOLANA_ENVIRONMENT ?? DEFAULT_SOLANA_ENVIRONMENT;
   if (!(SOLANA_ENVIRONMENTS as readonly string[]).includes(raw)) {
     throw new Error(`SOLANA_ENVIRONMENT must be one of ${SOLANA_ENVIRONMENTS.join(', ')}, got "${raw}"`);
   }

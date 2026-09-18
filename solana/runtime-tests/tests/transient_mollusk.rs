@@ -1251,7 +1251,7 @@ fn sdk_transient_store_fixture_matches_host_address_and_lifecycle_bytes() {
     let payer = Pubkey::new_from_array([0x44; 32]);
     assert_eq!(
         host::transient_store_address(payer).0.to_string(),
-        "7HVhfpvm7TiBwHw8vFNeEqkMCDTU2cWpruEweWsRziAW"
+        "FQtss6FsWsNugVEsasKQ4vF8urWD7gkCzjTVgEaVy6xp"
     );
     assert_eq!(
         host::instruction::OpenTransientStore {}.data(),

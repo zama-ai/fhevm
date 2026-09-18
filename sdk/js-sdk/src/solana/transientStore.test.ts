@@ -18,7 +18,7 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/program
 
 // Pinned against the host Rust codec and derivation in transient_mollusk.rs.
 const payer = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));
-const transientStoreAddress = address('7HVhfpvm7TiBwHw8vFNeEqkMCDTU2cWpruEweWsRziAW');
+const transientStoreAddress = address('FQtss6FsWsNugVEsasKQ4vF8urWD7gkCzjTVgEaVy6xp');
 
 describe('prepareTransientStore', () => {
   it('binds open, the journal PDA, and the final refund to the same canonical transient store', async () => {

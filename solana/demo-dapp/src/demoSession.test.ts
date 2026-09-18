@@ -1,3 +1,4 @@
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, test } from 'vitest';
 import type { UiWalletAccount } from '@wallet-standard/react';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
@@ -27,7 +28,7 @@ const validResponse = {
     rpcUrl: 'http://127.0.0.1:8899',
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
-    aclProgram: '0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee',
+    aclProgram: '0xb825643b79bf4499ff31ccfe8a297aa0eb30a8a0cc1f2319e82176c1b4d65e71',
     userDecryptContextId: '123',
     kmsSigners: [`0x${'01'.repeat(20)}`],
     kmsEpochId: `0x${'00'.repeat(32)}`,
@@ -42,7 +43,7 @@ const validResponse = {
       batcher: '11111111111111111111111111111111',
       token: '11111111111111111111111111111111',
       vault: '11111111111111111111111111111111',
-      host: '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+      host: ZAMA_HOST_PROGRAM_ADDRESS,
     },
     mints: {
       joinUnderlying: '11111111111111111111111111111111',

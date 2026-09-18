@@ -1,5 +1,5 @@
 {
-  "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg",
+  "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
   "metadata": {
     "name": "confidential_token",
     "version": "0.1.0",
@@ -106,7 +106,7 @@
         },
         {
           "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "system_program",
@@ -233,7 +233,7 @@
         },
         {
           "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "system_program",
@@ -409,7 +409,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "system_program",
@@ -553,7 +553,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -736,7 +736,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -875,7 +875,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -1026,7 +1026,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -1132,7 +1132,7 @@
           "docs": [
             "ZamaHost program used for the stateless verifier CPI."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "event_authority"
@@ -1276,7 +1276,7 @@
           "docs": [
             "ZamaHost program used to create the initial total-supply handle."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -1407,7 +1407,7 @@
           "docs": [
             "ZamaHost program used to create the initial balance handle."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
@@ -1525,7 +1525,7 @@
         },
         {
           "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "system_program",
@@ -1624,7 +1624,7 @@
         },
         {
           "name": "zama_program",
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "system_program",
@@ -1797,7 +1797,7 @@
           "docs": [
             "ZamaHost program used for the stateless verifier CPI."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "token_program",
@@ -1997,7 +1997,7 @@
           "docs": [
             "ZamaHost program used for FHE operations."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config",
