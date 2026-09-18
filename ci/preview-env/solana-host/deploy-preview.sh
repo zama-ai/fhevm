@@ -82,7 +82,7 @@ done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.
 helm get values relayer -n "$NAMESPACE" -o yaml > "$work/relayer.yaml"
 yq -i '.env = ((.env // []) | map(select(.name != "APP_HOST_CHAINS__1__CHAIN_ID" and .name != "APP_HOST_CHAINS__1__URL" and .name != "APP_HOST_CHAINS__1__ACL_ADDRESS"))) + [
-  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":"9223372036854788153"},
+  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":"72057594037940281"},
   {"name":"APP_HOST_CHAINS__1__URL","valueFrom":{"secretKeyRef":{"name":"solana-rpc","key":"rpc-url"}}},
   {"name":"APP_HOST_CHAINS__1__ACL_ADDRESS","valueFrom":{"configMapKeyRef":{"name":"solana-host-addresses","key":"zama_host.address"}}}
 ]' "$work/relayer.yaml"

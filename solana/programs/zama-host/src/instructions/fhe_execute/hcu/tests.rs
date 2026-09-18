@@ -792,6 +792,7 @@ fn run_walk(
     };
     let context = super::super::walk::ExecutionHandleContext {
         derivation: crate::HandleDerivationContext {
+            program_id: crate::ID,
             chain_id: config.chain_id,
             previous_bank_hash: [1; 32],
             unix_timestamp: 42,

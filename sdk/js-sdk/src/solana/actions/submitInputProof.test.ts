@@ -3,7 +3,7 @@ import type { InputHandle } from '../../core/types/encryptedTypes-p.js';
 import type { EncryptionBits } from '../../core/types/fheType.js';
 import type { Bytes32Hex } from '../../core/types/primitives.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
-import { hexToBytes32 } from '../../core/base/bytes.js';
+import { asBytes32Hex, hexToBytes32 } from '../../core/base/bytes.js';
 import { toSolanaZkProof } from '../../core/coprocessor/SolanaZkProof-p.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,7 +69,10 @@ function context(): {
 function solanaChain() {
   return {
     id: CHAIN_ID,
-    fhevm: { relayerUrl: 'https://relayer.example.com' },
+    fhevm: {
+      relayerUrl: 'https://relayer.example.com',
+      programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
+    },
   } as const;
 }
 

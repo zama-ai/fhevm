@@ -69,11 +69,11 @@ if [ "$SELF_TEST" -eq 1 ] && [ -n "${DEAD_SURFACE_ONLY_CHECK:-}" ]; then
 fi
 
 # Everything the Solana workstream owns. GLOSSARY.md is excluded from the alias sweep because its
-# "Replaces" column intentionally quotes the old names, and DESIGN_DECISIONS.md because it is a
-# historical record: a decision written under the old vocabulary keeps it, so the alias patterns
-# would fire on every entry. Decisions there are only ever appended, but their prose does get
-# reworded, and that is not something this sweep can police — a rename inside those bodies is
-# review's job. It has already gone wrong once: a blanket frame -> batch pass overwrote "CPI frame".
+# "Replaces" column intentionally quotes the old names; DESIGN_DECISIONS.md and DESIGN_HISTORY.md
+# because they are decision records: an entry written under the old vocabulary keeps it, and the
+# live entries use "frame", "durable" and "supersede" in their ordinary English sense, which the
+# context-blind patterns cannot tell apart. A rename inside those bodies is review's job. It has
+# already gone wrong once: a blanket frame -> batch pass overwrote "CPI frame".
 RUST_ROOTS=(
   solana/programs
   solana/crates
@@ -470,6 +470,7 @@ if run_check 3; then
     hits=$(echo "$hits" \
       | (grep -v '^solana/docs/GLOSSARY\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_DECISIONS\.md:' || true) \
+      | (grep -v '^solana/docs/DESIGN_HISTORY\.md:' || true) \
       | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) )
     if [ -n "$exceptions" ]; then
       # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
@@ -657,8 +658,8 @@ if run_check 3; then
   # alias. A second limit, bigger than that one: these patterns match whole words, and `_` is a word
   # character to grep, so a retired word inside a compound identifier (`value_account`,
   # `max_op_batch`) is invisible here. Identifier renames are carried by review, not by this sweep.
-  # (GLOSSARY.md is dropped by check_alias itself: its "Replaces" column has to keep the retired
-  # spelling greppable, which is that column's entire purpose.)
+  # (GLOSSARY.md and the two decision records are dropped by check_alias itself: the "Replaces"
+  # column and the decision bodies have to keep the retired spelling greppable.)
   check_alias 'value account — say encrypted value account' all 'encrypted[ -]value[ -]account' \
     -iE '(^|[^-[:alnum:]_])value[ -]accounts?\b'
   # The operand/output variants were renamed to say what the slot is rather than why it was admitted:
@@ -681,7 +682,8 @@ if run_check 3; then
     -E 'lookup[- ]?table of (handles|keys|entries|constants|operands|subjects)|(handle|key|dictionary|interned|intern|operand|constant)[- ]lookup[- ]?table|lookup[- ]?table \(the (dictionary|intern)' \
     "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" solana/docs 2>/dev/null || true) \
     | (grep -v 'solana/docs/GLOSSARY.md' || true) \
-    | (grep -v 'solana/docs/DESIGN_DECISIONS.md' || true) )
+    | (grep -v 'solana/docs/DESIGN_DECISIONS.md' || true) \
+    | (grep -v 'solana/docs/DESIGN_HISTORY.md' || true) )
   # Registered like a `check_alias` entry so the self-test's fixture-parity gate covers it too, even
   # though it is spelled out inline rather than going through the helper.
   printf '%s\n' 'lookup table — the interning structure is the dictionary' >> "$ALIAS_LABELS"

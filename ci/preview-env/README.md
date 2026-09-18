@@ -122,7 +122,7 @@ attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`
 | --- | --- | --- |
 | Party count | `nb_kms_core` (`4` \| `13`) | Topology only — not in `overrides`. |
 | Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
-| Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
+| Deploy scripts + chart | `kms_repo_ref` | Full 40-character commit SHA, branch or tag on `zama-ai/kms`. A short SHA fails: `actions/checkout` expands it into a ref glob. |
 
 Defaults live in [`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs)
 (`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**

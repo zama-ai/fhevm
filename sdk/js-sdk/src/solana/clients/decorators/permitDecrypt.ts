@@ -119,12 +119,11 @@ export type SolanaPermitDecryptActions = {
 /**
  * Builds the permit-path actions for one deployment and one trust configuration.
  *
- * @param chain - Where the deployment is; `verifyingProgramId` is required here, unlike on the
- * public-decrypt-only surface.
+ * @param chain - Where the deployment is; permits are signed for its host program id.
  * @param trust - Whom to believe; see {@link SolanaDecryptTrust}.
  * @param runtime - The client runtime; its configured auth reaches every relayer submission,
  * with per-call options taking precedence — the same merge the public-decrypt action runs.
- * @throws If the chain does not name the identity the permit path stands on.
+ * @throws If the trust configuration lacks the gateway domain the permit path stands on.
  */
 export function solanaPermitDecryptActions(
   chain: FhevmSolanaChain,
@@ -132,9 +131,8 @@ export function solanaPermitDecryptActions(
   runtime: FhevmRuntime,
   fetchPermitInvalidation: (user: Address) => Promise<bigint>,
 ): SolanaPermitDecryptActions {
-  // Fail at construction, not mid-session: a chain missing the deployment identity would otherwise
+  // Fail at construction, not mid-session: a trust configuration missing the domain would otherwise
   // surface as a failure of whichever request first needed it.
-  const verifyingProgramId = requiredField(chain.fhevm.verifyingProgramId, 'chain.fhevm.verifyingProgramId');
   const gatewayEip712Domain = requiredField(trust.gatewayEip712Domain, 'trust.gatewayEip712Domain');
 
   return {
@@ -154,7 +152,7 @@ export function solanaPermitDecryptActions(
         allowedScopes: sortedScopes(parameters.allowedScopes ?? []),
         startTimestamp,
         durationSeconds: parameters.durationSeconds,
-        verifyingProgramId: hexToBytes32(verifyingProgramId),
+        verifyingProgramId: hexToBytes32(chain.fhevm.programs.host.address),
         chainId: chain.id,
         extraData: encodeSolanaKmsRouting({
           version: PERMIT_KMS_ROUTING_VERSION,

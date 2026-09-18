@@ -11,7 +11,7 @@ const instructions = address('Sysvar1nstructions1111111111111111111111111');
 
 describe('createSolanaFheTransaction', () => {
   it('binds open, body accounts, and the final refund to the same canonical transient store', async () => {
-    const fhe = await createSolanaFheTransaction({ payer });
+    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     expect(fhe.accounts).toEqual({ transientStore, instructions });
     const [open, close] = fhe.wrap([]);
     expect(open!.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
@@ -44,7 +44,7 @@ describe('createSolanaFheTransaction', () => {
   });
 
   it('preserves arbitrary application order and rejects nested lifecycle instructions', async () => {
-    const fhe = await createSolanaFheTransaction({ payer });
+    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
     const first: Instruction = {
       programAddress: address('11111111111111111111111111111111'),
       data: new Uint8Array([1]),
@@ -60,8 +60,13 @@ describe('createSolanaFheTransaction', () => {
       expect(() => fhe.wrap(wrapped)).toThrow('must not open or close the transient store');
     }
     // A new transaction with the same sponsor deliberately reuses the address, not its contents.
-    expect((await createSolanaFheTransaction({ payer })).accounts).toEqual(fhe.accounts);
-    const other = await createSolanaFheTransaction({ payer: createNoopSigner(instructions) });
+    expect((await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts).toEqual(
+      fhe.accounts,
+    );
+    const other = await createSolanaFheTransaction({
+      payer: createNoopSigner(instructions),
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+    });
     expect(other.accounts.transientStore).not.toBe(transientStore);
   });
 });

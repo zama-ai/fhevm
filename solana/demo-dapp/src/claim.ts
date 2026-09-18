@@ -63,7 +63,7 @@ const buildClaimInstructions = async (
   }
 
   const initializesAccount = account === null || account.owner === SYSTEM_PROGRAM_ADDRESS;
-  const fhe = await createSolanaFheTransaction({ payer: session.keeper });
+  const fhe = await createSolanaFheTransaction({ payer: session.keeper, programAddress: session.config.programs.host });
   const instructions: Instruction[] = [];
   if (initializesAccount) {
     instructions.push(

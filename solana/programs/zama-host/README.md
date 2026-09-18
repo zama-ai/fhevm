@@ -1,6 +1,6 @@
-# Zama Host Solana PoC
+# Zama Host
 
-`zama-host` is the protocol-side Anchor program for the Solana FHEVM PoC. It owns host ACL state,
+`zama-host` is the protocol-side Anchor program of the Solana FHEVM port. It owns host ACL state,
 checks FHE operation authorization, emits generic host events, and provides the CPI surface used by
 application programs such as `confidential-token`.
 

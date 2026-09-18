@@ -48,7 +48,7 @@ if (((chainId >> 56n) & 0xffn) !== 0x01n) throw new Error('transfer chain id is 
 const aclProgramAddress = bytes32(required('TRANSFER_ACL_PROGRAM'));
 if (addressHex(HOST_PROGRAM) !== aclProgramAddress) throw new Error('configured ACL program is not the fixed Zama host program');
 const rpc = createSolanaRpc(required('TRANSFER_RPC_URL'));
-const chain = defineFhevmSolanaChain({ id: chainId, fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL'), verifyingProgramId: aclProgramAddress } });
+const chain = defineFhevmSolanaChain({ id: chainId, fhevm: { relayerUrl: required('TRANSFER_RELAYER_URL'), programs: { host: { address: aclProgramAddress } } } });
 setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
 const client = createFhevmEncryptClient({ chain, rpc });
 // The attestation binds the amount to (user = owner, contract = the confidential-token program),

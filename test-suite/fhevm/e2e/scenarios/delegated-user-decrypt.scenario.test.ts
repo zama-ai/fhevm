@@ -60,6 +60,7 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 
 /** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
 const EXPIRATION_SLOTS_AHEAD = 100_000n;
+type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
 
 type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
 const sdkSolana = async (): Promise<SdkSolanaModule> => {
@@ -99,6 +100,11 @@ describe("solana delegated user-decrypt", () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
       const solana = await sdkSolana();
+      const chain = solana.defineFhevmSolanaChain({
+        id: BigInt(config.chainId),
+        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+      });
+      const hostProgram = solana.solanaHostProgram(chain);
 
       // Two roles: the provisioning wallet is the delegator — it owns the counter, so the counter
       // program allows it on every handle it writes — and the delegate holds no access of its own;
@@ -116,6 +122,7 @@ describe("solana delegated user-decrypt", () => {
       // builder takes the signer itself, so the kit pipeline signs the instruction as built (the
       // Squads arc below is the bare-address path).
       const grant = await solana.buildDelegateForUserDecryptionInstruction({
+        programAddress: hostProgram,
         payer: wallet.signer,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
@@ -129,7 +136,7 @@ describe("solana delegated user-decrypt", () => {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
-      });
+      }, { programAddress: hostProgram });
       expect(rows.exact).not.toBeNull();
       expect(solana.isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await currentSlot(setup))).toBe(true);
 
@@ -139,11 +146,6 @@ describe("solana delegated user-decrypt", () => {
       // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
       // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
       // the same job id. The interception passes everything through untouched.
-      type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
-      const chain = solana.defineFhevmSolanaChain({
-        id: BigInt(config.chainId),
-        fhevm: { relayerUrl: config.relayerUrl, verifyingProgramId: config.verifyingProgramId as Bytes32Hex },
-      });
       solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
       const trust: SolanaDecryptTrust = {
         kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
@@ -193,6 +195,7 @@ describe("solana delegated user-decrypt", () => {
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
+        programAddress: hostProgram,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
@@ -202,7 +205,7 @@ describe("solana delegated user-decrypt", () => {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
-      });
+      }, { programAddress: hostProgram });
       expect(revokedRows.exact?.revoked).toBe(true);
       // The typed label, not the message text: the label IS the relayer's contract, while the
       // message it is rendered into is prose. `kind` is deliberately left unpinned — it says
@@ -226,8 +229,14 @@ describe("solana delegated user-decrypt", () => {
         );
       }
       const setup = await verticalSetup();
-      const { env, stack, context } = setup;
+      const { env, stack, context, config } = setup;
       const solana = await sdkSolana();
+      const hostProgram = solana.solanaHostProgram(
+        solana.defineFhevmSolanaChain({
+          id: BigInt(config.chainId),
+          fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+        }),
+      );
       const connection = new Connection(env.rpcUrl, "confirmed");
       // The skip condition above proved only that the fixtures are on disk; this proves the
       // RUNNING validator was booted with them, failing legibly instead of deep in createSquad.
@@ -253,7 +262,10 @@ describe("solana delegated user-decrypt", () => {
 
       // These proposals name member[0] as transient store sponsor, so its signature is required at execution.
       // The vault still authenticates its own State by CPI.
-      const fhe = await createSolanaFheTransaction({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address) });
+      const fhe = await createSolanaFheTransaction({
+        payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address),
+        programAddress: hostProgram,
+      });
       const [open, close] = fhe.wrap([]).map(toWeb3Instruction);
       // The DAO's value: the vault's own counter at 42, written through two approved proposals.
       for (const instruction of [
@@ -271,6 +283,7 @@ describe("solana delegated user-decrypt", () => {
 
       // The proposal's inner instruction: vault -> delegate, the vault paying its own rent.
       const grant = await solana.buildDelegateForUserDecryptionInstruction({
+        programAddress: hostProgram,
         payer: vaultAddress,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
@@ -293,7 +306,7 @@ describe("solana delegated user-decrypt", () => {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
-      });
+      }, { programAddress: hostProgram });
       expect(rows.exact?.delegator).toBe(vaultAddress);
 
       // The delegate decrypts the DAO's value: allowedKey = the vault PDA.
@@ -301,6 +314,7 @@ describe("solana delegated user-decrypt", () => {
 
       // The DAO takes it back: a second proposal revokes, and the next request is refused.
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
+        programAddress: hostProgram,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
@@ -313,7 +327,7 @@ describe("solana delegated user-decrypt", () => {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
         encryptedStoreAuthority: value.authority,
-      });
+      }, { programAddress: hostProgram });
       expect(revokedRows.exact?.revoked).toBe(true);
       // Pinned the same way as the headless arc above: the label, not the rendered message.
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({

@@ -1,6 +1,6 @@
-# Protocol invariants — Solana fhevm (POC)
+# Protocol invariants — Solana fhevm
 
-Last synced: 2026-09-11.
+Last synced: 2026-09-17.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -22,7 +22,7 @@ true; the sizes and limits are pinned by tests, and the [OPERATIONAL] entries ar
 notes about how we run the system rather than properties anything enforces.
 Nothing in Part II is a promise about safety, so you can skip it without skipping
 anything you have to trust. A [HOLDS] entry can sit in Part II when the thing it
-holds is a size or a limit — #14, #48 and #54 are all of that kind. An [ANTI] never
+holds is a size or a limit — #14, #48, #54 and #66 are all of that kind. An [ANTI] never
 can: it is a guarantee explicitly withheld, so a reader who skips it walks away
 assuming the opposite. Numbers are stable across both parts and never reused, so an
 entry that moves between them keeps its number.
@@ -106,7 +106,7 @@ RFC 035.) Related token/Host lifecycle guardrails are:
 - **11f [HOLDS].** Host pause (`HostConfig.paused`) gates token cash-out / disclose paths that call
   `assert_host_config_allows_token_response` (redeem, disclose). Opening a burn / cancelling a pending burn still
   requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
-  gov surface in this PoC (out of scope; zama-ai/fhevm-internal#1634).
+  gov surface yet (zama-ai/fhevm-internal#1634).
 
 **62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its Store authority's
 signature and the exact current handle. Each execution names a canonical producing Store; its authority must sign.
@@ -150,6 +150,12 @@ still needs a grant or its own authority to compute with it (#62). Pinned by
 `mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats`,
 `mollusk_fhe_execute_rejects_invalid_return_selection_before_execution`, and the SDK test
 `selected_result_stays_paired_with_its_execution_and_checks_return_data`.
+
+**67. [HOLDS]** Operand origin is derived by the host, never declared by the caller. Before an operand-bearing result
+is derived, each encrypted operand gets boundary bit 1 only if its handle was not produced earlier in this transaction.
+Scalars get bit 0. The big-endian 256-bit mask enters the handle preimage; input position 0 uses the least-significant
+bit. The listener reconstructs the same ordered transaction membership. An earlier transaction in the same block is
+still a boundary; `EarlierStep`, slot reload and transient store grant witnesses cannot choose a different origin.
 
 **13. [HOLDS]** Every dictionary index is bounds-checked by all three consumers
 (program, SDK, listener); an unreferenced dictionary entry rejects the
@@ -234,8 +240,10 @@ Delegation emits no event; readers read the record (DD-044).
 
 **28. [HOLDS]** Handles the listener re-derives are byte-identical to the
 on-chain ones, because the listener imports the program's own derivation
-functions and argument types rather than reimplementing them (fixtures and
-the e2e derivation check this too).
+functions and argument types rather than reimplementing them, and supplies
+the followed program id (`--program-id`) as `HandleDerivationContext.program_id`
+instead of hashing the crate's compiled `declare_id!` (fixtures and the e2e
+derivation check this too).
 
 **29. [HOLDS]** Every transaction is independently interpretable: replay from
 instruction bytes alone reconstructs full history with zero account reads
@@ -255,9 +263,11 @@ plaintext.
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
 rolled back (safe only because of #31).
 
-**33. [RISK]** Nothing pins a deployed program build to the listener build; the
-shared-crate identicality guarantee (#28) silently assumes matching
-versions.
+**33. [RISK]** Nothing pins a deployed program build to the listener build.
+#28 now takes the followed program id as an input, so a listener compiled
+for one `declare_id!` can still derive another deployment's handles.
+Instruction layout and decoder types still silently assume matching crate
+revisions.
 
 ## F. Admin, config & custody
 
@@ -287,8 +297,8 @@ Total and critical-path depth accumulate across all calls in the transaction’s
 different applications. Each application block meter is charged only the cost of its own execution. Repeated handle
 occurrences retain the maximum depth for that handle; changing its operand witness cannot reset its depth.
 
-**38. [ASSUMPTION]** The host admin key is a single trusted key. This is a POC:
-there is no multisig and no timelock. The initial admin must be the BPF
+**38. [ASSUMPTION]** The host admin key is a single trusted key. There is no
+multisig and no timelock yet (fhevm-internal#1634). The initial admin must be the BPF
 upgrade authority (`ProgramData.upgrade_authority_address`). After init,
 `set_admin` rotates in one instruction: the current admin signs; a new
 keypair must co-sign; a new PDA skips co-sign only when it is off-curve
@@ -453,7 +463,7 @@ data passes. A direct Solana entry is not pre-checked — its authorization
 is an allow leaf the connector fetches, and there is no cheaper reading of
 it — so an unauthorized one is rejected by the KMS connectors after the
 gateway fee is paid. This does not affect authorization (#42, #45); for
-the POC we accept that a rejected request can still cost a fee, and that
+now we accept that a rejected request can still cost a fee, and that
 this leaves room for spam.
 
 **52. [OPERATIONAL]** Every batch gets its own settle address lookup table, and
@@ -491,19 +501,11 @@ The host heap remains a separate limit (#61). Runtime sweeps cover wide audience
 committed snapshots, updates across Stores with 8, 32 and 64 MMR peaks reach 15, 7 and 4 steps, respectively; 60-operand
 reductions reach 4. These shape measurements do not guarantee that an arbitrary composition fits.
 
-## J. Roadmap
-
-**39. [RETIRED]** App-layer invariants were folded into this register rather
-than split into a second source of truth (#55–#60).
-
-**65. [HOLDS]** Operand origin is derived by the host, never declared by the caller. Before an operand-bearing result
-is derived, each encrypted operand gets boundary bit 1 only if its handle was not produced earlier in this transaction.
-Scalars get bit 0. The big-endian 256-bit mask enters the handle preimage; input position 0 uses the least-significant
-bit. The listener reconstructs the same ordered transaction membership. An earlier transaction in the same block is
-still a boundary; `EarlierStep`, slot reload and transient store grant witnesses cannot choose a different origin.
-
 **66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
 32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
 atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte
 transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
+
+**39. [RETIRED]** App-layer invariants were folded into this register rather
+than split into a second source of truth (#55–#60).

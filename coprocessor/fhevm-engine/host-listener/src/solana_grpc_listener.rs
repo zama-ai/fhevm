@@ -7,11 +7,10 @@
 //!   work scheduled from a minority fork is wasted, never reverted. This is safe only because
 //!   scheduling is decoupled from authorization — the KMS re-checks live on-chain state before
 //!   releasing any plaintext (INVARIANTS #31/#32).
-//! - **Version pairing.** Handle re-derivation is byte-identical to the program because the
-//!   listener links the program crate itself (INVARIANTS #28) — which silently assumes the
-//!   deployed program and the running listener were built from the same revision. There is no
-//!   runtime handshake; the operational rule is to deploy both from the same rev
-//!   (INVARIANTS #33).
+//! - **Version pairing.** Handle re-derivation uses the program crate's `computed_*` functions
+//!   (INVARIANTS #28) and hashes the followed `--program-id`, not the crate's compiled
+//!   `declare_id!`. Instruction layout still has no runtime handshake: deploy the listener from
+//!   the same rev as the program (INVARIANTS #33).
 //!
 //! Each sealed block is applied in one database transaction: its compute rows, the
 //! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
@@ -31,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
 use tonic::metadata::{Ascii, MetadataValue};
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
@@ -140,7 +139,8 @@ pub struct SolanaGrpcListenerConfig {
     pub grpc_url: String,
     /// Optional `x-token` auth metadata (None for a local validator).
     pub x_token: Option<String>,
-    /// Base58 zama-host program id whose instructions are reconstructed.
+    /// Base58 zama-host program id to follow: instruction filter and the id hashed into
+    /// reconstructed handles (not the id this crate was compiled with).
     pub program_id: String,
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
@@ -255,11 +255,11 @@ pub async fn run(
             Err(err) => match err.downcast::<FatalListenerError>() {
                 Ok(fatal) => {
                     let err = fatal.into_inner();
-                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
+                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
                     return Err(err);
                 }
                 Err(err) => {
-                    error!(error = %err, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
+                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
                     tokio::select! {
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -384,6 +384,15 @@ async fn subscribe_loop(
 ) -> Result<()> {
     let endpoint = Channel::from_shared(config.grpc_url.clone())
         .context("invalid grpc url")?;
+    // from_shared leaves tls unset. Attach rustls when the parsed URI is https so hosted
+    // Yellowstone handshakes; plaintext http (local e2e geyser) stays as-is.
+    let endpoint = if endpoint.uri().scheme_str() == Some("https") {
+        endpoint
+            .tls_config(ClientTlsConfig::new().with_webpki_roots())
+            .context("configure grpc tls")?
+    } else {
+        endpoint
+    };
     let channel = tokio::select! {
         _ = cancel.cancelled() => return Ok(()),
         result = endpoint.connect() => result.context("connect grpc endpoint")?,
@@ -1054,21 +1063,31 @@ fn sealed_block_timestamp(block: &SealedBlock) -> Option<PrimitiveDateTime> {
         .and_then(unix_to_pdt)
 }
 
-/// Builds the handle-derivation context for `slot` from the streamed sysvars,
-/// Returns `None` until both the Clock and SlotHashes value for the slot have been cached.
+/// Builds the handle-derivation context for `slot` from the streamed sysvars.
+/// Returns `Ok(None)` until both the Clock and SlotHashes value for the slot have been cached.
 fn reconstruct_context(
     config: &SolanaGrpcListenerConfig,
     slot: u64,
     slot_bank_hash: &HashMap<u64, [u8; 32]>,
     slot_clock_ts: &HashMap<u64, i64>,
-) -> Option<crate::solana_reconstruct::ReconstructContext> {
-    let unix_timestamp = slot_clock_ts.get(&slot).copied()?;
-    let previous_bank_hash = slot_bank_hash.get(&slot).copied()?;
-    Some(crate::solana_reconstruct::ReconstructContext {
+) -> Result<Option<crate::solana_reconstruct::ReconstructContext>> {
+    // The deployment this listener follows, not the id the crate was compiled with: handles
+    // hash the program id, so a listener built for one profile can still derive another's.
+    let program_id = config.program_id.parse().with_context(|| {
+        format!("program_id {} is not a Solana pubkey", config.program_id)
+    })?;
+    let (Some(unix_timestamp), Some(previous_bank_hash)) = (
+        slot_clock_ts.get(&slot).copied(),
+        slot_bank_hash.get(&slot).copied(),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(crate::solana_reconstruct::ReconstructContext {
+        program_id,
         chain_id: config.chain_id,
         previous_bank_hash,
         unix_timestamp,
-    })
+    }))
 }
 
 /// One covered transaction, rebuilt off-chain: the compute rows to insert and the
@@ -1134,7 +1153,7 @@ fn reconstruct_records_for_insert(
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
-    let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts);
+    let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)?;
     if has_fhe_execute && ctx.is_none() {
         anyhow::bail!(
             "reconstruct: missing slot derivation context for covered fhe_execute in slot {slot}"
@@ -1392,7 +1411,9 @@ mod fhe_execute_acl_tests {
     use crate::database::solana_leaves::EncryptedStoreWrite;
     use crate::solana_reconstruct::DecodedInstruction;
 
-    const ZAMA_HOST: &str = "ZamaHost11111111111111111111111111111111";
+    // A valid pubkey that is not the compiled-in `zama_host::ID`: derivation must follow the
+    // configured deployment.
+    const ZAMA_HOST: &str = "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
     const STATE: [u8; 32] = [0x22; 32];
 
     fn config() -> SolanaGrpcListenerConfig {
@@ -1498,6 +1519,7 @@ mod fhe_execute_acl_tests {
             FheExecuteOperand, SlotWrite,
         };
         let context = zama_host::HandleDerivationContext {
+            program_id: ZAMA_HOST.parse().unwrap(),
             chain_id: config().chain_id,
             previous_bank_hash: [0x44; 32],
             unix_timestamp: 1_700_000_000,

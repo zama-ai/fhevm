@@ -51,7 +51,7 @@ describe('buildDispatchBatchInstruction', () => {
 
   it('derives every non-root account exactly as dispatch.rs validates them', async () => {
     const instruction = await buildDispatchBatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer })).accounts,
+      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
       payer,
       batcher,
       batch,
@@ -114,7 +114,7 @@ describe('buildDispatchBatchInstruction', () => {
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildDispatchBatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer })).accounts,
+      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
       payer,
       batcher,
       batch,

@@ -6,6 +6,7 @@ const environment = (): Record<string, string> => ({
   PD_RPC_URL: 'http://127.0.0.1:8899',
   PD_CONTRACTS_CHAIN_ID: '72057594037940281',
   PD_RELAYER_URL: 'http://127.0.0.1:3000',
+  PD_VERIFYING_PROGRAM_ID: hex32('6'),
   PD_HANDLE: hex32('1'),
   PD_CONTEXT_ID: hex32('2'),
   PD_ENCRYPTED_STORE: hex32('4'),
@@ -31,6 +32,7 @@ describe('solana-public-decrypt', () => {
       chainId: 72057594037940281n,
       relayerUrl: 'http://127.0.0.1:3000',
       rpcUrl: 'http://127.0.0.1:8899',
+      verifyingProgramId: hex32('6'),
       apiKey: 'local',
       request: {
         handle: hex32('1'),

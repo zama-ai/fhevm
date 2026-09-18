@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
 import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
 import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 
 const mocks = vi.hoisted(() => ({
   encryptValues: vi.fn(),
@@ -79,7 +80,7 @@ const session = {
     aclProgram: '11111111111111111111111111111111',
     hostConfig: '11111111111111111111111111111111',
     mints: { joinConfidential: '11111111111111111111111111111111' },
-    programs: { token: '11111111111111111111111111111111' },
+    programs: { token: '11111111111111111111111111111111', host: ZAMA_HOST_PROGRAM_ADDRESS },
     batchers: { deposit: { batcher: '11111111111111111111111111111111' } },
   },
   signer: { address: '11111111111111111111111111111111' },

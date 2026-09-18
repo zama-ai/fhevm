@@ -52,6 +52,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import { prepareNextBatch } from './batchProvisioning';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { BatchStatus } from './batchTypes';
 
 const REGISTRY_PATH = '/tmp/registry.json';
@@ -61,6 +62,7 @@ const config = {
   chainId: 42,
   rpcUrl: 'http://rpc',
   authorityFundingLamports: '1000',
+  programs: { host: ZAMA_HOST_PROGRAM_ADDRESS },
   batchers: { deposit: { batcher: 'batcher-1', lookupTable: 'table-batch-0' }, redeem: { batcher: 'batcher-2', lookupTable: 'table-redeem-0' } },
 } as never;
 

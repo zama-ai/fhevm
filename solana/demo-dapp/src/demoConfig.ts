@@ -1,4 +1,5 @@
-import { address, type Address } from "@solana/kit";
+import { address, getAddressDecoder, type Address } from "@solana/kit";
+import { hexToBytes } from "@fhevm/sdk/base";
 
 export type DemoConfig = {
   readonly source: "demo-config";
@@ -87,6 +88,12 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
   if (raw.source !== "demo-config") throw new Error("demo config.source must be demo-config");
   const rpcUrl = localUrl(raw.rpcUrl, "demo config.rpcUrl", "http:");
   if (rpcUrl !== "http://127.0.0.1:8899") throw new Error(`demo refuses non-local RPC ${rpcUrl}`);
+  const aclProgram = hexBytes(raw.aclProgram, "demo config.aclProgram", 32);
+  const host = address(string(programs.host, "demo config.programs.host"));
+  // Two spellings of one deployment: the chain definition takes bytes32, the instruction builders base58.
+  if (getAddressDecoder().decode(hexToBytes(aclProgram)) !== host) {
+    throw new Error("demo config.aclProgram and demo config.programs.host name different programs");
+  }
   return {
     source: "demo-config",
     demoBootId: string(raw.demoBootId, "demo config.demoBootId"),
@@ -94,7 +101,7 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     rpcUrl,
     wsUrl: localUrl(raw.wsUrl, "demo config.wsUrl", "ws:"),
     relayerUrl: localUrl(raw.relayerUrl, "demo config.relayerUrl", "http:"),
-    aclProgram: string(raw.aclProgram, "demo config.aclProgram") as `0x${string}`,
+    aclProgram,
     userDecryptContextId: string(raw.userDecryptContextId, "demo config.userDecryptContextId"),
     kmsSigners: hexBytesArray(raw.kmsSigners, "demo config.kmsSigners", 20),
     kmsEpochId: hexBytes(raw.kmsEpochId, "demo config.kmsEpochId", 32),
@@ -109,7 +116,7 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
       batcher: address(string(programs.batcher, "demo config.programs.batcher")),
       token: address(string(programs.token, "demo config.programs.token")),
       vault: address(string(programs.vault, "demo config.programs.vault")),
-      host: address(string(programs.host, "demo config.programs.host")),
+      host,
     },
     mints: {
       joinUnderlying: address(string(mints.joinUnderlying, "demo config.mints.joinUnderlying")),

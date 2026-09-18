@@ -186,13 +186,12 @@ mod tests {
         [tag; 32]
     }
 
-    /// Doc-sync guard for `docs/MMR_ACL_MVP.md` "Resource Bounds And Liveness": the
-    /// stranding-impossible argument quotes these exact numbers, so a change here must update
-    /// that section in the same PR.
+    /// Doc-sync guard for `docs/INVARIANTS.md` Part II and DD-048's account-layout line: they
+    /// quote these exact numbers, so a change here must update them in the same PR.
     #[test]
     fn resource_bounds_match_liveness_doc() {
-        assert_eq!(MAX_MMR_PEAKS, 64, "MMR_ACL_MVP.md liveness section");
-        // account_size = 181 + 32·peaks; max = 2229 bytes, forever.
+        assert_eq!(MAX_MMR_PEAKS, 64, "INVARIANTS.md Part II peak cap");
+        // account_size = 121 + 64·slots + 32·peaks; max = 4217 bytes, forever.
         assert_eq!(EncryptedStore::account_size(0, 0), 121);
         assert_eq!(
             EncryptedStore::account_size(MAX_STORE_SLOTS, MAX_MMR_PEAKS),

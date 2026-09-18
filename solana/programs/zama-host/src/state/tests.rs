@@ -87,6 +87,7 @@ fn eval_handle_derivation_preserves_solana_chain_type_byte() {
         3,
         [0; 32],
         &HandleDerivationContext {
+            program_id: crate::ID,
             chain_id,
             previous_bank_hash: [9; 32],
             unix_timestamp: 42,
@@ -109,7 +110,7 @@ fn handle_derivation_rand_uses_keccak() {
     let seed = [0x42; 16];
     let chain_id = 13u64;
     let fhe_type = 5u8;
-    let handle = computed_rand_handle(seed, fhe_type, chain_id);
+    let handle = computed_rand_handle(seed, fhe_type, crate::ID, chain_id);
     let expected_prehandle = keccak(&[
         COMPUTATION_DOMAIN_SEPARATOR,
         &[3],
@@ -134,6 +135,7 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
             app,
             op_index,
             &HandleDerivationContext {
+                program_id: crate::ID,
                 chain_id: 13,
                 previous_bank_hash: slot_entropy,
                 unix_timestamp: 42,
@@ -440,4 +442,23 @@ fn assert_sum_and_is_in_enforce_coprocessor_max_operand_counts() {
         assert_is_in_operand_types(value, &narrow(101), 2),
         ZamaHostError::InvalidFheExecuteAccount,
     );
+}
+
+#[test]
+fn handle_derivation_binds_the_program_id() {
+    let context = |program_id: Pubkey| HandleDerivationContext {
+        program_id,
+        chain_id: 13,
+        previous_bank_hash: [9; 32],
+        unix_timestamp: 42,
+    };
+    let other = Pubkey::new_unique();
+    let trivial = |program_id| computed_eval_trivial_handle([7; 32], 5, &context(program_id));
+    let rand = |program_id| computed_rand_handle([1; 16], 5, program_id, 13);
+    let rand_bounded =
+        |program_id| computed_rand_bounded_handle([10; 32], [1; 16], 5, program_id, 13);
+    // Two deployments never share a handle for the same inputs (trivial encrypt and both rand regimes).
+    assert_ne!(trivial(crate::ID), trivial(other));
+    assert_ne!(rand(crate::ID), rand(other));
+    assert_ne!(rand_bounded(crate::ID), rand_bounded(other));
 }

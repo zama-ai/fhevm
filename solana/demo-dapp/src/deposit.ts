@@ -382,7 +382,7 @@ export async function depositToVault(
   }
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage('preparing');
-    const fhe = await createSolanaFheTransaction({ payer: signer });
+    const fhe = await createSolanaFheTransaction({ payer: signer, programAddress: config.programs.host });
     const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
       fhe: fhe.accounts,
       payer: signer,
@@ -425,7 +425,7 @@ export async function depositToVault(
   });
   const chain = defineFhevmSolanaChain({
     id: BigInt(config.chainId),
-    fhevm: { relayerUrl: config.relayerUrl, verifyingProgramId: config.aclProgram as Bytes32Hex },
+    fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.aclProgram as Bytes32Hex } } },
   });
   const encryptClient = createFhevmEncryptClient({
     chain,
