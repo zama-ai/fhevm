@@ -8,7 +8,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size,
+        default_database_pool_size, deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -57,14 +57,26 @@ pub struct Config {
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
-    #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 
     /// The polling interval for decryption requests.
-    #[serde(with = "humantime_serde", default = "default_decryption_polling")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_decryption_polling"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_polling: Duration,
     /// The polling interval for key management requests.
-    #[serde(with = "humantime_serde", default = "default_key_management_polling")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_key_management_polling"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub key_management_polling: Duration,
 
     /// The maximum number of blocks to fetch per `eth_getLogs` request.

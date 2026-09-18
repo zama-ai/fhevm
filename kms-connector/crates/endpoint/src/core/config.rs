@@ -1,5 +1,8 @@
 use connector_utils::{
-    config::{DeserializeConfig, default_database_pool_size, deserialize_one_or_many},
+    config::{
+        DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
+        deserialize_one_or_many,
+    },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use serde::Deserialize;
@@ -27,7 +30,11 @@ pub struct Config {
     #[serde(default = "default_max_in_flight_decryptions")]
     pub max_in_flight_decryptions: usize,
     /// How long a decryption request waits for its response before answering `504 timeout`.
-    #[serde(with = "humantime_serde", default = "default_decryption_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_decryption_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_timeout: Duration,
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
@@ -47,7 +54,11 @@ pub struct Config {
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
-    #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 

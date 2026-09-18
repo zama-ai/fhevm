@@ -30,7 +30,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let monitoring_url = Url::from_str(&format!("http://{}/healthz", monitoring_endpoint))?;
     let cancel_token = CancellationToken::new();
     let monitoring_server_task =
-        start_monitoring_server(monitoring_endpoint, t.state.clone(), cancel_token.clone());
+        start_monitoring_server(monitoring_endpoint, t.state.clone(), cancel_token.clone())?;
     wait_for_listener(monitoring_endpoint).await;
 
     // Test `liveness` endpoint
@@ -142,7 +142,7 @@ async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
     let monitoring_url = Url::from_str(&format!("http://{}/healthz", monitoring_endpoint))?;
     let cancel_token = CancellationToken::new();
     let monitoring_server_task =
-        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
+        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
     wait_for_listener(monitoring_endpoint).await;
 
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone()))
