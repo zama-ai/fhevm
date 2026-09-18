@@ -27,31 +27,44 @@ work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 fail() { echo "::error::$*" >&2; exit 1; }
 
-if [[ -z "${DEPLOY_POLYGON:-}" ]]; then
-  # The Polygon e2e workflow only exists in automated envs; the Polygon address ConfigMap is the
-  # reliable marker that this env has a second host chain.
-  DEPLOY_POLYGON=false
-  kubectl get configmap -n "${NAMESPACE}" polygon-sc-addresses >/dev/null 2>&1 && DEPLOY_POLYGON=true
-fi
-# chain key -> hardhat network / Argo workflow release carrying the per-chain env
-chains=(sepolia)
-[[ "${DEPLOY_POLYGON}" == "true" ]] && chains+=(amoy)
-hh_network() { case "$1" in sepolia) echo sepolia ;; amoy) echo polygonAmoy ;; esac; }
-wf_release() { case "$1" in sepolia) echo test-suite-workflow ;; amoy) echo test-suite-workflow-polygon ;; esac; }
-pod_name() { echo "bg-traffic-$1"; }
-chain_id() { case "$1" in sepolia) echo 11155111 ;; amoy) echo 80002 ;; esac; }
-
 # Run one query against party 1's coprocessor DB, empty on any error.
 copro_psql() {
   kubectl exec -n "${NAMESPACE}" postgres-coprocessor-1-0 -- \
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "$1" 2>/dev/null | tr -d '\r' | head -1
 }
 
+# Chains are identified by their chain id throughout, so this works on every chain mode. The set
+# comes from the environment itself (the same host_chains table bg-checkpoints.sh reads) rather
+# than being hardcoded, and CHAINS=<ids> overrides it.
+if [[ -n "${CHAINS:-}" ]]; then
+  read -r -a chains <<<"${CHAINS}"
+else
+  # shellcheck disable=SC2207 # word splitting is what we want: psql prints one id per line
+  chains=($(kubectl exec -n "${NAMESPACE}" postgres-coprocessor-1-0 -- \
+    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+    "SELECT chain_id FROM host_chains ORDER BY chain_id;" 2>/dev/null | tr -d '\r'))
+fi
+[[ ${#chains[@]} -gt 0 ]] || fail "no host chains found in ${NAMESPACE} (set CHAINS=<chain id>... to override)"
+
+# Chain id -> the hardhat network name configured in test-suite/e2e/hardhat.config.ts.
+hh_network() {
+  case "$1" in
+    12345) echo staging ;;
+    1337) echo zwsDev ;;
+    11155111) echo sepolia ;;
+    80002) echo polygonAmoy ;;
+    *) fail "chain ${1}: no hardhat network known for this chain id" ;;
+  esac
+}
+# Polygon is always the second host chain and carries its own e2e workflow release.
+wf_release() { [[ "$1" == "80002" ]] && echo test-suite-workflow-polygon || echo test-suite-workflow; }
+pod_name() { echo "bg-traffic-$(hh_network "$1" | tr '[:upper:]' '[:lower:]')"; }
+
 # First block of this chain's upgrade window, 0 when no proposal exists.
 window_start_block() {
   local v
   v=$(copro_psql "SELECT COALESCE(start_block,0) FROM upgrade_state
-                   WHERE stack_role='GCS' AND host_chain_id=$(chain_id "$1") LIMIT 1;")
+                   WHERE stack_role='GCS' AND host_chain_id=$1 LIMIT 1;")
   echo "${v:-0}"
 }
 
@@ -105,12 +118,12 @@ pod_source() {
            tolerations: $s.tolerations, nodeSelector: ($s.nodeSelector // null),
            preamble: (if (($c.args // []) | length) > 0 then $c.args[-1] else $c.command[-1] end)}' \
       "${work}/job.json" > "${out}"
-    if [[ "${chain}" == amoy ]]; then
-      # The idle Job is wired to the ETH host chain: point the RPC, chain id and the HOST-chain
+    if [[ "${chain}" == "80002" ]]; then
+      # The idle Job is wired to the first host chain: point the RPC, chain id and the HOST-chain
       # contract addresses at Polygon (gateway addresses stay as they are).
       local rpc
       rpc=$(kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.polygon-rpc-url}' | base64 -d)
-      [[ -n "${rpc}" ]] || fail "amoy: the rpc Secret has no polygon-rpc-url"
+      [[ -n "${rpc}" ]] || fail "chain 80002: the rpc Secret has no polygon-rpc-url"
       jq --arg rpc "${rpc}" '
         .env = (.env | map(
           if .name == "RPC_URL" then {name: .name, value: $rpc}
@@ -155,7 +168,7 @@ ensure_pod() {
   if ! kubectl get pod -n "${NAMESPACE}" "${pod}" >/dev/null 2>&1; then
     render_pod "${chain}" "${work}/pod-${chain}.yaml"
     kubectl apply -n "${NAMESPACE}" -f "${work}/pod-${chain}.yaml" >/dev/null
-    echo "${chain}: created pod ${pod}"
+    echo "$(hh_network "${chain}"): created pod ${pod}"
   fi
   kubectl wait --for=condition=Ready "pod/${pod}" -n "${NAMESPACE}" --timeout=600s >/dev/null
   # Compile is part of the preamble; the pod is Ready before it finishes, so wait for the marker.
@@ -207,19 +220,19 @@ setup)
   ;;
 start)
   for c in "${chains[@]}"; do
-    [[ -n "$(loop_pid "${c}")" ]] && { echo "${c}: loop already running"; continue; }
+    [[ -n "$(loop_pid "${c}")" ]] && { echo "$(hh_network "${c}"): loop already running"; continue; }
     net=$(hh_network "${c}")
     kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- \
       env "${traffic_env[@]}" sh -c 'cd /app/test-suite/e2e && rm -f /data/erc20-traffic/'"${net}"'.stop && \
         TRAFFIC_CMD=loop nohup npx hardhat run --no-compile scripts/erc20-traffic.ts --network '"${net}"' \
         >> /data/erc20-traffic/'"${net}"'.log 2>&1 & echo $! > /data/erc20-traffic/loop.pid'
-    echo "${c}: loop started (pid $(kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- cat /data/erc20-traffic/loop.pid)), log /data/erc20-traffic/${net}.log"
+    echo "$(hh_network "${c}"): loop started (pid $(kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- cat /data/erc20-traffic/loop.pid)), log /data/erc20-traffic/${net}.log"
   done
   ;;
 status)
   for c in "${chains[@]}"; do
     pid=$(loop_pid "${c}")
-    echo "== ${c}: loop $([[ -n "${pid}" ]] && echo "running (pid ${pid})" || echo "not running")"
+    echo "== $(hh_network "${c}"): loop $([[ -n "${pid}" ]] && echo "running (pid ${pid})" || echo "not running")"
     snapshot_state "${c}"
     state_json "${c}" | jq -r 'if .contractAddress then
       "   token \(.contractAddress) owner \(.owner)",
@@ -229,12 +242,23 @@ status)
       else "   no state (run setup)" end'
   done
   echo "== balances"
-  mnemonic=$(kubectl get secret -n "${NAMESPACE}" preview-wallets-mnemonic -o jsonpath='{.data.mnemonic}' | base64 -d)
+  # Display only: never let a missing wallet secret fail `status`.
+  mnemonic=$(kubectl get secret -n "${NAMESPACE}" preview-wallets-mnemonic \
+    -o jsonpath='{.data.mnemonic}' 2>/dev/null | base64 -d 2>/dev/null || true)
+  if [[ -z "${mnemonic}" ]]; then
+    echo "   (no preview-wallets-mnemonic secret — balances not checked)"
+    exit 0
+  fi
   alice=$(cast wallet address --mnemonic "${mnemonic}" --mnemonic-index 0)
   for c in "${chains[@]}"; do
-    key=$([[ "${c}" == amoy ]] && echo polygon-rpc-url || echo ethereum-rpc-url)
-    rpc=$(kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath="{.data.${key}}" | base64 -d)
-    echo "   ${c}: alice ${alice} = $(cast balance --ether "${alice}" --rpc-url "${rpc}" 2>/dev/null || echo '?') (pays deploys, mints, transfers)"
+    # The pod's own RPC_URL works on every chain mode; the rpc Secret only exists on testnets.
+    rpc=$(kubectl get pod -n "${NAMESPACE}" "$(pod_name "${c}")" \
+      -o jsonpath='{.spec.containers[0].env[?(@.name=="RPC_URL")].value}' 2>/dev/null || true)
+    if [[ -z "${rpc}" ]]; then
+      echo "   $(hh_network "${c}"): (no RPC_URL on the traffic pod — balance not checked)"
+      continue
+    fi
+    echo "   $(hh_network "${c}"): alice ${alice} = $(cast balance --ether "${alice}" --rpc-url "${rpc}" 2>/dev/null || echo '?') (pays deploys, mints, transfers)"
   done
   if [[ -n "${GATEWAY_RPC_URL:-}" ]]; then
     relayer=$(cast wallet address --mnemonic "${mnemonic}" --mnemonic-index 3)
@@ -273,14 +297,14 @@ burst)
     for c in "${chains[@]}"; do
       kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- \
         touch "/data/erc20-traffic/$(hh_network "${c}").burst"
-      echo "== ${c}: burst on (${TRAFFIC_BURST_INTERVAL_SECS:-10}s between steps)"
+      echo "== $(hh_network "${c}"): burst on (${TRAFFIC_BURST_INTERVAL_SECS:-10}s between steps)"
     done
     ;;
   off)
     for c in "${chains[@]}"; do
       kubectl exec -n "${NAMESPACE}" "$(pod_name "${c}")" -- \
         rm -f "/data/erc20-traffic/$(hh_network "${c}").burst"
-      echo "== ${c}: burst off"
+      echo "== $(hh_network "${c}"): burst off"
     done
     ;;
   *) fail "usage: bg-traffic.sh burst on|off" ;;
@@ -294,15 +318,15 @@ stop)
       [[ -z "$(loop_pid "${c}")" ]] && break
       sleep 5
     done
-    [[ -z "$(loop_pid "${c}")" ]] || fail "${c}: loop still running after 10 min"
-    echo "== ${c}: loop stopped"
+    [[ -z "$(loop_pid "${c}")" ]] || fail "$(hh_network "${c}"): loop still running after 10 min"
+    echo "== $(hh_network "${c}"): loop stopped"
     snapshot_state "${c}"
     state_json "${c}" | jq -r '"   iterations \(.counters.iterations)  transfers \(.counters.transfers)  mints \(.counters.mints)  decrypts \(.counters.decrypts)  mismatches \(.counters.decryptMismatches)  retries \(.counters.retries)  failures \(.counters.failures)"'
   done
   ;;
 teardown)
   for c in "${chains[@]}"; do
-    [[ -n "$(loop_pid "${c}")" ]] && fail "${c}: loop still running; stop first"
+    [[ -n "$(loop_pid "${c}")" ]] && fail "$(hh_network "${c}"): loop still running; stop first"
     kubectl delete pod -n "${NAMESPACE}" "$(pod_name "${c}")" --ignore-not-found
     # The snapshot too, or `setup` restores it and reuses a token whose ciphertexts
     # a bg-reset.sh in between has already truncated. Keep it with KEEP_STATE=true.
