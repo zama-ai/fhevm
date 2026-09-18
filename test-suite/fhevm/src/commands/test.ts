@@ -1,3 +1,9 @@
+import { runManifestHealingStressProfile } from "./manifest-healing-stress";
+import path from "node:path";
+import { createBlueGreenManifestChecks } from "./blue-green-manifests";
+import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
+import { runManifestLifecycleProfile } from "./manifest-lifecycle";
+import { runManifestHealingProfile } from "./manifest-healing";
 import { runRetainedMaterial } from "../consensus/retained-material-run";
 import { withRolloutSupervisor } from "../consensus/rollout-supervision";
 import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDENCE_CLEANUP_SQL, DRY_RUN_EVIDENCE_INSTALL_SQL, DRY_RUN_EVIDENCE_CLEANUP_SQL, dryRunEvidenceReadinessSql } from "../../../e2e/test/consensus/upgradeEvidenceSql";
@@ -77,7 +83,12 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "manifest-lifecycle",
+  "manifest-lifecycle-no-drift",
+  "manifest-healing",
+  "manifest-healing-stress",
   "blue-green",
+  "blue-green-manifests",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -112,6 +123,10 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-gateway-contracts": "gateway",
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
+  "manifest-lifecycle-no-drift": "Check healthy manifest publication, quorum, and continued computation without fault injection (requires --scenario manifest-lifecycle).",
+  "manifest-healing-stress": "Corrupt selected uint64 handles on one node across several reused blocks, then require those drifts to heal (requires --scenario manifest-lifecycle).",
+  "manifest-healing": "Exercise node 2's out-of-quorum fault matrix, inferred containment, ct64 restoration, and computation recovery (requires --scenario manifest-lifecycle).",
+  "manifest-lifecycle": "Publish a signed manifest fault and verify containment and independent progress (requires --scenario manifest-lifecycle).",
   light: "Run the lightweight smoke suite.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
@@ -147,6 +162,9 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "blue-green":
     "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
     "asserts final state). Requires `--scenario blue-green*`.",
+  "blue-green-manifests":
+    "Run the blue-green profile plus Green manifest publication/verification checks across the v0.14 upgrade " +
+    "(same as BLUE_GREEN_MANIFESTS=1; use --scenario blue-green-manifest).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -1056,6 +1074,7 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
 const runBlueGreenProfile = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  withManifests = process.env.BLUE_GREEN_MANIFESTS === "1",
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1116,6 +1135,16 @@ const runBlueGreenProfile = async (
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
+  // Opt-in manifest publication/verification checks on the Green detectors.
+  const manifests = withManifests
+    ? createBlueGreenManifestChecks({
+        databases: operatorDatabases,
+        hostChainIds: state.scenario.hostChains.map(chain => Number(chain.chainId)),
+        query: psqlQuery,
+        reportPath: path.join(STATE_DIR, "blue-green-manifests-report.json"),
+      })
+    : undefined;
+  await manifests?.preflight();
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
@@ -1138,6 +1167,7 @@ const runBlueGreenProfile = async (
     }
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  await manifests?.beforeProposals();
 
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
 
@@ -1312,6 +1342,7 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  await manifests?.afterRollback();
   };
   if (faultHost) {
     await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
@@ -1446,6 +1477,7 @@ const runBlueGreenProfile = async (
       }
     })();
     await Promise.race([chainPromise, traffic.errored]);
+    if (manifests) await Promise.race([manifests.duringDryRun(), traffic.errored]);
 
     console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
@@ -1471,6 +1503,7 @@ const runBlueGreenProfile = async (
       }
     }
     console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
+    await manifests?.markCutover();
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
@@ -1559,6 +1592,10 @@ const runBlueGreenProfile = async (
     console.log(`OK: ${db} retained every identified pre-cutover value; ciphertexts ${preCt} -> ${finalCt}`);
   }
 
+  if (manifests) {
+    await manifests.afterCutover();
+    console.log("OK:   Green published and verified the upgrade epoch across cutover without drift");
+  }
   if (quietSynthetic) console.log("[UPG-01] quiet synthetic promotion and post-promotion application checks passed on both host chains");
   console.log(`\n==== ✓ Blue-Green E2E PASSED (${opCount} operator(s)) ====`);
   return true;
@@ -1592,6 +1629,7 @@ const runBlueGreenProfile = async (
     profileFailure = error;
     throw error;
   } finally {
+    await manifests?.writeReport(profileFailure === undefined ? "passed" : "failed", profileFailure);
     // Attempt every installed object's cleanup, including after partial setup.
     const cleanup = await Promise.allSettled([
       ...syntheticInstalled.map(db => psqlQuery(db, SYNTHETIC_EVIDENCE_CLEANUP_SQL)),
@@ -1858,6 +1896,46 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const runProfile = async (name: string) => {
+    if (name === "manifest-healing-stress") {
+      return runLogged(name, Date.now(), () => runManifestHealingStressProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing stress fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing stress ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing stress ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-healing") {
+      return runLogged(name, Date.now(), () => runManifestHealingProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-lifecycle" || name === "manifest-lifecycle-no-drift") {
+      const runManifestProfile = name === "manifest-lifecycle" ? runManifestLifecycleProfile : runManifestLifecycleNoDriftProfile;
+      return runLogged(name, Date.now(), () => runManifestProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest lifecycle ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
+        },
+      ));
+    }
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
@@ -1869,6 +1947,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
+    }
+    if (name === "blue-green-manifests") {
+      return runBlueGreenProfile(state, options, true);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);
