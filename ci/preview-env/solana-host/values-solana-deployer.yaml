@@ -16,8 +16,16 @@ externalSecret:
     - keyReference: "zws-dev/preview-solana-host-keypairs"
       propertyReference: confidential_token
       secretKeyName: confidential_token
+    - keyReference: "zws-dev/preview-solana-host-keypairs"
+      propertyReference: demo_vault
+      secretKeyName: demo_vault
+    - keyReference: "zws-dev/preview-solana-host-keypairs"
+      propertyReference: confidential_batcher
+      secretKeyName: confidential_batcher
   template:
     data:
       deployer.json: '{{ .deployer }}'
       zama_host.json: '{{ .zama_host }}'
       confidential_token.json: '{{ .confidential_token }}'
+      demo_vault.json: '{{ .demo_vault }}'
+      confidential_batcher.json: '{{ .confidential_batcher }}'

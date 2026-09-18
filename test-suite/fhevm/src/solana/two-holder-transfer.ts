@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { address, getAddressEncoder } from "@solana/kit";
 
-import { REPO_ROOT, SOLANA_ACL_PROGRAM } from "../layout";
+import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
 import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
@@ -69,6 +69,8 @@ export type TwoHolderConfig = {
   readonly userDecryptContext: string | undefined;
   /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
   readonly funding: { readonly primarySol: number; readonly secondarySol: number };
+  /** Command prefix that opens the coprocessor database, where the SNS-commit wait polls. */
+  readonly coprocessorDbPsql: readonly string[];
   /** Wallet the holders are funded from by transfer; absent, they are airdropped (local validators). */
   readonly funderKeypairPath: string | undefined;
 };
@@ -126,6 +128,7 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   userDecryptContext: config.userDecryptContext,
   funding: config.funding ?? { primarySol: 10, secondarySol: 5 },
   funderKeypairPath: config.funderKeypairPath,
+  coprocessorDbPsql: config.coprocessorDbPsql ?? coprocessorDbPsql(),
 });
 
 export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
@@ -181,7 +184,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       return readTokenBalanceStore(context(), { mint: address(scenario.mint), owner: address(holder.owner) });
     },
     async waitForHandle(handle) {
-      await waitForSnsCommit(handle);
+      await waitForSnsCommit(handle, cfg.coprocessorDbPsql);
     },
     async transfer(scenario, alice, bob) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");

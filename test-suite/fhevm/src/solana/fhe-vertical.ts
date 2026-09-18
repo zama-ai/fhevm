@@ -132,18 +132,22 @@ export const userDecryptExpect = (
     ...(params.allowedKey === undefined ? {} : { UD_ALLOWED_KEY: addressHex(params.allowedKey) }),
   });
 
+/** The local stack's leaf-proof endpoint; a preview namespace passes its own. */
+export const LOCAL_LEAF_PROOF_ENDPOINT = {
+  url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
+  apiKey: SOLANA_LEAF_PROOF_API_KEY,
+} as const;
+
 /** Fetches the public leaf proof and checks it against the live shared state history. */
 export const livePublicLeafProof = async (
   context: SolanaProvisioningContext,
   encryptedStore: Address,
   handle: Uint8Array,
+  endpoint: { readonly url: string; readonly apiKey: string } = LOCAL_LEAF_PROOF_ENDPOINT,
 ): Promise<MmrProof> =>
   publicProof(
     { fetchEncryptedStore: (store, config) => fetchSolanaEncryptedStore(context.rpc, store, config, ZAMA_HOST_PROGRAM_ADDRESS) },
-    {
-      url: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
-      apiKey: SOLANA_LEAF_PROOF_API_KEY,
-    },
+    endpoint,
     encryptedStore,
     handle,
   );

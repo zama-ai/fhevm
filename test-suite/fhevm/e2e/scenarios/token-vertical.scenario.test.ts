@@ -122,6 +122,7 @@ describe("solana confidential-token consume vertical", () => {
         context,
         target.burnedAmountStore,
         burnedHandle,
+        env.leafProof,
       );
 
       const { cleartext, certificate } = await timed("certified public decrypt (KMS)", () =>
