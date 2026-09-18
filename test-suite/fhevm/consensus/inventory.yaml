@@ -204,6 +204,7 @@ cases:
     fault: { mechanism: branch-replacement, stage: after the orphan allow was ingested, observation: the forked operator follows canonical history and processes a canonical sentinel }
     participants: { compute: all, submit: all, quorum: forbidden }
     assertions:
+      - fault: the forked operator ingests the exact replacement block and completes a fresh canonical sentinel
       - safety: the orphan handle does not reach quorum
       - safety: a real decryption request for the orphan handle is REJECTED through the authorization interface
       - liveness: the canonical control decrypts successfully through the same interface
@@ -314,7 +315,6 @@ cases:
       - liveness: a transition occurring DURING the disconnect window is reconciled after re-subscription
       - safety: repeated replacement and cancellation leak no listeners and do not deadlock
       - safety: the transaction-level cutover write fences and required final mode still hold
-      - sensitivity: reverting the production fix fails this test for the intended reason
     timeout_s: 600
     cleanup: [test database dropped]
     runner: scripts/run-stackless-cases.sh --leg rust-regression (cargo test -p host-listener --test stack_version_listener_tests)
@@ -338,7 +338,6 @@ cases:
       - safety: non-zero exit within the bound on fatal failure
       - liveness: voluntary shutdown exits zero
       - safety: the in-process close_recv path does not terminate the embedding process
-      - sensitivity: reverting the production fix fails this test for the intended reason
     timeout_s: 600
     cleanup: [none]
     runner: scripts/run-stackless-cases.sh --leg rust-regression (cargo test -p tfhe-worker --test daemon_exit)

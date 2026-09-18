@@ -1,4 +1,4 @@
-import { successfulForkReceipt } from './forkRecovery';
+import { successfulForkReceipt, waitForForkSentinel } from './forkRecovery';
 import { expect } from 'chai';
 
 describe('Fork branch inclusion evidence', () => {
@@ -19,5 +19,29 @@ describe('Fork branch inclusion evidence', () => {
       try { await successfulForkReceipt({ wait: async () => receipt }, 'fork'); } catch (caught) { error = caught; }
       expect(String(error)).to.include('successful mined receipt');
     }
+  });
+});
+
+describe('Fork operator recovery evidence', () => {
+  it('rejects a stopped operator even when canonical decryption could succeed', async () => {
+    let now = 0;
+    let failure: unknown;
+    try {
+      await waitForForkSentinel(async () => ({ replacementSeen: false, total: 0, completed: 0, errors: 0 }),
+        { now: () => now, timeoutMs: 2, pause: async () => { now++; } });
+    } catch (error) { failure = error; }
+    expect(String(failure)).to.include('did not ingest');
+  });
+  it('requires completion as well as replacement ingestion', async () => {
+    let calls = 0;
+    await waitForForkSentinel(async () => ({ replacementSeen: true, total: 1, completed: calls++ ? 1 : 0, errors: 0 }), { pause: async () => {} });
+    expect(calls).to.eq(2);
+  });
+  it('rejects a caught-up listener whose worker never completes the sentinel', async () => {
+    let failure: unknown;
+    try {
+      await waitForForkSentinel(async () => ({ replacementSeen: true, total: 1, completed: 0, errors: 0 }), { timeoutMs: 0 });
+    } catch (error) { failure = error; }
+    expect(String(failure)).to.include('complete its fresh sentinel');
   });
 });

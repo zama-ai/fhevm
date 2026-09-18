@@ -8,7 +8,7 @@ import { emitAssertions } from './assertionEvidence';
  */
 import { expect } from 'chai';
 
-import { assertCanaryFiresWith } from './canary';
+import { assertCanaryFiresWith, assertRawByteCanaryFiresWith } from './canary';
 import {
   assertExecutedSchedulingDiffers,
   executedScheduling,
@@ -17,6 +17,7 @@ import {
 import { assertCiphertext128Format, assertRunValidity } from './validity';
 import {
   assertConsensusEventBindings,
+  assertGatewayTopology,
   assertDeviceSplit,
   assertHeterogeneousScheduling,
   attestationEvidenceFromCanonicalOutput,
@@ -133,6 +134,8 @@ describe('Materialization byte consensus', function () {
   let schedulingBefore: Awaited<ReturnType<typeof readAllSchedulingCounters>> | undefined;
   let schedulingBacklogPending = false;
   let schedulingBacklogTransactions = 0;
+  let authorizedSenders = new Set<string>();
+  let completedBodies = 0;
   let schedulingDrained: Awaited<ReturnType<typeof readAllSchedulingCounters>> | undefined;
 
   before(async function () {
@@ -158,6 +161,8 @@ describe('Materialization byte consensus', function () {
     required(GATEWAY_RPC_URL, 'GATEWAY_RPC_URL');
     required(GATEWAY_CONFIG_ADDRESS, 'GATEWAY_CONFIG_ADDRESS');
     required(CIPHERTEXT_COMMITS_ADDRESS, 'CIPHERTEXT_COMMITS_ADDRESS');
+    const membership = await assertGatewayTopology(GATEWAY_RPC_URL, GATEWAY_CONFIG_ADDRESS, COPROCESSOR_COUNT, CONSENSUS_THRESHOLD);
+    authorizedSenders = new Set(membership.txSenders);
     console.info(`[materialization-consensus] execution class ${JSON.stringify(execution)}`);
 
     // The execution class above is what must be identical. Scheduling is what
@@ -243,6 +248,7 @@ describe('Materialization byte consensus', function () {
   // whose rows say CPU had a worker of the wrong backend on a queue.
   after(async function () {
     if (!ENABLE_MATERIALIZATION_CONSENSUS) return;
+    if (completedBodies !== 2) throw new Error('materialization bodies did not both complete; no scheduling byte receipt can be issued');
 
     // Executed scheduling evidence, before the format gate: a heterogeneous run
     // that agreed while every operator executed the same batch has not
@@ -316,6 +322,14 @@ describe('Materialization byte consensus', function () {
       },
     );
 
+    await assertRawByteCanaryFiresWith(
+      databaseUrls[databaseUrls.length - 1], canaryHandle, 'materialization-consensus',
+      async phase => {
+        await waitForConsensusDatabaseReports(databaseUrls, FIXTURE_PRODUCED_OUTPUT_LABELS.map(label => run.handles[label]),
+          { timeoutMs: phase === 'poisoned' ? 45_000 : 6 * 60_000 });
+      },
+    );
+
     // Every produced output is publishable in this fixture.  This includes
     // materialized TrivialEncrypt values: they have a producing transaction
     // and must not evade the byte/digest/provenance oracle.  Only
@@ -332,6 +346,7 @@ describe('Materialization byte consensus', function () {
       const consensus = consensuses[index];
       expect(consensus, `on-chain quorum must form for ${label}`).to.not.be.null;
       const senders = consensus!.senders.map((sender) => sender.toLowerCase());
+      expect(senders.every(sender => authorizedSenders.has(sender)), `${label} senders must belong to the observed gateway membership`).to.eq(true);
       expect(senders, `${label} consensus must contain the configured quorum`).to.have.length(CONSENSUS_THRESHOLD);
       expect(new Set(senders).size, `${label} consensus must contain unique submitters`).to.eq(CONSENSUS_THRESHOLD);
     }
@@ -378,6 +393,7 @@ describe('Materialization byte consensus', function () {
       `[materialization-consensus] plaintext oracle: ${FIXTURE_HANDLE_LABELS.length} label(s) decrypt to ` +
         'the expected values',
     );
+    completedBodies += 1;
   });
 
   it('converges on same-sourcing aliases and pins mixed sourcing to distinct handles', async function () {
@@ -462,5 +478,6 @@ describe('Materialization byte consensus', function () {
     });
     expect(plaintext, 'aliased output plaintext').to.eq(ALIAS_FIXTURE_EXPECTED_PLAINTEXTS.combined);
     emitAssertions('MAT-02-ALIAS-SOURCING', ['bytes', 'safety'], 'Aliased handles have one canonical value/storage row, exact completed producer counts, and mixed sourcing produced distinct handles.');
+    completedBodies += 1;
   });
 });

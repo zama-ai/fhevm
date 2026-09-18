@@ -11,3 +11,12 @@ export async function assertionGroup<T>(caseId: string, names: readonly Assertio
   emitAssertions(caseId, names, detail);
   return result;
 }
+
+/** Fault evidence belongs to the case that observed it, never a sibling's fixture. */
+export function emitFaultObservation(caseId: string, workloadIds: string[], artifacts: Record<string, string>): void {
+  const runId = process.env.CONSENSUS_RUN_ID;
+  if (!runId || !workloadIds.length || workloadIds.some(value => !/^0x[a-f0-9]{64}$/i.test(value))) {
+    throw new Error('fault observation requires run identity and exact workload handles');
+  }
+  console.info(`[consensus-fault] ${JSON.stringify({ runId, caseId, workloadIds, artifacts, faultObservedAt: new Date().toISOString() })}`);
+}

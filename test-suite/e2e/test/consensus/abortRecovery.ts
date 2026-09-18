@@ -11,7 +11,8 @@ import { Pool } from 'pg';
 export interface MiningRpc { send(method: string, params: unknown[]): Promise<unknown> }
 interface DigestRecovery { kind: 'digest'; databaseUrl: string; handle: string; original: string; publicationMayHaveBegun?: boolean }
 interface MiningRecovery { kind: 'mining'; rpcUrl: string; automine: boolean; interval: number }
-type Recovery = DigestRecovery | MiningRecovery;
+interface CiphertextRecovery { kind: 'ciphertext'; databaseUrl: string; handle: string; version: number; ciphertext: string; digest: string }
+type Recovery = DigestRecovery | MiningRecovery | CiphertextRecovery;
 const directory = () => process.env.CONSENSUS_RECOVERY_DIR ?? '/tmp/fhevm-consensus-abort-recovery';
 const key = (kind: string, identity: string) => createHash('sha256').update(`${kind}:${identity}`).digest('hex');
 const digestKey = (url: string, handle: string) => key('digest', `${url}:${handle.toLowerCase()}`);
@@ -48,7 +49,9 @@ function read(id: string): Recovery | undefined {
 export function saveDigestRecovery(databaseUrl: string, handle: string, original: Buffer): void {
   if (!/^0x[0-9a-f]{64}$/i.test(handle) || original.length !== 32) throw new Error('invalid canary recovery identity');
   const id = digestKey(databaseUrl, handle);
-  if (read(id)) throw new Error(`unfinished canary recovery for ${handle}; restore it before another mutation`);
+  if (read(id) || read(key('ciphertext', `${databaseUrl}:${handle.toLowerCase()}`))) {
+    throw new Error(`unfinished canary recovery for ${handle}; restore it before another mutation`);
+  }
   save(id, { kind: 'digest', databaseUrl, handle, original: original.toString('hex') });
 }
 
@@ -73,6 +76,45 @@ async function restoreDigestRecord(databaseUrl: string, handle: string, original
       const checked = await client.query<{ ciphertext: Buffer }>('SELECT ciphertext FROM ciphertext_digest WHERE handle = $1', [bytes]);
       if (checked.rowCount !== 1 || !checked.rows[0].ciphertext.equals(original)) {
         throw new Error(`restored digest verification failed for ${handle}`);
+      }
+      remove(id);
+    } finally { client.release(); }
+  } finally { await pool.end(); }
+}
+
+/** Raw-byte canaries restore the ciphertext and its binding atomically. */
+export function saveCiphertextRecovery(databaseUrl: string, handle: string, version: number, ciphertext: Buffer, digest: Buffer): void {
+  if (!/^0x[0-9a-f]{64}$/i.test(handle) || !Number.isSafeInteger(version) || version < 0 || !ciphertext.length || digest.length !== 32) {
+    throw new Error('invalid ciphertext recovery identity');
+  }
+  const id = key('ciphertext', `${databaseUrl}:${handle.toLowerCase()}`);
+  if (read(id) || read(digestKey(databaseUrl, handle))) throw new Error('unfinished canary recovery');
+  save(id, { kind: 'ciphertext', databaseUrl, handle, version, ciphertext: ciphertext.toString('hex'), digest: digest.toString('hex') });
+}
+
+export async function restoreRecordedCiphertext(databaseUrl: string, handle: string): Promise<void> {
+  const id = key('ciphertext', `${databaseUrl}:${handle.toLowerCase()}`);
+  const record = read(id);
+  if (!record || record.kind !== 'ciphertext' || !Number.isSafeInteger(record.version) || record.version < 0 ||
+      !/^(?:[a-f0-9]{2})+$/.test(record.ciphertext) || !/^[a-f0-9]{64}$/.test(record.digest)) throw new Error('invalid ciphertext recovery journal');
+  const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5_000, query_timeout: 10_000, statement_timeout: 10_000 });
+  try {
+    const client = await pool.connect();
+    try {
+      const bytes = Buffer.from(handle.slice(2), 'hex');
+      const ciphertext = Buffer.from(record.ciphertext, 'hex');
+      const digest = Buffer.from(record.digest, 'hex');
+      await client.query('BEGIN');
+      try {
+        const restoredDigest = await client.query('UPDATE ciphertext_digest SET ciphertext=$2 WHERE handle=$1', [bytes, digest]);
+        const restoredValue = await client.query('UPDATE ciphertexts SET ciphertext=$2 WHERE handle=$1 AND ciphertext_version=$3', [bytes, ciphertext, record.version]);
+        if (restoredDigest.rowCount !== 1 || restoredValue.rowCount !== 1) throw new Error('canonical canary rows missing during restoration');
+        await client.query('COMMIT');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+      const verified = await client.query<{ ciphertext: Buffer; digest: Buffer }>(
+        'SELECT c.ciphertext, d.ciphertext AS digest FROM ciphertexts c JOIN ciphertext_digest d USING (handle) WHERE c.handle=$1 AND c.ciphertext_version=$2', [bytes, record.version]);
+      if (verified.rowCount !== 1 || !verified.rows[0].ciphertext.equals(ciphertext) || !verified.rows[0].digest.equals(digest)) {
+        throw new Error('ciphertext canary restoration verification failed');
       }
       remove(id);
     } finally { client.release(); }
@@ -151,6 +193,8 @@ export async function recoverAbortedSuite(): Promise<void> {
       if (record.kind === 'digest') {
         if (!/^[a-f0-9]{64}$/i.test(record.original)) throw new Error('invalid original');
         await restoreRecordedDigest(record.databaseUrl, record.handle, Buffer.from(record.original, 'hex'));
+      } else if (record.kind === 'ciphertext') {
+        await restoreRecordedCiphertext(record.databaseUrl, record.handle);
       } else if (record.kind === 'mining') {
         const request = new FetchRequest(record.rpcUrl);
         request.timeout = 5_000;

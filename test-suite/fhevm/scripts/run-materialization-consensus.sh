@@ -291,9 +291,9 @@ main() {
   # STATUS plus the marker each case prints, never `1 passing` in its output:
   # an after-hook can fail after a test body passes, and this suite has an
   # after-hook that gates the squash format and the executed scheduling.
-  CONSENSUS_SCENARIO="${CONSENSUS_SCENARIO:-unknown}"
-  CONSENSUS_OPERATORS="$count"
-  CONSENSUS_THRESHOLD="$count"
+  local observed_topology
+  observed_topology="$(bun "$SCRIPT_DIR/observe-consensus-topology.ts" "$count")" || die "cannot verify active topology"
+  eval "$observed_topology"
   cr_init "${CONSENSUS_RUN_ID:-}" || exit 1
   rs_stage_results || exit 1
   suite_identity_assert "$TEST_CONTAINER" ||
@@ -316,7 +316,7 @@ main() {
     -e "${suite_flag}=1" \
     -e "KMS_ATTESTATION_READINESS=$attestation_readiness" \
     -e "COPROCESSOR_COUNT=$count" \
-    -e "CONSENSUS_THRESHOLD=$count" \
+    -e "CONSENSUS_THRESHOLD=$CONSENSUS_THRESHOLD" \
     -e "GATEWAY_RPC_URL=$gateway_url" \
     -e "GATEWAY_CONFIG_ADDRESS=$gateway_config" \
     -e "CIPHERTEXT_COMMITS_ADDRESS=$ciphertext_commits" \
@@ -387,7 +387,7 @@ main() {
       fault_observed_at="$(awk '{print $NF}' <<<"$replacement_line")"
     )
   fi
-  local index=0 case_id marker state detail
+  local index=0 case_id marker state detail case_failures=0
   for case_id in "${case_ids[@]}"; do
     marker="${markers[$index]}"
     index=$((index + 1))
@@ -412,13 +412,16 @@ main() {
         assert="assertions-ran=pass:$marker" assert="lock-evidence=pass" || die "could not record $case_id PASS"
     else
       cr_record "$case_id" "$state" "${base_record[@]}" "${identity_args[@]}" detail="$detail" || die "could not record $case_id $state"
-      status=1
+      case_failures=$((case_failures + 1))
     fi
     echo "[$case_id] $state ${detail:+- $detail}"
   done
 
   echo "structured results: ${RS_PUBLISH_RESULTS:-$(dirname "$(cr_results_file)")}/$CR_RUN_ID.jsonl"
+  # Suite/after-hook or shared lock failures invalidate every sibling. A
+  # missing case marker is already represented by its own NOT_RUN record.
   [[ "$status" -eq 0 && "$lock_state" == pass ]] || die "the ${SUITE} gate did not stand"
+  [[ "$case_failures" -eq 0 ]]
 }
 
 main

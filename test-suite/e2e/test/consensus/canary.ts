@@ -13,10 +13,10 @@
  * poisoning. So this drives the comparison the other tests actually call, and
  * requires the specific mismatch class the tamper should produce.
  *
- * The tamper is at the consensus layer, not the data layer: it flips a byte of
- * one operator's stored compute *digest*, so the operator still holds correct
- * ciphertext and merely reports the wrong thing about it. That is the shape of
- * the divergence the detector exists for, and it restores cleanly.
+ * The digest arm flips only the stored compute digest. The raw-byte arm changes
+ * ciphertext and recomputes its digest consistently: local binding validation
+ * still passes, so only cross-operator comparison can catch that divergence.
+ * Both arms restore their originals through durable recovery journals.
  *
  * It runs on an already-published handle on purpose. Poisoning a value before
  * publication would be a test of bad submissions, and it can do irreversible
@@ -25,10 +25,11 @@
  */
 import { expect } from 'chai';
 import { Pool } from 'pg';
+import { keccak256 } from 'ethers';
 
 import { type MismatchKind, ComparisonMismatch } from './mismatch';
 import { assertOperatorsAgree } from './probe';
-import { saveDigestRecovery, restoreRecordedDigest } from './abortRecovery';
+import { saveDigestRecovery, restoreRecordedDigest, saveCiphertextRecovery, restoreRecordedCiphertext } from './abortRecovery';
 
 const handleBytes = (handle: string) => Buffer.from(handle.replace(/^0x/, ''), 'hex');
 
@@ -259,4 +260,67 @@ export async function assertCanaryFires(
       }).then(() => undefined),
     ['compute-digest'],
   );
+}
+
+/** Change raw bytes AND their compute digest so only cross-operator comparison
+ * can reject the value. Both originals are journaled under the publication row
+ * lock and restored atomically, including after an uncertain commit or abort. */
+export async function tamperCanonicalCiphertext(databaseUrl: string, handle: string, timeoutMs = 6 * 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let journaled = false;
+  try {
+    await withPool(databaseUrl, async pool => {
+      const client = await pool.connect();
+      try {
+        for (;;) {
+          await client.query('BEGIN');
+          try {
+            const selected = await client.query<{ ciphertext: Buffer; digest: Buffer; ciphertext_version: number; txn_is_sent: boolean }>(
+              `SELECT c.ciphertext, c.ciphertext_version, d.ciphertext AS digest, d.txn_is_sent
+               FROM ciphertext_digest d JOIN ciphertexts c USING (handle)
+               WHERE d.handle=$1 FOR UPDATE OF d, c`, [handleBytes(handle)]);
+            if (selected.rowCount !== 1) throw new Error('raw canary requires exactly one canonical ciphertext and digest');
+            const row = selected.rows[0];
+            if (row.txn_is_sent === true) {
+              if (!Buffer.isBuffer(row.ciphertext) || !row.ciphertext.length || !Buffer.isBuffer(row.digest) ||
+                  !row.digest.equals(Buffer.from(keccak256(row.ciphertext).slice(2), 'hex'))) throw new Error('raw canary starts from an invalid compute binding');
+              const poisoned = Buffer.from(row.ciphertext);
+              poisoned[0] ^= 0xff;
+              const digest = Buffer.from(keccak256(poisoned).slice(2), 'hex');
+              saveCiphertextRecovery(databaseUrl, handle, row.ciphertext_version, row.ciphertext, row.digest);
+              journaled = true;
+              const valueUpdate = await client.query('UPDATE ciphertexts SET ciphertext=$2 WHERE handle=$1 AND ciphertext_version=$3', [handleBytes(handle), poisoned, row.ciphertext_version]);
+              const digestUpdate = await client.query('UPDATE ciphertext_digest SET ciphertext=$2 WHERE handle=$1', [handleBytes(handle), digest]);
+              if (valueUpdate.rowCount !== 1 || digestUpdate.rowCount !== 1) throw new Error('raw canary did not update exactly one canonical value and digest');
+              await client.query('COMMIT');
+              return;
+            }
+            await client.query('ROLLBACK');
+          } catch (error) { await client.query('ROLLBACK'); throw error; }
+          if (Date.now() >= deadline) throw new Error('operator has not published; refusing raw-byte canary');
+          await new Promise(resolve => setTimeout(resolve, 2_000));
+        }
+      } finally { client.release(); }
+    });
+  } catch (error) {
+    if (journaled) await restoreRecordedCiphertext(databaseUrl, handle);
+    throw error;
+  }
+}
+
+export async function assertRawByteCanaryFiresWith(
+  databaseUrl: string, handle: string, label: string,
+  compare: (phase: 'clean' | 'poisoned' | 'restored') => Promise<void>,
+): Promise<void> {
+  await compare('clean');
+  await tamperCanonicalCiphertext(databaseUrl, handle);
+  try {
+    let observed: unknown;
+    try { await compare('poisoned'); } catch (error) { observed = error; }
+    if (!(observed instanceof ComparisonMismatch) || observed.kind !== 'raw-bytes' || observed.handle.toLowerCase() !== handle.toLowerCase()) {
+      throw new Error(`${label}: consistently rebound raw-byte poison was not rejected as a cross-operator raw-bytes mismatch`);
+    }
+    console.info(`[${label}] raw-byte canary fired with a valid local compute digest`);
+  } finally { await restoreRecordedCiphertext(databaseUrl, handle); }
+  await compare('restored');
 }

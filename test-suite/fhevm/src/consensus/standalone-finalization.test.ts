@@ -44,7 +44,8 @@ exit 0
   });
 }
 
-for (const finalGateFails of [false, true]) test(`ordinary first-case failure preserves later PASS unless final gate fails (${finalGateFails})`, () => {
+for (const failedState of ["FAIL", "NOT_RUN"] as const) {
+for (const finalGateFails of [false, true]) test(`ordinary ${failedState} preserves later PASS unless final gate fails (${finalGateFails})`, () => {
   const dir = mkdtempSync(path.join(tmpdir(), "mixed-finalize-"));
   try {
     const run = Bun.spawnSync(["bash", "-c", `set -uo pipefail
@@ -57,13 +58,14 @@ CR_RUN_ID=mixed; CR_REVISION=abc123; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLASS=cpu
 CR_SCENARIO=none; CR_OPERATORS=0; CR_THRESHOLD=0
 CONSENSUS_RESULTS_DIR='${dir}/published'; export CONSENSUS_RESULTS_DIR
 rs_stage_results
-cr_record HAR-03-READINESS-CONTRACTS FAIL cleanup=ok detail='first case failed'
+cr_record HAR-03-READINESS-CONTRACTS ${failedState} cleanup=ok detail='first case failed or did not run'
 cr_record_checked_pass HAR-02-INVENTORY-AGGREGATE assert=safety=pass:fixture cleanup=ok
-FAILURES=1; RS_FINAL_FAILURE=${finalGateFails ? 1 : 0}
+unset FAILURES; RS_FINAL_FAILURE=${finalGateFails ? 1 : 0}
 rs_finalize_results 1 ok; [[ "$?" == 1 ]]
 `], {timeout: 10000});
     expect(run.exitCode, run.stderr.toString()).toBe(0);
     const records = readFileSync(path.join(dir, "published/mixed.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    expect(records.map((record) => record.state)).toEqual(["FAIL", finalGateFails ? "FAIL" : "PASS"]);
+    expect(records.map((record) => record.state)).toEqual([finalGateFails ? "FAIL" : failedState, finalGateFails ? "FAIL" : "PASS"]);
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
+}

@@ -100,47 +100,34 @@ case_main() {
   local out status=0
   log "F1 to F3 on the fork topology"
   run_phase out main "[fork-consensus/F3] CASE COMPLETE" || status=$?
-  local -a cases=(FORK-01-COLLIDING-HANDLE FORK-02-DISTINCT-HANDLES FORK-03-ORPHAN-ALLOW-INERT)
-  local id
-  # The branch divergence is this family's fault, and a record without it
-  # cannot be told from a run on a single chain.
-  local -a fork_evidence=()
-  local diverged
-  diverged="$(grep -o 'branches diverged: handle 0x[0-9a-f]* canonical 0x[0-9a-f]* fork 0x[0-9a-f]* at [0-9TZ:.-]*' <<<"$out" | tail -1)"
-  if [[ -n "$diverged" ]]; then
-    fork_evidence+=(
-      workload="$(awk '{print $4}' <<<"$diverged")"
-      fault_observed_at="$(awk '{print $NF}' <<<"$diverged")"
-      artifact="canonical_block=$(awk '{print $6}' <<<"$diverged")"
-      artifact="fork_block=$(awk '{print $8}' <<<"$diverged")"
-    )
-  fi
-  if [[ "$status" -eq 0 ]]; then
-    for id in "${cases[@]}"; do
-      cr_record_checked_pass "$id" started_at="$started" cleanup=ok "${fork_evidence[@]}" \
-        assert="assertions-ran=pass:the phase printed every case marker"
-    done
-    echo "[fork main] PASS: ${cases[*]}"
-  else
-    echo "$out" | tail -30
-    # Attribute the failure to the case whose marker is missing, so a reader can
-    # see which of the three did not complete rather than all three failing
-    # together.
-    local reason; reason="$(cr_failure_reason "$out")"
-    for id in F1 F2 F3; do
-      local case_id
-      case "$id" in
-        F1) case_id=FORK-01-COLLIDING-HANDLE ;;
-        F2) case_id=FORK-02-DISTINCT-HANDLES ;;
-        F3) case_id=FORK-03-ORPHAN-ALLOW-INERT ;;
-      esac
-      if grep -qF "[fork-consensus/${id}] CASE COMPLETE" <<<"$out"; then
+  local id case_id evidence reason
+  local before_failures=$FAILURES
+  reason="$(cr_failure_reason "$out")"
+  echo "$out"
+  for id in F1 F2 F3; do
+    case "$id" in
+      F1) case_id=FORK-01-COLLIDING-HANDLE ;;
+      F2) case_id=FORK-02-DISTINCT-HANDLES ;;
+      F3) case_id=FORK-03-ORPHAN-ALLOW-INERT ;;
+    esac
+    if grep -qF "[fork-consensus/${id}] CASE COMPLETE" <<<"$out"; then
+      local -a fork_evidence=()
+      if evidence="$(printf '%s\n' "$out" | bun "$SCRIPT_DIR/read-fork-evidence.ts" "$CR_RUN_ID" "$case_id")"; then
+        mapfile -t fork_evidence <<<"$evidence"
         cr_record_checked_pass "$case_id" started_at="$started" cleanup=ok "${fork_evidence[@]}" assert="assertions-ran=pass"
       else
-        cr_record "$case_id" FAIL started_at="$started" cleanup=ok detail="$reason"
+        cr_record "$case_id" FAIL started_at="$started" cleanup=ok detail="completed case lacks its own valid fault observation"
         FAILURES=$((FAILURES + 1))
       fi
-    done
+    else
+      cr_record "$case_id" FAIL started_at="$started" cleanup=ok detail="$reason"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+  if [[ "$status" -ne 0 && "$FAILURES" -eq "$before_failures" ]]; then
+    # All bodies completed: the failure belongs to a shared hook or phase gate.
+    RS_FINAL_FAILURE=1
+    FAILURES=$((FAILURES + 1))
   fi
 }
 
@@ -150,9 +137,10 @@ main() {
   docker inspect "$TEST_CONTAINER" >/dev/null 2>&1 || die "test container $TEST_CONTAINER is not running"
   local count; count="$(operator_count)"
   [[ "$count" -ge 3 ]] || die "the fork gate needs three operators, found $count"
-  CONSENSUS_OPERATORS="$count"
-  CONSENSUS_THRESHOLD="${CONSENSUS_THRESHOLD:-$count}"
-  CONSENSUS_SCENARIO="${CONSENSUS_SCENARIO:-three-of-three-fork}"
+  [[ "$FORK_OPERATOR" == 2 ]] || die "the managed fork topology routes operator 2 to the fork"
+  local observed_topology
+  observed_topology="$(bun "$SCRIPT_DIR/observe-consensus-topology.ts" "$count")" || die "cannot verify active topology"
+  eval "$observed_topology"
   cr_init "${CONSENSUS_RUN_ID:-}" || exit 1
   rs_stage_results || exit 1
   # The image bakes the e2e suite in, so a commit since the last build does not

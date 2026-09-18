@@ -9,7 +9,7 @@ rs_finalize_results() {
   local status="$1" cleanup="$2" state=keep detail=""
   [[ -n "${RS_STAGED_RESULTS:-}" ]] || return "$status"
   local represented=0
-  if [[ "$status" != 0 && "$cleanup" == ok && "${FAILURES:-0}" -gt 0 && "${RS_FINAL_FAILURE:-0}" == 0 ]] &&
+  if [[ "$status" != 0 && "$cleanup" == ok && "${RS_FINAL_FAILURE:-0}" == 0 ]] &&
      timeout --kill-after=2s 20s bun "$SCRIPT_DIR/finalize-case-results.ts" --has-failure "$RS_STAGED_RESULTS" "$CR_RUN_ID"; then
     represented=1
   fi

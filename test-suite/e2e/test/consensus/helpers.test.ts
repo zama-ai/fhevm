@@ -2,6 +2,7 @@ import { attestationReadinessMode } from './helpers';
 import { evmBlockhash, isTerminalForkChild } from './forkHelper';
 import { expect } from 'chai';
 import { ethers } from 'ethers';
+import { ComparisonMismatch } from './mismatch';
 
 import {
   type CanonicalOutputRow,
@@ -121,7 +122,7 @@ describe('Materialization consensus harness helpers', () => {
         ],
         [expectedHandle],
       ),
-    ).to.throw('same-SW/same-backend consensus requires exact ciphertext and provenance equality');
+    ).to.throw(ComparisonMismatch).with.property('kind', 'raw-bytes');
     expect(() =>
       assertEquivalentCanonicalOutputs(
         [[output()], [output({ transactionId: Buffer.alloc(32, 0x99) })]],

@@ -1,5 +1,5 @@
-import { emitAssertions } from './assertionEvidence';
-import { successfulForkReceipt } from './forkRecovery';
+import { emitAssertions, emitFaultObservation } from './assertionEvidence';
+import { successfulForkReceipt, waitForForkSentinel } from './forkRecovery';
 /**
  * Fork byte-consensus gate: what a reorg may and may not do to ciphertext
  * bytes, under the revised RFC 019.
@@ -46,7 +46,7 @@ import { successfulForkReceipt } from './forkRecovery';
 import { expect } from 'chai';
 import { Contract, type InterfaceAbi, type JsonRpcProvider } from 'ethers';
 
-import { assertCanaryFiresWith } from './canary';
+import { assertCanaryFiresWith, assertRawByteCanaryFiresWith } from './canary';
 import { BRANCH_COMPARISON, type OperatorEvidence } from './comparator';
 import {
   type ForkConfig,
@@ -65,6 +65,7 @@ import { publishHandshake, readHandshake } from './handshake';
 import { restoreMiningState } from './abortRecovery';
 import {
   assertCanonicalOutputDigestBindings,
+  assertGatewayTopology,
   getCoprocessorDbUrls,
   queryCanonicalOutputs,
   waitForConsensus,
@@ -84,6 +85,7 @@ const COPROCESSOR_COUNT = Number.parseInt(process.env.COPROCESSOR_COUNT ?? '3', 
 /** Index of the operator routed to the fork by the scenario. */
 const FORK_OPERATOR = Number.parseInt(process.env.FORK_OPERATOR_INDEX ?? '2', 10);
 const PHASE = process.env.FORK_PHASE ?? 'main';
+const GATEWAY_CONFIG_ADDRESS = process.env.GATEWAY_CONFIG_ADDRESS ?? '';
 const GATEWAY_RPC_URL = process.env.GATEWAY_RPC_URL ?? '';
 const CIPHERTEXT_COMMITS_ADDRESS = process.env.CIPHERTEXT_COMMITS_ADDRESS ?? '';
 const ALIAS_FIXTURE_GAS_LIMIT = 10_000_000;
@@ -162,6 +164,7 @@ describe('Fork byte consensus', function () {
   let fixtureAbi: ReadonlyArray<unknown>;
   let forkOnlyHandle = '';
   let chainId: string;
+  let authorizedSenders = new Set<string>();
 
   before(async function () {
     if (!ENABLE_FORK_CONSENSUS) {
@@ -170,13 +173,15 @@ describe('Fork byte consensus', function () {
     if (PHASE !== 'main') throw new Error('Only the main fork phase is available in the consensus layer');
     required(GATEWAY_RPC_URL, 'GATEWAY_RPC_URL');
     required(CIPHERTEXT_COMMITS_ADDRESS, 'CIPHERTEXT_COMMITS_ADDRESS');
-    if (COPROCESSOR_COUNT < 3) {
+    if (COPROCESSOR_COUNT !== 3) {
       throw new Error('the fork gate needs three operators: two on the canonical chain and one on the fork');
     }
     if (FORK_OPERATOR < 0 || FORK_OPERATOR >= COPROCESSOR_COUNT) {
       throw new Error(`FORK_OPERATOR_INDEX ${FORK_OPERATOR} is outside the topology`);
     }
 
+    const membership = await assertGatewayTopology(GATEWAY_RPC_URL, required(GATEWAY_CONFIG_ADDRESS, 'GATEWAY_CONFIG_ADDRESS'), 3, 3);
+    authorizedSenders = new Set(membership.txSenders);
     forkConfig = defaultForkConfig();
     chainId = (await getCanonicalProvider(forkConfig).getNetwork()).chainId.toString();
     databaseUrls = getCoprocessorDbUrls(COPROCESSOR_COUNT);
@@ -344,14 +349,9 @@ describe('Fork byte consensus', function () {
       canonicalHandle.toLowerCase(),
     );
 
-    // The fault this family injects, in a form the runner records: two branches
-    // that really are different, and the handle minted on both. Without it the
-    // fork cases report PASS with nothing to distinguish them from a run on a
-    // single chain, which is what the aggregate refused.
-    console.info(
-      `[fork-consensus] branches diverged: handle ${canonicalHandle.toLowerCase()} canonical ` +
-        `${canonicalBlock!.hash} fork ${forkBlock!.hash} at ${new Date().toISOString()}`,
-    );
+    emitFaultObservation('FORK-01-COLLIDING-HANDLE', [canonicalHandle.toLowerCase()], {
+      canonical_block: canonicalBlock!.hash!, fork_block: forkBlock!.hash!,
+    });
 
     // Every operator computed it, including the one that saw it on the other
     // branch, and all of them agree byte for byte. Deliberately narrower than
@@ -376,6 +376,7 @@ describe('Fork byte consensus', function () {
       ['compute-digest'],
     );
     expect(canary.kind, 'the fork canary must fire as a compute-digest mismatch').to.eq('compute-digest');
+    await assertRawByteCanaryFiresWith(databaseUrls[FORK_OPERATOR], canonicalHandle.toLowerCase(), 'fork-consensus/F1', compareBranchBytes);
 
     // First-write-wins is silent: a colliding handle is stored once per
     // operator, never as a duplicate-key error surfaced to the worker.
@@ -391,6 +392,8 @@ describe('Fork byte consensus', function () {
     const consensus = await waitForConsensus(GATEWAY_RPC_URL, CIPHERTEXT_COMMITS_ADDRESS, canonicalHandle);
     expect(consensus, 'the aliased handle must reach on-chain quorum').to.not.be.null;
     const senders = consensus!.senders.map((sender) => sender.toLowerCase());
+    expect(senders.length, 'observed gateway quorum').to.eq(3);
+    expect(senders.every(sender => authorizedSenders.has(sender)), 'gateway-authorized submitters').to.eq(true);
     expect(new Set(senders).size, 'quorum must come from distinct operators').to.eq(senders.length);
     emitAssertions('FORK-01-COLLIDING-HANDLE', ['precondition', 'bytes', 'quorum'], 'Branches shared the EVM-visible preimage, minted one handle, agreed on ciphertext/digest and reached distinct-member quorum.');
     console.info(MARKER('F1'));
@@ -417,8 +420,8 @@ describe('Fork byte consensus', function () {
     ]);
     await Promise.all([mineOneBlock(canonical), mineOneBlock(fork)]);
     const [canonicalReceipt, forkReceipt] = await Promise.all([
-      successfulForkReceipt(canonicalSent, 'F2 canonical transaction'),
-      successfulForkReceipt(forkSent, 'F2 fork transaction'),
+      successfulForkReceipt<import('ethers').TransactionReceipt>(canonicalSent, 'F2 canonical transaction'),
+      successfulForkReceipt<import('ethers').TransactionReceipt>(forkSent, 'F2 fork transaction'),
     ]);
     const [canonicalBlock, forkBlock] = await Promise.all([
       canonical.getBlock(canonicalReceipt.blockNumber), fork.getBlock(forkReceipt.blockNumber),
@@ -453,7 +456,7 @@ describe('Fork byte consensus', function () {
     await pinNextBlockTimestamp(canonical, base + 24);
     const sentinelSent = await canonicalContract.combineLocal({ gasLimit: ALIAS_FIXTURE_GAS_LIMIT });
     await mineOneBlock(canonical);
-    const sentinelReceipt = await successfulForkReceipt(sentinelSent, 'F2 canonical sentinel');
+    const sentinelReceipt = await successfulForkReceipt<import('ethers').TransactionReceipt>(sentinelSent, 'F2 canonical sentinel');
     expect(sentinelReceipt.blockNumber, 'sentinel must follow the divergent canonical transaction').to.be.greaterThan(canonicalReceipt.blockNumber);
     const sentinel = (await canonicalContract.combinedLocal() as string).toLowerCase();
     for (const index of canonicalOperators()) {
@@ -467,6 +470,9 @@ describe('Fork byte consensus', function () {
     }
     console.info(`[fork-consensus] F2 absence confirmed past the canonical sentinel ${sentinel}`);
 
+    emitFaultObservation('FORK-02-DISTINCT-HANDLES', [canonicalHandle.toLowerCase(), forkHandle.toLowerCase(), sentinel], {
+      canonical_block: canonicalReceipt.blockHash, fork_block: forkReceipt.blockHash,
+    });
     forkOnlyHandle = forkHandle.toLowerCase();
     publishHandshake('fork-orphan', { forkOnlyHandle, canonicalHandle: canonicalHandle.toLowerCase() });
     emitAssertions('FORK-02-DISTINCT-HANDLES', ['safety'], 'Exact successful divergent receipts minted different handles; canonical operators past the later sentinel held no fork-only row.');
@@ -494,6 +500,41 @@ describe('Fork byte consensus', function () {
     // operator's point of view its branch is orphaned and replaced, which is
     // what a reorg is.
     await seedForkFromCanonical(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl, false);
+
+    // Mint NEW work after the first replacement. The fork still snapshots the
+    // previous tip, so it cannot already contain this transaction. Reseed at
+    // the new canonical tip, then require the forked operator itself to ingest
+    // that block and finish the exact transaction/handle. Stopping operator 2
+    // after F2 must fail here, even though the canonical ACL remains healthy.
+    const canonical = getCanonicalProvider(forkConfig);
+    const fork = getForkProvider(forkConfig);
+    const canonicalContract = new Contract(contractAddress, fixtureAbi as InterfaceAbi, getSignerForProvider(canonical, 0));
+    const recoverySent = await canonicalContract.combineLocal({ gasLimit: ALIAS_FIXTURE_GAS_LIMIT });
+    await mineOneBlock(canonical);
+    const recoveryReceipt = await successfulForkReceipt<import('ethers').TransactionReceipt>(recoverySent, 'F3 canonical recovery sentinel');
+    const recoveryHandle = (await canonicalContract.combinedLocal() as string).toLowerCase();
+    expect(await queryCanonicalOutputs(databaseUrls[FORK_OPERATOR], [recoveryHandle]), 'recovery sentinel must be new to the forked operator').to.have.length(0);
+    await seedForkFromCanonical(forkConfig.canonicalRpcUrl, forkConfig.forkRpcUrl, false);
+    await waitForForkSentinel(async () => {
+      await mineOneBlock(fork); // allow finality and catchup to advance on the replacement
+      return withPool(databaseUrls[FORK_OPERATOR], async pool => {
+        const result = await pool.query<{ replacement_seen: boolean; total: string; completed: string; errors: string }>(`
+          SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid
+            WHERE chain_id=$1 AND block_number=$2 AND block_hash=$3 AND block_status <> 'orphaned') AS replacement_seen,
+            count(*)::text AS total,
+            count(*) FILTER (WHERE is_completed AND NOT is_error)::text AS completed,
+            count(*) FILTER (WHERE is_error)::text AS errors
+          FROM computations WHERE host_chain_id=$1 AND block_number=$2 AND transaction_id=$4 AND output_handle=$5`,
+          [chainId, recoveryReceipt.blockNumber, Buffer.from(recoveryReceipt.blockHash.slice(2), 'hex'),
+            Buffer.from(recoveryReceipt.hash.slice(2), 'hex'), Buffer.from(recoveryHandle.slice(2), 'hex')]);
+        const row = result.rows[0];
+        return { replacementSeen: row.replacement_seen, total: Number(row.total), completed: Number(row.completed), errors: Number(row.errors) };
+      });
+    });
+    emitFaultObservation('FORK-03-ORPHAN-ALLOW-INERT', [forkOnlyHandle, canonicalHandle, recoveryHandle], {
+      replacement_block: recoveryReceipt.blockHash, sentinel_transaction: recoveryReceipt.hash,
+    });
+    emitAssertions('FORK-03-ORPHAN-ALLOW-INERT', ['fault'], 'Forked operator ingested the exact canonical replacement block and completed its fresh sentinel transaction and handle.');
 
     // The safety property. Two halves, and the previous version had only the
     // first: absence of quorum says nothing about authorization.

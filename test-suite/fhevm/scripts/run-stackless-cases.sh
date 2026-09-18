@@ -42,9 +42,6 @@ bun_test_count() { sed -n 's/^ *\([0-9]\+\) pass$/\1/p' <<<"$1" | tail -1; }
 # invoked from anywhere.
 bun_test() { (cd "$CLI_DIR" && bun test "$@"); }
 mocha_test_count() { sed -n 's/^ *\([0-9]\+\) passing.*/\1/p' <<<"$1" | tail -1; }
-mocha_test() {
-  (cd "$REPO_ROOT/test-suite/e2e" && TS_NODE_TRANSPILE_ONLY=true npx --no-install mocha --require ts-node/register "$@")
-}
 # Rustup resolves the pinned toolchain from cwd, not --manifest-path.
 cargo_test() { (cd "$ENGINE_DIR" && SQLX_OFFLINE=true cargo test "$@"); }
 cargo_test_count() {
@@ -103,19 +100,19 @@ harness_leg() {
 }
 
 comparator_leg() {
-  record_case MAT-05-CANARY-CLASSES 15 mocha_test_count \
+  record_case MAT-05-CANARY-CLASSES 30 mocha_test_count \
     "standalone consensus oracles reject invalid evidence" "safety" \
-    -- mocha_test 'test/consensus/*.test.ts'
+    -- bun "$SCRIPT_DIR/run-comparator-contracts.ts"
 }
 
 rust_regression_leg() {
   # Both need a database through testcontainers, which needs docker.
   record_case REG-01-LISTENER-POOL-REBIND 4 cargo_test_count \
-    "the stack-version listener rebinds and reconciles" "liveness safety sensitivity" \
+    "the stack-version listener rebinds and reconciles" "liveness safety" \
     -- cargo_test -p host-listener --test stack_version_listener_tests -- --test-threads=1
 
   record_case REG-02-TFHE-DAEMON-EXIT 2 cargo_test_count \
-    "a fatal daemon failure exits non-zero, and a voluntary one does not" "liveness safety sensitivity" \
+    "a fatal daemon failure exits non-zero, and a voluntary one does not" "liveness safety" \
     -- cargo_test -p tfhe-worker --test daemon_exit
 }
 

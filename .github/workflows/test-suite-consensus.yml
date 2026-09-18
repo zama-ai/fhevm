@@ -681,7 +681,7 @@ jobs:
         working-directory: test-suite/fhevm
         run: ./scripts/run-materialization-consensus.sh --heterogeneous --suite materialization
 
-      - name: Fleet ownership after the lifecycle cases
+      - name: Fleet ownership after scheduling agreement
         if: ${{ always() }}
         working-directory: test-suite/fhevm
         run: ./scripts/consensus-validity.sh exclusivity --operators 3

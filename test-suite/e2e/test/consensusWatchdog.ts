@@ -307,8 +307,8 @@ export class ConsensusWatchdog {
    * "one queue was served by two workers" from "the same backend disagreed with
    * itself" is `ciphertext_digest.ciphertext128_format`, and it takes one query.
    *
-   * The squash path currently records the CPU format variants regardless of
-   * execution hardware, so equal formats cannot establish backend agreement.
+   * CPU and GPU squash paths use distinct format variants. A mismatch can
+   * identify mixed backends; equal formats alone do not prove byte agreement.
    * Block numbers and row presence still help locate the divergent submissions.
    *
    * Best-effort by construction: a divergence report must never be lost because

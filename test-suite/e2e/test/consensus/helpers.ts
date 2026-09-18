@@ -971,8 +971,10 @@ export function assertEquivalentCanonicalOutputs(
       for (let producerIndex = 0; producerIndex < leftGroup.length; producerIndex += 1) {
         const left = leftGroup[producerIndex];
         const right = rightGroup[producerIndex];
+        if (!left.ciphertext.equals(right.ciphertext)) {
+          throw new ComparisonMismatch('raw-bytes', handle, [0, databaseIndex], 'canonical output mismatch: ciphertext bytes differ across operators');
+        }
         const equal =
-          left.ciphertext.equals(right.ciphertext) &&
           left.ciphertextType === right.ciphertextType &&
           left.ciphertextVersion === right.ciphertextVersion &&
           left.fheOperation === right.fheOperation &&
@@ -984,7 +986,13 @@ export function assertEquivalentCanonicalOutputs(
           valueEquals(left.snsCiphertextDigest, right.snsCiphertextDigest) &&
           left.ciphertext128Format === right.ciphertext128Format;
         if (!equal) {
-          throw new Error(
+          const kind = left.ciphertextType !== right.ciphertextType || left.ciphertextVersion !== right.ciphertextVersion ? 'type-version'
+            : left.fheOperation !== right.fheOperation ? 'operation'
+            : !left.keyId.equals(right.keyId) ? 'key-identity'
+            : !valueEquals(left.ciphertextDigest, right.ciphertextDigest) ? 'compute-digest'
+            : !valueEquals(left.snsCiphertextDigest, right.snsCiphertextDigest) ? 'sns-digest'
+            : left.ciphertext128Format !== right.ciphertext128Format ? 'ciphertext128-format' : 'provenance';
+          throw new ComparisonMismatch(kind, handle, [0, databaseIndex],
             `canonical output mismatch for ${handle} between databases 0 and ${databaseIndex}; ` +
               'same-SW/same-backend consensus requires exact ciphertext and provenance equality',
           );
@@ -1261,6 +1269,15 @@ export async function readGatewayMembership(
   } finally {
     provider.destroy();
   }
+}
+
+/** Read the deployed gateway rather than treating environment expectations as evidence. */
+export async function assertGatewayTopology(rpcUrl: string, configAddress: string, count: number, threshold: number): Promise<GatewayMembership> {
+  const membership = await readGatewayMembership(rpcUrl, configAddress);
+  if (membership.txSenders.length !== count || new Set(membership.txSenders).size !== count || membership.threshold !== threshold) {
+    throw new Error(`observed gateway membership/threshold does not match expected ${threshold}-of-${count}`);
+  }
+  return membership;
 }
 
 /**

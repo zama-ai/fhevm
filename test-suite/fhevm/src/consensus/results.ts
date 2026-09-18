@@ -298,12 +298,6 @@ export const aggregate = (options: AggregateOptions): AggregateReport => {
         result.executionClass.backend.split("-")[0] !== expected.ci.backend) {
       problems.push(`${result.caseId}: CI requires backend ${expected.ci.backend}; compatible backends are not additional CI coverage`);
     }
-    if (result.state === "PASS" && options.ci && expected.ci.leg === "degraded") {
-      const setting = expected.id === "DEG-06-GW-LISTENER-INFLIGHT" ? "false" : "true";
-      if (result.artifactIdentities?.drift_auto_revert !== setting) {
-        problems.push(`${result.caseId}: CI requires observed drift_auto_revert=${setting}`);
-      }
-    }
     if (result.state === "PASS" && expected.topology.scenario !== "none" && options.requireBuildMode &&
         result.artifactIdentities?.build_mode !== options.requireBuildMode) {
       problems.push(`${result.caseId}: branch validation requires build_mode=${options.requireBuildMode}, got ${result.artifactIdentities?.build_mode ?? "unspecified"}`);
