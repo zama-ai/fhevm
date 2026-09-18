@@ -1,23 +1,13 @@
 # kms-connector chart values overlay for the fhevm e2e preview namespace.
 #
-# ONE RELEASE PER kms-core PARTY: preview-env-deploy.yml's "Deploy kms-connector"
-# step installs this file NB_KMS_CORE times (kms-connector-<i>, i=1..N), each
-# --set-string-overriding the 3 per-party fields below (databaseUrl,
-# kmsCoreEndpoints, wallet.secret.name) to point at that party's own DB/kms-core/
-# wallet - mirrors kms's own real per-mpc-party-namespace topology (see
-# zama-zws/gitops's values-kms-connector-mpc-testnet.yaml: kmsCoreEndpoints is a
-# single "http://kms-core:50100" there too, not a list of every party). The
-# static defaults below are party 1's (harmless placeholders if this file is
-# ever helm-templated standalone without the workflow's --set-string calls).
+# ONE RELEASE PER kms-core PARTY: scripts/deploy-kms-connector.sh installs this
+# file NB_KMS_CORE times (kms-connector-<i>, i=1..N), each --set-string-overriding
+# the 3 per-party fields below (databaseUrl, kmsCoreEndpoints, wallet.secret.name)
+# to point at that party's own DB/kms-core/wallet.
 #
-# Unlike coprocessor's chart, this chart's per-address fields under
-# commonConfig are plain strings (no `value`/`valueFrom` object support -
-# see `kmsConnector.contracts` helper in templates/_helpers.tpl), so they
-# can't be wired live from the gw-sc-addresses / host-sc-addresses
-# ConfigMaps the way coprocessor's are via YAML alone. Real values are
-# discovered from those ConfigMaps and injected via --set-string in
-# preview-env-deploy.yml's "Deploy kms-connector" step instead - nothing
-# to fill in here.
+# commonConfig.network stays "" (the chart default): no bundled devnet/testnet/
+# mainnet preset applies to a per-PR anvil, so every chain id / address is given
+# explicitly here or by the script.
 #
 # kmsWorker's config.kmsCoreEndpoints (below) points at the dedicated per-PR
 # KMS's parties. Confirmed live via `kubectl get svc` against a running
@@ -30,38 +20,47 @@
 # peer (50001, inter-party MPC - not for the connector) and metrics (9646).
 #
 # Deployed as:
-#   helm upgrade --install kms-connector-<i> oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/kms-connector \
+#   helm upgrade --install kms-connector-<i> ../../charts/kms-connector \
 #     -n <namespace> -f this-file --set-string commonConfig.databaseUrl=... --set-string ...
 commonConfig:
   # Dedicated in-cluster Postgres release PER PARTY (../kms-connector/values-
   # postgres-connector-e2e.yaml, deployed as postgres-connector-<i>) - NOT
   # shared with coprocessor/relayer-migrate's instance, nor across parties.
-  # Overridden per-release by the workflow to postgres-connector-<i>; this is
+  # Overridden per-release by the script to postgres-connector-<i>; this is
   # just party 1's value as a standalone-template-safe default.
   databaseUrl: "postgresql://zama:zama@postgres-connector-1:5432/connector"
   gatewayUrl: "http://anvil-gateway-anvil-node:8546"
-  ethereumUrl: "http://anvil-host-anvil-node:8545"
   gatewayChainId: "54321"
-  ethereumChainId: "12345"
   # gatewayContractAddresses.* / ethereumContractAddresses.* are injected via
-  # --set-string in preview-env-deploy.yml (see header note above).
+  # --set-string in deploy-kms-connector.sh (see header note above).
 
-# kmsWorker's default hostChains entries reference $(KMS_CONNECTOR_POLYGON_*)
-# placeholders that don't apply to this single-host-chain scenario; pin it to
-# just the host chain so args still render cleanly.
+  # url/chainId are rewritten by apply-chain-env.sh on; aclAddress by
+  # deploy-kms-connector.sh
+  hostChains:
+    - name: ethereum
+      url: "http://anvil-host-anvil-node:8545"
+      chainId: "12345"
+      aclAddress: ""
+
 kmsConnectorKmsWorker:
   config:
     # Overridden per-release to this party's own kms-core-<i>-core-<i> - see
     # header note. Party 1's endpoint is the standalone-template-safe default.
     kmsCoreEndpoints: "http://kms-core-1-core-1:50100"
-    hostChains:
-      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
-        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
-        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
 
 # kmsConnectorTxSender.wallet.secret defaults to {name: kms-connector-tx-sender, key: kms-wallet}
-# - overridden per-release by the workflow to kms-connector-tx-sender-<i>. The
+# - overridden per-release by the script to kms-connector-tx-sender-<i>. The
 # Secret itself is created out-of-band by preview-env-deploy.yml's "Create
 # kms-connector-tx-sender secrets" step (must run before this chart installs,
 # unlike coprocessor's txSender which has a wallet.secret.value literal option
 # and needs no such out-of-band step).
+
+kmsConnectorProxy:
+  apiKeyDigest:
+    value: "0x75e65d843ac0b8656e1d75b2efc1cc7879e4b6c1854651cb28664686625a6e23"
+  # `kubernetes.io/tls` Secret the chart does NOT create. deploy-kms-connector.sh
+  # generates ONE self-signed certificate per namespace and stores it under this
+  # name before the first release installs. So all N releases share it and the
+  # test-suite trusts a single CA.
+  tls:
+    secretName: kms-connector-proxy-tls
