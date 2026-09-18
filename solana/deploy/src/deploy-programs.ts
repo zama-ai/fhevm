@@ -6,20 +6,14 @@ import path from 'node:path';
 
 import { type SolanaDeployProgram } from './constants';
 import generated from './generated/program-ids.json';
-import { DEFAULT_SOLANA_ENVIRONMENT, type SolanaEnvironment, programIdsFor } from './environment';
+import { DEFAULT_SOLANA_ENVIRONMENT, type SolanaEnvironment, deployedProgramIds } from './environment';
 
-const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => {
-  const ids = programIdsFor(environment);
-  return {
-    zama_host: ids.zamaHost,
-    confidential_token: ids.confidentialToken,
-    demo_vault: ids.demoVault,
-    confidential_batcher: ids.confidentialBatcher,
-    // The e2e specimens exist only on the test validator; their ids come from the committed IDLs.
-    encrypted_counter: generated.encrypted_counter,
-    dep_chain: generated.dep_chain,
-  };
-};
+const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => ({
+  ...deployedProgramIds(environment),
+  // The e2e specimens exist only on the test validator; their ids come from the committed IDLs.
+  encrypted_counter: generated.encrypted_counter,
+  dep_chain: generated.dep_chain,
+});
 
 const run = (argv: string[], signal?: AbortSignal): Promise<string> =>
   new Promise((resolve, reject) => {

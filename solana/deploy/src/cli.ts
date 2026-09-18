@@ -1,6 +1,5 @@
 // Solana deployer: host deploy|upgrade|wipe, demos deploy|upgrade, coprocessor register.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { writeSolanaAddressArtifact } from './artifact';
@@ -28,12 +27,12 @@ const resolveProgramKeypairs = async (
   for (const program of programs) {
     const envName = `SOLANA_${program.toUpperCase()}_KEYPAIR`;
     const jsonName = `${envName}_JSON`;
-    const fallbackPath = path.join(ARTIFACTS_DIR, `${program}-keypair.json`);
-    if (!process.env[envName] && !process.env[jsonName] && !existsSync(fallbackPath)) continue;
+    // Only an explicit keypair (first deploy of a program on a cluster). The build writes a
+    // throwaway <program>-keypair.json next to the .so, which never matches the shipped id.
+    if (!process.env[envName] && !process.env[jsonName]) continue;
     paths[program] = await resolveKeypairPath({
       pathEnv: process.env[envName],
       jsonEnv: process.env[jsonName],
-      fallbackPath,
       writePath: path.join(KEYPAIR_DIR, `${program}-keypair.json`),
     });
   }

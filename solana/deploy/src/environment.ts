@@ -1,6 +1,7 @@
 import type { Address } from '@solana/kit';
 
 import previewEnv from '../../environments/preview-env.json';
+import { SOLANA_DEPLOY_PROGRAMS } from './constants';
 
 /**
  * Deployed environments: `solana/environments/<name>.json`, also the programs' compiled ids.
@@ -30,6 +31,16 @@ export const programIdsFor = (environment: SolanaEnvironment): SolanaProgramIds 
     demoVault: programs.demo_vault as Address,
     confidentialBatcher: programs.confidential_batcher as Address,
   };
+};
+
+type DeployedProgram = (typeof SOLANA_DEPLOY_PROGRAMS)[number];
+
+/** The same ids keyed by program crate name. */
+export const deployedProgramIds = (environment: SolanaEnvironment): Record<DeployedProgram, Address> => {
+  const programs = ENVIRONMENTS[environment].programs;
+  const ids = {} as Record<DeployedProgram, Address>;
+  for (const program of SOLANA_DEPLOY_PROGRAMS) ids[program] = programs[program] as Address;
+  return ids;
 };
 
 export const readSolanaEnvironment = (): SolanaEnvironment => {

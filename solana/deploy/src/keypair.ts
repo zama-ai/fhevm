@@ -40,12 +40,13 @@ export const loadKeypairSigner = async (keypairPath: string): Promise<Transactio
 export const resolveKeypairPath = async (parameters: {
   readonly pathEnv: string | undefined;
   readonly jsonEnv: string | undefined;
-  readonly fallbackPath: string;
+  readonly fallbackPath?: string;
   readonly writePath: string;
 }): Promise<string> => {
   if (parameters.jsonEnv) {
     return writeKeypairJson(parameters.writePath, parameters.jsonEnv);
   }
   if (parameters.pathEnv) return parameters.pathEnv;
-  return parameters.fallbackPath;
+  if (parameters.fallbackPath) return parameters.fallbackPath;
+  throw new Error('no keypair given');
 };

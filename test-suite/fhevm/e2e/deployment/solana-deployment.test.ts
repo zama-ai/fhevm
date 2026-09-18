@@ -8,7 +8,7 @@ import path from 'node:path';
 
 import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/hostConfig';
 import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
-import { solanaProgramIdFromKeypairFile } from '../../src/generate/solana';
+import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';
 import { validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
@@ -94,7 +94,7 @@ beforeAll(async () => {
           {
             address: programIdsFor(DEFAULT_SOLANA_ENVIRONMENT).zamaHost,
             soPath: path.join(directory, 'A/zama_host.so'),
-            authority: solanaProgramIdFromKeypairFile(path.join(directory, 'payer.json')),
+            authority: solanaPubkeyFromKeypairFile(path.join(directory, 'payer.json')),
           },
         ],
       }),

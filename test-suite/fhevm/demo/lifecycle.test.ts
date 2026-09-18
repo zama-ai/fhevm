@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { centralizedKmsCorePlatform } from "../src/generate/compose";
-import { solanaProgramIdFromKeypairFile } from "../src/generate/solana";
+import { solanaPubkeyFromKeypairFile } from "../src/generate/solana";
 import {
   DEFAULT_SOLANA_ENVIRONMENT,
   programIdsFor,
@@ -129,7 +129,7 @@ describe("demo lifecycle collision policy", () => {
     ) as Record<string, string>;
     for (const program of SOLANA_SPECIMEN_PROGRAMS) {
       expect(
-        solanaProgramIdFromKeypairFile(
+        solanaPubkeyFromKeypairFile(
           path.join(root, "scripts/e2e/test-keypairs", `${program}-keypair.json`),
         ),
       ).toBe(generated[program]!);
@@ -156,7 +156,7 @@ describe("demo lifecycle collision policy", () => {
         "/deploy/confidential_batcher.so",
       ]);
       expect(new Set(programs.map((program) => program.authority))).toEqual(
-        new Set([solanaProgramIdFromKeypairFile(deployer)]),
+        new Set([solanaPubkeyFromKeypairFile(deployer)]),
       );
     } finally {
       await fs.rm(directory, { recursive: true, force: true });

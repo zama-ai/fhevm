@@ -14,8 +14,8 @@ import { copyFile, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 
 import { SOLANA_DEPLOY_PROGRAMS } from "../../../../solana/deploy/src/constants";
-import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from "../../../../solana/deploy/src/environment";
-import { solanaProgramIdFromKeypairFile } from "../generate/solana";
+import { DEFAULT_SOLANA_ENVIRONMENT, deployedProgramIds } from "../../../../solana/deploy/src/environment";
+import { solanaPubkeyFromKeypairFile } from "../generate/solana";
 import { REPO_ROOT } from "../layout";
 import { squadsGenesisExtras } from "./squads";
 import { run } from "../utils/process";
@@ -52,16 +52,10 @@ export const genesisDeployedPrograms = (
   deployerKeypairPath: string,
   deployDir: string = SOLANA_DEPLOY_DIR,
 ): GenesisUpgradeableProgram[] => {
-  const authority = solanaProgramIdFromKeypairFile(deployerKeypairPath);
-  const ids = programIdsFor(DEFAULT_SOLANA_ENVIRONMENT);
-  const byProgram = {
-    zama_host: ids.zamaHost,
-    confidential_token: ids.confidentialToken,
-    demo_vault: ids.demoVault,
-    confidential_batcher: ids.confidentialBatcher,
-  } as const;
+  const authority = solanaPubkeyFromKeypairFile(deployerKeypairPath);
+  const ids = deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT);
   return SOLANA_DEPLOY_PROGRAMS.map((program) => ({
-    address: byProgram[program],
+    address: ids[program],
     soPath: path.join(deployDir, `${program}.so`),
     authority,
   }));
