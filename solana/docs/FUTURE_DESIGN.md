@@ -4,17 +4,11 @@ Forward requirements and decisions the Solana port defers. Each item states what
 what production needs, phrased as a requirement or an open decision — not a narrative. Cross-refs are
 to [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md).
 
-## 1. Coprocessor signer set: single signer → registered n-of-m
+## 1. Coprocessor signer set: forward work after DD-041
 
-**RESOLVED (DD-041).** `HostConfig` now stores a registered n-of-m coprocessor signer set
-(`coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIGNERS]` + `coprocessor_signer_count` +
-`coprocessor_threshold`), and input-attestation verification threshold-checks recovered signers
-against it via `eip712::verify_threshold` (the same machinery the KMS cert path uses). The set lives
-inline in `HostConfig` rather than a dedicated context PDA (the decision the earlier version of this
-item flagged as open): a fixed-cap array keeps the singleton layout pinned and adds no account to the
-byte-tight `fhe_execute`. Admin-gated rotation via `set_coprocessor_signers`.
+DD-041 settled the registered n-of-m signer set in `HostConfig` with admin-gated rotation. What
+remains:
 
-**Remaining forward work** (not the signer-set wiring itself):
 - A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
   `set_coprocessor_signers`, instead of admin-driven rotation.
 - The real proof / transciphering service that produces the attested ciphertext behind the signature.
@@ -22,14 +16,11 @@ byte-tight `fhe_execute`. Admin-gated rotation via `set_coprocessor_signers`.
   public-decrypt proof, the transaction may exceed one packet — see the DD-041 fit table and the
   fhevm-internal#1704 scratch-account two-tx fallback.
 
-## 2. Canonicalize the compute-authority-PDA binding convention — RESOLVED (DD-047)
+## 2. Attested contract naming on the gateway
 
-The host now verifies the program: every persistent output's authority must be a PDA of the
-declared `program`, proven by the seeds the execution declares
-(`assert_authority_is_program_pda`), and the attestation's `contract_address` must equal that
-verified program. The "compute-authority PDA" convention became the protocol rule, with no
-coupling to a seed layout because the seeds travel with the execution. What remains open is only
-the naming of the attested contract on the gateway side (a program id, not a signing PDA).
+DD-047 made program verification the protocol rule: every Store output's authority must be a PDA of
+the declared `program`, and the attestation's `contract_address` must equal that program. What
+remains open is only how the gateway names the attested contract (a program id, not a signing PDA).
 
 ## 3. Operator / delegated-transfer model
 
@@ -56,7 +47,7 @@ The Solana input path uses the gateway `InputVerification.verifyProofRequestSola
 `VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses the host-generic
 `userDecryptionRequest` overload with the `solana-srfc38-user-decrypt-v1` payload (DD-026).
 
-**Requirement:** keep the PoC ↔ RFC-021 mirror in sync as the gateway evolves. The Solana
+**Requirement:** keep the port and RFC-021 in sync as the gateway evolves. The Solana
 host-listener reconstructs from confirmed Yellowstone instructions and inserts directly, while KMS
 revalidates confirmed live authorization before plaintext release (DD-024, DD-025, DD-028). Wiring
 the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
@@ -64,13 +55,6 @@ the listener into the EVM block-status substrate (`host_chain_blocks_valid` +
 
 ## Standing open decisions
 
-Carried from `DESIGN_DECISIONS.md` "Open Product Decisions":
-
-- Persistent archival / compaction policy for ACL, material, delegation, and replay evidence (no
-  `close_acl_record` today).
-- Confidential-balance profile: keep the immediate available-balance profile or move to staged
-  inbound-credit (DD-016).
-- Full production KMS-connector wiring and real ZKPoK / transciphering behind the input attestation
-  (both are PoC shortcuts today — DD-028).
-- One coprocessor indexing both zama-devnet and zama-testnet would need `host_chains` to key by
-  program ID as well as `chain_id` (DD-051).
+The list is kept once, at the end of [`DESIGN_DECISIONS.md`](./DESIGN_DECISIONS.md) under "Open
+product decisions". One item lives only here: one coprocessor indexing both zama-devnet and
+zama-testnet would need `host_chains` to key by program ID as well as `chain_id` (DD-051).
