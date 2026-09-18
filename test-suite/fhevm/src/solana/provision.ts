@@ -121,7 +121,16 @@ export type SolanaProvisioningContext = {
    * keep their SOL between runs). Resolves null when no transfer was needed.
    */
   fundSol(recipient: Address, sol: number): Promise<string | null>;
+  /**
+   * Moves `from`'s whole balance minus the transaction fee to `to`, leaving the account empty (and
+   * so deleted): a wallet a run generated gives its unspent SOL back on a live cluster. Resolves
+   * null when the balance does not cover the fee.
+   */
+  sweepSol(from: TransactionSigner, to: Address): Promise<string | null>;
 };
+
+/** Base fee of a one-signature transaction; a sweep leaves exactly this much to pay for itself. */
+const TRANSACTION_FEE_LAMPORTS = 5_000n;
 
 export type ProvisioningContextOptions = {
   readonly computeUnitLimit?: number;
@@ -191,7 +200,12 @@ export const createProvisioningContext = (
       await Bun.sleep(500);
     }
   };
-  return { rpc, sendTransaction, fundSol };
+  const sweepSol: SolanaProvisioningContext['sweepSol'] = async (from, to) => {
+    const { value: balance } = await rpc.getBalance(from.address, { commitment: 'confirmed' }).send();
+    if (balance <= TRANSACTION_FEE_LAMPORTS) return null;
+    return sendAndConfirmSigned(from, [transferSolInstruction({ from, to, lamports: balance - TRANSACTION_FEE_LAMPORTS })]);
+  };
+  return { rpc, sendTransaction, fundSol, sweepSol };
 };
 
 export type GeneratedKeypair = {

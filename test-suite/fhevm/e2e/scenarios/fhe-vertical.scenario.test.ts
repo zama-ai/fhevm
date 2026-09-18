@@ -43,7 +43,7 @@ describe('solana specimen decrypt vertical', () => {
   test(
     'counter: initialize -> increment(42) -> pure-SDK user-decrypt == 42',
     async () => {
-      const { stack, context, wallet, config, secretKey } = await verticalSetup();
+      const { stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
 
       await initializeCounter(context, wallet.signer);
       const { value, handle } = await incrementCounter(context, wallet.signer, 42n);
@@ -57,6 +57,7 @@ describe('solana specimen decrypt vertical', () => {
         expected: 42n,
       });
       expect(decrypted).toBe(42n);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
@@ -64,7 +65,7 @@ describe('solana specimen decrypt vertical', () => {
   test(
     'historical decrypt: increment again, then user-decrypt the OLD handle and the current one',
     async () => {
-      const { stack, context, wallet, config, secretKey } = await verticalSetup();
+      const { stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
 
       await initializeCounter(context, wallet.signer);
       const original = await incrementCounter(context, wallet.signer, 42n);
@@ -79,6 +80,7 @@ describe('solana specimen decrypt vertical', () => {
       const encryptedStore = original.value.encryptedStore;
       expect(await userDecryptExpect(config, { encryptedStore, handle: original.handle, secretKey, expected: 42n })).toBe(42n);
       expect(await userDecryptExpect(config, { encryptedStore, handle: updated.handle, secretKey, expected: 49n })).toBe(49n);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
@@ -89,7 +91,7 @@ describe('solana specimen decrypt vertical', () => {
 test(
   'host upgrade and listener restart retain old decryptable values',
   async () => {
-    const { env, stack, context, wallet, config, secretKey } = await verticalSetup();
+    const { env, stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
     const directory = await mkdtemp(path.join(tmpdir(), 'solana-upgrade-'));
     const artifactsDir = path.join(REPO_ROOT, 'solana/target/deploy');
     const bootstrap = {
@@ -135,6 +137,7 @@ test(
       expect(
         await userDecryptExpect(config, { encryptedStore, handle: original.handle, secretKey, expected: 42n }),
       ).toBe(42n);
+      await wallets.sweep();
       passed = true;
     } finally {
       try {

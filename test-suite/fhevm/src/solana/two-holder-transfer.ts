@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { address, getAddressEncoder } from "@solana/kit";
+import { address, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 
 import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
 import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
@@ -140,9 +140,13 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     return provisioned;
   };
   let scenarioDir: string | undefined;
+  // The holders' signers, kept so cleanup can return their SOL to the funder on a live cluster.
+  const holders: TransactionSigner[] = [];
+  let funderAddress: Address | undefined;
   return {
     async provision() {
       const funder = cfg.funderKeypairPath === undefined ? undefined : await loadKeypairSigner(cfg.funderKeypairPath);
+      funderAddress = funder?.address;
       provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
       const context = provisioned;
       scenarioDir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-solana-two-holder-"));
@@ -157,6 +161,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
           keypairPath,
           secretKey: `0x${Buffer.from(bytes.subarray(0, 32)).toString("hex")}`,
         };
+        holders.push(signer);
         return { signer, holder };
       };
       const alice = await createHolder("alice");
@@ -243,6 +248,10 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     async cleanup() {
       if (scenarioDir) await fs.rm(scenarioDir, { recursive: true, force: true });
       scenarioDir = undefined;
+      // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).
+      if (funderAddress !== undefined && provisioned !== undefined) {
+        for (const holder of holders.splice(0)) await provisioned.sweepSol(holder, funderAddress);
+      }
     },
   };
 };

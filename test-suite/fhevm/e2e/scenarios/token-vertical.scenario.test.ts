@@ -55,7 +55,7 @@ describe("solana confidential-token consume vertical", () => {
   test(
     "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7 -> redeem releases 7 (leaf 1 of 3) -> disclose",
     async () => {
-      const { env, stack, context, wallet, config, walletHex } = await verticalSetup();
+      const { env, stack, context, wallets, wallet, config, walletHex } = await verticalSetup();
 
       // Provision the token pair: a fresh 9-decimals underlying with the wallet as mint authority
       // funded well past the wrap, the confidential wrapper mint with its escrow, the wallet's
@@ -174,6 +174,7 @@ describe("solana confidential-token consume vertical", () => {
       const contextError = hostIdl.errors.find(({ name }) => name === "InvalidKmsContext");
       expect(contextError).toBeDefined();
       expect(customProgramErrorCode(rejection)).toBe(contextError!.code);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );

@@ -17,7 +17,8 @@
 //
 // Source "devnet": the same programs deployed on Solana devnet behind a preview-env namespace.
 // Selected with `SOLANA_E2E_SOURCE=devnet`. No airdrop exists there, so scenarios fund fresh
-// wallets by transfer from the deployer wallet, with the small amounts in `FUNDING_BY_SOURCE`, and
+// wallets by transfer from the deployer wallet, with the small amounts in `FUNDING_BY_SOURCE`
+// (and sweep them back at the end, see `wallets.ts`), and
 // the SNS probe reaches the coprocessor Postgres through whatever command `COPROCESSOR_DB_PSQL`
 // names (a `kubectl exec ... psql` prefix) instead of the local `docker exec`.
 //
