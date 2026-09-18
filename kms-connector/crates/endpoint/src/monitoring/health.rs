@@ -96,7 +96,7 @@ pub struct HealthStatus {
     pub details: String,
 }
 
-/// Performs the healthcheck of the public HTTP server by querying its `v1/version` route.
+/// Performs the healthcheck of the public HTTP server by querying its `/version` route.
 async fn http_server_healthcheck(url: &Url, timeout: Duration) -> Result<(), String> {
     match tokio::time::timeout(timeout, reqwest::get(url.clone())).await {
         Ok(Ok(response)) if response.status().is_success() => Ok(()),
@@ -109,7 +109,7 @@ async fn http_server_healthcheck(url: &Url, timeout: Duration) -> Result<(), Str
     }
 }
 
-/// Builds the loopback URL of the `v1/version` route from the bind address of the HTTP server.
+/// Builds the loopback URL of the `/version` route from the bind address of the HTTP server.
 fn version_url(http_endpoint: SocketAddr) -> Url {
     let ip = match http_endpoint.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
