@@ -1,3 +1,4 @@
+use crate::manifest_consensus::drift_injection::DriftInjection;
 use crate::manifest_consensus::{
     lineage::RangeFrontier,
     publication::{
@@ -174,6 +175,7 @@ pub(crate) async fn load_manifest_descriptors(
     trx: &mut Transaction<'_, Postgres>,
     block: &PendingBlock,
     allow_uncomputed: bool,
+    injection: Option<&DriftInjection>,
 ) -> Result<Vec<CiphertextDescriptor>, ExecutionError> {
     let rows = sqlx::query!(
         r#"
@@ -350,6 +352,9 @@ pub(crate) async fn load_manifest_descriptors(
         ));
     }
 
+    if let Some(injection) = injection {
+        injection.apply(block.host_chain_id, &mut descriptors);
+    }
     Ok(descriptors)
 }
 
@@ -538,6 +543,7 @@ pub(crate) async fn prepare_manifest(
     target: &PendingBlock,
     coprocessor_context_id: U256,
     publisher: Address,
+    injection: Option<&DriftInjection>,
 ) -> Result<PreparedManifest, ExecutionError> {
     if target.manifest_published || target.manifest_digest.is_some() {
         return Err(internal(format!(
@@ -550,7 +556,7 @@ pub(crate) async fn prepare_manifest(
         .map_err(|_| internal("manifest revision is negative"))?;
     let (lineage, last_published_manifest) =
         load_detailed_lineage(trx, target, coprocessor_context_id).await?;
-    let blocks = load_detailed_blocks(trx, &lineage, coprocessor_context_id).await?;
+    let blocks = load_detailed_blocks(trx, &lineage, coprocessor_context_id, injection).await?;
     let detailed_range = build_detailed_range(target, coprocessor_context_id, blocks)?;
     let host_chain_id = non_negative_u256("host chain id", target.host_chain_id)?;
 
@@ -599,10 +605,11 @@ async fn load_detailed_blocks(
     trx: &mut Transaction<'_, Postgres>,
     lineage: &[PendingBlock],
     coprocessor_context_id: U256,
+    injection: Option<&DriftInjection>,
 ) -> Result<Vec<ManifestBlockEntry>, ExecutionError> {
     let mut blocks = Vec::with_capacity(lineage.len());
     for block in lineage {
-        blocks.push(load_detailed_block(trx, block, coprocessor_context_id).await?);
+        blocks.push(load_detailed_block(trx, block, coprocessor_context_id, injection).await?);
     }
     Ok(blocks)
 }
@@ -611,8 +618,9 @@ async fn load_detailed_block(
     trx: &mut Transaction<'_, Postgres>,
     block: &PendingBlock,
     coprocessor_context_id: U256,
+    injection: Option<&DriftInjection>,
 ) -> Result<ManifestBlockEntry, ExecutionError> {
-    let descriptors = load_manifest_descriptors(trx, block, true).await?;
+    let descriptors = load_manifest_descriptors(trx, block, true, injection).await?;
     let stored_count = block
         .block_handle_count
         .ok_or_else(|| internal("detailed-range block has no descriptor count"))?;

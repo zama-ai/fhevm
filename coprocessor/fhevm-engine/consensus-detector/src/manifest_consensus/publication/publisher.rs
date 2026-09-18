@@ -23,7 +23,8 @@ use crate::manifest_consensus::{
         block_discovery::{
             discover_blocks_for_consensus_epoch, discover_children_for_consensus_epoch,
             discover_children_of, lock_next_block_to_progress_for_consensus_epoch,
-            pending_chain_ids_for_consensus_epoch, ManifestProgressCursor, PendingBlock,
+            log_discovery_frontiers, pending_chain_ids_for_consensus_epoch, ManifestProgressCursor,
+            PendingBlock,
         },
         manifest_builder::{
             is_block_manifest_ready, load_manifest_descriptors, missing_handles_are_uncomputed,
@@ -125,19 +126,36 @@ async fn run_manifest_publisher_with_poll_interval(
     } = context;
     info!(
         discovery_interval = ?poll_interval,
+        incomplete_block_timeout = ?consensus.incomplete_block_timeout,
+        incomplete_manifest_max_lag = consensus.incomplete_manifest_max_lag,
         "Manifest publication enabled for this stack consensus_epoch"
     );
 
     let mut ticker = tokio::time::interval(poll_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    let mut next_diagnostic = tokio::time::Instant::now();
     loop {
         tokio::select! {
             _ = token.cancelled() => return Ok(()),
             _ = ticker.tick() => {}
         }
 
-        match publish_due_work(&pool, &client, &bucket, &signer, &consensus, &work_gate).await {
+        let diagnostics = tokio::time::Instant::now() >= next_diagnostic;
+        if diagnostics {
+            next_diagnostic = tokio::time::Instant::now() + Duration::from_secs(30);
+        }
+        match publish_due_work(
+            &pool,
+            &client,
+            &bucket,
+            &signer,
+            &consensus,
+            &work_gate,
+            diagnostics,
+        )
+        .await
+        {
             Ok(()) => {}
             Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
                 return Err(ExecutionError::DbError(err));
@@ -153,6 +171,7 @@ async fn run_manifest_publisher_with_poll_interval(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn publish_due_work(
     pool: &PgPool,
     client: &Client,
@@ -160,8 +179,12 @@ async fn publish_due_work(
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
     work_gate: &ManifestWorkGate,
+    mut diagnostics: bool,
 ) -> Result<(), ExecutionError> {
     let Some(consensus_epoch) = work_gate.pinned_consensus_epoch() else {
+        if diagnostics {
+            info!("Manifest publication waiting for a pinned consensus epoch");
+        }
         return Ok(());
     };
 
@@ -175,6 +198,9 @@ async fn publish_due_work(
         debug!(discovered, "Discovered manifest blocks");
     }
     if !work_gate.work_enabled_for(&consensus_epoch) {
+        if diagnostics {
+            info!(consensus_epoch, "Manifest publication paused by work gate");
+        }
         return Ok(());
     }
     let descendants = discover_children_for_consensus_epoch(pool, &consensus_epoch).await?;
@@ -187,6 +213,11 @@ async fn publish_due_work(
             return Ok(());
         }
         let chain_ids = pending_chain_ids_for_consensus_epoch(pool, &consensus_epoch).await?;
+        if diagnostics {
+            log_discovery_frontiers(pool, &consensus_epoch).await?;
+            info!(consensus_epoch, discovered, descendants, pending_chains = ?chain_ids,
+                "Manifest publication discovery poll");
+        }
         if chain_ids.is_empty() {
             return Ok(());
         }
@@ -205,6 +236,7 @@ async fn publish_due_work(
                 consensus,
                 work_gate,
                 &consensus_epoch,
+                diagnostics,
             )
             .await
             {
@@ -226,6 +258,7 @@ async fn publish_due_work(
             }
         }
 
+        diagnostics = false;
         if !advanced {
             return Ok(());
         }
@@ -242,6 +275,7 @@ async fn progress_chain(
     consensus: &ManifestConsensusConfig,
     work_gate: &ManifestWorkGate,
     consensus_epoch: &str,
+    mut diagnostics: bool,
 ) -> Result<PublicationProgress, ExecutionError> {
     let mut cursor = ManifestProgressCursor::start();
     let mut attempted_candidate = false;
@@ -291,6 +325,10 @@ async fn progress_chain(
             Err(error) => return Err(error),
         };
         let Some(block) = selected else {
+            if diagnostics {
+                info!(host_chain_id, consensus_epoch,
+                    "No eligible manifest candidate; work may be locked or blocked by lineage/retry state");
+            }
             trx.rollback().await?;
             return Ok(if attempted_candidate {
                 PublicationProgress::Waiting
@@ -309,8 +347,10 @@ async fn progress_chain(
             &block,
             signer,
             consensus,
+            diagnostics,
         )
         .await;
+        diagnostics = false;
         if !work_gate.work_enabled_for(consensus_epoch) {
             trx.rollback().await?;
             return Ok(PublicationProgress::Waiting);
@@ -409,6 +449,7 @@ fn is_statement_timeout(error: &sqlx::Error) -> bool {
         .is_some_and(|code| code == "57014")
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn progress_locked_block(
     trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     client: &Client,
@@ -417,13 +458,34 @@ async fn progress_locked_block(
     block: &PendingBlock,
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
+    diagnostics: bool,
 ) -> Result<PublicationProgress, ExecutionError> {
     if block.block_content_digest.is_none() {
         let allow_uncomputed = missing_handles_are_uncomputed(trx, block, consensus).await?;
         if !is_block_manifest_ready(trx, block).await? && !allow_uncomputed {
+            if diagnostics {
+                info!(host_chain_id, block_number = block.block_number,
+                    block_hash = %hex::encode(&block.block_hash),
+                    lag_blocks = ?consensus.incomplete_seal_lag_blocks(block.publication_cadence),
+                    stall_timeout_secs = ?consensus.incomplete_block_timeout_secs(),
+                    "Manifest block incomplete; uncomputed sealing requires both chain lag and computation stall thresholds");
+            }
             return Ok(PublicationProgress::Waiting);
         }
-        let descriptors = load_manifest_descriptors(trx, block, allow_uncomputed).await?;
+        if allow_uncomputed && diagnostics {
+            info!(
+                host_chain_id,
+                block_number = block.block_number,
+                "Incomplete-block thresholds met; missing handles may be sealed as uncomputed"
+            );
+        }
+        let descriptors = load_manifest_descriptors(
+            trx,
+            block,
+            allow_uncomputed,
+            consensus.dangerous_drift_injection.as_ref(),
+        )
+        .await?;
         seal_block_content(trx, block, COPROCESSOR_CONTEXT_ID_1, &descriptors).await?;
         let discovered = discover_children_of(trx, block).await?;
         debug!(
@@ -444,20 +506,25 @@ async fn progress_locked_block(
             block_number,
             ref reason,
         }) => {
-            debug!(
-                host_chain_id,
-                block_number, reason, "Discarded stale unpublished seal; block will reseal"
-            );
+            if diagnostics {
+                info!(
+                    host_chain_id,
+                    block_number, reason, "Discarded stale unpublished seal; block will reseal"
+                );
+            }
             Ok(PublicationProgress::Waiting)
         }
         Err(ExecutionError::PredecessorUnsealed {
             host_chain_id,
             block_number,
         }) => {
-            debug!(
-                host_chain_id,
-                block_number, "Waiting for an unsealed predecessor before publishing this manifest"
-            );
+            if diagnostics {
+                info!(
+                    host_chain_id,
+                    block_number,
+                    "Waiting for an unsealed predecessor before publishing this manifest"
+                );
+            }
             Ok(PublicationProgress::Waiting)
         }
         Err(error) => Err(error),
@@ -472,7 +539,14 @@ pub(crate) async fn publish_block_manifest(
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
 ) -> Result<(), ExecutionError> {
-    let prepared = prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await?;
+    let prepared = prepare_manifest(
+        trx,
+        block,
+        COPROCESSOR_CONTEXT_ID_1,
+        signer.address(),
+        consensus.dangerous_drift_injection.as_ref(),
+    )
+    .await?;
     let frontier_range_count = prepared.history_frontier.as_slice().len();
     let signed = prepared
         .payload
