@@ -1,0 +1,40 @@
+{
+  "name": "@fhevm/hardhat-plugin-v3",
+  "version": "0.13.0",
+  "description": "FHEVM plugin for Hardhat 3: a cleartext FHEVM stack on every development connection, encryption, public and user decryption, error diagnostics, HCU accounting and the fhevm tasks.",
+  "license": "BSD-3-Clause-Clear",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zama-ai/fhevm.git",
+    "directory": "sdk/hardhat/v3/plugin/pkg"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "types": "./_types/index.d.ts",
+  "files": [
+    "_esm",
+    "_types",
+    "src",
+    "LICENSE",
+    "README.md",
+    "!**/tsconfig*.json",
+    "!**/*.tsbuildinfo"
+  ],
+  "exports": {
+    ".": {
+      "types": "./_types/index.d.ts",
+      "import": "./_esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@fhevm/host-contracts-cleartext": "file:../../../../host-contracts-cleartext/v13/pkg"
+  },
+  "peerDependencies": {
+    "@fhevm/sdk": "^0.13.4",
+    "hardhat": "^3.0.0",
+    "viem": "^2.55.19"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "fhevm-sdk-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "workspaces": [
+    "common",
+    "common-vendored",
+    "host-contracts-cleartext/v12",
+    "host-contracts-cleartext/v13",
+    "host-contracts-cleartext/v13/pkg"
+  ],
+  "scripts": {
+    "build": "make build",
+    "compile": "make compile",
+    "test:ci": "make ci"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.2",
+    "ethers": "6.17.0",
+    "prettier": "^3.8.3",
+    "publint": "^0.2.12",
+    "tsx": "^4.23.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.2",
+    "viem": "2.55.19",
+    "vitest": "^4.0.18"
+  }
+}

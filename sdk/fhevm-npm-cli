@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#
+# Thin launcher for the fhevm-npm CLI, so `./fhevm-npm-cli <command>` works from the sdk root (and
+# from anywhere — the path resolves from this file). Named after the Makefile's FHEVM_NPM_CLI, which
+# execs through here; a root executable named plain `fhevm-npm` is impossible — the directory owns
+# that name.
+set -euo pipefail
+exec node "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fhevm-npm/fhevm-npm.ts" "$@"

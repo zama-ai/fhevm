@@ -1,0 +1,31 @@
+[profile.default]
+extends = "../../../foundry.base.toml"
+libs = ["dependencies", "node_modules", "../node_modules"]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 800
+evm_version = "cancun"
+via_ir = false
+src = "contracts"
+out = "out"
+# Not "cache": hardhat owns ./cache, and sharing or nesting the path makes the two tools clobber
+# each other's incremental state. A sibling directory keeps both caches intact.
+cache_path = "cache-forge"
+bytecode_hash = "none"
+
+[lint]
+exclude_lints = [
+    "unsafe-typecast",
+    "incorrect-shift",
+    "mixed-case-variable",
+    "mixed-case-function",
+    "named-struct-fields",
+    "screaming-snake-case-const",
+    "pascal-case-struct",
+    "asm-keccak256",
+    "unwrapped-modifier-logic",
+    "unsafe-cheatcode"
+]
+
+[dependencies]
+forge-std = "1.11.0"
