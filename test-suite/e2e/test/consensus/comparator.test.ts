@@ -150,6 +150,14 @@ describe('consensus comparator', () => {
   });
 
   describe('evidence folding', () => {
+    it('rejects an operation mismatch on any alias producer regardless of row order', () => {
+      const aliases = [row(), row({ transactionId: buffer(0x02, 32), fheOperation: row().fheOperation + 1 })];
+      for (const rows of [aliases, [...aliases].reverse()]) {
+        expect(() => evidenceFromRows(1, HANDLE, rows, 1))
+          .to.throw(ComparisonMismatch).with.property('kind', 'operation');
+      }
+    });
+
     it('folds several producing transactions into one normalized provenance set', () => {
       const folded = evidenceFromRows(
         1,

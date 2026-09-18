@@ -56,7 +56,10 @@ not constitute a GPU run. Retain the binary/build manifest and observed device
 and worker activity evidence.
 
 `smoke` selects CPU byte agreement; `standard` adds harness, Rust regressions and
-fork; `full` adds GPU scheduling. `full` with `build=false` is PARTIAL by design:
+fork; `full` adds GPU scheduling. CPU stack jobs and GPU provisioning always
+wait for successful harness checks, including stack-only selections whose
+requested coverage does not include the harness. A Rust-regression-only
+selection remains independent. `full` with `build=false` is PARTIAL by design:
 published production images cannot validate this checkout's production changes.
 The workflow still builds this checkout's test-suite image in published mode.
 The ordinary container-based GPU E2E workflow is separate from this host-worker
@@ -112,7 +115,12 @@ Run the applicable commands on the corresponding source-built topology:
 For SCH-01, boot `three-of-three-heterogeneous-scheduling`, then use
 `gpu-consensus-workers.sh build` and `start`. Match the workflow's per-operator
 window/component settings (100/20, 1/1, 200/64); scenario boolean tuning is carried
-into each unit's environment. The launcher checks this handoff. Run
+into each unit's environment. Explicit launcher overrides are appended to a
+private per-unit environment file after the inherited settings; systemd and the
+scheduling report use that same resolved file. This avoids `EnvironmentFile`
+overriding values supplied through systemd's `--setenv`. Restart uses the saved
+unit tuning and host environment, not the caller's current overrides. The
+launcher checks this handoff. Run
 `run-materialization-consensus.sh --heterogeneous --suite materialization` and
 finish with `gpu-consensus-workers.sh stop`. Three independent operators can
 share the selected GPU. `fhevm-cli down` alone does not stop host systemd workers.

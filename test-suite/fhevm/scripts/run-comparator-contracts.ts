@@ -13,10 +13,18 @@ try {
     "test/consensus/comparator.test.ts", "test/consensus/canary.test.ts", "test/consensus/rawCanary.test.ts", "test/consensus/helpers.test.ts",
     ...new Bun.Glob("test/consensus/*.test.ts").scanSync({ cwd }),
   ])];
+  // Recent Node 22 releases can load .ts as native ESM before ts-node's
+  // CommonJS hook handles it. Keep tsconfig/ts-node in charge of these tests.
+  // Older Node versions have no stripping flag and need no opt-out.
+  const supportsOptOut = Bun.spawnSync(["node", "-p",
+    "process.allowedNodeEnvironmentFlags.has('--no-experimental-strip-types')"], { stdout: "pipe", stderr: "pipe" });
+  if (supportsOptOut.exitCode !== 0) throw new Error("cannot inspect the Mocha Node runtime");
+  const nodeOptions = [process.env.NODE_OPTIONS ?? "",
+    supportsOptOut.stdout.toString().trim() === "true" ? "--no-experimental-strip-types" : ""].filter(Boolean).join(" ");
   const child = Bun.spawn(["npx", "--no-install", "mocha", "--require", "ts-node/register",
     "--reporter", "json", "--reporter-option", `output=${output}`,
     ...files], {
-    cwd, env: { ...process.env, TS_NODE_TRANSPILE_ONLY: "true" },
+    cwd, env: { ...process.env, NODE_OPTIONS: nodeOptions, TS_NODE_TRANSPILE_ONLY: "true" },
     stdout: "inherit", stderr: "inherit", timeout: 180_000,
   });
   if (await child.exited !== 0) throw new Error("comparator contract suite failed");

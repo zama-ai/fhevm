@@ -463,6 +463,31 @@ unit_config_file() {
   printf '%s/%s.config' "$INVOCATION_DIR" "$(unit_name "$1" "$2")"
 }
 
+unit_environment_file() {
+  printf '%s/%s.env' "$INVOCATION_DIR" "$(unit_name "$1" "$2")"
+}
+
+# EnvironmentFile overrides systemd's Environment/--setenv. Resolve launcher
+# overrides into the file itself, last, and report from this same private file.
+# Each unit gets its own file so starting SNS cannot overwrite TFHE settings.
+write_unit_environment() (
+  local kind="$1" index="$2" source="$3" target
+  target="$(unit_environment_file "$kind" "$index")"
+  mkdir -p "$INVOCATION_DIR" || return 1
+  umask 077
+  cat "$source" >"$target" || return 1
+  printf '\nCUDA_VISIBLE_DEVICES=%s\nFHEVM_GPU_STREAMS_PER_DEVICE=%s\nRUST_BACKTRACE=1\n' \
+    "$UNIT_DEVICE" "$UNIT_STREAMS" >>"$target" || return 1
+  if [[ "$kind" == tfhe ]]; then
+    if [[ -n "${UNIT_ADAPTIVE:-}" ]]; then
+      printf 'FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION=%s\n' "$UNIT_ADAPTIVE" >>"$target" || return 1
+    fi
+    if [[ -n "${UNIT_BATCH:-}" ]]; then
+      printf 'FHEVM_DCID_BATCH_EXECUTION=%s\n' "$UNIT_BATCH" >>"$target" || return 1
+    fi
+  fi
+)
+
 # Resolve this operator's knobs from the environment and record them.
 record_unit_tuning() {
   local kind="$1" index="$2" file
@@ -527,13 +552,14 @@ unit_tuning_signature() {
 # loaded, so the invocation is a function of the recorded configuration rather
 # than of the ambient environment.
 start_unit() {
-  local kind="$1" index="$2" env_file="$3" unit device streams
+  local kind="$1" index="$2" env_file="$3" unit streams resolved_env
   unit="$(unit_name "$kind" "$index")"
-  device="$UNIT_DEVICE"
   streams="$UNIT_STREAMS"
   stop_transient_unit "$unit" || return 1
 
-  local -a args scheduling_env=()
+  write_unit_environment "$kind" "$index" "$env_file" || return 1
+  resolved_env="$(unit_environment_file "$kind" "$index")"
+  local -a args
   case "$kind" in
     tfhe)
       args=(
@@ -550,13 +576,6 @@ start_unit() {
         --health-check-port=$((18080 + index * 10))
         --metrics-addr=0.0.0.0:$((19100 + index * 10))
       )
-      # `--dcid-adaptive-batch-execution` and `--dcid-batch-execution` are
-      # clap flags: passing one can only turn it ON, so an operator that must
-      # run with it OFF can only be configured through the environment.
-      [[ -n "${UNIT_ADAPTIVE:-}" ]] &&
-        scheduling_env+=(--setenv="FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION=$UNIT_ADAPTIVE")
-      [[ -n "${UNIT_BATCH:-}" ]] &&
-        scheduling_env+=(--setenv="FHEVM_DCID_BATCH_EXECUTION=$UNIT_BATCH")
       ;;
     zkproof)
       args=(
@@ -598,9 +617,7 @@ start_unit() {
   systemd-run --user --collect --unit="$unit" \
     --description="FHEVM GPU $kind worker operator $index" \
     --property=Restart=on-failure --property=RestartSec=2 \
-    --property="EnvironmentFile=$env_file" \
-    --setenv="CUDA_VISIBLE_DEVICES=$device" --setenv="FHEVM_GPU_STREAMS_PER_DEVICE=$streams" --setenv=RUST_BACKTRACE=1 \
-    "${scheduling_env[@]}" \
+    --property="EnvironmentFile=$resolved_env" \
     "${BIN_DIR}/${kind}_worker" "${args[@]}" >/dev/null
 }
 
@@ -1171,17 +1188,14 @@ fleet_is_homogeneous() {
 # different shell from `start`, where the override variables are long gone.
 # The consensus gate compares these for distinctness: a run that claims
 # heterogeneous scheduling but whose operators share a class is a vacuous pass.
-# The value a unit will actually run with: an explicit GPU_CONSENSUS_* override
-# wins, otherwise whatever the operator's env file sets, otherwise `default`.
+# Read the last assignment from the file supplied to this unit, including any
+# resolved override. The original generated env may have changed since start.
 effective_scheduling_flag() {
-  local index="$1" var="$2" override="$3" file value
-  if [[ -n "$override" && "$override" != default ]]; then printf '%s' "$override"; return 0; fi
-  file="$(env_file_for "$index")"
-  if [[ -f "$file" ]]; then
-    value="$(sed -n "s/^${var}=//p" "$file" | tail -1)"
-    [[ -z "$value" ]] || { printf '%s' "$value"; return 0; }
-  fi
-  printf 'default'
+  local index="$1" var="$2" file value
+  file="$(unit_environment_file tfhe "$index")"
+  [[ -f "$file" ]] || { echo "missing resolved environment for TFHE operator $index" >&2; return 1; }
+  value="$(sed -n "s/^${var}=//p" "$file" | tail -1)"
+  case "$value" in true|false) printf '%s' "$value" ;; '') printf default ;; *) return 1 ;; esac
 }
 
 scheduling_classes() {
@@ -1198,15 +1212,8 @@ scheduling_classes() {
     key="operator_${index}_work_items_batch_size";        out+=",window:${!key}"
     key="operator_${index}_dependence_chains_per_batch";  out+=",chains:${!key}"
     key="operator_${index}_coprocessor_fhe_threads";      out+=",threads:${!key}"
-    # The launcher only records its own GPU_CONSENSUS_* overrides here, but a
-    # unit also loads the operator's env file (EnvironmentFile=), which is where
-    # a scenario puts FHEVM_DCID_*. Reporting the override alone describes a
-    # fleet that is not the one running: an operator with batch execution
-    # disabled by the scenario would be published as `batch:default`.
-    key="operator_${index}_adaptive_batch_execution"
-    out+=",adaptive:$(effective_scheduling_flag "$index" FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION "${!key}")"
-    key="operator_${index}_batch_execution"
-    out+=",batch:$(effective_scheduling_flag "$index" FHEVM_DCID_BATCH_EXECUTION "${!key}")"
+    out+=",adaptive:$(effective_scheduling_flag "$index" FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION)" || return 1
+    out+=",batch:$(effective_scheduling_flag "$index" FHEVM_DCID_BATCH_EXECUTION)" || return 1
   done < <(grep -o '^operator_[0-9]\+_device' "$NODE_CONFIG" | sed 's/^operator_//; s/_device$//' | sort -n)
   printf '%s' "$out"
 }
@@ -1260,7 +1267,9 @@ test_env() {
   # the byte oracle applies unchanged.  It is exported separately so the gate
   # can assert the fleet really was heterogeneous when a run claims it.
   if [[ -f "$NODE_CONFIG" ]]; then
-    printf 'export CONSENSUS_SCHEDULING_CLASSES=%q\n' "$(scheduling_classes)"
+    local classes
+    classes="$(scheduling_classes)" || die "cannot read resolved GPU scheduling configuration"
+    printf 'export CONSENSUS_SCHEDULING_CLASSES=%q\n' "$classes"
   fi
 }
 

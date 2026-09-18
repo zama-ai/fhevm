@@ -145,7 +145,8 @@ jobs:
   harness:
     name: consensus/harness
     needs: plan
-    if: ${{ contains(needs.plan.outputs.legs, 'harness') }}
+    # Stack-only selections also need their harness checked before provisioning.
+    if: ${{ contains(needs.plan.outputs.legs, 'harness') || needs.plan.outputs.cpu-legs != '' || needs.plan.outputs.needs-gpu == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -294,11 +295,11 @@ jobs:
   # ---------------------------------------------------------------------------
   consensus:
     name: consensus/${{ matrix.leg }}/${{ matrix.scenario }}/${{ matrix.shard }}
-    needs: plan
+    needs: [plan, harness]
     # `cpu-matrix` excludes every leg whose cases declare a hardware capability,
     # so this job can never run a GPU case on a runner that has no GPU and
     # report it green.
-    if: ${{ needs.plan.outputs.cpu-legs != '' }}
+    if: ${{ needs.harness.result == 'success' && needs.plan.outputs.cpu-legs != '' }}
     strategy:
       # One leg failing must not cancel the others: they cover different claims,
       # and knowing which of them broke is the point.
@@ -499,13 +500,12 @@ jobs:
         run: ./fhevm-cli down || true
 
   # ---------------------------------------------------------------------------
-  # GPU legs. Provisioning is gated on the PLAN, so a CPU-only selection never
-  # allocates hardware.
+  # GPU provisioning requires both a GPU plan and successful harness checks.
   # ---------------------------------------------------------------------------
   gpu-setup-instance:
     name: consensus/gpu/setup-instance
-    needs: plan
-    if: ${{ needs.plan.outputs.needs-gpu == 'true' }}
+    needs: [plan, harness]
+    if: ${{ needs.harness.result == 'success' && needs.plan.outputs.needs-gpu == 'true' }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     # No checkout and no API call on the workflow token: the provisioning
     # action authenticates with its own SLAB_ACTION_TOKEN.

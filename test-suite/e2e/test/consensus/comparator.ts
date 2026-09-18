@@ -181,6 +181,10 @@ export function evidenceFromRows(
     );
   }
   const reference = rows[0];
+  if (rows.some(row => row.fheOperation !== reference.fheOperation)) {
+    throw new ComparisonMismatch('operation', handle, [operator],
+      `operator ${operator}'s alias producers disagree on the operation`);
+  }
   return {
     operator,
     handle,

@@ -18,6 +18,7 @@ export const REQUIRED_COMPARATOR_CONTRACTS = [
   "consensus comparator evidence folding rejects one operator holding two different values for one handle",
   "consensus comparator evidence folding asserts storage-row uniqueness separately from the computation join",
   "consensus comparator evidence folding rejects an operator whose own rows disagree on the digest",
+  "consensus comparator evidence folding rejects an operation mismatch on any alias producer regardless of row order",
   "consensus comparator evidence folding reports no rows as missing evidence, so a wait can keep waiting",
   "canary publication safety waits for the selected operator to publish, releasing the lock between polls",
   "canary publication safety refuses to poison an unpublished victim even when other operators could have quorum",

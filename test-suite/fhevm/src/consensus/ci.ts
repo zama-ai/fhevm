@@ -6,6 +6,7 @@ export const failedSelectedJobs = (
   const jobs = new Set(["plan"]);
   for (const leg of legs) {
     jobs.add(["harness", "rust-regression", "gpu"].includes(leg) ? leg : "consensus");
+    if (leg !== "rust-regression") jobs.add("harness");
   }
   return [...jobs].filter((job) => needs[job]?.result !== "success")
     .map((job) => `${job}: ${needs[job]?.result ?? "missing"}`);
