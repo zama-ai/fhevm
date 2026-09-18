@@ -6,7 +6,7 @@
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 108270,
+      "compute_units": 108575,
       "unique_accounts": 9,
       "instruction_data_bytes": 536,
       "cpi_instructions": 0,
@@ -14,7 +14,7 @@
       "max_cpi_instruction_data_bytes": 0
     },
     "fhe_execute/three_steps": {
-      "compute_units": 48791,
+      "compute_units": 48835,
       "unique_accounts": 9,
       "instruction_data_bytes": 275,
       "cpi_instructions": 0,
