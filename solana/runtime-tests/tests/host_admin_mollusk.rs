@@ -437,9 +437,9 @@ fn mollusk_set_eip712_domain_persists_zeros() {
 
 // ---- close_owned_accounts (admin-sweep) ----
 
-/// The default-feature artifact (localnet; only `preview-env.json` enables the feature) lacks
-/// `close_owned_accounts`. check-zama-host-idl.sh builds the `admin-sweep` feature set as
-/// `zama_host_admin_sweep.so` for these tests alone.
+/// The default-cargo-feature artifact lacks `close_owned_accounts`; only the `admin-sweep` feature
+/// set has it. check-zama-host-idl.sh builds that set as `zama_host_admin_sweep.so` for these tests
+/// alone.
 fn sweep_context(payer: Pubkey, seeded_accounts: Vec<(Pubkey, Account)>) -> Ctx {
     let mut accounts = std::collections::HashMap::from([(payer, funded_system_account())]);
     accounts.extend(seeded_accounts);

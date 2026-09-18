@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { programIdsFor, readSolanaEnvironment } from "../../../../solana/deploy/src/environment";
 import {
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
@@ -15,8 +16,6 @@ import {
   gatewayAddressesPath,
   hostChainAddressesPath,
 } from "../layout";
-
-import { programIdsFor, readSolanaEnvironment } from "../../../../solana/deploy/src/environment";
 import type { Discovery, State } from "../types";
 import { predictedCrsId, predictedKeyId, readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";

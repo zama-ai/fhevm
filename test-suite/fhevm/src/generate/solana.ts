@@ -23,11 +23,11 @@ const base58Encode = (bytes: Uint8Array): string => {
 };
 
 /**
- * Resolves a Solana program's base58 id from its keypair file (a 64-byte JSON array, the
- * `[secret(32) || public(32)]` ed25519 layout) — the deterministic id `solana address -k` prints,
- * computed without invoking the CLI.
+ * Reads the base58 public key of a Solana keypair file (a 64-byte JSON array, the
+ * `[secret(32) || public(32)]` ed25519 layout): a program id or a wallet address, what
+ * `solana address -k` prints, computed without invoking the CLI.
  */
-export const solanaProgramIdFromKeypairFile = (keypairPath: string): string => {
+export const solanaPubkeyFromKeypairFile = (keypairPath: string): string => {
   const bytes = Uint8Array.from(JSON.parse(fs.readFileSync(keypairPath, "utf8")) as number[]);
   if (bytes.length !== 64) {
     throw new Error(`${keypairPath}: expected a 64-byte solana keypair, got ${bytes.length} bytes`);
