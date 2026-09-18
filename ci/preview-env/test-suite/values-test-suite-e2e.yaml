@@ -65,11 +65,8 @@ job:
   args:
     - |
       # contracts/E2ECoprocessorConfigLocal.sol ships with hardcoded placeholder
-      # addresses (0x05fD9B5E.../0xcCAe95fF.../0xa1880e99...) - its own header
-      # comment says so verbatim: "These addresses are placeholders. They are
-      # patched at runtime via sed in the E2E test runner script with the
-      # actual deployment addresses." (confirmed via `git show
-      # v0.13.0:test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol`).
+      # addresses patched at runtime via sed in the E2E test runner script with the
+      # actual deployment addresses.
       # DefaultCoprocessorConfig.getConfig() only takes the sed-patched branch
       # when block.chainid != 31337 (see the same file) - our "staging" network
       # uses chainId 12345 (not the Hardhat-default 31337), so we hit that
@@ -83,6 +80,12 @@ job:
       echo "Patching E2ECoprocessorConfigLocal.sol with real deployment addresses..."
       sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
       sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
+
+      # The kms-connector proxies' self-signed certificate (see KMS_CONNECTOR_PROXY_CA
+      # below): Node only trusts extra CAs from a file, so materialize the env var
+      # where NODE_EXTRA_CA_CERTS points before any hardhat process starts.
+      printf '%s\n' "${KMS_CONNECTOR_PROXY_CA}" > "${NODE_EXTRA_CA_CERTS}"
+
       # No trailing "," here (unlike ACLAddress/CoprocessorAddress above): at
       # v0.13.0, KMSVerifierAddress is the LAST field in the CoprocessorConfig
       # struct literal, so it's followed by a bare newline + "});", not a comma
@@ -137,6 +140,17 @@ env:
   - {name: GATEWAY_DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
   - {name: RELAYER_URL, value: "http://relayer:3000/v2"}
   - {name: RELAYER_SDK_VERSION, value: ""}
+
+  # kms-connector HTTP decryption path.
+  - name: KMS_CONNECTOR_ENDPOINT_URLS
+    valueFrom: {configMapKeyRef: {name: kms-connector-http, key: endpoint-urls}}
+  - {name: KMS_CONNECTOR_API_KEY, value: "fhevm-e2e-kms-connector-api-key"}
+  - name: KMS_THRESHOLD
+    valueFrom: {configMapKeyRef: {name: kms-connector-http, key: kms-threshold}}
+  # PEM of the proxies' certificate; the Job script writes it to NODE_EXTRA_CA_CERTS.
+  - name: KMS_CONNECTOR_PROXY_CA
+    valueFrom: {configMapKeyRef: {name: kms-connector-http, key: ca.crt}}
+  - {name: NODE_EXTRA_CA_CERTS, value: "/tmp/kms-connector-proxy-ca.crt"}
 
   # $ZAMA token + payment contract, needed only by scripts/gen_handles.ts: it mints mocked $ZAMA
   # and max-approves ProtocolPayment so its own signer can pay the per-request decryption fee.
