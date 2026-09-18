@@ -635,7 +635,8 @@ describe("applyBootstrap", () => {
   });
 
   test("boots the pre-key components at the release and suspends their local overrides", async () => {
-    const scenario = await loadBlueGreenScenario("blue-green");
+    // The shipped scenarios boot at 0.15.0 without a bootstrap, so pin one here.
+    const scenario = { ...(await loadBlueGreenScenario("blue-green")), bootstrap: { tag: "v0.14.2-0" } };
     const boot = applyBootstrap(bundle, scenario, overrides);
     expect(boot.versions.env).toEqual({
       CORE_VERSION: "v0.14.2-0",
