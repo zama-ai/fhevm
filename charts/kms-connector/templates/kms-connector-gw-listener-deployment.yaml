@@ -1,5 +1,6 @@
 {{- if .Values.kmsConnectorGwListener.enabled -}}
 {{- $contracts := include "kmsConnector.contracts" . | fromYaml -}}
+{{- $ethereum := include "kmsConnector.ethereumHostChain" . | fromYaml -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,6 +52,10 @@ spec:
         - name: kms-connector-gw-listener
           image: {{ .Values.kmsConnectorGwListener.image.name }}:{{ .Values.kmsConnectorGwListener.image.tag }}
           env:
+            # Listen addresses derived from `ports`. Declared first so entries in
+            # `commonConfig.env` / `kmsConnectorGwListener.env` take precedence.
+            - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorGwListener.ports.monitoring | quote }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -70,9 +75,9 @@ spec:
             - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
               value: {{ $contracts.ethereumKmsGeneration | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_URL
-              value: {{ .Values.commonConfig.ethereumUrl | quote }}
+              value: {{ $ethereum.url | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
-              value: {{ $contracts.ethereumChainId | quote }}
+              value: {{ $ethereum.chainId | quote }}
             - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
               value: {{ $contracts.ethereumProtocolConfig | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorGwListener.tracing.enabled }}
