@@ -35,10 +35,10 @@ pub enum ValidationError {
     #[error("requestValidity.{field} is too high: {value}, max is {}", i64::MAX)]
     RequestValidityOutOfRange { field: &'static str, value: u64 },
     #[error(
-        "unsupported attestationType {0:?}, supported: [{supported}]",
+        "unsupported attestationType, supported: [{supported}]",
         supported = supported_attestation_types()
     )]
-    UnsupportedAttestationType(String),
+    UnsupportedAttestationType,
 }
 
 fn supported_attestation_types() -> String {
@@ -49,7 +49,7 @@ impl ValidationError {
     /// The error code this failure is answered with.
     pub fn code(&self) -> ErrorCode {
         match self {
-            Self::UnsupportedAttestationType(_) => ErrorCode::UnsupportedAttestationType,
+            Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
             Self::NoHandles
             | Self::BitSizeExceeded(..)
             | Self::TooManyAllowedContracts(..)
@@ -77,9 +77,7 @@ pub fn validate_user_decryption(
     let _attestation_type = request
         .attestationType
         .parse::<AttestationType>()
-        .map_err(|_| {
-            ValidationError::UnsupportedAttestationType(request.attestationType.clone())
-        })?;
+        .map_err(|_| ValidationError::UnsupportedAttestationType)?;
     let payload = &request.payload;
     validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     if payload.allowedContracts.len() > config.max_allowed_contracts {
@@ -346,10 +344,7 @@ pub(crate) mod tests {
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
         request.attestationType = "random_attestation_type".to_owned();
         let error = validate_user_decryption(&request, &cfg).unwrap_err();
-        assert_eq!(
-            error,
-            ValidationError::UnsupportedAttestationType("random_attestation_type".to_owned())
-        );
+        assert_eq!(error, ValidationError::UnsupportedAttestationType);
         assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
         assert_eq!(ValidationError::NoHandles.code(), ErrorCode::Malformed);
     }
