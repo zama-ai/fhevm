@@ -21,6 +21,7 @@ import {
   sealBurnedAmountHandle,
 } from "../../src/solana/token-vertical";
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from "@demo-dapp/vault/index.js";
+import { timed } from "../../src/utils/timing";
 import { submitUint64InputProof } from "../harness/solana/sdkEncrypt";
 import { verticalSetup } from "../harness/solana/vertical";
 
@@ -78,15 +79,17 @@ describe("solana confidential-token consume vertical", () => {
       // contract = the confidential-token program) — the contract identity the token requires
       // for transfer/burn amounts.
       const contractAddress = asBytes32Hex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
-      const submission = await submitUint64InputProof({
-        rpcUrl: env.rpcUrl,
-        chainId: config.chainId,
-        relayerUrl: config.relayerUrl,
-        aclProgramAddress: env.aclProgram,
-        contractAddress,
-        userAddress: walletHex,
-        value: BURN_AMOUNT,
-      });
+      const submission = await timed("encrypt + input proof (burn amount)", () =>
+        submitUint64InputProof({
+          rpcUrl: env.rpcUrl,
+          chainId: config.chainId,
+          relayerUrl: config.relayerUrl,
+          aclProgramAddress: env.aclProgram,
+          contractAddress,
+          userAddress: walletHex,
+          value: BURN_AMOUNT,
+        }),
+      );
       const amountHandle = hexToBytes(submission.handles[0].bytes32Hex);
       expect(amountHandle).toHaveLength(32);
 
@@ -121,10 +124,12 @@ describe("solana confidential-token consume vertical", () => {
         burnedHandle,
       );
 
-      const { cleartext, certificate } = await certifiedPublicDecrypt(config, {
-        encryptedStore: target.burnedAmountStore,
-        handle: burnedHandle,
-      });
+      const { cleartext, certificate } = await timed("certified public decrypt (KMS)", () =>
+        certifiedPublicDecrypt(config, {
+          encryptedStore: target.burnedAmountStore,
+          handle: burnedHandle,
+        }),
+      );
       expect(cleartext).toBe(BURN_AMOUNT);
 
       // Redeem: the host verifier CPI checks the KMS certificate against the live context it
@@ -133,7 +138,9 @@ describe("solana confidential-token consume vertical", () => {
       const balanceBefore = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
-      await redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate, inclusionProof });
+      await timed("redeem with certificate + leaf proof (host verifier CPI)", () =>
+        redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate, inclusionProof }),
+      );
       const balanceAfter = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );

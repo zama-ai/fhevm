@@ -21,6 +21,7 @@ import { parseRuntimeDemoConfig } from './demoConfig';
 const validResponse = {
   config: {
     source: 'demo-config',
+    network: 'localnet',
     demoBootId: 'test-boot',
     chainId: '72057594037940281',
     rpcUrl: 'http://127.0.0.1:8899',

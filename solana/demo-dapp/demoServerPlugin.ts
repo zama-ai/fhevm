@@ -140,7 +140,19 @@ const loadDemoOperatorSession = async (demoBootId: string) => {
   return { config, keeper, proofService: { url, apiKey } };
 };
 
+type RuntimeConfigHead = { source?: string; network?: string; rpcUrl?: string };
+
+const readRuntimeConfigHead = async (): Promise<RuntimeConfigHead> =>
+  JSON.parse(await fs.readFile(runtimeConfigPath, 'utf8')) as RuntimeConfigHead;
+
+// Burner keys and the seeded config leave this process only for the stack the seed recorded: the
+// local validator, or devnet behind a preview namespace (toy mints, low-value committed keys).
+const isSeededStack = (config: RuntimeConfigHead): boolean =>
+  config.source === 'demo-config' &&
+  (config.network === 'devnet' || (config.network === 'localnet' && config.rpcUrl === 'http://127.0.0.1:8899'));
+
 const readDemoEncryptionKeyDescriptor = async (): Promise<DemoEncryptionKeyDescriptor> => {
+  const { network } = await readRuntimeConfigHead();
   const keyUrlResponse = await fetch(relayerKeyUrl, {
     headers: { accept: 'application/json', 'x-api-key': 'local' },
   });
@@ -157,8 +169,14 @@ const readDemoEncryptionKeyDescriptor = async (): Promise<DemoEncryptionKeyDescr
   const crs = body.response?.crs?.['2048'];
   const publicKeyUrl = Array.isArray(publicKey?.urls) ? publicKey.urls[0] : undefined;
   const crsUrl = Array.isArray(crs?.urls) ? crs.urls[0] : undefined;
+  // Key material is public, but the fetch runs from this process, so the URL policy is explicit:
+  // the local stack serves keys from MinIO on loopback, a preview namespace from S3 over TLS.
   const hostUrl = (value: unknown, name: string): string => {
     const url = new URL(requiredString(value, name));
+    if (network === 'devnet') {
+      if (url.protocol !== 'https:') throw new Error(`${name} must use https on devnet`);
+      return url.toString();
+    }
     if (url.protocol !== 'http:' || url.port !== '9000') {
       throw new Error(`${name} must use the local MinIO HTTP endpoint`);
     }
@@ -486,12 +504,9 @@ export const demoServerPlugin = (): Plugin => ({
             return;
           }
           try {
-            const config = JSON.parse(await fs.readFile(runtimeConfigPath, 'utf8')) as {
-              source?: string;
-              rpcUrl?: string;
-            };
-            if (config.source !== 'demo-config' || config.rpcUrl !== 'http://127.0.0.1:8899') {
-              throw new Error('refusing to expose a burner wallet outside the seeded local validator');
+            const config = await readRuntimeConfigHead();
+            if (!isSeededStack(config)) {
+              throw new Error('refusing to expose a burner wallet outside the seeded stack');
             }
             const aliceKeypair = await fs
               .readFile(aliceKeypairPath, 'utf8')
@@ -522,12 +537,9 @@ export const demoServerPlugin = (): Plugin => ({
             return;
           }
           try {
-            const config = JSON.parse(await fs.readFile(runtimeConfigPath, 'utf8')) as {
-              source?: string;
-              rpcUrl?: string;
-            };
-            if (config.source !== 'demo-config' || config.rpcUrl !== 'http://127.0.0.1:8899') {
-              throw new Error('refusing to expose configuration outside the seeded local validator');
+            const config = await readRuntimeConfigHead();
+            if (!isSeededStack(config)) {
+              throw new Error('refusing to expose configuration outside the seeded stack');
             }
             response.statusCode = 200;
             response.end(
