@@ -50,6 +50,7 @@ describe("RFC 029 rollout gates", () => {
   test("uses the last published 0.14 images as the first rollout predecessor", () => {
     const versions = migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" });
     expect(versions.baselineTag).toBe("v0.14.1");
+    expect(versions.baseline.CORE_VERSION).toBe("v0.14.1");
     expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
     expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.1");
   });
