@@ -4,7 +4,8 @@
 
 A simple tool to send a configurable number of parallel decryption requests (public, user, or
 RFC-016 user-v2 decrypts at the time of writing), at a given frequency and for a specified
-duration.
+duration. Requests can be sent through the Gateway chain (`gw`), inserted directly in the KMS
+Connectors' DBs (`db`), or sent to the KMS Connectors' HTTP decryption endpoints (`http`).
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -36,7 +37,7 @@ Some of the configuration fields can be overridden via the CLI:
 - `tests_interval`
 - `parallel_requests`
 - `sequential`
-- `id_counter_start` (via `--id-counter-start`, DB path only)
+- `id_counter_start` (via `--id-counter-start`, DB and HTTP paths only)
 
 ## Run
 
@@ -72,7 +73,26 @@ Once the `gateway-stress` binary has been built, you can run the following comma
 
 # Don't clear Connectors' DBs before and after running stress tests (not recommended)
 ./gateway-stress -c config/config.toml db -t public --skip_clear-db
+
+# Run public decryption stress test by sending requests to the Connectors' HTTP endpoints
+./gateway-stress -c config/config.toml http -t public
+
+# Run RFC-016 user-v2 decryption stress test by sending requests to the Connectors' HTTP endpoints
+./gateway-stress -c config/config.toml http -t user-v2
+
+# NOTE: legacy `user` decryption is NOT supported over the `http`/`bench-http` path either: the
+# RFC 033 interface only exposes `public` and RFC-016 `user-v2` decryptions.
 ```
+
+#### HTTP path and decryption id uniqueness
+
+The `http`/`bench-http` path posts decryption to every party's connector proxy and measures the
+time until every party answered `200`.
+The connector derives the `decryption_id` from the request body and serves an already known id
+from its response table. So, to avoid the benchmark to measure a DB lookup instead of a
+decryption, the tool uses the same handle for each request, but suffixes the usual v2 `extraData`
+with a unique 32-byte nonce, starting at `id_counter_start`. This changes the `decryption_id` of
+each request without having to generate a new test handle per decryption.
 
 Or directly from `test-suite/gateway-stress` directory:
 
@@ -108,6 +128,10 @@ and throughput) for each burst in a CSV file.
 
 # Same, but also store each burst result in `tmp/full.csv`
 ./gateway-stress -c config/config.toml bench-db -i templates/small_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+
+# Run a benchmarking session using `templates/http_bench.csv` as input and store the global
+# results in `/tmp/bench.csv` (decryption requests sent to the Connectors' HTTP endpoints)
+./gateway-stress -c config/config.toml bench-http -i templates/http_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
 ```
 
 ## Tracing

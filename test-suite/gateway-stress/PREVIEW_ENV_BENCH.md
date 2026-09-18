@@ -1,6 +1,6 @@
 # Running gateway-stress benchmarks against a preview env
 
-How to reproduce a `bench-db` or `bench-gw` benchmark of the KMS (core + connector),
+How to reproduce a `bench-db`, `bench-http` or `bench-gw` benchmark of the KMS (core + connector),
 running the gateway-stress tool as a pod **inside** a preview-env namespace on `zws-dev`.
 
 - `bench-gw` exercises the full decryption path: requests are submitted on the
@@ -8,6 +8,9 @@ running the gateway-stress tool as a pod **inside** a preview-env namespace on `
 - `bench-db` skips the gateway chain on the way in: requests are inserted
   directly into the connectors' DBs, isolating the kms-worker + kms-core
   pipeline.
+- `bench-http` sends requests to the connectors' HTTP decryption endpoints
+  through their proxies and waits for the HTTP answers, isolating the
+  proxy + endpoint + kms-worker + kms-core pipeline as seen by a relayer.
 
 Prerequisites: a running preview env (see
 [`ci/preview-env/101-preview-env.md`](../../ci/preview-env/101-preview-env.md)),
@@ -71,8 +74,23 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
    pool_size = 10
    connection_timeout = "30s"
    insertion_chunk_size = 10
+
+   [http]
+   urls = [
+       "https://kms-connector-1-proxy:8443",
+       "https://kms-connector-2-proxy:8443",
+       "https://kms-connector-3-proxy:8443",
+       "https://kms-connector-4-proxy:8443",
+   ]
+   api_key = "fhevm-e2e-kms-connector-api-key"
+   danger_accept_invalid_certs = true
+   request_timeout = "120s"
    EOF
    ```
+
+   Check the proxy service names and the API key of your preview env (the sha256 of the key is the
+   proxies' `KMS_CONNECTOR_API_KEY_DIGEST`); `danger_accept_invalid_certs` trusts the proxies'
+   self-signed test certificate.
 
 4. Ship the config and the bench input CSVs to the cluster as a ConfigMap:
 
@@ -80,6 +98,7 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
    kubectl create configmap gateway-stress-config -n $NS \
      --from-file=config.toml=/tmp/gateway-stress-config.toml \
      --from-file=db_bench.csv=templates/db_bench.csv \
+     --from-file=http_bench.csv=templates/http_bench.csv \
      --from-file=gw_bench.csv=templates/gw_bench.csv
    ```
 
@@ -130,6 +149,10 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
    noise polluting the measurement. Stopping them isolates the
    kms-worker + kms-core pipeline, which is what `bench-db` measures.
 
+   **For `bench-http`: the tx-senders can stay as they are.** HTTP-sourced
+   requests and responses are tagged `source = 'http'` in the connectors' DBs
+   and are never submitted on-chain, so the tx-senders neither help nor hurt.
+
    **For `bench-gw`: the tx-senders are required — make sure they run.**
 
    The tool waits for the decryption responses on the gateway chain, and only
@@ -150,6 +173,15 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
      -i /config/db_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
    ```
 
+   HTTP path (check the proxies' service names with `kubectl get svc -n $NS | grep proxy`
+   and adjust `[http].urls` if needed):
+
+   ```bash
+   kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
+     -c /config/config.toml bench-http \
+     -i /config/http_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+   ```
+
    Gateway path:
 
    ```bash
@@ -165,11 +197,11 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
    kubectl cp $NS/gateway-stress:/tmp/full.csv ./full.csv
    ```
 
-   Reminder: the DB path supports `public` and `user_v2` bursts only (legacy
-   `user` needs an on-chain tx_hash for the ACL check); the gateway path
-   supports all three.
+   Reminder: the DB and HTTP paths support `public` and `user_v2` bursts only
+   (legacy `user` needs an on-chain tx_hash for the ACL check over the DB, and
+   has no HTTP route); the gateway path supports all three.
 
-   > **Re-running `bench-db`:** the kms-cores remember (in RAM) the request IDs
+   > **Re-running `bench-db` or `bench-http`:** the kms-cores remember (in RAM) the request IDs
    > they have already processed, and reject any decryption reusing one — so a
    > second run with the same IDs is silently rejected. Either bump
    > `--id-counter-start` on the next run to use a fresh ID range or restart

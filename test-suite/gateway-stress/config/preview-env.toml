@@ -63,3 +63,25 @@ connection_timeout = "30s"
 # The number of requests to insert in one insertion query (should be smaller than the
 # `events_batch_size` setting of the KMS Workers)
 insertion_chunk_size = 10
+
+
+# Configuration section for stress test using the Connectors' HTTP endpoints.
+[http]
+urls = [
+    "https://kms-connector-proxy:8443",
+    "https://kms-connector-2-proxy:8443",
+    "https://kms-connector-3-proxy:8443",
+    "https://kms-connector-4-proxy:8443",
+]
+
+# The API key the proxies check. Testing only.
+api_key = "fhevm-e2e-kms-connector-api-key"
+
+# The proxies' certificate to trust.
+# tls_ca_cert = "/etc/kms-connector/proxy/tls.crt"
+
+# Skip TLS certificate verification instead of trusting `tls_ca_cert`. Testing only.
+danger_accept_invalid_certs = true
+
+# Client-side timeout of each request.
+request_timeout = "120s"
