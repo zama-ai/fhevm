@@ -109,6 +109,7 @@ export type { FhevmSolanaChain } from '../core/types/fhevmSolanaChain.js';
 export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';
 
 export { createSolanaFheTransaction } from './fheTransaction.js';
+export { solanaHostProgram } from './clients/createFhevmBaseClient.js';
 export type { SolanaFheTransaction, SolanaFheTransactionAccounts } from './fheTransaction.js';
 
 export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';

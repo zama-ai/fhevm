@@ -50,7 +50,7 @@ const GRANT_DATA =
 const REVOKE_DATA = '931b7e35412576e1';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 
-// A deployment not at the canonical id — what `chain.fhevm.verifyingProgramId` names on a local
+// A deployment not at the canonical id — what `chain.fhevm.programs.host.address` names on a local
 // validator or a fork.
 const OTHER_PROGRAM = addr(0x66);
 const HOST = { programAddress: ZAMA_HOST_PROGRAM_ADDRESS };

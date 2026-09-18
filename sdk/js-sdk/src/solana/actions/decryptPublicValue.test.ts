@@ -98,9 +98,9 @@ const contextId = new Uint8Array(32).fill(0x44);
 const store = new Uint8Array(32).fill(0x44);
 const chain = {
   id: 9223372036854788153n,
-  // The bytes32 form of `ZAMA_HOST_PROGRAM_ADDRESS`, the owner of the fixture accounts below.
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
+    // The bytes32 form of `ZAMA_HOST_PROGRAM_ADDRESS`, the owner of the fixture accounts below.
     programs: { host: { address: asBytes32Hex('0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee') } },
   },
 };
