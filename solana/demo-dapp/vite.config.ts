@@ -6,9 +6,16 @@ import { readDemoAuthorizationFromEnv } from '../../test-suite/fhevm/demo/author
 // operator-server.ts). The dev server proxies the page's same-origin `/api` calls to it and adds
 // the boot capability on the way, so the browser never holds a token and the operator never trusts
 // a page context. `/api/relayer` goes straight to the relayer.
+// The lifecycle and the preview helper always pass these three; the fallbacks are the local
+// stack's ports from test-suite/fhevm/src/layout.ts (not imported: that module is Bun-typed and
+// would pull the whole layout into this Node config).
 const dappUrl = new URL(process.env.DEMO_DAPP_URL ?? 'http://127.0.0.1:5173');
 const operatorUrl = process.env.DEMO_OPERATOR_URL ?? 'http://127.0.0.1:8091';
 const relayerUrl = process.env.DEMO_RELAYER_URL ?? 'http://127.0.0.1:3000';
+// The proxy adds the capability to every `/api` call, so this server must not be reachable from
+// anywhere but this machine: the bind is loopback whatever DEMO_DAPP_URL says, and the URL only
+// names the origin the operator answers and the port to listen on.
+if (dappUrl.hostname !== '127.0.0.1') throw new Error('DEMO_DAPP_URL must be a http://127.0.0.1 origin');
 
 const operatorProxy = async (): Promise<ProxyOptions> => {
   const authorization = await readDemoAuthorizationFromEnv();
@@ -26,7 +33,7 @@ const operatorProxy = async (): Promise<ProxyOptions> => {
 
 export default defineConfig(async ({ mode }) => ({
   server: {
-    host: dappUrl.hostname,
+    host: '127.0.0.1',
     port: Number(dappUrl.port),
     strictPort: true,
     proxy: {

@@ -24,7 +24,8 @@ const parseStored = (value: string | null): Uint8Array | undefined => {
 };
 
 /** A fresh 64-byte secret key in the layout `@solana/kit` reads: the seed, then the public key. */
-export const generateBurnerSecretKey = async (subtle: SubtleCrypto = crypto.subtle): Promise<Uint8Array> => {
+const generateBurnerSecretKey = async (): Promise<Uint8Array> => {
+  const subtle = crypto.subtle;
   const keyPair = (await subtle.generateKey('Ed25519', true, ['sign', 'verify'])) as CryptoKeyPair;
   const [pkcs8, publicKey] = await Promise.all([
     subtle.exportKey('pkcs8', keyPair.privateKey),
@@ -38,13 +39,10 @@ export const generateBurnerSecretKey = async (subtle: SubtleCrypto = crypto.subt
 };
 
 /** The stored demo wallet, or a new one persisted for the next reload. */
-export const loadOrCreateBurnerSecretKey = async (
-  storage: KeyStorage,
-  subtle: SubtleCrypto = crypto.subtle,
-): Promise<Uint8Array> => {
+export const loadOrCreateBurnerSecretKey = async (storage: KeyStorage): Promise<Uint8Array> => {
   const stored = parseStored(storage.getItem(BURNER_WALLET_STORAGE_KEY));
   if (stored !== undefined) return stored;
-  const secretKey = await generateBurnerSecretKey(subtle);
+  const secretKey = await generateBurnerSecretKey();
   storage.setItem(BURNER_WALLET_STORAGE_KEY, JSON.stringify(Array.from(secretKey)));
   return secretKey;
 };

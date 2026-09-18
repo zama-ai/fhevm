@@ -2,7 +2,7 @@
 // stack: the seeded demo-config (RPC endpoints, mints, personas), the committed keeper and
 // mint-authority keypairs, the environment's SOL funder, the listener's proof endpoint and the
 // relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
-// the boot capability; `tailscale serve` may front it for teammates on the tailnet.
+// the boot capability; `tailscale serve` may front it for direct callers on the tailnet.
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
 // carries no `@solana-program/token` dependency; they come from `../src/solana/spl` (shared with
@@ -33,7 +33,7 @@ import {
 import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { claimBatchPayout } from "@demo-dapp/claim";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
-import { harvestDemoVault, readDemoVaultMetrics } from "@demo-dapp/harvestOperator";
+import { harvestDemoVault, readDemoVaultMetrics, type UnderlyingMinter } from "@demo-dapp/harvestOperator";
 import { dispatchVaultBatch, settleVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
@@ -48,18 +48,18 @@ import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./au
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
 import { DEMO_KEYPAIRS, loadDemoEnv } from "./loadDemoEnv";
-import { createOperator, TAILSCALE_LOGIN_HEADER, type UsdcMinter } from "./operator";
+import { createOperator, TAILSCALE_LOGIN_HEADER } from "./operator";
 
 /** Tailscale logins (comma-separated) the operator accepts through the identity header. */
 const TAILSCALE_LOGINS_ENV = "DEMO_OPERATOR_TAILSCALE_LOGINS";
 
-/** Builds a `UsdcMinter` that mints mock USDC to a recipient's ATA on the live validator. */
+/** Builds the minter that mints mock USDC to a recipient's ATA on the live cluster. */
 const buildUsdcMinter = async (options: {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly mint: Address;
   readonly mintAuthorityKeypairPath: string;
-}): Promise<UsdcMinter> => {
+}): Promise<UnderlyingMinter> => {
   const rpc = createSolanaRpc(options.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(options.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });

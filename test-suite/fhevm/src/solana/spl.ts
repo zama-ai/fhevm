@@ -1,6 +1,6 @@
 // spl — pure SPL/associated-token/system-program helpers shared by the typed scenario
 // provisioning (`./provision.ts`) and the live demo entrypoints (`demo/seed.ts`,
-// `demo/faucet-server.ts`). No top-level side effects, so this module is importable by offline
+// `demo/operator-server.ts`). No top-level side effects, so this module is importable by offline
 // tests (unlike the demo entrypoints, which run `await main()` against a live validator on
 // import).
 //

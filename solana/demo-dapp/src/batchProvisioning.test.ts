@@ -57,7 +57,7 @@ vi.mock('node:fs/promises', () => ({
   rename: mocks.rename,
 }));
 
-import { prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
+import { RECLAIM_SCAN_WINDOW, prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { BatchStatus } from './batchTypes';
 
@@ -268,6 +268,21 @@ describe('the authority-reclaim crank drains every finished batch once', () => {
     });
     await expect(reclaimFinishedBatchAuthorities(config, keeper, 'deposit')).resolves.toBe(1);
     expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
+  });
+
+  test('inspects only the most recent batches so the join path stays bounded', async () => {
+    mocks.getBatcher.mockResolvedValue({ nextBatchIndex: RECLAIM_SCAN_WINDOW + 5n });
+    mocks.getBatchByIndex.mockImplementation((_rpc: unknown, _roots: unknown, index: bigint) =>
+      Promise.resolve({
+        index,
+        addresses: { batch: `batch-${index}`, batchAuthority: `authority-${index}` },
+        state: { status: BatchStatus.Canceled },
+      }),
+    );
+    mocks.getBalanceSend.mockResolvedValue({ value: 50_000n });
+    await expect(reclaimFinishedBatchAuthorities(config, keeper, 'deposit')).resolves.toBe(Number(RECLAIM_SCAN_WINDOW));
+    expect(mocks.getBatchByIndex).toHaveBeenCalledTimes(Number(RECLAIM_SCAN_WINDOW));
+    expect(reclaimedBatches()[0]).toBe('batch-5');
   });
 
   test('prepareNextBatch runs the reclaim pass after the table crank', async () => {

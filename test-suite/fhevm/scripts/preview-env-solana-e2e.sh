@@ -10,7 +10,7 @@
 #   bun test e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
 #   bun run demo:seed                                 # once per namespace deployment
 #   bun run demo:operator &                           # DEMO_OPERATOR_URL, default http://127.0.0.1:8091
-#   (cd ../../solana/demo-dapp && npm run dev)        # DEMO_DAPP_URL, default http://127.0.0.1:5173/
+#   (cd ../../solana/demo-dapp && npm run dev)        # DEMO_DAPP_URL, default http://127.0.0.1:5173
 #   bun run demo:smoke                                # the deposit arc, against the operator + namespace
 #
 # The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the dapp dev server presents to

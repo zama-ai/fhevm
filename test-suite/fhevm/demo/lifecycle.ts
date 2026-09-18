@@ -6,9 +6,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
+  DEMO_DAPP_PORT,
+  DEMO_OPERATOR_PORT,
   FHEVM_COMPOSE_PROJECT_ENV,
   PORTS,
   REPO_ROOT,
+  SOLANA_LISTENER_GRPC_PORT,
+  SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { solanaImages } from "../src/solana/images";
 import { run, runStreaming } from "../src/utils/process";
@@ -106,10 +110,10 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
   ...new Set([
     ...PORTS,
     50051,
-    5173,
-    8090,
-    8899,
-    10000,
+    DEMO_DAPP_PORT,
+    DEMO_OPERATOR_PORT,
+    SOLANA_VALIDATOR_RPC_PORT,
+    SOLANA_LISTENER_GRPC_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];

@@ -23,7 +23,8 @@ export type RunWallets = {
    * Returns every generated wallet's remaining SOL to the deployer wallet, where funding came from
    * it (live clusters). A no-op where a faucet funded them: airdropped SOL is free. Call it as the
    * scenario's last step; a scenario that fails before it leaves that run's wallets funded, which is
-   * the funding amount of the environment (`FUNDING_BY_SOURCE`) at most.
+   * the funding amount of the environment (`FUNDING_BY_SOURCE`) at most. A failed sweep is logged,
+   * never thrown.
    */
   sweep(): Promise<void>;
 };
@@ -40,7 +41,12 @@ export const openRunWallets = (env: TestEnv, context: SolanaProvisioningContext)
     async sweep() {
       if (env.capabilities.faucet) return;
       const deployer: Address = (await loadKeypairSigner(env.roots.deployerKeypairPath)).address;
-      for (const wallet of generated.splice(0)) await context.sweepSol(wallet.signer, deployer);
+      for (const wallet of generated.splice(0)) {
+        // Rent hygiene, not a verdict: a failed sweep leaves at most one funding amount behind.
+        await context.sweepSol(wallet.signer, deployer).catch((error: unknown) => {
+          console.warn(`sweeping ${wallet.signer.address} back to the deployer failed: ${String(error)}`);
+        });
+      }
     },
   };
 };

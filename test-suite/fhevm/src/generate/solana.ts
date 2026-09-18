@@ -1,3 +1,4 @@
+import { SOLANA_LEAF_PROOF_PORT } from "../layout";
 import fs from "node:fs";
 
 import type { Discovery } from "../types";
@@ -55,14 +56,12 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
   `http://host.docker.internal:${chain.rpcPort}`;
 
 /**
- * Port the Solana host listener serves its leaf-proof route on, and the bearer key that route
- * requires. Both sides of the same connection read these: `startHostListener` passes them to
- * `solana_host_listener` as `--http-port` / `--proof-api-key`, and `serializeKmsHostChains` puts
- * them in the connector's host-chain entry. Passed explicitly rather than relying on the
- * binary's own default, so the two cannot drift apart silently.
+ * Bearer key the Solana host listener's leaf-proof route requires (its port is
+ * `SOLANA_LEAF_PROOF_PORT` in the layout). Both sides of the same connection read these:
+ * `startHostListener` passes them to `solana_host_listener` as `--http-port` / `--proof-api-key`,
+ * and `serializeKmsHostChains` puts them in the connector's host-chain entry. Passed explicitly
+ * rather than relying on the binary's own default, so the two cannot drift apart silently.
  */
-import { SOLANA_LEAF_PROOF_PORT } from "../layout";
-export { SOLANA_LEAF_PROOF_PORT };
 export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 /**
