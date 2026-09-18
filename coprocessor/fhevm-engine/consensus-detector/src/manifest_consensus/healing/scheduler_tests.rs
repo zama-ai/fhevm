@@ -1,6 +1,7 @@
 use super::*;
 use crate::manifest_consensus::ManifestWorkGate;
-use alloy_primitives::{keccak256, U256};
+use alloy_primitives::{keccak256, Address, B256, U256};
+use block_manifest::LEGACY_CONSENSUS_EPOCH;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,7 +19,19 @@ async fn setup() -> (DBInstance, PgPool) {
 }
 
 async fn insert_healable(pool: &PgPool, handle: u8, bucket_url: &str, body: &[u8]) -> i64 {
-    let sources = format!(r#"[{{"s3_bucket_url":"{bucket_url}"}}]"#);
+    insert_healable_from(pool, handle, Some(bucket_url), body, true).await
+}
+
+async fn insert_healable_from(
+    pool: &PgPool,
+    handle: u8,
+    bucket_url: Option<&str>,
+    body: &[u8],
+    pin: bool,
+) -> i64 {
+    let sources = bucket_url
+        .map(|url| format!(r#"[{{"s3_bucket_url":"{url}"}}]"#))
+        .unwrap_or_else(|| "[]".into());
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
@@ -32,30 +45,78 @@ async fn insert_healable(pool: &PgPool, handle: u8, bucket_url: &str, body: &[u8
     .bind(bytes(1))
     .bind(i64::from(handle))
     .bind(bytes(handle))
-    .bind(keccak256(body).as_slice())
+    .bind(pin.then(|| keccak256(body).as_slice().to_vec()))
     .bind(sources)
     .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+    )
+    .bind(bytes(handle))
+    .bind(vec![0xffu8; 4])
+    .execute(pool)
     .await
     .unwrap();
     id
 }
 
-type FakeStore = HashMap<(String, Vec<u8>), Vec<u8>>;
+async fn stored_ct64(pool: &PgPool, handle: u8) -> Vec<u8> {
+    sqlx::query_scalar(
+        "SELECT ciphertext FROM ciphertexts WHERE handle = $1 AND ciphertext_version = 0",
+    )
+    .bind(bytes(handle))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn healed(pool: &PgPool, id: i64) -> (bool, bool) {
+    let row: (bool, bool) = sqlx::query_as(
+        "SELECT can_be_healed, healed_at IS NOT NULL FROM drifted_handle WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    row
+}
+
+struct FakeObject {
+    digest: B256,
+    body: Option<Vec<u8>>,
+}
+
+type FakeStore = HashMap<(String, Vec<u8>), FakeObject>;
 
 #[derive(Clone, Default)]
 struct FakeCt64 {
     objects: Arc<Mutex<FakeStore>>,
     gets: Arc<AtomicUsize>,
+    heads: Arc<AtomicUsize>,
     inflight: Arc<AtomicUsize>,
     max_inflight: Arc<AtomicUsize>,
 }
 
 impl FakeCt64 {
     fn put(&self, bucket_url: &str, handle: u8, body: Vec<u8>) {
-        self.objects
-            .lock()
-            .unwrap()
-            .insert((bucket_url.to_owned(), bytes(handle)), body);
+        let digest = keccak256(&body);
+        self.objects.lock().unwrap().insert(
+            (bucket_url.to_owned(), bytes(handle)),
+            FakeObject {
+                digest,
+                body: Some(body),
+            },
+        );
+    }
+
+    fn attest(&self, bucket_url: &str, handle: u8, digest: B256) {
+        self.objects.lock().unwrap().insert(
+            (bucket_url.to_owned(), bytes(handle)),
+            FakeObject { digest, body: None },
+        );
     }
 }
 
@@ -75,8 +136,53 @@ impl Ct64Source for FakeCt64 {
             .lock()
             .unwrap()
             .get(&(bucket_url.to_owned(), handle.to_vec()))
-            .cloned()
+            .and_then(|object| object.body.clone())
             .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
+    }
+
+    async fn head_ct64_digest(
+        &self,
+        bucket_url: &str,
+        handle: &[u8],
+        _coprocessor_context_id: U256,
+        _expected_signer: Option<Address>,
+    ) -> Result<B256, ExecutionError> {
+        self.heads.fetch_add(1, Ordering::SeqCst);
+        self.objects
+            .lock()
+            .unwrap()
+            .get(&(bucket_url.to_owned(), handle.to_vec()))
+            .map(|object| object.digest)
+            .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
+    }
+}
+
+async fn seed_registry(pool: &PgPool, buckets: &[&str], threshold: i64) {
+    for (index, bucket) in buckets.iter().enumerate() {
+        sqlx::query(
+            r#"
+            INSERT INTO gateway_config_coprocessors (
+                tx_sender_address,
+                signer_address,
+                s3_bucket_url,
+                coprocessor_threshold,
+                gateway_chain_id,
+                gateway_config_address,
+                snapshot_block_number,
+                snapshot_block_hash
+            )
+            VALUES ($1, $2, $3, $4, 54321, $5, 100, $6)
+            "#,
+        )
+        .bind(Address::repeat_byte(0x30 + index as u8).as_slice())
+        .bind(Address::repeat_byte(0x40 + index as u8).as_slice())
+        .bind(*bucket)
+        .bind(threshold)
+        .bind(Address::repeat_byte(0x10).as_slice())
+        .bind(B256::repeat_byte(0x20).as_slice())
+        .execute(pool)
+        .await
+        .unwrap();
     }
 }
 
@@ -85,13 +191,15 @@ impl Ct64Source for FakeCt64 {
 async fn pass_downloads_matching_ct64_from_peer_bucket() {
     let (_db, pool) = setup().await;
     let body = vec![7u8; 8];
-    insert_healable(&pool, 1, "s3://peer-a", &body).await;
+    let id = insert_healable(&pool, 1, "s3://peer-a", &body).await;
     let source = FakeCt64::default();
-    source.put("s3://peer-a", 1, body);
+    source.put("s3://peer-a", 1, body.clone());
     run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
         .await
         .unwrap();
     assert_eq!(source.gets.load(Ordering::SeqCst), 1);
+    assert_eq!(stored_ct64(&pool, 1).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
 }
 
 #[tokio::test]
@@ -100,16 +208,20 @@ async fn pass_downloads_due_handles_concurrently() {
     let (_db, pool) = setup().await;
     let body_a = vec![1u8; 8];
     let body_b = vec![2u8; 8];
-    insert_healable(&pool, 1, "s3://peer-a", &body_a).await;
-    insert_healable(&pool, 2, "s3://peer-a", &body_b).await;
+    let id_a = insert_healable(&pool, 1, "s3://peer-a", &body_a).await;
+    let id_b = insert_healable(&pool, 2, "s3://peer-a", &body_b).await;
     let source = FakeCt64::default();
-    source.put("s3://peer-a", 1, body_a);
-    source.put("s3://peer-a", 2, body_b);
+    source.put("s3://peer-a", 1, body_a.clone());
+    source.put("s3://peer-a", 2, body_b.clone());
     run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
         .await
         .unwrap();
     assert_eq!(source.gets.load(Ordering::SeqCst), 2);
     assert!(source.max_inflight.load(Ordering::SeqCst) >= 2);
+    assert_eq!(stored_ct64(&pool, 1).await, body_a);
+    assert_eq!(stored_ct64(&pool, 2).await, body_b);
+    assert_eq!(healed(&pool, id_a).await, (false, true));
+    assert_eq!(healed(&pool, id_b).await, (false, true));
 }
 
 #[tokio::test]
@@ -127,10 +239,10 @@ async fn notify_wakes_the_worker_before_the_poll() {
         ManifestWorkGate::always_enabled(),
     ));
     tokio::time::sleep(Duration::from_millis(200)).await;
-    insert_healable(&pool, 3, "s3://peer-a", &body).await;
+    let id = insert_healable(&pool, 3, "s3://peer-a", &body).await;
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if source.gets.load(Ordering::SeqCst) >= 1 {
+            if healed(&pool, id).await == (false, true) {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -138,6 +250,131 @@ async fn notify_wakes_the_worker_before_the_poll() {
     })
     .await
     .expect("healing worker should run on NOTIFY, not wait for the 30s poll");
+    assert_eq!(stored_ct64(&pool, 3).await, body);
     token.cancel();
     worker.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn digest_mismatch_does_not_install() {
+    let (_db, pool) = setup().await;
+    let target = vec![7u8; 8];
+    let id = insert_healable(&pool, 4, "s3://peer-a", &target).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 4, vec![8u8; 8]);
+    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
+        .await
+        .unwrap();
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 4).await, vec![0xffu8; 4]);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn mismatch_falls_back_to_attestation_quorum_peer() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b", "s3://peer-c"], 2).await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 5, vec![8u8; 8]);
+    source.put("s3://peer-b", 5, body.clone());
+    source.put("s3://peer-c", 5, body.clone());
+    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
+        .await
+        .unwrap();
+    assert_eq!(stored_ct64(&pool, 5).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert!(source.heads.load(Ordering::SeqCst) >= 2);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn inferred_without_sources_uses_attestation_quorum() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 6, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 6, body.clone());
+    source.put("s3://peer-b", 6, body.clone());
+    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
+        .await
+        .unwrap();
+    assert_eq!(stored_ct64(&pool, 6).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    let pinned: Vec<u8> =
+        sqlx::query_scalar("SELECT target_ct64_digest FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(pinned, keccak256(&body).as_slice());
+    let sources: serde_json::Value =
+        sqlx::query_scalar("SELECT peer_sources FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sources.as_array().map(Vec::len), Some(2));
+    let evidence: serde_json::Value =
+        sqlx::query_scalar("SELECT target_evidence FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(evidence["source"], "attestation");
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn attestation_quorum_on_another_digest_is_quorum_changed() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let target = vec![7u8; 8];
+    let other = vec![9u8; 8];
+    let id = insert_healable_from(&pool, 7, None, &target, true).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 7, other.clone());
+    source.put("s3://peer-b", 7, other);
+    let before = metrics::QUORUM_CHANGED
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
+        .await
+        .unwrap();
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert!(
+        metrics::QUORUM_CHANGED
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get()
+            > before
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn matching_attestations_without_bytes_are_a_bad_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![7u8; 8];
+    let digest = keccak256(&body);
+    let id = insert_healable_from(&pool, 8, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.attest("s3://peer-a", 8, digest);
+    source.attest("s3://peer-b", 8, digest);
+    let before = metrics::BAD_TARGET_DIGEST
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled())
+        .await
+        .unwrap();
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert!(
+        metrics::BAD_TARGET_DIGEST
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get()
+            > before
+    );
 }

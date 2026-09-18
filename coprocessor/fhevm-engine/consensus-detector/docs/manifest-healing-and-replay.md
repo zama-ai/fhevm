@@ -1,7 +1,11 @@
 # Manifest healing and replay
 
 Status: containment propagation, TFHE scheduling/result checks, and healing-state
-fields are implemented. Healing workers remain planned.
+fields are implemented. The healing worker downloads known-source ct64 and
+installs it locally. Inferred rows start with no target and no sources; a live
+attestation quorum pins both, then GETs. A digest mismatch HEADs the same way.
+A new quorum digest or an unavailable pinned target is counted and retried.
+SNS/publication repair remain planned.
 
 Healing is local emergency recovery. It prevents further ct64 contamination,
 replaces erroneous local ciphertexts with quorum-identical material, and lets
@@ -56,8 +60,8 @@ result or consume another verification attempt. TFHE batches participate in the 
 scheduling and result persistence. Freeze records `tx_unlock_potential`, an EMA
 of the per-batch unlock share of each drifted handle. Verification stores the
 quorum group's pinned registry S3 URLs on `peer_sources` and records the
-registry pin plus quorum ct64 statements on `target_evidence`. Local repair
-is not implemented.
+registry pin plus quorum ct64 statements on `target_evidence`. A matching
+download installs the ct64 and sets `healed_at` in one transaction.
 
 An interrupted or failed call can leave additional contaminated computations.
 This is an accepted containment delay: all outputs remain subject to manifest
@@ -116,9 +120,9 @@ TFHE scheduling and result writing participate in the same query and lock
 contract through the shared barrier key and their frozen inventory.
 The worker-side integration uses the shared barrier and the frozen inventory. The containment
 directory holds the propagation functions. The healing worker starts with publication and
-verification: it LISTENs on `event_healing_work` and polls every 30s, then claims due
-`can_be_healed` rows and downloads matching ct64 from peer buckets. Local installation
-is not implemented yet.
+verification: it LISTENs on `event_healing_work` and polls every 30s, then picks due
+`can_be_healed` rows and downloads matching ct64 from peer buckets. A matching GET
+writes `ciphertexts` and `healed_at` in the same transaction.
 
 ## Containment
 

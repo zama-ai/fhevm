@@ -792,8 +792,8 @@ and polls every 30s, picks due `can_be_healed` rows, and downloads matching ct64
 from those sources. Verification fills `peer_sources` from the quorum group's
 pinned registry S3 URLs (the same URLs used for manifest download). It fills
 `target_evidence` with the pinned registry snapshot and the quorum publishers'
-ct64 statements for that one digest (`source: manifest`). Local installation
-remains planned.
+ct64 statements for that one digest (`source: manifest`). A matching download
+installs the ct64 and sets `healed_at` in one transaction.
 `tx_unlock_potential` lives on `drifted_handle_demand`, one EMA per handle: each stalled
 transaction contributes `1/k` to every drifted handle that transitively blocks it.
 Only handles seen as blockers are updated. That table is separate so TFHE samples

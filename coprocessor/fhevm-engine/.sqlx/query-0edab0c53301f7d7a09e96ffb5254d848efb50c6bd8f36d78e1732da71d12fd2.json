@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET healed_at = NOW(),\n               claimed_by = NULL,\n               claim_expires_at = NULL,\n               next_retry_at = NULL\n         WHERE id = $1\n           AND can_be_healed\n           AND target_ct64_digest = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0edab0c53301f7d7a09e96ffb5254d848efb50c6bd8f36d78e1732da71d12fd2"
+}
