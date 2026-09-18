@@ -28,6 +28,7 @@ contract AliasFixture is E2ECoprocessorConfig {
     euint64 public combined;
     euint64 public combinedSecond;
     euint64 public combinedLocal;
+    euint64 public consumed;
 
     /// @notice Produce and expose the two inputs (their handles become
     /// persisted, allowed boundaries).
@@ -65,6 +66,27 @@ contract AliasFixture is E2ECoprocessorConfig {
         euint64 localC = FHE.asEuint64(5);
         combinedLocal = FHE.add(localB, localC);
         _expose(combinedLocal);
+    }
+
+    /// @notice Consume `combined` from storage, from a LATER block.
+    ///
+    /// This is the cross-block producer/consumer edge the fork and failure
+    /// cases need: the consumer's dependence chain is GATED on the producer's
+    /// until the producer retires, which is the only stage at which "a child
+    /// waiting on a producer that then disappears" can be constructed and
+    /// observed. Nothing else in this fixture crosses a block boundary --
+    /// `combineFromStorage` and `combineFromStorageAgain` read boundaries
+    /// persisted by `produceInputs`, but a test cannot hold that edge open,
+    /// because the operands are already complete before either is called.
+    function consumeCombined() external {
+        consumed = FHE.add(combined, inputB);
+        _expose(consumed);
+    }
+
+    /// @notice Use the exact external input whose proof the recovery test submitted.
+    function consumeExternal(externalEuint64 inputHandle, bytes calldata inputProof) external {
+        consumed = FHE.add(FHE.fromExternal(inputHandle, inputProof), inputB);
+        _expose(consumed);
     }
 
     function _expose(euint64 value) private {

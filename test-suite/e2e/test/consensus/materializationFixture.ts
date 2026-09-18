@@ -3,7 +3,8 @@ import { ethers } from 'hardhat';
 
 import type { SdkInstance } from '../sdk/types';
 import { waitForPendingTransactions, waitForTransactionReceipt } from '../utils';
-import { FIXTURE_HANDLE_LABELS, type FixtureHandleLabel, type FixtureHandles } from './materializationFixtureModel';
+import { FIXTURE_HANDLE_LABELS, type FixtureHandleLabel, type FixtureHandles, FIXTURE_TRANSACTIONS } from './materializationFixtureModel';
+import { consensusHostRpcUrl, rememberMiningState, restoreMiningState } from './abortRecovery';
 
 export { decryptMaterializationFixture, type FixturePlaintexts } from './materializationFixtureDecrypt';
 
@@ -35,6 +36,8 @@ export interface MaterializationFixtureRun {
   readonly contract: MaterializationFixtureContract;
   readonly contractAddress: string;
   readonly handles: FixtureHandles;
+  readonly hostChainId: number;
+  readonly transactionHashes: Readonly<Record<(typeof FIXTURE_TRANSACTIONS)[number]['name'], string>>;
   readonly sameBlockNumber: number;
   readonly sameBlockHash: string;
   readonly terminalBlockNumber: number;
@@ -120,6 +123,8 @@ export async function runMaterializationFixture(parameters: {
   readonly instance: SdkInstance;
 }): Promise<MaterializationFixtureRun> {
   const { contract, contractAddress, owner, instance } = parameters;
+  const hostChainId = Number((await ethers.provider.getNetwork()).chainId);
+  if (!Number.isSafeInteger(hostChainId)) throw new Error('fixture host chain ID exceeds safe integer range');
   const [encryptedA, encryptedB, encryptedIndependent] = await Promise.all([
     instance.encryptUint64({ value: 0n, contractAddress, userAddress: owner.address }),
     instance.encryptUint64({ value: 9n, contractAddress, userAddress: owner.address }),
@@ -127,6 +132,8 @@ export async function runMaterializationFixture(parameters: {
   ]);
 
   let firstBlockReceipts: readonly TransactionReceipt[];
+  const rpcUrl = consensusHostRpcUrl();
+  await rememberMiningState(ethers.provider, rpcUrl);
   await ethers.provider.send('evm_setIntervalMining', [0]);
   await ethers.provider.send('evm_setAutomine', [false]);
   try {
@@ -153,8 +160,7 @@ export async function runMaterializationFixture(parameters: {
       ),
     );
   } finally {
-    await ethers.provider.send('evm_setAutomine', [true]);
-    await ethers.provider.send('evm_setIntervalMining', [1]);
+    await restoreMiningState(ethers.provider, rpcUrl);
   }
 
   const sameBlockHash = requireBlockHash(firstBlockReceipts![0], 'stageInputA');
@@ -182,6 +188,13 @@ export async function runMaterializationFixture(parameters: {
     contract,
     contractAddress,
     handles: await collectHandles(contract),
+    hostChainId,
+    transactionHashes: {
+      'stage-input-a': firstBlockReceipts![0].hash,
+      'derive-from-a-and-b': firstBlockReceipts![1].hash,
+      'run-independent': firstBlockReceipts![2].hash,
+      'next-block-terminal': terminalReceipt.hash,
+    },
     sameBlockNumber,
     sameBlockHash,
     terminalBlockNumber: terminalReceipt.blockNumber,
