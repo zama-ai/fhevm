@@ -2958,7 +2958,8 @@ async fn later_verification_pins_existing_inferred_and_keeps_origin() {
         .unwrap();
     assert_eq!(count, 1);
     let row = sqlx::query(
-        "SELECT detection_kind, can_be_healed, target_ct64_digest
+        "SELECT detection_kind, can_be_healed, target_ct64_digest, target_keyset_id,
+                target_ct128_digest, target_ct128_format
            FROM drifted_handle WHERE id = $1",
     )
     .bind(inferred)
@@ -2970,6 +2971,18 @@ async fn later_verification_pins_existing_inferred_and_keeps_origin() {
     assert_eq!(
         row.get::<Vec<u8>, _>("target_ct64_digest"),
         B256::repeat_byte(9).to_vec()
+    );
+    assert_eq!(
+        row.get::<Vec<u8>, _>("target_keyset_id"),
+        U256::from(17).to_be_bytes::<32>().to_vec()
+    );
+    assert_eq!(
+        row.get::<Vec<u8>, _>("target_ct128_digest"),
+        B256::repeat_byte(10).to_vec()
+    );
+    assert_eq!(
+        row.get::<i16, _>("target_ct128_format"),
+        CiphertextFormat::CompressedOnCpu as u8 as i16
     );
 }
 
