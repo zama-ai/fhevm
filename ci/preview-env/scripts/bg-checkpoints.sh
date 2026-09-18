@@ -18,8 +18,10 @@
 #
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-checkpoints.sh <phase>
 # Env: NAMESPACE (required); GCS_STACK_VERSION (default: gcs overlay); BCS_STACK_VERSION (default:
-#      what the Blue consumer binary prints); WINDOW_START (ISO time passed to the propose task,
-#      optional); WINDOW_ALIGN_SECS (12); GATEWAY_RPC_URL (optional, gateway checks).
+#      what the live consumer binary prints); WINDOW_START (ISO time passed to the propose task,
+#      optional); WINDOW_ALIGN_SECS (12); GATEWAY_RPC_URL (optional, gateway checks);
+#      GREEN_SLOT (-gcs) / LIVE_RELEASE_SUFFIX ("") / LIVE_CONSENSUS_VERSION (1) - see bg-green.sh;
+#      a second round in the same env inverts the slots and starts one consensus version higher.
 set -euo pipefail
 
 phase="${1:?usage: bg-checkpoints.sh baseline|dry-run|window-timing|cutover|post}"
@@ -27,6 +29,10 @@ phase="${1:?usage: bg-checkpoints.sh baseline|dry-run|window-timing|cutover|post
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${root}/ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml")}"
 schema="gcs-${GCS_STACK_VERSION}"
+# Same slot parameters as bg-green.sh: which helm slot holds the incoming fleet and which the live one.
+GREEN_SLOT="${GREEN_SLOT--gcs}"
+LIVE_RELEASE_SUFFIX="${LIVE_RELEASE_SUFFIX:-}"
+LIVE_CONSENSUS_VERSION="${LIVE_CONSENSUS_VERSION:-1}"
 WINDOW_ALIGN_SECS="${WINDOW_ALIGN_SECS:-12}"
 # verify_proofs.contract_address is text holding 0x-prefixed hex, not bytea.
 SYNTHETIC_INPUT_CONTRACT='0x5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a'
@@ -45,19 +51,22 @@ psql_party() {
   kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -v ON_ERROR_STOP=1 -tAqc "${sql}"
 }
-nb_parties=$(helm list -n "${NAMESPACE}" -o json | jq '[.[] | select(.name | test("^coprocessor-[0-9]+$"))] | length')
+nb_parties=$(helm list -n "${NAMESPACE}" -o json | jq --arg re "^coprocessor-[0-9]+${LIVE_RELEASE_SUFFIX}\$" '[.[] | select(.name | test($re))] | length')
+[[ "${nb_parties}" -gt 0 ]] || { echo "::error::no coprocessor releases match ^coprocessor-[0-9]+${LIVE_RELEASE_SUFFIX}\$ in ${NAMESPACE}; set LIVE_RELEASE_SUFFIX for a second round" >&2; exit 1; }
 parties=$(seq 1 "${nb_parties}")
 chains=$(psql_party 1 "SELECT chain_id FROM host_chains ORDER BY chain_id;")
 nb_chains=$(wc -w <<<"${chains}" | tr -d ' ')
 version_mm() { sed -E 's/^v//; s/^([0-9]+\.[0-9]+).*/\1/' <<<"$1"; }
 
 blue_version() {
-  kubectl exec -n "${NAMESPACE}" deploy/coprocessor-1-host-listener-consumer -- host_listener --stack-version 2>/dev/null || echo "${BCS_STACK_VERSION:-0.14.0}"
+  kubectl exec -n "${NAMESPACE}" "deploy/coprocessor-1${LIVE_RELEASE_SUFFIX}-host-listener-consumer" -- host_listener --stack-version 2>/dev/null || echo "${BCS_STACK_VERSION:-0.14.0}"
 }
-# Deployments of a fleet: Blue = coprocessor-<i>-* without -gcs- (+ Polygon consumer), Green = *-gcs-*.
+# Deployments of a fleet, anchored on the component name so an empty slot suffix cannot swallow the
+# other fleet's releases (coprocessor-1- is a prefix of coprocessor-1-gcs-).
 fleet_ready() { # fleet_ready <blue|green> <party>
-  local fleet="$1" party="$2" pattern
-  if [[ "${fleet}" == green ]]; then pattern="^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-gcs-"; else pattern="^coprocessor-(${party}|polygon-${party})-(gw|host|sns|tfhe|tx|zk)|^coprocessor-poller-(polygon-)?${party}-host"; fi
+  local fleet="$1" party="$2" sfx pattern
+  sfx="${LIVE_RELEASE_SUFFIX}"; [[ "${fleet}" == green ]] && sfx="${GREEN_SLOT}"
+  pattern="^coprocessor-(${party}|polygon-${party})${sfx}-(gw|host|sns|tfhe|tx|zk|upgrade|consensus)|^coprocessor-poller-(polygon-)?${party}${sfx}-host"
   kubectl get deploy -n "${NAMESPACE}" -o json \
     | jq -r --arg re "${pattern}" '[.items[] | select(.metadata.name | test($re))] | "\(map(select(.status.readyReplicas == .spec.replicas and .spec.replicas > 0)) | length)/\(length)"'
 }
@@ -104,13 +113,13 @@ baseline)
   bv=$(blue_version)
   for i in ${parties}; do
     v=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")
-    check "party ${i}: versioning ${v} (Blue binary ${bv}, consensus 1)" "$(version_mm "${v%/*}")" = "$(version_mm "${bv}")" -a "${v#*/}" = "1"
+    check "party ${i}: versioning ${v} (live binary ${bv}, consensus ${LIVE_CONSENSUS_VERSION})" "$(version_mm "${v%/*}")" = "$(version_mm "${bv}")" -a "${v#*/}" = "${LIVE_CONSENSUS_VERSION}"
     n=$(psql_party "${i}" "SELECT count(*) FROM upgrade_state;")
     check "party ${i}: upgrade_state rows = ${n}" "${n}" = "0"
     g=$(psql_party "${i}" "SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%';")
     # On the production path Green is migrated mid-round, so a Green schema is only a fault
     # while the Green release is still absent.
-    if helm status "coprocessor-${i}-gcs" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    if helm status "coprocessor-${i}${GREEN_SLOT}" -n "${NAMESPACE}" >/dev/null 2>&1; then
       info "party ${i}: Green schemas = ${g} (Green already installed)"
     else
       check "party ${i}: Green schemas = ${g}" "${g}" = "0"
@@ -210,10 +219,10 @@ cutover)
     check "party ${i}: Green schema dropped (gcs schemas = ${g})" "${g}" = "0"
     r=$(fleet_ready green "${i}")
     check "party ${i}: Green deployments ready ${r}" "${r%/*}" = "${r#*/}" -a "${r#*/}" != "0"
-    bad=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "^coprocessor-(${i}|polygon-${i})-gcs-" --arg v "${GCS_STACK_VERSION}" '[.items[] | select(.metadata.name | test($re)) | select(.status.phase == "Running") | select(.metadata.labels["app.kubernetes.io/version"] != $v)] | length')
+    bad=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "^coprocessor-(${i}|polygon-${i})${GREEN_SLOT}-" --arg v "${GCS_STACK_VERSION}" '[.items[] | select(.metadata.name | test($re)) | select(.status.phase == "Running") | select(.metadata.labels["app.kubernetes.io/version"] != $v)] | length')
     check "party ${i}: every running Green replica carries version label ${GCS_STACK_VERSION} (${bad} without)" "${bad}" = "0"
-    paused=$(kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-tx-sender" --tail=500 2>/dev/null | grep -c "pausing into no-op mode" || true)
-    check "party ${i}: Blue tx-sender paused into no-op mode (${paused} log line)" "${paused}" -ge 1
+    paused=$(kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}${LIVE_RELEASE_SUFFIX}-tx-sender" --tail=500 2>/dev/null | grep -c "pausing into no-op mode" || true)
+    check "party ${i}: retired tx-sender paused into no-op mode (${paused} log line)" "${paused}" -ge 1
     syn=$(psql_party "${i}" "WITH h AS (SELECT substring(u.synthetic_txn_hashes FROM g.pos FOR 32) AS tx FROM upgrade_state u, generate_series(1, GREATEST(octet_length(u.synthetic_txn_hashes), 1), 32) AS g(pos) WHERE u.stack_role='GCS' AND octet_length(u.synthetic_txn_hashes) > 0) SELECT (SELECT count(*) FROM computations c JOIN h ON c.transaction_id = h.tx) + (SELECT count(*) FROM verify_proofs WHERE lower(contract_address) = lower('${SYNTHETIC_INPUT_CONTRACT}'));")
     check "party ${i}: synthetic rows left in public = ${syn}" "${syn}" = "0"
   done

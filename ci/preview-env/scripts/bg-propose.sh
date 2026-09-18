@@ -44,9 +44,13 @@ host_http="${HOST_HTTP:-$(secret_val rpc ethereum-rpc-url)}"
 [[ -n "${host_http}" ]] || fail "could not resolve the host RPC (no rpc Secret and no test-suite Job RPC_URL)"
 polygon_http=$(secret_val rpc polygon-rpc-url)
 # The coprocessor talks to the gateway over ws://<host>:8548; the tool needs the http port on the same host.
-gateway_ws=$(kubectl get deploy -n "${NAMESPACE}" coprocessor-1-gw-listener \
+# Any fleet's gw-listener carries the same URL, so take the first one: which slot is live moves
+# between rounds, and on a second round "coprocessor-1" may not exist at all.
+gw_deploy=$(kubectl get deploy -n "${NAMESPACE}" -o name 2>/dev/null | grep -E '/coprocessor-[0-9]+(-[a-z0-9]+)?-gw-listener$' | head -1)
+[[ -n "${gw_deploy}" ]] || fail "no coprocessor gw-listener deployment found in ${NAMESPACE}"
+gateway_ws=$(kubectl get -n "${NAMESPACE}" "${gw_deploy}" \
   -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="GATEWAY_URL")].value}')
-[[ -n "${gateway_ws}" ]] || fail "could not read GATEWAY_URL from coprocessor-1-gw-listener"
+[[ -n "${gateway_ws}" ]] || fail "could not read GATEWAY_URL from ${gw_deploy}"
 gateway_http="${GATEWAY_HTTP:-$(sed -E 's#^ws://#http://#; s#:8548$#:8547#' <<<"${gateway_ws}")}"
 
 chains=$(psql1 "SELECT chain_id FROM host_chains ORDER BY chain_id;" | tr '\n' ' ')

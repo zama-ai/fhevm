@@ -3,10 +3,10 @@
 #
 #   bg-green.sh migrate   apply the HEAD database migration to every party while
 #                         Blue keeps serving (step 3 of the manual flow)
-#   bg-green.sh start     install the Green fleet per party: coprocessor-<i>-gcs
+#   bg-green.sh start     install the Green fleet per party: coprocessor-<i><slot>
 #                         (workers, gw-listener, consumer, tx-sender, upgrade-controller,
 #                         consensus-detector) and the Green Polygon consumer
-#                         coprocessor-polygon-<i>-gcs (step 4). Needs `migrate` first.
+#                         coprocessor-polygon-<i><slot> (step 4). Needs `migrate` first.
 #
 # Values are the ones CI used for this env: the deployed Blue release carries the
 # chain-mode patched commonConfig/chains (apply-chain-env.sh), so Green is built
@@ -21,7 +21,10 @@
 #      GCS_IMAGE_TAG (default: the listener image tag of this env, else the checkout's HEAD SHA),
 #      GCS_STACK_VERSION (default: commonConfig.stackVersion of the gcs overlay),
 #      COPROCESSOR_CHART (charts/coprocessor of this checkout),
-#      BCS_STACK_VERSION (default: what the running Blue binary prints for --stack-version).
+#      BCS_STACK_VERSION (default: what the running live binary prints for --stack-version),
+#      GREEN_SLOT (-gcs), LIVE_RELEASE_PREFIX (coprocessor), LIVE_RELEASE_SUFFIX ("") - the helm
+#        slots. A second round in the same env inverts them: the live fleet is in -gcs and the new
+#        Green takes the slot the retired one vacated, i.e. GREEN_SLOT="" LIVE_RELEASE_SUFFIX=-gcs.
 set -euo pipefail
 
 verb="${1:?usage: bg-green.sh migrate|start}"
@@ -33,7 +36,17 @@ if [[ -z "${DEPLOY_POLYGON:-}" ]]; then
 fi
 # The versioning row holds the string the Blue binary was compiled with (a 0.14.1
 # image still prints 0.14.0), so read it from the binary rather than from a pin.
-BCS_STACK_VERSION="${BCS_STACK_VERSION:-$(kubectl exec -n "${NAMESPACE}" deploy/coprocessor-1-host-listener-consumer -- host_listener --stack-version)}"
+# Which helm slot the incoming fleet occupies, and which release it copies chain config from.
+# Blue/green mode is decided by the binary's CONSENSUS_PROTOCOL_VERSION, not by these names, so on
+# a second round the roles swap and the new Green takes the slot the retired fleet vacated.
+GREEN_SLOT="${GREEN_SLOT--gcs}"
+LIVE_RELEASE_PREFIX="${LIVE_RELEASE_PREFIX:-coprocessor}"
+LIVE_RELEASE_SUFFIX="${LIVE_RELEASE_SUFFIX:-}"
+green_release() { echo "coprocessor-$1${GREEN_SLOT}"; }
+live_release()  { echo "${LIVE_RELEASE_PREFIX}-$1${LIVE_RELEASE_SUFFIX}"; }
+# Fleet label: the slot name without the leading dash, or "bcs" for the unsuffixed slot.
+green_fleet() { echo "$1${GREEN_SLOT:--bcs}"; }
+BCS_STACK_VERSION="${BCS_STACK_VERSION:-$(kubectl exec -n "${NAMESPACE}" "deploy/$(live_release 1)-host-listener-consumer" -- host_listener --stack-version)}"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 values_dir="${root}/ci/preview-env/coprocessor"
@@ -71,7 +84,7 @@ psql_party() {
 green_values() {
   local party="$1"
   local blue="${work}/blue-${party}.yaml" out="${work}/green-${party}.yaml"
-  helm get values "coprocessor-${party}" -n "${NAMESPACE}" -o yaml > "${blue}"
+  helm get values "$(live_release "${party}")" -n "${NAMESPACE}" -o yaml > "${blue}"
   cp "${values_dir}/values-coprocessor-e2e.yaml" "${out}"
   BLUE="${blue}" yq -i '.commonConfig = load(strenv(BLUE)).commonConfig
     | .chains = [load(strenv(BLUE)).chains[] | select(.name == "host")]' "${out}"
@@ -100,8 +113,8 @@ green_helm_args() {
     -n "${NAMESPACE}"
     -f "${values}"
     -f "${values_dir}/values-coprocessor-gcs-e2e.yaml"
-    --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${party}-gcs\"}"
-    --set-string "fullnameOverride=coprocessor-${party}-gcs"
+    --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"$(green_fleet "${party}")\"}"
+    --set-string "fullnameOverride=$(green_release "${party}")"
     --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}"
     --set-string "commonConfig.canonicalProtocolConfigChainId=${canonical}"
     --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${party}:5432"
@@ -125,17 +138,21 @@ green_helm_args() {
   done
 }
 
-blue_live() {
-  local party="$1" v
-  # Pre-migration the row is 'v0.14' with no consensus_version column; compare major.minor and default to 1.
-  v=$(psql_party "${party}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1')||' upgrade_state='||(SELECT count(*) FROM upgrade_state)||' gcs_schemas='||(SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%') FROM versioning v;")
-  [[ "$(version_mm "${v%%/*}")" == "$(version_mm "${BCS_STACK_VERSION}")" && "${v#*/}" == "1 upgrade_state=0 gcs_schemas=0" ]] \
-    || fail "party ${party} is not in the Blue-only state (${v}); run bg-reset.sh first"
-  helm status "coprocessor-${party}-gcs" -n "${NAMESPACE}" >/dev/null 2>&1 \
-    && fail "party ${party}: Green release already installed"
-  local ready
-  ready=$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-${party}-host-listener-consumer" -o jsonpath='{.status.readyReplicas}')
-  [[ "${ready}" == "1" ]] || fail "party ${party}: Blue consumer not ready"
+# The live fleet must be the one this round upgrades from, with no attempt still in progress
+# (ingest.rs `can_replace` rejects a proposal while one is) and no schema for the target version.
+live_ok() {
+  local party="$1" v active schema ready
+  v=$(psql_party "${party}" "SELECT stack_version FROM versioning;")
+  [[ "$(version_mm "${v}")" == "$(version_mm "${BCS_STACK_VERSION}")" ]] \
+    || fail "party ${party}: live stack is ${v}, expected ${BCS_STACK_VERSION}; run bg-reset.sh first"
+  active=$(psql_party "${party}" "SELECT CASE WHEN to_regclass('upgrade_state') IS NULL THEN 0 ELSE (SELECT count(*) FROM upgrade_state WHERE status = 'in_progress') END;")
+  [[ "${active}" == "0" ]] || fail "party ${party}: ${active} upgrade attempt(s) still in_progress; clear upgrade_state before starting a new Green"
+  schema=$(psql_party "${party}" "SELECT count(*) FROM pg_namespace WHERE nspname = 'gcs-${GCS_STACK_VERSION}';")
+  [[ "${schema}" == "0" ]] || fail "party ${party}: schema gcs-${GCS_STACK_VERSION} already exists"
+  helm status "$(green_release "${party}")" -n "${NAMESPACE}" >/dev/null 2>&1 \
+    && fail "party ${party}: Green release $(green_release "${party}") already installed"
+  ready=$(kubectl get deploy -n "${NAMESPACE}" "$(live_release "${party}")-host-listener-consumer" -o jsonpath='{.status.readyReplicas}')
+  [[ "${ready}" == "1" ]] || fail "party ${party}: live consumer not ready"
 }
 
 echo "== bg-green ${verb}: ${NAMESPACE}, ${NB_COPROCESSOR} parties, Green image tag ${GCS_IMAGE_TAG}, stack ${GCS_STACK_VERSION}, HEAD migration ${head_migration}"
@@ -143,14 +160,14 @@ echo "== bg-green ${verb}: ${NAMESPACE}, ${NB_COPROCESSOR} parties, Green image 
 case "${verb}" in
 migrate)
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
-    blue_live "${i}"
+    live_ok "${i}"
     before=$(psql_party "${i}" "SELECT max(version)||' ('||count(*)||')' FROM _sqlx_migrations;")
     values=$(green_values "${i}")
     green_helm_args "${i}" "${values}"
-    job="coprocessor-${i}-gcs-db-migration-1"
+    job="$(green_release "${i}")-db-migration-1"
     # Same Job the Green release runs as its pre-install hook, rendered without the
     # hook so it runs now, on its own, while Blue serves. `start` re-runs it as a no-op.
-    helm template "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" "${GREEN_ARGS[@]}" \
+    helm template "$(green_release "${i}")" "${COPROCESSOR_CHART}" "${GREEN_ARGS[@]}" \
       --show-only templates/coprocessor-db-migration.yaml > "${work}/migrate-${i}.yaml"
     kubectl delete job "${job}" -n "${NAMESPACE}" --ignore-not-found >/dev/null
     kubectl apply -n "${NAMESPACE}" -f "${work}/migrate-${i}.yaml"
@@ -163,32 +180,36 @@ migrate)
     fi
     after=$(psql_party "${i}" "SELECT max(version)||' ('||count(*)||')' FROM _sqlx_migrations;")
     [[ "${after}" == "${head_migration} ("* ]] || fail "party ${i}: DB at ${after}, expected ${head_migration}"
-    echo "party ${i}: migrations ${before} -> ${after}; Blue still $(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")"
+    echo "party ${i}: migrations ${before} -> ${after}; live still $(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1') FROM versioning v;")"
   done
-  echo "== migrate done: schema at ${head_migration} on every party, Blue untouched. Next: bg-green.sh start"
+  echo "== migrate done: schema at ${head_migration} on every party, the live fleet untouched. Next: bg-green.sh start"
   ;;
 
 start)
+  green_releases=()
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
-    blue_live "${i}"
+    live_ok "${i}"
     at=$(psql_party "${i}" "SELECT max(version) FROM _sqlx_migrations;")
     [[ "${at}" == "${head_migration}" ]] || fail "party ${i}: schema at ${at}, run bg-green.sh migrate first"
   done
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     values=$(green_values "${i}")
     green_helm_args "${i}" "${values}"
-    echo "party ${i}: installing coprocessor-${i}-gcs"
-    helm upgrade --install "coprocessor-${i}-gcs" "${COPROCESSOR_CHART}" "${GREEN_ARGS[@]}" \
+    echo "party ${i}: installing $(green_release "${i}")"
+    green_releases+=("$(green_release "${i}")")
+    helm upgrade --install "$(green_release "${i}")" "${COPROCESSOR_CHART}" "${GREEN_ARGS[@]}" \
       --set-json 'dbMigration.annotations={"helm.sh/hook":"pre-install,pre-upgrade","helm.sh/hook-delete-policy":"before-hook-creation"}' \
       >/dev/null
     # Green pollers: twins of the Blue poller releases (HEAD image, Green fleet). They inject the
     # synthetic host anchors and, in gcs mode, wait for the Green schema the controller creates.
-    for rel in "coprocessor-poller-${i}" $([[ "${DEPLOY_POLYGON}" == "true" ]] && echo "coprocessor-poller-polygon-${i}"); do
+    for rel in "coprocessor-poller-${i}${LIVE_RELEASE_SUFFIX}" $([[ "${DEPLOY_POLYGON}" == "true" ]] && echo "coprocessor-poller-polygon-${i}${LIVE_RELEASE_SUFFIX}"); do
       helm get values "${rel}" -n "${NAMESPACE}" -o yaml > "${work}/${rel}.yaml"
-      echo "party ${i}: installing ${rel}-gcs"
-      helm upgrade --install "${rel}-gcs" "${COPROCESSOR_CHART}" -n "${NAMESPACE}" \
+      green_rel="${rel%"${LIVE_RELEASE_SUFFIX}"}${GREEN_SLOT}"
+      echo "party ${i}: installing ${green_rel}"
+      green_releases+=("${green_rel}")
+      helm upgrade --install "${green_rel}" "${COPROCESSOR_CHART}" -n "${NAMESPACE}" \
         -f "${work}/${rel}.yaml" \
-        --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-gcs\"}" \
+        --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"$(green_fleet "${i}")\"}" \
         --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}" \
         --set-string "hostListenerPollerShared.image.tag=${GCS_IMAGE_TAG}" \
         >/dev/null
@@ -196,19 +217,23 @@ start)
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
       # Twin of the Blue Polygon consumer: its values, Green image/version/fleet and an
       # own consumer name (the Redis group is <service-name>.<chain-id>).
-      helm get values "coprocessor-polygon-${i}" -n "${NAMESPACE}" -o yaml > "${work}/polygon-${i}.yaml"
-      echo "party ${i}: installing coprocessor-polygon-${i}-gcs"
-      helm upgrade --install "coprocessor-polygon-${i}-gcs" "${COPROCESSOR_CHART}" -n "${NAMESPACE}" \
+      helm get values "coprocessor-polygon-${i}${LIVE_RELEASE_SUFFIX}" -n "${NAMESPACE}" -o yaml > "${work}/polygon-${i}.yaml"
+      echo "party ${i}: installing coprocessor-polygon-${i}${GREEN_SLOT}"
+      green_releases+=("coprocessor-polygon-${i}${GREEN_SLOT}")
+      helm upgrade --install "coprocessor-polygon-${i}${GREEN_SLOT}" "${COPROCESSOR_CHART}" -n "${NAMESPACE}" \
         -f "${work}/polygon-${i}.yaml" \
-        --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-gcs\"}" \
+        --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"$(green_fleet "${i}")\"}" \
         --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}" \
         --set-string "hostListenerConsumerShared.image.tag=${GCS_IMAGE_TAG}" \
-        --set-string "hostListenerConsumerShared.args.serviceName=host-listener-consumer-gcs" \
+        --set-string "hostListenerConsumerShared.args.serviceName=host-listener-consumer${GREEN_SLOT:--bcs}" \
         >/dev/null
     fi
   done
-  for d in $(kubectl get deploy -n "${NAMESPACE}" -o name | grep -- "-gcs-"); do
-    kubectl rollout status "${d}" -n "${NAMESPACE}" --timeout=300s >/dev/null
+  # By release rather than by name pattern: with GREEN_SLOT="" the Green names carry no marker.
+  for rel in "${green_releases[@]}"; do
+    for d in $(helm get manifest "${rel}" -n "${NAMESPACE}" | yq -r 'select(.kind == "Deployment") | .metadata.name'); do
+      kubectl rollout status "deploy/${d}" -n "${NAMESPACE}" --timeout=300s >/dev/null
+    done
   done
 
   # Verify: Green schema created by the controller, Green consumers shadow-ingesting
@@ -228,14 +253,20 @@ start)
     else
       echo "::error::party ${i}: Green ingests on ${chains}/${expected_chains} chain(s) in ${schema} after 3 min"; failed=1
     fi
-    blue=$(psql_party "${i}" "SELECT stack_version||'/'||COALESCE(to_jsonb(v)->>'consensus_version','1')||' upgrade_state='||(SELECT count(*) FROM upgrade_state) FROM versioning v;")
-    [[ "$(version_mm "${blue%%/*}")" == "$(version_mm "${BCS_STACK_VERSION}")" && "${blue#*/}" == "1 upgrade_state=0" ]] || { echo "::error::party ${i}: Blue state changed: ${blue}"; failed=1; }
+    # The binary, not the helm label: a Green built from the wrong commit otherwise surfaces only
+    # as a rejected proposal later in the round. Exact, since 0.15.0 vs 0.15.1 is the whole point.
+    green_bin=$(kubectl exec -n "${NAMESPACE}" "deploy/$(green_release "${i}")-host-listener-consumer" \
+      -- host_listener --stack-version 2>/dev/null | tr -d '\r' || true)
+    [[ "${green_bin#v}" == "${GCS_STACK_VERSION#v}" ]] \
+      || { echo "::error::party ${i}: Green binary reports ${green_bin:-<none>}, expected ${GCS_STACK_VERSION} (image ${GCS_IMAGE_TAG})"; failed=1; }
+    live=$(psql_party "${i}" "SELECT stack_version||' in_progress='||(SELECT count(*) FROM upgrade_state WHERE status = 'in_progress') FROM versioning;")
+    [[ "$(version_mm "${live%% *}")" == "$(version_mm "${BCS_STACK_VERSION}")" && "${live#* }" == "in_progress=0" ]] || { echo "::error::party ${i}: live state changed: ${live}"; failed=1; }
     for d in upgrade-controller consensus-detector; do
-      if kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}-gcs-${d}" --tail=200 2>/dev/null | grep '"level":"ERROR"' >/dev/null; then
-        echo "::warning::party ${i}: ${d} logged errors, check: kubectl logs -n ${NAMESPACE} deploy/coprocessor-${i}-gcs-${d}"
+      if kubectl logs -n "${NAMESPACE}" "deploy/$(green_release "${i}")-${d}" --tail=200 2>/dev/null | grep '"level":"ERROR"' >/dev/null; then
+        echo "::warning::party ${i}: ${d} logged errors, check: kubectl logs -n ${NAMESPACE} deploy/$(green_release "${i}")-${d}"
       fi
     done
-    for p in "coprocessor-poller-${i}-gcs-host-listener-poller" "coprocessor-poller-polygon-${i}-gcs-host-listener-poller"; do
+    for p in "coprocessor-poller-${i}${GREEN_SLOT}-host-listener-poller" "coprocessor-poller-polygon-${i}${GREEN_SLOT}-host-listener-poller"; do
       kubectl get deploy -n "${NAMESPACE}" "${p}" >/dev/null 2>&1 || continue
       if kubectl logs -n "${NAMESPACE}" "deploy/${p}" --tail=3 2>/dev/null | grep "waiting for the upgrade-controller to create the GCS schema" >/dev/null; then
         echo "::warning::${p} still waiting for the Green schema"
@@ -243,7 +274,7 @@ start)
     done
   done
   [[ "${failed}" == "0" ]] || fail "Green installed but verification failed, see errors above"
-  echo "== start done: Green ${GCS_STACK_VERSION} (${GCS_IMAGE_TAG}) shadowing Blue ${BCS_STACK_VERSION} on ${NB_COPROCESSOR} parties. Next: propose the upgrade."
+  echo "== start done: Green ${GCS_STACK_VERSION} (${GCS_IMAGE_TAG}) shadowing live ${BCS_STACK_VERSION} on ${NB_COPROCESSOR} parties. Next: propose the upgrade."
   ;;
 *)
   fail "unknown verb '${verb}' (migrate|start)"
