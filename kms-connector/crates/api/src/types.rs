@@ -48,19 +48,27 @@ sol! {
         uint64 durationSeconds;
     }
 
-    /// `POST v1/user-decrypt` request body: the protocol inputs of a user decryption
-    /// (unified shape per RFC 016).
+    /// The protocol inputs of a user decryption, i.e. the `payload` of a [`UserDecryptionRequest`].
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct UserDecryptionRequest {
+    struct UserDecryptionPayload {
         HandleEntry[] handles;
         address userAddress;
         bytes publicKey;
         address[] allowedContracts;
         RequestValidity requestValidity;
-        /// The user's EIP-712 signature.
-        bytes signature;
         bytes extraData;
+    }
+
+    /// `POST v1/user-decrypt` request body: the user's signature over the protocol inputs of a
+    /// user decryption, tagged with the scheme it was produced with.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct UserDecryptionRequest {
+        string attestationType;
+        UserDecryptionPayload payload;
+        /// The user's signature, in the scheme named by `attestationType`.
+        bytes signature;
     }
 }
 
@@ -107,6 +115,7 @@ pub struct UserDecryptionResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AttestationType;
     use alloy::primitives::Address;
 
     fn public_request() -> PublicDecryptionRequest {
@@ -118,20 +127,23 @@ mod tests {
 
     fn user_request() -> UserDecryptionRequest {
         UserDecryptionRequest {
-            handles: vec![HandleEntry {
-                handle: B256::repeat_byte(0xaa),
-                contractAddress: Address::repeat_byte(0x33),
-                ownerAddress: Address::repeat_byte(0x44),
-            }],
-            userAddress: Address::repeat_byte(0x55),
-            publicKey: Bytes::from(vec![0x20, 0x00, 0x20, 0x00]),
-            allowedContracts: vec![Address::repeat_byte(0x33)],
-            requestValidity: RequestValidity {
-                startTimestamp: 1_770_000_000,
-                durationSeconds: 300,
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: UserDecryptionPayload {
+                handles: vec![HandleEntry {
+                    handle: B256::repeat_byte(0xaa),
+                    contractAddress: Address::repeat_byte(0x33),
+                    ownerAddress: Address::repeat_byte(0x44),
+                }],
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20, 0x00, 0x20, 0x00]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1_770_000_000,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(vec![0x00]),
             },
             signature: Bytes::from(vec![0x66; 65]),
-            extraData: Bytes::from(vec![0x00]),
         }
     }
 
@@ -143,6 +155,25 @@ mod tests {
             "sneaky": true
         }"#;
         assert!(serde_json::from_str::<PublicDecryptionRequest>(json).is_err());
+
+        // Both the envelope and the payload deny unknown fields.
+        let mut json = serde_json::to_value(user_request()).unwrap();
+        json["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<UserDecryptionRequest>(json).is_err());
+        let mut json = serde_json::to_value(user_request()).unwrap();
+        json["payload"]["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<UserDecryptionRequest>(json).is_err());
+    }
+
+    #[test]
+    fn attestation_type_is_not_enforced_by_serde() {
+        // Deserialization accepts any string: the endpoint answers a dedicated error code for
+        // unsupported schemes, which requires a parsed body.
+        let mut request = user_request();
+        request.attestationType = "random_attestation_type".to_owned();
+        let json = serde_json::to_string(&request).unwrap();
+        let back: UserDecryptionRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.attestationType, "random_attestation_type");
     }
 
     #[test]
@@ -157,7 +188,13 @@ mod tests {
         let user = user_request();
         assert_eq!(user.id(), user.id());
         let mut other = user.clone();
-        other.requestValidity.durationSeconds += 1;
+        other.payload.requestValidity.durationSeconds += 1;
+        assert_ne!(user.id(), other.id());
+
+        // The discriminant is part of the id: the same payload and signature under another
+        // scheme is another request.
+        let mut other = user.clone();
+        other.attestationType = "random_attestation_type".to_owned();
         assert_ne!(user.id(), other.id());
     }
 }

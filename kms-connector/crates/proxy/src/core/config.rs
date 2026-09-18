@@ -1,6 +1,6 @@
 use alloy::primitives::B256;
 use connector_utils::{
-    config::DeserializeConfig,
+    config::{DeserializeConfig, deserialize_non_zero_duration},
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use http::uri::Authority;
@@ -31,29 +31,43 @@ pub struct Config {
     #[cfg_attr(test, serde(serialize_with = "serialize_endpoint_addresses"))]
     pub endpoint_addresses: Vec<Authority>,
     /// The timeout to establish a TCP connection to an endpoint.
-    #[serde(with = "humantime_serde", default = "default_endpoint_connect_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_endpoint_connect_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_healthcheck_frequency"
     )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_healthcheck_frequency: Duration,
     /// How long the proxy waits for an endpoint response before answering `502`.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
     )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
-    #[serde(with = "humantime_serde", default = "default_endpoint_idle_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_endpoint_idle_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
 
     /// The maximum accepted size of a request body.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
     /// How long the proxy waits for the client to send request bytes before dropping it.
-    #[serde(with = "humantime_serde", default = "default_request_read_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_request_read_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
     /// How long in-flight requests are given to complete after `SIGTERM`.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
@@ -66,7 +80,11 @@ pub struct Config {
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
-    #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
