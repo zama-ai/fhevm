@@ -102,7 +102,9 @@ const chain = {
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
     programs: {
-      host: { address: asBytes32Hex(bytesToHex(getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS))) },
+      host: {
+        address: asBytes32Hex(bytesToHex(new Uint8Array(getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS)))),
+      },
     },
   },
 };
