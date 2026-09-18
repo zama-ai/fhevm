@@ -13,7 +13,7 @@ export function skipUnlessConfigured(ctx: Mocha.Context): void {
   }
 }
 
-/** Fails fast, listing every party whose `/v1/version` is unreachable. */
+/** Fails fast, listing every party whose `/version` is unreachable. */
 export async function probeEndpoints(): Promise<void> {
   const unreachable: string[] = [];
   for (const url of endpointUrls()) {

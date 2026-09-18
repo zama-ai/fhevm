@@ -54,7 +54,7 @@ impl State {
         (addresses(healthy), addresses(unhealthy))
     }
 
-    /// Performs the healthcheck of the proxy's TLS listener by querying the `v1/version` route
+    /// Performs the healthcheck of the proxy's TLS listener by querying the `/version` route
     /// through the loopback interface.
     ///
     /// No credentials are sent, so the proxy is expected to answer `401`: what is checked here is
@@ -130,7 +130,7 @@ pub struct HealthStatus {
     pub details: String,
 }
 
-/// The healthcheck run against each endpoint: a `GET v1/version` must be answered with `200`.
+/// The healthcheck run against each endpoint: a `GET /version` must be answered with `200`.
 pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck> {
     // The endpoints answer whatever the `Host` header says, so it is left empty
     let mut health_check = HttpHealthCheck::new("", false);
@@ -150,7 +150,7 @@ pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck>
     Ok(health_check)
 }
 
-/// Builds the loopback URL of the `v1/version` route from the bind address of the TLS listener.
+/// Builds the loopback URL of the `/version` route from the bind address of the TLS listener.
 fn version_url(bind_address: SocketAddr) -> Url {
     let ip = match bind_address.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
