@@ -74,6 +74,11 @@ test('preview-env enables admin-sweep on zama-host only', async () => {
   }
 });
 
+test('the workspace pins PROGRAM_ENVIRONMENT to localnet so a shell export is inert', async () => {
+  const config = await readFile(path.join(REPO_ROOT, 'solana/.cargo/config.toml'), 'utf8');
+  expect(config).toContain('PROGRAM_ENVIRONMENT = { value = "localnet", force = true }');
+});
+
 test('each program takes its id from the environment file, not a literal', async () => {
   for (const program of PROGRAMS) {
     const crate = path.join(REPO_ROOT, 'solana/programs', program.replaceAll('_', '-'));

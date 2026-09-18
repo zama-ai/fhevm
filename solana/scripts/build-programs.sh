@@ -21,11 +21,15 @@ for program in "$@"; do
 done
 bash scripts/install-sbf-tools.sh
 # build.rs reads the program ids from the environment file; each program's cargo features come from
-# the same file (`features.<program>`).
-export PROGRAM_ENVIRONMENT="$environment"
+# the same file (`features.<program>`). The environment is passed as cargo config, not a shell
+# variable: .cargo/config.toml pins PROGRAM_ENVIRONMENT to localnet so a stray export cannot leak
+# into other builds, and this command-line value overrides that pin for this build only.
+# `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
+cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')
 for program in "$@"; do
   features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
-  args=(build --ignore-keys --no-idl -p "$program")
-  if [[ -n "$features" ]]; then args+=(-- --features "$features"); fi
+  args=(build --ignore-keys --no-idl -p "$program" --)
+  if [[ -n "$features" ]]; then args+=(--features "$features"); fi
+  args+=(-- "${cargo_config[@]}")
   anchor "${args[@]}"
 done

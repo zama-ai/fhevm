@@ -2,8 +2,10 @@
 
 One file per deployed environment: the program ids compiled into the four Solana programs
 (`declare_id!`) and the cargo features enabled per program for that build. `PROGRAM_ENVIRONMENT=<name>`
-selects a file at build time; unset means `localnet`, so plain `cargo` and `anchor build`
-produce the test programs.
+selects a file at build time. `.cargo/config.toml` pins it to `localnet` for every build in this
+workspace, so plain `cargo` and `anchor build` produce the test programs even with a stray shell
+export; `scripts/build-programs.sh` overrides the pin with `--config` for one build, and a
+non-localnet build prints a cargo warning naming the environment.
 
 | File | Cluster | Use |
 | --- | --- | --- |

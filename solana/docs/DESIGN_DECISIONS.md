@@ -2557,7 +2557,9 @@ This entry fixes how that id reaches the build.
 
 The id is read at build time from `solana/environments/<name>.json`, one file per deployed
 environment. A `build.rs` in each program (`crates/program-environment`) writes the `declare_id!`
-line from the file named by `PROGRAM_ENVIRONMENT` and falls back to `localnet` when it is unset.
+line from the file named by `PROGRAM_ENVIRONMENT`. `.cargo/config.toml` pins that variable to
+`localnet` (`force = true`), so a shell export cannot change what a build compiles; only the
+`--config` override that `scripts/build-programs.sh` passes does, and such a build warns.
 Plain `cargo` and `anchor build` therefore produce the localnet program, as before. The deployer
 image and CI set one environment before building; `scripts/build-programs.sh` also enables the
 cargo features the file lists per program (`features.zama_host`).

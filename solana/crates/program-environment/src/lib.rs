@@ -15,6 +15,9 @@ pub fn declare_program_id(program: &str) {
         .join("../../environments")
         .join(format!("{name}.json"));
     println!("cargo:rerun-if-changed={}", path.display());
+    if name != DEFAULT_ENVIRONMENT {
+        println!("cargo:warning={program}: compiling the {name} program id");
+    }
     let file = std::fs::read_to_string(&path).unwrap_or_else(|err| {
         panic!(
             "PROGRAM_ENVIRONMENT={name}: cannot read {}: {err}",
