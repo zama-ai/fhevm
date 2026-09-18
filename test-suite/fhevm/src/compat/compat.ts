@@ -362,6 +362,12 @@ export const requiresLegacyRelayerReadinessConfig = (state: Pick<CompatState, "v
 export const requiresLegacyRelayerKeyUrlConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.RELAYER_VERSION ?? "", [0, 14, 0], { unparsed: "modern" });
 
+/** Older releases built insecure support into core-service. SHA/main pins retain the modern image family. */
+export const kmsCoreImageForVersion = (version: string): string => {
+  const image = versionBeforeReleaseFamily(version, [0, 15, 0]) ? "core-service" : "core-service-insecure";
+  return `ghcr.io/zama-ai/kms/${image}:${version}`;
+};
+
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);
