@@ -67,6 +67,8 @@ const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
 // claim measures ~311k CU under mollusk (batcher_mollusk.json `claim`); the same ~1.2x factor puts
 // it near ~373k, so 600k is ample headroom.
 const CLAIM_COMPUTE_UNIT_LIMIT = 600_000;
+// reclaim_batch_authority and close_join_record measure ~6.7k and ~4.6k CU under mollusk.
+const RENT_HYGIENE_COMPUTE_UNIT_LIMIT = 50_000;
 // Bound for the user-decrypt relayer roundtrip: the SDK's default request timeout is one hour
 // (RelayerAsyncRequest), which would let a stuck decrypt eat the whole scenario budget silently.
 const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
@@ -468,6 +470,28 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(verifiedTotal.type).toBe("uint64");
       expect(verifiedTotal.value as bigint).toBe(wrapBaseUnits);
 
+      // Step 15: the settled batch's authority PDA has paid its last owner-charged rent. The keeper
+      // (join mint authority) takes the unspent open + settle funding back, so a run costs the
+      // keeper only the rent actually consumed, not 0.2 SOL per batch. The claim below then proves
+      // claims never needed those lamports.
+      console.log("deposit-arc settle: keeper reclaiming the batch authority's unspent funding...");
+      const authorityFundingLeft = (await rpc.getBalance(batchAuthority, { commitment: "confirmed" }).send()).value;
+      expect(authorityFundingLeft > 0n).toBe(true);
+      await send(
+        keeper,
+        [
+          await vault.buildReclaimBatchAuthorityInstruction({
+            authority: keeper,
+            batcher: roots.batcher,
+            batch,
+            batchAuthority,
+            joinConfidentialMint: roots.joinConfidentialMint,
+          }),
+        ],
+        RENT_HYGIENE_COMPUTE_UNIT_LIMIT,
+      );
+      expect((await rpc.getBalance(batchAuthority, { commitment: "confirmed" }).send()).value === 0n).toBe(true);
+
 
       // Claim into Alice's payout balance, then decrypt that balance to verify the transfer
       // credited the full proportional payout. No separate claim output is stored, and the balance
@@ -565,6 +589,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // not just "> 0" — this is the one place the arc proves the encrypted plumbing carried the
       // right number end to end.
       expect(payoutBalanceAfter - payoutBalanceBefore === batchAfterSettle.state.payoutReceived).toBe(true);
+
+      // Step 16: with the payout claimed, alice's join record has nothing left to do; she closes it
+      // and gets its rent back. The joined-amount encrypted store stays (its ACL grants are hers).
+      console.log("deposit-arc close: alice closing her spent join record...");
+      const joinRecordAddress = await vault.deriveJoinRecordAddress(batch, alice.address);
+      await send(alice, [await vault.buildCloseJoinRecordInstruction({ user: alice, batch })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
+      const closedRecord = await rpc.getAccountInfo(joinRecordAddress, { commitment: "confirmed" }).send();
+      expect(closedRecord.value).toBeNull();
 
       // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
       // SKIPPED (measured: `0 pass, 1 skip`, exit 0), so renaming RUN_DEMO_SCENARIOS on either

@@ -80,4 +80,13 @@ pub enum BatcherError {
     /// Dispatch cancellation is reserved to the join mint's wrapper authority.
     #[msg("cancel authority does not match the join confidential mint authority")]
     CancelAuthorityMismatch,
+    /// Authority funding is reclaimable only once the batch is settled, canceled or refunding.
+    #[msg("batch is still live; authority funding is reclaimable after settle, cancel or refund")]
+    BatchStillLive,
+    /// Reclaiming authority funding is reserved to the join mint's wrapper authority.
+    #[msg("reclaim authority does not match the join confidential mint authority")]
+    ReclaimAuthorityMismatch,
+    /// A join record closes only after its payout is claimed or its batch is canceled.
+    #[msg("join record is still live; close it after claiming or once the batch is canceled")]
+    JoinRecordStillLive,
 }

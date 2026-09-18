@@ -11,6 +11,7 @@ import {
 import { createFhevmPublicDecryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
   buildDispatchBatchInstruction,
+  buildReclaimBatchAuthorityInstruction,
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
@@ -31,7 +32,7 @@ import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
-const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
+const SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT = 100_000;
 
 export type DemoOperatorSession = {
   readonly proofService: ProofService;
@@ -173,21 +174,31 @@ export const settleVaultBatch = async (
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });
-  // The batch is settled, so its per-batch table has served its one purpose: deactivate it now and
-  // the crank in prepareNextBatch reclaims the rent once the cooldown has elapsed. A failed
-  // deactivation is a rent-hygiene miss, never a settlement failure — and no longer a permanent
-  // one either: the crank deactivates any table whose batch is settled or canceled, so this eager
-  // attempt is a shortcut on the happy path rather than the only chance the table gets.
+  // The batch is settled, so its per-batch table has served its one purpose and its authority PDA
+  // has paid its last owner-charged rent: deactivate the table (the crank in prepareNextBatch
+  // closes it once the cooldown has elapsed) and take the authority's unspent funding back. A
+  // failure here is a rent-hygiene miss, never a settlement failure — and not a permanent one:
+  // the cranks deactivate any table and drain any authority whose batch is finished, so this eager
+  // attempt is a shortcut on the happy path rather than the only chance either gets.
   try {
     await sendTransaction(
       session.config,
       session.keeper,
-      [getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper })],
-      DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
+      [
+        getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper }),
+        await buildReclaimBatchAuthorityInstruction({
+          authority: session.keeper,
+          batcher: roots.batcher,
+          batch: batch.addresses.batch,
+          batchAuthority: batch.addresses.batchAuthority,
+          joinConfidentialMint: roots.joinConfidentialMint,
+        }),
+      ],
+      SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT,
     );
   } catch (error) {
     console.warn(
-      `settled, but deactivating lookup table ${lookupTableAddress} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `settled, but retiring lookup table ${lookupTableAddress} and reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   return signature;
