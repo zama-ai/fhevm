@@ -14,6 +14,6 @@ type WasmModuleVersionByKey = {
  * tfhe and one tkms WASM module and always loads these versions.
  */
 export const CANONICAL_WASM_VERSIONS: WasmModuleVersionByKey = Object.freeze({
-  tfhe: '1.6.2',
-  kms: '0.14.0-1',
+  tfhe: '1.8.1',
+  kms: '0.15.0-0',
 });

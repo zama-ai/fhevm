@@ -397,7 +397,7 @@ describe("rollout runbook", () => {
           return {
             containers: [
               {
-                image: "ghcr.io/zama-ai/kms/core-service:target-core",
+                image: "ghcr.io/zama-ai/kms/core-service-insecure:target-core",
                 imageId: "sha256:target",
                 name: "kms-core-2",
                 state: "running",

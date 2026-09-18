@@ -79,12 +79,12 @@ jobs:
             package: sns-worker
             needs_localstack: true
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: zkproof-worker
             package: zkproof-worker
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: transaction-sender
             package: transaction-sender
             needs_localstack: true
@@ -95,7 +95,7 @@ jobs:
             package: gw-listener
             needs_localstack: false
             needs_foundry: true
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: host-listener
             package: host-listener
             needs_localstack: false
@@ -112,7 +112,7 @@ jobs:
             package: upgrade-controller
             needs_localstack: false
             needs_foundry: false
-            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+            runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: consensus-detector
             package: consensus-detector
             needs_localstack: false
@@ -167,6 +167,26 @@ jobs:
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
       with:
         node-version: 20.x
+
+    # Warm the image once per runner before parallel tests start containers.
+    # Retry provisioning here rather than retrying failed test assertions.
+    - name: Pre-pull PostgreSQL test image
+      timeout-minutes: 5
+      shell: bash
+      run: |
+        set -euo pipefail
+        for attempt in 1 2 3; do
+          if docker pull postgres:15.7; then
+            docker image inspect postgres:15.7 >/dev/null
+            exit 0
+          fi
+          if [ "$attempt" -lt 3 ]; then
+            echo "PostgreSQL image pull failed (attempt $attempt/3); retrying"
+            sleep "$((attempt * 5))"
+          fi
+        done
+        echo "::error::Failed to pull postgres:15.7 after 3 attempts"
+        exit 1
 
     - name: Start localstack
       if: ${{ matrix.needs_localstack }}

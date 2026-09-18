@@ -259,7 +259,8 @@ export type KmsParty = { party: number; endpoint: string; privateKey: string; db
 
 /**
  * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
- * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * The cores run without auto TLS, so they never enforce the PCR allowlist and zero PCRs suffice.
+ * softwareVersion must be valid semver
  * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
  */
 const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
@@ -556,8 +557,7 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
-  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
-  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  // Auto-revert stays off under blue-green: the cutover merge legitimately replaces blue's in-window digests with green's, which the detector cannot tell from real drift.
   if (plan.blueGreen) {
     envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
   }

@@ -47,6 +47,8 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
+    permissions:
+      contents: 'read' # Required so the reusable workflow can git ls-remote
 
   check-changes:
     if: github.event_name == 'push' || inputs.is_workflow_call

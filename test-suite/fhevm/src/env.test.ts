@@ -235,7 +235,8 @@ describe("env", () => {
       expect(host[`KMS_NODE_STORAGE_PREFIX_${index}`]).toBe(`PUB-p${party}`);
       expect(host[`KMS_NODE_CA_CERT_${index}`]).toBe(expectedCaCert[index]);
     }
-    // context params the deploy requires; mock_enclave => zero PCRs. softwareVersion must be valid
+    // context params the deploy requires; no auto TLS => no PCR allowlist => zero PCRs.
+    // softwareVersion must be valid
     // semver (the KMS core parses it) — never a bare git-SHA image tag like CORE_VERSION.
     expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
     const pcrValues = JSON.parse(host.KMS_PCR_VALUES);

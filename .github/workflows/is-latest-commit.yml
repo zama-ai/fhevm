@@ -12,6 +12,8 @@ permissions: {}
 jobs:
   check:
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    permissions:
+      contents: 'read' # Authenticated git ls-remote against this repository
     outputs:
       is_latest: ${{ steps.check.outputs.is_latest }}
     steps:
@@ -21,8 +23,17 @@ jobs:
           CURRENT_COMMIT: ${{ github.sha }}
           REF_NAME: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          LATEST_COMMIT=$(git ls-remote https://github.com/"$REPOSITORY".git refs/heads/"$REF_NAME" | cut -f1)
+          set -euo pipefail
+          # Unauthenticated ls-remote is challenged by GitHub (no TTY →
+          # "could not read Username") and is rate-limited. Use the job token.
+          auth="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          LATEST_COMMIT="$(
+            git -c http.https://github.com/.extraheader="AUTHORIZATION: basic ${auth}" \
+              ls-remote "https://github.com/${REPOSITORY}.git" "refs/heads/${REF_NAME}" \
+              | cut -f1
+          )"
           if [ -z "$LATEST_COMMIT" ]; then
             echo "::error::Failed to fetch latest commit for $REF_NAME"
             exit 1

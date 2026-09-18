@@ -31,8 +31,8 @@ use connector_utils::{
 use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
 use kms_grpc::kms::v1::{
     CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
-    UserDecryptionResponse, UserDecryptionResponsePayload,
+    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload, SigningSchemeType,
+    TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
 use mocktail::{MockSet, StatusCode, server::MockServer};
@@ -252,23 +252,28 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         match req {
             ProtocolEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
+                signatures: mock_signatures(),
                 ..Default::default()
             }),
             ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => then
                 .pb(UserDecryptionResponse {
                     payload: Some(UserDecryptionResponsePayload::default()),
+                    signatures: mock_signatures(),
                     ..Default::default()
                 }),
             ProtocolEventKind::PrepKeygen(_) => then.pb(KeyGenPreprocResult {
                 preprocessing_id: request_id,
+                signatures: mock_signatures(),
                 ..Default::default()
             }),
             ProtocolEventKind::Keygen(_) => then.pb(KeyGenResult {
                 request_id,
+                signatures: mock_signatures(),
                 ..Default::default()
             }),
             ProtocolEventKind::Crsgen(_) => then.pb(CrsGenResult {
                 request_id,
+                signatures: mock_signatures(),
                 ..Default::default()
             }),
             ProtocolEventKind::NewKmsEpoch(_) => then.pb(GrpcEpochResultResponse::default()),
@@ -284,6 +289,14 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
     });
 
     kms_mocks
+}
+
+fn mock_signatures() -> Vec<TypedSignature> {
+    vec![TypedSignature {
+        scheme: SigningSchemeType::Ecdsa256k1 as i32,
+        // Deterministic so the expected response built in `check_response_data` matches the mock.
+        signature: vec![69u8; 65],
+    }]
 }
 
 async fn wait_for_response_in_db(
@@ -357,6 +370,7 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             decryption_id: r.decryptionId,
             grpc_response: PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
+                signatures: mock_signatures(),
                 ..Default::default()
             },
         },
@@ -364,6 +378,7 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             decryption_id: r.decryptionId,
             grpc_response: UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
+                signatures: mock_signatures(),
                 ..Default::default()
             },
         },
@@ -371,19 +386,23 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
             decryption_id: r.decryptionId,
             grpc_response: UserDecryptionResponse {
                 payload: Some(UserDecryptionResponsePayload::default()),
+                signatures: mock_signatures(),
                 ..Default::default()
             },
         },
         ProtocolEventKind::PrepKeygen(r) => KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
             preprocessing_id: Some(u256_to_request_id(r.prepKeygenId)),
+            signatures: mock_signatures(),
             ..Default::default()
         }),
         ProtocolEventKind::Keygen(r) => KmsGrpcResponse::Keygen(KeyGenResult {
             request_id: Some(u256_to_request_id(r.keyId)),
+            signatures: mock_signatures(),
             ..Default::default()
         }),
         ProtocolEventKind::Crsgen(r) => KmsGrpcResponse::Crsgen(CrsGenResult {
             request_id: Some(u256_to_request_id(r.crsId)),
+            signatures: mock_signatures(),
             ..Default::default()
         }),
         ProtocolEventKind::NewKmsContext(r) => KmsGrpcResponse::NewKmsContext {
