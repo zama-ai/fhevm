@@ -409,7 +409,8 @@ jobs:
         run: |
           mkdir -p /tmp/consensus-artifacts
           ./scripts/record-run-identity.sh | tee /tmp/consensus-artifacts/run-identity.env
-          bun scripts/checkout-build-receipt.ts attach /tmp/consensus-build-receipt.json /tmp/consensus-artifacts/run-identity.env >> /tmp/consensus-artifacts/run-identity.env
+          receipt_identity=$(bun scripts/checkout-build-receipt.ts attach /tmp/consensus-build-receipt.json /tmp/consensus-artifacts/run-identity.env)
+          printf '%s\n' "$receipt_identity" >> /tmp/consensus-artifacts/run-identity.env
           echo "CONSENSUS_ARTIFACT_IDENTITIES_FILE=/tmp/consensus-artifacts/run-identity.env" >> "$GITHUB_ENV"
           echo "CONSENSUS_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           echo "CONSENSUS_RUN_ID=${{ github.run_id }}-${LEG}-${SCENARIO}-${{ matrix.shard }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
@@ -663,7 +664,8 @@ jobs:
         run: |
           mkdir -p /tmp/consensus-artifacts
           ./scripts/record-run-identity.sh | tee /tmp/consensus-artifacts/run-identity.env
-          bun scripts/checkout-build-receipt.ts attach /tmp/consensus-build-receipt.json /tmp/consensus-artifacts/run-identity.env >> /tmp/consensus-artifacts/run-identity.env
+          receipt_identity=$(bun scripts/checkout-build-receipt.ts attach /tmp/consensus-build-receipt.json /tmp/consensus-artifacts/run-identity.env)
+          printf '%s\n' "$receipt_identity" >> /tmp/consensus-artifacts/run-identity.env
           echo "CONSENSUS_ARTIFACT_IDENTITIES_FILE=/tmp/consensus-artifacts/run-identity.env" >> "$GITHUB_ENV"
 
       - name: Heterogeneous scheduling agreement (SCH-01)

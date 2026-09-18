@@ -102,20 +102,20 @@ case_main() {
   run_phase out main "[fork-consensus/F3] CASE COMPLETE" || status=$?
   local -a cases=(FORK-01-COLLIDING-HANDLE FORK-02-DISTINCT-HANDLES FORK-03-ORPHAN-ALLOW-INERT)
   local id
+  # The branch divergence is this family's fault, and a record without it
+  # cannot be told from a run on a single chain.
+  local -a fork_evidence=()
+  local diverged
+  diverged="$(grep -o 'branches diverged: handle 0x[0-9a-f]* canonical 0x[0-9a-f]* fork 0x[0-9a-f]* at [0-9TZ:.-]*' <<<"$out" | tail -1)"
+  if [[ -n "$diverged" ]]; then
+    fork_evidence+=(
+      workload="$(awk '{print $4}' <<<"$diverged")"
+      fault_observed_at="$(awk '{print $NF}' <<<"$diverged")"
+      artifact="canonical_block=$(awk '{print $6}' <<<"$diverged")"
+      artifact="fork_block=$(awk '{print $8}' <<<"$diverged")"
+    )
+  fi
   if [[ "$status" -eq 0 ]]; then
-    # The branch divergence is this family's fault, and a record without it
-    # cannot be told from a run on a single chain.
-    local -a fork_evidence=()
-    local diverged
-    diverged="$(grep -o 'branches diverged: handle 0x[0-9a-f]* canonical 0x[0-9a-f]* fork 0x[0-9a-f]* at [0-9TZ:.-]*' <<<"$out" | tail -1)"
-    if [[ -n "$diverged" ]]; then
-      fork_evidence+=(
-        workload="$(awk '{print $4}' <<<"$diverged")"
-        fault_observed_at="$(awk '{print $NF}' <<<"$diverged")"
-        artifact="canonical_block=$(awk '{print $6}' <<<"$diverged")"
-        artifact="fork_block=$(awk '{print $8}' <<<"$diverged")"
-      )
-    fi
     for id in "${cases[@]}"; do
       cr_record_checked_pass "$id" started_at="$started" cleanup=ok "${fork_evidence[@]}" \
         assert="assertions-ran=pass:the phase printed every case marker"
@@ -135,7 +135,7 @@ case_main() {
         F3) case_id=FORK-03-ORPHAN-ALLOW-INERT ;;
       esac
       if grep -qF "[fork-consensus/${id}] CASE COMPLETE" <<<"$out"; then
-        cr_record_checked_pass "$case_id" started_at="$started" cleanup=ok assert="assertions-ran=pass"
+        cr_record_checked_pass "$case_id" started_at="$started" cleanup=ok "${fork_evidence[@]}" assert="assertions-ran=pass"
       else
         cr_record "$case_id" FAIL started_at="$started" cleanup=ok detail="$reason"
         FAILURES=$((FAILURES + 1))

@@ -61,7 +61,7 @@ import {
   seedForkFromCanonical,
   setIntervalMining,
 } from './forkHelper';
-import { publishHandshake } from './handshake';
+import { publishHandshake, readHandshake } from './handshake';
 import { restoreMiningState } from './abortRecovery';
 import {
   assertCanonicalOutputDigestBindings,

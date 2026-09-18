@@ -71,10 +71,7 @@ fn squash_determinism_for_a_fixed_ciphertext() {
     let keyset: CompressedXofKeySet =
         fhevm_engine_common::utils::safe_deserialize_key(&keyset_bytes)
             .expect("deserialize CompressedXofKeySet");
-    let (compact_public_key, server_key) = keyset
-        .decompress()
-        .expect("decompress the xof keyset")
-        .into_raw_parts();
+    let (compact_public_key, server_key) = keyset.decompress().into_raw_parts();
     let server_key_for_workers = server_key.clone();
     tfhe::set_server_key(server_key);
 
@@ -350,10 +347,7 @@ fn squash_a_production_ciphertext() {
     let keyset: CompressedXofKeySet =
         fhevm_engine_common::utils::safe_deserialize_key(&keyset_bytes)
             .expect("deserialize the production CompressedXofKeySet");
-    let (_pk, server_key) = keyset
-        .decompress()
-        .expect("decompress the production keyset")
-        .into_raw_parts();
+    let (_pk, server_key) = keyset.decompress().into_raw_parts();
     tfhe::set_server_key(server_key);
 
     let compressed = std::fs::read(&ct_path).expect("read the production ciphertext");
@@ -414,7 +408,7 @@ fn squash_production_ciphertext_both_serializations() {
     let keyset: CompressedXofKeySet =
         fhevm_engine_common::utils::safe_deserialize_key(&keyset_bytes)
             .expect("deserialize the production keyset");
-    let (_pk, server_key) = keyset.decompress().expect("decompress").into_raw_parts();
+    let (_pk, server_key) = keyset.decompress().into_raw_parts();
     tfhe::set_server_key(server_key);
 
     let compressed_ct = std::fs::read(std::env::var("PROD_CT").expect("PROD_CT"))
@@ -471,10 +465,7 @@ fn keyset_decompression_determinism() {
         let keyset: CompressedXofKeySet =
             fhevm_engine_common::utils::safe_deserialize_key(&keyset_bytes)
                 .expect("deserialize the keyset");
-        let (_pk, server_key) = keyset
-            .decompress()
-            .expect("decompress the keyset")
-            .into_raw_parts();
+        let (_pk, server_key) = keyset.decompress().into_raw_parts();
         tfhe::set_server_key(server_key);
 
         let ct = SupportedFheCiphertexts::decompress_no_memcheck(ct_type, &compressed_ct)
@@ -527,7 +518,7 @@ fn squash_under_two_server_key_clones() {
 
     let keyset: CompressedXofKeySet =
         fhevm_engine_common::utils::safe_deserialize_key(&keyset_bytes).expect("deserialize");
-    let (_pk, server_key) = keyset.decompress().expect("decompress").into_raw_parts();
+    let (_pk, server_key) = keyset.decompress().into_raw_parts();
 
     let mut digests = Vec::new();
     for clone_index in 0..3 {
