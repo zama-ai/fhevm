@@ -33,7 +33,8 @@ COMMON_CHART="${COMMON_CHART:-oci://hub.zama.org/ghcr/zama-zws/helm-charts/commo
 COMMON_CHART_VERSION="${COMMON_CHART_VERSION:-0.3.3}"
 COMPONENTS="${COMPONENTS:-kms-connector relayer test-suite}"
 # Same precedence as bg-green.sh: the Green coprocessor carries the tag the round upgrades to.
-TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" coprocessor-1-gcs-tx-sender \
+GREEN_SLOT="${GREEN_SLOT--gcs}"
+TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-1${GREEN_SLOT}-tx-sender" \
   -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
 TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
   -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
