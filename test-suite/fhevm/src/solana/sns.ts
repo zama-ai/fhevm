@@ -8,6 +8,7 @@
 
 import { coprocessorDbPsql } from "../layout";
 import { run } from "../utils/process";
+import { timed } from "../utils/timing";
 import { until } from "../utils/until";
 
 const BYTES32 = /^0x[0-9a-f]{64}$/i;
@@ -32,7 +33,8 @@ export const waitForSnsCommit = async (
 ): Promise<void> => {
   if (!BYTES32.test(handle)) throw new Error(`invalid handle before ciphertext wait: ${handle}`);
   const hex = handle.slice(2);
-  await until(
+  await timed(`sns commit ${handle.slice(0, 10)}`, () =>
+    until(
     async () => {
       const result = await run(
         [
@@ -49,5 +51,6 @@ export const waitForSnsCommit = async (
       intervalMs: SNS_COMMIT_POLL_INTERVAL_MS,
       description: `ciphertext materialization for ${handle}`,
     },
+    ),
   );
 };

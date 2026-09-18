@@ -22,6 +22,7 @@ import {
 } from "./provision";
 import { waitForSnsCommit } from "./sns";
 import { run } from "../utils/process";
+import { timed } from "../utils/timing";
 
 export type { BalanceStore };
 
@@ -246,24 +247,27 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
 export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies = createRealTwoHolderDependencies()) => {
   let scenario: TwoHolderScenario | undefined;
   try {
-    scenario = await dependencies.provision();
-    const initialAlice = await dependencies.readBalance(scenario, scenario.alice);
-    const initialBob = await dependencies.readBalance(scenario, scenario.bob);
+    const provisioned = await timed("provision two holders (mints, wrap 1000)", () => dependencies.provision());
+    scenario = provisioned;
+    const initialAlice = await dependencies.readBalance(provisioned, provisioned.alice);
+    const initialBob = await dependencies.readBalance(provisioned, provisioned.bob);
     await dependencies.waitForHandle(initialAlice.currentHandle);
     await dependencies.waitForHandle(initialBob.currentHandle);
-    await dependencies.decrypt(scenario, scenario.alice, initialAlice, 1000n);
-    await dependencies.decrypt(scenario, scenario.bob, initialBob, 0n);
+    await timed("user decrypt alice=1000", () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, 1000n));
+    await timed("user decrypt bob=0", () => dependencies.decrypt(provisioned, provisioned.bob, initialBob, 0n));
 
-    await dependencies.transfer(scenario, initialAlice, initialBob);
-    const finalAlice = await dependencies.readBalance(scenario, scenario.alice);
-    const finalBob = await dependencies.readBalance(scenario, scenario.bob);
+    await timed("encrypt + input proof + confidential transfer(400)", () =>
+      dependencies.transfer(provisioned, initialAlice, initialBob),
+    );
+    const finalAlice = await dependencies.readBalance(provisioned, provisioned.alice);
+    const finalBob = await dependencies.readBalance(provisioned, provisioned.bob);
     if (finalAlice.currentHandle === initialAlice.currentHandle || finalBob.currentHandle === initialBob.currentHandle) {
       throw new Error("confidential transfer did not rotate both current balance handles");
     }
     await dependencies.waitForHandle(finalAlice.currentHandle);
     await dependencies.waitForHandle(finalBob.currentHandle);
-    await dependencies.decrypt(scenario, scenario.alice, finalAlice, 600n);
-    await dependencies.decrypt(scenario, scenario.bob, finalBob, 400n);
+    await timed("user decrypt alice=600", () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, 600n));
+    await timed("user decrypt bob=400", () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, 400n));
     console.log("[solana-two-holder-transfer] Alice=600 Bob=400");
   } finally {
     await dependencies.cleanup(scenario);
