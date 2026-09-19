@@ -147,10 +147,17 @@ live_ok() {
     || fail "party ${party}: live stack is ${v}, expected ${BCS_STACK_VERSION}; run bg-reset.sh first"
   active=$(psql_party "${party}" "SELECT CASE WHEN to_regclass('upgrade_state') IS NULL THEN 0 ELSE (SELECT count(*) FROM upgrade_state WHERE status = 'in_progress') END;")
   [[ "${active}" == "0" ]] || fail "party ${party}: ${active} upgrade attempt(s) still in_progress; clear upgrade_state before starting a new Green"
-  schema=$(psql_party "${party}" "SELECT count(*) FROM pg_namespace WHERE nspname = 'gcs-${GCS_STACK_VERSION}';")
-  [[ "${schema}" == "0" ]] || fail "party ${party}: schema gcs-${GCS_STACK_VERSION} already exists"
-  helm status "$(green_release "${party}")" -n "${NAMESPACE}" >/dev/null 2>&1 \
-    && fail "party ${party}: Green release $(green_release "${party}") already installed"
+  local green_ver=""
+  if helm status "$(green_release "${party}")" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    green_ver=$(helm get values "$(green_release "${party}")" -n "${NAMESPACE}" -o json 2>/dev/null \
+      | jq -r '.commonConfig.stackVersion // ""')
+    [[ "${green_ver}" == "${GCS_STACK_VERSION}" ]] \
+      || fail "party ${party}: $(green_release "${party}") already installed at ${green_ver:-unknown}, not ${GCS_STACK_VERSION}"
+    echo "party ${party}: Green ${GCS_STACK_VERSION} already installed, resuming"
+  else
+    schema=$(psql_party "${party}" "SELECT count(*) FROM pg_namespace WHERE nspname = 'gcs-${GCS_STACK_VERSION}';")
+    [[ "${schema}" == "0" ]] || fail "party ${party}: schema gcs-${GCS_STACK_VERSION} exists with no Green release; run bg-reset.sh first"
+  fi
   ready=$(kubectl get deploy -n "${NAMESPACE}" "$(live_release "${party}")-host-listener-consumer" -o jsonpath='{.status.readyReplicas}')
   [[ "${ready}" == "1" ]] || fail "party ${party}: live consumer not ready"
 }
@@ -231,7 +238,8 @@ start)
   done
   # By release rather than by name pattern: with GREEN_SLOT="" the Green names carry no marker.
   for rel in "${green_releases[@]}"; do
-    for d in $(helm get manifest "${rel}" -n "${NAMESPACE}" | yq -r 'select(.kind == "Deployment") | .metadata.name'); do
+    for d in $(helm get manifest "${rel}" -n "${NAMESPACE}" \
+                 | yq -r 'select(.kind == "Deployment") | .metadata.name' | grep -v '^---$'); do
       kubectl rollout status "deploy/${d}" -n "${NAMESPACE}" --timeout=300s >/dev/null
     done
   done

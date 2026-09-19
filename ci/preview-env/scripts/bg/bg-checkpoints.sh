@@ -219,7 +219,7 @@ cutover)
     check "party ${i}: Green schema dropped (gcs schemas = ${g})" "${g}" = "0"
     r=$(fleet_ready green "${i}")
     check "party ${i}: Green deployments ready ${r}" "${r%/*}" = "${r#*/}" -a "${r#*/}" != "0"
-    bad=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "^coprocessor-(${i}|polygon-${i})${GREEN_SLOT}-" --arg v "${GCS_STACK_VERSION}" '[.items[] | select(.metadata.name | test($re)) | select(.status.phase == "Running") | select(.metadata.labels["app.kubernetes.io/version"] != $v)] | length')
+    bad=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "^coprocessor-(${i}|polygon-${i})${GREEN_SLOT}-(gw|host|sns|tfhe|tx|zk|upgrade|consensus)" --arg v "${GCS_STACK_VERSION}" '[.items[] | select(.metadata.name | test($re)) | select(.status.phase == "Running") | select(.metadata.labels["app.kubernetes.io/version"] != $v)] | length')
     check "party ${i}: every running Green replica carries version label ${GCS_STACK_VERSION} (${bad} without)" "${bad}" = "0"
     paused=$(kubectl logs -n "${NAMESPACE}" "deploy/coprocessor-${i}${LIVE_RELEASE_SUFFIX}-tx-sender" --tail=500 2>/dev/null | grep -c "pausing into no-op mode" || true)
     check "party ${i}: retired tx-sender paused into no-op mode (${paused} log line)" "${paused}" -ge 1
