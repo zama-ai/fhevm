@@ -84,14 +84,31 @@ resolve_ref() { # an image tag is either a release tag (vX.Y.Z-N) or a short com
   fi
 }
 cm_value() { kubectl get configmap -n "${NAMESPACE}" "$1" -o json | jq -r --arg k "$2" '.data[$k] // empty'; }
-rpc_for() { # release -> RPC URL usable from this machine, or empty
+# The rpc Secret exists only on chain_mode=testnets. Elsewhere the host RPC is a ClusterIP that
+# the test-suite Job carries, so fall back to that rather than erroring on a missing Secret.
+secret_rpc() { kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath="{.data.$1}" 2>/dev/null | base64 -d 2>/dev/null || true; }
+job_rpc() { kubectl get job -n "${NAMESPACE}" test-suite -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name=='$1')].value}" 2>/dev/null || true; }
+rpc_for() { # release -> RPC URL, or empty
+  local u
   case "$1" in
-    host-contracts)         kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.ethereum-rpc-url}' | base64 -d ;;
-    host-contracts-polygon) kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.polygon-rpc-url}' | base64 -d ;;
+    host-contracts)         u=$(secret_rpc ethereum-rpc-url); [[ -n "${u}" ]] || u=$(job_rpc RPC_URL); echo "${u}" ;;
+    host-contracts-polygon) secret_rpc polygon-rpc-url ;;
     gateway-contracts)      echo "${GATEWAY_RPC_URL:-}" ;;
   esac
 }
-impl_of() { [[ -n "$1" ]] && cast storage "$2" "${IMPL_SLOT}" --rpc-url "$1" 2>/dev/null | sed -E 's/^0x0{24}/0x/' || echo "?"; }
+# A ClusterIP URL is unreachable from here, so read the slot from inside the namespace instead.
+impl_of() {
+  local rpc="$1" proxy="$2" raw body
+  [[ -n "${rpc}" ]] || { echo "?"; return; }
+  if [[ "${rpc}" == *.svc* || "${rpc}" == *cluster.local* || "${rpc}" == *blockchain-dev* ]]; then
+    body=$(jq -nc --arg a "${proxy}" --arg s "${IMPL_SLOT}" \
+      '{jsonrpc:"2.0",id:1,method:"eth_getStorageAt",params:[$a,$s,"latest"]}')
+    raw=$(bash "$(dirname "${BASH_SOURCE[0]}")/cluster-rpc.sh" "${rpc}" "${body}" 2>/dev/null | jq -r '.result // empty')
+  else
+    raw=$(cast storage "${proxy}" "${IMPL_SLOT}" --rpc-url "${rpc}" 2>/dev/null)
+  fi
+  [[ -n "${raw}" ]] && sed -E 's/^0x0{24}/0x/' <<<"${raw}" || echo "?"
+}
 
 # Decide per release what to upgrade. Sets PLAN (lines "<Contract> <cm key> <env> <from> <to> <proxy>") for contracts with a bump.
 plan_release() {
