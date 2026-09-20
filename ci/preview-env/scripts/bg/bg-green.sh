@@ -22,6 +22,9 @@
 #      GCS_STACK_VERSION (default: commonConfig.stackVersion of the gcs overlay),
 #      COPROCESSOR_CHART (charts/coprocessor of this checkout),
 #      BCS_STACK_VERSION (default: what the running live binary prints for --stack-version),
+#      ALLOW_ACTIVE_ATTEMPT (unset) - start Green although an attempt is in_progress. Only for a
+#        proposal no Green ever picked up: it is refused once a round is past UpgradeActivated,
+#        so it cannot clobber a running dry run or cutover,
 #      GREEN_SLOT (-gcs), LIVE_RELEASE_PREFIX (coprocessor), LIVE_RELEASE_SUFFIX ("") - the helm
 #        slots. A second round in the same env inverts them: the live fleet is in -gcs and the new
 #        Green takes the slot the retired one vacated, i.e. GREEN_SLOT="" LIVE_RELEASE_SUFFIX=-gcs.
@@ -140,13 +143,22 @@ green_helm_args() {
 
 # The live fleet must be the one this round upgrades from, with no attempt still in progress
 # (ingest.rs `can_replace` rejects a proposal while one is) and no schema for the target version.
+# ALLOW_ACTIVE_ATTEMPT relaxes the attempt check for a wedged proposal only; see below.
 live_ok() {
   local party="$1" v active schema ready
   v=$(psql_party "${party}" "SELECT stack_version FROM versioning;")
   [[ "$(version_mm "${v}")" == "$(version_mm "${BCS_STACK_VERSION}")" ]] \
     || fail "party ${party}: live stack is ${v}, expected ${BCS_STACK_VERSION}; run bg-reset.sh first"
   active=$(psql_party "${party}" "SELECT CASE WHEN to_regclass('upgrade_state') IS NULL THEN 0 ELSE (SELECT count(*) FROM upgrade_state WHERE status = 'in_progress') END;")
-  [[ "${active}" == "0" ]] || fail "party ${party}: ${active} upgrade attempt(s) still in_progress; clear upgrade_state before starting a new Green"
+  if [[ "${active}" != "0" ]]; then
+    # Only UpgradeActivated can be a proposal no Green ever picked up; the later states mean a round
+    # is running, and reinstalling Green under it would disrupt a live dry run or cutover.
+    local states
+    states=$(psql_party "${party}" "SELECT DISTINCT state FROM upgrade_state WHERE status = 'in_progress';")
+    [[ "${ALLOW_ACTIVE_ATTEMPT:-}" == "1" && "${states}" == "UpgradeActivated" ]] \
+      || fail "party ${party}: ${active} attempt(s) in_progress (${states//$'\n'/,}); clear upgrade_state, or if this is a proposal no Green picked up, set ALLOW_ACTIVE_ATTEMPT=1"
+    echo "party ${party}: ${active} attempt(s) in UpgradeActivated; starting Green to pick them up (ALLOW_ACTIVE_ATTEMPT=1)"
+  fi
   local green_ver=""
   if helm status "$(green_release "${party}")" -n "${NAMESPACE}" >/dev/null 2>&1; then
     green_ver=$(helm get values "$(green_release "${party}")" -n "${NAMESPACE}" -o json 2>/dev/null \
