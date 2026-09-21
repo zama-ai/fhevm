@@ -12,8 +12,8 @@ use std::str::FromStr;
 use crate::types::FhevmError;
 
 pub const SAFE_SER_DESER_LIMIT: u64 = 1024 * 1024 * 16;
-pub const SAFE_SER_DESER_KEY_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
-pub const SAFE_SER_DESER_SNS_KEY_LIMIT: u64 = 1024 * 1024 * 1024 * 2;
+pub const SAFE_SER_DESER_KEY_LIMIT: u64 = 1024 * 1024 * 1024 * 4;
+pub const SAFE_SER_DESER_SNS_KEY_LIMIT: u64 = 1024 * 1024 * 1024 * 4;
 
 pub fn safe_serialize<T: Serialize + Named + Versionize>(object: &T) -> Vec<u8> {
     let mut out = vec![];
