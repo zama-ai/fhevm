@@ -44,6 +44,7 @@ type RolloutKmsNodeUpgradeOptions = {
 };
 type RolloutKmsOperatorUpgradeOptions = RolloutKmsNodeUpgradeOptions & {
   overrides?: LocalOverride[];
+  epochMigration?: State["kmsEpochMigration"];
 };
 type RolloutVersionLockOptions = {
   allowedVersionKeys: string[];
@@ -349,7 +350,7 @@ export const createRolloutContext = (
         } catch (error) {
           try {
             await receipt.record("upgrade-kms-operator-failed", `KMS operator ${operatorId}`, {
-              details: { error: error instanceof Error ? error.message : String(error), operatorId },
+              details: { error: error instanceof Error ? error.message : String(error), operatorId, epochMigration: options.epochMigration },
               docker: true,
               lockFile: options.lockFile,
             });
@@ -362,7 +363,7 @@ export const createRolloutContext = (
           throw error;
         }
         await receipt.record("upgrade-kms-operator", `KMS operator ${operatorId}`, {
-          details: { operatorId },
+          details: { operatorId, epochMigration: options.epochMigration },
           docker: true,
           lockFile: options.lockFile,
         });

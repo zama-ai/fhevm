@@ -18,6 +18,7 @@ import {
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
   supportsHostListenerConsumer,
+  supportsKmsEpochMigration,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
@@ -2457,7 +2458,7 @@ const thresholdKmsOperatorUpgradeOperations: ThresholdKmsOperatorUpgradeOperatio
 /** Upgrades one serving operator's KMS Core and matching Connector without yielding between them. */
 export const upgradeThresholdKmsOperator = async (
   operatorId: number,
-  options: { lockFile: string; overrides?: LocalOverride[] },
+  options: { lockFile: string; overrides?: LocalOverride[]; epochMigration?: State["kmsEpochMigration"] },
   operations: ThresholdKmsOperatorUpgradeOperations = thresholdKmsOperatorUpgradeOperations,
 ) => {
   const state = await operations.loadState();
@@ -2504,6 +2505,9 @@ export const upgradeThresholdKmsOperator = async (
     locallyBuilt: hasFullConnectorOverride(lockedState.overrides),
     versions: connectorVersions(lockedState.versions.env),
   };
+  if (options.epochMigration && !supportsKmsEpochMigration(targetVersion)) {
+    throw new PreflightError("Explicit epoch migration requires a KMS 0.15 release tag");
+  }
   const missingConnectorVersion = KMS_CONNECTOR_VERSION_KEYS.find(
     (key) => !targetConnector.versions[key]?.trim(),
   );
@@ -2560,6 +2564,7 @@ export const upgradeThresholdKmsOperator = async (
     },
     kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
     kmsConnectorDeploymentByNodeId: Object.keys(perNodeConnectors).length ? perNodeConnectors : undefined,
+    kmsEpochMigration: options.epochMigration ?? state.kmsEpochMigration,
   };
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.assertQuorum(state, operatorId);

@@ -240,6 +240,7 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  kmsEpochMigration?: Array<{ context_id: string; epoch_ids: string[] }>;
   /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
   kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];

@@ -368,6 +368,10 @@ export const kmsCoreImageForVersion = (version: string): string => {
   return `ghcr.io/zama-ai/kms/${image}:${version}`;
 };
 
+/** Epoch migration is a 0.15-only startup input; do not guess support for SHA pins. */
+export const supportsKmsEpochMigration = (version: string): boolean =>
+  /^v?0\.15\.\d+(?:[-+].*)?$/.test(version);
+
 /** Detects when kms-core still expects the legacy config schema. */
 export const requiresLegacyKmsCoreConfig = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.CORE_VERSION ?? "", [0, 13, 10]);

@@ -34,6 +34,12 @@ const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
+// kms-init creates exactly this context/epoch; match KMS's own upgrade-test mapping.
+export const kmsEpochMigration = [{
+  context_id: "0700000000000000000000000000000000000000000000000000000000000001",
+  epoch_ids: ["0800000000000000000000000000000000000000000000000000000000000001"],
+}];
+
 export const predecessorImagePlan = [
   { image: "db-migration", target: "db-migration" },
   { image: "host-listener", target: "host-listener" },
@@ -628,6 +634,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
+    epochMigration: kmsEpochMigration,
     overrides: [{ group: "kms-connector" }],
   });
   await assertKmsCoreVersions([1], phaseVersions.connector.CORE_VERSION!);
@@ -653,6 +660,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
+      epochMigration: kmsEpochMigration,
       overrides: [{ group: "kms-connector" }],
     });
     const operatorBoundary = await mineHostBlock();
