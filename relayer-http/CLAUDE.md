@@ -26,13 +26,13 @@ relayer-http/
     ├── main.rs                # load settings → init logging → App → serve until SIGINT/SIGTERM → drain → exit
     ├── lib.rs                 # App: the one shared state (both aggregators, http settings, shutdown token)
     ├── settings.rs            # Settings, LogConfig, HttpConfig: YAML + APP_<SECTION>__<FIELD> overrides
-    ├── logging.rs             # tracing subscriber: json | pretty | compact, RUST_LOG filter
+    ├── logging.rs             # tracing subscriber (json | pretty | compact, RUST_LOG) + Log: one request's identifiers on every line
     ├── endpoint/              # the HTTP layer; start with its docs.md
     │   ├── mod.rs             # router() and serve()
     │   ├── error.rs           # ApiError: the one error body and its mapping
     │   ├── validate.rs        # rules shared by the routes (handles, extraData)
     │   ├── ops.rs             # GET /liveness, GET /healthz
-    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler
+    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (logs each step)
     └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
         ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs
         ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
@@ -106,7 +106,9 @@ a trait so that Redis (or another store) can back it later.
 error). Errors are logged once, at the boundary that answers the client. No `error!` inside a module for an expected
 failure.
 
-**Logging.** `tracing` only, structured fields, short messages, `request_id` on every span. Never log request or
+**Logging.** `tracing` only, structured fields, short messages. Every endpoint line about a request goes through its
+`Log` (`logging.rs`) and carries `request_id`, `flow`, `handles`, `decryption_id`, the last two `none` until known:
+a known event is a method on `Log`, any other line is `log!(level, log, fields…, "message")`. Never log request or
 response bodies, shares, signatures, header values or URLs. The subscriber is installed by `main`, never by a module;
 `log:` is optional and defaults to JSON lines (`log.format`: `json` | `pretty` | `compact`, plus the relayer's
 `show_*` switches); the level filter is `RUST_LOG`, default `warn,relayer_http=info`.

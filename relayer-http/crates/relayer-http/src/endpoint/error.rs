@@ -1,13 +1,14 @@
-//! The only error a handler returns: `{ "code", "message", "requestId" }`, logged once here, at the boundary.
+//! The only error a handler returns: `{ "code", "message", "requestId" }`, logged once here, at the boundary, with
+//! the request's identifiers (`Log`).
 
 use axum::Json;
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use kms_connector_api::ErrorCode;
 use serde::Serialize;
-use tracing::{info, warn};
 
 use crate::kms_aggregator::AggregationError;
+use crate::logging::Log;
 
 /// Wire body of every error.
 #[derive(Debug, Serialize)]
@@ -22,13 +23,15 @@ pub struct ErrorBody {
 pub struct ApiError {
     pub status: StatusCode,
     pub body: ErrorBody,
+    /// The request's identifiers, for the one log line this error produces.
+    pub log: Log,
 }
 
 impl ApiError {
     pub fn new(
         status: StatusCode,
         code: &'static str,
-        request_id: &str,
+        log: &Log,
         message: impl Into<String>,
     ) -> Self {
         Self {
@@ -36,26 +39,27 @@ impl ApiError {
             body: ErrorBody {
                 code,
                 message: message.into(),
-                request_id: request_id.to_owned(),
+                request_id: log.request_id.clone(),
             },
+            log: log.clone(),
         }
     }
 
     /// The request is wrong: unreadable or oversized body, invalid JSON, unknown field, wrong content type, or a
     /// validation rule. `message` names the field.
-    pub fn malformed(request_id: &str, message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, "malformed", request_id, message)
+    pub fn malformed(log: &Log, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, "malformed", log, message)
     }
 
     /// The aggregator's verdict. A dominant connector error is answered with the connector's own status and code.
-    pub fn aggregation(request_id: &str, error: AggregationError) -> Self {
+    pub fn aggregation(log: &Log, error: AggregationError) -> Self {
         match error {
             AggregationError::Timeout {
                 counted, threshold, ..
             } => Self::new(
                 StatusCode::GATEWAY_TIMEOUT,
                 "timeout",
-                request_id,
+                log,
                 format!("KMS nodes did not answer in time ({counted} of {threshold} responses)"),
             ),
             AggregationError::ThresholdNotReached {
@@ -70,7 +74,7 @@ impl ApiError {
                 Self::new(
                     status,
                     code.as_str(),
-                    request_id,
+                    log,
                     format!(
                         "KMS threshold not reached ({counted} of {threshold} responses, {rejected} rejected)"
                     ),
@@ -79,28 +83,25 @@ impl ApiError {
             AggregationError::Cancelled => Self::new(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "shutting_down",
-                request_id,
+                log,
                 "relayer is shutting down",
             ),
-            AggregationError::Internal(message) => Self::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "internal",
-                request_id,
-                message,
-            ),
+            AggregationError::Internal(message) => {
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", log, message)
+            }
         }
     }
 }
 
 impl IntoResponse for ApiError {
-    /// One log line per failed request: 4xx are the client's (info), 5xx are ours or the nodes' (warn).
+    /// One log line per failed request, with the request's identifiers: 4xx are the client's (info), 5xx are ours
+    /// or the nodes' (warn).
     fn into_response(self) -> Response {
-        let (request_id, status, code) =
-            (&self.body.request_id, self.status.as_u16(), self.body.code);
+        let (status, code) = (self.status.as_u16(), self.body.code);
         if self.status.is_server_error() {
-            warn!(request_id, status, code, "request failed");
+            self.log.failed(status, code);
         } else {
-            info!(request_id, status, code, reason = %self.body.message, "request rejected");
+            self.log.rejected(status, code, &self.body.message);
         }
         let mut response = (self.status, Json(&self.body)).into_response();
         tag(&mut response, &self.body.request_id);
@@ -113,7 +114,7 @@ pub async fn not_found() -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
         "not_found",
-        &super::flows::request_id(),
+        &Log::new("none"),
         "no such route",
     )
 }
@@ -123,7 +124,7 @@ pub async fn method_not_allowed() -> ApiError {
     ApiError::new(
         StatusCode::METHOD_NOT_ALLOWED,
         "method_not_allowed",
-        &super::flows::request_id(),
+        &Log::new("none"),
         "method not allowed on this route",
     )
 }
@@ -156,10 +157,20 @@ mod tests {
         (status, header, serde_json::from_slice(&bytes).unwrap())
     }
 
+    fn log(request_id: &str) -> Log {
+        Log {
+            request_id: request_id.to_owned(),
+            ..Log::new("test")
+        }
+    }
+
     #[tokio::test]
     async fn body_has_exactly_code_message_and_request_id() {
-        let (status, header, body) =
-            rendered(ApiError::malformed("req-1", "handles: must not be empty")).await;
+        let (status, header, body) = rendered(ApiError::malformed(
+            &log("req-1"),
+            "handles: must not be empty",
+        ))
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(header, "req-1");
         assert_eq!(
@@ -223,7 +234,7 @@ mod tests {
             ),
         ];
         for (error, expected_status, expected_code) in cases {
-            let (status, _, body) = rendered(ApiError::aggregation("req-2", error)).await;
+            let (status, _, body) = rendered(ApiError::aggregation(&log("req-2"), error)).await;
             assert_eq!(
                 (status, body["code"].as_str().unwrap()),
                 (expected_status, expected_code)
@@ -252,7 +263,7 @@ mod tests {
             ErrorCode::Unknown,
         ] {
             let error = ApiError::aggregation(
-                "r",
+                &log("r"),
                 AggregationError::ThresholdNotReached {
                     counted: 0,
                     threshold: 1,

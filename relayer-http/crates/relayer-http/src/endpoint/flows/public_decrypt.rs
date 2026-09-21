@@ -8,12 +8,12 @@ use axum::extract::rejection::JsonRejection;
 use axum::response::{IntoResponse, Response};
 use kms_connector_api::PublicDecryptionRequest;
 use serde::Deserialize;
-use tracing::info;
 
 use super::Reply;
 use crate::App;
 use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
+use crate::logging::Log;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 #[derive(Debug, Clone, Deserialize)]
@@ -33,29 +33,41 @@ pub fn validate(request: &PublicDecryptRequest, chain_ids: &[u64]) -> Result<(),
     validate::extra_data("extraData", &request.extra_data)
 }
 
-/// One request: mint the id, parse (axum did it: `body` is `Err` for invalid JSON, an unknown field, a wrong
-/// content type or an oversized body), validate, convert to the connector DTO, aggregate, answer.
+/// One request, logged step by step under its own `Log`.
 pub async fn handle(
     app: State<App>,
     body: Result<Json<PublicDecryptRequest>, JsonRejection>,
+) -> Response {
+    let mut log = Log::new("public_decrypt");
+    process(&app, body, &mut log)
+        .await
+        .unwrap_or_else(IntoResponse::into_response)
+}
+
+/// Parse (axum did it: `body` is `Err` for invalid JSON, an unknown field, a wrong content type or an oversized
+/// body), validate, convert to the connector DTO, aggregate, answer.
+async fn process(
+    app: &App,
+    body: Result<Json<PublicDecryptRequest>, JsonRejection>,
+    log: &mut Log,
 ) -> Result<Response, ApiError> {
-    let request_id = super::request_id();
-    let Json(request) = body.map_err(|e| ApiError::malformed(&request_id, e.body_text()))?;
-    validate(&request, &app.http.supported_chain_ids)
-        .map_err(|e| ApiError::malformed(&request_id, e.to_string()))?;
+    let Json(request) = body.map_err(|e| {
+        log.body_rejected(&e.body_text());
+        ApiError::malformed(log, e.body_text())
+    })?;
+    log.received(request.ciphertext_handles.clone());
+    validate(&request, &app.http.supported_chain_ids).map_err(|e| {
+        log.validation_failed(&e.field, &e.issue);
+        ApiError::malformed(log, e.to_string())
+    })?;
     let request = PublicDecryptionRequest::from(request);
-    info!(
-        request_id,
-        decryption_id = %request.id(),
-        handles = request.ctHandles.len(),
-        "public decrypt request"
-    );
+    log.forwarded(request.id());
     let output = app
         .public_decrypt
-        .run(&request_id, request)
+        .run(&log.request_id, request)
         .await
-        .map_err(|e| ApiError::aggregation(&request_id, e))?;
-    Ok(Reply::succeeded(request_id, output).into_response())
+        .map_err(|e| ApiError::aggregation(log, e))?;
+    Ok(Reply::succeeded(log.clone(), output).into_response())
 }
 
 /// The body the connector receives (RFC-033).
