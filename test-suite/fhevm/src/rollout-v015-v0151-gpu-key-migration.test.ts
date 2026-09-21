@@ -36,19 +36,24 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
   ...overrides,
 });
 
+const greenCandidate = { RFC029_GREEN_SHA: "c9a9e929308973ed949dcea86c4c5f2f5e221c3a" };
+
 describe("RFC 029 rollout gates", () => {
   test("requires an exact 0.15 Blue tag", () => {
     expect(() => migrationVersions({})).toThrow("RFC029_BLUE_TAG is required");
     expect(() => migrationVersions({ RFC029_BLUE_TAG: "latest" })).toThrow("release tag or a full commit SHA");
-    expect(migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" }).blueTag).toBe("v0.15.0-0");
+    expect(migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" }).blueTag).toBe("v0.15.0-0");
     expect(() => migrationVersions({ RFC029_BLUE_TAG: "04fb072" })).toThrow("full commit SHA");
-    const versions = migrationVersions({ RFC029_BLUE_TAG: "04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c" });
+    const versions = migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c" });
     expect(versions.blueRef).toBe("04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c");
     expect(versions.blueTag).toBe("04fb072");
+    expect(versions.greenTag).toBe("c9a9e92");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" })).toThrow("RFC029_GREEN_SHA is required");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0", RFC029_GREEN_SHA: "main" })).toThrow("full commit SHA");
   });
 
   test("uses the last published 0.14 images as the first rollout predecessor", () => {
-    const versions = migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" });
+    const versions = migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" });
     expect(versions.baselineTag).toBe("v0.14.1");
     expect(versions.baseline.CORE_VERSION).toBe("v0.14.1");
     expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
@@ -65,10 +70,11 @@ describe("RFC 029 rollout gates", () => {
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);
     expect(scenario.hostChains).toHaveLength(2);
+    expect(scenario.topology).toEqual({ count: 3, threshold: 2 });
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
   });
 
-  test("builds every 0.15 coprocessor image used by the first cutover", () => {
+  test("pulls every coprocessor image used by both cutovers", () => {
     expect(predecessorImagePlan.map(({ image }) => image)).toEqual([
       "db-migration",
       "host-listener",
@@ -94,7 +100,7 @@ describe("RFC 029 rollout gates", () => {
 
   test("changes only the intended deployment unit in each version lock", () => {
     const baseline: Record<string, string> = {
-      ...migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" }).baseline,
+      ...migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" }).baseline,
       LISTENER_CORE_VERSION: "baseline-listener",
       RELAYER_VERSION: "baseline-relayer",
       TEST_SUITE_VERSION: "baseline-test-suite",

@@ -28,7 +28,7 @@ import {
 import { coprocessorVersionKeys, migrationPhaseVersions, migrationVersions, versionSources } from "./versions";
 
 const CONNECTOR_PARTIES = 4;
-const OPERATOR_COUNT = 2;
+const OPERATOR_COUNT = 3;
 const CONNECTOR_SERVICES = ["db-migration", "gw-listener", "kms-worker", "tx-sender"] as const;
 const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
@@ -41,15 +41,15 @@ export const kmsEpochMigration = [{
 }];
 
 export const predecessorImagePlan = [
-  { image: "db-migration", target: "db-migration" },
-  { image: "host-listener", target: "host-listener" },
-  { image: "gw-listener", target: "gw-listener" },
-  { image: "tfhe-worker", target: "tfhe-worker" },
-  { image: "zkproof-worker", target: "zkproof-worker" },
-  { image: "sns-worker", target: "sns-worker" },
-  { image: "tx-sender", target: "transaction-sender" },
-  { image: "consensus-detector", target: "consensus-detector" },
-  { image: "upgrade-controller", target: "upgrade-controller" },
+  { image: "db-migration" },
+  { image: "host-listener" },
+  { image: "gw-listener" },
+  { image: "tfhe-worker" },
+  { image: "zkproof-worker" },
+  { image: "sns-worker" },
+  { image: "tx-sender" },
+  { image: "consensus-detector" },
+  { image: "upgrade-controller" },
 ] as const;
 
 const predecessorVersionChecks = [
@@ -94,50 +94,17 @@ const buildRolloutTestImage = async (hostRef: string): Promise<string> => {
   }
 };
 
-const buildPredecessorImages = async (ref: string, tag: string) => {
-  const tempRoot = await mkdtemp(path.join(tmpdir(), "rfc029-v015-"));
-  const source = path.join(tempRoot, "source");
-  try {
-    const expectedHead = (await run(["git", "rev-parse", `${ref}^{commit}`])).stdout.trim();
-    await run(["git", "worktree", "add", "--detach", source, expectedHead]);
-    const actualHead = (await run(["git", "-C", source, "rev-parse", "HEAD"])).stdout.trim();
-    if (actualHead !== expectedHead) {
-      throw new Error(`0.15 predecessor checkout resolved to ${actualHead}; expected ${expectedHead}`);
-    }
-    const toolchain = await Bun.file(path.join(source, "coprocessor/fhevm-engine/rust-toolchain.toml")).text();
-    const rustVersion = toolchain.match(/^\s*channel\s*=\s*"([^"]+)"/m)?.[1];
-    if (!rustVersion) {
-      throw new Error(`cannot resolve the Rust toolchain from 0.15 predecessor ${ref}`);
-    }
-    const dockerfile = path.join(source, "coprocessor/fhevm-engine/Dockerfile.workspace");
-    for (const { image, target } of predecessorImagePlan) {
-      await runStreaming([
-        "docker",
-        "buildx",
-        "build",
-        "--load",
-        "--file",
-        dockerfile,
-        "--target",
-        target,
-        "--build-arg",
-        `RUST_IMAGE_VERSION=${rustVersion}`,
-        "--tag",
-        predecessorImage(image, tag),
-        source,
-      ]);
-    }
-  } finally {
-    await run(["git", "worktree", "remove", "--force", source], { allowFailure: true });
-    await rm(tempRoot, { force: true, recursive: true });
+const pullCandidateImages = async (tag: string, expectedVersion: string) => {
+  for (const { image } of predecessorImagePlan) {
+    const ref = predecessorImage(image, tag);
+    await runStreaming(["docker", "pull", "--platform", "linux/amd64", ref]);
+    const digest = await run(["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", ref]);
+    console.log(`[candidate image] ${ref} ${digest.stdout.trim()}`);
   }
-};
-
-const assertPredecessorStackVersion = async (tag: string) => {
   for (const [image, executable] of predecessorVersionChecks) {
-    const result = await run(["docker", "run", "--rm", predecessorImage(image, tag), executable, "--stack-version"]);
-    if (result.stdout.trim() !== "0.15.0") {
-      throw new Error(`${image}:${tag} ${executable} reports ${result.stdout.trim() || "no stack version"}; expected 0.15.0`);
+    const result = await run(["docker", "run", "--rm", "--platform", "linux/amd64", predecessorImage(image, tag), executable, "--stack-version"]);
+    if (result.stdout.trim() !== expectedVersion) {
+      throw new Error(`${image}:${tag} ${executable} reports ${result.stdout.trim() || "no stack version"}; expected ${expectedVersion}`);
     }
   }
 };
@@ -223,7 +190,7 @@ name: RFC 029 0.14 to 0.15 to 0.15.1 compressed key adoption
 ${hostChains}
 topology:
   count: ${OPERATOR_COUNT}
-  threshold: ${OPERATOR_COUNT}
+  threshold: 2
 bcs:
   source:
     mode: registry
@@ -536,6 +503,9 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
 /** Executes the complete 0.14 to 0.15 rollout and returns the continuity probe. */
 export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Promise<string> => {
   const versions = migrationVersions();
+  logPhase("00 pull and verify published 0.15.0 and 0.15.1 candidates");
+  await pullCandidateImages(versions.blueTag, "0.15.0");
+  await pullCandidateImages(versions.greenTag, "0.15.1");
   const testSuiteTag = await buildRolloutTestImage(versions.baseline.HOST_VERSION);
   const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
     versions: { ...versions.baseline, TEST_SUITE_VERSION: testSuiteTag },
@@ -570,10 +540,6 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-adoption.yaml");
   await Bun.write(scenario, adoptionScenario(versions.baselineTag, versions.blueTag));
-
-  logPhase("00 build and verify the exact 0.15.0 predecessor");
-  await buildPredecessorImages(versions.blueRef, versions.blueTag);
-  await assertPredecessorStackVersion(versions.blueTag);
 
   logPhase("01 restore production-style legacy state before the 0.15 rollout");
   await ctx.up({
@@ -708,6 +674,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
 
   logPhase("09 re-home promoted 0.15.0 as Blue and stage deferred 0.15.1 Green");
   await ctx.restagePromotedGreen({
+    source: { mode: "registry", tag: versions.greenTag, compatTag: "v0.15.1" },
     env: { FORCE_LEGACY_SERVER_KEY: "false" },
   });
   await assertActiveSafeguard();
