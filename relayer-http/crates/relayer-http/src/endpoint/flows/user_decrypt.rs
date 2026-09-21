@@ -1,5 +1,5 @@
-//! `POST /v4/exp/user-decrypt`: the current relayer's v3 attestation envelope, validated, converted to the connector
-//! DTO and aggregated.
+//! `POST /v4/exp/user-decrypt`: the connector's v1 envelope topology (`attestationType`, `payload`, `signature`)
+//! with the relayer's own field names inside, validated, converted to the connector DTO and aggregated.
 
 use alloy::primitives::{Address, B256, Bytes};
 use axum::Json;
@@ -7,7 +7,8 @@ use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
 use axum::response::{IntoResponse, Response};
 use kms_connector_api::{
-    HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionRequest,
+    HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionPayload,
+    UserDecryptionRequest,
 };
 use serde::{Deserialize, Deserializer};
 use tracing::info;
@@ -18,18 +19,19 @@ use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
-pub const PAYLOAD_VERSION: &str = "2.0";
-pub const PAYLOAD_TYPE: &str = "user_decryption";
 /// The connector's cap.
 const MAX_ALLOWED_CONTRACTS: usize = 10;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
+///
+/// Owned by the relayer (not the connector's DTO) so relayer-only fields can be added later.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UserDecryptRequest {
-    /// `eip712-unified-user-decrypt-v1`.
+    /// `eip712-unified-user-decrypt-v1`. Forwarded as received because it is part of the connector's
+    /// `decryptionId`.
     pub attestation_type: String,
-    pub attested_payload: UserDecryptPayload,
+    pub payload: UserDecryptPayload,
     /// The user's EIP-712 signature; empty on the ERC-1271 path. Verified by the connector, not here.
     pub signature: Bytes,
 }
@@ -37,11 +39,6 @@ pub struct UserDecryptRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UserDecryptPayload {
-    /// `2.0`.
-    pub version: String,
-    /// `user_decryption`.
-    #[serde(rename = "type")]
-    pub kind: String,
     pub handles: Vec<HandleEntry>,
     pub user_address: Address,
     pub allowed_contracts: Vec<Address>,
@@ -90,30 +87,25 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
         &request.attestation_type,
         ATTESTATION_TYPE,
     )?;
-    let payload = &request.attested_payload;
-    validate::expect("attestedPayload.version", &payload.version, PAYLOAD_VERSION)?;
-    validate::expect("attestedPayload.type", &payload.kind, PAYLOAD_TYPE)?;
+    let payload = &request.payload;
     validate::handles(
-        "attestedPayload.handles",
+        "payload.handles",
         payload.handles.iter().map(|h| &h.ct_handle),
         chain_ids,
     )?;
     if payload.allowed_contracts.len() > MAX_ALLOWED_CONTRACTS {
         return Err(Invalid::new(
-            "attestedPayload.allowedContracts",
+            "payload.allowedContracts",
             format!("at most {MAX_ALLOWED_CONTRACTS} contracts"),
         ));
     }
     if payload.public_key.is_empty() {
-        return Err(Invalid::new(
-            "attestedPayload.publicKey",
-            "must not be empty",
-        ));
+        return Err(Invalid::new("payload.publicKey", "must not be empty"));
     }
     let validity = &payload.request_validity;
     if validity.start_timestamp > now {
         return Err(Invalid::new(
-            "attestedPayload.requestValidity.startTimestamp",
+            "payload.requestValidity.startTimestamp",
             "must not be in the future",
         ));
     }
@@ -123,11 +115,11 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
         <= now
     {
         return Err(Invalid::new(
-            "attestedPayload.requestValidity",
+            "payload.requestValidity",
             "window has already expired",
         ));
     }
-    validate::extra_data("attestedPayload.extraData", &payload.extra_data)
+    validate::extra_data("payload.extraData", &payload.extra_data)
 }
 
 /// One request: mint the id, parse (axum did it: `body` is `Err` for invalid JSON, an unknown field, a wrong
@@ -144,7 +136,7 @@ pub async fn handle(
     info!(
         request_id,
         decryption_id = %request.id(),
-        handles = request.handles.len(),
+        handles = request.payload.handles.len(),
         "user decrypt request"
     );
     let output = app
@@ -158,26 +150,29 @@ pub async fn handle(
 /// The body the connector receives (RFC-033), field by field.
 impl From<UserDecryptRequest> for UserDecryptionRequest {
     fn from(request: UserDecryptRequest) -> Self {
-        let payload = request.attested_payload;
+        let payload = request.payload;
         Self {
-            handles: payload
-                .handles
-                .into_iter()
-                .map(|h| ConnectorHandle {
-                    handle: h.ct_handle,
-                    contractAddress: h.contract_address,
-                    ownerAddress: h.owner_address,
-                })
-                .collect(),
-            userAddress: payload.user_address,
-            publicKey: payload.public_key,
-            allowedContracts: payload.allowed_contracts,
-            requestValidity: ConnectorValidity {
-                startTimestamp: payload.request_validity.start_timestamp,
-                durationSeconds: payload.request_validity.duration_seconds,
+            attestationType: request.attestation_type,
+            payload: UserDecryptionPayload {
+                handles: payload
+                    .handles
+                    .into_iter()
+                    .map(|h| ConnectorHandle {
+                        handle: h.ct_handle,
+                        contractAddress: h.contract_address,
+                        ownerAddress: h.owner_address,
+                    })
+                    .collect(),
+                userAddress: payload.user_address,
+                publicKey: payload.public_key,
+                allowedContracts: payload.allowed_contracts,
+                requestValidity: ConnectorValidity {
+                    startTimestamp: payload.request_validity.start_timestamp,
+                    durationSeconds: payload.request_validity.duration_seconds,
+                },
+                extraData: payload.extra_data,
             },
             signature: request.signature,
-            extraData: payload.extra_data,
         }
     }
 }
@@ -196,9 +191,7 @@ pub(crate) mod tests {
         format!(
             r#"{{
               "attestationType": "eip712-unified-user-decrypt-v1",
-              "attestedPayload": {{
-                "version": "2.0",
-                "type": "user_decryption",
+              "payload": {{
                 "handles": [{{
                   "ctHandle": "{}",
                   "contractAddress": "0x3333333333333333333333333333333333333333",
@@ -222,16 +215,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn attestation_type_matches_the_connector_crate() {
+        assert_eq!(
+            ATTESTATION_TYPE,
+            <&'static str>::from(kms_connector_api::AttestationType::Eip712UnifiedUserDecryptV1)
+        );
+    }
+
+    #[test]
     fn wire_example_deserialises_with_string_or_number_timestamps() {
         let text = valid();
         let numbers: UserDecryptRequest = serde_json::from_str(&wire("1799999900", "600")).unwrap();
         for r in [text, numbers] {
-            assert_eq!(
-                r.attested_payload.request_validity.start_timestamp,
-                1_799_999_900
-            );
-            assert_eq!(r.attested_payload.request_validity.duration_seconds, 600);
-            assert_eq!(r.attested_payload.handles[0].ct_handle, handle(1, 4));
+            assert_eq!(r.payload.request_validity.start_timestamp, 1_799_999_900);
+            assert_eq!(r.payload.request_validity.duration_seconds, 600);
+            assert_eq!(r.payload.handles[0].ct_handle, handle(1, 4));
             assert_eq!(r.signature.len(), 65);
         }
     }
@@ -259,44 +257,33 @@ pub(crate) mod tests {
                 Box::new(|r| r.attestation_type = "other".into()),
                 "attestationType",
             ),
+            (Box::new(|r| r.payload.handles.clear()), "payload.handles"),
             (
-                Box::new(|r| r.attested_payload.version = "1.0".into()),
-                "attestedPayload.version",
-            ),
-            (
-                Box::new(|r| r.attested_payload.kind = "public".into()),
-                "attestedPayload.type",
-            ),
-            (
-                Box::new(|r| r.attested_payload.handles.clear()),
-                "attestedPayload.handles",
-            ),
-            (
-                Box::new(|r| r.attested_payload.handles[0].ct_handle = handle(31337, 4)),
-                "attestedPayload.handles[0]",
+                Box::new(|r| r.payload.handles[0].ct_handle = handle(31337, 4)),
+                "payload.handles[0]",
             ),
             (
                 Box::new(|r| {
-                    r.attested_payload.allowed_contracts =
+                    r.payload.allowed_contracts =
                         vec![address!("0x3333333333333333333333333333333333333333"); 11]
                 }),
-                "attestedPayload.allowedContracts",
+                "payload.allowedContracts",
             ),
             (
-                Box::new(|r| r.attested_payload.public_key = Bytes::new()),
-                "attestedPayload.publicKey",
+                Box::new(|r| r.payload.public_key = Bytes::new()),
+                "payload.publicKey",
             ),
             (
-                Box::new(|r| r.attested_payload.request_validity.start_timestamp = NOW + 1),
-                "attestedPayload.requestValidity.startTimestamp",
+                Box::new(|r| r.payload.request_validity.start_timestamp = NOW + 1),
+                "payload.requestValidity.startTimestamp",
             ),
             (
-                Box::new(|r| r.attested_payload.request_validity.duration_seconds = 1),
-                "attestedPayload.requestValidity",
+                Box::new(|r| r.payload.request_validity.duration_seconds = 1),
+                "payload.requestValidity",
             ),
             (
-                Box::new(|r| r.attested_payload.extra_data = Bytes::from_static(&[9])),
-                "attestedPayload.extraData",
+                Box::new(|r| r.payload.extra_data = Bytes::from_static(&[9])),
+                "payload.extraData",
             ),
         ];
         for (mutate, field) in cases {
@@ -311,26 +298,30 @@ pub(crate) mod tests {
     fn conversion_keeps_every_field() {
         let request = valid();
         let connector = UserDecryptionRequest::from(request.clone());
-        assert_eq!(connector.handles.len(), 1);
-        assert_eq!(connector.handles[0].handle, handle(1, 4));
+        assert_eq!(connector.attestationType, request.attestation_type);
+        assert_eq!(connector.payload.handles.len(), 1);
+        assert_eq!(connector.payload.handles[0].handle, handle(1, 4));
         assert_eq!(
-            connector.handles[0].contractAddress,
+            connector.payload.handles[0].contractAddress,
             address!("0x3333333333333333333333333333333333333333")
         );
         assert_eq!(
-            connector.handles[0].ownerAddress,
+            connector.payload.handles[0].ownerAddress,
             address!("0x4444444444444444444444444444444444444444")
         );
-        assert_eq!(connector.userAddress, request.attested_payload.user_address);
-        assert_eq!(connector.publicKey, request.attested_payload.public_key);
+        assert_eq!(connector.payload.userAddress, request.payload.user_address);
+        assert_eq!(connector.payload.publicKey, request.payload.public_key);
         assert_eq!(
-            connector.allowedContracts,
-            request.attested_payload.allowed_contracts
+            connector.payload.allowedContracts,
+            request.payload.allowed_contracts
         );
-        assert_eq!(connector.requestValidity.startTimestamp, 1_799_999_900);
-        assert_eq!(connector.requestValidity.durationSeconds, 600);
+        assert_eq!(
+            connector.payload.requestValidity.startTimestamp,
+            1_799_999_900
+        );
+        assert_eq!(connector.payload.requestValidity.durationSeconds, 600);
         assert_eq!(connector.signature, request.signature);
-        assert_eq!(connector.extraData, request.attested_payload.extra_data);
+        assert_eq!(connector.payload.extraData, request.payload.extra_data);
         // The connector derives the same id from this body on every node.
         assert_ne!(connector.id(), B256::ZERO);
     }

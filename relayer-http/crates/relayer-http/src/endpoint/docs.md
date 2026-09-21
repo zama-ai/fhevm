@@ -30,9 +30,7 @@ field. The body must be `application/json`.
 ```json
 {
   "attestationType": "eip712-unified-user-decrypt-v1",
-  "attestedPayload": {
-    "version": "2.0",
-    "type": "user_decryption",
+  "payload": {
     "handles": [
       {
         "ctHandle": "0x0000000000000000000000000000000000000000000000000000000000010401",
@@ -53,10 +51,12 @@ field. The body must be `application/json`.
 `startTimestamp` and `durationSeconds` are decimal strings (numbers are accepted too). `signature` is the user's
 EIP-712 signature, empty on the ERC-1271 path; the connector verifies it, not the relayer.
 
-Conversion to the connector request (`kms-connector-api::UserDecryptionRequest`): `handles[].ctHandle` →
-`handles[].handle`, the other handle fields, `userAddress`, `publicKey`, `allowedContracts`, `requestValidity`,
-`signature` and `extraData` as they are. The envelope fields (`attestationType`, `version`, `type`) are checked, then
-dropped.
+Conversion to the connector request (`kms-connector-api::UserDecryptionRequest`): `attestationType` is checked
+(section 3) and forwarded, it is part of the connector's `decryptionId`; `payload.handles[].ctHandle` →
+`payload.handles[].handle`; the other handle fields, `userAddress`, `publicKey`, `allowedContracts`,
+`requestValidity`, `extraData` and `signature` as they are. Nothing is dropped. The body has the connector's v1
+envelope topology (`attestationType`, `payload`, `signature`) with the relayer's field names, so a relayer-only field
+can be added later without touching the connector DTO.
 
 ### `POST /v4/exp/public-decrypt`
 
@@ -74,11 +74,10 @@ these requests anyway; failing here saves n calls). Every failure is `400 malfor
 | field | rule |
 |---|---|
 | `attestationType` | `eip712-unified-user-decrypt-v1` |
-| `attestedPayload.version`, `.type` | `2.0`, `user_decryption` |
-| `attestedPayload.handles`, `ciphertextHandles` | non-empty; each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that is in `supported_chain_ids`; total plaintext size at most 2048 bits |
-| `attestedPayload.allowedContracts` | at most 10 |
-| `attestedPayload.publicKey` | non-empty |
-| `attestedPayload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
+| `payload.handles`, `ciphertextHandles` | non-empty; each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that is in `supported_chain_ids`; total plaintext size at most 2048 bits |
+| `payload.allowedContracts` | at most 10 |
+| `payload.publicKey` | non-empty |
+| `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
 | `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed |
 
 Deliberately not checked here: the user's signature (ERC-1271, connector worker), the signature length, the ACL and
@@ -128,8 +127,10 @@ One body for every error:
 | 502 | `upstream_transient` | `ThresholdNotReached` with no connector error (only rejected or unreachable nodes) |
 
 Connector codes that can come back this way, with the status the connector assigns them (`kms-connector-api`):
-`malformed` 400, `sender_authentication_failed` 401 (the relayer's API key is wrong for that node),
-`acl_denied` 403, `user_signature_rejected` 403, `ciphertext_not_found` 404 (the ciphertext is not committed yet),
+`malformed` 400, `unsupported_attestation_type` 400 (only reachable if the relayer and connector crates disagree:
+the relayer rejects other schemes before the fan-out with `400 malformed "attestationType: must be …"`),
+`sender_authentication_failed` 401 (the relayer's API key is wrong for that node), `acl_denied` 403,
+`user_signature_rejected` 403, `ciphertext_not_found` 404 (the ciphertext is not committed yet),
 `kms_context_destroyed` 410, `kms_context_invalid` 412, `unprocessable` 422, `rate_limited` 429,
 `copro_consensus_failed` 502, `upstream_transient` 502, `overloaded` 503, `timeout` 504, `unknown` 500.
 The message always carries the counts: `KMS threshold not reached (<counted> of <threshold> responses, <rejected> rejected)`.

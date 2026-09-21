@@ -39,7 +39,7 @@ impl Flow for UserDecrypt {
     }
 
     fn handles(request: &Self::Request) -> Vec<B256> {
-        request.handles.iter().map(|h| h.handle).collect()
+        request.payload.handles.iter().map(|h| h.handle).collect()
     }
 
     fn check(
