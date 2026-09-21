@@ -13,7 +13,7 @@
     "demo": "bun run demo/cli.ts",
     "demo:seed": "bun run demo/seed.ts",
     "demo:operator": "bun run demo/operator-server.ts",
-    "demo:check-cors": "bun run demo/checkBrowserReality.ts",
+    "demo:check-browser": "bun run demo/checkBrowserReality.ts",
     "demo:smoke": "bun run demo/smoke.ts",
     "start": "bun run src/cli.ts"
   },

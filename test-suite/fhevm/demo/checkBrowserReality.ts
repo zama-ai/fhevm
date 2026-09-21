@@ -1,19 +1,10 @@
 // checkBrowserReality — acceptance #5, run as a step of the solana-e2e workflow's demo phase.
 //
-// The page (#1761) reaches the relayer with browser fetch(), so the relayer must answer the exact
-// dApp origin's CORS preflight (OPTIONS). The page reaches the operator through its own origin: the
-// dev server proxies `/api` and adds the boot capability, so the proxied config must carry the
-// current boot and no key material, while the operator itself must refuse a request without the
-// capability and answer one with it. This exercises exactly that, from a browser Origin, and exits
-// non-zero (naming the failing endpoint) if any check fails. TS rather than a bash curl script
-// because the header assertions are logic.
-//
-// Reads the seeded demo-config for the relayer URL; the operator and dApp URLs come from the
-// lifecycle env (local defaults from `src/solana/endpoints.ts`). The browser origin is the exact
-// dApp origin.
+// The page reaches the relayer and operator through the dApp's same-origin proxy. Verify
+// that relayer requests work without client credentials and that the config advertises that
+// proxy. The operator must still enforce its boot capability and exact-origin CORS policy.
 
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
-import { readDemoConfig } from "./config";
 import { readDemoAuthorization } from "./lifecycle";
 
 const DAPP_URL = process.env.DEMO_DAPP_URL ?? LOCAL_SOLANA_ENDPOINTS.demoDapp;
@@ -87,19 +78,29 @@ const preflightAllowsOrigin = async (
 };
 
 const main = async (): Promise<void> => {
-  const [config, authorization] = await Promise.all([
-    readDemoConfig(),
-    readDemoAuthorization(),
-  ]);
+  const authorization = await readDemoAuthorization();
   const authorizationHeaders = {
     authorization: `Bearer ${authorization.token}`,
     "x-fhevm-demo-boot-id": authorization.bootId,
   };
 
   const checks: Check[] = [
-    // The relayer only carries the CORS layer when RELAYER_PERMISSIVE_CORS is set on its container;
-    // this preflight is what proves the demo bring-up wired that env through to the relayer service.
-    { name: "relayer", run: () => preflightAllowsOrigin("relayer", `${config.relayerUrl}/v2/input-proof`) },
+    {
+      name: "dApp same-origin relayer proxy",
+      run: async () => {
+        // No API key: the Vite proxy supplies it server-side, just as for the browser.
+        const response = await fetch(`${DAPP_URL}/api/relayer/v2/keyurl`, {
+          headers: { origin: ORIGIN, accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`proxied relayer key URL returned ${response.status}`);
+        const body = await response.json() as {
+          response?: { fheKeyInfo?: unknown[]; crs?: Record<string, unknown> };
+        };
+        if (!body.response?.fheKeyInfo?.length || !body.response.crs?.["2048"]) {
+          throw new Error("proxied relayer did not return FHE key and CRS metadata");
+        }
+      },
+    },
     {
       name: "operator preflight",
       run: () =>
@@ -148,9 +149,12 @@ const main = async (): Promise<void> => {
         const response = await fetch(`${DAPP_URL}/api/demo-config`);
         if (!response.ok) throw new Error(`proxied demo config returned ${response.status}`);
         const text = await response.text();
-        const body = JSON.parse(text) as { readonly config?: { readonly demoBootId?: unknown } };
+        const body = JSON.parse(text) as { readonly config?: { readonly demoBootId?: unknown; readonly relayerUrl?: unknown } };
         if (body.config?.demoBootId !== authorization.bootId) {
           throw new Error("proxied demo config did not return the current boot");
+        }
+        if (body.config?.relayerUrl !== `${DAPP_URL}/api/relayer`) {
+          throw new Error("proxied demo config did not advertise the same-origin relayer proxy");
         }
         if (/keypair/i.test(text) || text.includes(authorization.token)) {
           throw new Error("proxied demo config leaked key material or the capability");

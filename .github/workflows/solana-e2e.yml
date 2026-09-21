@@ -17,7 +17,7 @@ name: solana-e2e
 #   - `bun run demo reseed`: re-deploy the two demo programs, seed fresh, rotate authorization
 #   - deposit-arc smoke (bun run demo:smoke): the live exercise of the vault's full forward path
 #     (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
-#   - browser-reality: CORS preflight against the relayer (with RELAYER_PERMISSIVE_CORS set), and
+#   - browser-reality: same-origin relayer proxy checks, and
 #     the operator reachable from the dApp origin with the current boot capability
 # The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
 # solana/scripts/demo/demo-keypairs/ (see its README).
@@ -64,12 +64,6 @@ jobs:
       packages: "read" # pull repo-owned images from ghcr.io
     env:
       DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
-      # Opt-in permissive CORS for the demo dApp origin (relayer default OFF; only demo mode sets
-      # this). Set at the job level so the relayer container comes up with the demo CORS layer on at
-      # bring-up time, delivered via the ${RELAYER_PERMISSIVE_CORS:-} passthrough in its compose
-      # file. Intentional in this per-PR lane: the browser-reality step below asserts the demo CORS
-      # behavior every run.
-      RELAYER_PERMISSIVE_CORS: "1"
       # Acceptance clients read the protected token file directly. Never persist the fragment token
       # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
       DEMO_PRINT_LAUNCH_URL: "0"
@@ -228,18 +222,16 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun run demo:smoke
 
-      - name: Browser-reality checks (CORS preflight + operator endpoints)
+      - name: Browser-reality checks (same-origin proxy + operator endpoints)
         # Runs even when the smoke fails (browser-reality is an independent acceptance criterion;
-        # an arc failure must not mask a CORS regression) — but only once the demo reseed
+        # an arc failure must not mask a proxy regression) — but only once the demo reseed
         # succeeded, so an earlier e2e-phase failure does not fire it against a stack with no
         # demo layer.
         if: ${{ !cancelled() && steps.demo-reseed.outcome == 'success' }}
         working-directory: test-suite/fhevm
-        # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, operator)
-        # from the exact 127.0.0.1 dApp origin, then exercise the current boot capability against the
-        # protected operator and the dApp's proxied, current-boot config. TS, not bash: the
-        # assertions are logic.
-        run: bun run demo:check-cors
+        # Check the same-origin relayer proxy without browser API credentials, then verify
+        # operator authorization and the dApp's proxied current-boot config.
+        run: bun run demo:check-browser
 
       - name: Collect stack logs on failure
         if: ${{ failure() }}

@@ -19,11 +19,6 @@ VALIDATOR_RPC="${SOLANA_RPC_URL:?missing lifecycle validator RPC URL}"
 : "${DEMO_CONFIG_PATH:?missing lifecycle demo config path}"
 : "${DEMO_MANIFEST_PATH:?missing lifecycle manifest path}"
 
-# Opt-in permissive CORS for the demo dApp origin (relayer default OFF). Exported before bring-up
-# so the relayer compose service picks it up via its ${RELAYER_PERMISSIVE_CORS:-} passthrough (see
-# docker-compose/relayer-docker-compose.yml) and comes up with the demo CORS layer on; harmless on
-# a re-run against an already-running stack.
-export RELAYER_PERMISSIVE_CORS="${RELAYER_PERMISSIVE_CORS:-1}"
 
 : "${DEMO_LIFECYCLE_DIR:?demo-up.sh is lifecycle-only; run 'bun run demo up' from the repository root}"
 : "${DEMO_BOOT_ID:?missing lifecycle boot identity}"
