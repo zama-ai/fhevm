@@ -55,6 +55,7 @@ describe("solana confidential-transfer scenario", () => {
           wsUrl: env.wsUrl,
           relayerUrl: env.relayerUrl,
           hostRpcUrl: env.hostRpcUrl,
+          gatewayRpcUrl: env.gatewayRpcUrl,
           aclProgram: env.aclProgram,
           funding: env.funding,
           funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,
