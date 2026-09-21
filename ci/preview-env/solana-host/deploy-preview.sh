@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Extend an already bootstrapped preview through its existing Helm releases.
+set +x
 set -euo pipefail
 umask 077
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=ci/preview-env/scripts/lib.sh
 source "${script_dir}/../scripts/lib.sh"
+# shellcheck source=ci/preview-env/solana-host/ownership.sh
+source "$script_dir/ownership.sh"
+solana_acquire
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf "$work"; solana_release_operation' EXIT
 values=ci/preview-env/solana-host
 tag=$(jq -er .solana_programs <<< "$TAGS_JSON")
 # The canonical EVM host chain (per-namespace Anvil) whose key material the Solana chain shares.
@@ -21,8 +25,21 @@ for name in solana-rpc solana-deployer; do
 done
 # The leaf-proof bearer token is only ever read inside this namespace, by the listeners and
 # the connectors, so each preview mints its own.
+openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
 kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
-  --from-literal=api-key="$(openssl rand -base64 32)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  --from-file=api-key="$work/proof-api-key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+# Old public actors are imported only for recovery, never for new funding.
+if [[ -z $(kubectl get secret solana-recovery -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
+  kubectl create secret generic solana-recovery -n "$NAMESPACE" \
+    --from-file=demo-legacy-keeper.json=solana/scripts/demo/demo-keypairs/keeper.json \
+    --from-file=demo-legacy-alice.json=solana/scripts/demo/demo-keypairs/alice.json \
+    --from-file=demo-legacy-bob.json=solana/scripts/demo/demo-keypairs/bob.json \
+    --from-file=demo-legacy-mintAuthority.json=solana/scripts/demo/demo-keypairs/mint-authority.json >/dev/null
+fi
+SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
+  bash "$script_dir/recover.sh" reset
+
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
@@ -82,7 +99,7 @@ done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.
 helm get values relayer -n "$NAMESPACE" -o yaml > "$work/relayer.yaml"
 yq -i '.env = ((.env // []) | map(select(.name != "APP_HOST_CHAINS__1__CHAIN_ID" and .name != "APP_HOST_CHAINS__1__URL" and .name != "APP_HOST_CHAINS__1__ACL_ADDRESS"))) + [
-  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":"72057594037940281"},
+  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":"130140237723663404"},
   {"name":"APP_HOST_CHAINS__1__URL","valueFrom":{"secretKeyRef":{"name":"solana-rpc","key":"rpc-url"}}},
   {"name":"APP_HOST_CHAINS__1__ACL_ADDRESS","valueFrom":{"configMapKeyRef":{"name":"solana-host-addresses","key":"zama_host.address"}}}
 ]' "$work/relayer.yaml"

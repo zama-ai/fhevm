@@ -1,13 +1,18 @@
-import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../src/generate/solana";
+import { SOLANA_LEAF_PROOF_API_KEY } from "../src/generate/solana";
+import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import { createHash } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
+  DEMO_DAPP_PORT,
+  DEMO_OPERATOR_PORT,
   FHEVM_COMPOSE_PROJECT_ENV,
   PORTS,
   REPO_ROOT,
+  SOLANA_LISTENER_GRPC_PORT,
+  SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { solanaImages } from "../src/solana/images";
 import { run, runStreaming } from "../src/utils/process";
@@ -20,20 +25,18 @@ import {
   DEMO_BOOT_ID_ENV,
   readDemoAuthorizationFromEnv,
 } from "./authorization";
-import { DEMO_CONFIG_DEFAULT_PATH } from "./config";
+import { MINIO_EXTERNAL_URL, SOLANA_DEMO_DIR, STATE_DIR } from "../src/layout";
+import { resolveDemoConfigPath } from "./config";
 import {
   requestSupervisorReseed,
   startSupervisorControl,
   type SupervisorReseedResult,
 } from "./supervisorControl";
 
-export const DEMO_RUNTIME_DIR = path.join(
-  REPO_ROOT,
-  ".fhevm",
-  "runtime",
-  "solana-demo",
-);
-export const DEMO_CONFIG_PATH = DEMO_CONFIG_DEFAULT_PATH;
+// Layout paths under the FHEVM_STATE_DIR this process started with; children get the same root
+// through `lifecycleEnv`, so every producer and consumer of a boot agrees on the files.
+export const DEMO_RUNTIME_DIR = SOLANA_DEMO_DIR;
+export const DEMO_CONFIG_PATH = resolveDemoConfigPath();
 export const DEMO_MANIFEST_PATH = path.join(DEMO_RUNTIME_DIR, "manifest.json");
 export const DEMO_LOCK_PATH = path.join(DEMO_RUNTIME_DIR, "lifecycle.lock");
 export const DEMO_COMPOSE_PROJECT = "fhevm";
@@ -41,6 +44,8 @@ const DEMO_COMPOSE_PROJECT_PREFIX = "fhevm-demo-";
 const BOOT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OBSERVABILITY_PORTS = [9090, 16686] as const;
+const METRICS_URL = `http://127.0.0.1:${OBSERVABILITY_PORTS[0]}`;
+const TRACES_URL = `http://127.0.0.1:${OBSERVABILITY_PORTS[1]}`;
 const OBSERVABILITY_COMPOSE_PATH = path.join(
   REPO_ROOT,
   "test-suite/fhevm/demo/observability-docker-compose.yml",
@@ -105,31 +110,16 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
   ...new Set([
     ...PORTS,
     50051,
-    5173,
-    8090,
-    8899,
-    10000,
+    DEMO_DAPP_PORT,
+    DEMO_OPERATOR_PORT,
+    SOLANA_VALIDATOR_RPC_PORT,
+    SOLANA_LISTENER_GRPC_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];
-const PROCESS_NAMES = ["validator", "listener", "faucet", "dapp"] as const;
+const PROCESS_NAMES = ["validator", "listener", "operator", "dapp"] as const;
 const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
-  ...[
-    "confidential_batcher",
-    "confidential_token",
-    "demo_vault",
-    "zama_host",
-  ].map((name) =>
-    path.join(
-      REPO_ROOT,
-      "solana",
-      "scripts",
-      "e2e",
-      "test-keypairs",
-      `${name}-keypair.json`,
-    ),
-  ),
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
     path.join(
       REPO_ROOT,
@@ -1013,11 +1003,11 @@ const startObservability = async (composeProject: string): Promise<void> => {
   });
   await Promise.all([
     waitForHttp(
-      "http://127.0.0.1:9090/api/v1/targets",
+      `${METRICS_URL}/api/v1/targets`,
       "Prometheus required targets",
       prometheusTargetsReady,
     ),
-    waitForHttp("http://127.0.0.1:16686/api/services", "Jaeger query API"),
+    waitForHttp(`${TRACES_URL}/api/services`, "Jaeger query API"),
   ]);
 };
 
@@ -1067,7 +1057,7 @@ export const terminateUntrackedChild = async (
 };
 
 const startOwnedProcess = async (
-  name: "faucet" | "dapp",
+  name: "operator" | "dapp",
   command: readonly string[],
   cwd: string,
   env: Record<string, string>,
@@ -1123,7 +1113,11 @@ const lifecycleEnv = (
   runtimeDir: string,
   composeProject: string,
 ): Record<string, string> => ({
+  FHEVM_STATE_DIR: STATE_DIR,
   DEMO_CONFIG_PATH,
+  DEMO_MANIFEST_PATH,
+  SOLANA_RPC_URL: LOCAL_SOLANA_ENDPOINTS.validatorRpc,
+  DEMO_OPERATOR_URL: LOCAL_SOLANA_ENDPOINTS.demoOperator,
   [DEMO_BOOT_ID_ENV]: path.basename(runtimeDir),
   DEMO_LIFECYCLE_DIR: runtimeDir,
   [FHEVM_COMPOSE_PROJECT_ENV]: composeProject,
@@ -1136,14 +1130,19 @@ export const authorizedServiceEnv = (
   bootId: string,
   tokenFile: string,
 ): Record<string, string> => ({
-  DEMO_PROOF_URL: `http://127.0.0.1:${SOLANA_LEAF_PROOF_PORT}`,
+  FHEVM_STATE_DIR: STATE_DIR,
+  DEMO_CONFIG_PATH,
+  DEMO_PROOF_URL: LOCAL_SOLANA_ENDPOINTS.leafProof,
   DEMO_PROOF_API_KEY: SOLANA_LEAF_PROOF_API_KEY,
-  [DEMO_ALLOWED_ORIGIN_ENV]: "http://127.0.0.1:5173",
+  [DEMO_ALLOWED_ORIGIN_ENV]: LOCAL_SOLANA_ENDPOINTS.demoDapp,
+  DEMO_DAPP_URL: LOCAL_SOLANA_ENDPOINTS.demoDapp,
+  DEMO_OPERATOR_URL: LOCAL_SOLANA_ENDPOINTS.demoOperator,
+  DEMO_RELAYER_URL: LOCAL_SOLANA_ENDPOINTS.relayer,
   [DEMO_AUTH_TOKEN_FILE_ENV]: tokenFile,
   [DEMO_BOOT_ID_ENV]: bootId,
 });
 
-export const demoLaunchUrl = (): string => "http://127.0.0.1:5173/";
+export const demoLaunchUrl = (): string => `${LOCAL_SOLANA_ENDPOINTS.demoDapp}/`;
 
 const readyMessage = (
   command: "up" | "reseed",
@@ -1154,8 +1153,8 @@ const readyMessage = (
     `[${command}] demo boot ${bootId} is ready at ${demoLaunchUrl()}`,
     ...(observability
       ? [
-          `[${command}] metrics http://127.0.0.1:9090`,
-          `[${command}] connector traces http://127.0.0.1:16686`,
+          `[${command}] metrics ${METRICS_URL}`,
+          `[${command}] connector traces ${TRACES_URL}`,
         ]
       : []),
   ].join("\n");
@@ -1209,8 +1208,18 @@ export const readCurrentDemoAuthorization = async () => {
   });
 };
 
+/**
+ * The boot capability for scenarios and checks. A process that was started with the capability in
+ * its environment (an operator and dapp run against a remote stack, as CI's preview namespace) uses it
+ * directly; otherwise it belongs to the running lifecycle-owned boot.
+ */
+export const readDemoAuthorization = async () =>
+  process.env[DEMO_BOOT_ID_ENV] !== undefined && process.env[DEMO_AUTH_TOKEN_FILE_ENV] !== undefined
+    ? readDemoAuthorizationFromEnv()
+    : readCurrentDemoAuthorization();
+
 const validatorHealthy = async (): Promise<boolean> => {
-  const response = await fetch("http://127.0.0.1:8899", {
+  const response = await fetch(LOCAL_SOLANA_ENDPOINTS.validatorRpc, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: '{"jsonrpc":"2.0","id":1,"method":"getHealth"}',
@@ -1264,7 +1273,7 @@ export const isDemoDappApiResponseHealthy = async (
 const demoDappHealthy = async (): Promise<boolean> => {
   try {
     return await isDemoDappApiResponseHealthy(
-      await fetch("http://127.0.0.1:5173/api/demo-encryption-key-meta", {
+      await fetch(`${LOCAL_SOLANA_ENDPOINTS.demoDapp}/api/demo-encryption-key-meta`, {
         signal: AbortSignal.timeout(2_000),
       }),
     );
@@ -1377,7 +1386,7 @@ const dockerLogContains = async (
 type DemoHealth = {
   readonly validator: boolean;
   readonly listener: boolean;
-  readonly faucet: boolean;
+  readonly operator: boolean;
   readonly dapp: boolean;
   readonly kmsCore: boolean;
   readonly relayer: boolean;
@@ -1409,7 +1418,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   );
   const [
     validator,
-    faucet,
+    operator,
     dapp,
     kmsReady,
     relayerEndpoint,
@@ -1420,26 +1429,26 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     jaeger,
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
-    httpHealthy("http://127.0.0.1:8090/health"),
+    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`),
     demoDappHealthy(),
     dockerLogContains(
       manifest,
       "kms-core",
       /KMS Server service socket address/,
     ),
-    httpHealthy("http://127.0.0.1:3000/healthz"),
+    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.relayer}/healthz`),
     evmRpcHealthy(8545),
     evmRpcHealthy(8546),
-    httpHealthy("http://127.0.0.1:9000/minio/health/ready"),
+    httpHealthy(`${MINIO_EXTERNAL_URL}/minio/health/ready`),
     manifest.observability
-      ? fetch("http://127.0.0.1:9090/api/v1/targets", {
+      ? fetch(`${METRICS_URL}/api/v1/targets`, {
           signal: AbortSignal.timeout(2_000),
         })
           .then(prometheusTargetsReady)
           .catch(() => false)
       : Promise.resolve(true),
     manifest.observability
-      ? httpHealthy("http://127.0.0.1:16686/api/services")
+      ? httpHealthy(`${TRACES_URL}/api/services`)
       : Promise.resolve(true),
   ]);
   const containerReady = (name: string) => {
@@ -1452,7 +1461,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   return {
     validator: exactEndpointReady(exact.get("validator") === true, validator),
     listener: exact.get("listener") === true,
-    faucet: exactEndpointReady(exact.get("faucet") === true, faucet),
+    operator: exactEndpointReady(exact.get("operator") === true, operator),
     dapp: exactEndpointReady(exact.get("dapp") === true, dapp),
     kmsCore: containerReady("kms-core") && kmsReady,
     relayer: containerReady("fhevm-relayer") && relayerEndpoint,
@@ -1471,7 +1480,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
 const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.validator &&
   health.listener &&
-  health.faucet &&
+  health.operator &&
   health.dapp &&
   health.kmsCore &&
   health.relayer &&
@@ -1499,7 +1508,7 @@ const assertDemoHealthReady = (health: DemoHealth): void => {
   const serviceNames = [
     "validator",
     "listener",
-    "faucet",
+    "operator",
     "dapp",
     "kmsCore",
     "relayer",
@@ -1663,16 +1672,16 @@ export const upDemo = async ({
         processes: { validator, listener },
       };
       await writeDemoManifest(manifest);
-      const faucet = await startOwnedProcess(
-        "faucet",
-        ["bun", "run", "demo:faucet"],
+      const operator = await startOwnedProcess(
+        "operator",
+        ["bun", "run", "demo:operator"],
         path.join(REPO_ROOT, "test-suite/fhevm"),
         serviceEnv,
-        path.join(logsDir, "faucet.log"),
+        path.join(logsDir, "operator.log"),
       );
-      manifest = { ...manifest, processes: { ...manifest.processes, faucet } };
+      manifest = { ...manifest, processes: { ...manifest.processes, operator } };
       await writeDemoManifest(manifest);
-      await waitForHttp("http://127.0.0.1:8090/health", "demo faucet");
+      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`, "demo operator");
       const dapp = await startOwnedProcess(
         "dapp",
         ["bun", "run", "dev"],
@@ -1683,7 +1692,7 @@ export const upDemo = async ({
       manifest = { ...manifest, processes: { ...manifest.processes, dapp } };
       await writeDemoManifest(manifest);
       await waitForHttp(
-        "http://127.0.0.1:5173/api/demo-encryption-key-meta",
+        `${LOCAL_SOLANA_ENDPOINTS.demoDapp}/api/demo-encryption-key-meta`,
         "demo dApp API",
         isDemoDappApiResponseHealthy,
       );
@@ -2122,14 +2131,14 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
     }
     // Bootstrap commands must load before the stack installs its Solana dependency graph.
     const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
-    const { programIdsFor } = await import("../../../solana/deploy/src/environment");
+    const { programIdsFor, readSolanaEnvironment } = await import("../../../solana/deploy/src/environment");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);
     await startHostListener({
-      zamaHostId: programIdsFor('localnet').zamaHost,
+      zamaHostId: programIdsFor(readSolanaEnvironment()).zamaHost,
       databaseUrl: await readCoprocessorDatabaseUrl(),
-      grpcUrl: process.env.GRPC_URL ?? 'http://127.0.0.1:10000',
+      grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
       logDir,
       lifecycleDir: runtimeDir,
     });
@@ -2140,7 +2149,7 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
       path.join(logDir, 'host-listener.log'),
     );
     await writeDemoManifest({ ...manifest, processes: { ...manifest.processes, listener } });
-    await waitForHttp('http://127.0.0.1:8080/healthz', 'Solana listener');
+    await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.leafProof}/healthz`, 'Solana listener');
   });
 
 const reseedReadyMessage = ({
@@ -2176,7 +2185,7 @@ export const reseedDemo = async ({
     let nextManifest = manifest;
     try {
       await stopOwnedProcess("dapp", manifest.processes.dapp);
-      await stopOwnedProcess("faucet", manifest.processes.faucet);
+      await stopOwnedProcess("operator", manifest.processes.operator);
       nextManifest = {
         ...manifest,
         state: "starting",
@@ -2224,19 +2233,19 @@ export const reseedDemo = async ({
           NODE_PATH: path.join(REPO_ROOT, "solana/demo-dapp/node_modules"),
         },
       });
-      const faucet = await startOwnedProcess(
-        "faucet",
-        ["bun", "run", "demo:faucet"],
+      const operator = await startOwnedProcess(
+        "operator",
+        ["bun", "run", "demo:operator"],
         path.join(REPO_ROOT, "test-suite/fhevm"),
         serviceEnv,
-        path.join(logsDir, "faucet.log"),
+        path.join(logsDir, "operator.log"),
       );
       nextManifest = {
         ...nextManifest,
-        processes: { ...nextManifest.processes, faucet },
+        processes: { ...nextManifest.processes, operator },
       };
       await writeDemoManifest(nextManifest);
-      await waitForHttp("http://127.0.0.1:8090/health", "demo faucet");
+      await waitForHttp(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`, "demo operator");
       const dapp = await startOwnedProcess(
         "dapp",
         ["bun", "run", "dev"],
@@ -2250,7 +2259,7 @@ export const reseedDemo = async ({
       };
       await writeDemoManifest(nextManifest);
       await waitForHttp(
-        "http://127.0.0.1:5173/api/demo-encryption-key-meta",
+        `${LOCAL_SOLANA_ENDPOINTS.demoDapp}/api/demo-encryption-key-meta`,
         "demo dApp API",
         isDemoDappApiResponseHealthy,
       );
@@ -2309,8 +2318,8 @@ export const statusDemo = async (): Promise<boolean> => {
     `[status] observability=${manifest.observability ? "enabled" : "disabled"}`,
   );
   if (manifest.observability) {
-    console.log("[status] metrics=http://127.0.0.1:9090");
-    console.log("[status] connector-traces=http://127.0.0.1:16686");
+    console.log(`[status] metrics=${METRICS_URL}`);
+    console.log(`[status] connector-traces=${TRACES_URL}`);
   }
   let healthy = manifest.state === "running";
   const containers = await exactDockerResources(manifest);
@@ -2330,7 +2339,7 @@ export const statusDemo = async (): Promise<boolean> => {
   for (const [service, ready] of [
     ["validator", serviceHealth.validator],
     ["listener", serviceHealth.listener],
-    ["faucet", serviceHealth.faucet],
+    ["operator", serviceHealth.operator],
     ["dapp", serviceHealth.dapp],
     ["kmsCore", serviceHealth.kmsCore],
     ["relayer", serviceHealth.relayer],

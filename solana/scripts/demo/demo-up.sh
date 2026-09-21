@@ -6,25 +6,19 @@
 #   1. bring the stack up from an ownership-checked empty state (clean-e2e.sh).
 #   2. deploy the two demo programs (deploy-demo-programs.sh).
 #   3. seed mints/vault/batchers/personas + write the demo-config JSON (bun demo:seed).
-#   4. print the config path, faucet command, and status/log hints. NO teardown here — the stack is
+#   4. print the config path, operator URL, and status/log hints. NO teardown here — the stack is
 #      meant to stay up for the dApp (#1761) / rehearsal (#1762). The e2e scenario suite is NEVER run here.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 FHEVM="$ROOT/test-suite/fhevm"
-VALIDATOR_RPC="http://127.0.0.1:8899"
+VALIDATOR_RPC="${SOLANA_RPC_URL:?missing lifecycle validator RPC URL}"
 
-# Absolute demo-config path, exported so the seed (runs from $FHEVM) and every later consumer resolve
-# the SAME file regardless of their working directory. demo/config.ts honors DEMO_CONFIG_PATH; without
-# this, the seed would write a CWD-relative path under $FHEVM while this script advertises a repo-root
-# path — the mismatch the unified DEMO_CONFIG_PATH contract closes.
-export DEMO_CONFIG_PATH="${DEMO_CONFIG_PATH:-$ROOT/.fhevm/runtime/solana-demo.json}"
+# The lifecycle hands every path down (layout under its FHEVM_STATE_DIR); this script computes none.
+: "${FHEVM_STATE_DIR:?demo-up.sh is lifecycle-only; run 'bun run demo up' from the repository root}"
+: "${DEMO_CONFIG_PATH:?missing lifecycle demo config path}"
+: "${DEMO_MANIFEST_PATH:?missing lifecycle manifest path}"
 
-# Opt-in permissive CORS for the demo dApp origin (relayer default OFF). Exported before bring-up
-# so the relayer compose service picks it up via its ${RELAYER_PERMISSIVE_CORS:-} passthrough (see
-# docker-compose/relayer-docker-compose.yml) and comes up with the demo CORS layer on; harmless on
-# a re-run against an already-running stack.
-export RELAYER_PERMISSIVE_CORS="${RELAYER_PERMISSIVE_CORS:-1}"
 
 : "${DEMO_LIFECYCLE_DIR:?demo-up.sh is lifecycle-only; run 'bun run demo up' from the repository root}"
 : "${DEMO_BOOT_ID:?missing lifecycle boot identity}"
@@ -33,7 +27,7 @@ export RELAYER_PERMISSIVE_CORS="${RELAYER_PERMISSIVE_CORS:-1}"
   exit 1
 }
 : "${FHEVM_COMPOSE_PROJECT:?missing lifecycle Compose project}"
-python3 - "$ROOT/.fhevm/runtime/solana-demo/manifest.json" "$DEMO_BOOT_ID" "$DEMO_LIFECYCLE_DIR" "$ROOT" "$FHEVM_COMPOSE_PROJECT" <<'PY'
+python3 - "$DEMO_MANIFEST_PATH" "$DEMO_BOOT_ID" "$DEMO_LIFECYCLE_DIR" "$ROOT" "$FHEVM_COMPOSE_PROJECT" <<'PY'
 import json
 import os
 import sys
@@ -82,7 +76,7 @@ CONFIG_PATH="$DEMO_CONFIG_PATH"
 echo
 echo "==> [demo-up] demo stack is up and seeded."
 echo "    config JSON : $CONFIG_PATH"
-echo "    faucet      : lifecycle-managed on http://127.0.0.1:8090"
+echo "    operator    : lifecycle-managed on ${DEMO_OPERATOR_URL:?missing lifecycle operator URL}"
 echo "    smoke       : (cd $FHEVM && bun run demo:smoke)"
 echo "    status      : (cd $ROOT && bun run demo status)"
 echo "    logs        : (cd $ROOT && bun run demo logs)"

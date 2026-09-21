@@ -36,7 +36,7 @@ import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;
-const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));
+const CANONICAL_ACL = bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS));
 const SIGNATURE = `0x${'44'.repeat(65)}` as const;
 
 function key(fill: number): Address {

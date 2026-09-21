@@ -18,8 +18,10 @@ trap 'rm -f "$build_log"' EXIT
 bash "$ROOT/scripts/install-sbf-tools.sh"
 # `close_owned_accounts` exists only behind `admin-sweep` (enabled by `preview-env.json`).
 # Mollusk covers it from this artifact alone; every other suite runs the default build below.
-NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --features admin-sweep 2>&1 | tee "$build_log"
-mv target/deploy/zama_host.so target/deploy/zama_host_admin_sweep.so
+for program in zama_host confidential_token confidential_batcher demo_vault; do
+  NO_DNA=1 anchor build --ignore-keys --no-idl -p "$program" -- --features admin-sweep 2>&1 | tee -a "$build_log"
+  mv "target/deploy/$program.so" "target/deploy/${program}_admin_sweep.so"
+done
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
 if rg -n 'Error:.*[Ss]tack offset' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
@@ -30,7 +32,7 @@ python3 scripts/check_solana_abi.py --root "$ROOT"
 
 # Runtime Mollusk tests load ignored SBF artifacts from target/deploy, and the build above already
 # produced them on the default feature set, so Mollusk runs against the same artifact that ships.
-# The one exception is `zama_host_admin_sweep.so` above, which only the sweep tests load.
+# The exceptions are the `*_admin_sweep.so` artifacts above, loaded only by cleanup tests.
 
 # Event-version constants are runtime u8s stamped on protocol events. The ABI
 # golden manifest (check_solana_abi.py above) pins both programs' versions from

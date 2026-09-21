@@ -2,6 +2,7 @@
 // Poll confirmation so deployment does not also require a WebSocket subscription endpoint.
 import {
   type Instruction,
+  type Signature,
   type Rpc,
   type SolanaRpcApi,
   type TransactionSigner,
@@ -21,6 +22,8 @@ const CONFIRM_INTERVAL_MS = 400;
 
 export type HostDeployContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
+  readonly confirmedSignatures?: Signature[];
+  beforeSubmit?: (signature: Signature, lastValidBlockHeight: bigint) => Promise<void>;
   sendTransaction(payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void>;
 };
 
@@ -28,8 +31,10 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): HostDeployContext => {
   const rpc = createSolanaRpc(rpcUrl);
-  return {
+  const confirmedSignatures: Signature[] = [];
+  const context: HostDeployContext = {
     rpc,
+    confirmedSignatures,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
       const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
@@ -40,6 +45,7 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
       assertIsTransactionWithBlockhashLifetime(signedTransaction);
       const signature = getSignatureFromTransaction(signedTransaction);
       signal?.throwIfAborted();
+      await context.beforeSubmit?.(signature, latestBlockhash.lastValidBlockHeight);
       await rpc
         .sendTransaction(getBase64EncodedWireTransaction(signedTransaction), {
           encoding: 'base64',
@@ -54,7 +60,10 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
           throw new Error(`transaction ${signature} failed: ${JSON.stringify(status.err)}`);
         }
         const level = status?.confirmationStatus;
-        if (level === 'confirmed' || level === 'finalized') return;
+        if (level === 'confirmed' || level === 'finalized') {
+          confirmedSignatures.push(signature);
+          return;
+        }
         if (Date.now() >= deadline) {
           throw new Error(`transaction ${signature} did not confirm within ${CONFIRM_TIMEOUT_MS}ms`);
         }
@@ -62,4 +71,5 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
       }
     },
   };
+  return context;
 };

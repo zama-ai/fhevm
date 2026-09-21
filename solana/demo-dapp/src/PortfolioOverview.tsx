@@ -307,7 +307,7 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
               </div>
               <small id="deposit-amount-help">
                 {depositSource === 'usdc'
-                  ? 'Funded automatically on localnet'
+                  ? 'Demo funds provided automatically'
                   : 'Uses your private cUSDC balance'}
               </small>
             </label>

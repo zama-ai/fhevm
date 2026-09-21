@@ -1,5 +1,6 @@
 import { clearSolanaEncryptionKeyCache, createFhevmEncryptClient } from "@fhevm/sdk/solana";
 
+import { demoApiFetch } from "./demoAuthorization";
 import type { DemoConfig } from "./demoSession";
 
 type EncryptionKeyBytes = NonNullable<
@@ -47,8 +48,8 @@ const parseEncryptionKeyResponse = (value: unknown, config: DemoConfig): Encrypt
   };
 };
 
-const getJson = async (path: string): Promise<unknown> => {
-  const response = await fetch(path);
+const getJson = async (path: `/api/${string}`): Promise<unknown> => {
+  const response = await demoApiFetch(path);
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { readonly error?: string } | null;
     throw new Error(body?.error ?? `${path} failed with HTTP ${response.status}`);

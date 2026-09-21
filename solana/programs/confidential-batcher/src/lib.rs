@@ -57,10 +57,36 @@ pub use state::*;
 // Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
 include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
+#[cfg(feature = "admin-sweep")]
+// Anchor's IDL parser does not resolve #[path] modules.
+mod preview_cleanup {
+    include!("../../preview_cleanup.rs");
+}
+#[cfg(feature = "admin-sweep")]
+use preview_cleanup::*;
+
 /// Anchor entrypoint module for the confidential batcher.
 #[program]
 pub mod confidential_batcher {
     use super::*;
+
+    /// Preview reset: recover program-owned rent after recovering external accounts.
+    #[cfg(feature = "admin-sweep")]
+    pub fn close_owned_accounts<'info>(ctx: Context<'info, PreviewAdmin<'info>>) -> Result<()> {
+        preview_cleanup::close_owned_accounts(ctx)
+    }
+
+    /// Preview reset: burn disposable tokens and recover PDA-owned token account rent.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::close_token(ctx, seeds)
+    }
+
+    /// Preview reset: return unused PDA funding to the deployer.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_drain(ctx: Context<PreviewDrain>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::drain(ctx, seeds)
+    }
 
     /// Creates a batcher config for one direction, wiring a join confidential
     /// mint, a payout confidential mint, and one public vault together.
@@ -83,8 +109,8 @@ pub mod confidential_batcher {
     /// batcher's batches never overlap while pending; the other direction's
     /// batcher is independent). `authority_funding_lamports` is moved from
     /// the payer to the batch authority PDA, which pays the rent the token
-    /// CPIs charge to the account owner. Unspent funding stays on the PDA and
-    /// is unrecoverable by design in this PoC (no sweep instruction).
+    /// CPIs charge to the account owner. Unspent funding stays on the PDA until
+    /// the batch is finished and `reclaim_batch_authority` returns it.
     pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> Result<()> {
         instructions::open_batch(ctx, authority_funding_lamports)
     }
@@ -158,5 +184,19 @@ pub mod confidential_batcher {
     /// account. Permissionless pull — anyone can trigger a user's claim.
     pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         instructions::claim(ctx)
+    }
+
+    /// Returns a finished batch's (settled, canceled or refunding) unspent
+    /// authority funding to the join mint's wrapper authority, the operator
+    /// role that funds batches. Claims and quits pay their own rent, so the
+    /// authority needs no lamports after this point.
+    pub fn reclaim_batch_authority(ctx: Context<ReclaimBatchAuthority>) -> Result<()> {
+        instructions::reclaim_batch_authority(ctx)
+    }
+
+    /// Closes the user's spent join record (payout claimed, or batch
+    /// canceled), returning its rent to the user. User-signed.
+    pub fn close_join_record(ctx: Context<CloseJoinRecord>) -> Result<()> {
+        instructions::close_join_record(ctx)
     }
 }

@@ -4,21 +4,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SOLANA="$ROOT/solana"
-VALIDATOR_RPC="http://127.0.0.1:8899"
+VALIDATOR_RPC="${SOLANA_RPC_URL:?missing validator RPC URL (the lifecycle sets SOLANA_RPC_URL)}"
 DEPLOYER_KEYPAIR="${SOLANA_DEPLOYER_KEYPAIR:-$HOME/.config/solana/id.json}"
 
 echo "==> [demo-deploy] build + deploy confidential_token, demo_vault, confidential_batcher"
-mkdir -p "$SOLANA/target/deploy"
-# Seed the committed program keypairs so the built program ids match each declare_id!. Always
-# overwrite target artifacts left by older branches, as src/solana/validator.ts does for host programs.
-for p in confidential_token demo_vault confidential_batcher; do
-  cp -f "$SOLANA/scripts/e2e/test-keypairs/$p-keypair.json" "$SOLANA/target/deploy/$p-keypair.json"
-done
-
-bash "$SOLANA/scripts/build-programs.sh" localnet confidential_token demo_vault confidential_batcher
+# The validator loaded these programs at genesis (src/solana/validator.ts genesisDeployedPrograms)
+# with the deployer wallet as upgrade authority, so this is a bytecode check on a fresh stack and an
+# in-place upgrade after an edit.
+bash "$SOLANA/scripts/build-programs.sh" preview-env confidential_token demo_vault confidential_batcher
 SOLANA_RPC_URL="$VALIDATOR_RPC" \
 SOLANA_DEPLOYER_KEYPAIR="$DEPLOYER_KEYPAIR" \
 SOLANA_ARTIFACTS_DIR="$SOLANA/target/deploy" \
-SOLANA_ENVIRONMENT=localnet \
 ADDRESSES_DIR="$SOLANA/target/deploy" \
 bun run "$ROOT/solana/deploy/src/cli.ts" demos "${1:-deploy}"

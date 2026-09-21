@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { generateSolanaKeypair } from '../provision';
 import { deployProgramArtifacts } from '../../../../../solana/deploy/src/deploy-programs';
 import { programIdsFor } from '../../../../../solana/deploy/src/environment';
 
@@ -51,12 +52,13 @@ if [ "$1" = address ]; then echo '${host}'; exit 0; fi
 printf '%s\\n' "$1 $2" >> '${directory}/calls'
 ${options.failure ? 'echo "https://rpc.example/?api-key=private-test-value" >&2; exit 1' : ''}
 if [ "$2" = show ]; then echo '{"lastDeploySlot":1,"authority":"${options.wrongAuthority ? 'wrong' : host}"}'; fi
-if [ "$2" = dump ]; then printf '${options.changed ? 'different' : 'fixture\\000\\000'}' > "$6"; fi
+if [ "$2" = dump ]; then printf '${options.changed ? 'different' : 'fixture\\000\\000'}' > "$4"; fi
 `,
     { mode: 0o700 },
   );
   await writeFile(path.join(directory, 'zama_host.so'), 'fixture');
   await writeFile(path.join(directory, 'host.json'), 'fixture');
+  await writeFile(path.join(directory, 'payer.json'), JSON.stringify([...(await generateSolanaKeypair()).bytes]), { mode: 0o600 });
   await writeFile(path.join(directory, 'calls'), '');
   process.env.PATH = `${directory}:${originalPath}`;
   return {

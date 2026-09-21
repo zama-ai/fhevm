@@ -39,7 +39,7 @@ describe("solana dependency-chain load smoke", () => {
   test(
     "32 dependent steps in one execution -> tail == 32, with unrelated work alongside",
     async () => {
-      const { stack, context, wallet, config, secretKey } = await verticalSetup();
+      const { stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
 
       await initializeChain(context, wallet.signer);
       const chain = await extendChain(context, wallet.signer, { links: MAX_CHAIN_LINKS, amount: STEP });
@@ -60,6 +60,7 @@ describe("solana dependency-chain load smoke", () => {
       ]);
       expect(tail).toBe(TAIL);
       expect(count).toBe(7n);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );

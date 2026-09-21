@@ -18,8 +18,8 @@ which.
 
 Program-level docs live next to the code: [`../programs/zama-host/README.md`](../programs/zama-host/README.md)
 (accounts, roles, external-input flow) and
-[`../scripts/e2e/test-keypairs/README.md`](../scripts/e2e/test-keypairs/README.md) (committed test
-keypairs and rotation).
+[`../scripts/e2e/test-keypairs/README.md`](../scripts/e2e/test-keypairs/README.md) (the specimen
+programs' committed test keypairs; the deployed programs have one id everywhere and no committed key).
 
 When a change alters the intended architecture, add or amend the decision in `DESIGN_DECISIONS.md`
 before treating the work as ready for handoff. A replaced decision moves to `DESIGN_HISTORY.md`.

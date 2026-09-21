@@ -49,10 +49,36 @@ pub use state::*;
 // Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
 include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
+#[cfg(feature = "admin-sweep")]
+// Anchor's IDL parser does not resolve #[path] modules.
+mod preview_cleanup {
+    include!("../../preview_cleanup.rs");
+}
+#[cfg(feature = "admin-sweep")]
+use preview_cleanup::*;
+
 /// Anchor entrypoint module for the demo vault.
 #[program]
 pub mod demo_vault {
     use super::*;
+
+    /// Preview reset: recover program-owned rent after recovering external accounts.
+    #[cfg(feature = "admin-sweep")]
+    pub fn close_owned_accounts<'info>(ctx: Context<'info, PreviewAdmin<'info>>) -> Result<()> {
+        preview_cleanup::close_owned_accounts(ctx)
+    }
+
+    /// Preview reset: burn disposable tokens and recover PDA-owned token account rent.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::close_token(ctx, seeds)
+    }
+
+    /// Preview reset: return unused PDA funding to the deployer.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_drain(ctx: Context<PreviewDrain>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::drain(ctx, seeds)
+    }
 
     /// Creates the vault state account, its PDA-owned share mint, and its
     /// PDA-owned underlying token account. Permissionless; no admin role beyond

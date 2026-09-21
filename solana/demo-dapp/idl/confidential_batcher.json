@@ -1,5 +1,5 @@
 {
-  "address": "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG",
+  "address": "DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb",
   "metadata": {
     "name": "confidential_batcher",
     "version": "0.1.0",
@@ -128,7 +128,7 @@
           "docs": [
             "ZamaHost program."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "confidential_token_event_authority"
@@ -138,7 +138,7 @@
           "docs": [
             "Confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -327,7 +327,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -340,7 +340,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -348,6 +348,75 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_join_record",
+      "docs": [
+        "Closes the user's spent join record (payout claimed, or batch",
+        "canceled), returning its rent to the user. User-signed."
+      ],
+      "discriminator": [
+        214,
+        253,
+        223,
+        106,
+        110,
+        247,
+        230,
+        167
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "docs": [
+            "The user who joined; receives the record's rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "batch",
+          "docs": [
+            "The batch the record belongs to."
+          ]
+        },
+        {
+          "name": "join_record",
+          "docs": [
+            "The user's join record for this batch; closed to `user`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  105,
+                  110,
+                  45,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batch"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -475,7 +544,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -488,7 +557,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -753,7 +822,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -766,7 +835,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
@@ -797,8 +866,8 @@
         "batcher's batches never overlap while pending; the other direction's",
         "batcher is independent). `authority_funding_lamports` is moved from",
         "the payer to the batch authority PDA, which pays the rent the token",
-        "CPIs charge to the account owner. Unspent funding stays on the PDA and",
-        "is unrecoverable by design in this PoC (no sweep instruction)."
+        "CPIs charge to the account owner. Unspent funding stays on the PDA until",
+        "the batch is finished and `reclaim_batch_authority` returns it."
       ],
       "discriminator": [
         103,
@@ -1041,7 +1110,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -1054,7 +1123,7 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "token_program",
@@ -1251,7 +1320,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "host_config"
@@ -1264,12 +1333,99 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "system_program",
           "docs": [
             "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "reclaim_batch_authority",
+      "docs": [
+        "Returns a finished batch's (settled, canceled or refunding) unspent",
+        "authority funding to the join mint's wrapper authority, the operator",
+        "role that funds batches. Claims and quits pay their own rent, so the",
+        "authority needs no lamports after this point."
+      ],
+      "discriminator": [
+        164,
+        167,
+        253,
+        18,
+        169,
+        242,
+        223,
+        206
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "Join-mint wrapper authority; receives the lamports."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ]
+        },
+        {
+          "name": "batch",
+          "docs": [
+            "The finished batch (settled, canceled or refunding)."
+          ]
+        },
+        {
+          "name": "batch_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "join_confidential_mint",
+          "docs": [
+            "Confidential mint users join batches with; its authority is the reclaim authority."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program that moves the lamports."
           ],
           "address": "11111111111111111111111111111111"
         }
@@ -1552,7 +1708,7 @@
           "docs": [
             "ZamaHost program (FHE compute + ACL)."
           ],
-          "address": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
           "name": "confidential_token_event_authority"
@@ -1562,14 +1718,14 @@
           "docs": [
             "confidential-token program composed via CPI."
           ],
-          "address": "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
           "name": "demo_vault_program",
           "docs": [
             "demo-vault program composed via CPI."
           ],
-          "address": "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
+          "address": "DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH"
         },
         {
           "name": "token_program",
@@ -1664,6 +1820,19 @@
   ],
   "events": [
     {
+      "name": "BatchAuthorityReclaimed",
+      "discriminator": [
+        109,
+        109,
+        186,
+        58,
+        101,
+        201,
+        30,
+        173
+      ]
+    },
+    {
       "name": "BatchCanceled",
       "discriminator": [
         231,
@@ -1739,6 +1908,19 @@
         3,
         100,
         63
+      ]
+    },
+    {
+      "name": "JoinRecordClosed",
+      "discriminator": [
+        231,
+        12,
+        123,
+        40,
+        7,
+        153,
+        206,
+        173
       ]
     },
     {
@@ -1896,6 +2078,21 @@
       "code": 6022,
       "name": "CancelAuthorityMismatch",
       "msg": "cancel authority does not match the join confidential mint authority"
+    },
+    {
+      "code": 6023,
+      "name": "BatchStillLive",
+      "msg": "batch is still live; authority funding is reclaimable after settle, cancel or refund"
+    },
+    {
+      "code": 6024,
+      "name": "ReclaimAuthorityMismatch",
+      "msg": "reclaim authority does not match the join confidential mint authority"
+    },
+    {
+      "code": 6025,
+      "name": "JoinRecordStillLive",
+      "msg": "join record is still live; close it after claiming or once the batch is canceled"
     }
   ],
   "types": [
@@ -1993,6 +2190,38 @@
               "Informational rate `payout_received * RATE_SCALE / total_joined`,",
               "saturating at u64::MAX (settle). Claims use exact proportional division",
               "instead — never this field."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BatchAuthorityReclaimed",
+      "docs": [
+        "Emitted when a finished batch's unspent authority funding returns to the operator."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batch",
+            "docs": [
+              "Batch account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "docs": [
+              "Lamports moved from the batch authority to the join mint's wrapper authority."
             ],
             "type": "u64"
           }
@@ -2529,6 +2758,38 @@
               "PDA bump for `(batch, user)`."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "JoinRecordClosed",
+      "docs": [
+        "Emitted when a user closes their spent join record."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batch",
+            "docs": [
+              "Batch account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "docs": [
+              "User whose record was closed; received its rent."
+            ],
+            "type": "pubkey"
           }
         ]
       }

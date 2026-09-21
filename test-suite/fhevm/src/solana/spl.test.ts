@@ -20,7 +20,7 @@ const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 
 // Fixed, realistic inputs so the derived escrow is a stable golden: the deployed confidential-token
 // program id (matches the on-chain WrapUsdc failure that motivated this escrow) and two valid mints.
-const TOKEN_PROGRAM = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg" as Address;
+const TOKEN_PROGRAM = "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL" as Address;
 const CONFIDENTIAL_MINT = "So11111111111111111111111111111111111111112" as Address;
 const UNDERLYING_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" as Address;
 
@@ -40,8 +40,8 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
     );
     expect(escrow).toBe(expected);
     // Golden: pins the vault_authority PDA + ATA derivation the seed must match the program/SDK on.
-    expect(vaultAuthority).toBe("G2Pzm1TT4n9vwcViAMGCwH6of9SaLSkPfm25UdtrNfb4" as Address);
-    expect(escrow).toBe("Dte8iCreFgzj26bwLLPgGt5MiyzBeAUcebYRpk5m9uj3" as Address);
+    expect(vaultAuthority).toBe("Y5emEtkuiaUP9HgUujdsyWHrqrYyBkYox9E58ZX9kHc" as Address);
+    expect(escrow).toBe("ErpU2FQWEbT1ESXxEC4J8SKdsHgzwcYDtBCxS5YDGjBt" as Address);
   });
 
   test("builds a CreateIdempotent (tag 1) with the canonical account order and roles", async () => {

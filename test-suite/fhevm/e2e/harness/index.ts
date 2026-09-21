@@ -12,5 +12,7 @@ export { loadEnv, resolveEnv } from "./loadEnv";
 export type { TestEnv, Capabilities } from "./loadEnv";
 export { loadPersonas } from "./personas";
 export type { Persona, Personas } from "./personas";
+export { openRunWallets } from "./wallets";
+export type { RunWallets } from "./wallets";
 export { until } from "../../src/utils/until";
 export type { UntilOptions } from "../../src/utils/until";

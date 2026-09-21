@@ -3,7 +3,6 @@ import { describe, expect, test } from 'bun:test';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
-import { programIdsFor } from '../../../../solana/deploy/src/environment';
 import { getHostConfigEncoder } from '../../../../solana/deploy/src/generated/zamaHost/accounts/hostConfig';
 import { KMS_CONTEXT_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/kmsContext';
 import {
@@ -91,7 +90,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
     async sendTransaction(_payer: TransactionSigner, instructions: readonly Instruction[]) {
       sent.push([...instructions]);
     },
-    async airdropSol() {},
+    async fundSol() {},
   } as unknown as SolanaProvisioningContext;
   return { context, sent };
 };
@@ -163,16 +162,16 @@ describe('bootstrapZamaHost', () => {
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });
 
-  test('preview bootstrap derives the randomness account under the preview host', async () => {
+  test('bootstrap derives the randomness account under the given host, not the compiled default', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
-    const programAddress = programIdsFor('preview-env').zamaHost;
+    const programAddress = (await generateKeyPairSigner()).address;
     await bootstrapZamaHost(context, { payer, gateway, programAddress });
-    const [previewNonce] = await findRandNoncePda({ programAddress });
-    const [localNonce] = await findRandNoncePda();
+    const [givenNonce] = await findRandNoncePda({ programAddress });
+    const [defaultNonce] = await findRandNoncePda();
     const accounts = sent[0][0].accounts!.map((account) => account.address);
-    expect(accounts).toContain(previewNonce);
-    expect(accounts).not.toContain(localNonce);
+    expect(accounts).toContain(givenNonce);
+    expect(accounts).not.toContain(defaultNonce);
   });
 
   test('configured validator: skips initialize_host_config, still defines the context', async () => {

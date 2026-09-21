@@ -20,6 +20,11 @@ on:
   push:
     branches: [feature/solana]
   workflow_dispatch:
+    inputs:
+      programs_only:
+        description: "Build only the Solana deployment image, with an immutable short-SHA tag"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -31,7 +36,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  publish-programs:
+    if: inputs.programs_only == true
+    uses: ./.github/workflows/solana-programs-docker-build.yml
+    permissions:
+      contents: read # Checkout source in the shared builder.
+      packages: write # Publish the immutable deployment image.
+      id-token: write # Shared build provenance authentication.
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+
   publish:
+    if: inputs.programs_only != true
     name: publish/${{ matrix.name }}
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
     timeout-minutes: 90

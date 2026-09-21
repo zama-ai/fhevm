@@ -66,10 +66,11 @@ export type ClaimInstruction<
   TAccountBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountUserPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
-  TAccountZamaProgram extends string | AccountMeta<string> = '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+  TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
-  TAccountConfidentialTokenProgram extends string | AccountMeta<string> = 'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg',
+  TAccountConfidentialTokenProgram extends string | AccountMeta<string> =
+    'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -364,11 +365,11 @@ export async function getClaimInstructionAsync<
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =
-      'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>;
+      'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
@@ -638,11 +639,11 @@ export function getClaimInstruction<
   // Resolve default values.
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
-      '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu' as Address<'6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'>;
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =
-      'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg' as Address<'pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg'>;
+      'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

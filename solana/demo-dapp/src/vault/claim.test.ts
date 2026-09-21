@@ -158,9 +158,9 @@ describe('buildClaimInstruction', () => {
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceStore
-    expect(addresses[17]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[20]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[13]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchPayoutTokenAccount
+    expect(addresses[15]).toBe('4pn8uFyj9EnVWa8g8YGQedU4sCLBCNEQnhcJBZRnkwtw'); // batchPayoutBalanceStore
+    expect(addresses[17]).toBe('CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp'); // zamaEventAuthority
+    expect(addresses[20]).toBe('FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp'); // tokenEventAuthority
   });
 });

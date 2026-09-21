@@ -92,11 +92,17 @@ const flush = async () => {
   });
 };
 
-const connect = async (controller: DemoController) => {
+const connect = async (
+  controller: DemoController,
+  network: DemoSession['config']['network'] = 'devnet',
+  wallet: DemoSession['wallet'] = { kind: 'burner', name: 'Demo wallet' },
+) => {
   await act(async () => {
     await controller.actions.connect(async (isActive) => {
       const session = {
+        wallet,
         config: {
+          network,
           mints: {
             joinConfidential: position.batch,
             payoutConfidential: position.batch,
@@ -249,6 +255,22 @@ describe('useDemoController generation safety', () => {
       kind: 'joined',
       result: { ...nextPosition, amountBaseUnits: 50_000_000n },
     });
+  });
+
+  test.each(['localnet', 'devnet'] as const)('funds external wallets only on localnet (%s)', async (network) => {
+    mocks.lifecycle.mockResolvedValue(settled);
+    mocks.joinDeposit.mockResolvedValue(position);
+    await connect(controller, network, { kind: 'wallet-standard', name: 'Wallet', accountKey: 'account' });
+    await flush();
+
+    await act(async () => {
+      controller.actions.deposit(25, 'usdc');
+    });
+    await flush();
+
+    expect(mocks.fund).toHaveBeenCalledTimes(network === 'localnet' ? 1 : 0);
+    expect(mocks.joinDeposit).toHaveBeenCalled();
+    expect(controller.state.deposit).toEqual({ kind: 'joined', result: position });
   });
 
   test('deposits existing cUSDC without funding public USDC', async () => {

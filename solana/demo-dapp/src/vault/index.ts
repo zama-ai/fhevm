@@ -7,6 +7,11 @@ export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameter
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export {
+  buildReclaimBatchAuthorityInstruction,
+  type SolanaVaultReclaimBatchAuthorityParameters,
+} from './reclaimBatchAuthority.js';
+export { buildCloseJoinRecordInstruction, type SolanaVaultCloseJoinRecordParameters } from './closeJoinRecord.js';
+export {
   buildHarvestInstruction,
   getVaultMetrics,
   type SolanaVaultHarvestParameters,

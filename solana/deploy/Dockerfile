@@ -50,8 +50,10 @@ RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_ENVIRONMENT" \
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
 WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile --production \
+    && ln -s deploy/node_modules /src/solana/node_modules
 COPY solana/deploy/src ./src
+COPY solana/demo-dapp/src/vault/internal/generated /src/solana/demo-dapp/src/vault/internal/generated
 COPY solana/environments/ /src/solana/environments/
 # Bundle to one file so the runtime image does not need bun or a node_modules tree.
 RUN bun build src/cli.ts --target=node --outfile=/out/cli.mjs

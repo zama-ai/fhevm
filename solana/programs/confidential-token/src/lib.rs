@@ -44,10 +44,36 @@ pub use state::*;
 // Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
 include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
+#[cfg(feature = "admin-sweep")]
+// Anchor's IDL parser does not resolve #[path] modules.
+mod preview_cleanup {
+    include!("../../preview_cleanup.rs");
+}
+#[cfg(feature = "admin-sweep")]
+use preview_cleanup::*;
+
 /// Anchor entrypoint module for the confidential token PoC.
 #[program]
 pub mod confidential_token {
     use super::*;
+
+    /// Preview reset: recover program-owned rent after recovering external accounts.
+    #[cfg(feature = "admin-sweep")]
+    pub fn close_owned_accounts<'info>(ctx: Context<'info, PreviewAdmin<'info>>) -> Result<()> {
+        preview_cleanup::close_owned_accounts(ctx)
+    }
+
+    /// Preview reset: burn disposable tokens and recover PDA-owned token account rent.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::close_token(ctx, seeds)
+    }
+
+    /// Preview reset: return unused PDA funding to the deployer.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_drain(ctx: Context<PreviewDrain>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::drain(ctx, seeds)
+    }
 
     /// Initializes a confidential mint and creates its zero encrypted total supply.
     pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Result<()> {

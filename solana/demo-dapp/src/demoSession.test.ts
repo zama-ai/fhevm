@@ -11,7 +11,6 @@ import {
   assertWalletAccountCapabilities,
   describeWalletError,
   parseDemoConfigResponse,
-  parseDemoSessionResponse,
   permitWalletFromWalletAccount,
   planDemoFunding,
   readExactMessageSignature,
@@ -21,12 +20,13 @@ import { parseRuntimeDemoConfig } from './demoConfig';
 const validResponse = {
   config: {
     source: 'demo-config',
+    network: 'localnet',
     demoBootId: 'test-boot',
     chainId: '72057594037940281',
     rpcUrl: 'http://127.0.0.1:8899',
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
-    aclProgram: '0x4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee',
+    aclProgram: '0xb825643b79bf4499ff31ccfe8a297aa0eb30a8a0cc1f2319e82176c1b4d65e71',
     userDecryptContextId: '123',
     kmsSigners: [`0x${'01'.repeat(20)}`],
     kmsEpochId: `0x${'00'.repeat(32)}`,
@@ -41,7 +41,7 @@ const validResponse = {
       batcher: '11111111111111111111111111111111',
       token: '11111111111111111111111111111111',
       vault: '11111111111111111111111111111111',
-      host: '6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu',
+      host: ZAMA_HOST_PROGRAM_ADDRESS,
     },
     mints: {
       joinUnderlying: '11111111111111111111111111111111',
@@ -64,30 +64,18 @@ const validResponse = {
       alice: '11111111111111111111111111111111',
     },
   },
-  aliceKeypair: Array.from({ length: 64 }, (_, index) => index),
 };
 
-describe('parseDemoSessionResponse', () => {
-  test('accepts a seeded localnet session', () => {
-    expect(parseDemoSessionResponse(validResponse)).toEqual(validResponse);
-  });
-
-  test('rejects a non-local RPC before exposing the burner', () => {
+describe('parseDemoConfigResponse', () => {
+  test('rejects a non-local RPC on localnet', () => {
     expect(() =>
-      parseDemoSessionResponse({
-        ...validResponse,
+      parseDemoConfigResponse({
         config: { ...validResponse.config, rpcUrl: 'https://api.mainnet-beta.solana.com' },
       }),
     ).toThrow('must use http://127.0.0.1');
   });
 
-  test('rejects malformed key material', () => {
-    expect(() => parseDemoSessionResponse({ ...validResponse, aliceKeypair: [1, 2, 3] })).toThrow(
-      'must contain exactly 64 bytes',
-    );
-  });
-
-  test('parses public configuration without burner key material', () => {
+  test('parses the public configuration', () => {
     expect(parseDemoConfigResponse({ config: validResponse.config })).toEqual(validResponse.config);
   });
 
@@ -117,15 +105,15 @@ describe('planDemoFunding', () => {
   });
 
   test('tops each missing asset up to its demo target', () => {
-    expect(planDemoFunding(1_500_000_000n, 50_000_000n)).toEqual({
-      sol: 3.5,
+    expect(planDemoFunding(25_000_000n, 50_000_000n)).toEqual({
+      sol: 0.2,
       usdc: 950,
     });
   });
 
   test('retries only the asset that is still below its safety threshold', () => {
     expect(planDemoFunding(5_000_000_000n, 0n)).toEqual({ usdc: 1_000 });
-    expect(planDemoFunding(0n, 1_000_000_000n)).toEqual({ sol: 5 });
+    expect(planDemoFunding(0n, 1_000_000_000n)).toEqual({ sol: 0.2 });
   });
 
   test('funds the requested deposit when it is above the default target', () => {
@@ -194,6 +182,11 @@ describe('Wallet Standard boundary', () => {
     expect(() =>
       assertWalletAccountCapabilities(walletAccount({ features: ['solana:signTransaction'] }), 'Phantom'),
     ).toThrow('does not support message signing');
+  });
+
+  test('requires the selected devnet chain before funding', () => {
+    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom', 'devnet')).not.toThrow();
+    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom', 'devnet')).toThrow('has not enabled Solana devnet');
   });
 
   test('accepts an unchanged decrypt preimage and copies its signature', () => {

@@ -2,8 +2,10 @@
 
 These are **throwaway, publicly-known keypairs** for the confidential-vault demo (#1760) — the same
 policy as `solana/scripts/e2e/test-keypairs/` (the Solana equivalent of Anvil's well-known dev
-accounts). They are **safe to commit** and are **never deployed to / funded on any public cluster**;
-the demo only ever runs against a fresh local `solana-test-validator` bound to localhost.
+accounts). They are public localnet fixtures. Older preview runs used these actors on devnet;
+recovery imports them only to reclaim that historical funding. New devnet runs generate
+private actors, save them in `SOLANA_RECOVERY_DIR`, and back them up to the preview Secret
+before funding. These files are not the private program/deployer keys held in AWS/1Password.
 
 ## Persona / mint keypairs (this directory)
 
@@ -14,22 +16,15 @@ the demo only ever runs against a fresh local `solana-test-validator` bound to l
 | `keeper.json` | Operator that plays `dispatch` + `settle` (settle must read as an operator action, not a user button). |
 | `alice.json` | End-user persona that deposits and redeems. |
 | `bob.json` | Second end-user persona. |
-| `mint-authority.json` | SPL mint authority for the mock-USDC faucet (`demo:faucet` mints from this key). |
+| `mint-authority.json` | SPL mint authority for the mock-USDC faucet (`demo:operator` mints from this key). |
 
 The demo-config JSON carries only the **pubkeys** of these; the keys sign from these files, so a
 scenario cross-checks the loaded key against the published address. `test-suite/fhevm/demo/loadDemoEnv.ts`
-(`DEMO_KEYPAIRS`) points at this directory.
+(`demoKeypairs(env)`) selects this directory only on localnet.
 
-## Program keypairs (in `../../e2e/test-keypairs/`)
+## Program keypairs
 
-The two demo programs deploy from committed program keypairs alongside the other PoC program keys:
-
-| File | Program |
-| --- | --- |
-| `demo_vault-keypair.json` | `demo_vault` (its pubkey is the program id, pinned in `declare_id!`). |
-| `confidential_batcher-keypair.json` | `confidential_batcher` (pubkey = program id, pinned in `declare_id!`). |
-
-`deploy-demo-programs.sh` seeds `target/deploy/` from there so `anchor build --ignore-keys` +
-`solana program deploy` produce programs at exactly the `declare_id!` ids the SDK/config expect —
-the same pattern the e2e side-stack setup (`test-suite/fhevm/src/solana/validator.ts`
-`seedProgramKeypairs`) uses for `zama_host` / `confidential_token`.
+None. `demo_vault` and `confidential_batcher` have one program id on every cluster
+(`solana/environments/preview-env.json`); the local validator loads their build at genesis with the
+deployer wallet as upgrade authority (`test-suite/fhevm/src/solana/validator.ts`
+`genesisDeployedPrograms`), and `deploy-demo-programs.sh` only checks or upgrades bytecode.

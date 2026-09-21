@@ -191,6 +191,8 @@ const targets = [
         'cancelDispatch',
         'settle',
         'claim',
+        'reclaimBatchAuthority',
+        'closeJoinRecord',
       ]),
       // Anchor inlines the CoprocessorInputAttestation (join) and MmrInclusionProof (settle) structs
       // directly into the instruction data. Keep the initializeBatcher direction enum plus batchStatus

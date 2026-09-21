@@ -1,17 +1,13 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
 
-beforeEach(() => {
-  vi.stubGlobal('window', { location: { origin: 'http://127.0.0.1:5173' } });
-});
-
 describe('browser demo requests', () => {
-  test('uses the exact same-origin dApp API without browser credentials', async () => {
+  test('calls the same-origin dApp API without browser credentials or redirects', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response('{}'));
-    await demoApiFetch('/api/demo-session', { headers: { accept: 'application/json' } }, fetcher);
+    await demoApiFetch('/api/demo-config', { headers: { accept: 'application/json' } }, fetcher);
 
-    expect(fetcher).toHaveBeenCalledWith('http://127.0.0.1:5173/api/demo-session', {
+    expect(fetcher).toHaveBeenCalledWith('/api/demo-config', {
       headers: { accept: 'application/json' },
       credentials: 'omit',
       redirect: 'error',
@@ -22,8 +18,8 @@ describe('browser demo requests', () => {
   });
 
   test.each([
-    ['/airdrop-sol', 'http://127.0.0.1:5173/api/demo-faucet/airdrop-sol'],
-    ['/mint-usdc', 'http://127.0.0.1:5173/api/demo-faucet/mint-usdc'],
+    ['/airdrop-sol', '/api/demo-faucet/airdrop-sol'],
+    ['/mint-usdc', '/api/demo-faucet/mint-usdc'],
   ] as const)('routes %s through the same-origin dApp server', async (path, expectedUrl) => {
     const fetcher = vi.fn().mockResolvedValue(new Response('{}'));
     await demoFaucetFetch(path, { method: 'POST' }, fetcher);
@@ -32,12 +28,5 @@ describe('browser demo requests', () => {
       credentials: 'omit',
       redirect: 'error',
     });
-  });
-
-  test('refuses to send demo requests from another page origin', () => {
-    vi.stubGlobal('window', { location: { origin: 'http://localhost:5173' } });
-    expect(() => demoApiFetch('/api/demo-session')).toThrow(
-      'refusing local demo request from http://localhost:5173',
-    );
   });
 });
