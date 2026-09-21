@@ -1,7 +1,7 @@
 // Wait until every image built this run is pullable from GHCR.
 // 404 is "not yet" (tag propagation). Transport/5xx stay inside registryClient.
 //
-//   await require('./ci/preview-env/scripts/wait-built-ghcr-tags.cjs')({
+//   await require('./ci/preview-env/scripts/resolve/wait-built-ghcr-tags.cjs')({
 //     core, user, token, images: [{ repo, tag }],
 //   })
 //

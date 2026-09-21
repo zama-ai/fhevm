@@ -138,8 +138,8 @@ jobs:
           # operator picked, which is what makes this testable before merge.
           ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.repository.default_branch }}
           sparse-checkout: |
-            ci/preview-env/scripts/sweep-wallets.sh
-            ci/preview-env/scripts/sweep-wallets.cjs
+            ci/preview-env/scripts/wallets/sweep-wallets.sh
+            ci/preview-env/scripts/wallets/sweep-wallets.cjs
           sparse-checkout-cone-mode: false
 
       - name: Install ethers for the wallet sweep
@@ -155,7 +155,7 @@ jobs:
         timeout-minutes: 10
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
-        run: bash ci/preview-env/scripts/sweep-wallets.sh
+        run: bash ci/preview-env/scripts/wallets/sweep-wallets.sh
 
       - name: Destroy preview namespace
         id: destroy

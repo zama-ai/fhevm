@@ -1,7 +1,7 @@
 // Resolve the tag of every image the deploy job installs, derive the preview
 // namespace, and write the deployment-plan job summary. Invoked from the
 // resolve-tags github-script step:
-//   await require('./ci/preview-env/scripts/resolve-tags.cjs')({ core, context, github })
+//   await require('./ci/preview-env/scripts/resolve/resolve-tags.cjs')({ core, context, github })
 // Env: NEEDS, EVENT_NAME, INPUTS (parsed overrides_json from check-labels),
 // ACTOR, MAX_IMAGE_COMMIT_COUNT, GHCR_USER, GHCR_READ_TOKEN.
 //

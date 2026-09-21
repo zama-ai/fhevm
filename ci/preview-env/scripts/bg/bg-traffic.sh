@@ -12,7 +12,7 @@
 #                          so a later setup reuses the same token (delete that ConfigMap to start a new token)
 #
 # The loop itself is test-suite/e2e/scripts/erc20-traffic.ts (copied into the pod at setup until
-# it ships in the image). Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-traffic.sh <verb>
+# it ships in the image). Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-traffic.sh <verb>
 # Env: NAMESPACE (required), DEPLOY_POLYGON (default: true when the env has a Polygon host chain),
 #      TRAFFIC_INTERVAL_SECS (60), TRAFFIC_DECRYPT_EVERY (2), TRAFFIC_MINT_EVERY (10),
 #      TRAFFIC_MAX_TRANSFER (1000), TRAFFIC_MAX_ITERATIONS (0 = until stop),
@@ -21,7 +21,7 @@ set -euo pipefail
 
 verb="${1:?usage: bg-traffic.sh setup|start|status|verify|burst on|burst off|stop|teardown}"
 : "${NAMESPACE:?}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 script_src="${root}/test-suite/e2e/scripts/erc20-traffic.ts"
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT

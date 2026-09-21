@@ -10,7 +10,7 @@
 # streams only hold unconsumed blocks and Blue's groups resume at the tip.
 # Idempotent: if it aborts half-way, fix the cause and run it again.
 #
-# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-reset.sh
+# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-reset.sh
 # Env: NAMESPACE (required), NB_COPROCESSOR (2), DEPLOY_POLYGON (true),
 #      BCS_STACK_VERSION (default: what the running Blue binary prints for
 #      --stack-version, which is also what the Blue migration job bootstrapped),
