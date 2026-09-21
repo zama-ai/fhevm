@@ -104,5 +104,8 @@ describe('prepareTransientStore', () => {
       message,
     );
     expect(withStore.instructions).toEqual(expected.instructions);
+    expect(() => appendTransientStoreInstructions(transientStore, [body], withStore)).toThrow(
+      'must not open or close the transient store',
+    );
   });
 });

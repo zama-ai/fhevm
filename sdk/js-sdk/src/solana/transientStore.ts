@@ -76,9 +76,15 @@ function isTransientStoreLifecycleInstruction(host: Address, instruction: Instru
   );
 }
 
-function sandwichTransientStore(transientStore: TransientStore, instructions: readonly Instruction[]): Instruction[] {
+function sandwichTransientStore(
+  transientStore: TransientStore,
+  instructions: readonly Instruction[],
+  alreadyPresent: readonly Instruction[] = [],
+): Instruction[] {
   const { open, close, host } = lifecycleOf(transientStore);
-  if (instructions.some((instruction) => isTransientStoreLifecycleInstruction(host, instruction))) {
+  if (
+    [...alreadyPresent, ...instructions].some((instruction) => isTransientStoreLifecycleInstruction(host, instruction))
+  ) {
     throw new Error(
       'FHE transaction instructions must not open or close the transient store; appendTransientStoreInstructions already does both',
     );
@@ -103,6 +109,8 @@ export function appendTransientStoreInstructions(
   instructions: readonly Instruction[],
   message?: KitTransactionMessage,
 ): Instruction[] | ReturnType<typeof appendTransactionMessageInstructions> {
-  const sandwiched = sandwichTransientStore(transientStore, instructions);
+  const alreadyPresent =
+    message === undefined ? [] : ((message as { readonly instructions?: readonly Instruction[] }).instructions ?? []);
+  const sandwiched = sandwichTransientStore(transientStore, instructions, alreadyPresent);
   return message === undefined ? sandwiched : appendTransactionMessageInstructions(sandwiched, message);
 }

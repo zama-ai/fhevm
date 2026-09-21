@@ -28,7 +28,7 @@ import { Connection } from "@solana/web3.js";
 import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
 import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
-import { currentHandle, userDecryptExpect } from "../../src/solana/transientStore-vertical";
+import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
 import {
   buildIncrementCounterInstruction,

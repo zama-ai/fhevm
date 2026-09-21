@@ -1,3 +1,4 @@
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Instruction } from '@solana/kit';
 
 import {
@@ -9,7 +10,9 @@ import {
  * Accounts for the batcher `quit` instruction. `batchAuthority` and `joinRecord` default to their
  * PDAs; the batcher/token/system program ids default to their compiled addresses.
  */
-export type SolanaVaultQuitParameters = QuitAsyncInput;
+export type SolanaVaultQuitParameters = Omit<QuitAsyncInput, 'transientStore' | 'instructions'> & {
+  readonly transientStore: TransientStore;
+};
 
 /**
  * Builds the batcher `quit` instruction: the user leaves a pending batch and is refunded the exact
@@ -18,5 +21,10 @@ export type SolanaVaultQuitParameters = QuitAsyncInput;
  * builds the batcher instruction; the from-value transfer is a CPI the program makes internally.
  */
 export async function buildQuitInstruction(parameters: SolanaVaultQuitParameters): Promise<Instruction> {
-  return getQuitInstructionAsync(parameters);
+  const { transientStore, ...accounts } = parameters;
+  return getQuitInstructionAsync({
+    ...accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+  });
 }

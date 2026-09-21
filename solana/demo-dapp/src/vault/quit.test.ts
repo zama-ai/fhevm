@@ -1,4 +1,4 @@
-import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
@@ -23,8 +23,7 @@ describe('buildQuitInstruction', () => {
     const user = signer(addr(1));
     const transientStore = await prepareTransientStore({ payer: signer(addr(2)), host: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = await buildQuitInstruction({
-      transientStore: transientStore.address,
-      instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+      transientStore,
       user,
       payer: signer(addr(2)),
       batcher: addr(3),
