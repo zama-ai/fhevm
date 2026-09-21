@@ -245,6 +245,7 @@ export async function recoverPreview(
       }
     }
   }
+  const pendingTables = new Map<Address, TransactionSigner>();
   for (const wallet of fundingOnly ? [] : wallets.values()) {
     const tokens = await context.rpc
       .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64', commitment: 'confirmed' })
@@ -297,26 +298,36 @@ export async function recoverPreview(
         }
         if (bytes.readBigUInt64LE(4) === 0xffffffffffffffffn)
           await send({ programAddress: ALT, accounts: [writable(table.pubkey), signer(wallet)], data: u32(3) });
-        const deadline = Date.now() + 10 * 60_000;
-        for (;;) {
-          const info = (
-            await context.rpc.getAccountInfo(table.pubkey, { encoding: 'base64', commitment: 'confirmed' }).send()
-          ).value;
-          if (!info) break;
-          const deactivated = Buffer.from(info.data[0], 'base64').readBigUInt64LE(4);
-          if ((await context.rpc.getSlot({ commitment: 'finalized' }).send()) > deactivated + 513n) {
-            await send({
-              programAddress: ALT,
-              accounts: [writable(table.pubkey), signer(wallet), writable(payer.address)],
-              data: u32(4),
-            });
-            break;
-          }
-          if (Date.now() > deadline) throw new Error(`lookup table ${table.pubkey} still cooling down; retry recovery`);
-          await sleep(5_000);
-        }
+        pendingTables.set(table.pubkey, wallet);
       }
     }
+  }
+  // Start every cooldown before waiting, including tables owned by different wallets.
+  const tableDeadline = Date.now() + 10 * 60_000;
+  while (pendingTables.size > 0) {
+    const finalizedSlot = await context.rpc.getSlot({ commitment: 'finalized' }).send();
+    for (const [table, wallet] of pendingTables) {
+      const info = (
+        await context.rpc.getAccountInfo(table, { encoding: 'base64', commitment: 'confirmed' }).send()
+      ).value;
+      if (!info) {
+        pendingTables.delete(table);
+        continue;
+      }
+      const deactivated = Buffer.from(info.data[0], 'base64').readBigUInt64LE(4);
+      if (finalizedSlot > deactivated + 513n) {
+        await send({
+          programAddress: ALT,
+          accounts: [writable(table), signer(wallet), writable(payer.address)],
+          data: u32(4),
+        });
+        pendingTables.delete(table);
+      }
+    }
+    if (pendingTables.size === 0) break;
+    if (Date.now() > tableDeadline)
+      throw new Error(`${pendingTables.size} lookup tables still cooling down; retry recovery`);
+    await sleep(5_000);
   }
   // Recover interrupted uploads; these are loader Buffer accounts, never ProgramData.
   {
