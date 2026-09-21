@@ -19,10 +19,11 @@ commonConfig:
   # Database connection string
   databaseUrl: "postgresql://$(DATABASE_ENDPOINT)/connector"
 
-  # Selects a bundled smart contract address preset from
-  # configs/contracts-<network>.yaml. Allowed values: "" (no preset), "devnet",
-  # "testnet", "mainnet". An unrecognized value fails the render. The per-chain
-  # *ContractAddresses below override individual preset entries when set.
+  # Selects a bundled preset from configs/contracts-<network>.yaml: chain ids,
+  # contract addresses and the set of host chains deployed on that network.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet". An
+  # unrecognized value fails the render. The per-chain values below override
+  # individual preset entries when set.
   network: ""
 
   # Gateway chain RPC node endpoint (HTTP)
@@ -34,17 +35,17 @@ commonConfig:
     decryption: ""
     gatewayConfig: ""
 
-  # Host chains, shared by every component (ACL checks in kms-worker, accepted
-  # handles in endpoint). `name` selects the preset entry (ethereum, polygon,
-  # bnb_testnet); chainId and aclAddress override the preset when set. An
-  # "ethereum" entry is required by gw-listener and tx-sender.
+  # Host chains, keyed by chain name and shared by every component . The preset
+  # selected by `network` decides which chains are deployed and defaults their
+  # chainId / aclAddress. Every deployed chain MUST have its `url` set by the
+  # operator or the render fails.
   hostChains:
-    - name: ethereum
-      url: "http://ethereum-node:8545"
+    ethereum:
+      url: ""
       chainId: ""
       aclAddress: ""
-    - name: polygon
-      url: "http://polygon-node:8545"
+    polygon:
+      url: ""
       chainId: ""
       aclAddress: ""
 
