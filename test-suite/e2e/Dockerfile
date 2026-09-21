@@ -46,7 +46,8 @@ COPY sdk/js-sdk ./sdk/js-sdk
 # The sdk's codegen:solana:check step reads the Anchor IDLs from here.
 COPY coprocessor/fhevm-engine/host-listener/idl ./coprocessor/fhevm-engine/host-listener/idl
 # The SDK build runs `codegen:solana:check`, which regenerates the Solana program clients from
-# these IDLs and compares them with the committed deployment, dapp and test-suite clients.
+# these IDLs and compares them with the committed deployment, dapp, specimen, and confidential-token
+# clients.
 COPY solana/deploy/src/generated ./solana/deploy/src/generated
 COPY solana/programs/encrypted-counter/idl ./solana/programs/encrypted-counter/idl
 COPY solana/programs/dep-chain/idl ./solana/programs/dep-chain/idl
@@ -55,6 +56,7 @@ COPY solana/programs/encrypted-counter/idl ./solana/programs/encrypted-counter/i
 COPY solana/programs/dep-chain/idl ./solana/programs/dep-chain/idl
 COPY solana/demo-dapp/src/vault/internal/generated ./solana/demo-dapp/src/vault/internal/generated
 COPY test-suite/fhevm/src/solana/internal/generated ./test-suite/fhevm/src/solana/internal/generated
+COPY solana/clients/confidential-token/src/generated ./solana/clients/confidential-token/src/generated
 
 # sdk/js-sdk is no longer an npm workspace member: install its own deps
 # standalone using its own lockfile, then point test-suite/e2e's @fhevm/sdk at

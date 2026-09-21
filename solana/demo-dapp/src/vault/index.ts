@@ -38,15 +38,11 @@ export { openBatchForBatcher, type SolanaVaultOpenBatchForBatcherParameters } fr
 // the host protocol.
 export { confidentialTransfer, type SolanaConfidentialTransferParameters } from './actions/confidentialTransfer.js';
 export { buildDiscloseSecpInstruction, type SolanaDiscloseSecpAccounts } from './actions/discloseSecp.js';
-export {
-  buildMakeTokenAccountHandlePublicInstruction,
-  type SolanaMakeTokenAccountHandlePublicParameters,
-} from './actions/makeHandlePublic.js';
 
 // Program ids the seeder records into the demo-config `programs` block. `CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS`
 // is already exported below with the batcher internals; the token/host pair comes from the
 // workspace confidential-token client, and the demo vault id from its generated client.
-export { DisclosedValueKind, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+export { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/programAddress.js';
 
 export {

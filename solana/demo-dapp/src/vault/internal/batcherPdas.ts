@@ -5,12 +5,10 @@ import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinReco
 import { solanaEncryptedStoreAddress } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findPendingBurnPda, findTokenAccountPda } from '@fhevm/confidential-token';
 
 const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');
-const TOKEN_ACCOUNT_SEED = encoder.encode('token-account');
-const PENDING_BURN_SEED = encoder.encode('pending-burn');
 /** Fixed confidential-token label for the all-or-zero burned amount (`burned_amount_key`). */
 /**
  * Anchor event-CPI authority seed (`__event_authority`). Both the zama-host and confidential-token
@@ -51,12 +49,12 @@ export async function batchAddress(batcher: Address, index: bigint): Promise<Add
 
 /** The canonical confidential token account for one owner and mint (`token_account_address`). */
 export async function tokenAccountAddress(mint: Address, owner: Address): Promise<Address> {
-  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [TOKEN_ACCOUNT_SEED, addressBytes(mint), addressBytes(owner)]);
+  return (await findTokenAccountPda({ mint, owner }))[0];
 }
 
 /** The single PendingBurn for a confidential token account (`pending_burn_address`). */
 export async function pendingBurnAddress(mint: Address, tokenAccount: Address): Promise<Address> {
-  return pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [PENDING_BURN_SEED, addressBytes(mint), addressBytes(tokenAccount)]);
+  return (await findPendingBurnPda({ mint, tokenAccount }))[0];
 }
 
 export async function joinStoreAddress(batch: Address, user: Address): Promise<Address> {

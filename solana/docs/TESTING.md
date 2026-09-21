@@ -132,9 +132,10 @@ Two rules the layer holds itself to:
 
 1. **Each behavior is tested at exactly one layer.** Mollusk owns instruction admission, guards,
    arithmetic and cost; scenarios never re-test that territory.
-2. **Scenarios reach the protocol through `@fhevm/sdk` Solana actions and the generated Codama
-   clients** (`test-suite/fhevm/src/solana/internal/generated`, rendered from the committed IDLs —
-   never hand-rolled instruction bytes). A missing SDK read/action is an SDK gap to file.
+2. **Scenarios reach the protocol through `@fhevm/sdk` Solana actions and generated Codama
+   clients.** Token instructions come from `@fhevm/confidential-token`. Specimen programs
+   (encrypted-counter, dep-chain) still live at `test-suite/fhevm/src/solana/internal/generated`.
+   Never hand-rolled instruction bytes. A missing SDK read/action is an SDK gap to file.
 
 The harness (`e2e/harness/`):
 

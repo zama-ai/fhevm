@@ -58,8 +58,14 @@ fi
 echo "==> [demo-up] lifecycle-owned fresh bring-up (clean-e2e.sh)"
 bash "$ROOT/solana/scripts/e2e/clean-e2e.sh"
 
-# The lifecycle starts Vite after this script returns. Install its frozen graph once per fresh boot
-# so local and CI bring-up never rely on Bun's implicit auto-install; reseed intentionally skips it.
+# The lifecycle starts Vite after this script returns. Install the confidential-token client's
+# graph first: tsc follows `@fhevm/confidential-token` into that package's source. Then install
+# the dapp graph once per fresh boot so local and CI bring-up never rely on Bun's implicit
+# auto-install; reseed intentionally skips it.
+if ! ( cd "$ROOT/solana/clients/confidential-token" && bun install --frozen-lockfile ); then
+  echo "==> [demo-up] confidential-token client install failed; retrying once without cached registry data" >&2
+  ( cd "$ROOT/solana/clients/confidential-token" && bun install --force --no-cache --frozen-lockfile )
+fi
 if ! ( cd "$ROOT/solana/demo-dapp" && bun install --frozen-lockfile ); then
   echo "==> [demo-up] dependency install failed; retrying once without cached registry data" >&2
   ( cd "$ROOT/solana/demo-dapp" && bun install --force --no-cache --frozen-lockfile )

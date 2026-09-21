@@ -60,8 +60,8 @@ const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
-    // Full instruction/account/type/PDA surface. Errors, events and constants stay pruned.
-    keepAll: true,
+    // Omit `keep`: render the full instruction/account/type/PDA surface. Errors, events and
+    // constants are still pruned below for every target.
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
         .find(({ name }) => name === 'confidential_transfer')
@@ -245,33 +245,31 @@ for (const target of targets) {
   deploymentProgramIds[anchorIdl.metadata.name] = anchorIdl.address;
   const codama = createFromRoot(rootNodeFromAnchor(anchorIdl));
   const program = codama.getRoot().program;
-  const keep = target.keepAll
-    ? {
-        instructions: new Set(program.instructions.map(({ name }) => name)),
-        accounts: new Set(program.accounts.map(({ name }) => name)),
-        definedTypes: new Set(program.definedTypes.map(({ name }) => name)),
-        pdas: new Set(program.pdas.map(({ name }) => name)),
+  const keep = target.keep;
+  if (keep) {
+    for (const [kind, names] of Object.entries(keep)) {
+      const present = new Set(program[kind].map((node) => node.name));
+      for (const name of names) {
+        if (!present.has(name)) throw new Error(`Required Codama ${kind} node is missing: ${name}`);
       }
-    : target.keep;
-
-  for (const [kind, names] of Object.entries(keep)) {
-    const present = new Set(program[kind].map((node) => node.name));
-    for (const name of names) {
-      if (!present.has(name)) throw new Error(`Required Codama ${kind} node is missing: ${name}`);
     }
   }
 
   const selectors = [
-    ...program.instructions
-      .filter(({ name }) => !keep.instructions.has(name))
-      .map(({ name }) => `[instructionNode]${name}`),
-    ...program.accounts
-      .filter(({ name }) => !(keep.accounts ?? new Set()).has(name))
-      .map(({ name }) => `[accountNode]${name}`),
-    ...program.definedTypes
-      .filter(({ name }) => !keep.definedTypes.has(name))
-      .map(({ name }) => `[definedTypeNode]${name}`),
-    ...program.pdas.filter(({ name }) => !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
+    ...(keep
+      ? [
+          ...program.instructions
+            .filter(({ name }) => !keep.instructions.has(name))
+            .map(({ name }) => `[instructionNode]${name}`),
+          ...program.accounts
+            .filter(({ name }) => !(keep.accounts ?? new Set()).has(name))
+            .map(({ name }) => `[accountNode]${name}`),
+          ...program.definedTypes
+            .filter(({ name }) => !keep.definedTypes.has(name))
+            .map(({ name }) => `[definedTypeNode]${name}`),
+          ...program.pdas.filter(({ name }) => !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
+        ]
+      : []),
     ...program.errors.map(({ name }) => `[errorNode]${name}`),
     ...(program.events ?? []).map(({ name }) => `[eventNode]${name}`),
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),

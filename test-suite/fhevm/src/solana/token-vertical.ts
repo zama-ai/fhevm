@@ -16,7 +16,16 @@ import { findKmsContextPda } from "../../../../solana/deploy/src/generated/zamaH
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";
-import { getConfidentialBurnInstructionAsync, getRedeemBurnedAmountInstructionAsync, findTotalSupplyAuthorityPda, findVaultAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import {
+  getConfidentialBurnInstructionAsync,
+  getRedeemBurnedAmountInstructionAsync,
+  getMakeTokenAccountHandlePublicInstructionAsync,
+  findTotalSupplyAuthorityPda,
+  findVaultAuthorityPda,
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  DisclosedValueKind,
+} from '@fhevm/confidential-token';
 import type { CoprocessorInputAttestationArgs } from '@fhevm/confidential-token';
 
 /** The zama-host KMS-context PDA for `contextId` (`["kms-context", 32-byte id]`). */
@@ -158,17 +167,16 @@ export const sealBurnedAmountHandle = async (
   context: SolanaProvisioningContext,
   params: { readonly owner: TransactionSigner; readonly mint: Address; readonly handle: Uint8Array },
 ): Promise<void> => {
-  const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   await context.sendTransaction(params.owner, [
-    await vault.buildMakeTokenAccountHandlePublicInstruction({
+    await getMakeTokenAccountHandlePublicInstructionAsync({
       payer: params.owner,
       owner: params.owner,
       mint: params.mint,
       tokenAccount: target.tokenAccount,
       encryptedStore: target.burnedAmountStore,
       hostConfig: await hostConfigAddress(),
-      kind: vault.DisclosedValueKind.BurnedAmount,
+      kind: DisclosedValueKind.BurnedAmount,
       handle: params.handle,
     }),
   ]);

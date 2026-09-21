@@ -258,6 +258,7 @@ fi
 ( cd "$ROOT/sdk/js-sdk" && npm ci )
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$ROOT/solana/deploy" && bun install --frozen-lockfile )
+( cd "$ROOT/solana/clients/confidential-token" && bun install --frozen-lockfile )
 ( cd "$FHEVM" && bun install --frozen-lockfile )
 [ -L "$FHEVM/node_modules/@fhevm/sdk" ]
 # Prove both runtimes resolve the SDK and its dependencies through the symlink.
