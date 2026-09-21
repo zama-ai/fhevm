@@ -1,11 +1,12 @@
 import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-
-import { getWrapUsdcInstructionAsync } from './internal/generated/confidentialToken/instructions/wrapUsdc.js';
-import { findTokenAccountPda } from './internal/generated/confidentialToken/pdas/tokenAccount.js';
-import { findVaultAuthorityPda as findMintVaultAuthorityPda } from './internal/generated/confidentialToken/pdas/vaultAuthority.js';
-import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
+import {
+  getWrapUsdcInstructionAsync,
+  findTokenAccountPda,
+  findVaultAuthorityPda as findMintVaultAuthorityPda,
+  findTotalSupplyAuthorityPda,
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+} from '@fhevm/confidential-token';
 import {
   associatedTokenAddress,
   tokenStateAddress,

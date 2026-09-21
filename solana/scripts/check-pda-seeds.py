@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check explicit handwritten TypeScript/Rust PDA-seed counterparts."""
+"""Check confidential-token PDA-seed usage. TypeScript seeds come from the Codama client."""
 
 from __future__ import annotations
 
@@ -21,16 +21,9 @@ class SeedPair:
     rust_symbol: str
 
 
-# Keep this list explicit. Global literal-set membership is unsafe: a wrong TypeScript seed could
-# otherwise be vouched for by an unrelated Rust program that happens to use the same bytes.
-SEED_PAIRS = (
-    SeedPair(
-        pathlib.Path("demo-dapp/src/vault/internal/batcherPdas.ts"),
-        "PENDING_BURN_SEED",
-        pathlib.Path("programs/confidential-token/src/constants.rs"),
-        "PENDING_BURN_SEED",
-    ),
-)
+# TypeScript token PDAs are generated (`@fhevm/confidential-token`). Remaining checks are
+# Rust-only: one `PENDING_BURN_SEED` constant, and exactly one use at each call site.
+SEED_PAIRS: tuple[SeedPair, ...] = ()
 RUST_USAGE_PATHS = (
     pathlib.Path("programs/confidential-token/src/state/mod.rs"),
     pathlib.Path("programs/confidential-token/src/instructions/confidential_burn.rs"),
@@ -102,7 +95,12 @@ def usage_errors(sources: dict[pathlib.Path, str]) -> list[str]:
 
 
 def self_test() -> int:
-    pair = SEED_PAIRS[0]
+    pair = SeedPair(
+        pathlib.Path("fixture.ts"),
+        "PENDING_BURN_SEED",
+        pathlib.Path("fixture.rs"),
+        "PENDING_BURN_SEED",
+    )
     ts = "const PENDING_BURN_SEED = encoder.encode('pending-burn');"
     rust = 'pub const PENDING_BURN_SEED: &[u8] = b"pending-burn";'
     cases = (

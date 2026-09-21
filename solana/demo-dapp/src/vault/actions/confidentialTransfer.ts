@@ -31,12 +31,8 @@ import { bytes32HexToHandle } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
-import { getConfidentialTransferInstruction } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from '../internal/generated/confidentialToken/programAddress.js';
 import { associatedTokenAddress } from '../internal/tokenAccounts.js';
+import { getConfidentialTransferInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 

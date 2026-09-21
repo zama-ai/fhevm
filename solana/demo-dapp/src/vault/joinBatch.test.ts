@@ -26,7 +26,6 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
@@ -34,6 +33,7 @@ import {
 } from '@fhevm/sdk/solana/host';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode('6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu'));

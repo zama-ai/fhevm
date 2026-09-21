@@ -120,6 +120,7 @@ jobs:
           - 'solana/demo-dapp/idl/**'
           - 'solana/demo-dapp/src/vault/internal/generated/**'
           - 'test-suite/fhevm/src/solana/internal/generated/**'
+          - 'solana/clients/confidential-token/**'
           - 'solana/deploy/src/generated/**'
           - 'solana/programs/encrypted-counter/idl/**'
           - 'solana/programs/dep-chain/idl/**'

@@ -24,19 +24,7 @@ import {
   getInitializeBatcherInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/initializeBatcher.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import {
-  INITIALIZE_MINT_DISCRIMINATOR,
-  getInitializeMintInstructionDataDecoder,
-} from './internal/generated/confidentialToken/instructions/initializeMint.js';
-import {
-  INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR,
-  getInitializeTokenAccountInstructionDataDecoder,
-} from './internal/generated/confidentialToken/instructions/initializeTokenAccount.js';
-import {
-  WRAP_USDC_DISCRIMINATOR,
-  getWrapUsdcInstructionDataDecoder,
-} from './internal/generated/confidentialToken/instructions/wrapUsdc.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
+import { INITIALIZE_MINT_DISCRIMINATOR, getInitializeMintInstructionDataDecoder, INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR, getInitializeTokenAccountInstructionDataDecoder, WRAP_USDC_DISCRIMINATOR, getWrapUsdcInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

@@ -6,6 +6,6 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './confidentialMint.js';
+export * from './confidentialTokenAccount.js';
 export * from './pendingBurn.js';
-export * from './totalSupplyAuthority.js';
-export * from './vaultAuthority.js';

@@ -6,6 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './balanceHandleUpdateReason.js';
 export * from './coprocessorInputAttestation.js';
 export * from './disclosedValueKind.js';
+export * from './encryptedSlot.js';
+export * from './encryptedStore.js';
+export * from './hostConfig.js';
+export * from './kmsContext.js';
+export * from './kmsThresholds.js';
 export * from './mmrInclusionProof.js';
+export * from './totalSupplyUpdateReason.js';
+export * from './transferInput.js';

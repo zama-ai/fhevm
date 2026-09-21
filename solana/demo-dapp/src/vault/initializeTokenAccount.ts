@@ -1,10 +1,7 @@
 import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
 import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
-
-import { getInitializeTokenAccountInstructionAsync } from './internal/generated/confidentialToken/instructions/initializeTokenAccount.js';
-import { findTokenAccountPda } from './internal/generated/confidentialToken/pdas/tokenAccount.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
+import { getInitializeTokenAccountInstructionAsync, findTokenAccountPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
   readonly fhe: SolanaFheTransactionAccounts;

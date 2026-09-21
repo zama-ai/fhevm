@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk",
+    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk && rm -rf node_modules/@fhevm/confidential-token && ln -s ../../../../solana/clients/confidential-token node_modules/@fhevm/confidential-token",
     "check": "tsc --noEmit",
     "compat-smoke": "bun run src/compat/smoke.ts",
     "test": "bun test src",
@@ -18,6 +18,7 @@
     "start": "bun run src/cli.ts"
   },
   "dependencies": {
+    "@fhevm/confidential-token": "file:../../solana/clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",

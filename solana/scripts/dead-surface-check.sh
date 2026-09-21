@@ -95,6 +95,7 @@ TS_ROOTS=(
   sdk/js-sdk/src/solana
   solana/demo-dapp/src
   solana/demo-dapp/demoServerPlugin.ts
+  solana/clients
   test-suite/fhevm
 )
 
@@ -833,6 +834,7 @@ if run_check 6; then
     local file="$1" kind="$2" name="$3" same_file_counts="${4:-}"
     case "$file" in
       */internal/generated/*) return ;;
+      solana/clients/*/src/generated/*) return ;;
     esac
     local production external internal
     production=$(index_refs "\b${name}\b" "$file")

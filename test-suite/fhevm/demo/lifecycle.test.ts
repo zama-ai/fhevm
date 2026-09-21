@@ -333,10 +333,14 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain("FHEVM_COMPOSE_PROJECT");
     expect(script).toContain('state") != "starting');
     expect(script).toContain('cd "$ROOT/solana/demo-dapp"');
-    expect(script.match(/bun install --frozen-lockfile/g)).toHaveLength(1);
+    expect(script).toContain('cd "$ROOT/solana/clients/confidential-token"');
+    expect(script.match(/bun install --frozen-lockfile/g)).toHaveLength(2);
     expect(
       script.match(/bun install --force --no-cache --frozen-lockfile/g),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
+    expect(script).toMatch(
+      /if ! \( cd "\$ROOT\/solana\/clients\/confidential-token" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/clients\/confidential-token" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
+    );
     expect(script).toMatch(
       /if ! \( cd "\$ROOT\/solana\/demo-dapp" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/demo-dapp" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
     );
@@ -389,6 +393,9 @@ describe("demo lifecycle collision policy", () => {
     // A stale-snapshot regression guard: the dependency must stay a symlink, and nothing may
     // reintroduce the copy-refresh dance (`--force` reinstalls, materialize-test-sdk.sh).
     expect(script).toContain('[ -L "$FHEVM/node_modules/@fhevm/sdk" ]');
+    expect(script).toContain(
+      '( cd "$ROOT/solana/clients/confidential-token" && bun install --frozen-lockfile )',
+    );
     expect(script).not.toContain("materialize-test-sdk");
     expect(script).not.toContain("bun install --force");
   });
@@ -465,7 +472,8 @@ describe("demo lifecycle collision policy", () => {
     // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
     // through tsconfig paths), which node's type-stripping cannot resolve.
     expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
-    expect(demoViteConfig).toContain("noExternal: ['@fhevm/sdk']");
+    expect(demoViteConfig).toContain("'@fhevm/sdk'");
+    expect(demoViteConfig).toContain("'@fhevm/confidential-token'");
     expect(workflow).not.toContain("--preserve-symlinks");
     expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     // Both consumers must reach the SDK through a symlink into its live source tree: bun installs
@@ -475,14 +483,20 @@ describe("demo lifecycle collision policy", () => {
     // declared in the dependency spec itself.) Resolution must then follow the symlink to its
     // real path so the SDK's runtime dependencies come from the SDK's own dependency graph —
     // which is why the vite config must not turn on `preserveSymlinks`.
-    const swapSnapshotForSymlink =
+    const swapSdkSnapshotForSymlink =
       "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk";
     for (const consumer of [consumerPackage, demoDappPackage]) {
       expect(consumer.dependencies["@fhevm/sdk"]).toBe(
         "file:../../sdk/js-sdk/src",
       );
-      expect(consumer.scripts.postinstall).toBe(swapSnapshotForSymlink);
+      expect(consumer.scripts.postinstall).toContain(swapSdkSnapshotForSymlink);
     }
+    expect(consumerPackage.scripts.postinstall).toContain(
+      "ln -s ../../../../solana/clients/confidential-token node_modules/@fhevm/confidential-token",
+    );
+    expect(demoDappPackage.scripts.postinstall).toContain(
+      "ln -s ../../../clients/confidential-token node_modules/@fhevm/confidential-token",
+    );
     expect(demoViteConfig).not.toContain("preserveSymlinks");
   });
 

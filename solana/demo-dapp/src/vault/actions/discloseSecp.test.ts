@@ -5,9 +5,8 @@ import { base58 } from '@scure/base';
 import type { MmrProof } from '@fhevm/sdk/solana';
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
-import { getDiscloseSecpInstructionDataDecoder } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { getDiscloseSecpInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

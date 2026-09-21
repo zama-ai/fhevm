@@ -5,6 +5,7 @@
     "": {
       "name": "@fhevm/solana-demo-dapp",
       "dependencies": {
+        "@fhevm/confidential-token": "file:../clients/confidential-token",
         "@fhevm/sdk": "file:../../sdk/js-sdk/src",
         "@noble/curves": "^2.0.1",
         "@noble/hashes": "^2.0.1",
@@ -92,6 +93,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.27.7", "", { "os": "win32", "cpu": "ia32" }, "sha512-SmwKXe6VHIyZYbBLJrhOoCJRB/Z1tckzmgTLfFYOfpMAx63BJEaL9ExI8x7v0oAO3Zh6D/Oi1gVxEYr5oUCFhw=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.7", "", { "os": "win32", "cpu": "x64" }, "sha512-56hiAJPhwQ1R4i+21FVF7V8kSD5zZTdHcVuRFMW0hn753vVfQN8xlx4uOPT4xoGH0Z/oVATuR82AiqSTDIpaHg=="],
+
+    "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../clients/confidential-token", { "dependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@fhevm/sdk": ["@fhevm/sdk@file:../../sdk/js-sdk/src", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "@scure/base": "1.2.6", "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "wasm-feature-detect": "^1.8.0" }, "peerDependencies": { "ethers": ">=6.8.0", "typescript": ">=5.0.4", "viem": ">=2" }, "optionalPeers": ["ethers", "typescript", "viem"] }],
 

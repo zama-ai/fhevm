@@ -2,33 +2,31 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 // token-vertical — the typed confidential-token consume arc the token scenario drives:
 // burn (attested external amount) -> seal -> KMS-certified public decrypt -> redeem + disclose.
 //
-// The burn/redeem instructions come from the test-suite's own Codama confidential-token client
-// (they are deliberately absent from the demo-dapp's client — the demo never burns or redeems
-// directly); the seal and disclose steps reuse the vault module's product builders. Everything
-// the retired live-client derived with anchor-client (token account, pending burn, escrow ATAs,
-// KMS context) derives here from the same seeds.
+// Burn/redeem come from @fhevm/confidential-token; seal and disclose reuse the vault module's
+// product builders. Identities (token account, pending burn, escrow ATAs, KMS context) derive
+// from the same on-chain seeds.
 
 import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
 import type { MmrProof } from "@fhevm/sdk/solana";
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
-import {
-  getConfidentialBurnInstructionAsync,
-  getRedeemBurnedAmountInstructionAsync,
-} from "./internal/generated/confidentialToken/instructions/index.js";
-import { findTotalSupplyAuthorityPda } from "./internal/generated/confidentialToken/pdas/totalSupplyAuthority.js";
-import { findVaultAuthorityPda } from "./internal/generated/confidentialToken/pdas/vaultAuthority.js";
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from "./internal/generated/confidentialToken/programAddress.js";
-import type { CoprocessorInputAttestationArgs } from "./internal/generated/confidentialToken/types/index.js";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "../../../../solana/deploy/src/generated/zamaHost/pdas/index.js";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";
+import {
+  getConfidentialBurnInstructionAsync,
+  getRedeemBurnedAmountInstructionAsync,
+  getMakeTokenAccountHandlePublicInstructionAsync,
+  findTotalSupplyAuthorityPda,
+  findVaultAuthorityPda,
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  DisclosedValueKind,
+} from '@fhevm/confidential-token';
+import type { CoprocessorInputAttestationArgs } from '@fhevm/confidential-token';
 
 /** The zama-host KMS-context PDA for `contextId` (`["kms-context", 32-byte id]`). */
 export const kmsContextAddress = async (
@@ -169,17 +167,16 @@ export const sealBurnedAmountHandle = async (
   context: SolanaProvisioningContext,
   params: { readonly owner: TransactionSigner; readonly mint: Address; readonly handle: Uint8Array },
 ): Promise<void> => {
-  const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   await context.sendTransaction(params.owner, [
-    await vault.buildMakeTokenAccountHandlePublicInstruction({
+    await getMakeTokenAccountHandlePublicInstructionAsync({
       payer: params.owner,
       owner: params.owner,
       mint: params.mint,
       tokenAccount: target.tokenAccount,
       encryptedStore: target.burnedAmountStore,
       hostConfig: await hostConfigAddress(),
-      kind: vault.DisclosedValueKind.BurnedAmount,
+      kind: DisclosedValueKind.BurnedAmount,
       handle: params.handle,
     }),
   ]);

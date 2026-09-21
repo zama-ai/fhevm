@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => ({
   ssr: {
     // Operator routes load the local SDK through Vite. Bundle it so it goes through the same
     // resolution and transforms as the rest of the app instead of being required as an external.
-    noExternal: ['@fhevm/sdk'],
+    noExternal: ['@fhevm/sdk', '@fhevm/confidential-token'],
   },
   // Vitest needs only transforms; omitting the development server plugin keeps tests independent
   // of runtime credentials without creating a credential bypass mode.

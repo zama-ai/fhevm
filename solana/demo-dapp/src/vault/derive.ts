@@ -1,7 +1,4 @@
 import type { Address } from '@solana/kit';
-
-import { findTotalSupplyAuthorityPda } from './internal/generated/confidentialToken/pdas/totalSupplyAuthority.js';
-import { findVaultAuthorityPda as findMintVaultAuthorityPda } from './internal/generated/confidentialToken/pdas/vaultAuthority.js';
 import {
   findVaultAuthorityPda as findDemoVaultAuthorityPda,
   findVaultTokenAccountPda,
@@ -14,6 +11,7 @@ import {
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { batchAddress, tokenStateAddress, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
 import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
+import { findTotalSupplyAuthorityPda, findVaultAuthorityPda as findMintVaultAuthorityPda } from '@fhevm/confidential-token';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the

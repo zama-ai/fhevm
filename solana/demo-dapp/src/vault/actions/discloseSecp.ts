@@ -3,8 +3,7 @@ import { getProgramDerivedAddress, type Address, type Instruction } from '@solan
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import type { MmrProof } from '@fhevm/sdk/solana';
 import { verifyPublicDecryptArgsFromClaim } from '@fhevm/sdk/solana';
-import { getDiscloseSecpInstruction } from '../internal/generated/confidentialToken/instructions/discloseSecp.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
+import { getDiscloseSecpInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
