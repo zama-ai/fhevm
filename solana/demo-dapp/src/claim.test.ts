@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { address } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -63,7 +63,10 @@ let closeInstruction: unknown;
 
 describe('sponsored payout claim', () => {
   beforeEach(async () => {
-    [openInstruction, closeInstruction] = (await createSolanaFheTransaction({ payer: keeper as never, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).wrap([]);
+    [openInstruction, closeInstruction] = appendTransientStoreInstructions(
+      await prepareTransientStore({ payer: keeper as never, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+      [],
+    );
     vi.clearAllMocks();
     mocks.getBatch.mockResolvedValue({ index: 1n, addresses: { batch }, state: { status: 2 } });
     mocks.getJoinRecord.mockResolvedValue({ batch, user, claimed: false });

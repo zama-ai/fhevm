@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
@@ -69,7 +69,7 @@ describe('vault provisioning builders', () => {
 
   it('initialize_mint: right program + discriminator (encrypted store/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
-      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
       authority: signer(addr(1)),
       mint: signer(addr(2)),
       underlyingMint: addr(3),
@@ -84,7 +84,7 @@ describe('vault provisioning builders', () => {
     const payer = signer(addr(1));
     const owner = addr(2);
     const instruction = await buildInitializeTokenAccountInstruction({
-      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       owner,
       mint: addr(3),
@@ -99,7 +99,7 @@ describe('vault provisioning builders', () => {
 
   it('get-or-create returns create only for absent or System-owned canonical accounts', async () => {
     const parameters = {
-      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer: signer(addr(1)),
       owner: addr(2),
       mint: addr(3),
@@ -126,7 +126,7 @@ describe('vault provisioning builders', () => {
 
   it('wrap_usdc: public amount, no proof; encodes the u64 amount', async () => {
     const instruction = await buildWrapUsdcInstruction({
-      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
       owner: signer(addr(1)),
       mint: addr(2),
       underlyingMint: addr(3),
@@ -156,7 +156,7 @@ describe('vault provisioning builders', () => {
       kmsContext: addr(21),
     };
     const result = await openBatchForBatcher({
-      fhe: (await createSolanaFheTransaction({ payer: signer(addr(1)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
       roots,
       batchIndex: 0n,
       payer: signer(addr(1)),

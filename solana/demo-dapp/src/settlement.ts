@@ -1,5 +1,4 @@
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import type { ProofService } from './vault/internal/publicProof.js';
 import {
   createSolanaRpc,
@@ -8,7 +7,13 @@ import {
   type Signature,
   type TransactionSigner,
 } from '@solana/kit';
-import { createFhevmPublicDecryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
+import {
+  appendTransientStoreInstructions,
+  createFhevmPublicDecryptClient,
+  defineFhevmSolanaChain,
+  prepareTransientStore,
+  setFhevmRuntimeConfig,
+} from '@fhevm/sdk/solana';
 import {
   buildDispatchBatchInstruction,
   deriveJoinRecordAddress,
@@ -116,13 +121,13 @@ export const dispatchVaultBatch = async (
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
-  const fhe = await createSolanaFheTransaction({ payer: session.keeper, programAddress: session.config.programs.host });
+  const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
   return sendTransaction(
     session.config,
     session.keeper,
-    fhe.wrap([
+    appendTransientStoreInstructions(transientStore, [
       await buildDispatchBatchInstruction({
-        fhe: fhe.accounts,
+        transientStore: transientStore,
         payer: session.keeper,
         batcher: roots.batcher,
         batch: position.batch,

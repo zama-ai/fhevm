@@ -1,10 +1,10 @@
-import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
 import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 import { getInitializeTokenAccountInstructionAsync, findTokenAccountPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
-  readonly fhe: SolanaFheTransactionAccounts;
+  readonly transientStore: TransientStore;
   /** Signer funding the new confidential account and encrypted balance. */
   readonly payer: TransactionSigner;
   /** Owner of the confidential account. This address does not need to sign. */
@@ -35,7 +35,8 @@ export async function buildInitializeTokenAccountInstruction(
 ): Promise<Instruction> {
   const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
   return getInitializeTokenAccountInstructionAsync({
-    ...parameters.fhe,
+    transientStore: parameters.transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
     owner: parameters.owner,
     mint: parameters.mint,

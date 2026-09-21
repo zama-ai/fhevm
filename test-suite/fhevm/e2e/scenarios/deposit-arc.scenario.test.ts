@@ -1,5 +1,5 @@
 import { asBytes32Hex } from '@fhevm/sdk/base';
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 import { encryptedStoreHandle } from "@fhevm/sdk/solana";
 import { SOLANA_LEAF_PROOF_PORT, SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 // Live vault deposit: fund → wrap → join → dispatch → public decrypt → settle → claim → user decrypt.
@@ -194,22 +194,22 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       };
 
 
-      const aliceFhe = await createSolanaFheTransaction({ payer: alice, programAddress: config.programs.host });
+      const aliceTransientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
       // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
       // cShares (payout mint) for the claim phase: claim.rs requires the user's payout account to
       // ALREADY exist (nothing creates it on the fly), so it is provisioned here with the same
       // one-time initialization the join mint gets, keeping the claim phase a pure claim. initialize
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
-      await send(alice, aliceFhe.wrap([
+      await send(alice, appendTransientStoreInstructions(aliceTransientStore, [
         await vault.buildInitializeTokenAccountInstruction({
-          fhe: aliceFhe.accounts,
+          transientStore: aliceTransientStore,
           payer: alice,
           owner: alice.address,
           mint: config.mints.joinConfidential,
           hostConfig: config.hostConfig,
         }),
         await vault.buildInitializeTokenAccountInstruction({
-          fhe: aliceFhe.accounts,
+          transientStore: aliceTransientStore,
           payer: alice,
           owner: alice.address,
           mint: config.mints.payoutConfidential,
@@ -220,9 +220,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Step 3: wrap the funded mock USDC into alice's confidential cUSDC balance. wrap_usdc escrows a
       // PUBLIC amount and needs no input proof, which is why it wires cheaply here.
       const wrapBaseUnits = BigInt(Math.round(DEPOSIT_USDC * 10 ** USDC_DECIMALS));
-      await send(alice, aliceFhe.wrap([
+      await send(alice, appendTransientStoreInstructions(aliceTransientStore, [
         await vault.buildWrapUsdcInstruction({
-          fhe: aliceFhe.accounts,
+          transientStore: aliceTransientStore,
           owner: alice,
           mint: config.mints.joinConfidential,
           underlyingMint: config.mints.joinUnderlying,
@@ -356,12 +356,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // encrypted value accounts, event authorities — from these five roots (its unit test pins each derivation
       // against dispatch.rs), so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
-      const keeperFhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
+      const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
       await send(
         keeper,
-        keeperFhe.wrap([
+        appendTransientStoreInstructions(keeperTransientStore, [
           await vault.buildDispatchBatchInstruction({
-            fhe: keeperFhe.accounts,
+            transientStore: keeperTransientStore,
             payer: keeper,
             batcher: roots.batcher,
             batch,
@@ -447,9 +447,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
       await send(
         alice,
-        aliceFhe.wrap([
+        appendTransientStoreInstructions(aliceTransientStore, [
           await vault.buildClaimInstruction({
-            fhe: aliceFhe.accounts,
+            transientStore: aliceTransientStore,
             payer: alice,
             user: alice.address,
             batcher: roots.batcher,

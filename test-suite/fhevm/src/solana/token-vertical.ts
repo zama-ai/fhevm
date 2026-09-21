@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 // token-vertical — the typed confidential-token consume arc the token scenario drives:
 // burn (attested external amount) -> seal -> KMS-certified public decrypt -> redeem + disclose.
 //
@@ -82,9 +82,10 @@ export const confidentialBurn = async (
   const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: params.mint });
-  const fhe = await createSolanaFheTransaction({ payer: params.owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
+  const transientStore = await prepareTransientStore({ payer: params.owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await getConfidentialBurnInstructionAsync({
-    ...fhe.accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner: params.owner,
     mint: params.mint,
     underlyingMint: params.underlyingMint,
@@ -103,7 +104,7 @@ export const confidentialBurn = async (
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: params.amountAttestation,
   });
-  await context.sendTransaction(params.owner, fhe.wrap([instruction]), {
+  await context.sendTransaction(params.owner, appendTransientStoreInstructions(transientStore, [instruction]), {
     skipPreflight: true,
   });
 };

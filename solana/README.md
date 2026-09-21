@@ -201,16 +201,16 @@ An app program drives compute by CPI into `zama-host`, using
   The client opens the transient store before application calls and closes it last, refunding its rent. There is no
   receiver-callback path — that EVM workaround is unnecessary on Solana.
 
-The transaction owner creates the context once, forwards its accounts to all app
-builders, and wraps the complete body before signing:
+The transaction owner prepares the transient store once, forwards it to all app
+builders, and appends the complete body before signing:
 
 ```ts
-import { createSolanaFheTransaction, solanaHostProgram } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore, solanaHostProgram } from '@fhevm/sdk/solana';
 
-const fhe = await createSolanaFheTransaction({ payer, programAddress: solanaHostProgram(chain) });
-const initialize = await buildInitialize({ ...inputs, fhe: fhe.accounts });
-const join = await buildJoin({ ...inputs, fhe: fhe.accounts });
-const instructions = fhe.wrap([initialize, join]);
+const transientStore = await prepareTransientStore({ payer, host: solanaHostProgram(chain) });
+const initialize = await buildInitialize({ ...inputs, transientStore });
+const join = await buildJoin({ ...inputs, transientStore });
+const instructions = appendTransientStoreInstructions(transientStore, [initialize, join]);
 // Sign and send through the application's existing transaction transport.
 ```
 

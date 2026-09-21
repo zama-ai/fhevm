@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 // Scenario: delegated user-decrypt — the #1690 evidence pack, live.
 //
 // Two arcs over the same protocol surface:
@@ -28,7 +28,7 @@ import { Connection } from "@solana/web3.js";
 import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
 import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
-import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
+import { currentHandle, userDecryptExpect } from "../../src/solana/transientStore-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
 import {
   buildIncrementCounterInstruction,
@@ -262,15 +262,12 @@ describe("solana delegated user-decrypt", () => {
 
       // These proposals name member[0] as transient store sponsor, so its signature is required at execution.
       // The vault still authenticates its own State by CPI.
-      const fhe = await createSolanaFheTransaction({
-        payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address),
-        programAddress: hostProgram,
-      });
-      const [open, close] = fhe.wrap([]).map(toWeb3Instruction);
+      const transientStore = await prepareTransientStore({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address), host: hostProgram, });
+      const [open, close] = appendTransientStoreInstructions(transientStore, []).map(toWeb3Instruction);
       // The DAO's value: the vault's own counter at 42, written through two approved proposals.
       for (const instruction of [
-        await buildInitializeCounterInstruction(vaultSigner, fhe.accounts),
-        await buildIncrementCounterInstruction(vaultSigner, 42n, fhe.accounts),
+        await buildInitializeCounterInstruction(vaultSigner, transientStore),
+        await buildIncrementCounterInstruction(vaultSigner, 42n, transientStore),
       ]) {
         const index = await proposeThroughSquad(connection, squad, members[0]!, instruction);
         await approveProposal(connection, squad, members[0]!, index);
