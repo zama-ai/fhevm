@@ -29,9 +29,14 @@ on:
   workflow_dispatch:
     inputs:
       namespace:
-        description: "Exact namespace to destroy (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<run-id digest>). Must start with fhevm-ci-."
+        description: "Exact preview namespace to destroy or reset (copy from the manual deploy run's summary, e.g. fhevm-ci-<actor>-<run-id digest>). Must start with fhevm-ci-."
         required: true
         type: string
+      reset_solana_only:
+        description: "Recover funds, wipe and reinitialize Solana application/host state; retain the namespace, KMS and EVM services."
+        required: false
+        type: boolean
+        default: false
 
 # Serialize teardowns of the same env so overlapping triggers (a PR `closed`
 # firing alongside an `unlabeled`, or a manual dispatch for the same namespace)
@@ -63,7 +68,7 @@ jobs:
       contains(github.event.label.name, 'preview-env-') &&
       !contains(toJSON(github.event.pull_request.labels.*.name), 'preview-env-'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.reset_solana_only && 120 || 60 }}
     # The comment step needs to write to the PR; the workflow-level
     # permissions ({}) don't grant it, so scope it here at the job level.
     permissions:
@@ -142,29 +147,51 @@ jobs:
             ci/preview-env/scripts/sweep-wallets.cjs
             ci/preview-env/solana-host/recover.sh
             ci/preview-env/solana-host/ownership.sh
+            ci/preview-env/solana-host/reset-preview.sh
+            charts/contracts
           sparse-checkout-cone-mode: false
 
       - name: Install ethers for the wallet sweep
+        if: ${{ !inputs.reset_solana_only }}
         continue-on-error: true
         run: |
           mkdir -p /tmp/wallet-tools && cd /tmp/wallet-tools
           npm install --silent --no-save ethers@6
 
       - name: Return leftover testnet funds to the treasury
+        if: ${{ !inputs.reset_solana_only }}
         continue-on-error: true
         # Each refund waits for one confirmation on Sepolia/Amoy; bounded so a stalled
-        # RPC cannot eat the job's 30m and strand the namespace.
+        # RPC cannot consume the recovery budget and strand the namespace.
         timeout-minutes: 10
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/sweep-wallets.sh
 
+      - name: Validate Solana-only reset target
+        if: inputs.reset_solana_only
+        run: |
+          if [[ "${NAMESPACE}" != fhevm-ci-* || "${NAMESPACE}" == fhevm-ci-solana-owner ]]; then
+            echo "::error::Refusing reset: target is not a preview namespace."
+            exit 1
+          fi
+          # The normal destroy path permits namespaces without Solana. An explicit reset
+          # must fail instead of reporting success when recovery would be a no-op.
+          kubectl get namespace "${NAMESPACE}" >/dev/null
+          kubectl get secret solana-deployer -n "${NAMESPACE}" -o name >/dev/null
+
+      - name: Recover funds and reinitialize Solana state
+        if: inputs.reset_solana_only
+        run: bash ci/preview-env/solana-host/reset-preview.sh
+
       - name: Recover Solana funds before deleting signing keys
+        if: ${{ !inputs.reset_solana_only }}
         env:
           SOLANA_KEEP_OPERATION: "1"
         run: bash ci/preview-env/solana-host/recover.sh reset
 
       - name: Destroy preview namespace
+        if: ${{ !inputs.reset_solana_only }}
         id: destroy
         run: |
           # Guard against a typo'd dispatch input nuking an unrelated namespace:
@@ -210,7 +237,7 @@ jobs:
         # No PR to comment on for workflow_dispatch - result goes to the summary.
         # deleted == 'true' only when a namespace actually existed and was torn
         # down, so we never comment on the many closed PRs that had no env.
-        if: success() && github.event_name == 'pull_request' && steps.destroy.outputs.deleted == 'true'
+        if: success() && !inputs.reset_solana_only && github.event_name == 'pull_request' && steps.destroy.outputs.deleted == 'true'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -218,7 +245,7 @@ jobs:
             :broom: e2e preview environment (namespace `${{ env.NAMESPACE }}`) has been torn down.
 
       - name: Comment teardown failure on PR
-        if: failure() && github.event_name == 'pull_request'
+        if: failure() && !inputs.reset_solana_only && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -226,16 +253,26 @@ jobs:
             :warning: **Teardown of e2e preview environment (namespace `${{ env.NAMESPACE }}`) FAILED.** Crossplane-managed AWS resources (S3 buckets, enclave nodegroups) may still be leaking - see the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and clean up manually.
 
       - name: Write teardown success to summary
-        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted == 'true'
+        if: success() && !inputs.reset_solana_only && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted == 'true'
         run: |
           echo ":broom: e2e preview environment (namespace \`${NAMESPACE}\`) teardown finished." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write no-op to summary
-        if: success() && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted != 'true'
+        if: success() && !inputs.reset_solana_only && github.event_name == 'workflow_dispatch' && steps.destroy.outputs.deleted != 'true'
         run: |
           echo ":information_source: Namespace \`${NAMESPACE}\` did not exist - nothing to tear down." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write teardown failure to summary
-        if: failure() && github.event_name == 'workflow_dispatch'
+        if: failure() && !inputs.reset_solana_only && github.event_name == 'workflow_dispatch'
         run: |
           echo ":warning: Teardown of namespace \`${NAMESPACE}\` FAILED - Crossplane-managed AWS resources may still be leaking; check the run and clean up manually." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write Solana reset success to summary
+        if: success() && inputs.reset_solana_only
+        run: |
+          echo "Solana recovery, state reset and reinitialization completed for namespace \`${NAMESPACE}\`. Namespace, signing keys, KMS and EVM services retained. Reseed the local demo client before reuse." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write Solana reset failure to summary
+        if: failure() && inputs.reset_solana_only
+        run: |
+          echo "Solana reset/reinitialization FAILED for namespace \`${NAMESPACE}\`; state may be partially reset or reinitialized. Namespace, signing keys, KMS and EVM services retained. Diagnose recovery before retrying or bootstrapping." >> "$GITHUB_STEP_SUMMARY"

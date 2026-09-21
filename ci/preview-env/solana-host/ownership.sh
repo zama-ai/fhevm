@@ -15,7 +15,7 @@ solana_acquire() {
   fi
   owner=$(kubectl get namespace "$solana_owner_namespace" -o jsonpath='{.metadata.annotations.solana-preview-owner-uid}')
   [[ "$owner" == "$uid" ]] || { echo 'Shared Solana programs belong to another preview; refusing changes.' >&2; return 1; }
-  kubectl create configmap solana-operation -n "$solana_owner_namespace" --from-literal="namespace=$NAMESPACE" >/dev/null || { echo 'Another Solana operation is active; inspect it before retrying.' >&2; return 1; }
+  kubectl create configmap solana-operation -n "$solana_owner_namespace" --from-literal="namespace=$NAMESPACE" >/dev/null || { echo 'Cannot acquire the Solana operation lock; inspect the Kubernetes error and existing lock before retrying.' >&2; return 1; }
   export SOLANA_OPERATION_HELD=1
 }
 solana_release_operation() {
