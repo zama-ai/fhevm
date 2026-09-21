@@ -2578,11 +2578,11 @@ type ReconcileRow = (
     Option<i64>,
 );
 
-/// Fail a proposal no GCS fleet ever picked up: still `UpgradeActivated`, its
-/// Gateway gate never fired, and every chain's window is behind this stack's
-/// watermark. Without this it would block every later proposal. A Green may
-/// still be waiting on its gates; once one has released a worker, the attempt
-/// is left to that Green's rollback.
+/// Fail a proposal no GCS fleet ever picked up: still `UpgradeActivated`, no
+/// `gcs-*` schema exists (a Green creates its own at startup and tails into
+/// it, so none means nothing was written), and every chain's window is behind
+/// this stack's watermark. Without this it would block every later proposal.
+/// Anything with a schema is left to that Green's rollback or manual reset.
 async fn fail_expired_without_gcs(pool: &Pool<Postgres>) -> Result<(), Error> {
     let failed = sqlx::query(
         r#"
@@ -2591,7 +2591,9 @@ async fn fail_expired_without_gcs(pool: &Pool<Postgres>) -> Result<(), Error> {
                last_error = 'window_expired_no_gcs', updated_at = NOW()
          WHERE stack_role = 'GCS'
            AND state = 'UpgradeActivated'
+           AND status = 'in_progress'
            AND gw_dry_run_started = FALSE
+           AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname LIKE 'gcs-%')
            AND NOT EXISTS (
                SELECT 1 FROM upgrade_state w
                 WHERE w.stack_role = 'GCS'
@@ -4182,6 +4184,78 @@ mod tests {
                 )
             );
         }
+    }
+
+    /// A chain with no watermark yet blocks expiry: unknown is not "passed".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_keeps_proposal_with_unknown_watermark() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_chain(&pool, 1, false, false).await;
+        seed_gcs_chain(&pool, 2, false, false).await;
+        sqlx::query(
+            "UPDATE upgrade_state SET state = 'UpgradeActivated', gw_dry_run_started = FALSE",
+        )
+        .execute(&pool)
+        .await
+        .expect("set UpgradeActivated");
+        // Chain 1 past its window; chain 2 has no host_chain_blocks_valid row at all.
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 201, 'finalized')",
+        )
+        .bind(&[0xD1u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed tip");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
+    }
+
+    /// A `gcs-*` schema means a Green exists and has been tailing into it, even
+    /// with both gates still closed: the attempt is not this controller's to fail.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_leaves_attempt_with_gcs_schema_to_green() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // end_block = 200
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE")
+            .execute(&pool)
+            .await
+            .expect("close gw gate");
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 201, 'finalized')",
+        )
+        .bind(&[0xD2u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed tip");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
     }
 
     /// Once Green's Gateway gate has released its zkproof-worker, the attempt has
