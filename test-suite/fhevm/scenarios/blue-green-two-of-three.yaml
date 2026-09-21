@@ -13,8 +13,15 @@ topology:
 bcs:
   source:
     mode: registry
-    tag: v0.14.0-7
+    tag: v0.14.2-0
 
 gcs:
   source:
     mode: local
+
+# The pinned Blue (tfhe-rs 1.6) cannot read key material from a 0.15+ KMS core, so the core boots
+# on the last 0.14 release, generates the keys, and is upgraded to the resolved bundle once the
+# operators have ingested them: the same order as a production KMS upgrade over existing keys.
+kms:
+  bootstrap:
+    coreVersion: v0.14.2-0

@@ -7,6 +7,7 @@ import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
 import { ensureRuntimeArtifacts } from "./flow/artifacts";
 import {
+  applyKmsBootstrap,
   assertNoUnrestoredGpuSession,
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
@@ -22,6 +23,7 @@ import {
   kmsThresholdGenKeysConfigName,
 } from "./generate/kms-core";
 import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import { loadBlueGreenScenario } from "./scenario/resolve";
 import {
   type Discovery,
   OVERRIDE_GROUPS,
@@ -594,6 +596,37 @@ describe("runtime helpers", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.CORE_VERSION).toBe("c57f52f");
+  });
+});
+
+describe("applyKmsBootstrap", () => {
+  const bundle = {
+    target: "latest-main" as const,
+    lockName: "latest-main.json",
+    env: {
+      CORE_VERSION: "v0.15.0-0",
+      CONNECTOR_DB_MIGRATION_VERSION: "abc1234",
+      CONNECTOR_GW_LISTENER_VERSION: "abc1234",
+      CONNECTOR_KMS_WORKER_VERSION: "abc1234",
+      CONNECTOR_TX_SENDER_VERSION: "abc1234",
+      CONNECTOR_PROXY_VERSION: "abc1234",
+      RELAYER_VERSION: "abc1234",
+    },
+    sources: ["preset=latest-main"],
+  };
+
+  test("leaves a scenario without kms.bootstrap untouched", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const plain = { ...scenario, kms: { ...scenario.kms, bootstrap: undefined } };
+    expect(applyKmsBootstrap(bundle, plain)).toEqual({ versions: bundle });
+  });
+
+  test("boots only the core at the bootstrap version and marks the upgrade pending", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const boot = applyKmsBootstrap(bundle, scenario);
+    expect(boot.versions.env).toEqual({ ...bundle.env, CORE_VERSION: "v0.14.2-0" });
+    expect(boot.versions.sources).toContain("kms-bootstrap=v0.14.2-0");
+    expect(boot.kmsBootstrapPending).toBe(true);
   });
 });
 

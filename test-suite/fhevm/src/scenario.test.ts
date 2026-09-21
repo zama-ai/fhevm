@@ -7,6 +7,7 @@ import {
   parseBlueGreenScenario,
   parseCoprocessorScenario,
   resolveBlueGreenScenario,
+  resolveKmsTopology,
   resolveScenarioReference,
   synthesizeOverrideScenario,
   effectiveOverrides,
@@ -172,7 +173,7 @@ topology:
       const scenario = await loadBlueGreenScenario("blue-green");
       expect(scenario.kind).toBe("blue-green");
       expect(scenario.name).toBe("Blue-Green Upgrade");
-      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-7" });
+      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.2-0" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
       expect(scenario.hostChains).toHaveLength(1);
       // Default topology = single-operator dev flow.
@@ -214,6 +215,39 @@ gcs: {}
 `);
       expect(parsed.bcs).toBeUndefined();
       expect(parsed.gcs.source).toBeUndefined();
+    });
+
+    test("carries kms.bootstrap versions through to the resolved topology", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+kms:
+  bootstrap:
+    coreVersion: v0.14.2-0
+`);
+      expect(resolveKmsTopology(parsed.kms)).toMatchObject({
+        mode: "centralized",
+        bootstrap: { coreVersion: "v0.14.2-0" },
+      });
+    });
+
+    test("rejects kms.bootstrap without a core version", () => {
+      expect(() => resolveKmsTopology({ bootstrap: {} } as never)).toThrow(
+        "scenario.kms.bootstrap.coreVersion must be a non-empty version tag",
+      );
+    });
+
+    test("rejects kms.bootstrap for a threshold cluster", () => {
+      expect(() =>
+        resolveKmsTopology({
+          mode: "threshold",
+          parties: 4,
+          threshold: 1,
+          bootstrap: { coreVersion: "v0.14.2-0" },
+        }),
+      ).toThrow("only supported for centralized mode");
     });
 
     test("rejects missing gcs block", () => {
@@ -369,7 +403,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 
@@ -380,7 +414,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 
@@ -391,7 +425,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 

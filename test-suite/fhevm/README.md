@@ -563,6 +563,14 @@ instances:
 
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
+Blue-green scenarios pin a previous-release Blue whose tfhe-rs cannot read key material from a newer KMS core. `kms.bootstrap.coreVersion` boots the KMS core at that version, waits for the operators to ingest the generated keys, then upgrades the core to the resolved bundle in place (centralized KMS only). The connector stays on the bundle, since it must decode the current contracts' events:
+
+```yaml
+kms:
+  bootstrap:
+    coreVersion: v0.14.2-0
+```
+
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
 ## Troubleshooting

@@ -21,6 +21,7 @@ import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
+  KmsBootstrapVersions,
   KmsMode,
   KmsScenarioBlock,
   LocalOverride,
@@ -67,6 +68,28 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
 
 const MAX_KMS_PARTIES = 7;
 
+/** Parses the optional `kms.bootstrap` versions; only the single centralized core has an in-place upgrade path. */
+const resolveKmsBootstrap = (
+  block: unknown,
+  mode: KmsMode,
+  sourceLabel: string,
+): KmsBootstrapVersions | undefined => {
+  if (block === undefined) {
+    return undefined;
+  }
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel} must be a map with coreVersion`);
+  }
+  if (mode !== "centralized") {
+    throw new Error(`${sourceLabel} is only supported for centralized mode; threshold clusters upgrade per operator`);
+  }
+  const { coreVersion } = block as Record<string, unknown>;
+  if (typeof coreVersion !== "string" || !coreVersion.trim()) {
+    throw new Error(`${sourceLabel}.coreVersion must be a non-empty version tag`);
+  }
+  return { coreVersion: coreVersion.trim() };
+};
+
 /**
  * Parses + validates the optional `kms` block from a scenario.
  * Returns the centralized default when the block is absent.
@@ -86,6 +109,7 @@ export const resolveKmsTopology = (
   if (mode !== "centralized" && mode !== "threshold") {
     throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
   }
+  const bootstrap = resolveKmsBootstrap(block.bootstrap, mode, `${sourceLabel}.bootstrap`);
   if (mode === "centralized") {
     // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
     // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
@@ -104,6 +128,7 @@ export const resolveKmsTopology = (
       threshold: 1,
       committeeSize: 1,
       fheParams: "Default",
+      ...(bootstrap ? { bootstrap } : {}),
     };
   }
   const parties = block.parties ?? 4;
