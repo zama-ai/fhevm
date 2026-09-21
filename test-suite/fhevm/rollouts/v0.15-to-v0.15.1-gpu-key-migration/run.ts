@@ -542,10 +542,15 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await Bun.write(scenario, adoptionScenario(versions.baselineTag, versions.blueTag));
 
   logPhase("01 restore production-style legacy state before the 0.15 rollout");
+  // Three overlapping Blue/Green fleets and four connectors share this one server.
+  process.env.FHEVM_POSTGRES_MAX_CONNECTIONS = "1000";
   await ctx.up({
     lockFile: baselineLock,
     scenario,
   });
+  const maxConnections = await sqlScalar(coprocessorDatabaseName(0), "SHOW max_connections;");
+  console.log(`[rollout database] max_connections=${maxConnections}`);
+  if (maxConnections !== "1000") throw new Error("Rollout database connection limit was not applied");
   await assertGreenAbsent();
   await assertActiveImageTag(versions.baselineTag);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
