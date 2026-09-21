@@ -44,7 +44,7 @@ extend-exclude = [
     # sdk/js-sdk/scripts/regen-tkms-wasm.sh and checked against its own SHA-256
     # on both sides, so a wording fix here would break the digest. Spelling is
     # fixed at the source (kms core/grpc/tests/solana_linker_vectors.rs).
-    "solana/test-fixtures/user-decrypt/solana_linker_v1.json",
+    "solana/test-fixtures/user-decrypt/solana_linker_v2.json",
 
     # Protocol buffers (generated)
     "proto/",

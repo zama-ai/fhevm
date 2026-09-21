@@ -1,11 +1,13 @@
 // The session orchestrator, and the one mapping it owns.
 //
-// `solanaUserDecryptLinkInputs` is the substantive piece: every link field must come from the
-// signed permit itself — the KMS routing from the extraData the wallet signed, never from
-// configuration — so the link this client computes can only disagree with the KMS if the permit
-// does. The execute wiring around it is pinned to the extent real vectors allow: an answered
-// transport feeds verification (which refuses garbage shares), and an unanswered one surfaces the
-// session's own error untouched.
+// `solanaUserDecryptRequestInputs` is the substantive piece: every permit-owned field must come from
+// the signed permit itself — the KMS routing from the extraData the wallet signed, never from
+// configuration — and the one field the permit does not carry, the gateway domain, from the trust
+// configuration handed in beside the signer set. So the link this client computes can only disagree
+// with the KMS if the permit does, or if the configured domain is not the gateway's. The execute
+// wiring around it is pinned to the extent real vectors allow: an answered transport feeds
+// verification (which refuses garbage shares), and an unanswered one surfaces the session's own
+// error untouched.
 
 import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
@@ -18,7 +20,7 @@ import {
   PERMIT_TRANSPORT_KEY_LEN,
   decodeSolanaPermitFields,
 } from '../permit/index.js';
-import { SolanaUserDecryptRunError, executeSolanaUserDecrypt, solanaUserDecryptLinkInputs } from './index.js';
+import { SolanaUserDecryptRunError, executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -71,25 +73,34 @@ const session = () => ({
   warnings: [],
 });
 
+const gatewayEip712Domain = {
+  name: 'Decryption',
+  version: '1',
+  chainId: 31337n,
+  verifyingContract: '0x0000000000000000000000000000000000000042',
+};
+
 const verification = {
   signers: [{ partyId: 1, address: '0x0000000000000000000000000000000000000001' }],
   fheParameter: 'test',
+  gatewayEip712Domain,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('the link inputs a permit pins', () => {
-  it('takes every field from the permit itself, routing included', () => {
+describe('the request inputs a permit pins', () => {
+  it('takes every permit-owned field from the permit itself, routing included, and the domain from trust', () => {
     const fields = permitFields();
     const handles = [handle()];
 
-    expect(solanaUserDecryptLinkInputs(fields, handles)).toEqual({
+    expect(solanaUserDecryptRequestInputs(fields, handles, gatewayEip712Domain)).toEqual({
       userPubkey: fields.userPubkey,
       hostChainId: PERMIT_CHAIN_ID,
       verifyingProgramId: fields.verifyingProgramId,
-      extraData: routing(),
       handles,
       transportKey: fields.transportKey,
+      gatewayEip712Domain,
+      extraData: routing(),
     });
   });
 });

@@ -2,11 +2,16 @@
 //
 // Four rules stand between the shares and a plaintext, and all four are about the same thing: the
 // response must be bound to the request the client actually made. The link is recomputed here from the
-// client's own fields — never from anything the response echoed back, which is why this module's
+// client's own fields — the EIP-712 `SolanaUserDecryptionLinker` struct hashed under the gateway's
+// `Decryption` domain — never from anything the response echoed back, which is why this module's
 // parameters carry no field a response could supply. Each share's signature is checked before its link
 // is compared, so an unauthenticated share cannot even be considered. The comparison is byte equality.
 // And the shares that survive must agree on one link and reach the threshold: a set that disagrees
 // yields nothing rather than a partial answer.
+//
+// The request's `extra_data` — the KMS routing the permit signed — is not a link input. It is
+// authenticated by the node signature on each share instead, and the blob compares the route a share
+// carries against the client's own before that signature is even checked.
 //
 // The rules live inside the KMS client (the vendored TKMS blob), which is deliberate — the same code
 // the KMS side runs, rather than a second implementation of the same arithmetic in TypeScript. What
@@ -27,8 +32,8 @@ import initSolanaTkms, {
   new_server_id_addr,
   new_solana_client,
   process_user_decryption_resp_solana_from_js,
-} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.6b36473c.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.6b36473c.wasm.base64.js';
+} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.294802eb.js';
+import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.294802eb.wasm.base64.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
@@ -100,12 +105,13 @@ export interface SolanaUserDecryptPlaintext {
 }
 
 /**
- * The gateway EIP-712 domain a KMS node signed the response's external signature under.
+ * The gateway `Decryption` contract's EIP-712 domain: the domain the link is hashed under, and the
+ * domain a KMS node signed the response's external signature under.
  *
  * Trusted configuration, like the signer set: a domain taken from the response would let the
- * response choose what it is verified against. Without one, verification treats the domain as
- * empty — under which no real external signature verifies, so real responses are refused by the
- * signature rule rather than accepted unchecked.
+ * response choose both the link it is held to and the key it is verified against. It is required
+ * — without it there is no link to recompute, and the blob refuses to proceed rather than falling
+ * back to an empty domain.
  */
 export interface SolanaGatewayEip712Domain {
   readonly name: string;
@@ -125,21 +131,32 @@ export interface SolanaGatewayEip712Domain {
 export interface SolanaUserDecryptLinkInputs {
   /** The recipient: the permit's 32-byte user pubkey. */
   readonly userPubkey: Uint8Array;
-  /** The host chain id the permit was signed for. */
+  /**
+   * The host chain id the permit was signed for. Not a word of the struct: the host chain is bound
+   * through the chain id every handle embeds, and this declared one is checked against it — a
+   * request whose handles name another cluster is refused, not hashed.
+   */
   readonly hostChainId: bigint;
   /** The 32-byte program id the permit was signed for. */
   readonly verifyingProgramId: Uint8Array;
-  /**
-   * The request's `extra_data`, verbatim: the KMS routing envelope the permit signed, in its wire
-   * form. The link binds these bytes as they are — the KMS never parses them — so what goes in
-   * here must be the exact bytes the request carried, rebuilt from the signed permit and never
-   * copied from a response.
-   */
-  readonly extraData: Uint8Array;
   /** The requested handles, in the order the request carried them — position is part of the link. */
   readonly handles: readonly Uint8Array[];
   /** The serialized transport key, in full: the link commits to the key, not to its fingerprint. */
   readonly transportKey: Uint8Array;
+  /** The gateway domain the struct is hashed under; a different domain is a different link. */
+  readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
+}
+
+/**
+ * The link inputs plus the one request field the link does not bind: the KMS route.
+ *
+ * The route is the request's `extra_data`, verbatim — the routing envelope the permit signed, in
+ * its wire form. The node signature on each share covers it, and the blob compares the route a
+ * share carries against these bytes before checking that signature, so what goes in here must be
+ * the exact bytes the request carried: rebuilt from the signed permit, never copied from a response.
+ */
+export interface SolanaUserDecryptRequestInputs extends SolanaUserDecryptLinkInputs {
+  readonly extraData: Uint8Array;
 }
 
 /**
@@ -174,7 +191,7 @@ export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs)
     solanaRequestFieldsWasmArg(inputs),
     inputs.handles.map((handle) => bytesToHexNo0x(handle)),
     inputs.transportKey,
-    inputs.extraData,
+    gatewayDomainWasmArg(inputs.gatewayEip712Domain),
   );
 }
 
@@ -198,23 +215,23 @@ function solanaRequestFieldsWasmArg(inputs: SolanaUserDecryptLinkInputs): {
 }
 
 /**
- * The request half of the link contract, in the blob's request shape — from the client's own link
- * inputs, none of them from the response.
+ * The request half of the link contract, in the blob's request shape — from the client's own
+ * request inputs, none of them from the response.
  *
  * The EVM-shaped fields are zeroed, not read on this path: the recipient is the raw ed25519 key
- * passed alongside, and the link is the Solana binding computed from the explicit arguments plus
- * the handles, transport key and extra_data here. The extra_data is not one of the zeroed fields:
- * the link binds it and the blob compares it against the route the response carries before any
- * signature is checked, so it must be the exact bytes the permit signed — rebuilt from the signed
- * permit, never copied from the response, or the comparison would be the response agreeing with
- * itself.
+ * passed alongside, the domain is the explicit trailing argument, and the link is the Solana struct
+ * computed from those plus the handles and transport key here. The extra_data is not one of the
+ * zeroed fields: the link does not bind it, but the blob compares it against the route the
+ * response carries before any signature is checked, and the node signature covers it — so it must
+ * be the exact bytes the permit signed, rebuilt from the signed permit and never copied from the
+ * response, or the comparison would be the response agreeing with itself.
  *
  * Exported so it can be pinned directly: the committed vectors carry no signcrypted shares, so no
  * test reaches the blob's route comparison through a full verification.
  *
- * @param link - The client's own request fields.
+ * @param request - The client's own request fields.
  */
-export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs): {
+export function solanaUserDecryptRequestHalf(request: SolanaUserDecryptRequestInputs): {
   readonly signature: undefined;
   readonly client_address: string;
   readonly enc_key: string;
@@ -225,10 +242,10 @@ export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs):
   return {
     signature: undefined,
     client_address: '0x0000000000000000000000000000000000000000',
-    enc_key: bytesToHexNo0x(link.transportKey),
-    ciphertext_handles: link.handles.map((handle) => bytesToHexNo0x(handle)),
+    enc_key: bytesToHexNo0x(request.transportKey),
+    ciphertext_handles: request.handles.map((handle) => bytesToHexNo0x(handle)),
     eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
-    extra_data: bytesToHexNo0x(link.extraData),
+    extra_data: bytesToHexNo0x(request.extraData),
   };
 }
 
@@ -239,22 +256,20 @@ export function solanaUserDecryptRequestHalf(link: SolanaUserDecryptLinkInputs):
  * remains cannot reconstruct, the call fails rather than returning the values it could recover. A
  * partial answer would be indistinguishable from a complete one to the caller.
  *
- * @param response.link - The request fields the link is recomputed from.
+ * @param response.request - The client's own request fields: the link inputs, the gateway domain
+ * the link is hashed under and node signatures verify against, and the signed KMS route.
  * @param response.shares - The signcrypted shares as returned, in any order.
  * @param response.keyPair - The session's transport keypair; the secret key stays here.
  * @param response.signers - The registered KMS signer set, from trusted configuration.
  * @param response.fheParameter - The FHE parameter choice the client was built for.
- * @param response.gatewayEip712Domain - The domain node signatures verify under; absent, no real
- * external signature verifies and every real response is refused fail-closed.
  * @throws If no set of authenticated shares agrees on the recomputed link and reaches the threshold.
  */
 export async function verifySolanaUserDecryptResponse(response: {
-  readonly link: SolanaUserDecryptLinkInputs;
+  readonly request: SolanaUserDecryptRequestInputs;
   readonly shares: readonly SolanaSigncryptedShare[];
   readonly keyPair: SolanaTransportKeyPair;
   readonly signers: readonly SolanaKmsSigner[];
   readonly fheParameter: string;
-  readonly gatewayEip712Domain?: SolanaGatewayEip712Domain | undefined;
 }): Promise<readonly SolanaUserDecryptPlaintext[]> {
   // No shares is not an empty answer: it is a response that reaches no threshold, said here in the
   // request's own terms rather than left to a reconstruction error about a missing pivot.
@@ -272,7 +287,7 @@ export async function verifySolanaUserDecryptResponse(response: {
     response.fheParameter,
   );
 
-  const request = solanaUserDecryptRequestHalf(response.link);
+  const request = solanaUserDecryptRequestHalf(response.request);
 
   const aggResp = response.shares.map((share) => ({
     signature: remove0x(share.signature),
@@ -280,22 +295,21 @@ export async function verifySolanaUserDecryptResponse(response: {
     extra_data: remove0x(share.extraData),
   }));
 
-  // The trailing EIP-712 domain comes from trusted configuration; omitted, the blob treats it as
-  // the empty domain — under which no external signature verifies, so a response is refused by the
-  // signature rule rather than accepted unchecked.
+  // The trailing EIP-712 domain comes from trusted configuration and does double duty: the blob
+  // recomputes the expected link under it and verifies every node signature against it.
   const plaintexts = process_user_decryption_resp_solana_from_js(
     client,
     request,
-    solanaRequestFieldsWasmArg(response.link),
+    solanaRequestFieldsWasmArg(response.request),
     aggResp,
     response.keyPair.publicKey,
     response.keyPair.secretKey,
-    response.gatewayEip712Domain === undefined ? undefined : gatewayDomainWasmArg(response.gatewayEip712Domain),
+    gatewayDomainWasmArg(response.request.gatewayEip712Domain),
   );
 
   // The wrapper already converts little-endian to big-endian, so `bytes` is the plaintext as-is.
   const typed = plaintexts.map((plaintext) => ({ bytes: plaintext.bytes, fheTypeId: plaintext.fhe_type }));
-  verifySolanaUserDecryptPlaintexts(typed, response.link.handles);
+  verifySolanaUserDecryptPlaintexts(typed, response.request.handles);
   return typed;
 }
 
@@ -343,7 +357,9 @@ export function verifySolanaUserDecryptPlaintexts(
 }
 
 /**
- * The domain in the blob's JS shape: the chain id as 32 big-endian bytes, no salt.
+ * The domain in the blob's JS shape: the chain id as 32 big-endian bytes, no salt. One marshaling
+ * for both uses of the domain — the link computation and the response verification — so the two
+ * cannot be handed different spellings of the same configuration.
  *
  * @param domain - The configured gateway domain.
  */

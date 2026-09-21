@@ -16,7 +16,7 @@ export type {
   SolanaUserDecryptRequestJson,
 } from './request.js';
 
-export { executeSolanaUserDecrypt, solanaUserDecryptLinkInputs } from './execute.js';
+export { executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './execute.js';
 export type { SolanaPermitSession, SolanaUserDecryptVerification } from './execute.js';
 
 export {
@@ -40,6 +40,7 @@ export type {
   SolanaTransportKeyPair,
   SolanaUserDecryptLinkInputs,
   SolanaUserDecryptPlaintext,
+  SolanaUserDecryptRequestInputs,
 } from './response.js';
 
 export { createSolanaUserDecryptRelayerTransport } from './relayerTransport.js';
