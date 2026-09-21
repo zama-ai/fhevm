@@ -123,13 +123,13 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         acl.cleanTransientStorage();
     }
 
-    /// @dev A valid-looking Uint64 handle, distinct per `seed`.
+    /// @dev A valid-looking Uint32 handle matching the app's declared type, distinct per `seed`.
     function _makeHandle(uint256 seed) internal view returns (bytes32 h) {
         h = keccak256(abi.encodePacked("shl-handle", seed));
         h = h & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
         h = h | (bytes32(uint256(0xff)) << 80);
         h = h | (bytes32(uint256(uint64(block.chainid))) << 16);
-        h = h | (bytes32(uint256(0x05)) << 8); // FheType.Uint64
+        h = h | (bytes32(uint256(0x04)) << 8); // FheType.Uint32
     }
 
     function _addressToBytes32(address a) internal pure returns (bytes32) {

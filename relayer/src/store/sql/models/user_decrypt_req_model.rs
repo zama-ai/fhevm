@@ -7,7 +7,9 @@ use uuid::Uuid;
 
 use alloy::primitives::{Address, Bytes, U256};
 
-use crate::core::event::{HandleContractPair, RequestValidity, UserDecryptRequest};
+use crate::core::event::{
+    HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds, UserDecryptRequest,
+};
 use crate::store::sql::models::req_status_enum_model::ReqStatus;
 
 /// Enum representing the type of user decrypt request. Maps to the
@@ -32,16 +34,13 @@ pub enum UserDecryptReqType {
 /// Typed wrapper for user decrypt request data.
 ///
 /// All three variants carry the same in-memory `UserDecryptRequest`; the
-/// variant discriminator drives the `user_decrypt_req_type` SQL enum so
-/// existing on-disk rows keep their type tag. `parse_req_data` lifts
-/// pre-refactor v2 rows (which serialized the request struct in its
-/// old flat shape) into the current tagged form on read.
+/// variant drives the `user_decrypt_req_type` SQL enum, which selects the
+/// stored payload's shape (see [`from_stored_value`]).
 ///
 /// `UserDecrypt` and `DelegatedUserDecrypt` are deprecated and should be
 /// removed once the legacy EIP-712 formats (direct + delegated) are
 /// removed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Debug, Clone)]
 pub enum UserDecryptReqData {
     /// Legacy EIP-712 direct user decryption (payload = LegacyDirect).
     /// Deprecated; should be removed once the legacy EIP-712 formats are removed.
@@ -59,7 +58,7 @@ impl UserDecryptReqData {
         match self {
             UserDecryptReqData::UserDecrypt(req)
             | UserDecryptReqData::DelegatedUserDecrypt(req)
-            | UserDecryptReqData::Unified(req) => serde_json::to_value(req),
+            | UserDecryptReqData::Unified(req) => to_stored_value(req),
         }
     }
 
@@ -72,10 +71,8 @@ impl UserDecryptReqData {
     }
 }
 
-/// Pre-refactor flat shape for `UserDecryptRequest` rows: top-level
-/// `user_address` and no `payload` tag. Used solely to deserialize rows
-/// written before the tagged-payload refactor.
-#[derive(Deserialize)]
+/// Stored shape of a `user_decrypt` row.
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 struct LegacyDirectFlatRow {
     ct_handle_contract_pairs: Vec<HandleContractPair>,
@@ -103,11 +100,9 @@ impl From<LegacyDirectFlatRow> for UserDecryptRequest {
     }
 }
 
-/// Pre-refactor flat shape for `DelegatedUserDecryptRequest` rows:
-/// top-level `delegator_address`, `delegate_address`, `startTimestamp`,
-/// `durationDays` and no `payload` tag. Used solely to deserialize rows
-/// written before the tagged-payload refactor.
-#[derive(Deserialize)]
+/// Stored shape of a `delegated_user_decrypt` row. The validity window is
+/// flat here; the in-memory variant nests it under `request_validity`.
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 struct LegacyDelegatedFlatRow {
     ct_handle_contract_pairs: Vec<HandleContractPair>,
@@ -143,19 +138,113 @@ impl From<LegacyDelegatedFlatRow> for UserDecryptRequest {
     }
 }
 
-/// Try the new tagged shape first; if absent (pre-refactor row), fall back
-/// to the supplied flat-row deserialization. This keeps rows persisted by
-/// older relayer versions usable after the refactor.
-fn deserialize_user_decrypt_request_compat<F>(
+/// Stored shape of a `unified` row.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct UnifiedFlatRow {
+    handles: Vec<HandleEntry>,
+    user_address: Address,
+    allowed_contracts: Vec<Address>,
+    request_validity: RequestValiditySeconds,
+    signature: Bytes,
+    public_key: Bytes,
+    extra_data: Bytes,
+}
+
+impl From<UnifiedFlatRow> for UserDecryptRequest {
+    fn from(v: UnifiedFlatRow) -> Self {
+        UserDecryptRequest::Eip712UnifiedV1 {
+            handles: v.handles,
+            user_address: v.user_address,
+            allowed_contracts: v.allowed_contracts,
+            request_validity: v.request_validity,
+            signature: v.signature,
+            public_key: v.public_key,
+            extra_data: v.extra_data,
+        }
+    }
+}
+
+fn to_stored_value(request: &UserDecryptRequest) -> Result<Value, serde_json::Error> {
+    match request {
+        UserDecryptRequest::LegacyDirect {
+            ct_handle_contract_pairs,
+            request_validity,
+            contracts_chain_id,
+            contract_addresses,
+            user_address,
+            signature,
+            public_key,
+            extra_data,
+        } => serde_json::to_value(LegacyDirectFlatRow {
+            ct_handle_contract_pairs: ct_handle_contract_pairs.clone(),
+            request_validity: request_validity.clone(),
+            contracts_chain_id: *contracts_chain_id,
+            contract_addresses: contract_addresses.clone(),
+            user_address: *user_address,
+            signature: signature.clone(),
+            public_key: public_key.clone(),
+            extra_data: extra_data.clone(),
+        }),
+        UserDecryptRequest::LegacyDelegated {
+            ct_handle_contract_pairs,
+            request_validity,
+            contracts_chain_id,
+            contract_addresses,
+            delegator_address,
+            delegate_address,
+            signature,
+            public_key,
+            extra_data,
+        } => serde_json::to_value(LegacyDelegatedFlatRow {
+            ct_handle_contract_pairs: ct_handle_contract_pairs.clone(),
+            contracts_chain_id: *contracts_chain_id,
+            contract_addresses: contract_addresses.clone(),
+            delegator_address: *delegator_address,
+            delegate_address: *delegate_address,
+            start_timestamp: request_validity.start_timestamp,
+            duration_days: request_validity.duration_days,
+            signature: signature.clone(),
+            public_key: public_key.clone(),
+            extra_data: extra_data.clone(),
+        }),
+        UserDecryptRequest::Eip712UnifiedV1 {
+            handles,
+            user_address,
+            allowed_contracts,
+            request_validity,
+            signature,
+            public_key,
+            extra_data,
+        } => serde_json::to_value(UnifiedFlatRow {
+            handles: handles.clone(),
+            user_address: *user_address,
+            allowed_contracts: allowed_contracts.clone(),
+            request_validity: request_validity.clone(),
+            signature: signature.clone(),
+            public_key: public_key.clone(),
+            extra_data: extra_data.clone(),
+        }),
+    }
+}
+
+/// `req_type` selects the shape; the payload carries no discriminator. Every
+/// read of `user_decrypt_req.req` goes through here - a caller that parses one
+/// itself can disagree with this one.
+pub fn from_stored_value(
+    req_type: UserDecryptReqType,
     value: Value,
-    legacy: F,
-) -> Result<UserDecryptRequest, serde_json::Error>
-where
-    F: FnOnce(Value) -> Result<UserDecryptRequest, serde_json::Error>,
-{
-    match serde_json::from_value::<UserDecryptRequest>(value.clone()) {
-        Ok(req) => Ok(req),
-        Err(_) => legacy(value),
+) -> Result<UserDecryptRequest, serde_json::Error> {
+    match req_type {
+        UserDecryptReqType::UserDecrypt => {
+            serde_json::from_value::<LegacyDirectFlatRow>(value).map(UserDecryptRequest::from)
+        }
+        UserDecryptReqType::DelegatedUserDecrypt => {
+            serde_json::from_value::<LegacyDelegatedFlatRow>(value).map(UserDecryptRequest::from)
+        }
+        UserDecryptReqType::Unified => {
+            serde_json::from_value::<UnifiedFlatRow>(value).map(UserDecryptRequest::from)
+        }
     }
 }
 
@@ -174,38 +263,6 @@ pub struct UserDecryptReq {
     pub err_reason: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-impl UserDecryptReq {
-    /// Parse the request data into the appropriate typed variant.
-    ///
-    /// For `UserDecrypt` / `DelegatedUserDecrypt` rows, first tries the new
-    /// tagged `UserDecryptRequest` JSON shape; on failure falls back to the
-    /// pre-refactor flat shape (for rows written by older relayer versions).
-    pub fn parse_req_data(&self) -> Result<UserDecryptReqData, serde_json::Error> {
-        match self.req_type {
-            UserDecryptReqType::UserDecrypt => {
-                let req = deserialize_user_decrypt_request_compat(self.req.clone(), |v| {
-                    serde_json::from_value::<LegacyDirectFlatRow>(v).map(UserDecryptRequest::from)
-                })?;
-                Ok(UserDecryptReqData::UserDecrypt(req))
-            }
-            UserDecryptReqType::DelegatedUserDecrypt => {
-                let req = deserialize_user_decrypt_request_compat(self.req.clone(), |v| {
-                    serde_json::from_value::<LegacyDelegatedFlatRow>(v)
-                        .map(UserDecryptRequest::from)
-                })?;
-                Ok(UserDecryptReqData::DelegatedUserDecrypt(req))
-            }
-            UserDecryptReqType::Unified => {
-                // Unified rows are only written by post-refactor relayer
-                // versions, so the tagged-payload JSON shape is the only
-                // format we ever see here — no flat-shape fallback needed.
-                let req: UserDecryptRequest = serde_json::from_value(self.req.clone())?;
-                Ok(UserDecryptReqData::Unified(req))
-            }
-        }
-    }
 }
 
 #[derive(Debug, FromRow)]
@@ -243,4 +300,122 @@ pub struct UserDecryptDoneWithTransitionRes {
     pub err_reason: Option<String>,
     pub old_status: ReqStatus,
     pub old_updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The `user_decrypt` shape v0.13.0 stored: no discriminator, validity
+    /// nested. Field names and renames taken from that tag's
+    /// `core::event::{UserDecryptRequest, RequestValidity, HandleContractPair}`;
+    /// its `UserDecryptReqData::to_value` serialized the bare struct, so no
+    /// envelope wraps it.
+    fn v013_direct_payload() -> Value {
+        json!({
+            "ct_handle_contract_pairs": [{
+                "handle": "0x1",
+                "contractAddress": "0x1111111111111111111111111111111111111111"
+            }],
+            "request_validity": { "startTimestamp": "0x64", "durationDays": "0x1e" },
+            "contracts_chain_id": 11155111u64,
+            "contract_addresses": ["0x1111111111111111111111111111111111111111"],
+            "user_address": "0x2222222222222222222222222222222222222222",
+            "signature": "0xdead",
+            "public_key": "0xbeef",
+            "extra_data": "0x00"
+        })
+    }
+
+    /// The `delegated_user_decrypt` shape v0.13.0 stored: validity flat, from
+    /// that tag's `core::event::DelegatedUserDecryptRequest`.
+    fn v013_delegated_payload() -> Value {
+        json!({
+            "ct_handle_contract_pairs": [{
+                "handle": "0x1",
+                "contractAddress": "0x1111111111111111111111111111111111111111"
+            }],
+            "contracts_chain_id": 11155111u64,
+            "contract_addresses": ["0x1111111111111111111111111111111111111111"],
+            "delegator_address": "0x2222222222222222222222222222222222222222",
+            "delegate_address": "0x3333333333333333333333333333333333333333",
+            "startTimestamp": "0x64",
+            "durationDays": "0x1e",
+            "signature": "0xdead",
+            "public_key": "0xbeef",
+            "extra_data": "0x00"
+        })
+    }
+
+    /// `req_type` alone routes the payload, so each value must reach its own
+    /// flat shape.
+    #[test]
+    fn req_type_selects_the_stored_shape() {
+        let direct = from_stored_value(UserDecryptReqType::UserDecrypt, v013_direct_payload())
+            .expect("v0.13 direct payload must parse");
+        assert!(matches!(direct, UserDecryptRequest::LegacyDirect { .. }));
+
+        let delegated = from_stored_value(
+            UserDecryptReqType::DelegatedUserDecrypt,
+            v013_delegated_payload(),
+        )
+        .expect("v0.13 delegated payload must parse");
+        assert!(matches!(
+            delegated,
+            UserDecryptRequest::LegacyDelegated { .. }
+        ));
+    }
+
+    /// The delegated variant nests its validity window in memory and stores it
+    /// flat, so the two directions can disagree without either failing alone.
+    #[test]
+    fn write_path_agrees_with_read_path() {
+        for (req_type, payload) in [
+            (UserDecryptReqType::UserDecrypt, v013_direct_payload()),
+            (
+                UserDecryptReqType::DelegatedUserDecrypt,
+                v013_delegated_payload(),
+            ),
+        ] {
+            let parsed = from_stored_value(req_type, payload.clone()).expect("parse");
+            let rewritten = to_stored_value(&parsed).expect("serialize");
+            assert_eq!(
+                rewritten, payload,
+                "{req_type:?} round-trip changed the shape"
+            );
+        }
+    }
+
+    #[test]
+    fn unified_round_trips() {
+        let stored = json!({
+            "handles": [{
+                "ctHandle": "0x1",
+                "contractAddress": "0x1111111111111111111111111111111111111111",
+                "ownerAddress": "0x2222222222222222222222222222222222222222"
+            }],
+            "user_address": "0x2222222222222222222222222222222222222222",
+            "allowed_contracts": [],
+            "request_validity": { "startTimestamp": "0x64", "durationSeconds": "0xe10" },
+            "signature": "0xdead",
+            "public_key": "0xbeef",
+            "extra_data": "0x00"
+        });
+
+        let parsed = from_stored_value(UserDecryptReqType::Unified, stored.clone()).expect("parse");
+        assert!(matches!(parsed, UserDecryptRequest::Eip712UnifiedV1 { .. }));
+        assert_eq!(to_stored_value(&parsed).expect("serialize"), stored);
+    }
+
+    /// `req_type` alone decides the shape: a payload is not sniffed, so the
+    /// wrong `req_type` is an error rather than a silently different request.
+    #[test]
+    fn a_mismatched_req_type_is_an_error() {
+        assert!(from_stored_value(
+            UserDecryptReqType::DelegatedUserDecrypt,
+            v013_direct_payload()
+        )
+        .is_err());
+    }
 }

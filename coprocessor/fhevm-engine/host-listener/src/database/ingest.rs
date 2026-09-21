@@ -245,6 +245,7 @@ pub async fn ingest_block_logs(
     let is_protocol_config_listener = options.is_protocol_config_listener;
 
     let mut is_allowed = HashSet::<Handle>::new();
+    let mut bridged_src_handles = Vec::<(Vec<u8>, Option<Vec<u8>>)>::new();
     let mut seen_fallback_handles = HashSet::<Handle>::new();
     let mut acl_event_log = vec![];
     let mut tfhe_event_log = vec![];
@@ -421,6 +422,22 @@ pub async fn ingest_block_logs(
                         )
                         .await?;
                 } else {
+                    // `send` needs only a transient allowance (no ACL event), so force
+                    // the source handle allowed or its ciphertext is never computed.
+                    if let BridgeContract::BridgeContractEvents::BridgeHandle(e) =
+                        &event.data
+                    {
+                        if chain_id_from_handle(&e.srcHandle.0)
+                            == chain_id.as_u64()
+                            && ChainId::try_from(e.dstChainId).is_ok()
+                        {
+                            is_allowed.insert(e.srcHandle.to_vec());
+                            bridged_src_handles.push((
+                                e.srcHandle.to_vec(),
+                                log.transaction_hash.map(|h| h.to_vec()),
+                            ));
+                        }
+                    }
                     at_least_one_insertion |= db
                         .handle_bridge_event(
                             &mut tx,
@@ -492,6 +509,18 @@ pub async fn ingest_block_logs(
             info!(tfhe_log = ?tfhe_log, "TFHE event");
         }
     }
+
+    // Producer resolution needs this block's computations inserted first: a
+    // handle can be bridged in the same block that produced it.
+    at_least_one_insertion |= db
+        .enqueue_bridge_source_pbs(
+            &mut tx,
+            &bridged_src_handles,
+            block_number,
+            block_logs.summary.hash.as_slice(),
+            block_logs.summary.parent_hash.as_slice(),
+        )
+        .await?;
 
     // ACL events are processed only after every tfhe compute event for this
     // block has been inserted into computations_branch. handle_acl_event

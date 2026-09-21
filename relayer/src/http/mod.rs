@@ -4,6 +4,7 @@ pub mod middleware;
 pub mod openapi;
 pub mod retry_after;
 pub mod server;
+pub mod user_decrypt_wait;
 pub mod utils;
 
 // Re-export key types and functions for direct access
@@ -20,6 +21,7 @@ pub use utils::{
     // Other utilities
     de_string_or_number,
     deserialize_ct_handles_from_hex,
+    extra_data_decryption_schema,
     // Parsing utilities
     parse_and_validate,
     // Serialization helpers
