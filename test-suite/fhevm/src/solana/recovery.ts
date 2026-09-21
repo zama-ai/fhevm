@@ -37,7 +37,8 @@ export const mirrorRecoveryKeys = async (): Promise<void> => {
   }
   // stdin only: neither secret data nor kubectl diagnostics can reach process output.
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('kubectl', ['patch', 'secret', 'solana-recovery', '-n', namespace, '--type=merge', '--patch-file=/dev/stdin'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    // Node exposes a socket as stdin on Linux; cat supplies the pipe kubectl can reopen.
+    const child = spawn('sh', ['-c', 'cat | kubectl "$@"', 'kubectl', 'patch', 'secret', 'solana-recovery', '-n', namespace, '--type=merge', '--patch-file=/dev/stdin'], { stdio: ['pipe', 'ignore', 'ignore'] });
     child.on('error', () => reject(new Error('cannot mirror recovery keys')));
     child.on('close', code => code === 0 ? resolve() : reject(new Error('cannot mirror recovery keys; refusing to fund')));
     child.stdin.on('error', () => {});

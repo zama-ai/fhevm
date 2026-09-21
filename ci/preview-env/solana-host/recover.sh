@@ -37,6 +37,8 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: solana-recovery
+imagePullSecrets:
+  - name: registry-credentials
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

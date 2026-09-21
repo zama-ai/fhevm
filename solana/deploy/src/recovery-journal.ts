@@ -11,7 +11,13 @@ export async function journalRecovery(context: HostDeployContext, directory: str
   const namespace = process.env.SOLANA_PREVIEW_NAMESPACE;
   const kubectl = (args: string[], input?: string): string => {
     try {
-      return execFileSync('kubectl', args, { input, stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8' });
+      // Node's child stdin is a socket on Linux; kubectl opens /dev/stdin as a file.
+      // A shell pipe keeps patch contents off argv and gives kubectl a readable pipe.
+      return input === undefined
+        ? execFileSync('kubectl', args, { stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8' })
+        : execFileSync('sh', ['-c', 'cat | kubectl "$@"', 'kubectl', ...args], {
+            input, stdio: ['pipe', 'pipe', 'ignore'], encoding: 'utf8',
+          });
     } catch {
       throw new Error('Cannot persist recovery accounting; no further transactions submitted');
     }
