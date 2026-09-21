@@ -1,6 +1,5 @@
 name: solana-programs-docker-build
 on:
-  workflow_dispatch:
   workflow_call:
     secrets:
       AWS_ACCESS_KEY_S3_USER:
