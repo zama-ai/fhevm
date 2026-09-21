@@ -7,7 +7,7 @@
 #
 # `up` writes <state-dir>/preview.env; load it and run the usual commands:
 #   set -a; source <state-dir>/preview.env; set +a
-#   bun test e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
+#   bun run test:e2e e2e/scenarios/confidential-transfer.scenario.test.ts e2e/scenarios/token-vertical.scenario.test.ts
 #   bun run demo:seed                                 # once per namespace deployment
 #   bun run demo:operator &                           # DEMO_OPERATOR_URL, default http://127.0.0.1:8091
 #   (cd ../../solana/demo-dapp && npm run dev)        # DEMO_DAPP_URL, default http://127.0.0.1:5173
@@ -15,9 +15,8 @@
 #
 # The demo boot capability (`DEMO_BOOT_ID` + the 0600 token file the dapp dev server presents to
 # the operator) is created under <state-dir> in place of the local lifecycle's
-# owned boot, and reused across `up` runs. The seeded personas keep their SOL between runs; the
-# arc tops them up from the deployer wallet and the keeper pays each batch's authority funding,
-# so refill those two devnet wallets when a run stops on "insufficient lamports".
+# owned boot, and reused across `up` runs. Normal run cleanup sweeps saved actors; the operator
+# replenishes keeper/mint-authority balances as needed from the deployer.
 #
 # What it gathers from the namespace, and why:
 #   - gateway/host contract addresses (configmaps) into the fhevm-cli address layout under
@@ -28,7 +27,9 @@
 #   - the listener proof endpoint bearer token (secret `solana-proof-api`) for the demo operator.
 # The relayer, both anvil chains and the first coprocessor's proof endpoint are port-forwarded to
 # the loopback ports the local stack uses, so no default URL changes.
+set +x
 set -euo pipefail
+umask 077
 
 usage() { echo "usage: $0 up <namespace> [state-dir] | down <state-dir>" >&2; exit 2; }
 
@@ -54,6 +55,8 @@ up)
   namespace=${2:?namespace}
   state=${3:-$PWD/.fhevm-preview/$namespace}
   mkdir -p "$state/runtime/addresses/gateway" "$state/runtime/addresses/host"
+  state=$(cd "$state" && pwd)
+  chmod 700 "$state"
   [[ -f "$state/port-forward.pids" ]] && "$0" down "$state"
 
   {
@@ -68,6 +71,7 @@ up)
   if [[ ! -f "$deployer" ]]; then
     (umask 077 && secret_value solana-deployer 'deployer\.json' >"$deployer")
   fi
+  deployer=$(cd "$(dirname "$deployer")" && pwd)/$(basename "$deployer")
   rpc_url=$(secret_value solana-rpc 'rpc-url')
   proof_api_key=$(secret_value solana-proof-api 'api-key')
 
@@ -95,10 +99,14 @@ up)
   forward svc/coprocessor-1-solana-host-listener "$leaf_proof_port:8080"
   sleep 2
 
-  # Every value is single-quoted so the file can be sourced (`set -a; . preview.env; set +a`).
-  env_line() { printf "%s='%s'\n" "$1" "$2"; }
+  # Shell-escape values, including quotes in credentials, without executing or logging them.
+  env_line() { printf "%s=%q\n" "$1" "$2"; }
   {
+    env_line SOLANA_HOST_CHAIN_ID 130140237723663404
     env_line SOLANA_E2E_SOURCE devnet
+    env_line SOLANA_RECOVERY_DIR "$state/recovery"
+    env_line SOLANA_PREVIEW_NAMESPACE "$namespace"
+    env_line DEMO_RELAYER_API_KEY "${DEMO_RELAYER_API_KEY:-local}"
     env_line SOLANA_RPC_URL "$rpc_url"
     env_line SOLANA_WS_URL "${rpc_url/https:/wss:}"
     env_line SOLANA_RELAYER_URL "http://127.0.0.1:$relayer_port"

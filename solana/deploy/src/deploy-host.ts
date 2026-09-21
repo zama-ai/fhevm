@@ -9,6 +9,7 @@ import { createHostDeployContext } from './send';
 export const deployHostProgram = async (
   parameters: Omit<Parameters<typeof deployProgramArtifacts>[0], 'programs' | 'programKeypairPaths'> & {
     readonly programKeypairPath?: string;
+    readonly chainId?: bigint;
     readonly gateway: GatewayBootstrapInputs;
     readonly coprocessorThreshold?: number;
     readonly kmsCorruptionThreshold?: number;
@@ -19,6 +20,7 @@ export const deployHostProgram = async (
   const bootstrap = {
     payer: await loadKeypairSigner(parameters.deployerKeypairPath),
     programAddress,
+    chainId: parameters.chainId,
     gateway: parameters.gateway,
     coprocessorThreshold: parameters.coprocessorThreshold,
     kmsCorruptionThreshold: parameters.kmsCorruptionThreshold,

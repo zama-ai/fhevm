@@ -59,7 +59,8 @@ import {
   initializeMint2Instruction,
 } from "../src/solana/spl";
 import { kmsContextAddress } from "../src/solana/token-vertical";
-import { DEMO_KEYPAIRS } from "./loadDemoEnv";
+import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
+import { demoKeypairs } from "./loadDemoEnv";
 import {
   resolveDemoConfigPath,
   writeDemoConfig,
@@ -85,11 +86,16 @@ const main = async (): Promise<void> => {
   const env = loadEnv();
   const configPath = resolveDemoConfigPath();
 
-  // Remove any prior config up front: it is written only at the very end (step 7), so its presence
-  // means a completed prior seed. Deleting it now guarantees that if this run crashes mid-seed, no
-  // stale config survives pointing consumers at half-provisioned / now-defunct roots — the absence
-  // of the file is the honest signal that no usable stack was seeded.
-  await fs.rm(configPath, { force: true });
+  // Preserve the last inventory even if a reseed fails before publishing a replacement.
+  if (env.network === "devnet") {
+    try {
+      await fs.copyFile(configPath, `${configPath}.${Date.now()}.previous`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    for (const role of ["keeper", "alice", "bob", "mintAuthority"]) await ensureDemoRecoveryKey(role);
+    await mirrorRecoveryKeys();
+  }
 
   // The shared provisioning send/confirm/fund closures, at the seeder's own CU ceiling.
   const provisioning = await openProvisioning(env, { computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT });
@@ -101,10 +107,10 @@ const main = async (): Promise<void> => {
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
   // authority backs the operator's faucet, and Alice/Bob are end users.
   const deployer = await loadKeypairSigner(env.roots.deployerKeypairPath);
-  const mintAuthority = await loadKeypairSigner(DEMO_KEYPAIRS.mintAuthority);
-  const keeper = await loadKeypairSigner(DEMO_KEYPAIRS.keeper);
-  const alice = await loadKeypairSigner(DEMO_KEYPAIRS.alice);
-  const bob = await loadKeypairSigner(DEMO_KEYPAIRS.bob);
+  const mintAuthority = await loadKeypairSigner(demoKeypairs(env).mintAuthority);
+  const keeper = await loadKeypairSigner(demoKeypairs(env).keeper);
+  const alice = await loadKeypairSigner(demoKeypairs(env).alice);
+  const bob = await loadKeypairSigner(demoKeypairs(env).bob);
 
   // Fund the personas before provisioning so every subsequent step has fees available. A local
   // validator airdrops the deployer first; on devnet the deployer is the funder and pays from its
@@ -144,6 +150,14 @@ const main = async (): Promise<void> => {
     programAddress: vault.DEMO_VAULT_PROGRAM_ADDRESS,
     seeds: [new TextEncoder().encode("shares"), encodeAddress(vaultAccount.address)],
   });
+
+  if (env.network === "devnet") {
+    await fs.writeFile(`${recoveryDirectory()}/inventory-${mockUsdcMint.address}.json`, JSON.stringify({
+      mints: [mockUsdcMint.address, shareMint],
+      accounts: [vaultAccount.address, cUsdcMint.address, cSharesMint.address, depositBatcher.address, redeemBatcher.address],
+    }), { mode: 0o600, flag: "wx" });
+    await mirrorRecoveryKeys();
+  }
 
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
   const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();

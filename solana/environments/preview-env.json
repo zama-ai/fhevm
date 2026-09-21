@@ -5,5 +5,18 @@
     "demo_vault": "DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH",
     "confidential_batcher": "DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb"
   },
-  "features": { "zama_host": ["admin-sweep"] }
+  "features": {
+    "zama_host": [
+      "admin-sweep"
+    ],
+    "confidential_token": [
+      "admin-sweep"
+    ],
+    "demo_vault": [
+      "admin-sweep"
+    ],
+    "confidential_batcher": [
+      "admin-sweep"
+    ]
+  }
 }

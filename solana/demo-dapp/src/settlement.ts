@@ -22,6 +22,7 @@ import {
   getBatcher,
   getDeactivateLookupTableInstruction,
   getJoinRecord,
+  buildCloseJoinRecordInstruction,
   settleBatch,
   TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
@@ -40,6 +41,7 @@ const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
 const SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT = 100_000;
 
 export type DemoOperatorSession = {
+  readonly relayerApiKey: string;
   readonly proofService: ProofService;
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
@@ -94,14 +96,16 @@ export const readVaultLifecycle = async (
     return { kind: 'dispatched' };
   }
   if (batch.state.status === BatchStatus.Settled) {
-    const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, session.signer.address), {
+    const recordAddress = await deriveJoinRecordAddress(position.batch, session.signer.address);
+    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64", commitment: "confirmed" }).send()).value !== null;
+    const joinRecord = exists ? await getJoinRecord(rpc, recordAddress, {
       commitment: 'confirmed',
-    });
+    }) : null;
     return {
       kind: 'settled',
       totalJoined: batch.state.totalJoined,
       payoutReceived: batch.state.payoutReceived,
-      claimed: joinRecord.claimed,
+      claimed: joinRecord === null || joinRecord.claimed,
     };
   }
   if (batch.state.status === BatchStatus.Canceled) return { kind: 'canceled' };
@@ -162,7 +166,7 @@ export const settleVaultBatch = async (
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
 
   const rpcSubscriptions = createSolanaRpcSubscriptions(session.config.wsUrl);
-  setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'local' } });
+  setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
@@ -207,4 +211,12 @@ export const settleVaultBatch = async (
     );
   }
   return signature;
+};
+
+/** User-signed rent return after claim/cancel. Refunding records still authorize quit. */
+export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
+  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const record = await deriveJoinRecordAddress(position.batch, session.signer.address);
+  if ((await rpc.getAccountInfo(record, { encoding: 'base64', commitment: 'confirmed' }).send()).value === null) return;
+  await sendTransaction(session.config, session.signer, [await buildCloseJoinRecordInstruction({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
 };

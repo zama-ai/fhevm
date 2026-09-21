@@ -14,6 +14,7 @@ scDeploy:
   configmap:
     name: solana-host-addresses
   env:
+    - {name: SOLANA_HOST_CHAIN_ID, value: "130140237723663404"}
     - {name: SOLANA_ARTIFACTS_DIR, value: "/app/programs"}
     - {name: ADDRESSES_DIR, value: "/app/addresses"}
     - {name: SOLANA_ENVIRONMENT, value: "preview-env"}
@@ -51,10 +52,8 @@ scDeploy:
           optional: true
     # deploy-preview.sh appends KMS_THRESHOLD and COPROCESSOR_THRESHOLD from the party counts.
   # Each preview namespace binds HostConfig to its own Gateway, and every branch head brings
-  # different bytecode to the same program id (DD-051). Close the previous namespace's accounts,
-  # then deploy or upgrade in place.
+  # different bytecode to the same program id. deploy-preview.sh recovers the old state first.
   deployCommands:
-    - node /app/cli.mjs host wipe
     - node /app/cli.mjs host deploy --allow-upgrade
   verifyContracts: false
 nodeSelector:

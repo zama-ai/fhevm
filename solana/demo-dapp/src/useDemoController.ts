@@ -33,7 +33,7 @@ import {
   revealClaimedUsdc,
   type RevealedBalance,
 } from './revealShares';
-import { readVaultLifecycle } from './settlement';
+import { closeSpentJoinRecord, readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
 
 export type ConnectionState =
@@ -254,6 +254,7 @@ export function useDemoController() {
                 : {}),
             });
             if (action === 'claim' && completed) {
+              await closeSpentJoinRecord(session, position);
               void refreshWalletBalances(session, generation);
             }
           } catch (error) {

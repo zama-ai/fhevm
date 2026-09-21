@@ -35,7 +35,7 @@ import { waitForSnsCommit } from "../../src/solana/sns";
 import { solanaDemoSmokeMarkerPath } from "../../src/layout";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
-import { DEMO_KEYPAIRS, loadDemoEnv } from "../../demo/loadDemoEnv";
+import { demoKeypairs, loadDemoEnv } from "../../demo/loadDemoEnv";
 import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 
@@ -122,8 +122,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Personas: the keeper is the operator that plays dispatch + settle; alice is the depositing
       // end-user. Both load from committed demo keypairs (pubkeys cross-checked against the config).
       const personas = await loadPersonas(env, {
-        keeper: DEMO_KEYPAIRS.keeper,
-        alice: DEMO_KEYPAIRS.alice,
+        keeper: demoKeypairs(env).keeper,
+        alice: demoKeypairs(env).alice,
       });
       const alicePersona = personas.roles.alice;
       if (!alicePersona) throw new Error("alice persona did not load");
@@ -134,13 +134,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // decrypt phase signs the user-decrypt request with her 32-byte ed25519 seed (the first half of
       // the 64-byte keypair file) through the SDK's own signer wrapper.
       const aliceKeypairBytes = Uint8Array.from(
-        JSON.parse(await fs.readFile(DEMO_KEYPAIRS.alice, "utf8")) as number[],
+        JSON.parse(await fs.readFile(demoKeypairs(env).alice, "utf8")) as number[],
       );
       const alice = await createKeyPairSignerFromBytes(aliceKeypairBytes);
       if (alice.address !== config.personas.alice) {
         throw new Error(`alice keypair ${alice.address} does not match seeded persona ${config.personas.alice}`);
       }
-      const keeper = await loadSigner(DEMO_KEYPAIRS.keeper);
+      const keeper = await loadSigner(demoKeypairs(env).keeper);
       if (keeper.address !== config.personas.keeper) {
         throw new Error(`keeper keypair ${keeper.address} does not match seeded persona ${config.personas.keeper}`);
       }

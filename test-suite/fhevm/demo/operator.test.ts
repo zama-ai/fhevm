@@ -158,9 +158,9 @@ describe("operator routes", () => {
 
   test("funds SOL and mints USDC in base units (6 decimals)", async () => {
     const { handler, actions } = operator();
-    const air = await handler(post("/demo-faucet/airdrop-sol", { address: RECIPIENT, sol: 2 }));
-    expect(await air.json()).toMatchObject({ signature: "sig-air", sol: 2 });
-    expect(actions.fundSol).toHaveBeenCalledWith(RECIPIENT, 2);
+    const air = await handler(post("/demo-faucet/airdrop-sol", { address: RECIPIENT, sol: 0.2 }));
+    expect(await air.json()).toMatchObject({ signature: "sig-air", sol: 0.2 });
+    expect(actions.fundSol).toHaveBeenCalledWith(RECIPIENT, 0.2);
     const mint = await handler(post("/demo-faucet/mint-usdc", { address: RECIPIENT, amount: 250 }));
     expect(await mint.json()).toMatchObject({ signature: "sig-mint", baseUnits: "250000000" });
     expect(actions.mintUsdc.mock.calls[0]).toEqual([RECIPIENT, 250_000_000n]);
@@ -169,6 +169,8 @@ describe("operator routes", () => {
   test("answers bad input with 400 and a failing action with 503", async () => {
     const { handler, actions } = operator();
     expect((await handler(post("/demo-faucet/airdrop-sol", { address: "not-an-address" }))).status).toBe(400);
+    expect((await handler(post("/demo-faucet/airdrop-sol", { address: RECIPIENT, sol: 5 }))).status).toBe(400);
+    expect(actions.fundSol).not.toHaveBeenCalled();
     expect((await handler(post("/demo-batch", { direction: "sideways" }))).status).toBe(400);
     expect((await handler(post("/demo-operator", { action: "dispatch" }))).status).toBe(400);
     expect((await handler(post("/demo-faucet/mint-usdc", {}))).status).toBe(400);
@@ -294,4 +296,12 @@ describe("single-flight and serialization", () => {
     await expect(Promise.all([first, second])).resolves.toEqual(["deposit", "redeem"]);
     expect(order).toEqual(["deposit:start", "deposit:end", "redeem:start", "redeem:end"]);
   });
+});
+
+test('wallet recovery failures never return signer diagnostics to the browser', async () => {
+  const actions = { ...stubActions(), registerBurner: async () => { throw new Error('private signer diagnostics'); } };
+  const { handler } = operator({ actions });
+  const response = await handler(post('/demo-wallet/recovery', { keypair: Array(64).fill(7) }));
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain('private signer diagnostics');
 });

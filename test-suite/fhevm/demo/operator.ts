@@ -32,7 +32,7 @@ import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest, type Opera
 import type { UnderlyingMinter } from "@demo-dapp/harvestOperator";
 import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
-const DEFAULT_AIRDROP_SOL = 5;
+const DEFAULT_AIRDROP_SOL = 0.2;
 /** Mock USDC has 6 decimals (matches the seeded SPL mint); the default drip is 1,000 USDC. */
 const USDC_DECIMALS = 6;
 const DEFAULT_USDC_AMOUNT = 1_000;
@@ -57,6 +57,7 @@ export type DemoEncryptionKey = {
 /** What the operator does when a route is called; the server wires these to the live stack. */
 export type OperatorActions = {
   readonly fundSol: SolFunder;
+  readonly registerBurner?: (bytes: Uint8Array) => Promise<string>;
   /** Mints mock USDC (the vault's underlying) to a recipient's ATA, creating it if needed. */
   readonly mintUsdc: UnderlyingMinter;
   /** The public configuration the page boots from, `relayerUrl` and `demoBootId` already set. */
@@ -184,6 +185,7 @@ export const createOperator = (config: OperatorConfig): ((request: Request) => P
   const { actions, allowedOrigin } = config;
   const operatorInFlight = new Map<string, Promise<string | null>>();
   const preparationInFlight = new Map<string, Promise<PreparedBatch>>();
+  const fundingQueue: SerialQueue = { tail: Promise.resolve() };
   const preparationQueue: SerialQueue = { tail: Promise.resolve() };
   let harvestInFlight: ReturnType<OperatorActions["harvest"]> | undefined;
 
@@ -246,12 +248,22 @@ export const createOperator = (config: OperatorConfig): ((request: Request) => P
         return { before: encodeVaultMetrics(result.before), after: encodeVaultMetrics(result.after) };
       },
     },
+    "/demo-wallet/recovery": {
+      method: "POST",
+      run: async (body) => {
+        if (!Array.isArray(body.keypair) || body.keypair.length !== 64 || body.keypair.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255)) invalid("invalid demo wallet");
+        if (!actions.registerBurner) invalid("demo wallet recovery is unavailable");
+        try { return { address: await actions.registerBurner!(Uint8Array.from(body.keypair as number[])) }; }
+        catch { throw new Error("Cannot secure the demo wallet recovery copy; funding is disabled"); }
+      },
+    },
     "/demo-faucet/airdrop-sol": {
       method: "POST",
       run: async (body) => {
         const recipient = parseRecipient(body.address);
         const sol = parsePositiveNumber(body.sol, "sol", DEFAULT_AIRDROP_SOL);
-        const signature = await actions.fundSol(recipient, sol);
+        if (sol > DEFAULT_AIRDROP_SOL) invalid("SOL target exceeds the 0.2 SOL demo limit");
+        const signature = await runSerialized(fundingQueue, () => actions.fundSol(recipient, sol));
         return { signature, address: recipient, sol };
       },
     },
@@ -260,6 +272,7 @@ export const createOperator = (config: OperatorConfig): ((request: Request) => P
       run: async (body) => {
         const recipient = parseRecipient(body.address);
         const amount = parsePositiveNumber(body.amount, "amount", DEFAULT_USDC_AMOUNT);
+        if (amount > DEFAULT_USDC_AMOUNT) invalid("mock USDC request exceeds the 1000 USDC limit");
         const baseUnits = BigInt(Math.round(amount * 10 ** USDC_DECIMALS));
         const signature = await actions.mintUsdc(recipient, baseUnits);
         return { signature, address: recipient, amount, baseUnits: baseUnits.toString() };

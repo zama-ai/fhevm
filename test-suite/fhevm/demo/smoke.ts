@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import { solanaDemoSmokeMarkerPath } from "../src/layout";
 
 await fs.rm(solanaDemoSmokeMarkerPath, { force: true });
-const suite = Bun.spawn(["bun", "test", "e2e/scenarios/deposit-arc.scenario.test.ts"], {
+const suite = Bun.spawn(["bun", "e2e/run.ts", "e2e/scenarios/deposit-arc.scenario.test.ts"], {
   cwd: import.meta.dir + "/..",
   env: { ...process.env, RUN_DEMO_SCENARIOS: "1" },
   stdio: ["inherit", "inherit", "inherit"],

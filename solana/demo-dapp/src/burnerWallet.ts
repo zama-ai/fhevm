@@ -1,5 +1,5 @@
 // The demo wallet: an Ed25519 keypair generated in this browser and kept in its local storage, so a
-// reload finds the same funded wallet. Nothing about it leaves the page except signatures; it is a
+// reload finds the same funded wallet. The demo operator stores a private recovery copy before funding; it is a
 // burner for toy mints, and the storage key names it as such.
 
 export const BURNER_WALLET_STORAGE_KEY = 'fhevm-demo-burner-wallet';
@@ -39,10 +39,16 @@ const generateBurnerSecretKey = async (): Promise<Uint8Array> => {
 };
 
 /** The stored demo wallet, or a new one persisted for the next reload. */
-export const loadOrCreateBurnerSecretKey = async (storage: KeyStorage): Promise<Uint8Array> => {
+const loadWallet = async (storage: KeyStorage): Promise<Uint8Array> => {
   const stored = parseStored(storage.getItem(BURNER_WALLET_STORAGE_KEY));
   if (stored !== undefined) return stored;
   const secretKey = await generateBurnerSecretKey();
   storage.setItem(BURNER_WALLET_STORAGE_KEY, JSON.stringify(Array.from(secretKey)));
   return secretKey;
 };
+
+/** Serialize creation across tabs so no funded key is overwritten by another first connection. */
+export const loadOrCreateBurnerSecretKey = (storage: KeyStorage): Promise<Uint8Array> =>
+  globalThis.navigator?.locks
+    ? navigator.locks.request(BURNER_WALLET_STORAGE_KEY, () => loadWallet(storage))
+    : loadWallet(storage);

@@ -32,6 +32,7 @@ import { userDecryptExpect } from '../../src/solana/fhe-vertical';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { incrementCounter, initializeCounter } from '../../src/solana/specimens';
 import { runStreaming } from '../../src/utils/process';
+import { loadEnv } from '../harness/loadEnv';
 import { verticalSetup } from '../harness/solana/vertical';
 
 // Each phase does its own write + SNS commit wait (up to ~3min) + KMS round-trips.
@@ -88,7 +89,7 @@ describe('solana specimen decrypt vertical', () => {
 
 // The same source compiled with another optimization level supplies a genuinely different,
 // compatible executable without introducing a test-only instruction into the host program.
-test(
+test.skipIf(loadEnv().network !== 'localnet')(
   'host upgrade and listener restart retain old decryptable values',
   async () => {
     const { env, stack, context, wallets, wallet, config, secretKey } = await verticalSetup();

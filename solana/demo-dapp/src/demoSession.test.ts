@@ -106,15 +106,15 @@ describe('planDemoFunding', () => {
   });
 
   test('tops each missing asset up to its demo target', () => {
-    expect(planDemoFunding(1_500_000_000n, 50_000_000n)).toEqual({
-      sol: 3.5,
+    expect(planDemoFunding(25_000_000n, 50_000_000n)).toEqual({
+      sol: 0.2,
       usdc: 950,
     });
   });
 
   test('retries only the asset that is still below its safety threshold', () => {
     expect(planDemoFunding(5_000_000_000n, 0n)).toEqual({ usdc: 1_000 });
-    expect(planDemoFunding(0n, 1_000_000_000n)).toEqual({ sol: 5 });
+    expect(planDemoFunding(0n, 1_000_000_000n)).toEqual({ sol: 0.2 });
   });
 
   test('funds the requested deposit when it is above the default target', () => {

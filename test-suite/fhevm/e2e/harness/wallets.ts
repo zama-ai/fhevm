@@ -6,6 +6,7 @@
 // of stranding it on a key nobody keeps. Named actors that persist between runs are personas
 // (`personas.ts`), not run wallets.
 
+import { recordRunWallet } from "../../src/solana/recovery";
 import { type Address } from "@solana/kit";
 
 import {
@@ -34,16 +35,19 @@ export const openRunWallets = (env: TestEnv, context: SolanaProvisioningContext)
   return {
     async fresh(sol) {
       const wallet = await generateSolanaKeypair();
-      await context.fundSol(wallet.signer.address, sol);
+      if (!env.capabilities.faucet) await recordRunWallet(wallet);
       generated.push(wallet);
+      await context.fundSol(wallet.signer.address, sol);
       return wallet;
     },
     async sweep() {
       if (env.capabilities.faucet) return;
       const deployer: Address = (await loadKeypairSigner(env.roots.deployerKeypairPath)).address;
-      for (const wallet of generated.splice(0)) {
+      for (const wallet of [...generated]) {
         // Rent hygiene, not a verdict: a failed sweep leaves at most one funding amount behind.
-        await context.sweepSol(wallet.signer, deployer).catch((error: unknown) => {
+        await context.sweepSol(wallet.signer, deployer).then(() => {
+          generated.splice(generated.indexOf(wallet), 1);
+        }).catch((error: unknown) => {
           console.warn(`sweeping ${wallet.signer.address} back to the deployer failed: ${String(error)}`);
         });
       }

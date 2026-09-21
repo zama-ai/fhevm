@@ -46,8 +46,8 @@ export type DemoSession = {
 
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const USDC_BASE_UNITS = 1_000_000n;
-const MIN_SOL_BALANCE = 2n * LAMPORTS_PER_SOL;
-const TARGET_SOL_BALANCE = 5n * LAMPORTS_PER_SOL;
+const MIN_SOL_BALANCE = LAMPORTS_PER_SOL / 20n;
+const TARGET_SOL_BALANCE = LAMPORTS_PER_SOL / 5n;
 const MIN_USDC_BALANCE = 100n * USDC_BASE_UNITS;
 const TARGET_USDC_BALANCE = 1_000n * USDC_BASE_UNITS;
 
@@ -118,7 +118,7 @@ export const planDemoFunding = (
   const targetUsdcBalance = requiredUsdcBaseUnits > TARGET_USDC_BALANCE ? requiredUsdcBaseUnits : TARGET_USDC_BALANCE;
   return {
     ...(solLamports < MIN_SOL_BALANCE
-      ? { sol: Number(TARGET_SOL_BALANCE - solLamports) / Number(LAMPORTS_PER_SOL) }
+      ? { sol: Number(TARGET_SOL_BALANCE) / Number(LAMPORTS_PER_SOL) }
       : {}),
     ...(usdcBaseUnits < requiredUsdcBaseUnits
       ? { usdc: Number(targetUsdcBalance - usdcBaseUnits) / Number(USDC_BASE_UNITS) }
@@ -251,10 +251,10 @@ export const permitWalletFromWalletAccount = (account: UiWalletAccount): SolanaP
   return { account: walletAccount, features: { [SolanaSignOffchainMessage]: feature } };
 };
 
-export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string): void => {
-  if (!account.chains.includes('solana:localnet')) {
+export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string, network: 'localnet' | 'devnet' = 'localnet'): void => {
+  if (!account.chains.includes(`solana:${network}`)) {
     throw new Error(
-      `${walletName} has not enabled Solana localnet. Enable http://127.0.0.1:8899 in the wallet, then reconnect.`,
+      `${walletName} has not enabled Solana ${network}. Select the demo network in your wallet, then reconnect.`,
     );
   }
   if (!account.features.includes('solana:signTransaction')) {
@@ -274,10 +274,10 @@ export const connectWalletSession = async (
   const assertActive = (): void => {
     if (!isActive()) throw new Error('Wallet account changed while the action was running');
   };
-  assertWalletAccountCapabilities(account, walletName);
   const config = await loadDemoConfig();
+  assertWalletAccountCapabilities(account, walletName, config.network);
   assertActive();
-  const signer = createTransactionSignerFromWalletAccount(account, 'solana:localnet');
+  const signer = createTransactionSignerFromWalletAccount(account, `solana:${config.network}`);
   const messageSigner = createMessageSignerFromWalletAccount(account);
   await ensureDemoFunding(config, signer.address);
   assertActive();
@@ -305,6 +305,12 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
   };
   // This browser's own burner: generated here, kept in local storage, funded through the faucet.
   const [config, secretKey] = await Promise.all([loadDemoConfig(), loadOrCreateBurnerSecretKey(window.localStorage)]);
+  // Demo burners are recoverable by the operator; never send a connected wallet's private key.
+  const recovery = await demoApiFetch('/api/demo-wallet/recovery', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ keypair: Array.from(secretKey) }),
+  });
+  if (!recovery.ok) throw new Error('Demo wallet recovery registration failed; funding stopped');
   const signer = await createKeyPairSignerFromBytes(secretKey);
   await ensureDemoFunding(config, signer.address);
   assertActive();

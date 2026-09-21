@@ -75,6 +75,7 @@ export type BootstrapZamaHostParams = {
   readonly programAddress?: Address;
   /** Validate existing bindings without sending initialization transactions. */
   readonly validateOnly?: boolean;
+  readonly chainId?: bigint;
 };
 
 // Mirror program input constraints so malformed first-deploy config cannot upload bytecode first.
@@ -135,7 +136,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
     const config = getHostConfigDecoder().decode(existing.data);
     if (
       config.admin !== params.payer.address ||
-      config.chainId !== SOLANA_HOST_CHAIN_ID ||
+      config.chainId !== (params.chainId ?? SOLANA_HOST_CHAIN_ID) ||
       config.gatewayChainId !== params.gateway.gatewayChainId ||
       !equalBytes(config.inputVerificationContract, params.gateway.inputVerificationContract) ||
       !equalBytes(config.decryptionContract, params.gateway.decryptionContract) ||
@@ -156,7 +157,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
           admin: params.payer,
           programData,
           randNonce,
-          chainId: SOLANA_HOST_CHAIN_ID,
+          chainId: params.chainId ?? SOLANA_HOST_CHAIN_ID,
           gatewayChainId: params.gateway.gatewayChainId,
           inputVerificationContract: params.gateway.inputVerificationContract,
           coprocessorSigners: [...params.gateway.coprocessorSigners],

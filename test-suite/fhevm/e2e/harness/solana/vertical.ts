@@ -1,3 +1,4 @@
+import { afterEach } from "bun:test";
 // vertical — the per-test setup the decrypt scenarios share: gate on a healthy stack, open a
 // provisioning context, fund one fresh wallet, and bind the decrypt config to the live chain.
 //
@@ -16,6 +17,12 @@ import { loadEnv, type TestEnv } from "../loadEnv";
 import { openRunWallets, type RunWallets } from "../wallets";
 import { openProvisioning } from "./provisioning";
 import { ensureUp, type SolanaStack } from "./stack";
+
+const activeWallets = new Set<RunWallets>();
+afterEach(async () => {
+  for (const wallets of activeWallets) await wallets.sweep();
+  activeWallets.clear();
+});
 
 export type VerticalTestSetup = {
   readonly env: TestEnv;
@@ -37,6 +44,7 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const stack = await ensureUp(env);
   const context = await openProvisioning(env);
   const wallets = openRunWallets(env, context);
+  activeWallets.add(wallets);
   const wallet = await wallets.fresh(env.funding.primarySol);
   // The permit path's trust inputs, read live from the deployed stack: the signer set and
   // Decryption contract from the gateway (party ids follow this registry order), the active KMS

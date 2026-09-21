@@ -57,9 +57,12 @@ provider and allow connectors to reach `coprocessor-<party>-solana-host-listener
 The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.
 The listener stores computations, MMR leaves and checkpoints in its coprocessor's database.
 
-Keep one active experiment per set of Solana devnet program addresses, and run only one
-deployer at a time. CI serializes Solana launches; manual deployments are the operator's
-responsibility. No separate coordination database is required.
+The fixed devnet programs have one active preview owner. Deployment acquires the
+`fhevm-ci-solana-owner` namespace with the preview namespace UID; a second preview
+cannot reset or upgrade them. Its `solana-operation` ConfigMap serializes mutations.
+Ownership persists across upgrades and is released after successful teardown. A
+canceled operation retains its lock while a Solana Job may still be running. Inspect
+and stop that Job before releasing the lock; never delete it to bypass another owner.
 
 ## Program commands
 
@@ -108,12 +111,26 @@ which must be the program's upgrade authority. In the image it needs only `SOLAN
 deployer keypair. The instruction it sends, `close_owned_accounts`, exists only in `admin-sweep` builds (the `preview-env` environment),
 so the command fails against a program built without that feature.
 
-Kubernetes teardown does not close those accounts. Destroy and deploy's namespace reset only
-helm-uninstall and delete the namespace. The preview deploy Job runs `host wipe` before
-`host deploy --allow-upgrade`; elsewhere run `host wipe` before the next `host deploy`, which
-refuses a HostConfig bound to a different Gateway or committee. Wipe can run as a Job while the
-namespace still has `solana-rpc` / `solana-deployer`, or with the docker command above after
-destroy — those keypairs survive in AWS / 1Password.
+Preview namespace reset and destruction run recovery **before** deleting signing keys.
+The recovery Job first returns saved-wallet SOL and deterministic upload-buffer rent,
+installs current cleanup instructions if needed, then recovers disposable application
+accounts, token accounts and lookup tables before wiping host state. A failure blocks
+namespace deletion and preserves signing keys for retry. Executable accounts remain
+funded: closing these programs would permanently retire their stable IDs.
+
+Private run/demo/browser keys are saved before funding and merged into the preview's
+`solana-recovery` Secret. Transaction receipts and mint inventory are persisted before
+submission in `solana-recovery-journal`, so interrupted Jobs can resume accounting.
+Reports list public transaction signatures, recovered lamports, fees and retained rent
+(including non-closeable SPL mints and legacy accounts whose signing keys are missing).
+Never print Secret contents or raw Solana CLI diagnostics.
+
+For a non-destructive run cleanup, use `NAMESPACE=<owned-preview> bash
+ci/preview-env/solana-host/recover.sh recover`. Use `reset` for an intentional restart:
+stop the demo/operator and scenario traffic first. The `test:e2e` and `demo:smoke`
+entrypoints run normal recovery even when tests fail. Direct `bun test` bypasses that
+wrapper. Devnet runs require absolute `SOLANA_RECOVERY_DIR` and
+`SOLANA_PREVIEW_NAMESPACE`; `preview-env-solana-e2e.sh up` sets both.
 
 `coprocessor register` is an internal deployment command that associates the Solana
 host with the canonical host's key material in PostgreSQL. It shares registration SQL
@@ -123,7 +140,7 @@ with the local harness; it is not a new top-level fhevm-cli command.
 
 1. Stop traffic before upgrading; stop the listener too if its decoder must change.
 2. For a compatible change, upgrade the program, then update the affected infrastructure.
-3. For a breaking change, run `host wipe` before the next deploy. Destroy and deploy's namespace reset do not erase Solana accounts.
+3. For a breaking change, run the preview recovery script with `reset` before the next deploy. A bare `host wipe` bypasses rent recovery and is not the preview lifecycle command.
 4. Recreate the preview (`preview-env-destroy.yml` if the namespace is still up, then deploy, or re-dispatch deploy) with fresh application state and matching host bindings.
 5. Resume traffic when the listener is ingesting and a computation/decryption smoke test passes.
 
@@ -144,7 +161,7 @@ bun test --cwd test-suite/fhevm e2e/deployment/solana-deployment.test.ts
 
 The deployment acceptance test uses a real validator, checks initialization, verified
 no-op, explicit compatible upgrade and retained HostConfig, and tests coprocessor
-registration against PostgreSQL. CI also runs it through the packaged image. The full-stack
+registration against PostgreSQL. CI also runs it through the packaged image. The localnet-only full-stack
 upgrade scenario also checks old-value decryption after host upgrade and listener restart.
 The preview launch checks listener checkpoint progress; a live computation/decryption
 smoke test is still required to validate provider delivery and internal routing together.

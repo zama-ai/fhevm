@@ -198,7 +198,7 @@ export const resolveEnv = (
   source: TestEnvSource = "local",
   network: SolanaNetwork = source === "devnet" ? "devnet" : "localnet",
 ): TestEnv => {
-  const merged = { ...LOCAL_DEFAULTS, ...overrides };
+  const merged = { ...LOCAL_DEFAULTS, ...(network === "devnet" ? { chainId: "130140237723663404" } : {}), ...overrides };
   const deployerKeypairPath =
     overrides.deployerKeypairPath ?? path.join(os.homedir(), ".config/solana/id.json");
   if (source === "devnet" && network !== "devnet") throw new Error('source "devnet" runs on network "devnet"');

@@ -2,8 +2,10 @@
 
 These are **throwaway, publicly-known keypairs** for the confidential-vault demo (#1760) — the same
 policy as `solana/scripts/e2e/test-keypairs/` (the Solana equivalent of Anvil's well-known dev
-accounts). They are **safe to commit** and are **never deployed to / funded on any public cluster**;
-the demo only ever runs against a fresh local `solana-test-validator` bound to localhost.
+accounts). They are public localnet fixtures. Older preview runs used these actors on devnet;
+recovery imports them only to reclaim that historical funding. New devnet runs generate
+private actors, save them in `SOLANA_RECOVERY_DIR`, and back them up to the preview Secret
+before funding. These files are not the private program/deployer keys held in AWS/1Password.
 
 ## Persona / mint keypairs (this directory)
 
@@ -18,7 +20,7 @@ the demo only ever runs against a fresh local `solana-test-validator` bound to l
 
 The demo-config JSON carries only the **pubkeys** of these; the keys sign from these files, so a
 scenario cross-checks the loaded key against the published address. `test-suite/fhevm/demo/loadDemoEnv.ts`
-(`DEMO_KEYPAIRS`) points at this directory.
+(`demoKeypairs(env)`) selects this directory only on localnet.
 
 ## Program keypairs
 

@@ -63,9 +63,9 @@ test('every environment file names the four programs; Anchor.toml carries the de
   }
 });
 
-test('preview-env enables admin-sweep on zama-host only', async () => {
+test('preview-env enables preview recovery on host and application programs', async () => {
   const preview = JSON.parse(await readFile(path.join(REPO_ROOT, 'solana/environments/preview-env.json'), 'utf8'));
-  expect(preview.features).toEqual({ zama_host: ['admin-sweep'] });
+  expect(preview.features).toEqual({ zama_host: ['admin-sweep'], confidential_token: ['admin-sweep'], demo_vault: ['admin-sweep'], confidential_batcher: ['admin-sweep'] });
 });
 
 test('the workspace pins PROGRAM_ENVIRONMENT to the default so a shell export is inert', async () => {

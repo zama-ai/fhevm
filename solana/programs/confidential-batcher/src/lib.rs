@@ -58,9 +58,33 @@ pub use state::*;
 include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
 /// Anchor entrypoint module for the confidential batcher.
+#[cfg(feature = "admin-sweep")]
+#[path = "../../preview_cleanup.rs"]
+mod preview_cleanup;
+#[cfg(feature = "admin-sweep")]
+use preview_cleanup::*;
+
 #[program]
 pub mod confidential_batcher {
     use super::*;
+
+    /// Preview reset: recover program-owned rent after recovering external accounts.
+    #[cfg(feature = "admin-sweep")]
+    pub fn close_owned_accounts<'info>(ctx: Context<'info, PreviewAdmin<'info>>) -> Result<()> {
+        preview_cleanup::close_owned_accounts(ctx)
+    }
+
+    /// Preview reset: burn disposable tokens and recover PDA-owned token account rent.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::close_token(ctx, seeds)
+    }
+
+    /// Preview reset: return unused PDA funding to the deployer.
+    #[cfg(feature = "admin-sweep")]
+    pub fn preview_drain(ctx: Context<PreviewDrain>, seeds: Vec<Vec<u8>>) -> Result<()> {
+        preview_cleanup::drain(ctx, seeds)
+    }
 
     /// Creates a batcher config for one direction, wiring a join confidential
     /// mint, a payout confidential mint, and one public vault together.

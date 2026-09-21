@@ -140,6 +140,8 @@ jobs:
           sparse-checkout: |
             ci/preview-env/scripts/sweep-wallets.sh
             ci/preview-env/scripts/sweep-wallets.cjs
+            ci/preview-env/solana-host/recover.sh
+            ci/preview-env/solana-host/ownership.sh
           sparse-checkout-cone-mode: false
 
       - name: Install ethers for the wallet sweep
@@ -157,12 +159,17 @@ jobs:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/sweep-wallets.sh
 
+      - name: Recover Solana funds before deleting signing keys
+        env:
+          SOLANA_KEEP_OPERATION: "1"
+        run: bash ci/preview-env/solana-host/recover.sh reset
+
       - name: Destroy preview namespace
         id: destroy
         run: |
           # Guard against a typo'd dispatch input nuking an unrelated namespace:
           # all preview envs are fhevm-ci-*, so refuse anything else.
-          if [[ "${NAMESPACE}" != fhevm-ci-* ]]; then
+          if [[ "${NAMESPACE}" != fhevm-ci-* || "${NAMESPACE}" == fhevm-ci-solana-owner ]]; then
             echo "::error::Refusing to destroy '${NAMESPACE}': not a fhevm-ci-* preview namespace."
             exit 1
           fi
@@ -190,6 +197,9 @@ jobs:
           if ! kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=300s; then
             echo "::error::Namespace ${NAMESPACE} did not finish terminating within 5m (likely stuck on Crossplane finalizers releasing AWS resources) - check and clean up manually."
             exit 1
+          fi
+          if [[ $(kubectl get namespace fhevm-ci-solana-owner --ignore-not-found -o jsonpath='{.metadata.annotations.solana-preview-owner}') == "$NAMESPACE" ]]; then
+            kubectl delete namespace fhevm-ci-solana-owner --wait=false
           fi
           echo "deleted=true" >> "$GITHUB_OUTPUT"
 

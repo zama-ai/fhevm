@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -7,6 +7,25 @@ import path from "node:path";
 import type { SolanaProvisioningContext } from "../../src/solana/provision";
 import type { TestEnv } from "./loadEnv";
 import { openRunWallets } from "./wallets";
+
+const previousPath = process.env.PATH;
+const previousNamespace = process.env.SOLANA_PREVIEW_NAMESPACE;
+const previousRecovery = process.env.SOLANA_RECOVERY_DIR;
+let fakeTools: string;
+beforeAll(async () => {
+  fakeTools = await fs.mkdtemp(path.join(os.tmpdir(), "recovery-tools-"));
+  await fs.writeFile(path.join(fakeTools, "kubectl"), "#!/bin/sh\ncat >/dev/null\n", { mode: 0o700 });
+  process.env.PATH = `${fakeTools}:${previousPath}`;
+  process.env.SOLANA_PREVIEW_NAMESPACE = "fhevm-ci-eikix-unit-test";
+});
+afterAll(async () => {
+  process.env.PATH = previousPath;
+  if (previousNamespace === undefined) delete process.env.SOLANA_PREVIEW_NAMESPACE;
+  else process.env.SOLANA_PREVIEW_NAMESPACE = previousNamespace;
+  if (previousRecovery === undefined) delete process.env.SOLANA_RECOVERY_DIR;
+  else process.env.SOLANA_RECOVERY_DIR = previousRecovery;
+  await fs.rm(fakeTools, { recursive: true, force: true });
+});
 
 const writeKeypairFile = async (): Promise<string> => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
@@ -41,6 +60,7 @@ const stubContext = () => {
 describe("run wallets", () => {
   test("funds each fresh wallet to the requested amount and sweeps them all to the deployer", async () => {
     const deployerPath = await writeKeypairFile();
+    process.env.SOLANA_RECOVERY_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "wallet-recovery-"));
     const { context, funded, swept } = stubContext();
     const wallets = openRunWallets(envWith(deployerPath, false), context);
 
@@ -67,4 +87,23 @@ describe("run wallets", () => {
     await wallets.sweep();
     expect(swept).toEqual([]);
   });
+});
+
+test("funding failure preserves a durable recovery key and a failed sweep can retry", async () => {
+  const deployerPath = await writeKeypairFile();
+  process.env.SOLANA_RECOVERY_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "wallet-recovery-"));
+  const { context, swept } = stubContext();
+  let attempts = 0;
+  const originalSweep = context.sweepSol;
+  const failing = { ...context, fundSol: async () => { throw new Error("funding confirmation interrupted"); }, sweepSol: async (...args: Parameters<typeof originalSweep>) => {
+    if (++attempts === 1) throw new Error("temporary RPC failure");
+    return originalSweep(...args);
+  } };
+  const wallets = openRunWallets(envWith(deployerPath, false), failing);
+  await expect(wallets.fresh(0.2)).rejects.toThrow("interrupted");
+  const files = await fs.readdir(process.env.SOLANA_RECOVERY_DIR);
+  expect(files.filter(name => name.startsWith("run-")).length).toBe(1);
+  await wallets.sweep();
+  await wallets.sweep();
+  expect(swept.length).toBe(1);
 });

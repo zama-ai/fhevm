@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import { writeSolanaAddressArtifact } from './artifact';
-import { SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
+import { SOLANA_HOST_CHAIN_ID, SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
 import { registerSolanaCoprocessorSql } from './coprocessor';
 import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
@@ -11,6 +11,7 @@ import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './ga
 import { loadKeypairSigner, resolveKeypairPath } from './keypair';
 import { programIdsFor, readSolanaEnvironment } from './environment';
 import { createHostDeployContext } from './send';
+import { recoverPreview } from './recover';
 import { wipeZamaHost } from './wipe';
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
@@ -63,9 +64,20 @@ const main = async () => {
   if (flags.some((flag) => flag !== '--allow-upgrade') || (allowUpgrade && action !== 'deploy')) {
     throw new Error(USAGE);
   }
-  if (target === 'coprocessor' && action === 'register') {
+  if (target === 'environment' && action === 'prepare-reset') {
+    const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
+    for (const program of SOLANA_DEPLOY_PROGRAMS) {
+      const names = { zama_host: programIds.zamaHost, confidential_token: programIds.confidentialToken, demo_vault: programIds.demoVault, confidential_batcher: programIds.confidentialBatcher };
+      if (!(await context.rpc.getAccountInfo(names[program], { encoding: 'base64' }).send()).value) continue;
+      await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: [program], programKeypairPaths: {}, upgrade: true, environment });
+    }
+  } else if (target === 'environment' && (action === 'recover' || action === 'recover-funding' || action === 'reset')) {
+    await recoverPreview(createHostDeployContext(requiredEnv('SOLANA_RPC_URL')), await loadKeypairSigner(await resolveDeployerKeypairPath()), environment, requiredEnv('SOLANA_RECOVERY_DIR'), action === 'reset', await resolveDeployerKeypairPath(), action === 'recover-funding');
+  } else if (target === 'host' && action === 'upgrade-code') {
+    await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: ['zama_host'], programKeypairPaths: await resolveProgramKeypairs(['zama_host']), allowUpgrade: true, environment });
+  } else if (target === 'coprocessor' && action === 'register') {
     const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
-      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID')),
+      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(process.env.SOLANA_HOST_CHAIN_ID ?? SOLANA_HOST_CHAIN_ID)),
       encoding: 'utf8',
     });
     if (result.error) throw new Error(`coprocessor registration failed: ${result.error.message}`);
@@ -101,6 +113,7 @@ const main = async () => {
       );
       ids = await deployHostProgram({
         ...parameters,
+        chainId: BigInt(process.env.SOLANA_HOST_CHAIN_ID ?? SOLANA_HOST_CHAIN_ID),
         programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),

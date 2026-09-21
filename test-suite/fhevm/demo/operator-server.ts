@@ -1,5 +1,5 @@
 // operator-server — the `demo:operator` entrypoint. Wires the pure operator (`./operator`) to a live
-// stack: the seeded demo-config (RPC endpoints, mints, personas), the committed keeper and
+// stack: the seeded demo-config (RPC endpoints, mints, personas), the environment-specific keeper and
 // mint-authority keypairs, the environment's SOL funder, the listener's proof endpoint and the
 // relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
 // the boot capability; `tailscale serve` may front it for direct callers on the tailnet.
@@ -47,7 +47,8 @@ import {
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
-import { DEMO_KEYPAIRS, loadDemoEnv } from "./loadDemoEnv";
+import { saveRecoveryKey, mirrorRecoveryKeys } from "../src/solana/recovery";
+import { demoKeypairs, loadDemoEnv } from "./loadDemoEnv";
 import { createOperator, TAILSCALE_LOGIN_HEADER } from "./operator";
 
 /** Tailscale logins (comma-separated) the operator accepts through the identity header. */
@@ -109,33 +110,49 @@ const main = async (): Promise<void> => {
   // deployer wallet on devnet.
   const configPath = resolveDemoConfigPath();
   const { env, config: seeded } = await loadDemoEnv(configPath);
+  const relayerApiKey = process.env.DEMO_RELAYER_API_KEY ?? (env.network === "localnet" ? "local" : requiredEnv("DEMO_RELAYER_API_KEY"));
   const { fundSol } = await openProvisioning(env);
-  const mintUsdc = await buildUsdcMinter({
+  const mintAuthority = await loadSigner(demoKeypairs(env).mintAuthority);
+  const mintUnderlying = await buildUsdcMinter({
     rpcUrl: seeded.rpcUrl,
     wsUrl: seeded.wsUrl,
     // Mock USDC is the deposit underlying (`mints.joinUnderlying`); the faucet drips exactly that.
     mint: address(seeded.mints.joinUnderlying),
-    mintAuthorityKeypairPath: DEMO_KEYPAIRS.mintAuthority,
+    mintAuthorityKeypairPath: demoKeypairs(env).mintAuthority,
   });
-  const keeper = await loadSigner(DEMO_KEYPAIRS.keeper);
+  const keeper = await loadSigner(demoKeypairs(env).keeper);
+  const mintUsdc: UnderlyingMinter = async (recipient, amount) => {
+    await fundSol(mintAuthority.address, 0.2);
+    return mintUnderlying(recipient, amount);
+  };
 
-  // Re-read per call: a reseed rewrites the config under a running operator.
+  // One configuration per process: restart the operator after reseeding.
   const readRuntimeConfig = async (): Promise<Record<string, unknown>> =>
-    JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+    seeded as unknown as Record<string, unknown>;
   const session = async (): Promise<DemoOperatorSession> => {
     const config = parseRuntimeDemoConfig(await readRuntimeConfig(), authorization.bootId);
     if (keeper.address !== config.personas.keeper) {
       throw new Error(`keeper signer ${keeper.address} does not match seeded keeper ${config.personas.keeper}`);
     }
-    return { config, keeper, proofService };
+    await fundSol(keeper.address, 0.2);
+    return { config, keeper, proofService, relayerApiKey };
   };
-  const encryptionKey = createEncryptionKeyMaterial({ relayerUrl, network: seeded.network });
+  const encryptionKey = createEncryptionKeyMaterial({ relayerUrl, apiKey: relayerApiKey, network: seeded.network });
 
   const handler = createOperator({
     authorization,
     allowedOrigin,
     tailscaleLogins,
     actions: {
+      registerBurner: async (bytes) => {
+        const wallet = await createKeyPairSignerFromBytes(bytes);
+        if (env.network === "devnet") {
+          try { await saveRecoveryKey(`browser-${wallet.address}`, bytes); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+          await mirrorRecoveryKeys();
+        }
+        return wallet.address;
+      },
       fundSol,
       mintUsdc,
       // The page reaches the relayer through its own origin's proxy, never a raw relayer URL.

@@ -40,6 +40,7 @@ export default defineConfig(async ({ command, mode }) => ({
       // Listed first: proxy contexts match in order and `/api` would otherwise take it.
       '/api/relayer': {
         target: relayerUrl,
+        headers: { "x-api-key": process.env.DEMO_RELAYER_API_KEY ?? "local" },
         rewrite: (requestPath: string) => requestPath.replace(/^\/api\/relayer/, ''),
       },
       // The proxy (and the capability it reads) exists only for a served page: `vite build` and

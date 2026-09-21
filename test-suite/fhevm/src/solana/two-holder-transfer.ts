@@ -1,3 +1,4 @@
+import { recordRunWallet } from "./recovery";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -154,8 +155,9 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       // subprocess loads Alice's file, and the user-decrypt secret is the 32-byte seed.
       const createHolder = async (name: string) => {
         const { signer, bytes } = await generateSolanaKeypair();
+        if (funder) await recordRunWallet({ signer, bytes });
         const keypairPath = path.join(scenarioDir!, `${name}.json`);
-        await fs.writeFile(keypairPath, JSON.stringify(Array.from(bytes)));
+        await fs.writeFile(keypairPath, JSON.stringify(Array.from(bytes)), { mode: 0o600 });
         const holder: Holder = {
           owner: signer.address,
           keypairPath,

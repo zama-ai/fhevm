@@ -26,7 +26,6 @@ import {
   deriveBatchAddresses,
   deriveJoinRecordAddress,
   getBatchByIndex,
-  getBatcher,
   getCurrentBatch,
   getOrCreateConfidentialTokenAccountInstruction,
   getJoinRecord,
@@ -38,7 +37,7 @@ import type { BatchPosition, BatchTarget } from './batchTypes';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { recordTransactionEvidence } from './evidenceStore';
-import { readClaimedUsdcHandle } from './revealShares';
+import { hasConfidentialBalanceAccount, readClaimedUsdcHandle } from './revealShares';
 import { simulateSignedTransactionLocally, simulateUnsignedTransactionLocally } from './transactionSimulation';
 import { vaultRoots } from './vaultRoots';
 
@@ -257,21 +256,9 @@ export async function findExistingDeposit(session: DemoSession): Promise<BatchPo
   return result;
 }
 
-export const hasClaimedDeposit = async (session: DemoSession): Promise<boolean> => {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
-  const roots = depositRoots(session);
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
-  for (let batchIndex = 0n; batchIndex < batcher.nextBatchIndex; batchIndex += 1n) {
-    const batch = await deriveBatchAddresses(roots, batchIndex);
-    const joinRecordAddress = await deriveJoinRecordAddress(batch.batch, session.signer.address);
-    const account = await rpc.getAccountInfo(joinRecordAddress, { commitment: 'confirmed', encoding: 'base64' }).send();
-    if (account.value !== null) {
-      const joinRecord = await getJoinRecord(rpc, joinRecordAddress, { commitment: 'confirmed' });
-      if (joinRecord.claimed) return true;
-    }
-  }
-  return false;
-};
+// Claimed join records can be closed for rent; the balance account remains authoritative.
+export const hasClaimedDeposit = (session: DemoSession): Promise<boolean> =>
+  hasConfidentialBalanceAccount(session, session.config.mints.payoutConfidential);
 
 export async function depositToVault(
   session: DemoSession,

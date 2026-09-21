@@ -8,6 +8,7 @@ scDeploy:
   configmap:
     name: solana-coprocessor-registration
   env:
+    - {name: SOLANA_HOST_CHAIN_ID, value: "130140237723663404"}
     - {name: SOLANA_ENVIRONMENT, value: preview-env}
     # The canonical EVM host chain whose keys the Solana chain shares (Anvil host, see deploy-preview.sh).
     - {name: SOLANA_KEY_SOURCE_CHAIN_ID, value: "12345"}

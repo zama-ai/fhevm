@@ -44,13 +44,14 @@ const objectUrl = (value: unknown, name: string, network: "localnet" | "devnet")
 
 export const createEncryptionKeyMaterial = (options: {
   readonly relayerUrl: string;
+  readonly apiKey: string;
   readonly network: "localnet" | "devnet";
 }): EncryptionKeyMaterial => {
   let cached: { readonly fingerprint: string; readonly key: Promise<DemoEncryptionKey> } | undefined;
 
   const describe = async (): Promise<Descriptor> => {
     const keyUrlResponse = await fetch(`${options.relayerUrl}/v2/keyurl`, {
-      headers: { accept: "application/json", "x-api-key": "local" },
+      headers: { accept: "application/json", "x-api-key": options.apiKey },
     });
     if (!keyUrlResponse.ok) throw new Error(`relayer key URL failed with HTTP ${keyUrlResponse.status}`);
     const body = (await keyUrlResponse.json()) as {

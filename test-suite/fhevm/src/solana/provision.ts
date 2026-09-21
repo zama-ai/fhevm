@@ -206,8 +206,10 @@ export const createProvisioningContext = (
   };
   const sweepSol: SolanaProvisioningContext['sweepSol'] = async (from, to) => {
     const { value: balance } = await rpc.getBalance(from.address, { commitment: 'confirmed' }).send();
-    if (balance <= TRANSACTION_FEE_LAMPORTS) return null;
-    return sendAndConfirmSigned(from, [transferSolInstruction({ from, to, lamports: balance - TRANSACTION_FEE_LAMPORTS })]);
+    const payer = contextOptions.funder ?? from;
+    const amount = payer.address === from.address ? balance - TRANSACTION_FEE_LAMPORTS : balance;
+    if (amount <= 0n) return null;
+    return sendAndConfirmSigned(payer, [transferSolInstruction({ from, to, lamports: amount })]);
   };
   return { rpc, sendTransaction, fundSol, sweepSol };
 };

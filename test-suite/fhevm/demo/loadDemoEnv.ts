@@ -19,12 +19,20 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
  * for the committed-key policy). Personas sign from these files; the demo-config JSON carries only
  * their pubkeys, so a scenario can cross-check the loaded key against the published address.
  */
-export const DEMO_KEYPAIRS = {
+const LOCAL_DEMO_KEYPAIRS = {
   keeper: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/keeper.json"),
   alice: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/alice.json"),
   bob: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/bob.json"),
   mintAuthority: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/mint-authority.json"),
 } as const;
+
+/** Devnet actors are private files in the recovery directory, never repository fixtures. */
+export const demoKeypairs = (env: TestEnv): typeof LOCAL_DEMO_KEYPAIRS => {
+  if (env.network === "localnet") return LOCAL_DEMO_KEYPAIRS;
+  const directory = process.env.SOLANA_RECOVERY_DIR;
+  if (!directory || !path.isAbsolute(directory)) throw new Error("devnet requires an absolute SOLANA_RECOVERY_DIR");
+  return Object.fromEntries(Object.keys(LOCAL_DEMO_KEYPAIRS).map(role => [role, path.join(directory, `demo-${role}.json`)])) as typeof LOCAL_DEMO_KEYPAIRS;
+};
 
 /** Maps the demo-config onto the harness's `TestEnvOverrides` (endpoint + identity fields only). */
 const toOverrides = (config: SolanaDemoConfig) => ({
