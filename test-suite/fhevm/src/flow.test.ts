@@ -1,14 +1,18 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
 import { ensureRuntimeArtifacts } from "./flow/artifacts";
 import {
+  assertNoUnrestoredGpuSession,
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
   preflightPorts,
   resumeRepairStep,
+  scenarioUsesForkAnvil,
   runtimeArtifactPaths,
   shouldShowResumeHint,
 } from "./flow/up-flow";
@@ -184,7 +188,7 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBe("relayer");
   });
 
-  test("expects the kms-connector endpoint only when the bundle pins its image", () => {
+  test("expects the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const running = [
       "fhevm-minio",
       "coprocessor-and-kms-db",
@@ -210,15 +214,19 @@ describe("resumeRepairStep", () => {
       "fhevm-relayer",
       "fhevm-test-suite-e2e-debug",
     ];
-    // completeState() carries no CONNECTOR_ENDPOINT_VERSION: the endpoint is not expected.
+    // completeState() carries no CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION: neither is expected.
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
     const base = completeState();
-    const withEndpoint = {
+    const withHttp = {
       ...base,
-      versions: { ...base.versions, env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+      versions: {
+        ...base.versions,
+        env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
     };
-    expect(resumeRepairStep(withEndpoint, running)).toBe("kms-connector");
-    expect(resumeRepairStep(withEndpoint, [...running, "kms-connector-endpoint"])).toBeUndefined();
+    expect(resumeRepairStep(withHttp, running)).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint"])).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
   test("returns nothing when every steady-state service is present", () => {
@@ -586,5 +594,71 @@ describe("runtime helpers", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.CORE_VERSION).toBe("c57f52f");
+  });
+});
+
+describe("fork-anvil scenarios", () => {
+  const withInstanceEnv = (env: Record<string, string>): ResolvedCoprocessorScenario => {
+    const base = completeState().scenario;
+    return {
+      ...base,
+      instances: [
+        { index: 0, source: { mode: "registry", tag: "x" }, env: {}, args: {} },
+        { index: 1, source: { mode: "registry", tag: "x" }, env, args: {} },
+      ],
+    };
+  };
+
+  test("detects an instance routed to the fork by hostname", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil:8546" }))).toBe(true);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_WS_URL: "ws://fork-anvil:8546" }))).toBe(true);
+  });
+
+  test("leaves ordinary scenarios alone", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({}))).toBe(false);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://host-node:8545" }))).toBe(false);
+  });
+
+  // A hostname that merely contains the string must not trigger the managed
+  // fork: starting a second Anvil for a scenario that did not ask for one
+  // would bind a port and seed a chain nobody reads.
+  test("matches the host exactly, not by substring", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil-2:8546" }))).toBe(false);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://not-fork-anvil:8546" }))).toBe(false);
+  });
+
+  test("treats an unparsable RPC URL as no fork rather than throwing", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "not a url" }))).toBe(false);
+  });
+
+  test("reserves a fork port distinct from the second host chain", async () => {
+    const { DEFAULT_EXTRA_HOST_RPC_PORT, DEFAULT_FORK_RPC_PORT, PORTS } = await import("./layout");
+    expect(DEFAULT_FORK_RPC_PORT).not.toBe(DEFAULT_EXTRA_HOST_RPC_PORT);
+    expect(PORTS).not.toContain(DEFAULT_FORK_RPC_PORT);
+    expect(preflightPorts({ scenario: withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil:8546" }) })).toContain(DEFAULT_FORK_RPC_PORT);
+    expect(preflightPorts({ scenario: withInstanceEnv({ RPC_HTTP_URL: "http://host-anvil:8545" }) })).not.toContain(DEFAULT_FORK_RPC_PORT);
+  });
+});
+
+describe("assertNoUnrestoredGpuSession", () => {
+  test("passes when no GPU session record exists", () => {
+    expect(() =>
+      assertNoUnrestoredGpuSession("/nonexistent/gpu-consensus-workers/docker-workers-to-restore"),
+    ).not.toThrow();
+  });
+
+  test("refuses to bring the stack up while host workers still hold the roles", () => {
+    // `gpu-consensus-workers.sh start` leaves this record behind for `stop` to
+    // consume. While it exists, host-run workers own the tfhe/zkproof/sns
+    // roles, and starting the containers too would put two builds on every
+    // queue -- the failure this guard exists to prevent.
+    const record = `${tmpdir()}/gpu-restore-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(record, "coprocessor-sns-worker\n");
+    try {
+      expect(() => assertNoUnrestoredGpuSession(record)).toThrow(/GPU consensus worker session/);
+      expect(() => assertNoUnrestoredGpuSession(record)).toThrow(/gpu-consensus-workers\.sh stop/);
+    } finally {
+      rmSync(record, { force: true });
+    }
   });
 });

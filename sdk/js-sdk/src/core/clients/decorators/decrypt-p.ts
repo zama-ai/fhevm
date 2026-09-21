@@ -8,7 +8,7 @@ import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.j
 export async function _initDecrypt(fhevm: FhevmBase<FhevmChain>): Promise<void> {
   const f = asFhevmClientWith(fhevm, 'decrypt');
 
-  const frozen = await ensureFrozenContext(f);
+  await ensureFrozenContext(f);
 
-  await f.runtime.decrypt.initTkmsModule({ tkmsVersion: frozen.tkmsVersion });
+  await f.runtime.decrypt.initTkmsModule();
 }

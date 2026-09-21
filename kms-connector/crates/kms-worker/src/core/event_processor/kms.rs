@@ -8,7 +8,7 @@ use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CompressedKeyConfig, ComputeKeyType, CrsGenRequest, Eip712DomainMsg, KeyGenPreprocRequest,
     KeyGenRequest, KeyGenSecretKeyConfig, KeySetAddedInfo, KeySetConfig, KeySetType,
-    StandardKeySetConfig,
+    SigningSchemeType, StandardKeySetConfig,
 };
 use tracing::error;
 
@@ -47,6 +47,8 @@ impl KMSGenerationProcessor {
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
             extra_data: prep_keygen_request.extraData.to_vec(),
             keyset_config: Some(keyset_config(prep_keygen_request.existingKeyId)),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }
 
@@ -69,6 +71,8 @@ impl KMSGenerationProcessor {
             extra_data: keygen_request.extraData.to_vec(),
             keyset_config: Some(keyset_config(existing_key_id)),
             keyset_added_info: keyset_added_info(existing_key_id),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }
 
@@ -98,6 +102,8 @@ impl KMSGenerationProcessor {
             max_num_bits,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
             context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }
 }

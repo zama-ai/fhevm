@@ -8,7 +8,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
@@ -259,7 +259,8 @@ export type KmsParty = { party: number; endpoint: string; privateKey: string; db
 
 /**
  * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
- * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * The cores run without auto TLS, so they never enforce the PCR allowlist and zero PCRs suffice.
+ * softwareVersion must be valid semver
  * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
  */
 const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
@@ -434,10 +435,19 @@ const buildKmsConnectorInstanceEnvs = (
     next.KMS_CONNECTOR_PRIVATE_KEY = privateKey;
     next.KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
     next.DATABASE_URL = `postgresql://db:5432/${dbName}`;
+    next.KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, party);
     instanceEnvs[kmsConnectorEnvName(party)] = next;
   }
   return instanceEnvs;
 };
+
+/** Port the kms-connector HTTP endpoint listens on, read from the (template) bind address. */
+const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
+  (envs["kms-connector"].KMS_CONNECTOR_HTTP_ENDPOINT ?? "").split(":").pop() || "8080";
+
+/** `host:port` of party i's HTTP endpoint: what that party's TLS proxy forwards to. */
+const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
+  `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
@@ -501,12 +511,15 @@ const validateEnvMaps = (
   }
 };
 
-const applyConnectorEndpointTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
-  const bind = envs["kms-connector"].KMS_CONNECTOR_HTTP_ENDPOINT ?? "";
-  const port = bind.split(":").pop() || "8080";
-  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supportsConnectorEndpoint(plan)
+const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  // The base kms-connector.env is party 1's env (the unsuffixed `kms-connector-*` containers);
+  // parties 2..n get their own address in buildKmsConnectorInstanceEnvs.
+  envs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, 1);
+  const supported = supportsConnectorHttp(plan);
+  const proxyPort = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
+  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supported
     ? kmsPartyIds(plan.kms.committeeSize)
-        .map((party) => `http://${kmsConnectorPrefix(party)}-endpoint:${port}`)
+        .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
         .join(",")
     : "";
   envs["test-suite"].KMS_THRESHOLD = plan.kms.mode === "threshold" ? String(plan.kms.threshold) : "0";
@@ -544,8 +557,7 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
-  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
-  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  // Auto-revert stays off under blue-green: the cutover merge legitimately replaces blue's in-window digests with green's, which the detector cannot tell from real drift.
   if (plan.blueGreen) {
     envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
   }
@@ -553,7 +565,7 @@ export const renderEnvMaps = async (
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
-  applyConnectorEndpointTestSuiteEnv(envs, plan);
+  applyConnectorHttpEnv(envs, plan);
 
   // Multi-chain seeding for the coprocessor dbMigration container.
   // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive

@@ -72,6 +72,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance, ProofMa
         crate::verifier::execute_verify_proofs_loop(
             pmngr,
             conf.clone(),
+            fhevm_engine_common::versioning::StackMode::new(false),
             last_active_at.clone(),
             start_block_state,
         )

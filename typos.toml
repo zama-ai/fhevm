@@ -23,7 +23,7 @@ extend-exclude = [
     "lib/openzeppelin-contracts-upgradeable/",
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
-    "sdk/js-sdk/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs",
+    "sdk/js-sdk/src/wasm/tfhe/v1.8.1/tfhe-worker.mjs",
 
     # Keys and charts (binary/config data)
     "fhevm-keys/",
@@ -34,6 +34,11 @@ extend-exclude = [
 
     # cargo-chef recipe (generated; embeds crate names like `writeable`)
     "listener/recipe.json",
+
+    # hardhat-deploy records of live deployments (address, ABI, compiler metadata).
+    # The metadata embeds upstream LayerZero source verbatim; editing it would
+    # falsify the record of what is on chain.
+    "protocol-contracts/solanaOFT/deployments/",
 
     # Lock files and binaries
     "*.lock",
@@ -154,9 +159,11 @@ privkey = "privkey"       # private key
 # Rust module/variable naming conventions
 consts = "consts"         # common Rust module name for constants
 dbe = "dbe"               # variable name (DbError)
+esource = "esource"       # pingora::Error::esource() API method
 
 # External project/service names
 Hashi = "Hashi"           # HashiCorp (Hashi bridge project)
+Initia = "Initia"         # Initia, a Move-VM chain LayerZero supports (ChainType.INITIA)
 
 # AWS AMI IDs contain random hex strings
 caf = "caf"               # appears in AWS AMI IDs
@@ -166,3 +173,7 @@ BA = "BA"                 # used in test variable names (e.g., wrongOrderBAInste
 
 # Doc
 PN = "PN"                 # abbreviation P1, ..., PN
+
+[default.extend-identifiers]
+# A Solana public key (base58) that typos splits into "9thq..." and reads as "the"
+"9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK" = "9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK"

@@ -4,7 +4,7 @@
  * tfhe-rs >= 1.7.0 returns 0 on an overshift (amount >= bit width) instead of
  * truncating the amount. Flip the flag together with the engine version bump.
  */
-export const OVERSHIFT_RETURNS_ZERO = false;
+export const OVERSHIFT_RETURNS_ZERO = true;
 
 const mask = (bits: bigint): bigint => (1n << bits) - 1n;
 

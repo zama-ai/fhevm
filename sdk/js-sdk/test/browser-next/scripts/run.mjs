@@ -13,24 +13,17 @@ const playwrightBin = resolve(browserNextDir, '../../node_modules/.bin/playwrigh
 
 const args = process.argv.slice(2);
 let rebuild = false;
-let buildProfile = 'dev';
 
 for (const arg of args) {
   if (arg === '--rebuild') {
     rebuild = true;
-  } else if (arg.startsWith('--build-profile=')) {
-    buildProfile = arg.slice('--build-profile='.length);
   } else {
     throw new Error(`Unknown argument: ${arg}`);
   }
 }
 
-if (!['dev', 'prod', 'skip'].includes(buildProfile)) {
-  throw new Error(`Invalid --build-profile value: ${buildProfile}`);
-}
-
 if (rebuild) {
-  run('bash', [rebuildScript, `--build-profile=${buildProfile}`], sdkRoot);
+  run('bash', [rebuildScript], sdkRoot);
 }
 
 if (!existsSync(tarballPath)) {

@@ -16,6 +16,9 @@ use fhevm_engine_common::types::{
 };
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, ListenerPoolClosed, StackMode,
+};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -28,6 +31,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::error;
 use tracing::info;
@@ -180,6 +184,10 @@ const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
 // short wait in case the database had a short issue
 const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
+/// Delay before rebinding the stack-version listener to a replaced pool, so a
+/// database that is down does not turn the respawn loop into a busy loop.
+const LISTENER_RESPAWN_DELAY: Duration = Duration::from_secs(1);
+
 struct AllowedHandleInsert {
     handle: Vec<u8>,
     account_address: String,
@@ -251,9 +259,7 @@ pub struct Database {
     pub consumed_boundaries: ConsumedBoundaryGuard,
     pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
-    /// When true, every connection in this pool sets
-    /// `search_path = gcs,public` so writes resolve to the GCS schema.
-    gcs_mode: bool,
+    stack_mode: Arc<StackMode>,
 }
 
 #[derive(Debug)]
@@ -295,7 +301,7 @@ impl Database {
     /// Whether this listener is the incoming green (GCS) stack. Only green injects
     /// synthetic consensus work; see `database::synthetic_ops`.
     pub fn gcs_mode(&self) -> bool {
-        self.gcs_mode
+        self.stack_mode.gcs_mode()
     }
 
     pub async fn new(
@@ -303,26 +309,32 @@ impl Database {
         chain_id: ChainId,
         dependence_cache_size: u16,
     ) -> Result<Self> {
-        Self::new_with_gcs_mode(url, chain_id, dependence_cache_size, false)
-            .await
+        Self::new_with_stack_mode(
+            url,
+            chain_id,
+            dependence_cache_size,
+            StackMode::new(false),
+        )
+        .await
     }
 
-    pub async fn new_with_gcs_mode(
+    pub async fn new_with_stack_mode(
         url: &DatabaseURL,
         chain_id: ChainId,
         dependence_cache_size: u16,
-        gcs_mode: bool,
+        stack_mode: Arc<StackMode>,
     ) -> Result<Self> {
         // A green pool points at the gcs schema. Postgres ignores a schema that is
         // missing, so writes would go to public instead. Wait for it first.
-        if gcs_mode {
+        if stack_mode.gcs_mode() {
             fhevm_engine_common::versioning::wait_for_gcs_schema(
                 url.as_str(),
                 fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
             )
             .await?;
         }
-        let (pool, pool_refresh_handle) = Self::new_pool(url, gcs_mode).await;
+        let (pool, pool_refresh_handle) =
+            Self::new_pool(url, stack_mode.gcs_mode()).await;
         let bucket_cache =
             Arc::new(tokio::sync::RwLock::new(lru::LruCache::new(
                 std::num::NonZeroU16::new(
@@ -356,7 +368,7 @@ impl Database {
             consumed_boundaries,
             sealed_chains,
             tick: HeartBeat::default(),
-            gcs_mode,
+            stack_mode,
         };
         db.reload_sealed_chains(dependence_cache_size).await;
         Ok(db)
@@ -613,7 +625,7 @@ impl Database {
         let Some(mut tx) =
             fhevm_engine_common::versioning::begin_write_guarded_conn(
                 &mut connection,
-                self.gcs_mode,
+                self.stack_mode.gcs_mode(),
                 fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
             )
             .await?
@@ -739,7 +751,7 @@ impl Database {
     /// Begin a write transaction fenced against cutover. Runs `assert_not_retired`
     /// at BEGIN (via `begin_guarded_pool`), then takes the shared advisory lock and
     /// re-checks retirement. Returns `Ok(None)` if a committed cutover retired
-    /// this stack. GCS-mode connections (`self.gcs_mode`) take the same lock so
+    /// this stack. GCS-mode connections (`self.stack_mode`) take the same lock so
     /// their raw writes cannot overlap cutover or schema reset, but continue after
     /// rollback to refill the GCS schema. See `versioning::begin_write_guarded`.
     pub async fn new_transaction(
@@ -748,7 +760,7 @@ impl Database {
         let pool = self.pool().await;
         Ok(fhevm_engine_common::versioning::begin_write_guarded(
             &pool,
-            self.gcs_mode,
+            self.stack_mode.gcs_mode(),
             fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
         )
         .await?
@@ -763,7 +775,7 @@ impl Database {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let (old_pool, old_refresh_handle) = {
             let (new_pool, new_refresh_handle) =
-                Self::new_pool(&self.url, self.gcs_mode).await;
+                Self::new_pool(&self.url, self.stack_mode.gcs_mode()).await;
             let mut pool = self.pool.write().await;
             let mut pool_refresh_handle =
                 self.pool_refresh_handle.write().await;
@@ -1942,7 +1954,7 @@ impl Database {
                     dst_chain_id = e.dstChainId,
                     "BridgeHandle event"
                 );
-                sqlx::query!(
+                let recorded = sqlx::query!(
                     "INSERT INTO bridge_handle_events
                         (src_handle, dst_chain_id, src_chain_id, sender_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -1955,12 +1967,24 @@ impl Database {
                     e.guid.as_slice(),
                     block_number as i64,
                     block_hash.as_slice(),
-                    transaction_id,
+                    transaction_id.clone(),
                 )
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0
+                    > 0;
+
+                // Enqueue SnS for the handle: `ConfidentialBridge.send` needs
+                // only a transient allowance and so emits no ACL event.
+                self.insert_pbs_computations(
+                    tx,
+                    &[e.srcHandle.to_vec()],
+                    transaction_id,
+                    block_number,
+                )
+                .await?;
+
+                recorded
             }
             BridgeContractEvents::HandleBridged(e) => {
                 // Verify the destination handle was correctly derived and ignore the
@@ -2019,8 +2043,6 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Adds handles to the pbs_computations table and alerts the SnS worker
-    /// about new of PBS work.
     pub async fn insert_pbs_computations(
         &self,
         tx: &mut Transaction<'_>,
@@ -2460,6 +2482,41 @@ impl Database {
         }
         Ok(())
     }
+}
+
+/// Keep the version listener bound to the pool shared by all `Database` clones.
+/// `Database::reconnect` closes the displaced pool, terminating its subscription.
+pub fn spawn_stack_version_listener(
+    db: Database,
+    mode: Arc<StackMode>,
+    cancel: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        while !cancel.is_cancelled() {
+            let pool = db.pool().await;
+            match run_stack_version_listener(pool, mode.clone(), cancel.clone())
+                .await
+            {
+                // Cancelled: the service is shutting down.
+                Ok(()) => return,
+                Err(err) if err.is::<ListenerPoolClosed>() => {
+                    info!(
+                        "stack-version listener lost its pool to a reconnect; rebinding to the current pool"
+                    );
+                }
+                Err(err) => {
+                    error!(
+                        error = %err,
+                        "stack-version listener failed; rebinding to the current pool"
+                    );
+                }
+            }
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = tokio::time::sleep(LISTENER_RESPAWN_DELAY) => {},
+            }
+        }
+    })
 }
 
 fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {

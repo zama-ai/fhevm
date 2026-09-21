@@ -366,6 +366,7 @@ async fn test_worker_recovers_after_backend_termination() {
     let _service_task = tokio::spawn(crate::verifier::execute_verify_proofs_loop(
         pool_mngr,
         conf,
+        fhevm_engine_common::versioning::StackMode::new(false),
         Arc::new(RwLock::new(SystemTime::now())),
         Arc::new(AtomicI64::new(-1)),
     ));

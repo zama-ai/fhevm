@@ -12,6 +12,8 @@
 import { execFile as oldExecFile } from 'child_process';
 import { ethers } from 'ethers';
 import { Pool } from 'pg';
+
+import { ComparisonMismatch } from './mismatch';
 import { promisify } from 'util';
 
 const execFile = promisify(oldExecFile);
@@ -23,6 +25,7 @@ const CIPHERTEXT_COMMITS_ABI = [
 
 const GATEWAY_CONFIG_ABI = [
   'function getCoprocessorTxSenders() view returns (address[])',
+  'function getCoprocessorMajorityThreshold() view returns (uint256)',
   'function getCoprocessor(address) view returns (tuple(address txSenderAddress,address signerAddress,string s3BucketUrl))',
 ];
 
@@ -208,8 +211,12 @@ export function rfc023CiphertextUrl(bucketUrl: string, handle: string): string {
   // The connector deliberately appends directly to the registered string.
   // Preserve it byte-for-byte (including an accidental trailing slash) so the
   // E2E gate cannot validate a normalized URL different from KMS's real HEAD.
-  // Layout per #3401: 64-bit ciphertext material lives under the ct128/
-  // prefix, chunked; the first chunk existing is the readiness signal.
+  // Layout per #3401, defined by `s3_ct128_key` in
+  // `shared/ciphertext-attestation`: `ct128/{hex(handle)}/{context_id}`.
+  // The trailing segment is the coprocessor context id, NOT a chunk index --
+  // do not "correct" it to 0 on the theory that chunks are zero-based. The
+  // literal 1 is the local stack's context id; a deployment on another
+  // context needs it threaded through the attestation evidence.
   return `${bucketUrl}/ct128/${handle.slice(2).toLowerCase()}/1`;
 }
 
@@ -553,6 +560,13 @@ async function probeKmsNamespaceAttestation(
  * from burning terminal UserDecryptionRequest retries while MinIO/namespace
  * routing has not yet converged, and does not alter connector retry semantics.
  */
+export function attestationReadinessMode(bucketCount: number, expectedCount: number, mode: string | undefined): 'probe' | 'skip' {
+  if (!Number.isSafeInteger(expectedCount) || expectedCount < 1 || bucketCount !== expectedCount) {
+    throw new Error(`GatewayConfig has ${bucketCount} Coprocessor buckets; expected ${expectedCount} for this consensus gate`);
+  }
+  return mode === 'skip' ? 'skip' : 'probe';
+}
+
 export async function waitForKmsNamespaceAttestationReadiness(options: {
   gatewayRpcUrl: string;
   gatewayConfigAddress: string;
@@ -564,10 +578,26 @@ export async function waitForKmsNamespaceAttestationReadiness(options: {
   probeImage?: string;
 }): Promise<CoprocessorAttestationBucket[]> {
   const buckets = await getRegisteredCoprocessorBuckets(options.gatewayRpcUrl, options.gatewayConfigAddress);
-  if (buckets.length !== options.expectedCoprocessorCount) {
-    throw new Error(
-      `GatewayConfig has ${buckets.length} Coprocessor buckets; expected ${options.expectedCoprocessorCount} for this consensus gate`,
+
+  // The readiness probe performs its RFC-023 HEAD by spawning a container, and
+  // the e2e test container deliberately has no Docker socket (defect L-3), so
+  // in that topology this throws before the gate reaches a single assertion of
+  // its own -- the whole materialization gate became unrunnable for a reason
+  // that has nothing to do with consensus.
+  //
+  // The runner detects the missing socket and sets this, so the omission is
+  // measured rather than assumed, and it is announced loudly: the bucket list
+  // is still returned and every byte-consensus, digest and plaintext assertion
+  // still runs. What is NOT covered is the attestation tier, and a reader of
+  // the output is told so rather than left to infer it from a green.
+  if (attestationReadinessMode(buckets.length, options.expectedCoprocessorCount, process.env.KMS_ATTESTATION_READINESS) === 'skip') {
+    console.warn(
+      `[attestation] READINESS PROBE OMITTED for ${buckets.length} bucket(s): this topology ` +
+        'cannot reach the Docker socket the probe needs (L-3). Byte consensus, digests and the ' +
+        'plaintext oracle are still asserted; the RFC-023 attestation tier is NOT covered by ' +
+        'this run.',
     );
+    return buckets;
   }
 
   const workerContainer =
@@ -741,7 +771,13 @@ export function assertCanonicalOutputDigestBindings(perDatabase: CanonicalOutput
       );
       const expectedCiphertextDigest = keccakDigest(row.ciphertext);
       if (!ciphertextDigest.equals(expectedCiphertextDigest)) {
-        throw new Error(
+        // Classified, not a bare Error: this is the oracle the materialization
+        // suite's canary falsifies, and a canary that accepts any thrown value
+        // counts a database outage as a detected divergence. See `mismatch.ts`.
+        throw new ComparisonMismatch(
+          'compute-digest',
+          bufferHex(row.handle),
+          [databaseIndex],
           `database ${databaseIndex} ciphertext digest mismatch for ${outputLabel(row)}: ` +
             'Keccak256(raw ciphertext) does not match ciphertext_digest.ciphertext',
         );
@@ -754,7 +790,10 @@ export function assertCanonicalOutputDigestBindings(perDatabase: CanonicalOutput
       if (row.snsCiphertext && row.snsCiphertext.length > 0) {
         const expectedSnsDigest = keccakDigest(row.snsCiphertext);
         if (!snsCiphertextDigest.equals(expectedSnsDigest)) {
-          throw new Error(
+          throw new ComparisonMismatch(
+            'sns-digest',
+            bufferHex(row.handle),
+            [databaseIndex],
             `database ${databaseIndex} SNS digest mismatch for ${outputLabel(row)}: ` +
               'Keccak256(raw SNS ciphertext) does not match ciphertext_digest.ciphertext128',
           );
@@ -932,8 +971,10 @@ export function assertEquivalentCanonicalOutputs(
       for (let producerIndex = 0; producerIndex < leftGroup.length; producerIndex += 1) {
         const left = leftGroup[producerIndex];
         const right = rightGroup[producerIndex];
+        if (!left.ciphertext.equals(right.ciphertext)) {
+          throw new ComparisonMismatch('raw-bytes', handle, [0, databaseIndex], 'canonical output mismatch: ciphertext bytes differ across operators');
+        }
         const equal =
-          left.ciphertext.equals(right.ciphertext) &&
           left.ciphertextType === right.ciphertextType &&
           left.ciphertextVersion === right.ciphertextVersion &&
           left.fheOperation === right.fheOperation &&
@@ -945,7 +986,13 @@ export function assertEquivalentCanonicalOutputs(
           valueEquals(left.snsCiphertextDigest, right.snsCiphertextDigest) &&
           left.ciphertext128Format === right.ciphertext128Format;
         if (!equal) {
-          throw new Error(
+          const kind = left.ciphertextType !== right.ciphertextType || left.ciphertextVersion !== right.ciphertextVersion ? 'type-version'
+            : left.fheOperation !== right.fheOperation ? 'operation'
+            : !left.keyId.equals(right.keyId) ? 'key-identity'
+            : !valueEquals(left.ciphertextDigest, right.ciphertextDigest) ? 'compute-digest'
+            : !valueEquals(left.snsCiphertextDigest, right.snsCiphertextDigest) ? 'sns-digest'
+            : left.ciphertext128Format !== right.ciphertext128Format ? 'ciphertext128-format' : 'provenance';
+          throw new ComparisonMismatch(kind, handle, [0, databaseIndex],
             `canonical output mismatch for ${handle} between databases 0 and ${databaseIndex}; ` +
               'same-SW/same-backend consensus requires exact ciphertext and provenance equality',
           );
@@ -1182,6 +1229,142 @@ export function getCoprocessorDbUrls(count: number): string[] {
   });
 }
 
+/** The gateway's own view of who may submit and how many must agree. */
+export interface GatewayMembership {
+  /** Authorized coprocessor transaction senders, lowercased. */
+  txSenders: string[];
+  /** The configured threshold a quorum must reach. */
+  threshold: number;
+}
+
+/**
+ * Reads membership and threshold from the RUNNING gateway.
+ *
+ * The alternative -- taking the threshold from the scenario file or from
+ * `CONSENSUS_THRESHOLD` -- describes what the topology was meant to be. A
+ * quorum claim is about what the gateway actually enforces, and the two
+ * disagree exactly when a stack was generated from a different scenario than
+ * the runner believes. Counting distinct submitter addresses in an event is
+ * not a substitute either: distinct is not the same as authorized.
+ */
+export async function readGatewayMembership(
+  gatewayRpcUrl: string,
+  gatewayConfigAddress: string,
+): Promise<GatewayMembership> {
+  const provider = new ethers.JsonRpcProvider(gatewayRpcUrl);
+  const contract = new ethers.Contract(gatewayConfigAddress, GATEWAY_CONFIG_ABI, provider);
+  try {
+    const [txSenders, threshold] = await Promise.all([
+      contract.getCoprocessorTxSenders() as Promise<string[]>,
+      contract.getCoprocessorMajorityThreshold() as Promise<bigint>,
+    ]);
+    if (txSenders.length === 0) throw new Error('GatewayConfig lists no coprocessor transaction senders');
+    const parsed = Number(threshold);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > txSenders.length) {
+      throw new Error(
+        `GatewayConfig reports threshold ${threshold} against ${txSenders.length} member(s), which cannot be met`,
+      );
+    }
+    return { txSenders: txSenders.map((sender) => sender.toLowerCase()), threshold: parsed };
+  } finally {
+    provider.destroy();
+  }
+}
+
+/** Read the deployed gateway rather than treating environment expectations as evidence. */
+export async function assertGatewayTopology(rpcUrl: string, configAddress: string, count: number, threshold: number): Promise<GatewayMembership> {
+  const membership = await readGatewayMembership(rpcUrl, configAddress);
+  if (membership.txSenders.length !== count || new Set(membership.txSenders).size !== count || membership.threshold !== threshold) {
+    throw new Error(`observed gateway membership/threshold does not match expected ${threshold}-of-${count}`);
+  }
+  return membership;
+}
+
+/**
+ * How one operator was scheduled, as recorded by the topology launcher.
+ *
+ * RFC 020 makes result bytes a function of on-chain data alone, so scheduling
+ * is an axis the protocol claims byte-consensus is independent of, not part of
+ * the execution class. `CONSENSUS_SCHEDULING_CLASSES` carries it in the form
+ * `0=device:0,window:10,...;1=device:0,window:1,...`, one entry per operator.
+ */
+export function parseSchedulingClasses(raw: string): Map<number, string> {
+  const classes = new Map<number, string>();
+  for (const entry of raw.split(';')) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator < 0) throw new Error(`malformed scheduling class entry ${JSON.stringify(trimmed)}`);
+    const index = Number.parseInt(trimmed.slice(0, separator), 10);
+    const description = trimmed.slice(separator + 1);
+    if (!Number.isInteger(index) || index < 0)
+      throw new Error(`malformed operator index in scheduling class entry ${JSON.stringify(trimmed)}`);
+    if (!description) throw new Error(`empty scheduling class for operator ${index}`);
+    if (classes.has(index)) throw new Error(`duplicate scheduling class for operator ${index}`);
+    classes.set(index, description);
+  }
+  return classes;
+}
+
+/**
+ * Fails a run that claims heterogeneous scheduling but did not get it.
+ *
+ * This is the anti-vacuity guard for the whole axis. If an override is
+ * mistyped, or the launcher is an older revision that ignores per-operator
+ * configuration, the fleet silently stays homogeneous and the byte comparison
+ * still passes -- reporting a green for a property that was never exercised.
+ * The distinctness check is what makes the green mean something.
+ */
+export function assertHeterogeneousScheduling(raw: string, expectedOperators: number): Map<number, string> {
+  if (!raw)
+    throw new Error(
+      'CONSENSUS_SCHEDULING_CLASSES is unset: a heterogeneous-scheduling run must be started by a launcher that records per-operator configuration',
+    );
+  const classes = parseSchedulingClasses(raw);
+  if (classes.size !== expectedOperators)
+    throw new Error(`expected scheduling classes for ${expectedOperators} operators, got ${classes.size}`);
+  const distinct = new Set(classes.values());
+  if (distinct.size < 2) {
+    const [only] = distinct;
+    throw new Error(
+      `every operator scheduled identically (${only}); a heterogeneous-scheduling run that is in fact homogeneous proves nothing, so it fails rather than passing vacuously`,
+    );
+  }
+  return classes;
+}
+
+/**
+ * Asserts a device-split run really spanned more than one GPU.
+ *
+ * Device placement is one of the independences RFC-020 claims -- bytes are a
+ * pure function of on-chain data, not of which card computed them -- and it is
+ * the one axis no run varied until this host had two GPUs. The scheduling
+ * classes already carry `device:N` per operator, so the check is cheap; without
+ * it a run with every operator on device 0 would pass as a device-split run and
+ * assert nothing, which is how the heterogeneous leg first went wrong (F-8).
+ */
+export function assertDeviceSplit(raw: string, expectedOperators: number): Map<number, number> {
+  if (!raw)
+    throw new Error(
+      'CONSENSUS_SCHEDULING_CLASSES is unset: a device-split run must be started by a launcher that records per-operator device placement',
+    );
+  const classes = parseSchedulingClasses(raw);
+  if (classes.size !== expectedOperators)
+    throw new Error(`expected scheduling classes for ${expectedOperators} operators, got ${classes.size}`);
+  const devices = new Map<number, number>();
+  for (const [operator, scheduling] of classes) {
+    const match = /(?:^|,)device:(\d+)/.exec(scheduling);
+    if (!match) throw new Error(`operator ${operator} scheduling class records no device: ${scheduling}`);
+    devices.set(operator, Number.parseInt(match[1], 10));
+  }
+  const distinct = new Set(devices.values());
+  if (distinct.size < 2)
+    throw new Error(
+      `every operator ran on CUDA device ${[...distinct][0]}; a device-split run that used one card proves nothing about device independence, so it fails rather than passing vacuously`,
+    );
+  return devices;
+}
+
 /** Explicitly waits for all isolated databases; no test should infer readiness from Docker start. */
 export async function waitForDatabaseReadiness(databaseUrls: string[], timeoutMs = 120_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -1249,4 +1432,11 @@ export function containerName(instanceIndex: number, service: string): string {
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function requireQuorumConfiguration(workload: string, rpc: string, config: string, commits: string): void {
+  if (workload === 'smoke') return;
+  if (!/^https?:\/\//.test(rpc) || !/^0x[0-9a-fA-F]{40}$/.test(config) || !/^0x[0-9a-fA-F]{40}$/.test(commits)) {
+    throw new Error('Every non-smoke consensus case requires gateway RPC, GatewayConfig and CiphertextCommits addresses');
+  }
 }

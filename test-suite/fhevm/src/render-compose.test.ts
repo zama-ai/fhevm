@@ -15,6 +15,7 @@ import {
 import { COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
+  loadCoprocessorScenario,
   parseBlueGreenScenario,
   parseCoprocessorScenario,
   resolveBlueGreenScenario,
@@ -142,6 +143,9 @@ instances:
 };
 
 /** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
+/** The template's mount of the kms-connector proxies' test certificate into the e2e runner. */
+const PROXY_TLS_CERT_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`;
+
 const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
   const previous = process.env.DOCKER_HOST;
   if (value === undefined) {
@@ -261,6 +265,81 @@ describe("render-compose", () => {
     });
   });
 
+  test("gives every coprocessor runtime service a bounded on-failure restart policy", async () => {
+    await withTempStateDir(async () => {
+      const doc = await loadMergedComposeDoc("coprocessor");
+      const runtime = [
+        "coprocessor-host-listener",
+        "coprocessor-host-listener-poller",
+        "coprocessor-host-listener-consumer",
+        "coprocessor-gw-listener",
+        "coprocessor-tfhe-worker",
+        "coprocessor-zkproof-worker",
+        "coprocessor-sns-worker",
+        "coprocessor-transaction-sender",
+        "coprocessor-consensus-detector",
+        "coprocessor-upgrade-controller",
+      ];
+      // These implement exit-for-restart: fatal error, non-zero exit, and they
+      // expect to be brought back. Without a policy the stack degraded
+      // permanently on any fatal path (L-5).
+      for (const service of runtime) {
+        expect(doc.services[service]?.restart, `${service} must recover from a fatal exit`).toBe("on-failure:10");
+      }
+      // `on-failure`, never `unless-stopped`: a clean exit 0 is a service that
+      // meant to finish, and restarting it would loop. Bounded, so a genuinely
+      // broken deploy stops instead of hiding in a crash loop.
+      for (const service of runtime) {
+        expect(String(doc.services[service]?.restart)).toStartWith("on-failure");
+      }
+      // One-shots must stay one-shot: readiness waits for db-migration to
+      // reach `complete`, and a failing migration should surface at once
+      // rather than retry.
+      expect(doc.services["coprocessor-db-migration"]?.restart).toBeUndefined();
+    });
+  });
+
+  test("exposes tfhe-worker metrics on the base service and on every clone", async () => {
+    await withTempStateDir(async () => {
+      // The run-validity gates read
+      // `coprocessor_worker_deferred_transactions_current` from each operator's
+      // worker and refuse to guess when they cannot. That only works if the
+      // flag survives clone generation, which rewrites the command.
+      const base = await loadMergedComposeDoc("coprocessor");
+      const baseCommand = (base.services["coprocessor-tfhe-worker"]?.command ?? []) as string[];
+      expect(baseCommand.some((arg) => String(arg).startsWith("--metrics-addr="))).toBe(true);
+
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      const clone = (doc.services["coprocessor1-tfhe-worker"]?.command ?? []) as string[];
+      expect(
+        clone.some((arg) => String(arg).startsWith("--metrics-addr=")),
+        "operator 1's worker must expose metrics or its validity gate cannot be evaluated",
+      ).toBe(true);
+    });
+  });
+
+  test("carries the restart policy onto per-operator clones", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { restart?: string }>;
+      };
+      // Operator 1 is the one the failure matrix injects faults into, so it is
+      // the operator whose recovery matters most.
+      expect(doc.services["coprocessor1-host-listener"]?.restart).toBe("on-failure:10");
+      expect(doc.services["coprocessor1-host-listener-poller"]?.restart).toBe("on-failure:10");
+    });
+  });
+
   test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,
@@ -302,13 +381,15 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
-  test("requests the kms-connector endpoint only when the bundle pins its image", () => {
+  test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const withoutEndpoint: State = {
       ...state,
       versions: {
         ...state.versions,
         env: Object.fromEntries(
-          Object.entries(state.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION"),
+          Object.entries(state.versions.env).filter(
+            ([key]) => key !== "CONNECTOR_ENDPOINT_VERSION" && key !== "CONNECTOR_PROXY_VERSION",
+          ),
         ),
       },
     };
@@ -321,9 +402,13 @@ describe("render-compose", () => {
 
     const withEndpoint: State = {
       ...state,
-      versions: { ...state.versions, env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0" } },
+      versions: {
+        ...state.versions,
+        env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
     };
     expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-endpoint");
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-proxy");
 
     const threshold: State = {
       ...withEndpoint,
@@ -332,6 +417,7 @@ describe("render-compose", () => {
     const services = serviceNameList(threshold, "kms-connector");
     expect(services).toContain("kms-connector-endpoint");
     expect(services).toContain("kms-connector-3-endpoint");
+    expect(services).toContain("kms-connector-3-proxy");
     expect(services).toContain("kms-connector-3-tx-sender");
   });
 
@@ -478,7 +564,8 @@ describe("render-compose", () => {
         const testSuite = doc.services["test-suite-e2e-debug"];
         expect(testSuite?.image).toContain(":fhevm-local");
         expect(testSuite?.build).toBeTruthy();
-        expect(testSuite?.volumes).toBeUndefined();
+        // Only the template's proxy test-certificate mount: no docker socket.
+        expect(testSuite?.volumes).toEqual([PROXY_TLS_CERT_MOUNT]);
         expect(testSuite?.group_add).toBeUndefined();
       });
     });
@@ -557,6 +644,139 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
         expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
       );
+    });
+  });
+
+  // Guards the shipped scenario file itself, not a copy of it inline: the
+  // point of the heterogeneous-scheduling topology is that the three operators
+  // come up scheduling DIFFERENTLY, and a silent regression to a uniform fleet
+  // would leave the byte-consensus gate passing while asserting nothing.
+  test("heterogeneous-scheduling scenario renders three distinct tfhe-worker configurations", async () => {
+    const heterogeneous = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-heterogeneous-scheduling.yaml"),
+      await loadCoprocessorScenario("three-of-three-heterogeneous-scheduling"),
+    );
+    const heterogeneousState: State = { ...state, scenario: heterogeneous };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(heterogeneousState, stackSpecForState(heterogeneousState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      const workers = ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker", "coprocessor2-tfhe-worker"];
+      const windows = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--work-items-batch-size=")) ?? "missing",
+      );
+      const chains = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--dependence-chains-per-batch=")) ??
+          "missing",
+      );
+
+      expect(windows).toEqual([
+        "--work-items-batch-size=100",
+        "--work-items-batch-size=1",
+        "--work-items-batch-size=200",
+      ]);
+      expect(chains).toEqual([
+        "--dependence-chains-per-batch=20",
+        "--dependence-chains-per-batch=1",
+        "--dependence-chains-per-batch=64",
+      ]);
+
+      // The compose template already carries `--work-items-batch-size=10`, so
+      // an override that appended instead of replacing would leave the worker
+      // with the flag twice. Assert each appears exactly once.
+      for (const name of workers) {
+        const command = doc.services[name]?.command ?? [];
+        expect(command.filter((argument) => argument.startsWith("--work-items-batch-size=")).length).toBe(1);
+      }
+
+      // The two DCID booleans have no command-line route that can turn them
+      // off, so they must arrive as environment entries on the right operators
+      // and nowhere else.
+      expect(doc.services["coprocessor1-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor2-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBeUndefined();
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBeUndefined();
+
+      // No operator may invert its own pair. The adaptive window gives each
+      // acquired chain ceil(window / acquired-chains) transactions and turns
+      // itself off once more chains are acquired than the window admits, so an
+      // operator whose window is below its chain count schedules
+      // non-adaptively -- while this scenario presents it as a scheduling
+      // variant of the adaptive baseline. Asserted as a property rather than
+      // left to the literals above, because the literals are exactly what went
+      // wrong: operator 0 shipped as 10/20 for a while, under a comment calling
+      // it the adaptive default.
+      windows.forEach((window, index) => {
+        const windowValue = Number.parseInt(window.split("=")[1] ?? "", 10);
+        const chainValue = Number.parseInt(chains[index].split("=")[1] ?? "", 10);
+        expect(Number.isInteger(windowValue) && Number.isInteger(chainValue)).toBe(true);
+        expect(
+          windowValue >= chainValue,
+          `operator ${index} has window ${windowValue} below its ${chainValue} chains, which disables ` +
+            "the adaptive window under load",
+        ).toBe(true);
+      });
+
+      // The whole point: no two operators schedule alike.
+      const classes = workers.map((name) => JSON.stringify(doc.services[name]?.command));
+      expect(new Set(classes).size).toBe(workers.length);
+    });
+  });
+
+  // The dual-Anvil scenario was re-derived from the wave2 original, which was
+  // written against binaries that no longer exist in this shape. Two flags it
+  // used were removed with the RFC 011 settlement machinery, and passing an
+  // unknown flag makes the listener exit at startup -- every operator would
+  // crash-loop and the fork suite would fail for a reason unrelated to forks.
+  test("fork scenario routes one instance to the fork and passes no retired listener flags", async () => {
+    const forkScenario = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-fork.yaml"),
+      await loadCoprocessorScenario("three-of-three-fork"),
+    );
+    const forkState: State = { ...state, scenario: forkScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(forkState, stackSpecForState(forkState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      // Exactly one instance follows the fork.
+      const routed = Object.entries(doc.services).filter(([, service]) =>
+        Object.values(service.environment ?? {}).some((value) => String(value).includes("fork-anvil")),
+      );
+      expect(routed.length).toBeGreaterThan(0);
+      for (const [name] of routed) expect(name.startsWith("coprocessor2-")).toBe(true);
+      expect(doc.services["coprocessor2-host-listener"]?.environment?.RPC_HTTP_URL).toBe("http://fork-anvil:8546");
+      expect(doc.services["coprocessor-host-listener"]?.environment?.RPC_HTTP_URL).toBeUndefined();
+
+      // Retired flags must not come back. `--settlement-finality-lag` no
+      // longer exists on either binary, and the poller never accepted
+      // `--reorg-maximum-duration-in-blocks`.
+      for (const [name, service] of Object.entries(doc.services)) {
+        const command = (service.command ?? []).map(String);
+        expect(
+          command.some((argument) => argument.startsWith("--settlement-finality-lag")),
+          `${name} passes a flag no current binary accepts`,
+        ).toBe(false);
+        if (name.endsWith("host-listener-poller")) {
+          expect(
+            command.some((argument) => argument.startsWith("--reorg-maximum-duration-in-blocks")),
+            `${name} passes a flag the poller does not accept`,
+          ).toBe(false);
+        }
+      }
     });
   });
 
@@ -1104,6 +1324,8 @@ describe("test-suite docker socket runtime", () => {
             services: Record<string, { volumes?: string[]; group_add?: string[] }>;
           };
           const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
           expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
           const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
@@ -1130,7 +1352,9 @@ describe("test-suite docker socket runtime", () => {
           const runner = doc.services["test-suite-e2e-debug"];
           expect(runner?.image).toContain(":fhevm-local");
           expect(runner?.build).toBeTruthy();
-          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
         });
       });
@@ -1213,6 +1437,8 @@ describe("test-suite docker socket runtime", () => {
             services: Record<string, { volumes?: string[]; group_add?: string[] }>;
           };
           const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
           expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
           const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
@@ -1239,7 +1465,9 @@ describe("test-suite docker socket runtime", () => {
           const runner = doc.services["test-suite-e2e-debug"];
           expect(runner?.image).toContain(":fhevm-local");
           expect(runner?.build).toBeTruthy();
-          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
           expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
         });
       });
@@ -1281,5 +1509,29 @@ describe("test-suite docker socket runtime", () => {
     expect(raw).not.toContain("docker.sock");
     expect(raw).not.toContain("group_add");
     expect(raw).not.toContain("DOCKER_GID");
+  });
+});
+
+test.each([
+  ["v0.13.0-2", false, "ws://gateway:8546"],
+  ["v0.13.5", false, "http://gateway:8545"],
+  ["v0.14.1", false, "ws://gateway:8546"],
+  ["v0.14.2", false, "http://gateway:8545"],
+  ["v0.13.0-2", true, "http://gateway:8545"],
+  ["c2f416b", false, "http://gateway:8545"],
+  ["c2f416b", true, "http://gateway:8545"],
+] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "GATEWAY_URL=http://gateway:8545\nGATEWAY_WS_URL=ws://gateway:8546\n");
+    const input: State = {
+      ...state,
+      versions: presetBundle("latest-main", tag, "test.json"),
+      overrides: local ? [{ group: "coprocessor" }] : [],
+      scenario: testDefaultScenario(),
+    };
+    await generateComposeOverrides(input, stackSpecForState(input));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
   });
 });

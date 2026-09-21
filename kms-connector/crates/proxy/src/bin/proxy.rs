@@ -1,46 +1,62 @@
-use proxy::core::{Config, Proxy};
-
 use connector_utils::{
     cli::{Cli, Subcommands},
     config::DeserializeConfig,
-    monitoring::otlp::init_otlp_setup,
-    signal::install_signal_handlers,
-    tasks::set_task_limit,
+    monitoring::{
+        health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
+    },
+};
+use proxy::{
+    core::{Config, Proxy},
+    monitoring::health::HealthStatus,
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error};
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    if let Err(err) = run().await {
+fn main() -> ExitCode {
+    if let Err(err) = run() {
         error!("{err}");
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
 }
 
-// TODO: this is a dummy implem. Update it once the `Proxy` service is implemented.
-async fn run() -> anyhow::Result<()> {
-    let subcommand = Cli::new("Proxy").parse();
-    match subcommand {
+// Unlike the other connector services, the proxy does not run on `#[tokio::main]`: Pingora
+// manages its own runtimes and blocks the main thread.
+fn run() -> anyhow::Result<()> {
+    match Cli::new("Proxy").parse() {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config))?;
         }
-        Subcommands::Health { endpoint: _ } => {
-            todo!("Proxy healthcheck is not implemented yet")
+        Subcommands::Health { endpoint } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(query_healthcheck_endpoint::<HealthStatus>(endpoint))?;
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
             debug!("{config:?}");
+
+            // The tonic OTLP exporter spawns its channel worker with `tokio::spawn` at build time,
+            // so a runtime must be entered here. The worker then runs on this runtime's threads,
+            // so it must stay alive for the whole process lifetime.
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()?;
+            let _guard = runtime.enter();
             init_otlp_setup(config.service_name.clone())?;
 
+            // The monitoring server runs on the tokio runtime, next to Pingora's own.
+            let monitoring_endpoint = config.monitoring_endpoint;
+            let (proxy, state) = Proxy::from_config(config)?;
             let cancel_token = CancellationToken::new();
-            set_task_limit(config.task_limit);
-            install_signal_handlers(cancel_token.clone())?;
+            let monitoring_server_task =
+                start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
 
-            let proxy = Proxy::from_config(config).await?;
-            proxy.start(cancel_token).await;
+            proxy.run()?;
+
+            cancel_token.cancel();
+            runtime.block_on(monitoring_server_task)?;
         }
     }
     Ok(())

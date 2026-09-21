@@ -29,6 +29,7 @@ jobs:
           filters: |
             rust-files:
               - .github/workflows/coprocessor-cargo-clippy.yml
+              - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
   cargo-clippy:
@@ -39,7 +40,7 @@ jobs:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
       packages: 'read' # Required to read GitHub packages/container registry
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -55,10 +56,8 @@ jobs:
       with:
         toolchain-dir: coprocessor/fhevm-engine
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler
+    - name: Install pinned protoc
+      uses: ./.github/actions/setup-rust-and-protoc
 
     - name: Install foundry
       uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c

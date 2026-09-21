@@ -181,6 +181,11 @@ zkProofWorker:
   extraArgs:
     - --pg-listen-channel=event_zkpok_new_work
     - --pg-notify-channel=event_zkpok_computed
+  # Chart default (512Mi) OOMs on envs that generate Default FHE parameters, whose CRS is far
+  # larger than the test one. 4Gi still OOMed during startup; 8Gi is stable.
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "4", memory: 8Gi}
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -264,6 +269,15 @@ txSender:
   # NotCoprocessorTxSender(<addr>) (non-retryable) and input proofs never verify,
   # so the relayer polls forever and the e2e input test times out.
   wallet: {secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}}
+  config:
+    # From 0.15 the sender talks HTTP to the gateway and aborts at startup on a
+    # ws:// URL ("Gateway URL is not usable by this build"). Unset, the template
+    # falls back to commonConfig.gatewayUrl, which stays ws:// for gwListener -
+    # anvil serves both schemes on the same port (see ../gateway-chain/
+    # values-anvil-gateway-e2e.yaml's single `port: 8546`). apply-chain-env.sh
+    # overwrites this for blockchain-dev/testnets, and the BCS overlay pins it
+    # back to ws:// for the v0.14.x sender.
+    gatewayUrl: {value: "http://anvil-gateway-anvil-node:8546"}
   # --multichain-acl-address (see charts/coprocessor/values.yaml's
   # txSender.disabledArgs comment) would reference a nonexistent
   # gw-sc-addresses key: gateway-contracts still doesn't deploy a

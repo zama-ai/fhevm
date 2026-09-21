@@ -12,7 +12,7 @@ use alloy::{
 };
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use tracing::error;
+use tracing::{error, warn};
 
 #[derive(Error, Debug)]
 pub enum BlockVerificationError {
@@ -283,6 +283,41 @@ fn encode_receipt(
     Ok(consensus_envelope.encoded_2718())
 }
 
+/// Transaction hash of an envelope, for diagnostic logging.
+fn transaction_hash(tx: &AnyTxEnvelope) -> B256 {
+    match tx {
+        AnyTxEnvelope::Ethereum(eth_tx) => *eth_tx.tx_hash(),
+        AnyTxEnvelope::Unknown(unknown) => unknown.hash,
+    }
+}
+
+/// Transaction count and comma-separated transaction hashes of a block, used to
+/// enrich verification failure logs so the offending block can be pulled from the
+/// chain by hash.
+///
+/// Only call this on a failure path: it allocates one string per transaction, so
+/// on a full block it produces a multi-kilobyte value.
+fn block_transaction_context(block: &AnyRpcBlock) -> (usize, String) {
+    match &block.transactions {
+        BlockTransactions::Full(txs) => (
+            txs.len(),
+            txs.iter()
+                .map(|tx| transaction_hash(tx.inner.inner.inner()).to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        BlockTransactions::Hashes(hashes) => (
+            hashes.len(),
+            hashes
+                .iter()
+                .map(|hash| hash.to_string())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        BlockTransactions::Uncle => (0, String::new()),
+    }
+}
+
 /// EVM block computer that verifies block data consistency.
 /// All EVM chains (Ethereum, Optimism, Arbitrum, Base, etc.) use the same block hash algorithm.
 pub struct EvmBlockComputer;
@@ -291,8 +326,12 @@ impl EvmBlockComputer {
     /// Verify the entire block: transaction root, receipt root, and block hash.
     ///
     /// When `allow_skipping` is true, unsupported transaction types cause the
-    /// transaction root check to be skipped with an ERROR log instead of failing.
+    /// transaction root check to be skipped with a WARN log instead of failing.
     /// Receipt root and block hash are always verified regardless.
+    ///
+    /// Log severity follows whether the failure blocks the block: skipped checks
+    /// are WARN (processing continues), while strict failures are ERROR (the block
+    /// is rejected and retried indefinitely as a transient error).
     pub fn verify_block(
         block: &AnyRpcBlock,
         receipts: &[AnyTransactionReceipt],
@@ -311,8 +350,12 @@ impl EvmBlockComputer {
                         "stalling" => "false"
                     )
                     .increment(1);
-                    error!(
+                    let (tx_count, tx_hashes) = block_transaction_context(block);
+                    warn!(
                         block_number = block.header.number,
+                        block_hash = %block.header.hash,
+                        tx_count = tx_count,
+                        tx_hashes = %tx_hashes,
                         chain_id = chain_id,
                         error = %e,
                         "Transaction root verification failed, skipping."
@@ -328,8 +371,12 @@ impl EvmBlockComputer {
                         "stalling" => "false"
                     )
                     .increment(1);
-                    error!(
+                    let (tx_count, tx_hashes) = block_transaction_context(block);
+                    warn!(
                         block_number = block.header.number,
+                        block_hash = %block.header.hash,
+                        tx_count = tx_count,
+                        tx_hashes = %tx_hashes,
                         chain_id = chain_id,
                         error = %e,
                         "Receipt root verification failed, skipping."
@@ -345,8 +392,12 @@ impl EvmBlockComputer {
                         "stalling" => "false"
                     )
                     .increment(1);
-                    error!(
+                    let (tx_count, tx_hashes) = block_transaction_context(block);
+                    warn!(
                         block_number = block.header.number,
+                        block_hash = %block.header.hash,
+                        tx_count = tx_count,
+                        tx_hashes = %tx_hashes,
                         chain_id = chain_id,
                         error = %e,
                         "Block hash verification failed, skipping."
@@ -361,6 +412,16 @@ impl EvmBlockComputer {
                     "stalling" => "true"
                 )
                 .increment(1);
+                let (tx_count, tx_hashes) = block_transaction_context(block);
+                error!(
+                    block_number = block.header.number,
+                    block_hash = %block.header.hash,
+                    tx_count = tx_count,
+                    tx_hashes = %tx_hashes,
+                    chain_id = chain_id,
+                    error = %e,
+                    "Transaction root verification failed, rejecting block."
+                );
                 return Err(e);
             }
             if let Err(e) = Self::verify_receipt_root(block, receipts) {
@@ -370,6 +431,16 @@ impl EvmBlockComputer {
                     "stalling" => "true"
                 )
                 .increment(1);
+                let (tx_count, tx_hashes) = block_transaction_context(block);
+                error!(
+                    block_number = block.header.number,
+                    block_hash = %block.header.hash,
+                    tx_count = tx_count,
+                    tx_hashes = %tx_hashes,
+                    chain_id = chain_id,
+                    error = %e,
+                    "Receipt root verification failed, rejecting block."
+                );
                 return Err(e);
             }
             if let Err(e) = Self::verify_block_hash(block) {
@@ -379,6 +450,16 @@ impl EvmBlockComputer {
                     "stalling" => "true"
                 )
                 .increment(1);
+                let (tx_count, tx_hashes) = block_transaction_context(block);
+                error!(
+                    block_number = block.header.number,
+                    block_hash = %block.header.hash,
+                    tx_count = tx_count,
+                    tx_hashes = %tx_hashes,
+                    chain_id = chain_id,
+                    error = %e,
+                    "Block hash verification failed, rejecting block."
+                );
                 return Err(e);
             }
         }
@@ -415,10 +496,11 @@ impl EvmBlockComputer {
                     // TODO: Specific polygon 127 transaction.
                     // 127 => encore transaction 127 type from polygon, source: raw json.
                     _ => {
-                        error!(
+                        warn!(
                             tx_type = tx_type,
                             index = index,
-                            "Could not encode the transaction skipping for this specific type. Skipping to avoid stalling."
+                            tx_hash = %unknown.hash,
+                            "Unsupported transaction type, cannot encode for transaction root verification"
                         );
                         Err(BlockVerificationError::UnsupportedTransactionType { tx_type, index })
                     }

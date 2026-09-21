@@ -13,6 +13,20 @@ on:
         description: "Run from the orchestrated image-validation path."
         default: false
         type: boolean
+      runner:
+        description: >-
+          Runner to run on. Empty keeps the default 32-CPU cloud runner; pass a
+          provisioned instance's label to run the suite there instead.
+        default: ""
+        type: string
+      gpu-host:
+        description: >-
+          Prepare the runner for GPU containers (Docker, the Compose plugin and
+          the NVIDIA container toolkit). A freshly provisioned GPU instance ships
+          none of them, and the default runner needs none, so it stays off unless
+          a caller asks.
+        default: false
+        type: boolean
       build:
         description: "Build repo-owned images from the checked out branch on the runner"
         default: true
@@ -68,7 +82,7 @@ on:
       connector-versions:
         description:
           'KMS Connector image versions as a JSON object. Keys: db-migration, gw-listener, kms-worker, tx-sender,
-          endpoint. Example: {"gw-listener":"01cf0ff","endpoint":"01cf0ff"}'
+          endpoint, proxy. Example: {"gw-listener":"01cf0ff","endpoint":"01cf0ff","proxy":"01cf0ff"}'
         default: "{}"
         type: string
       test-suite-version:
@@ -160,6 +174,7 @@ jobs:
       CONNECTOR_KMS_WORKER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['kms-worker'] }}
       CONNECTOR_TX_SENDER_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['tx-sender'] }}
       CONNECTOR_ENDPOINT_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['endpoint'] }}
+      CONNECTOR_PROXY_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['proxy'] }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
       RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
       RELAYER_VERSION: ${{ inputs.relayer-version }}
@@ -167,13 +182,20 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
+    # The default is unchanged; the override applies only when a caller passes one.
+    runs-on: ${{ inputs.runner || format('runs-on={0}/runner=32cpu-linux-x64/spot=false/volume=160gb', github.run_id) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: "false"
           fetch-depth: 0
+
+      # Ahead of `Setup Docker`: buildx needs a daemon, and a provisioned GPU
+      # instance has none yet.
+      - name: Prepare the GPU host
+        if: inputs.gpu-host
+        uses: ./.github/actions/gpu_container_runtime
 
       - name: Setup Docker
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
@@ -185,7 +207,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Login to GitHub Container Registry
-        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
@@ -195,11 +217,14 @@ jobs:
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
       - name: Login to Chainguard Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+        env:
+          CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+          CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
         with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }}
-          password: ${{ secrets.CGR_PASSWORD }}
+          command: |
+            echo "Logging into cgr.dev..."
+            echo "$CGR_PASSWORD" | docker login cgr.dev -u "$CGR_USERNAME" --password-stdin
 
       - name: Install safe-chain
         shell: bash
@@ -293,6 +318,23 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}" --dry-run
 
+      - name: Pull database image with retries
+        shell: bash
+        run: |
+          # Pre-pull the image from the compose file so a transient registry
+          # failure does not abort stack startup after other services start.
+          image="$(awk '$1 == "image:" { print $2; exit }' test-suite/fhevm/docker-compose/database-docker-compose.yml)"
+          for attempt in 1 2 3; do
+            if docker pull "$image"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Database image pull failed after three attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
         run: |
@@ -364,6 +406,7 @@ jobs:
           snapshot_logs "KMS Connector KMS Worker" kms-connector-kms-worker
           snapshot_logs "KMS Connector Transaction Sender" kms-connector-tx-sender
           snapshot_logs "KMS Connector Endpoint" kms-connector-endpoint
+          snapshot_logs "KMS Connector Proxy" kms-connector-proxy
           snapshot_logs "Host KMS Keygen Trigger" host-sc-trigger-keygen
           snapshot_logs "Host KMS CRS Trigger" host-sc-trigger-crsgen
           snapshot_logs "KMS Core" kms-core

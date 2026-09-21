@@ -13,6 +13,8 @@ use strum::{EnumString, IntoStaticStr};
 pub enum ErrorCode {
     /// Malformed body, bad handle format, unsupported chain id (connector endpoint).
     Malformed,
+    /// The `attestationType` of a user decryption is not supported (connector endpoint).
+    UnsupportedAttestationType,
     /// Sender authentication failure (connector proxy).
     SenderAuthenticationFailed,
     /// Per-sender rate limit exceeded (connector proxy).
@@ -47,7 +49,7 @@ impl ErrorCode {
     /// HTTP status associated with this code.
     pub fn http_status(self) -> u16 {
         match self {
-            Self::Malformed => 400,
+            Self::Malformed | Self::UnsupportedAttestationType => 400,
             Self::SenderAuthenticationFailed => 401,
             Self::AclDenied | Self::UserSignatureRejected => 403,
             Self::CiphertextNotFound => 404,
@@ -71,6 +73,7 @@ impl ErrorCode {
     pub fn retryable(self) -> bool {
         match self {
             Self::Malformed
+            | Self::UnsupportedAttestationType
             | Self::SenderAuthenticationFailed
             | Self::KmsContextDestroyed
             | Self::Unprocessable => false,
@@ -116,6 +119,8 @@ impl Display for ErrorResponse {
         write!(f, "{}: {}", self.code.as_str(), self.message)
     }
 }
+
+impl std::error::Error for ErrorResponse {}
 
 #[cfg(feature = "endpoint")]
 use actix_web::{HttpResponse, http::StatusCode};

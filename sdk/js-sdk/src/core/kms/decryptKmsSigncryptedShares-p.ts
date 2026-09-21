@@ -26,6 +26,9 @@ type ReturnType = readonly ClearValue[];
 export async function decryptKmsSigncryptedShares(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeyPair: transportKeyPair, kmsSigncryptedShares, fhevmContext } = parameters;
 
+  // Statically false with single-literal version types, but shares metadata
+  // is deserialized data and can carry a stale version at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (fhevmContext.tkmsVersion !== kmsSigncryptedShares.tkmsVersion) {
     throw new Error('TkmsVersion mismatch');
   }
@@ -34,13 +37,12 @@ export async function decryptKmsSigncryptedShares(context: Context, parameters: 
   // context tkmsVersion
 
   // also validates `transportKeyPair`
-  const tkmsPrivateKey = await transportKeyPairToTkmsPrivateKey(context, { transportKeyPair, fhevmContext });
+  const tkmsPrivateKey = await transportKeyPairToTkmsPrivateKey(context, { transportKeyPair });
   try {
     // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
     const orderedDecryptedHandles: readonly ClearValue[] = await context.runtime.decrypt.decryptAndReconstruct({
       shares: kmsSigncryptedShares,
       tkmsPrivateKey,
-      tkmsVersion: fhevmContext.tkmsVersion,
     });
 
     return orderedDecryptedHandles;

@@ -51,7 +51,7 @@ describe('Upgrades', function () {
       },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -61,7 +61,7 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.4.0');
     await expectThresholds(pc2);
   });
 
@@ -125,10 +125,10 @@ describe('Upgrades', function () {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.6.0');
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.7.0');
     const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.7.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.8.0');
   });
 
   it('deploy upgradeable HCULimit', async function () {

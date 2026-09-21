@@ -219,7 +219,7 @@ describe("buildKmsThresholdOverride", () => {
   test("renders an explicitly selected core version without changing the other nodes", () => {
     const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "target-core" }).services;
     expect(services["kms-core"].image).toBe(RENDER_OPTS.coreImage);
-    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service:target-core");
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service-insecure:target-core");
     expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
     expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
   });
@@ -322,27 +322,47 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     }
   });
 
-  test("clones the endpoint per party only when the bundle ships it (or it is built locally)", async () => {
-    const withEndpoint = thresholdSpec([]);
-    withEndpoint.versions = { ...withEndpoint.versions, env: { ...withEndpoint.versions.env, CONNECTOR_ENDPOINT_VERSION: "abcdef0" } };
-    const services = (await buildKmsConnectorOverride(withEndpoint)).services;
+  test("clones the endpoint and proxy per party only when the bundle ships them (or they are built locally)", async () => {
+    const withHttp = thresholdSpec([]);
+    withHttp.versions = {
+      ...withHttp.versions,
+      env: { ...withHttp.versions.env, CONNECTOR_ENDPOINT_VERSION: "abcdef0", CONNECTOR_PROXY_VERSION: "abcdef0" },
+    };
+    const services = (await buildKmsConnectorOverride(withHttp)).services;
     expect(services["kms-connector-endpoint"]).toBeDefined();
     expect(services["kms-connector-3-endpoint"]?.container_name).toBe("kms-connector-3-endpoint");
+    expect(services["kms-connector-proxy"]).toBeDefined();
+    expect(services["kms-connector-3-proxy"]?.container_name).toBe("kms-connector-3-proxy");
+    // Each proxy waits for its own party's endpoint (hostnames are resolved once at startup)
+    // and serves the shared checked-in test certificate.
+    expect(services["kms-connector-3-proxy"]?.depends_on).toEqual({
+      "kms-connector-3-endpoint": { condition: "service_healthy" },
+    });
+    expect(services["kms-connector-3-proxy"]?.volumes).toEqual(services["kms-connector-proxy"]?.volumes);
+    expect(String((services["kms-connector-3-proxy"]?.volumes as string[])[0])).toMatch(
+      /\/static\/config\/kms-connector-proxy:\/etc\/kms-connector\/proxy:ro$/,
+    );
 
-    const withoutEndpoint = thresholdSpec([]);
-    withoutEndpoint.versions = {
-      ...withoutEndpoint.versions,
-      env: Object.fromEntries(Object.entries(withoutEndpoint.versions.env).filter(([key]) => key !== "CONNECTOR_ENDPOINT_VERSION")),
+    const withoutHttp = thresholdSpec([]);
+    withoutHttp.versions = {
+      ...withoutHttp.versions,
+      env: Object.fromEntries(
+        Object.entries(withoutHttp.versions.env).filter(
+          ([key]) => key !== "CONNECTOR_ENDPOINT_VERSION" && key !== "CONNECTOR_PROXY_VERSION",
+        ),
+      ),
     };
-    const gated = (await buildKmsConnectorOverride(withoutEndpoint)).services;
-    expect(Object.keys(gated).some((name) => name.endsWith("-endpoint"))).toBe(false);
+    const gated = (await buildKmsConnectorOverride(withoutHttp)).services;
+    expect(Object.keys(gated).some((name) => name.endsWith("-endpoint") || name.endsWith("-proxy"))).toBe(false);
     expect(gated["kms-connector-3-tx-sender"]).toBeDefined();
 
     const overridden = thresholdSpec([{ group: "kms-connector" }]);
-    overridden.versions = withoutEndpoint.versions;
+    overridden.versions = withoutHttp.versions;
     const built = (await buildKmsConnectorOverride(overridden)).services;
     expect(built["kms-connector-endpoint"]?.build).toBeDefined();
     expect(built["kms-connector-3-endpoint"]?.image).toBe(built["kms-connector-endpoint"]?.image);
+    expect(built["kms-connector-proxy"]?.build).toBeDefined();
+    expect(built["kms-connector-3-proxy"]?.image).toBe(built["kms-connector-proxy"]?.image);
   });
 
   test("override retags every party to the one locally built image; only party 1 builds it", async () => {

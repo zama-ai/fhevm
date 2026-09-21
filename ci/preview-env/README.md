@@ -21,6 +21,11 @@ dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'
 [`../../.github/workflows/preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 Torn down automatically when the PR closes
 ([`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
+The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
+MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
+`tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
+without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
+ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -79,6 +84,12 @@ ci/preview-env/
 │   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
 ├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
 └── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
+    ├── lib.sh                           # shared bash helpers (thresholds, require_nonempty)
+    ├── resolve/                         # chain_mode, chart URLs, GHCR tags, dispatch overrides
+    ├── wallets/                         # mnemonic, HD derive, fund, sweep, KMS signer discovery
+    ├── deploy/                          # helm install wrappers + apply-chain-env / wire-contracts
+    ├── e2e/                             # Argo e2e workflows, wait, report, GCS dry-run assert
+    └── bg/                              # manual RFC-021 QA (not invoked by the deploy workflow)
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -112,7 +123,7 @@ attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`
 | Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
 | Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
 
-Defaults live in [`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs)
+Defaults live in [`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs)
 (`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**
 Override only via dispatch `overrides` / CLI `--set`, or by bumping
 `ALWAYS_DEFAULTS` for everyone. Keep the two keys aligned to the same kms
@@ -215,10 +226,10 @@ admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 ## Chain modes (`chain_mode`: `anvil` | `blockchain-dev` | `testnets`)
 
 `preview-env-deploy.yml` picks the chains via the `chain_mode` dispatch input
-(`ci/preview-env/scripts/resolve-chain.sh` resolves it; PR labels stay on Anvil except
+(`ci/preview-env/scripts/resolve/resolve-chain.sh` resolves it; PR labels stay on Anvil except
 `preview-env-blue-green`, which forces `blockchain-dev`). Everything below the chain
 layer is identical across modes: the same charts, the same overlays, patched at deploy
-time by `apply-chain-env.sh` for the two external modes.
+time by `scripts/deploy/apply-chain-env.sh` for the two external modes.
 
 | Mode | Host chain(s) | Gateway | Wallets | Funding |
 |------|---------------|---------|---------|---------|
@@ -280,10 +291,14 @@ The two host chains are the real public testnets, so this is the only preview sh
   the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
-  connector. Keygen spans two such round trips and was measured at **43 min** end to end,
-  so `apply-chain-env.sh` raises the in-pod waits to `KEYGEN_WAIT_TIMEOUT_MS=60m` and
-  `CRSGEN_WAIT_TIMEOUT_MS=40m` (both 15 m elsewhere), with `KEYGEN_TIMEOUT=110m` giving
-  helm room for both in the one pod. Budget ~70 min of wall clock here on a good run.
+  connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
+  launches (`preview-env-gpu` + tests, or dispatch `enable_gpu` / `--gpu`) switch
+  to production-size **Default** parameters (`params-type=0`) because Test
+  parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
+  A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
+  for keygen and 1 h for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm
+  room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
+  This GPU path deliberately consumes most of the deploy job's six-hour budget.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on
@@ -311,7 +326,8 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Cost and hygiene**: every run spends real testnet gas (~10 upgradeable contracts + the
   keygen ceremony per chain, then e2e FHE txs) and leaves its contracts on Sepolia and Amoy
   for good. Dispatch-only, no PR label.
-- **Not yet**: `enable_blue_green` (the blue-green scripts are single-chain today).
+- **Blue-green**: `enable_blue_green` works here too; the GCS fleet gets its own Polygon consumer and the
+  proposal carries one window per host chain (see "Blue-green (RFC-021)" below).
 
 To run `host-contracts` `task:prepareCoprocessorUpgrade` against this env, use
 `--environment devnet` (same Sepolia + Amoy chain set) with `RPC_URL_GATEWAY_DEVNET` pointed at a
@@ -391,12 +407,14 @@ These are different models. `nb_coprocessor > 1` is N-party unless you opt into 
 | Model | Meaning | How to enable |
 | --- | --- | --- |
 | **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
-| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.0-7`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.1`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
 
-Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. Incompatible with `deploy_polygon` (hence with `chain_mode=testnets`) and with `nb_coprocessor=1`.
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. With `deploy_polygon` (so on `chain_mode=testnets`) each fleet also gets its own Polygon consumer (`coprocessor-polygon-<i>` / `-gcs`), the proposal carries one window per host chain (Polygon offsets scaled by block time so both windows share the same wall-clock span) and the dry-run / cutover asserts read one `upgrade_state` row per chain. Incompatible with `nb_coprocessor=1`.
 
 With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
-driven by in-window e2e traffic: propose **after** the relayer is ready, hold
+driven by in-window e2e traffic: propose **after** the relayer is ready (the workflow runs
+host-contracts' `task:proposeCoprocessorUpgrade` from a host-contracts pod, so block times are
+measured per chain and the windows come out wall-clock aligned), hold
 `consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
 while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
 on every party), scale the detector back up, wait for
@@ -457,13 +475,16 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   override via `kms_core_version` + `kms_repo_ref` in `overrides` (see
   "Dedicated KMS version pins" above). Enclave **instance type** is still
   whatever kms `deploy.sh` picks for `aws-ci`.
-- Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
-  selection).
+- ~~Add support for changing the coprocessor's FHE worker instance type~~ —
+  `preview-env-gpu` + `preview-env-e2e-tests`, or dispatch `enable_gpu` /
+  `preview-env --gpu`, applies `values-coprocessor-gpu-e2e.yaml` to `tfhe` /
+  `sns` / `zkproof`, selects the pinned `b358436-cuda12.8-sm70` GPU images, and
+  generates Default FHE params. With `preview-env-blue-green` / `--blue-green`
+  as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
+  `coprocessor` pool. CPU launches keep Test params.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above
   (`chain_mode=testnets`: Sepolia + Amoy with RPC URLs + funder key from AWS Secrets Manager, Nitro gateway).
-- Wire RFC-021 blue-green onto `chain_mode=testnets`: `propose-coprocessor-upgrade.sh` /
-  `assert-gcs-dry-run.sh` are single-chain (scalar `upgrade_state` reads, one-element
-  windows array), which is what keeps `enable_blue_green` rejected there today. This is
-  the multi-chain shape fhevm-internal#1884 asks for.
+- ~~Wire RFC-021 blue-green onto `chain_mode=testnets`~~ — done: GCS Polygon consumer, per-chain
+  proposal windows and per-chain asserts (the multi-chain shape fhevm-internal#1884 asks for).

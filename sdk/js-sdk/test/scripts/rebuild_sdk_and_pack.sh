@@ -6,13 +6,11 @@ ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 MANUAL_PACK_DIRNAME="manual-pack"
 PACK_DIR="$SCRIPT_DIR/../$MANUAL_PACK_DIRNAME"
 
-PROFILE="dev"
+SKIP_BUILD=0
 for arg in "$@"; do
   case "$arg" in
-    --build-profile=dev)  PROFILE="dev" ;;
-    --build-profile=prod) PROFILE="prod" ;;
-    --build-profile=skip) PROFILE="skip" ;;
-    --build-profile=*)    echo "Error: unknown --build-profile value '${arg#--build-profile=}'. Use 'dev', 'prod', or 'skip'." >&2; exit 1 ;;
+    --skip-build) SKIP_BUILD=1 ;;
+    *)            echo "Error: unknown argument '$arg'. Use '--skip-build' to skip the build step." >&2; exit 1 ;;
   esac
 done
 
@@ -28,11 +26,11 @@ mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
 
 # Build
-if [[ "$PROFILE" == "skip" ]]; then
+if [[ "$SKIP_BUILD" -eq 1 ]]; then
   echo -e "${GREEN}Skipping build step.${NC}"
 else
-  echo -e "${GREEN}Building project (profile: $PROFILE)...${NC}"
-  (cd "$ROOT_DIR" && npm run "build:$PROFILE")
+  echo -e "${GREEN}Building project...${NC}"
+  (cd "$ROOT_DIR" && npm run build)
 fi
 
 # Pack from src/ which holds the real package.json for distribution

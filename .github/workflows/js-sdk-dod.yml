@@ -71,13 +71,7 @@ jobs:
       matrix:
         name:
           - quality
-          - build-dev
           - browser
-          - cleartext-v12
-          - cleartext-v13
-          - localstack-v11
-          - localstack-v12
-          - localstack-v13
           - localstack-latest
     steps:
       # Pass matrix values through env (not direct ${{ }} expansion in the
@@ -97,9 +91,9 @@ jobs:
   # sibling jobs on failure unless a job-level matrix opts in).
   # ===========================================================================
 
-  # --- Standard gate: prod build (clean/codegen/prettier/lint/builds) + unit ---
+  # --- Standard gate: build (clean/codegen/prettier/lint/builds) + unit ---
   quality:
-    name: dod quality (build:prod + unit)
+    name: dod quality (build + unit)
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     timeout-minutes: 30
@@ -118,33 +112,13 @@ jobs:
       - name: Install safe-chain
         shell: bash
         run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-      - run: npm ci
-      - run: npm run build:prod # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
+      - name: Install npm dependencies
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+        with:
+          max-attempts: "2"
+          command: cd sdk/js-sdk && npm ci
+      - run: npm run build # clean, codegen, prettier(+ext), lint, cjs/esm/types/tests
       - run: npm run test:unit
-
-  # --- Dev-profile build check (dod step: BUILD_PROFILE=dev build) ---
-  build-dev:
-    name: dod build:dev
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
-    timeout-minutes: 30
-    permissions:
-      contents: "read" # checkout the repository
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: "false"
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: 22.x
-      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-        with:
-          version: stable
-      - name: Install safe-chain
-        shell: bash
-        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-      - run: npm ci
-      - run: npm run build:dev
 
   # --- Browser WASM test (Playwright) ---
   browser:
@@ -167,56 +141,14 @@ jobs:
       - name: Install safe-chain
         shell: bash
         run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-      - run: npm ci
-      - run: npm run build:prod
+      - name: Install npm dependencies
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+        with:
+          max-attempts: "2"
+          command: cd sdk/js-sdk && npm ci
+      - run: npm run build
       - run: npx playwright install --with-deps
       - run: npm run test:browser-smoke
-
-  # --- Cleartext (Anvil) suites: one job per foundry profile ---
-  cleartext:
-    name: dod cleartext ${{ matrix.profile }}
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
-    timeout-minutes: 40
-    permissions:
-      contents: "read" # checkout the repository
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - profile: v12
-            flags: "--use-pack --foundry-profile=v12"
-          - profile: v13
-            flags: "--use-pack --foundry-profile=v13"
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          persist-credentials: "false"
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
-        with:
-          node-version: 22.x
-      - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
-        with:
-          version: stable
-      - name: Install safe-chain
-        shell: bash
-        run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
-      - run: npm ci
-      - run: cd contracts && forge soldeer install
-      - name: Write test .env
-        run: |
-          echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
-          echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
-      - run: npm run build:prod
-      - run: ./test/scripts/rebuild_sdk_and_pack.sh --build-profile=skip
-      - name: Run cleartext suite (${{ matrix.profile }})
-        env:
-          CLEARTEXT_FLAGS: ${{ matrix.flags }}
-        run: |
-          ulimit -n 65536
-          # CLEARTEXT_FLAGS is a controlled literal that must word-split into args:
-          # shellcheck disable=SC2086
-          ./test/scripts/localcleartext-run-tests.sh ${CLEARTEXT_FLAGS}
 
   # --- Localstack (full FHE stack) suites: one job per protocol version ---
   localstack:
@@ -232,15 +164,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
-      max-parallel: 4
       matrix:
         include:
-          - name: v11
-            script: test:localstack:v11
-          - name: v12
-            script: test:localstack:v12
-          - name: v13
-            script: test:localstack:v13
           - name: latest
             script: test:localstack
     steps:
@@ -262,7 +187,7 @@ jobs:
         with:
           node-version: 22.x
       - name: Log in to GitHub Container Registry
-        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_PASSWORD: ${{ secrets.GHCR_READ_TOKEN }}
@@ -270,20 +195,26 @@ jobs:
           command: |
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
       - name: Log in to Chainguard Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+        env:
+          CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+          CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
         with:
-          registry: cgr.dev
-          username: ${{ secrets.CGR_USERNAME }}
-          password: ${{ secrets.CGR_PASSWORD }}
+          command: |
+            echo "$CGR_PASSWORD" | docker login cgr.dev -u "$CGR_USERNAME" --password-stdin
       - name: Install safe-chain
         shell: bash
         run: curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
       - name: Install fhevm-cli deps
         working-directory: test-suite/fhevm
         run: bun install --frozen-lockfile
-      - run: npm ci
+      - name: Install npm dependencies
+        uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+        with:
+          max-attempts: "2"
+          command: cd sdk/js-sdk && npm ci
       - run: cd contracts && forge soldeer install
-      - run: npm run codegen:loaders:prod
+      - run: npm run codegen:loaders
       - name: Write test .env
         run: |
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env

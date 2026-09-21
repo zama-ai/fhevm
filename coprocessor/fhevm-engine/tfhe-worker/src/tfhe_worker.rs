@@ -11,7 +11,9 @@ use fhevm_engine_common::gcs_activation::{
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
-use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
+};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -2122,6 +2124,11 @@ lazy_static! {
         "times instant notifications for work items received from the database"
     )
     .unwrap();
+    static ref WORK_BATCH_TRANSACTIONS: Histogram = register_histogram!(
+        "coprocessor_work_batch_transactions",
+        "Transactions in each persisted work batch",
+        vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0]
+    ).unwrap();
     static ref WORK_ITEMS_FOUND_COUNTER: IntCounter = register_int_counter!(
         "coprocessor_work_items_found",
         "work items queried from database"
@@ -2205,6 +2212,30 @@ async fn run_tfhe_worker_inner(
 
     info!(target: "tfhe_worker", worker_id = %worker_id, gcs_mode = gcs_mode, "Starting tfhe-worker service");
 
+    let stack_mode = StackMode::new(gcs_mode);
+    // The listener holds one pooled connection; the reconcile needs a second. The
+    // refresh handle must outlive the spawned task, so it stays in this scope.
+    let (listener_pool, _listener_refresh) = connect_pool_with_options(
+        &db_url,
+        sqlx::postgres::PgPoolOptions::new().max_connections(2),
+        None,
+    )
+    .await?;
+    {
+        let listener_mode = stack_mode.clone();
+        tokio::spawn(async move {
+            if let Err(err) = run_stack_version_listener(
+                listener_pool,
+                listener_mode,
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            {
+                error!(target: "tfhe_worker", error = %err, "stack-version listener exited with error");
+            }
+        });
+    }
+
     // Shared GCS activation state. `GCS_NOT_ACTIVATED` means the worker is
     // paused (BCS mode keeps this value for the lifetime of the process).
     let start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
@@ -2235,7 +2266,7 @@ async fn run_tfhe_worker_inner(
         if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
             worker_id,
-            gcs_mode,
+            stack_mode.clone(),
             start_block_state.clone(),
             health_check.clone(),
             &mut readiness,
@@ -2257,7 +2288,7 @@ async fn run_tfhe_worker_inner(
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
-    gcs_mode: bool,
+    stack_mode: Arc<StackMode>,
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
     readiness: &mut Readiness,
@@ -2268,7 +2299,7 @@ async fn tfhe_worker_cycle(
     // `search_path = gcs,public` so unqualified writes land in `gcs.*` and
     // shared read-only tables (keys, crs, host_chains, upgrade_state, …)
     // still resolve from `public` via fallback.
-    if gcs_mode {
+    if stack_mode.gcs_mode() {
         fhevm_engine_common::versioning::wait_for_gcs_schema(
             db_url.as_str(),
             fhevm_engine_common::versioning::GCS_SCHEMA_WAIT,
@@ -2280,7 +2311,7 @@ async fn tfhe_worker_cycle(
         &db_url,
         sqlx::postgres::PgPoolOptions::new().max_connections(args.pg_pool_max_connections),
         None,
-        apply_gcs_mode_search_path(gcs_mode),
+        apply_gcs_mode_search_path(stack_mode.gcs_mode()),
     )
     .await?;
 
@@ -2406,7 +2437,7 @@ async fn tfhe_worker_cycle(
         // writes to `gcs.*` automatically — we no longer need the actual
         // start_block value inside the cycle. In BCS mode this branch is a
         // no-op.
-        if gcs_mode && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+        if stack_mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
             info!(target: "tfhe_worker", "GCS not yet activated; sleeping before re-check");
             tokio::time::sleep(GCS_GATE_RECHECK).await;
             continue;
@@ -2463,7 +2494,7 @@ async fn tfhe_worker_cycle(
         let txn_span = tracing::info_span!(parent: &loop_span, "begin_transaction");
         let mut trx = match fhevm_engine_common::versioning::begin_write_guarded_conn(
             &mut conn,
-            gcs_mode,
+            stack_mode.gcs_mode(),
             GcsRollbackPolicy::Skip,
         )
         .instrument(txn_span)
@@ -2498,10 +2529,11 @@ async fn tfhe_worker_cycle(
             &mut dcid_mngr,
             &mut no_progress_cycles,
             &mut deferred_cooldown,
-            gcs_mode,
+            stack_mode.gcs_mode(),
         )
         .instrument(loop_span.clone())
         .await?;
+        let batch_transactions = transactions.len();
         if has_more_work {
             if transactions.is_empty() {
                 // Rows were loaded but nothing was schedulable: every
@@ -2610,7 +2642,7 @@ async fn tfhe_worker_cycle(
             &health_check,
             &mut trx,
             &dcid_mngr,
-            gcs_mode,
+            stack_mode.gcs_mode(),
             gpu_reservation_timeout,
             args.gpu_streams_per_device,
         )
@@ -2734,6 +2766,7 @@ async fn tfhe_worker_cycle(
             }
         }
         trx.commit().await?;
+        WORK_BATCH_TRANSACTIONS.observe(batch_transactions as f64);
 
         // Releasing after commit makes terminal work visible before another
         // worker can acquire a dependent DCID. Keep unfinished DCIDs leased;
@@ -2792,20 +2825,46 @@ async fn query_ciphertexts<'a>(
     let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
         HashMap::with_capacity(cts_to_query.len());
 
-    let rows = sqlx::query!(
-        "SELECT handle, ciphertext, ciphertext_type
-         FROM ciphertexts
-         WHERE handle = ANY($1::BYTEA[])",
-        cts_to_query,
-    )
-    .fetch_all(trx.as_mut())
-    .await
+    let rows: Vec<(Vec<u8>, Vec<u8>, i16)> = if gcs_mode {
+        // GCS: never serve a *pre-snapshot* ciphertext (produced before this
+        // chain's start_block) out of gcs.ciphertexts. Such a handle may have
+        // been backfilled into gcs by cross-block dependence resolution, and its
+        // byte form there is ordering-dependent across operators (green's own
+        // re-derivation), which breaks the consensus state_hash. Excluding it
+        // here routes it to the canonical, block-gated public.ciphertexts
+        // fallback below, so every operator resolves pre-snapshot deps
+        // identically regardless of backfill timing.
+        sqlx::query_as(
+            "SELECT c.handle, c.ciphertext, c.ciphertext_type
+             FROM ciphertexts c
+             WHERE c.handle = ANY($1::BYTEA[])
+               AND NOT EXISTS (
+                   SELECT 1 FROM computations comp
+                   JOIN public.upgrade_state us
+                     ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
+                   WHERE comp.output_handle = c.handle
+                     AND comp.block_number IS NOT NULL
+                     AND comp.block_number < us.start_block)",
+        )
+        .bind(cts_to_query)
+        .fetch_all(trx.as_mut())
+        .await
+    } else {
+        sqlx::query_as(
+            "SELECT handle, ciphertext, ciphertext_type
+             FROM ciphertexts
+             WHERE handle = ANY($1::BYTEA[])",
+        )
+        .bind(cts_to_query)
+        .fetch_all(trx.as_mut())
+        .await
+    }
     .map_err(|err| {
         error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
         err
     })?;
-    for row in rows {
-        let _ = ciphertext_map.insert(row.handle, (row.ciphertext_type, row.ciphertext));
+    for (handle, ciphertext, ciphertext_type) in rows {
+        let _ = ciphertext_map.insert(handle, (ciphertext_type, ciphertext));
     }
 
     if gcs_mode {
@@ -2955,9 +3014,31 @@ async fn query_dead_boundary_handles<'a>(
     }
     let mut dead: HashSet<Vec<u8>> = HashSet::new();
     let mut seen: HashSet<Vec<u8>> = HashSet::new();
-    // Dead-producer predicate: see the function docs; identical in both
-    // queries of this function.
-    for row in sqlx::query!(
+    // GCS: never judge a *pre-snapshot* producer (block_number below its
+    // chain's start_block) from gcs.computations. Such a row may have been
+    // backfilled by cross-block dependence resolution, and whether it is
+    // present - and what stamps it carries - depends on backfill timing,
+    // which differs across operators. Excluding it here leaves the handle
+    // unseen so the canonical, block-gated public.computations fallback
+    // below delivers the same verdict on every operator. Mirrors the
+    // pre-snapshot exclusion in query_ciphertexts.
+    let pre_snapshot_exclusion = if gcs_mode {
+        "AND NOT EXISTS (
+              SELECT 1 FROM computations comp
+              JOIN public.upgrade_state us
+                ON us.stack_role = 'GCS' AND us.host_chain_id = comp.host_chain_id
+              WHERE comp.output_handle = c.output_handle
+                AND comp.block_number IS NOT NULL
+                AND comp.block_number < us.start_block)"
+    } else {
+        ""
+    };
+    // Dead-producer predicate: some producer row carries a terminal error stamp
+    // and no row could still deliver bytes. A retryable stamp
+    // (RETRYABLE_STAMP_MARKER, bound as $2) is not terminal. Built with format!
+    // rather than the query! macro so the gcs-mode pre-snapshot exclusion can be
+    // appended; the public.computations fallback below uses the same predicate.
+    let local_query = format!(
         "SELECT c.output_handle,
                 (bool_or(c.is_error AND NOT c.is_completed
                         AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
@@ -2965,23 +3046,29 @@ async fn query_dead_boundary_handles<'a>(
                         AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%')))) AS dead
          FROM computations c
          WHERE c.output_handle = ANY($1::BYTEA[])
-         GROUP BY c.output_handle",
-        &candidates,
-        RETRYABLE_STAMP_MARKER,
-    )
-    .fetch_all(trx.as_mut())
-    .await?
+         {pre_snapshot_exclusion}
+         GROUP BY c.output_handle"
+    );
+    for row in sqlx::query(&local_query)
+        .bind(&candidates)
+        .bind(RETRYABLE_STAMP_MARKER)
+        .fetch_all(trx.as_mut())
+        .await?
     {
-        seen.insert(row.output_handle.clone());
-        if row.dead.unwrap_or(false) {
-            dead.insert(row.output_handle);
+        use sqlx::Row;
+        let handle: Vec<u8> = row.get("output_handle");
+        let is_dead: Option<bool> = row.get("dead");
+        seen.insert(handle.clone());
+        if is_dead.unwrap_or(false) {
+            dead.insert(handle);
         }
     }
     // GCS mode: `computations` resolves to gcs.computations, created empty
     // at cutover — a producer that errored terminally in BCS before the
-    // snapshot leaves rows only in public.computations. Mirror
-    // query_ciphertexts' qualified fallback for handles the GCS schema has
-    // never seen, bounded to pre-start blocks so a post-start BCS judgment
+    // snapshot leaves rows only in public.computations, and pre-snapshot
+    // rows that were backfilled into gcs are excluded above. Mirror
+    // query_ciphertexts' qualified fallback for handles the local query did
+    // not judge, bounded to pre-start blocks so a post-start BCS judgment
     // is never imported (a NULL start_block fails the bound: fail-safe,
     // nothing is judged dead).
     if gcs_mode {
@@ -2995,7 +3082,7 @@ async fn query_dead_boundary_handles<'a>(
             // backfilled): those producers are never judged dead, so their
             // consumers defer — fail-safe, at worst the pre-existing
             // deferral behavior for ancient history.
-            for row in sqlx::query!(
+            let fallback_query =
                 "SELECT c.output_handle,
                         (bool_or(c.is_error AND NOT c.is_completed
                         AND (c.error_message IS NULL OR c.error_message NOT LIKE '%' || $2 || '%'))
@@ -3006,15 +3093,17 @@ async fn query_dead_boundary_handles<'a>(
                    ON us.stack_role = 'GCS' AND us.host_chain_id = c.host_chain_id
                  WHERE c.output_handle = ANY($1::BYTEA[])
                    AND c.block_number < us.start_block
-                 GROUP BY c.output_handle",
-                &unseen,
-                RETRYABLE_STAMP_MARKER,
-            )
-            .fetch_all(trx.as_mut())
-            .await?
+                 GROUP BY c.output_handle";
+            for row in sqlx::query(fallback_query)
+                .bind(&unseen)
+                .bind(RETRYABLE_STAMP_MARKER)
+                .fetch_all(trx.as_mut())
+                .await?
             {
-                if row.dead.unwrap_or(false) {
-                    dead.insert(row.output_handle);
+                use sqlx::Row;
+                let is_dead: Option<bool> = row.get("dead");
+                if is_dead.unwrap_or(false) {
+                    dead.insert(row.get::<Vec<u8>, _>("output_handle"));
                 }
             }
         }

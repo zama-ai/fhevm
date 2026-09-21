@@ -179,6 +179,10 @@ async fn wait_for_deployments_finalized(provider: &WalletProvider) -> anyhow::Re
     }
 }
 
+/// How long to wait for Anvil to start listening. The default of 10s in `alloy_node_bindings` is
+/// too short when many tests spawn Anvil and `forge` concurrently on a loaded machine.
+const ANVIL_STARTUP_TIMEOUT_MS: u64 = 30_000;
+
 fn setup_anvil(block_time: u64) -> anyhow::Result<AnvilInstance> {
     info!("Starting Anvil...");
     // The port is left unset so Anvil binds a random free port, avoiding collisions between
@@ -190,6 +194,7 @@ fn setup_anvil(block_time: u64) -> anyhow::Result<AnvilInstance> {
         // Reduce number of slots in an epoch to consider transaction as finalized ASAP.
         // A tx is generally considered finalized after two epochs.
         .args(["--slots-in-an-epoch", "1"])
+        .timeout(ANVIL_STARTUP_TIMEOUT_MS)
         .try_spawn()?;
 
     Ok(anvil)

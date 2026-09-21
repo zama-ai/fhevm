@@ -94,10 +94,14 @@ const refsAlreadyBuilt = async (state: State, refs: string[]) =>
   )).every(Boolean);
 
 /** Starts one compose component, optionally limiting it to selected services. */
-export const isDockerRegistryTransient = (message: string) =>
-  /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
+export const isDockerRegistryTransient = (message: string) => {
+  if (!/(ghcr\.io|quay\.io|cgr\.dev|registry|token|\/v2\/)/i.test(message)) {
+    return false;
+  }
+  return /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
     message,
-  ) && /(ghcr\.io|quay\.io|cgr\.dev|registry|manifest|token|\/v2\/)/i.test(message);
+  );
+};
 
 export const composeUp = async (
   component: string,
@@ -120,7 +124,7 @@ export const composeUp = async (
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (attempt < 3 && isDockerRegistryTransient(message)) {
-        console.log(`[warn] docker compose ${component} hit a registry timeout; retrying (${attempt}/2)`);
+        console.log(`[warn] docker compose ${component} hit a transient registry error; retrying (${attempt}/2)`);
         await Bun.sleep(5_000);
         continue;
       }

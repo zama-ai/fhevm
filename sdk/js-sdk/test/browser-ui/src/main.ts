@@ -1,8 +1,6 @@
 import type { FhevmChain } from '../../../src/core/chains/index.js';
-import type { FhevmModuleVersions } from '../../../src/core/types/moduleVersions.js';
 import type { WasmAssetLoadMode } from '../../../src/core/types/wasmAssets.js';
-import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
-import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../src/core/runtime/WasmVersions-p.js';
 import { defineFhevmChain, sepolia } from '../../../src/core/chains/index.js';
 import { createFhevmClient, setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
 import { createFhevmCleartextClient } from '../../../src/ethers/cleartext/index.js';
@@ -23,21 +21,31 @@ type BrowserUiConfig = {
   >;
 };
 
-type Matrix = {
-  readonly supportedVersionPairs: readonly VersionPair[];
-  readonly assetUrlSets: Record<AssetSource, AssetUrlSet>;
-};
-
-type VersionPair = {
-  readonly tfhe: TfheVersion;
-  readonly kms: TkmsVersion;
-  readonly cdns?: readonly AssetSource[];
-};
-
 type AssetUrlSet = {
   readonly tfheWasm: string;
   readonly tfheWorker: string;
   readonly kmsWasm: string;
+};
+
+// This SDK release bundles a single TFHE/TKMS WASM pair (see
+// CANONICAL_WASM_VERSIONS), so the asset URLs below are fixed rather than
+// templated per version.
+const ASSET_URL_SETS: Record<AssetSource, AssetUrlSet> = {
+  local: {
+    tfheWasm: `/src/wasm/tfhe/v${CANONICAL_WASM_VERSIONS.tfhe}/tfhe_bg.wasm`,
+    tfheWorker: `/__raw_wasm/src/wasm/tfhe/v${CANONICAL_WASM_VERSIONS.tfhe}/tfhe-worker.mjs`,
+    kmsWasm: `/src/wasm/tkms/v${CANONICAL_WASM_VERSIONS.kms}/kms_lib_bg.wasm`,
+  },
+  jsdelivr: {
+    tfheWasm: `https://cdn.jsdelivr.net/npm/tfhe@${CANONICAL_WASM_VERSIONS.tfhe}/tfhe_bg.wasm`,
+    tfheWorker: `/__raw_wasm/src/wasm/tfhe/v${CANONICAL_WASM_VERSIONS.tfhe}/tfhe-worker.mjs`,
+    kmsWasm: `https://cdn.jsdelivr.net/npm/tkms@${CANONICAL_WASM_VERSIONS.kms}/kms_lib_bg.wasm`,
+  },
+  unpkg: {
+    tfheWasm: `https://unpkg.com/tfhe@${CANONICAL_WASM_VERSIONS.tfhe}/tfhe_bg.wasm`,
+    tfheWorker: `/__raw_wasm/src/wasm/tfhe/v${CANONICAL_WASM_VERSIONS.tfhe}/tfhe-worker.mjs`,
+    kmsWasm: `https://unpkg.com/tkms@${CANONICAL_WASM_VERSIONS.kms}/kms_lib_bg.wasm`,
+  },
 };
 
 type DemoState = {
@@ -64,14 +72,7 @@ type FheTestContract = ethers.Contract & {
 
 const LOCALSTACK_RELAYER_URL = new URL('/__localstack_relayer', location.origin).toString();
 const FORM_SETTINGS_STORAGE_KEY = 'fhevm-browser-ui-form-settings-v1';
-const WASM_RUNTIME_CONTROL_IDS = new Set([
-  'wasmAssetLoadMode',
-  'tfheVersion',
-  'kmsVersion',
-  'assetSource',
-  'threadingMode',
-  'initMode',
-]);
+const WASM_RUNTIME_CONTROL_IDS = new Set(['wasmAssetLoadMode', 'assetSource', 'threadingMode', 'initMode']);
 const UINT64_MAX = (1n << 64n) - 1n;
 
 const FHETEST_ABI = [
@@ -113,8 +114,6 @@ const elements = {
   valueInput: byId<HTMLInputElement>('valueInput'),
   chainTarget: byId<HTMLSelectElement>('chainTarget'),
   wasmAssetLoadMode: byId<HTMLSelectElement>('wasmAssetLoadMode'),
-  tfheVersion: byId<HTMLSelectElement>('tfheVersion'),
-  kmsVersion: byId<HTMLSelectElement>('kmsVersion'),
   assetSource: byId<HTMLSelectElement>('assetSource'),
   threadingMode: byId<HTMLSelectElement>('threadingMode'),
   initMode: byId<HTMLSelectElement>('initMode'),
@@ -127,7 +126,6 @@ const elements = {
   logOutput: byId<HTMLPreElement>('logOutput'),
 };
 
-let matrix: Matrix | undefined;
 let browserConfig: BrowserUiConfig | undefined;
 let runtimeConfigKey: string | undefined;
 let demoState: DemoState | undefined;
@@ -139,13 +137,9 @@ void boot();
 async function boot(): Promise<void> {
   try {
     setBusy(true, 'Loading test configuration...');
-    const [loadedMatrix, loadedConfig] = await Promise.all([loadMatrix(), loadBrowserUiConfig()]);
-    matrix = loadedMatrix;
-    browserConfig = loadedConfig;
+    browserConfig = await loadBrowserUiConfig();
 
-    renderSelectOptions(elements.tfheVersion, unique(loadedMatrix.supportedVersionPairs.map((p) => p.tfhe)));
-    renderSelectOptions(elements.kmsVersion, unique(loadedMatrix.supportedVersionPairs.map((p) => p.kms)));
-    renderSelectOptions(elements.assetSource, Object.keys(loadedMatrix.assetUrlSets));
+    renderSelectOptions(elements.assetSource, Object.keys(ASSET_URL_SETS));
     restorePersistedFormSettings();
     enhanceSelects(elements.form.querySelectorAll('select'));
 
@@ -317,19 +311,13 @@ async function decrypt(): Promise<void> {
 async function createClientContext(
   options: FormOptions,
 ): Promise<Omit<DemoState, 'value' | 'encryptedValue' | 'storedHandle'>> {
-  const loadedMatrix = requireLoaded(matrix, 'matrix');
   const loadedConfig = requireLoaded(browserConfig, 'browser config');
   const targetConfig = loadedConfig.targets[options.chainTarget];
   if (targetConfig === undefined) {
     throw new Error(`Missing browser UI config for ${options.chainTarget}.`);
   }
 
-  const versionPair = resolveVersionPair(loadedMatrix, options.tfhe, options.kms, options.assetSource);
-  applyRuntimeConfig(loadedMatrix, versionPair, options);
-  const moduleVersions: FhevmModuleVersions = {
-    tfhe: versionPair.tfhe,
-    kms: versionPair.kms,
-  };
+  applyRuntimeConfig(options);
 
   const provider = new ethers.JsonRpcProvider(targetConfig.rpcUrl);
   await assertContractDeployed(provider, targetConfig.fheTestAddress, 'FHETest', options.chainTarget);
@@ -340,14 +328,16 @@ async function createClientContext(
   const chain = resolveChain(options.chainTarget);
   const client =
     options.chainTarget === 'localcleartext'
-      ? createFhevmCleartextClient({ chain, provider, options: { moduleVersions } })
-      : createFhevmClient({ chain, provider, options: { moduleVersions } });
+      ? createFhevmCleartextClient({ chain, provider })
+      : createFhevmClient({ chain, provider });
 
   log(`Target: ${options.chainTarget}`);
   log(`RPC URL: ${targetConfig.rpcUrl}`);
   log(`FHETest: ${targetConfig.fheTestAddress}`);
   log(`Signer: ${wallet.address}`);
-  log(`WASM: TFHE ${versionPair.tfhe}, TKMS ${versionPair.kms}, ${options.wasmAssetLoadMode}, ${options.assetSource}`);
+  log(
+    `WASM: TFHE ${CANONICAL_WASM_VERSIONS.tfhe}, TKMS ${CANONICAL_WASM_VERSIONS.kms}, ${options.wasmAssetLoadMode}, ${options.assetSource}`,
+  );
   log(`Threads: ${options.threaded ? 'threaded' : 'single-thread'}`);
 
   return {
@@ -397,11 +387,8 @@ async function ensureSignerFunds(chainTarget: ChainTarget, address: string): Pro
   }
 }
 
-function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: FormOptions): void {
-  const assetUrls =
-    options.wasmAssetLoadMode === 'embedded-base64'
-      ? undefined
-      : resolveAssetUrls(matrix_, versionPair, options.assetSource);
+function applyRuntimeConfig(options: FormOptions): void {
+  const assetUrls = options.wasmAssetLoadMode === 'embedded-base64' ? undefined : ASSET_URL_SETS[options.assetSource];
   const key = JSON.stringify({
     mode: options.wasmAssetLoadMode,
     assetUrls,
@@ -423,7 +410,7 @@ function applyRuntimeConfig(matrix_: Matrix, versionPair: VersionPair, options: 
       assetUrls === undefined
         ? undefined
         : (file: string): URL => {
-            return resolveWasmAssetUrl(versionPair, assetUrls, file);
+            return resolveWasmAssetUrl(assetUrls, file);
           },
     logger: {
       debug: (message: string) => log(`[debug] ${message}`),
@@ -490,8 +477,6 @@ function readFormOptions(): FormOptions {
     value,
     chainTarget: elements.chainTarget.value as ChainTarget,
     wasmAssetLoadMode: elements.wasmAssetLoadMode.value as WasmAssetLoadMode,
-    tfhe: elements.tfheVersion.value as TfheVersion,
-    kms: elements.kmsVersion.value as TkmsVersion,
     assetSource: elements.assetSource.value as AssetSource,
     threaded: elements.threadingMode.value === 'threaded',
     manualInit: elements.initMode.value === 'manual',
@@ -505,8 +490,6 @@ function persistFormSettings(): void {
     value: demoState === undefined ? elements.valueInput.value : demoState.value.toString(),
     chainTarget: elements.chainTarget.value,
     wasmAssetLoadMode: elements.wasmAssetLoadMode.value,
-    tfheVersion: elements.tfheVersion.value,
-    kmsVersion: elements.kmsVersion.value,
     assetSource: elements.assetSource.value,
     threadingMode: elements.threadingMode.value,
     initMode: elements.initMode.value,
@@ -529,8 +512,6 @@ function restorePersistedFormSettings(): void {
   }
   setSelectValueIfPresent(elements.chainTarget, settings.chainTarget);
   setSelectValueIfPresent(elements.wasmAssetLoadMode, settings.wasmAssetLoadMode);
-  setSelectValueIfPresent(elements.tfheVersion, settings.tfheVersion);
-  setSelectValueIfPresent(elements.kmsVersion, settings.kmsVersion);
   setSelectValueIfPresent(elements.assetSource, settings.assetSource);
   setSelectValueIfPresent(elements.threadingMode, settings.threadingMode);
   setSelectValueIfPresent(elements.initMode, settings.initMode);
@@ -551,8 +532,6 @@ type FormOptions = {
   readonly value: bigint;
   readonly chainTarget: ChainTarget;
   readonly wasmAssetLoadMode: WasmAssetLoadMode;
-  readonly tfhe: TfheVersion;
-  readonly kms: TkmsVersion;
   readonly assetSource: AssetSource;
   readonly threaded: boolean;
   readonly manualInit: boolean;
@@ -575,14 +554,6 @@ function validateDecryptionSelection(options: DecryptOptions): void {
   }
 }
 
-async function loadMatrix(): Promise<Matrix> {
-  const response = await fetch('/test/multi-wasm/matrix.json');
-  if (!response.ok) {
-    throw new Error(`Failed to load multi-wasm matrix: HTTP ${response.status}`);
-  }
-  return (await response.json()) as Matrix;
-}
-
 async function loadBrowserUiConfig(): Promise<BrowserUiConfig> {
   const response = await fetch('/__browser_ui/config');
   if (!response.ok) {
@@ -591,43 +562,11 @@ async function loadBrowserUiConfig(): Promise<BrowserUiConfig> {
   return (await response.json()) as BrowserUiConfig;
 }
 
-function resolveVersionPair(
-  matrix_: Matrix,
-  tfhe: TfheVersion,
-  kms: TkmsVersion,
-  assetSource: AssetSource,
-): VersionPair {
-  const pair = matrix_.supportedVersionPairs.find((candidate) => candidate.tfhe === tfhe && candidate.kms === kms);
-  if (pair === undefined) {
-    throw new Error(`Unsupported TFHE/KMS pair: ${tfhe} / ${kms}.`);
-  }
-  if (pair.cdns !== undefined && !pair.cdns.includes(assetSource)) {
-    throw new Error(`Asset source ${assetSource} is not enabled for TFHE ${tfhe} / KMS ${kms}.`);
-  }
-  return pair;
-}
-
-function resolveAssetUrls(matrix_: Matrix, versionPair: VersionPair, assetSource: AssetSource): AssetUrlSet {
-  const template = matrix_.assetUrlSets[assetSource];
-  if (template === undefined) {
-    throw new Error(`Unknown asset source: ${assetSource}`);
-  }
-  return {
-    tfheWasm: renderAssetUrlTemplate(template.tfheWasm, versionPair),
-    tfheWorker: renderAssetUrlTemplate(template.tfheWorker, versionPair),
-    kmsWasm: renderAssetUrlTemplate(template.kmsWasm, versionPair),
-  };
-}
-
-function renderAssetUrlTemplate(template: string, versions: VersionPair): string {
-  return template.replace(/\{tfhe\}/g, versions.tfhe).replace(/\{kms\}/g, versions.kms);
-}
-
-function resolveWasmAssetUrl(versionPair: VersionPair, assetUrls: AssetUrlSet, file: string): URL {
+function resolveWasmAssetUrl(assetUrls: AssetUrlSet, file: string): URL {
   const urlsByFilename: Record<string, string> = {
-    [`tfhe_bg.v${versionPair.tfhe}.wasm`]: assetUrls.tfheWasm,
-    [`tfhe-worker.v${versionPair.tfhe}.mjs`]: assetUrls.tfheWorker,
-    [`kms_lib_bg.v${versionPair.kms}.wasm`]: assetUrls.kmsWasm,
+    [`tfhe_bg.v${CANONICAL_WASM_VERSIONS.tfhe}.wasm`]: assetUrls.tfheWasm,
+    [`tfhe-worker.v${CANONICAL_WASM_VERSIONS.tfhe}.mjs`]: assetUrls.tfheWorker,
+    [`kms_lib_bg.v${CANONICAL_WASM_VERSIONS.kms}.wasm`]: assetUrls.kmsWasm,
   };
   const path = urlsByFilename[file];
   if (path === undefined) {
@@ -764,10 +703,6 @@ function closeAllCustomSelects(): void {
       menu.hidden = true;
     }
   }
-}
-
-function unique(values: readonly string[]): readonly string[] {
-  return [...new Set(values)];
 }
 
 function requireLoaded<T>(value: T | undefined, name: string): T {

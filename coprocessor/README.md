@@ -323,6 +323,13 @@ That is not decoration. `tfhe-cuda-backend` picks its CUDA architectures from th
 
 **Consequence for deployment:** an `sm_90` image runs on H100 and not on L40, and vice versa. Pick the tag that matches the hardware; there is deliberately no floating `:gpu` tag, because "some GPU" is exactly the ambiguity that would put an unrunnable image into a cluster.
 
+At startup, a GPU image checks every CUDA-visible device against the compute
+capability embedded by its build. This is an **exact** match: an `sm_90` image
+rejects both an older L40 (`sm_89`) and a newer architecture such as `sm_100`.
+That prevents CUDA's forward-compatibility behaviour from silently running a
+binary whose architecture-specific code was compiled for a different GPU.
+Compute capability is not a model identifier: H100 and H200 are both `sm_90`.
+
 ### The runner is not a free choice
 
 Instances are chosen with the same `provider::profile (hardware)` string the GPU benchmark job uses, parsed by `ci/parse_benchmark_profile.py`, which maps it onto a slab backend (`terraform` for Scaleway, `hyperstack` for Hyperstack) and refuses a profile that is not in `ci/slab.toml` before any instance is requested.

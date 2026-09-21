@@ -3,7 +3,7 @@ import type { EncryptedValue } from '@fhevm/sdk/types';
 import type { CreateEthersBaseClientFn, FheTestEthersConfig } from '../setup-ethers.js';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersClientOptions, getEthersTestConfigs } from '../setup-ethers.js';
+import { getEthersTestConfigs } from '../setup-ethers.js';
 import {
   decryptTestCases,
   fheTypeIdFromName,
@@ -84,12 +84,10 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
         const client0 = parameters.createFhevmBaseClient({
           chain: config0.fhevmChain,
           provider: config0.provider,
-          options: getEthersClientOptions(config0),
         });
         const client1 = parameters.createFhevmBaseClient({
           chain: config1.fhevmChain,
           provider: config1.provider,
-          options: getEthersClientOptions(config1),
         });
 
         const typedValue0 = await client0.decryptPublicValue({

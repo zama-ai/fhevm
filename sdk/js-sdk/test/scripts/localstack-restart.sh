@@ -10,10 +10,8 @@ PORT=8545
 RPC_URL="http://127.0.0.1:$PORT"
 FORCE=false
 DRY_RUN=false
-PROFILE=""
-PROFILES_DIR="$FHEVM_DIR/profiles"
 CHAIN="localstack"
-VALID_CHAINS=(localstack localstack_v11 localstack_v12 localstack_v13 localstack_v14)
+VALID_CHAINS=(localstack localstack_v14)
 CHAINS_DIR="$SCRIPT_DIR/../chains"
 CHAIN_DEFAULTS_FILE="$CHAINS_DIR/chain-defaults.json"
 
@@ -27,9 +25,6 @@ By default, if anvil is already listening on port ${PORT}, the script assumes
 the local stack is already running and exits without restarting or redeploying.
 
 Options:
-  --fhevm-cli-profile <name>
-                        Profile filename in ${PROFILES_DIR} (e.g., v0.11.0-mainnet.json).
-                        If omitted, fhevm-cli starts without a profile lock file.
   --chain, -c <name>    Chain to pass to fhetest-deploy.sh. One of:
                         ${VALID_CHAINS[*]}.
                         Default: ${CHAIN}.
@@ -41,9 +36,7 @@ Options:
   --help, -h            Print this help message and exit.
 
 Example:
-  ./localstack-restart.sh --chain localstack_v11 --fhevm-cli-profile v0.11.0-mainnet.json
-  ./localstack-restart.sh --chain localstack_v12 --fhevm-cli-profile v0.12.0-testnet.json
-  ./localstack-restart.sh --chain localstack_v13 --fhevm-cli-profile v0.13.0.json
+  ./localstack-restart.sh --chain localstack --force
 EOF
 }
 
@@ -67,15 +60,6 @@ require_arg_value() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --fhevm-cli-profile)
-            require_arg_value "$1" "${2:-}"
-            PROFILE="$2"
-            shift 2
-            ;;
-        --fhevm-cli-profile=*)
-            PROFILE="${1#--fhevm-cli-profile=}"
-            shift
-            ;;
         --chain|-c)
             require_arg_value "$1" "${2:-}"
             CHAIN="$2"
@@ -119,19 +103,6 @@ if [[ ! -d "$FHEVM_DIR" ]]; then
     exit 1
 fi
 FHEVM_DIR="$(cd "$FHEVM_DIR" && pwd)"
-PROFILES_DIR="$FHEVM_DIR/profiles"
-
-if [[ -n "$PROFILE" ]]; then
-    PROFILE_PATH="$PROFILES_DIR/$PROFILE"
-    if [[ ! -f "$PROFILE_PATH" ]]; then
-        echo "Error: profile '$PROFILE' not found at $PROFILE_PATH." >&2
-        if [[ -d "$PROFILES_DIR" ]]; then
-            echo "Available profiles:" >&2
-            (cd "$PROFILES_DIR" && ls -1 *.json 2>/dev/null) | sed 's/^/  /' >&2
-        fi
-        exit 1
-    fi
-fi
 
 port_is_listening() {
     lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1
@@ -202,10 +173,6 @@ print_dry_run() {
     chain_ts_file="$(to_clean_path "$CHAINS_DIR/${CHAIN}.ts")"
     local chain_defaults_display
     chain_defaults_display="$(to_clean_path "$CHAIN_DEFAULTS_FILE")"
-    local profile_display="(none — fhevm-cli will run without --lock-file)"
-    if [[ -n "$PROFILE" ]]; then
-        profile_display="$PROFILE_PATH"
-    fi
 
     local chain_ts_status="exists"
     [[ -f "$chain_ts_file" ]] || chain_ts_status="MISSING"
@@ -220,7 +187,6 @@ print_dry_run() {
     echo "  chain:               $CHAIN"
     echo "  chain TS file:       $chain_ts_file  ($chain_ts_status)"
     echo "  chain-defaults.json: $chain_defaults_display  ($chain_defaults_status)"
-    echo "  profile:             $profile_display"
     echo "  force restart:       $FORCE"
     echo "  rpc port:            $PORT"
     echo "  fhevm-cli dir:       $FHEVM_DIR"
@@ -249,11 +215,7 @@ print_dry_run() {
     if [[ "$FORCE" = true ]]; then
         echo "  $FHEVM_DIR/fhevm-cli down"
     fi
-    if [[ -n "$PROFILE" ]]; then
-        echo "  $FHEVM_DIR/fhevm-cli up --lock-file profiles/$PROFILE"
-    else
-        echo "  $FHEVM_DIR/fhevm-cli up"
-    fi
+    echo "  $FHEVM_DIR/fhevm-cli up"
     echo "  cd $CONTRACTS_DIR"
     echo "  forge clean"
     echo "  ./scripts/fhetest-deploy.sh --chain $CHAIN"
@@ -304,11 +266,7 @@ if [[ "$FORCE" = true ]]; then
 fi
 
 # Start
-if [[ -n "$PROFILE" ]]; then
-    "$FHEVM_DIR/fhevm-cli" up --lock-file "profiles/$PROFILE"
-else
-    "$FHEVM_DIR/fhevm-cli" up
-fi
+"$FHEVM_DIR/fhevm-cli" up
 
 # Deploy FHETest.sol
 cd "$CONTRACTS_DIR"

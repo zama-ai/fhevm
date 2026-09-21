@@ -15,6 +15,6 @@ export async function _initEncrypt(fhevm: FhevmBase<FhevmChain>): Promise<void> 
   await Promise.all([
     // Prefetch the global FheEncryptionKey in bytes format
     fetchFheEncryptionKeyBytes(f, { fhevmContext: cloneFhevmClientFrozenContext(frozen) }),
-    f.runtime.encrypt.initTfheModule({ tfheVersion: frozen.tfheVersion }),
+    f.runtime.encrypt.initTfheModule(),
   ]);
 }

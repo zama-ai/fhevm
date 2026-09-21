@@ -418,14 +418,18 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
-/** Detects when the resolved kms-connector bundle includes the HTTP `endpoint` service. */
-export const supportsConnectorEndpoint = (state: Pick<CompatState, "versions" | "overrides">) => {
-  const overridden = state.overrides.some(
-    (override) =>
-      override.group === "kms-connector" &&
-      (!override.services?.length || override.services.includes("kms-connector-endpoint")),
+/** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
+export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) => {
+  const available = (service: string, versionKey: string) =>
+    Boolean(state.versions.env[versionKey]) ||
+    state.overrides.some(
+      (override) =>
+        override.group === "kms-connector" && (!override.services?.length || override.services.includes(service)),
+    );
+  return (
+    available("kms-connector-endpoint", "CONNECTOR_ENDPOINT_VERSION") &&
+    available("kms-connector-proxy", "CONNECTOR_PROXY_VERSION")
   );
-  return overridden || Boolean(state.versions.env.CONNECTOR_ENDPOINT_VERSION);
 };
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
@@ -642,6 +646,14 @@ const mergeShimArgs = (policy: CoprocessorArgPolicy, profile: CompatPolicy) => {
   }
 };
 
+// HTTP was backported in 0.13.5 and after 0.14.1 (#3916, #3923).
+// Unversioned images retain the existing current/main compatibility policy.
+const transactionSenderGatewayArg = (version: string): readonly [string, CompatArgValue] => {
+  const http = compatVersionGte(version, [0, 14, 2], { unparsed: "modern" }) ||
+    (compatVersionGte(version, [0, 13, 5]) && versionBeforeReleaseFamily(version, [0, 14, 0]));
+  return ["--gateway-url", { env: http ? "GATEWAY_URL" : "GATEWAY_WS_URL" }];
+};
+
 /**
  * Builds the coprocessor arg policy for a fleet pinned to one published image tag.
  *
@@ -666,6 +678,10 @@ export const compatArgPolicyForPinnedTag = (tag: string): CoprocessorArgPolicy =
     }
     mergeShimArgs(policy, SHIM_PROFILES[shim.profile]);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(tag),
+  ];
   return policy;
 };
 
@@ -685,6 +701,10 @@ export const compatPolicyForState = (state: CompatState): CompatPolicy => {
     mergeShimArgs(policy, profile);
     Object.assign(policy.connectorEnv, profile.connectorEnv);
   }
+  policy.coprocessorArgs["transaction-sender"] = [
+    ...(policy.coprocessorArgs["transaction-sender"] ?? []),
+    transactionSenderGatewayArg(state.versions.env.COPROCESSOR_TX_SENDER_VERSION ?? ""),
+  ];
   // Local overrides build the current working tree, which always uses the
   // modern --use-internal-proxy-address flag regardless of the version label.
   const overrides = effectiveCompatOverrides(state);

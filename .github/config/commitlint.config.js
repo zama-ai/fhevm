@@ -20,6 +20,7 @@ const Configuration = {
         'coprocessor',
         'host-contracts',
         'gateway-contracts',
+        'protocol-contracts',
         'contracts',
         'library-solidity',
         'kms-connector',

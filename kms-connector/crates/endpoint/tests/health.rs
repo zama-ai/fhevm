@@ -40,7 +40,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let monitoring_url = Url::from_str(&format!("http://{}/healthz", monitoring_endpoint))?;
     let cancel_token = CancellationToken::new();
     let monitoring_server_task =
-        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
+        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
     test_instance
         .wait_for_log("Monitoring server listening at")
         .await;

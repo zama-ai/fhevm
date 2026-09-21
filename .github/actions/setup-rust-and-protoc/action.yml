@@ -1,0 +1,76 @@
+name: Setup pinned native build tools
+description: >-
+  Install checksum-pinned protoc and mold from GitHub releases, and require the
+  runner's existing Clang. Does not use APT. Rust stays in setup_rust.
+
+inputs:
+  setup-protoc:
+    description: Install the pinned Protobuf compiler into ~/.local/bin
+    required: false
+    default: "true"
+  setup-mold:
+    description: Install the pinned mold linker into ~/.local/bin
+    required: false
+    default: "false"
+  require-clang:
+    description: >-
+      Fail if clang is missing. Uses the runner image compiler; does not install
+      Clang and does not replace /usr/bin/ld.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Protoc
+      if: ${{ inputs.setup-protoc == 'true' }}
+      env:
+        # Same release as zama-ai/kms .github/actions/setup-rust-and-protoc.
+        PROTOC_VERSION: "34.1"
+        PROTOC_SHA256: af27ea66cd26938fe48587804ca7d4817457a08350021a1c6e23a27ccc8c6904
+      shell: bash
+      run: |
+        set -euo pipefail
+        archive="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+        dest="${RUNNER_TEMP}/${archive}"
+        url="https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${archive}"
+        curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
+        echo "${PROTOC_SHA256}  ${dest}" | sha256sum --check --strict
+        mkdir -p "${HOME}/.local"
+        unzip -o "${dest}" -d "${HOME}/.local"
+        # ~/.local/bin is on the RunsOn image PATH (same layout as kms).
+        # Do not write GITHUB_PATH: zizmor github-env flags it.
+        command -v protoc
+        protoc --version
+
+    - name: Install Mold
+      if: ${{ inputs.setup-mold == 'true' }}
+      env:
+        MOLD_VERSION: "2.42.1"
+        MOLD_SHA256: 6ff270c9bf07d2bec5c98aa324eb7c4daf6a1a4d815c05ff1708049616047855
+      shell: bash
+      run: |
+        set -euo pipefail
+        archive="mold-${MOLD_VERSION}-x86_64-linux.tar.gz"
+        dest="${RUNNER_TEMP}/${archive}"
+        url="https://github.com/rui314/mold/releases/download/v${MOLD_VERSION}/${archive}"
+        curl -fsSL --connect-timeout 15 --max-time 120 --retry 5 --retry-delay 2 --retry-all-errors -o "${dest}" "${url}"
+        echo "${MOLD_SHA256}  ${dest}" | sha256sum --check --strict
+        tar -xzf "${dest}" -C "${RUNNER_TEMP}"
+        mkdir -p "${HOME}/.local/bin"
+        install -m 0755 "${RUNNER_TEMP}/mold-${MOLD_VERSION}-x86_64-linux/bin/mold" "${HOME}/.local/bin/mold"
+        ln -sfn mold "${HOME}/.local/bin/ld.mold"
+        command -v mold
+        mold --version
+
+    - name: Require Clang on the runner
+      if: ${{ inputs.require-clang == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v clang >/dev/null; then
+          echo "clang is not on PATH. Coprocessor jobs expect the RunsOn image compiler; do not apt-install clang (fhevm-internal#2014)." >&2
+          exit 1
+        fi
+        command -v clang
+        clang --version

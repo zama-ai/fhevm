@@ -365,26 +365,45 @@ pub async fn ingest_block_logs(
     // logs go through the normal decode below, so `fhe_event_count`, `is_allowed`, the
     // dependence chain and `schedule_order` are all derived by the production path. Blue
     // never injects, so `public` stays untouched. See `database::synthetic_ops`.
-    let synthetic = if db.gcs_mode() && !options.disable_synthetic_ops {
-        synthetic_logs_for_block(
-            &mut tx,
-            chain_id,
-            block_number,
-            block_hash,
-            *tfhe_contract_address,
-            *acl_contract_address,
-            // Past every real log index in this block. `logs` can be a filtered subset of
-            // the block's logs, so its length is not an upper bound on their indices.
-            block_logs
-                .logs
-                .iter()
-                .filter_map(|log| log.log_index)
-                .max()
-                .map_or(0, |max| max.saturating_add(1)),
-        )
-        .await?
+    // GCS only: this chain's in-progress dry-run window, read once per block. It drives
+    // the synthetic injection below and the pre-start gate: green's listeners tail the
+    // chain before activation (and lag the head by a few blocks), so blocks below
+    // `start_block` keep arriving after the controller's one-shot prune of
+    // `gcs.computations`. Persisting their FHE rows would let green re-derive
+    // pre-snapshot handles with its own byte form; whether a consumer then reads that
+    // copy or the canonical `public` one depends on ingest timing - a per-operator
+    // divergence of the consensus `state_hash`. Blue never has a window, so `public` is
+    // untouched. Before the proposal is ingested there is no window either, so those
+    // blocks still land and the prune remains necessary for them.
+    let gcs_window = if db.gcs_mode() {
+        gcs_dry_run_window(&mut tx, chain_id).await?
     } else {
-        vec![]
+        None
+    };
+    let pre_start_block = gcs_window.as_ref().is_some_and(|window| {
+        i64::try_from(block_number)
+            .is_ok_and(|block| block < window.start_block)
+    });
+    let synthetic = match gcs_window.as_ref() {
+        Some(window) if !options.disable_synthetic_ops => {
+            synthetic_logs_for_block(
+                &mut tx,
+                window,
+                chain_id,
+                block_number,
+                block_hash,
+                *tfhe_contract_address,
+                *acl_contract_address,
+                block_logs
+                    .logs
+                    .iter()
+                    .filter_map(|log| log.log_index)
+                    .max()
+                    .map_or(0, |max| max.saturating_add(1)),
+            )
+            .await?
+        }
+        _ => vec![],
     };
     if !synthetic.is_empty() {
         info!(
@@ -465,6 +484,11 @@ pub async fn ingest_block_logs(
             if let Ok(event) =
                 BridgeContract::BridgeContractEvents::decode_log(&log.inner)
             {
+                // Pre-start block on the green stack: bridge and fallback rows are
+                // block-scoped FHE state, gated like the tfhe and ACL events below.
+                if pre_start_block {
+                    continue;
+                }
                 // A FallbackGrantedPlaintext becomes a synthetic TrivialEncrypt
                 // computation so the normal pipeline materializes the ciphertext.
                 // PBS is enqueued so its ct128/digest get computed and published.
@@ -577,6 +601,19 @@ pub async fn ingest_block_logs(
                         )
                         .await?;
                 } else {
+                    // `ConfidentialBridge.send` needs only a transient allowance
+                    // (no ACL event), so force the source handle allowed or its
+                    // ciphertext is never computed.
+                    if let BridgeContract::BridgeContractEvents::BridgeHandle(e) =
+                        &event.data
+                    {
+                        if chain_id_from_handle(&e.srcHandle.0)
+                            == chain_id.as_u64()
+                            && ChainId::try_from(e.dstChainId).is_ok()
+                        {
+                            is_allowed.insert(e.srcHandle.to_vec());
+                        }
+                    }
                     at_least_one_insertion |= db
                         .handle_bridge_event(
                             &mut tx,
@@ -611,6 +648,20 @@ pub async fn ingest_block_logs(
             );
         }
     }
+    if pre_start_block {
+        info!(
+            chain_id = chain_id.as_u64(),
+            block_number,
+            start_block = gcs_window.as_ref().map(|w| w.start_block),
+            fhe_event_count,
+            allow_event_count,
+            "GCS: block precedes this chain's start_block; skipping its FHE and ACL rows \
+             (the block itself is still recorded for reorg tracking)"
+        );
+        tfhe_event_log.clear();
+        acl_event_log.clear();
+    }
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
             .into_iter()
@@ -768,22 +819,21 @@ pub async fn ingest_block_logs(
 /// Everything the derivation consumes (`proposal_id`, chain id, block number) comes from
 /// on-chain data, so every operator produces byte-identical logs. See
 /// `database::synthetic_ops`.
-async fn synthetic_logs_for_block(
+/// One host chain's in-progress GCS dry-run window, as read by [`gcs_dry_run_window`].
+pub struct GcsDryRunWindow {
+    pub proposal_id: Vec<u8>,
+    pub target_version: String,
+    /// First host block of the dry-run window. Blocks below it are pre-snapshot: their
+    /// FHE state is canonical in `public` and must not be re-derived by green.
+    pub start_block: i64,
+}
+
+/// Read `chain_id`'s in-progress GCS window from `upgrade_state`, or `None` when no
+/// activated proposal covers the chain. One indexed read per ingested block on green.
+pub async fn gcs_dry_run_window(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
-    block_number: u64,
-    block_hash: BlockHash,
-    tfhe_contract_address: Option<Address>,
-    acl_contract_address: Option<Address>,
-    log_index_base: u64,
-) -> Result<Vec<Log>, sqlx::Error> {
-    let Ok(block_number_i64) = i64::try_from(block_number) else {
-        return Ok(vec![]);
-    };
-    let Ok(chain_id_i64) = i64::try_from(chain_id.as_u64()) else {
-        return Ok(vec![]);
-    };
-
+) -> Result<Option<GcsDryRunWindow>, sqlx::Error> {
     let row: Option<(Vec<u8>, String, i64)> = sqlx::query_as(
         "SELECT proposal_id, version, start_block
            FROM upgrade_state
@@ -795,20 +845,44 @@ async fn synthetic_logs_for_block(
             AND version IS NOT NULL
             AND start_block IS NOT NULL",
     )
-    .bind(chain_id_i64)
+    .bind(chain_id.as_i64())
     .fetch_optional(tx.as_mut())
     .await?;
+    Ok(row.map(
+        |(proposal_id, target_version, start_block)| GcsDryRunWindow {
+            proposal_id,
+            target_version,
+            start_block,
+        },
+    ))
+}
 
-    let Some((proposal_id, target_version, start_block)) = row else {
+#[allow(clippy::too_many_arguments)]
+async fn synthetic_logs_for_block(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    window: &GcsDryRunWindow,
+    chain_id: ChainId,
+    block_number: u64,
+    block_hash: BlockHash,
+    tfhe_contract_address: Option<Address>,
+    acl_contract_address: Option<Address>,
+    log_index_base: u64,
+) -> Result<Vec<Log>, sqlx::Error> {
+    let Ok(block_number_i64) = i64::try_from(block_number) else {
         return Ok(vec![]);
     };
-    if block_number_i64 != start_block.saturating_add(SYNTHETIC_BLOCK_OFFSET) {
+    let chain_id_i64 = chain_id.as_i64();
+    let proposal_id = &window.proposal_id;
+
+    if block_number_i64
+        != window.start_block.saturating_add(SYNTHETIC_BLOCK_OFFSET)
+    {
         return Ok(vec![]);
     }
 
     let ctx = SyntheticContext {
-        proposal_id: &proposal_id,
-        target_version: &target_version,
+        proposal_id,
+        target_version: &window.target_version,
         chain_id: chain_id.as_u64(),
         block_number: block_number_i64,
         block_hash,
@@ -856,7 +930,7 @@ async fn synthetic_logs_for_block(
     )
     .bind(synthetic_txn_hash.as_slice())
     .bind(chain_id_i64)
-    .bind(&proposal_id)
+    .bind(proposal_id.as_slice())
     .execute(tx.as_mut())
     .await?
     .rows_affected();
@@ -1037,6 +1111,33 @@ async fn notify_coprocessor_upgrade_proposed(
         );
         return Ok(());
     };
+
+    let host_chain_ids: HashSet<i64> =
+        sqlx::query_scalar("SELECT chain_id FROM host_chains")
+            .fetch_all(&mut **tx)
+            .await?
+            .into_iter()
+            .collect();
+    if let Some(host_chain_id) =
+        host_chain_ids.difference(&seen_chain_ids).next()
+    {
+        error!(
+            proposal_id = %proposal_id_hex,
+            host_chain_id,
+            "Rejecting CoprocessorUpgradeProposed: host chain is missing from proposal"
+        );
+        return Ok(());
+    }
+    if let Some(host_chain_id) =
+        seen_chain_ids.difference(&host_chain_ids).next()
+    {
+        error!(
+            proposal_id = %proposal_id_hex,
+            host_chain_id,
+            "Rejecting CoprocessorUpgradeProposed: proposed chain is absent from host_chains"
+        );
+        return Ok(());
+    }
 
     // ProtocolConfig ingestion replaces a proposal-wide row set. Serialize it
     // with controller transitions and concurrent listeners so readers can
@@ -1219,6 +1320,16 @@ pub async fn synthesize_finalized_fallback_grants(
     block_hash: &BlockHash,
 ) -> Result<(), sqlx::Error> {
     use sqlx::Row;
+    // Same pre-start gate as `ingest_block_logs`: a grant observed before the proposal
+    // was known must not be materialized by green once the window says its block is
+    // pre-snapshot.
+    if db.gcs_mode() {
+        if let Some(window) = gcs_dry_run_window(tx, db.chain_id).await? {
+            if block_number < window.start_block {
+                return Ok(());
+            }
+        }
+    }
     let rows = sqlx::query(
         "SELECT dst_handle, plaintext, transaction_id, created_at
            FROM fallback_granted_events
@@ -1912,6 +2023,13 @@ mod tests {
             .expect("pool");
 
         sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
+        sqlx::query(
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
@@ -1995,19 +2113,26 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01'), (2, 'test', '0x02')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
             softwareVersion: "v2".to_string(),
             chainUpgradeWindows: vec![
                 ProtocolConfig::ChainUpgradeWindow {
-                    chainId: 1,
-                    startBlock: 100,
-                    endBlock: 200,
-                },
-                ProtocolConfig::ChainUpgradeWindow {
                     chainId: 2,
                     startBlock: 300,
                     endBlock: 400,
+                },
+                ProtocolConfig::ChainUpgradeWindow {
+                    chainId: 1,
+                    startBlock: 100,
+                    endBlock: 200,
                 },
             ],
             gwStartBlock: 5,
@@ -2073,6 +2198,13 @@ mod tests {
             .connect(instance.db_url())
             .await
             .expect("pool");
+
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
 
         // Seed a completed GCS row from a prior cycle with gw_dry_run_started TRUE.
         sqlx::query(
@@ -2143,6 +2275,13 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         // A completed GCS cycle for proposal 1.
         sqlx::query(
             r#"
@@ -2203,6 +2342,13 @@ mod tests {
             .connect(instance.db_url())
             .await
             .expect("pool");
+
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
 
         sqlx::query(
             r#"
@@ -2313,6 +2459,13 @@ mod tests {
             .expect("pool");
 
         sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01'), (2, 'test', '0x02')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
+        sqlx::query(
             r#"
             INSERT INTO upgrade_state (
                 stack_role, state, status, proposal_id, version,
@@ -2388,6 +2541,13 @@ mod tests {
             .await
             .expect("pool");
 
+        sqlx::query(
+            "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (1, 'test', '0x01')",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed host chains");
+
         // A completed cycle for proposal 2, observed at block 100.
         sqlx::query(
             r#"
@@ -2438,5 +2598,84 @@ mod tests {
         );
         assert_eq!(row.try_get::<String, _>("state").unwrap(), "LIVE");
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "completed");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tracing_test::traced_test]
+    async fn upgrade_rejects_chain_set_mismatch() {
+        use alloy::primitives::U256;
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await
+            .expect("pool");
+
+        for (registered, proposed, message) in [
+            (
+                vec![1_i64, 2],
+                vec![1_u64],
+                "host chain is missing from proposal",
+            ),
+            (
+                vec![1],
+                vec![1, 2],
+                "proposed chain is absent from host_chains",
+            ),
+            (
+                vec![1, 2],
+                vec![1, 3],
+                "host chain is missing from proposal",
+            ),
+        ] {
+            sqlx::query("DELETE FROM host_chains")
+                .execute(&pool)
+                .await
+                .expect("clear host chains");
+            sqlx::query(
+                "INSERT INTO host_chains (chain_id, name, acl_contract_address)
+                 SELECT chain_id, 'test', '0x01' FROM UNNEST($1::bigint[]) AS chain_id",
+            )
+            .bind(&registered)
+            .execute(&pool)
+            .await
+            .expect("seed host chains");
+
+            let event = ProtocolConfig::CoprocessorUpgradeProposed {
+                proposalId: U256::from(2u64),
+                softwareVersion: "v2".to_string(),
+                chainUpgradeWindows: proposed
+                    .into_iter()
+                    .map(|chain_id| ProtocolConfig::ChainUpgradeWindow {
+                        chainId: chain_id,
+                        startBlock: 100,
+                        endBlock: 200,
+                    })
+                    .collect(),
+                gwStartBlock: 5,
+            };
+            let mut tx = pool.begin().await.expect("tx");
+            notify_coprocessor_upgrade_proposed(
+                &mut tx,
+                ChainId::try_from(1_u64).expect("chain id"),
+                &event,
+                300,
+            )
+            .await
+            .expect("reject proposal");
+            tx.commit().await.expect("commit");
+
+            let count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM upgrade_state")
+                    .fetch_one(&pool)
+                    .await
+                    .expect("row count");
+            assert_eq!(count, 0);
+            assert!(logs_contain(message));
+            assert!(logs_contain("host_chain_id=2"));
+        }
     }
 }

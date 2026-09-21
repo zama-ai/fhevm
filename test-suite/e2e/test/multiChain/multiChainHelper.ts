@@ -3,6 +3,10 @@ import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
 
 import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
+import type { ManagedWallet } from './freshDeployers';
+import { wrapWithNonceManager } from './freshDeployers';
+
+export type { ManagedWallet } from './freshDeployers';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -80,14 +84,6 @@ export function getProvider(chain: ChainConfig): ethers.JsonRpcProvider {
   return providers.get(chain.rpcUrl)!;
 }
 
-export type ManagedWallet = ethers.NonceManager & { address: string; reset: () => void };
-
-function wrapWithNonceManager(wallet: ethers.Wallet): ManagedWallet {
-  const nm = new ethers.NonceManager(wallet);
-  (nm as any).address = wallet.address;
-  return nm as ManagedWallet;
-}
-
 export interface NamedSigners {
   alice: ManagedWallet;
   bob: ManagedWallet;
@@ -112,12 +108,6 @@ export function getSigners(chain: ChainConfig): NamedSigners {
     });
   }
   return signersCache.get(chain.rpcUrl)!;
-}
-
-export function getWallet(chain: ChainConfig, index: number): ManagedWallet {
-  const provider = getProvider(chain);
-  const hdNode = ethers.HDNodeWallet.fromMnemonic(ethers.Mnemonic.fromPhrase(mnemonic), "m/44'/60'/0'/0");
-  return wrapWithNonceManager(new ethers.Wallet(hdNode.deriveChild(index).privateKey, provider));
 }
 
 export async function createInstance(chain: ChainConfig) {

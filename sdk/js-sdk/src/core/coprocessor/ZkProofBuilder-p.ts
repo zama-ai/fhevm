@@ -222,7 +222,6 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion: fhevmContext.tfheVersion,
       });
 
     return toZkProof(

@@ -1,12 +1,7 @@
 import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import {
-  getViemClientOptions,
-  getViemTestConfig,
-  type CreateViemBaseClientFn,
-  type FheTestViemConfig,
-} from '../setup-viem.js';
+import { getViemTestConfig, type CreateViemBaseClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import {
   createLogger,
@@ -82,7 +77,6 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
         const client = parameters.createFhevmBaseClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
-          options: getViemClientOptions(config),
         });
 
         const typedValue = await client.decryptPublicValue({
@@ -142,7 +136,6 @@ export function defineClientBaseDecryptPublicValueTests(parameters: {
       const client = parameters.createFhevmBaseClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
-        options: getViemClientOptions(config),
       });
 
       const allEncryptedValues = entries.map((e) => asEncryptedValue(e.encryptedValue));
