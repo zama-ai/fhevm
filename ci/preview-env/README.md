@@ -84,6 +84,12 @@ ci/preview-env/
 │   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
 ├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
 └── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
+    ├── lib.sh                           # shared bash helpers (thresholds, require_nonempty)
+    ├── resolve/                         # chain_mode, chart URLs, GHCR tags, dispatch overrides
+    ├── wallets/                         # mnemonic, HD derive, fund, sweep, KMS signer discovery
+    ├── deploy/                          # helm install wrappers + apply-chain-env / wire-contracts
+    ├── e2e/                             # Argo e2e workflows, wait, report, GCS dry-run assert
+    └── bg/                              # manual RFC-021 QA (not invoked by the deploy workflow)
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -117,7 +123,7 @@ attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`
 | Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
 | Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
 
-Defaults live in [`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs)
+Defaults live in [`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs)
 (`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**
 Override only via dispatch `overrides` / CLI `--set`, or by bumping
 `ALWAYS_DEFAULTS` for everyone. Keep the two keys aligned to the same kms
@@ -220,10 +226,10 @@ admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 ## Chain modes (`chain_mode`: `anvil` | `blockchain-dev` | `testnets`)
 
 `preview-env-deploy.yml` picks the chains via the `chain_mode` dispatch input
-(`ci/preview-env/scripts/resolve-chain.sh` resolves it; PR labels stay on Anvil except
+(`ci/preview-env/scripts/resolve/resolve-chain.sh` resolves it; PR labels stay on Anvil except
 `preview-env-blue-green`, which forces `blockchain-dev`). Everything below the chain
 layer is identical across modes: the same charts, the same overlays, patched at deploy
-time by `apply-chain-env.sh` for the two external modes.
+time by `scripts/deploy/apply-chain-env.sh` for the two external modes.
 
 | Mode | Host chain(s) | Gateway | Wallets | Funding |
 |------|---------------|---------|---------|---------|

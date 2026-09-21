@@ -100,7 +100,7 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 
 **Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
 today). Allowed keys are listed in
-[`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs). Unknown keys
+[`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs). Unknown keys
 fail the run.
 
 | Kind | Override keys | Default on PR / empty dispatch |

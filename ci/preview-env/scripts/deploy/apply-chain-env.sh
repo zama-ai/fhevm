@@ -10,7 +10,7 @@ if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" ]]; the
   exit 0
 fi
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 set_named_env() {
   # $1 file, $2 yq path to env array (e.g. .scDeploy.env), $3 name, $4 value

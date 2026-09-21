@@ -183,7 +183,7 @@ function selectImages({ buildResults, headTag, gpuWorkerTag }) {
 module.exports = async function createE2eInputs({ core, env = process.env, gpuWorkerTag }) {
   const fs = require('fs');
   const path = require('path');
-  const waitBuiltGhcrTags = require('./wait-built-ghcr-tags.cjs');
+  const waitBuiltGhcrTags = require('../resolve/wait-built-ghcr-tags.cjs');
   const { assertLockGhcrTags, selectBaselineGhcrImages } = waitBuiltGhcrTags;
   const headTag = env.NEW_COMMIT_HASH.slice(0, 7);
   const buildResults = JSON.parse(env.DOCKER_BUILD_RESULTS);
