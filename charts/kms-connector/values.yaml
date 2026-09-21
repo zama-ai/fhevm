@@ -170,8 +170,10 @@ kmsConnectorGwListener:
       httpGet:
         path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -244,8 +246,10 @@ kmsConnectorKmsWorker:
       httpGet:
         path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -327,8 +331,10 @@ kmsConnectorTxSender:
       httpGet:
         path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -392,10 +398,12 @@ kmsConnectorEndpoint:
     liveness:
       enabled: true
       httpGet:
-        path: /liveness
+        path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -472,10 +480,12 @@ kmsConnectorProxy:
     liveness:
       enabled: true
       httpGet:
-        path: /liveness
+        path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
