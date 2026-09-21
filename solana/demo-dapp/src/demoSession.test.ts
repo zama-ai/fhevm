@@ -185,6 +185,11 @@ describe('Wallet Standard boundary', () => {
     ).toThrow('does not support message signing');
   });
 
+  test('requires the selected devnet chain before funding', () => {
+    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom', 'devnet')).not.toThrow();
+    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom', 'devnet')).toThrow('has not enabled Solana devnet');
+  });
+
   test('accepts an unchanged decrypt preimage and copies its signature', () => {
     const signature = new Uint8Array([7, 8, 9]);
     expect(

@@ -25,7 +25,7 @@ kubectl get secret solana-recovery -n "$NAMESPACE" -o name >/dev/null
 
 image=${SOLANA_RECOVERY_IMAGE:-}
 if [[ -z "$image" ]]; then
-  # An in-place recovery fix can be newer than the program deployment Jobs.
+  # Use the latest program or recovery image; an older recovery Job must not override a newer deployment.
   image=$(kubectl get jobs -n "$NAMESPACE" -o json | python3 -c '
 import json,sys
 candidates=[]
@@ -33,8 +33,8 @@ for job in json.load(sys.stdin)["items"]:
     metadata=job["metadata"]
     for container in job["spec"]["template"]["spec"]["containers"]:
         if "/solana-programs:" in container["image"]:
-            candidates.append((metadata["name"].startswith("solana-recovery-"), metadata["creationTimestamp"], container["image"]))
-print(max(candidates)[2] if candidates else "")')
+            candidates.append((metadata["creationTimestamp"], container["image"]))
+print(max(candidates)[1] if candidates else "")')
 fi
 [[ -n "$image" ]] || { echo 'SOLANA_RECOVERY_IMAGE required; refusing teardown' >&2; exit 1; }
 # Receipts are public, durable across failed Jobs, and retained until namespace destruction.

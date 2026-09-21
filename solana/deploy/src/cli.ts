@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import { writeSolanaAddressArtifact } from './artifact';
-import { SOLANA_HOST_CHAIN_ID, SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
+import { SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
 import { registerSolanaCoprocessorSql } from './coprocessor';
 import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
@@ -77,7 +77,7 @@ const main = async () => {
     await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: ['zama_host'], programKeypairPaths: await resolveProgramKeypairs(['zama_host']), allowUpgrade: true, environment });
   } else if (target === 'coprocessor' && action === 'register') {
     const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
-      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(process.env.SOLANA_HOST_CHAIN_ID ?? SOLANA_HOST_CHAIN_ID)),
+      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'))),
       encoding: 'utf8',
     });
     if (result.error) throw new Error(`coprocessor registration failed: ${result.error.message}`);
@@ -106,6 +106,7 @@ const main = async () => {
     };
     let ids;
     if (target === 'host') {
+      const chainId = BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'));
       const gateway = await readGatewayBootstrapInputsFromEnv();
       console.log(`environment=${environment}; host=${programIds.zamaHost}; gateway_chain_id=${gateway.gatewayChainId}`);
       console.log(
@@ -113,7 +114,7 @@ const main = async () => {
       );
       ids = await deployHostProgram({
         ...parameters,
-        chainId: BigInt(process.env.SOLANA_HOST_CHAIN_ID ?? SOLANA_HOST_CHAIN_ID),
+        chainId,
         programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),

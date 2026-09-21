@@ -8,6 +8,8 @@ import fs from "node:fs/promises";
 
 import { address, createKeyPairSignerFromBytes } from "@solana/kit";
 
+import { requireRecoverableWallet } from "../../src/solana/recovery";
+
 import type { TestEnv } from "./loadEnv";
 import { openProvisioning } from "./solana/provisioning";
 
@@ -62,6 +64,7 @@ export const loadPersonas = async (
     deployer,
     roles,
     async fund(persona, sol = env.funding.primarySol) {
+      if (env.network === "devnet") await requireRecoverableWallet(persona.address);
       const context = await openProvisioning(env);
       await context.fundSol(address(persona.address), sol);
     },

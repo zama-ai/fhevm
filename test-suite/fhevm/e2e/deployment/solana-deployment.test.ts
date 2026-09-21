@@ -24,7 +24,7 @@ let gateway: ReturnType<typeof Bun.serve> | undefined;
 let env: Record<string, string>;
 
 const deploy = (action = 'deploy', overrides: Record<string, string> = {}, target = 'host') => {
-  const variables = { ...env, ...overrides };
+  const variables: Record<string, string> = { ...env, SOLANA_HOST_CHAIN_ID: '72057594037940281', ...overrides };
   const image = process.env.SOLANA_DEPLOY_TEST_IMAGE;
   if (image && process.platform === 'darwin') {
     for (const name of ['SOLANA_RPC_URL', 'GATEWAY_RPC_URL', 'DATABASE_URL']) {

@@ -16,6 +16,16 @@ import {
 } from '../../../../../solana/deploy/src/environment';
 
 describe('solana environments', () => {
+  test('CLI registration refuses a missing chain id before accessing PostgreSQL', async () => {
+    const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: 'postgres://127.0.0.1:1/unused', SOLANA_KEY_SOURCE_CHAIN_ID: '12345' };
+    delete env.SOLANA_HOST_CHAIN_ID;
+    const child = Bun.spawn([process.execPath, path.join(REPO_ROOT, 'solana/deploy/src/cli.ts'), 'coprocessor', 'register'],
+      { env, stdout: 'pipe', stderr: 'pipe' });
+    const stderr = await new Response(child.stderr).text();
+    expect(await child.exited).not.toBe(0);
+    expect(stderr).toContain('SOLANA_HOST_CHAIN_ID');
+  });
+
   test('bring-up KMS context id matches the tagged gateway default', () => {
     expect(`0x${Buffer.from(BRINGUP_KMS_CONTEXT_ID).toString('hex')}`).toBe(SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT);
   });
