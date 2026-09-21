@@ -948,6 +948,40 @@ start two upgrades.
 **Expect:** the second one is rejected or does nothing. There is still exactly one upgrade, and one
 cutover.
 
+### Edge case 9. Operators disagree
+
+**Why it matters.** The cases above cover an operator being missing. This one covers operators
+being present and disagreeing, which is what the dry run exists to catch.
+
+This corrupts data on one operator. Only run it on an environment you will destroy afterwards.
+
+**What to do.** After Green is started and before you propose, corrupt what operator 2 publishes:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-drift.sh arm
+```
+
+Send a normal proposal, then watch both sides:
+
+```bash
+kubectl logs -n $NAMESPACE deploy/coprocessor-1-gcs-consensus-detector | grep "state-hash divergence"
+bash ci/preview-env/scripts/bg/bg-drift.sh status
+```
+
+**Expect:** `state-hash divergence - all operators responded but hashes disagree`, a rising
+`corrupted`, and **no cutover**. The version stays on `v0.14`, traffic keeps working, and the
+attempt ends `PAUSED` / `failed` with `unanimity_consensus_timeout`. Automatic revert is disabled,
+so no switch is the pass.
+
+If you retry, re-arm first: a rollback recreates the Green schema and drops the injector with it,
+and a retry without re-arming tests nothing.
+
+Remove it when you are done:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-drift.sh disarm
+```
+
 ---
 
 ## 12. Known problems and what to do
@@ -1011,6 +1045,16 @@ keeping up.
 **Check:** run `bash ci/preview-env/scripts/bg/bg-checkpoints.sh dry-run` and look for a `[FAIL]` about
 state hashes differing across operators, or about a chain not ingesting.
 
+Also check for computations that never settled in the 10000 blocks before `start_block` — one
+abandoned row, which edge case 3 can leave behind, stops the dry run ever becoming ready:
+
+```bash
+kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
+  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+  "SELECT count(*) FROM public.computations
+    WHERE is_completed = false AND (is_error = false OR error_message LIKE '%RETRYABLE%');"
+```
+
 **This is a real finding.** Report it with the checkpoint output. Blue is still live, so nothing is
 broken for users.
 
@@ -1021,7 +1065,18 @@ No rows appear in `upgrade_state`.
 **Cause:** each proposal needs an id higher than the previous one. The script uses the current time
 by default, so this is rare. If you set an id by hand, make it larger than the last one.
 
-### Problem 6: traffic fails with "insufficient funds"
+### Problem 6: a proposal is stuck at `UpgradeActivated`
+
+Rows appear in `upgrade_state` but never move, and every later proposal is refused.
+
+**Cause:** the proposal was ingested while no Green was running. Only a Green fleet validates or
+expires an attempt, so with none deployed the row simply stays.
+
+**Fix:** start Green. Its controller picks the row up and fails it, after which a new proposal is
+accepted. `bg-green.sh` refuses to start while an attempt is in progress, so pass
+`ALLOW_ACTIVE_ATTEMPT=1`. No manual database edit is needed.
+
+### Problem 7: traffic fails with "insufficient funds"
 
 The wallets paying for transactions ran out.
 
