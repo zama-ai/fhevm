@@ -73,8 +73,11 @@ pub struct FheExecute<'info> {
     #[account(mut, seeds = [RAND_NONCE_SEED], bump = rand_nonce.bump)]
     pub rand_nonce: Option<Account<'info, RandNonce>>,
     /// Shared by every execution until the transaction's final CloseTransientStore.
+    /// Unchecked so an unopened (system-owned) PDA fails as `TransientStoreNotOpened`
+    /// instead of Anchor's generic owner error.
+    /// CHECK: `opened_transient_store` requires a host-owned journal of the canonical size.
     #[account(mut)]
-    pub transient_store: AccountLoader<'info, TransientStore>,
+    pub transient_store: UncheckedAccount<'info>,
     /// CHECK: authentic runtime transaction instructions, used to require final closure.
     #[account(address = solana_instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
@@ -100,11 +103,9 @@ pub fn fhe_execute<'info>(
         ZamaHostError::InvalidFheExecuteOperationCount
     );
     let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
-    require!(
-        ctx.accounts.transient_store.to_account_info().data_len() == TransientStore::SPACE,
-        ZamaHostError::TransientAccountInvalid
-    );
-    let mut transient_store = ctx.accounts.transient_store.load_mut()?;
+    let transient_store_account =
+        super::transient::opened_transient_store(&ctx.accounts.transient_store)?;
+    let mut transient_store = transient_store_account.load_mut()?;
     transient_store.validate(ctx.accounts.transient_store.key())?;
     super::transient::assert_final_close(
         ctx.accounts.transient_store.key(),
@@ -166,7 +167,7 @@ pub fn fhe_execute<'info>(
     emit_public_outputs_produced(&ctx, created_public_outputs)?;
     // Event CPIs may replace return data; restore the selected handles afterwards.
     return_execution_handles(
-        &*ctx.accounts.transient_store.load()?,
+        &*transient_store_account.load()?,
         call_start,
         &args.returned_results,
     );

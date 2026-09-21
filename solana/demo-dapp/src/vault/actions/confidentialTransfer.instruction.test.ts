@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, it } from 'vitest';
 
@@ -28,9 +28,10 @@ describe('generated confidentialTransfer instruction', () => {
     const underlyingMint = key(14);
     const fromAta = key(15);
     const toAta = key(15);
-    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
+    const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = getConfidentialTransferInstruction({
-      ...fhe.accounts,
+      transientStore: transientStore.address,
+      instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
       owner,
       payer,
       mint,
@@ -69,8 +70,8 @@ describe('generated confidentialTransfer instruction', () => {
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [zamaEvent, AccountRole.READONLY],
-      [fhe.accounts.transientStore, AccountRole.WRITABLE],
-      [fhe.accounts.instructions, AccountRole.READONLY],
+      [transientStore.address, AccountRole.WRITABLE],
+      [INSTRUCTIONS_SYSVAR_ADDRESS, AccountRole.READONLY],
       ['6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu', AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
       ['11111111111111111111111111111111', AccountRole.READONLY],

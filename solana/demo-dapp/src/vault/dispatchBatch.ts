@@ -1,4 +1,4 @@
-import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
@@ -20,7 +20,7 @@ import {
  * account map.
  */
 export type SolanaVaultDispatchParameters = {
-  readonly fhe: SolanaFheTransactionAccounts;
+  readonly transientStore: TransientStore;
   /** Pays the rent for the burn's output encrypted store. Anyone — dispatch is permissionless. */
   readonly payer: TransactionSigner;
   /** Batcher config account. */
@@ -48,7 +48,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
   const totalSupplyAuthority = await totalSupplyAuthorityAddress(joinConfidentialMint);
   return getDispatchInstructionAsync({
-    ...parameters.fhe,
+    transientStore: parameters.transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
     batcher: parameters.batcher,
     batch: parameters.batch,

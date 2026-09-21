@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -382,9 +382,9 @@ export async function depositToVault(
   }
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage('preparing');
-    const fhe = await createSolanaFheTransaction({ payer: signer, programAddress: config.programs.host });
+    const transientStore = await prepareTransientStore({ payer: signer, host: config.programs.host });
     const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       payer: signer,
       owner: signer.address,
       mint: config.mints.joinConfidential,
@@ -393,7 +393,7 @@ export async function depositToVault(
     const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
     shieldInstructions.push(
       await buildWrapUsdcInstruction({
-        fhe: fhe.accounts,
+        transientStore: transientStore,
         owner: signer,
         mint: config.mints.joinConfidential,
         underlyingMint: config.mints.joinUnderlying,
@@ -405,7 +405,7 @@ export async function depositToVault(
 
     onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;
-    const shieldSignature = await send(fhe.wrap(shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
+    const shieldSignature = await send(appendTransientStoreInstructions(transientStore, shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),

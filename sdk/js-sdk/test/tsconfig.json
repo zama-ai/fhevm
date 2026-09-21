@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
   "include": [".", "../src"],
-  "exclude": ["standalone", "browser-next"],
+  "exclude": ["standalone", "browser-next", "../src/_cjs", "../src/_esm", "../src/_types"],
   "compilerOptions": {
     "composite": true,
     "noEmit": true,

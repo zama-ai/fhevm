@@ -241,11 +241,11 @@ export const createConfidentialMint = async (
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
   const hostConfig = await hostConfigAddress();
-  const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.authority, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
-  await context.sendTransaction(params.authority, fhe.wrap([
+  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const transientStore = await prepareTransientStore({ payer: params.authority, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  await context.sendTransaction(params.authority, appendTransientStoreInstructions(transientStore, [
     await vault.buildInitializeMintInstruction({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       authority: params.authority,
       mint,
       underlyingMint: params.underlyingMint,
@@ -268,16 +268,16 @@ export const initializeConfidentialTokenAccount = async (
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
 ): Promise<void> => {
   const vault = await vaultModule();
-  const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
+  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const transientStore = await prepareTransientStore({ payer: params.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
-    fhe: fhe.accounts,
+    transientStore: transientStore,
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
     hostConfig: await hostConfigAddress(),
   });
-  if (instruction) await context.sendTransaction(params.payer, fhe.wrap([instruction]));
+  if (instruction) await context.sendTransaction(params.payer, appendTransientStoreInstructions(transientStore, [instruction]));
 };
 
 /** Escrows a public `amount` of the underlying and rotates it into `owner`'s confidential balance. */
@@ -291,11 +291,11 @@ export const wrapUnderlying = async (
   },
 ): Promise<void> => {
   const vault = await vaultModule();
-  const { createSolanaFheTransaction } = await sdkVerifyModule();
-  const fhe = await createSolanaFheTransaction({ payer: params.owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
-  await context.sendTransaction(params.owner, fhe.wrap([
+  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const transientStore = await prepareTransientStore({ payer: params.owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  await context.sendTransaction(params.owner, appendTransientStoreInstructions(transientStore, [
     await vault.buildWrapUsdcInstruction({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       owner: params.owner,
       mint: params.mint,
       underlyingMint: params.underlyingMint,

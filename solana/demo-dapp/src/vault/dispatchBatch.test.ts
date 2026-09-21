@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -51,7 +51,7 @@ describe('buildDispatchBatchInstruction', () => {
 
   it('derives every non-root account exactly as dispatch.rs validates them', async () => {
     const instruction = await buildDispatchBatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       batcher,
       batch,
@@ -114,7 +114,7 @@ describe('buildDispatchBatchInstruction', () => {
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildDispatchBatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       batcher,
       batch,

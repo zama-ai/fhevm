@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { createSolanaRpc, getAddressEncoder, type Address, type TransactionSigner } from '@solana/kit';
 import {
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
@@ -278,9 +278,9 @@ export const prepareNextBatch = async (
 
   const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
   const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
-  const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
+  const transientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
   const prepared = await openBatchForBatcher({
-    fhe: fhe.accounts,
+    transientStore: transientStore,
     roots,
     batchIndex,
     payer: keeper,
@@ -289,7 +289,7 @@ export const prepareNextBatch = async (
   });
 
   if (current.state.status !== BatchStatus.Pending) {
-    await sendTransaction(config, keeper, fhe.wrap([prepared.instructions[0]!]), PROVISIONING_COMPUTE_UNIT_LIMIT);
+    await sendTransaction(config, keeper, appendTransientStoreInstructions(transientStore, [prepared.instructions[0]!]), PROVISIONING_COMPUTE_UNIT_LIMIT);
   }
 
   const registry = await readRegistry(registryPath);

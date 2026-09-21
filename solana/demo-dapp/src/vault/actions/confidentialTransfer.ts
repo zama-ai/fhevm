@@ -1,8 +1,7 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   AccountRole,
   address,
-  appendTransactionMessageInstructions,
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
@@ -111,9 +110,10 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
-  const fhe = await createSolanaFheTransaction({ payer: feePayer, programAddress: zamaHostProgramAddress });
+  const transientStore = await prepareTransientStore({ payer: feePayer, host: zamaHostProgramAddress });
   const transferInstruction = getConfidentialTransferInstruction({
-    ...fhe.accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
     payer: feePayer,
     mint,
@@ -164,7 +164,7 @@ export async function confidentialTransfer(
     // A live transfer has been observed to exceed 400k CU (PDA bump search and
     // emit_cpi! overhead vary per run); 800k keeps headroom under the 1.4M/tx cap.
     (m) => setTransactionMessageComputeUnitLimit(800_000, m),
-    (m) => appendTransactionMessageInstructions(fhe.wrap([instruction]), m),
+    (m) => appendTransientStoreInstructions(transientStore, [instruction], m),
   );
   const transaction = await signTransactionMessageWithSigners(message);
   assertIsFullySignedTransaction(transaction);

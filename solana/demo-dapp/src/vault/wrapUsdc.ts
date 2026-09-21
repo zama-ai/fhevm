@@ -1,4 +1,4 @@
-import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import {
   getWrapUsdcInstructionAsync,
@@ -15,7 +15,7 @@ import {
 } from './internal/tokenAccounts.js';
 
 export type SolanaVaultWrapUsdcParameters = {
-  readonly fhe: SolanaFheTransactionAccounts;
+  readonly transientStore: TransientStore;
   /** Token owner and transfer authority. */
   readonly owner: TransactionSigner;
   /** The confidential mint whose balance is increased (e.g. cUSDC). */
@@ -44,7 +44,8 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
   const [mintVaultAuthority] = await findMintVaultAuthorityPda({ mint });
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint });
   return getWrapUsdcInstructionAsync({
-    ...parameters.fhe,
+    transientStore: parameters.transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
     mint,
     tokenAccount,

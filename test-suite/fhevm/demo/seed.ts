@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 // seed — the `demo:seed` entrypoint (#1760). Brings a freshly-deployed demo stack to the state the
 // dApp (#1761), the deposit-arc smoke and the rehearsal (#1762) expect, then writes the demo-config
 // JSON that every consumer reads.
@@ -179,20 +179,20 @@ const main = async (): Promise<void> => {
     }),
   ]);
 
-  const mintFhe = await createSolanaFheTransaction({ payer: deployer, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
+  const mintTransientStore = await prepareTransientStore({ payer: deployer, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
   // 3. Confidential mints: cUSDC wraps mock USDC, cShares wraps the share mint.
-  await send(deployer, mintFhe.wrap([
+  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
     await vault.buildInitializeMintInstruction({
-      fhe: mintFhe.accounts,
+      transientStore: mintTransientStore,
       authority: keeper,
       mint: cUsdcMint,
       underlyingMint: mockUsdcMint.address,
       hostConfig,
     }),
   ]));
-  await send(deployer, mintFhe.wrap([
+  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
     await vault.buildInitializeMintInstruction({
-      fhe: mintFhe.accounts,
+      transientStore: mintTransientStore,
       authority: keeper,
       mint: cSharesMint,
       underlyingMint: shareMint,
@@ -275,9 +275,9 @@ const main = async (): Promise<void> => {
   // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
   const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
     const recentSlot = await rpc.getSlot({ commitment: "finalized" }).send();
-    const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
+    const transientStore = await prepareTransientStore({ payer: keeper, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
     const opened = await vault.openBatchForBatcher({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       roots,
       batchIndex: 0n,
       payer: keeper,
@@ -285,7 +285,7 @@ const main = async (): Promise<void> => {
       authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
     });
     const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
-    await send(keeper, fhe.wrap([openBatchInstruction!]));
+    await send(keeper, appendTransientStoreInstructions(transientStore, [openBatchInstruction!]));
     // The create must land in the same transaction that first extends the table (or immediately
     // before it); pair it with the first chunk, then send each later chunk on its own.
     await send(keeper, [createLookupTable!, firstExtend!]);

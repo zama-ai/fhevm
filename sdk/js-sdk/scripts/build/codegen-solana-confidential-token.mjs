@@ -60,8 +60,9 @@ const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
-    // Omit `keep`: render the full instruction/account/type/PDA surface. Errors, events and
-    // constants are still pruned below for every target.
+    // Omit `keep`: render the full instruction/account/type/PDA surface. Events and
+    // constants are still pruned below for every target. Errors stay pruned except
+    // the SDK zama-host client (`keepErrors`).
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
         .find(({ name }) => name === 'confidential_transfer')
@@ -80,6 +81,8 @@ const targets = [
   {
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/src/solana/internal/generated/zamaHost`,
+    // Codama's isZamaHostError / getZamaHostErrorMessage / error constants.
+    keepErrors: true,
     keep: {
       // Keep the transaction lifecycle pair, stateless verifier, and delegation/revocation —
       // the three self-custody instructions a wallet (or a multisig proposal) builds through the
@@ -270,7 +273,7 @@ for (const target of targets) {
           ...program.pdas.filter(({ name }) => !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
         ]
       : []),
-    ...program.errors.map(({ name }) => `[errorNode]${name}`),
+    ...(target.keepErrors ? [] : program.errors.map(({ name }) => `[errorNode]${name}`)),
     ...(program.events ?? []).map(({ name }) => `[eventNode]${name}`),
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];

@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { publicProof, type ProofService } from './internal/publicProof.js';
 import {
   getBase64EncodedWireTransaction,
@@ -120,9 +120,10 @@ export async function settleBatch(
     );
   }
 
-  const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
+  const transientStore = await prepareTransientStore({ payer: keeper, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const settleInstruction = await getSettleInstructionAsync({
-    ...fhe.accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: keeper,
     ...accounts,
     cleartextTotal,
@@ -135,7 +136,7 @@ export async function settleBatch(
 
   const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
   const transaction = await buildAndSignSettleTransaction({
-    instructions: fhe.wrap([settleInstruction]),
+    instructions: appendTransientStoreInstructions(transientStore, [settleInstruction]),
     feePayer: keeper,
     latestBlockhash,
     computeUnitLimit: options.computeUnitLimit ?? 1_000_000,

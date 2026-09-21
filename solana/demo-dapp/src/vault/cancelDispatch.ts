@@ -1,4 +1,4 @@
-import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getCancelDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
@@ -11,7 +11,7 @@ import {
 } from './internal/tokenAccounts.js';
 
 export type SolanaVaultCancelDispatchParameters = {
-  readonly fhe: SolanaFheTransactionAccounts;
+  readonly transientStore: TransientStore;
   /** Join-mint wrapper authority; also pays optional batch-authority funding. */
   readonly payer: TransactionSigner;
   readonly batcher: Address;
@@ -30,7 +30,8 @@ export async function buildCancelDispatchInstruction(
   const batchJoinTokenAccount = await tokenAccountAddress(mint, batchAuthority);
   const totalSupplyAuthority = await totalSupplyAuthorityAddress(mint);
   return getCancelDispatchInstructionAsync({
-    ...parameters.fhe,
+    transientStore: parameters.transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
     batcher: parameters.batcher,
     batch: parameters.batch,

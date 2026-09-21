@@ -154,11 +154,11 @@ describe('public USDC deposit', () => {
     expect([...body[0]!.data!]).toEqual([...OPEN_TRANSIENT_STORE_DISCRIMINATOR]);
     expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual(initialize ? [[1], [2]] : [[2]]);
     expect([...body.at(-1)!.data!]).toEqual([...CLOSE_TRANSIENT_STORE_DISCRIMINATOR]);
-    const initContext = mocks.buildInitialize.mock.calls[0]![1].fhe;
-    const wrapContext = mocks.buildWrap.mock.calls[0]![0].fhe;
+    const initContext = mocks.buildInitialize.mock.calls[0]![1].transientStore;
+    const wrapContext = mocks.buildWrap.mock.calls[0]![0].transientStore;
     expect(initContext).toEqual(wrapContext);
-    expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.transientStore);
-    expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.transientStore);
+    expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.address);
+    expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.address);
     expect(mocks.joinBatch).toHaveBeenCalledOnce();
   });
 });

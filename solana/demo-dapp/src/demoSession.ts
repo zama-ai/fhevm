@@ -14,6 +14,11 @@ import { SolanaSignOffchainMessage, type SolanaSignOffchainMessageFeature } from
 import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
+import {
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  getZamaHostErrorMessage,
+  type ZamaHostError,
+} from '@fhevm/sdk/solana/host';
 
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
 import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
@@ -62,11 +67,52 @@ export const describeWalletError = (error: unknown, context: 'connect' | 'transa
     candidate?.code === 4_001_000 ||
     (typeof candidate?.message === 'string' &&
       /user rejected|request rejected|cancelled by user/i.test(candidate.message));
-  if (!rejected) return error instanceof Error ? error.message : String(error);
-  if (context === 'connect') return 'Wallet connection cancelled';
-  if (context === 'reveal') return 'Signature cancelled — your confidential balance remains hidden';
-  return 'Signature cancelled — nothing new was sent; any confirmed step is saved';
+  if (rejected) {
+    if (context === 'connect') return 'Wallet connection cancelled';
+    if (context === 'reveal') return 'Signature cancelled — your confidential balance remains hidden';
+    return 'Signature cancelled — nothing new was sent; any confirmed step is saved';
+  }
+  const host = identifiedZamaHostErrorCopy(error);
+  if (host !== undefined) return host;
+  return error instanceof Error ? error.message : String(error);
 };
+
+const HOST_FAILED = new RegExp(
+  `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed(?:[^\\n]*custom program error: 0x([0-9a-f]+))?`,
+  'i',
+);
+
+function identifiedZamaHostErrorCopy(error: unknown): string | undefined {
+  const text = diagnosticText(error);
+  const failed = text.match(HOST_FAILED);
+  const hex = failed?.[1];
+  if (hex === undefined) return undefined;
+  const code = Number.parseInt(hex, 16);
+  if (!Number.isInteger(code)) return undefined;
+  const message = getZamaHostErrorMessage(code as ZamaHostError);
+  if (typeof message !== 'string' || message.length === 0) return undefined;
+  if (message === 'Error message not available in production bundles.') return undefined;
+  const name = text.match(/Error Code: (\w+)\./)?.[1];
+  return name === undefined ? message : `${name}: ${message}`;
+}
+
+function diagnosticText(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error == null || typeof error !== 'object') return '';
+  const record = error as { readonly message?: unknown; readonly logs?: unknown; readonly context?: unknown };
+  const parts: string[] = [];
+  if (typeof record.message === 'string') parts.push(record.message);
+  if (Array.isArray(record.logs)) {
+    parts.push(record.logs.filter((line): line is string => typeof line === 'string').join('\n'));
+  }
+  if (record.context !== null && typeof record.context === 'object') {
+    const logs = (record.context as { readonly logs?: unknown }).logs;
+    if (Array.isArray(logs)) {
+      parts.push(logs.filter((line): line is string => typeof line === 'string').join('\n'));
+    }
+  }
+  return parts.join('\n');
+}
 
 export const planDemoFunding = (
   solLamports: bigint,

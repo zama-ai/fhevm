@@ -201,16 +201,16 @@ An app program drives compute by CPI into `zama-host`, using
   The client opens the transient store before application calls and closes it last, refunding its rent. There is no
   receiver-callback path — that EVM workaround is unnecessary on Solana.
 
-The transaction owner creates the context once, forwards its accounts to all app
-builders, and wraps the complete body before signing:
+The transaction owner prepares the transient store once, forwards it to all app
+builders, and appends the complete body before signing:
 
 ```ts
-import { createSolanaFheTransaction, solanaHostProgram } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore, solanaHostProgram } from '@fhevm/sdk/solana';
 
-const fhe = await createSolanaFheTransaction({ payer, programAddress: solanaHostProgram(chain) });
-const initialize = await buildInitialize({ ...inputs, fhe: fhe.accounts });
-const join = await buildJoin({ ...inputs, fhe: fhe.accounts });
-const instructions = fhe.wrap([initialize, join]);
+const transientStore = await prepareTransientStore({ payer, host: solanaHostProgram(chain) });
+const initialize = await buildInitialize({ ...inputs, transientStore });
+const join = await buildJoin({ ...inputs, transientStore });
+const instructions = appendTransientStoreInstructions(transientStore, [initialize, join]);
 // Sign and send through the application's existing transaction transport.
 ```
 
@@ -221,6 +221,9 @@ For a stored multisig proposal, declare that transient store payer up front and 
 its signature on the outer execution transaction. Transient store rent is refunded to
 that payer by the final close. Its fixed capacity is 112 result occurrences and
 32 explicit grants; packet and compute limits may bind earlier.
+Omitting `appendTransientStoreInstructions` fails the first FHE instruction as
+`TransientStoreNotOpened`. The generated host client identifies that error when
+the failed instruction is the host; the demo formats it only then.
 
 ## Documentation
 
