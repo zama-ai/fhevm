@@ -207,6 +207,24 @@ tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 ```
 
+### Call the relayer (no port-forward)
+
+Every preview publishes the relayer HTTP API (`:3000` only — not metrics, not the
+admin endpoint) on the zws-dev tailnet via a Tailscale Ingress named
+`relayer-<namespace>`. The MagicDNS URL is written to the deploy run summary and
+the PR `:rocket:` comment as `RELAYER_TS_URL`.
+
+With Tailscale up:
+
+```bash
+curl -sS https://relayer-<namespace>.diplodocus-boa.ts.net/v2/keyurl
+# or point @fhevm/sdk / a toy dapp at that base URL
+```
+
+Deleting the namespace (PR close / `preview-env destroy`) removes the Ingress and
+the operator drops the MagicDNS name. Access is Tailscale-ACL only (tag
+`tag:k8s-zws-dev`), not the public internet.
+
 ## Observe your environment
 
 Deploy with the `observability` dispatch input set to `true` (off by default,
