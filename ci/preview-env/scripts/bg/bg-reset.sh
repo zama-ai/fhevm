@@ -15,18 +15,32 @@
 #      BCS_STACK_VERSION (default: what the running Blue binary prints for
 #      --stack-version, which is also what the Blue migration job bootstrapped),
 #      QUIET_SECS (120: refuse if any party received work in the last N seconds),
-#      FORCE (false: skip the traffic checks), DRY_RUN (false: checks only).
+#      FORCE (false: skip the traffic checks), DRY_RUN (false: checks only),
+#      GREEN_SLOT (-gcs) / LIVE_RELEASE_SUFFIX ("") / LIVE_CONSENSUS_VERSION (1) - see bg-green.sh.
+#        A second round inverts the slots: the live fleet sits in -gcs and Green took the slot the
+#        retired one vacated, so a reset after one needs both set.
 set -euo pipefail
 
 : "${NAMESPACE:?}"
 NB_COPROCESSOR="${NB_COPROCESSOR:-2}"
+GREEN_SLOT="${GREEN_SLOT--gcs}"
+LIVE_RELEASE_SUFFIX="${LIVE_RELEASE_SUFFIX:-}"
+LIVE_CONSENSUS_VERSION="${LIVE_CONSENSUS_VERSION:-1}"
 if [[ -z "${DEPLOY_POLYGON:-}" ]]; then
   DEPLOY_POLYGON=false
-  helm status coprocessor-polygon-1 -n "${NAMESPACE}" >/dev/null 2>&1 && DEPLOY_POLYGON=true
+  helm status "coprocessor-polygon-1${LIVE_RELEASE_SUFFIX}" -n "${NAMESPACE}" >/dev/null 2>&1 && DEPLOY_POLYGON=true
 fi
 # Read the version string from the Blue binary (a 0.14.1 image still prints 0.14.0),
 # not from a pin: the retired Blue pods are still there at this point.
-BCS_STACK_VERSION="${BCS_STACK_VERSION:-$(kubectl exec -n "${NAMESPACE}" deploy/coprocessor-1-host-listener-consumer -- host_listener --stack-version)}"
+live_consumer_pod() {
+  kubectl get pods -n "${NAMESPACE}" --no-headers -o custom-columns=N:.metadata.name 2>/dev/null \
+    | grep -E "^coprocessor-1${LIVE_RELEASE_SUFFIX}-host-listener-consumer-[a-z0-9-]+$" | head -1
+}
+if [[ -z "${BCS_STACK_VERSION:-}" ]]; then
+  live_pod=$(live_consumer_pod)
+  [[ -n "${live_pod}" ]] || { echo "::error::no live host-listener-consumer pod matching coprocessor-1${LIVE_RELEASE_SUFFIX}-; set LIVE_RELEASE_SUFFIX or BCS_STACK_VERSION" >&2; exit 1; }
+  BCS_STACK_VERSION=$(kubectl exec -n "${NAMESPACE}" "${live_pod}" -- host_listener --stack-version)
+fi
 QUIET_SECS="${QUIET_SECS:-120}"
 FORCE="${FORCE:-false}"
 DRY_RUN="${DRY_RUN:-false}"
@@ -44,27 +58,45 @@ WORK_TABLES="ciphertexts, ciphertexts128, ciphertext_digest, computations, pbs_c
   coprocessor_settlement, bridge_handle_events, delegate_user_decrypt, drift_revert_signal,
   input_blobs"
 
-# This resets to Blue, so it always runs after a cutover - the live version alone proves nothing.
-# What it must not do is run on a *second-round* environment, where the roles are inverted: the
-# fleet it would keep as "Blue" is the newer one and the fleet it would uninstall is the live 0.15.
-# Compare the two binaries and refuse when Blue is not older than Green.
+fail() { echo "::error::$*" >&2; exit 1; }
+
+# This resets to the live fleet, so it always runs after a cutover - the live version alone proves
+# nothing. What it must not do is uninstall the fleet it should keep. Compare the two CONFIGURED
+# slots and refuse when the one to keep is not older than the one to remove; on a second round pass
+# LIVE_RELEASE_SUFFIX/GREEN_SLOT so the right pair is compared.
 binary_version() { # binary_version <release>   empty when the release has no consumer deployment
-  kubectl exec -n "${NAMESPACE}" "deploy/$1-host-listener-consumer" -- host_listener --stack-version \
-    2>/dev/null | tr -d '\r' || true
+  # By pod name, not `exec deploy/`: the chart's selectors do not separate fleets, so a selector
+  # lookup can answer from the wrong one - fatal in a check whose job is telling fleets apart.
+  local pod
+  pod=$(kubectl get pods -n "${NAMESPACE}" --no-headers -o custom-columns=N:.metadata.name 2>/dev/null \
+    | grep -E "^$1-host-listener-consumer-[a-z0-9-]+$" | head -1 || true)
+  [[ -n "${pod}" ]] || return 0
+  kubectl exec -n "${NAMESPACE}" "${pod}" -- host_listener --stack-version 2>/dev/null | tr -d '\r' || true
 }
-blue_v=$(binary_version "coprocessor-1")
-green_v=$(binary_version "coprocessor-1-gcs")
+live_rel="coprocessor-1${LIVE_RELEASE_SUFFIX}"
+green_rel="coprocessor-1${GREEN_SLOT}"
+blue_v=$(binary_version "${live_rel}")
+green_v=$(binary_version "${green_rel}")
 if [[ -n "${blue_v}" && -n "${green_v}" ]]; then
-  # Sort -V puts the older first; if Blue is not strictly older the slots are inverted.
+  # Sort -V puts the older first; if the fleet to keep is not strictly older the slots are inverted.
   if [[ "$(printf '%s\n%s\n' "${blue_v}" "${green_v}" | sort -V | head -1)" != "${blue_v}" \
      || "${blue_v}" == "${green_v}" ]]; then
-    fail "coprocessor-1 runs ${blue_v} and coprocessor-1-gcs runs ${green_v}: the slots are inverted, so this would uninstall the live fleet and keep the newer one as Blue. bg-reset only supports resetting a first round."
+    fail "${live_rel} runs ${blue_v} and ${green_rel} runs ${green_v}: the slots are inverted, so this would uninstall the live fleet and keep the newer one. Set LIVE_RELEASE_SUFFIX/GREEN_SLOT for the round you are resetting."
   fi
+fi
+# A fleet outside the two configured slots would survive the reset, and a stray fleet whose binary
+# is newer than the restored versioning comes up in GCS mode and acts on the next proposal.
+stray=""
+while IFS= read -r sfx; do
+  [[ "${sfx}" == "${LIVE_RELEASE_SUFFIX}" || "${sfx}" == "${GREEN_SLOT}" ]] && continue
+  stray+="${sfx:-(unsuffixed)} "
+done < <(helm list -n "${NAMESPACE}" -q 2>/dev/null | grep -E "^coprocessor-[0-9]+" \
+           | sed -E "s/^coprocessor-[0-9]+//" | sort -u)
+if [[ -n "${stray}" && "${FORCE}" != "true" ]]; then
+  fail "coprocessor fleets exist in unconfigured slot(s): ${stray}- this reset would leave them installed. Uninstall them, or re-run per slot (FORCE=true to override)."
 fi
 
 trap 'echo "::error::bg-reset aborted at line ${LINENO}. Blue may be scaled to zero: fix the cause and re-run (idempotent)." >&2' ERR
-
-fail() { echo "::error::$*" >&2; exit 1; }
 
 psql_party() {
   local party="$1" sql="$2"
@@ -81,8 +113,8 @@ list_blue_deployments() {
   local party="$1" all
   all=$(kubectl get deploy -n "${NAMESPACE}" \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}') || fail "kubectl get deploy failed"
-  grep -E "^coprocessor-(${party}|polygon-${party}|poller-${party}|poller-polygon-${party})-" <<<"${all}" \
-    | grep -v -- "-gcs-" > "${work}/blue-${party}" || true
+  grep -E "^coprocessor-(${party}|polygon-${party})${LIVE_RELEASE_SUFFIX}-(gw|host|sns|tfhe|tx|zk|upgrade|consensus)|^coprocessor-poller-(polygon-)?${party}${LIVE_RELEASE_SUFFIX}-host" \
+    <<<"${all}" > "${work}/blue-${party}" || true
   [[ -s "${work}/blue-${party}" ]] || fail "party ${party}: no Blue deployments found in ${NAMESPACE}"
 }
 blue_deployments() { cat "${work}/blue-$1"; }
@@ -96,7 +128,7 @@ deploy_logs() {
   if [[ -n "${pod}" ]]; then kubectl logs -n "${NAMESPACE}" "${pod}" 2>/dev/null || true; fi
 }
 
-echo "== bg-reset: ${NAMESPACE}, ${NB_COPROCESSOR} parties, polygon=${DEPLOY_POLYGON}, target versioning ${BCS_STACK_VERSION}/1"
+echo "== bg-reset: ${NAMESPACE}, ${NB_COPROCESSOR} parties, polygon=${DEPLOY_POLYGON}, target versioning ${BCS_STACK_VERSION}/${LIVE_CONSENSUS_VERSION}"
 for i in $(seq 1 "${NB_COPROCESSOR}"); do list_blue_deployments "${i}"; done
 
 # ---- 0. preconditions: no traffic -------------------------------------------
@@ -123,7 +155,7 @@ fi
 
 # ---- 1. Green releases off ----------------------------------------------------
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  for rel in "coprocessor-${i}-gcs" "coprocessor-polygon-${i}-gcs" "coprocessor-poller-${i}-gcs" "coprocessor-poller-polygon-${i}-gcs"; do
+  for rel in "coprocessor-${i}${GREEN_SLOT}" "coprocessor-polygon-${i}${GREEN_SLOT}" "coprocessor-poller-${i}${GREEN_SLOT}" "coprocessor-poller-polygon-${i}${GREEN_SLOT}"; do
     if helm status "${rel}" -n "${NAMESPACE}" >/dev/null 2>&1; then
       helm uninstall "${rel}" -n "${NAMESPACE}" --wait --timeout 5m
     else
@@ -131,7 +163,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     fi
   done
   # Helm hook Jobs (pre-install migration) outlive the release.
-  kubectl delete job -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${i}-gcs-db-migration" --ignore-not-found
+  kubectl delete job -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${i}${GREEN_SLOT}-db-migration" --ignore-not-found
 done
 
 # ---- 2. Blue and pollers off, then no DB sessions -----------------------------
@@ -155,7 +187,7 @@ done
 
 # ---- 3. database reset, one transaction per party -----------------------------
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  echo "party ${i}: clearing work tables, deleting upgrade_state, dropping any Green schema, versioning -> ${BCS_STACK_VERSION}/1"
+  echo "party ${i}: clearing work tables, deleting upgrade_state, dropping any Green schema, versioning -> ${BCS_STACK_VERSION}/${LIVE_CONSENSUS_VERSION}"
   kubectl exec -i -n "${NAMESPACE}" "postgres-coprocessor-${i}-0" -- \
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -v ON_ERROR_STOP=1 -q <<SQL
 BEGIN;
@@ -171,13 +203,13 @@ BEGIN
   END LOOP;
 END
 \$\$;
-UPDATE versioning SET stack_version = '${BCS_STACK_VERSION}', consensus_version = 1, updated_at = now()
+UPDATE versioning SET stack_version = '${BCS_STACK_VERSION}', consensus_version = ${LIVE_CONSENSUS_VERSION}, updated_at = now()
  WHERE singleton = TRUE;
 COMMIT;
 SQL
   got=$(psql_party "${i}" "SELECT stack_version||'/'||consensus_version||' upgrade_state='||(SELECT count(*) FROM upgrade_state)||' computations='||(SELECT count(*) FROM computations)||' gcs_schemas='||(SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'gcs%')||' keys='||(SELECT count(*) FROM keys)||' crs='||(SELECT count(*) FROM crs)||' host_chains='||(SELECT count(*) FROM host_chains) FROM versioning;")
   echo "party ${i}: ${got}"
-  [[ "${got}" == "${BCS_STACK_VERSION}/1 upgrade_state=0 computations=0 gcs_schemas=0 keys="* ]] || fail "party ${i} post-reset state unexpected"
+  [[ "${got}" == "${BCS_STACK_VERSION}/${LIVE_CONSENSUS_VERSION} upgrade_state=0 computations=0 gcs_schemas=0 keys="* ]] || fail "party ${i} post-reset state unexpected"
   [[ "${got}" == *" keys=0 "* || "${got}" == *" crs=0 "* ]] && fail "party ${i} lost keys/CRS - this should be impossible, stop and inspect"
 done
 
@@ -196,7 +228,7 @@ done
 # ---- 5. verify: Blue live, pollers parked, consumers ingesting ----------------
 failed=0
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
-  blue_tag=$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-${i}-host-listener-consumer" \
+  blue_tag=$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-${i}${LIVE_RELEASE_SUFFIX}-host-listener-consumer" \
     -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://')
   for d in $(blue_deployments "${i}"); do
     mode=""
