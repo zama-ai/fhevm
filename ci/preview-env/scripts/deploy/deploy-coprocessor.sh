@@ -158,7 +158,7 @@ if [[ "${BLUE_GREEN}" == "true" ]]; then
   # Manual Blue/Green QA mode (no automated_tests): Blue only. Green (migration, fleet,
   # upgrade-controller, consensus-detector) is started later with bg-green.sh.
   if [[ "${AUTOMATED_TESTS}" != "true" ]]; then
-    echo "Blue/Green manual mode: GCS release not installed (start it with ci/preview-env/scripts/bg-green.sh)"
+    echo "Blue/Green manual mode: GCS release not installed (start it with ci/preview-env/scripts/bg/bg-green.sh)"
   else
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
       privkey=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}")

@@ -12,7 +12,7 @@
 # coprocessor deployment, chain ids from host_chains, the ACL owner key (index 9) from
 # preview-wallets-mnemonic, and the hardhat image from the deployed host-contracts release.
 #
-# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-propose.sh calldata|send|wait-cutover
+# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-propose.sh calldata|send|wait-cutover
 # Env: NAMESPACE (required); PROPOSAL_ID (default: unix seconds - unique and above any previous id);
 #      GCS_VERSION (default: v + the gcs overlay's stackVersion); START_LEAD_SECS (300);
 #      WINDOW_DURATION (5h); BUFFER (0); TIMEOUT_SECS (900, DryRunStarted / cutover wait);
@@ -27,7 +27,7 @@ extra_args="${PROPOSE_EXTRA_ARGS:-}"
 [[ "${1:-}" == "--" ]] && shift
 [[ $# -gt 0 ]] && extra_args="${extra_args:+${extra_args} }$*"
 : "${NAMESPACE:?}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 fail() { echo "::error::$*" >&2; exit 1; }
 
 secret_val() { kubectl get secret -n "${NAMESPACE}" "$1" -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d 2>/dev/null || true; }
@@ -90,8 +90,8 @@ echo "== bg-propose ${verb}: ${NAMESPACE}, ${nb} operators, ${chain_mode} chains
 echo "   host ${host_http%%\?*} | polygon ${polygon_http%%\?*} | gateway ${gateway_http} | tool ${host_image##*/}"
 
 case "${verb}" in
-  calldata)     env "${common[@]}" PROPOSE_DRY_RUN=true  bash "${root}/ci/preview-env/scripts/propose-coprocessor-upgrade.sh" ;;
-  send)         env "${common[@]}" PROPOSE_DRY_RUN=false bash "${root}/ci/preview-env/scripts/propose-coprocessor-upgrade.sh" ;;
-  wait-cutover) env "${common[@]}" SKIP_PROPOSE=true ASSERT_CUTOVER=true bash "${root}/ci/preview-env/scripts/propose-coprocessor-upgrade.sh" ;;
+  calldata)     env "${common[@]}" PROPOSE_DRY_RUN=true  bash "${root}/ci/preview-env/scripts/deploy/propose-coprocessor-upgrade.sh" ;;
+  send)         env "${common[@]}" PROPOSE_DRY_RUN=false bash "${root}/ci/preview-env/scripts/deploy/propose-coprocessor-upgrade.sh" ;;
+  wait-cutover) env "${common[@]}" SKIP_PROPOSE=true ASSERT_CUTOVER=true bash "${root}/ci/preview-env/scripts/deploy/propose-coprocessor-upgrade.sh" ;;
   *) fail "unknown verb '${verb}' (calldata|send|wait-cutover)" ;;
 esac

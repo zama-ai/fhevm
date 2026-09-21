@@ -11,7 +11,7 @@ set -euo pipefail
 : "${COMMON_CHART_VERSION:?}"
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-root=$(cd "${script_dir}/.." && pwd)
+root=$(cd "${script_dir}/../.." && pwd)
 E2E_PHASE="${E2E_PHASE:-default}"
 
 patch_image() {
