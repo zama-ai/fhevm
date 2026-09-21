@@ -26,7 +26,6 @@ const TREES: readonly string[] = [
   'sdk/js-sdk/README.md',
   'sdk/js-sdk/docs',
   'solana/demo-dapp/src',
-  'solana/demo-dapp/demoServerPlugin.ts',
   'solana/README.md',
   'test-suite/fhevm/src',
   'test-suite/fhevm/e2e',

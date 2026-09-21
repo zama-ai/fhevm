@@ -651,14 +651,14 @@ test.skipIf(!runsDemoScenarios)(
       body: JSON.stringify({ address: alice.address, amount: 1 }),
     });
     if (!mintResponse.ok) throw new Error(`refund fixture mint failed (${mintResponse.status})`);
-    const fhe = await createSolanaFheTransaction({ payer: alice, programAddress: config.programs.host });
+    const transientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
     const mint = roots.joinConfidentialMint;
     const init = await vault.getOrCreateConfidentialTokenAccountInstruction(rpc, {
-      fhe: fhe.accounts, payer: alice, owner: alice.address, mint, hostConfig: config.hostConfig,
+      transientStore, payer: alice, owner: alice.address, mint, hostConfig: config.hostConfig,
     });
-    if (init) await sendTransaction(dappConfig, alice, fhe.wrap([init]), WRAP_COMPUTE_UNIT_LIMIT);
-    await sendTransaction(dappConfig, alice, fhe.wrap([await vault.buildWrapUsdcInstruction({
-      fhe: fhe.accounts, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
+    if (init) await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [init]), WRAP_COMPUTE_UNIT_LIMIT);
+    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [await vault.buildWrapUsdcInstruction({
+      transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
       tokenProgram: vault.TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, amount,
     })]), WRAP_COMPUTE_UNIT_LIMIT);
     sdk.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
@@ -723,12 +723,12 @@ test.skipIf(!runsDemoScenarios)(
     expect(dispatched.state.joinCount).toBe(1n);
     const pendingBefore = (await account()).value;
     expect(pendingBefore).not.toBeNull();
-    // Reconstruct every operator input from durable sources, as after losing the response/process.
+    // Reconstruct every operator input from persisted state, as after losing the response/process.
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
     expect((await account()).value).toEqual(pendingBefore);
-    const keeperFhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
-    await sendTransaction(dappConfig, keeper, keeperFhe.wrap([await vault.buildCancelDispatchInstruction({
-      fhe: keeperFhe.accounts, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
+    const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
+    await sendTransaction(dappConfig, keeper, appendTransientStoreInstructions(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
+      transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
       hostConfig: config.hostConfig, authorityFundingLamports: BigInt(config.authorityFundingLamports),
     })]), JOIN_COMPUTE_UNIT_LIMIT);
     expect((await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'confirmed' })).state.status).toBe(BATCH_STATUS_REFUNDING);
@@ -738,7 +738,7 @@ test.skipIf(!runsDemoScenarios)(
     })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
     expect((await rpc.getBalance(batchAuthority, { commitment: 'confirmed' }).send()).value === 0n).toBe(true);
     const quit = await vault.buildQuitInstruction({
-      ...fhe.accounts, user: alice, payer: alice, batcher: roots.batcher, batch,
+      transientStore, user: alice, payer: alice, batcher: roots.batcher, batch,
       joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
       batchAuthorityAta: await associatedTokenAddress(batchAuthority, roots.joinUnderlyingMint, vault.TOKEN_PROGRAM_ADDRESS),
       userAta: await associatedTokenAddress(alice.address, roots.joinUnderlyingMint, vault.TOKEN_PROGRAM_ADDRESS),
@@ -746,11 +746,11 @@ test.skipIf(!runsDemoScenarios)(
       userBalanceStore, joinStore, hostConfig: config.hostConfig,
       zamaEventAuthority: await zamaEventAuthorityAddress(), confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
     });
-    await sendTransaction(dappConfig, alice, fhe.wrap([quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
     // A retry cannot credit the original contribution twice.
-    await sendTransaction(dappConfig, alice, fhe.wrap([quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
     console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);
