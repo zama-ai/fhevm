@@ -701,7 +701,7 @@ describe("stack", () => {
     ]);
   });
 
-  test("re-homes a promoted registry Green before staging local 0.15.1", async () => {
+  test.each([undefined, { mode: "registry" as const, tag: "c9a9e92", compatTag: "v0.15.1" }])("re-homes promoted Green before staging the next source %j", async (source) => {
     const state: State = {
       target: "latest-main",
       lockPath: "/tmp/lock.json",
@@ -734,14 +734,14 @@ describe("stack", () => {
       async saveState(next: State) { saved.push(next); },
     };
 
-    await restagePromotedGreen({}, operations);
+    await restagePromotedGreen({ source }, operations);
 
     const next = saved[0]?.scenario;
     expect(next?.kind).toBe("blue-green");
     if (next?.kind === "blue-green") {
       expect(next.bcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
       expect(next.bcs.env.FORCE_LEGACY_SERVER_KEY).toBe("true");
-      expect(next.gcs.source).toEqual({ mode: "local" });
+      expect(next.gcs.source).toEqual(source ?? { mode: "local" });
       expect(next.gcs.deferredStart).toBe(true);
       expect(next.gcs.env.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
     }

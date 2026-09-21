@@ -8,7 +8,11 @@ on:
         required: true
         type: string
       rfc029_blue_tag:
-        description: "Exact 0.15.0 source tag or full commit SHA built by the RFC 029 rollout"
+        description: "Exact published 0.15.0 candidate source tag or full commit SHA"
+        required: false
+        type: string
+      rfc029_green_sha:
+        description: "Full source SHA of the published 0.15.1 candidate images"
         required: false
         type: string
 
@@ -30,6 +34,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ROLLOUT_RUNBOOK: ${{ inputs.runbook }}
       RFC029_BLUE_TAG: ${{ inputs.rfc029_blue_tag }}
+      RFC029_GREEN_SHA: ${{ inputs.rfc029_green_sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

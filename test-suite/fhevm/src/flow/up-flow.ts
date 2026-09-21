@@ -2168,6 +2168,7 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
 };
 
 export type RestageDeferredGreenOptions = {
+  source?: Extract<State["scenario"], { kind: "blue-green" }>["gcs"]["source"];
   env?: Record<string, string>;
   args?: Record<string, string[]>;
 };
@@ -2241,7 +2242,7 @@ export const restagePromotedGreen = async (
       ...scenario,
       bcs: promotedBlue,
       gcs: {
-        source: { mode: "local" },
+        source: options.source ?? { mode: "local" },
         deferredStart: true,
         env: options.env ?? {},
         args: options.args ?? {},

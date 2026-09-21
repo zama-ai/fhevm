@@ -98,6 +98,7 @@ export type RolloutRunContext = {
   startDeferredGreen(): Promise<void>;
   /** Re-homes promoted Green as Blue and prepares a newer deferred Green fleet. */
   restagePromotedGreen(options: {
+    source?: Extract<State["scenario"], { kind: "blue-green" }>["gcs"]["source"];
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   }): Promise<void>;
