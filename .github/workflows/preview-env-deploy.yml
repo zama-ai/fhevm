@@ -1239,6 +1239,12 @@ jobs:
             kubectl get pods -n ${{ env.NAMESPACE }}
             ```
 
+            Relayer HTTP (Tailscale MagicDNS, no port-forward):
+            ```bash
+            curl -sS ${{ env.RELAYER_TS_URL }}/v2/keyurl
+            # or point @fhevm/sdk / a toy dapp at ${{ env.RELAYER_TS_URL }}
+            ```
+
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
@@ -1260,6 +1266,14 @@ jobs:
             echo "kubectl get pods -n ${NAMESPACE}"
             echo '```'
             echo
+            if [[ -n "${RELAYER_TS_URL:-}" ]]; then
+              echo "Relayer HTTP (Tailscale MagicDNS, no port-forward):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_TS_URL}/v2/keyurl"
+              echo "# or point @fhevm/sdk / a toy dapp at ${RELAYER_TS_URL}"
+              echo '```'
+              echo
+            fi
             if [[ "${OBSERVABILITY}" == "true" ]]; then
               echo "Observability stack deployed (see ci/preview-env/observability/):"
               echo '```bash'
