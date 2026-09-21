@@ -30,7 +30,7 @@ jobs:
           filters: |
             fees-burner:
               - .github/workflows/protocol-contracts-fees-burner-tests.yml
-              - protocol-contracts/feesBurner/**
+              - protocol-contracts/contracts/feesBurner/**
   tests:
     name: protocol-contracts-fees-burner-tests/tests (bpr)
     needs: check-changes
@@ -49,7 +49,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: protocol-contracts/feesBurner/package-lock.json
+          cache-dependency-path: protocol-contracts/contracts/feesBurner/package-lock.json
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
@@ -65,25 +65,25 @@ jobs:
           curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       - name: Install dependencies
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make install
 
       - name: Check contract selectors
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make check-selectors
 
       - name: Run compile
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make compile
 
       - name: Run unit tests
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make test
 
       - name: Run coverage
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make coverage
 
       - name: Check coverage thresholds (core contracts only)
-        working-directory: protocol-contracts/feesBurner
+        working-directory: protocol-contracts/contracts/feesBurner
         run: make coverage-check

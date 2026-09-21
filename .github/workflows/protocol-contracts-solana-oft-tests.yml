@@ -35,7 +35,7 @@ jobs:
           filters: |
             solana-oft:
               - .github/workflows/protocol-contracts-solana-oft-tests.yml
-              - protocol-contracts/solanaOFT/**
+              - protocol-contracts/contracts/solanaOFT/**
   tests:
     name: protocol-contracts-solana-oft-tests/tests (bpr)
     needs: check-changes
@@ -59,7 +59,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: protocol-contracts/solanaOFT/pnpm-lock.yaml
+          cache-dependency-path: protocol-contracts/contracts/solanaOFT/pnpm-lock.yaml
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
@@ -75,17 +75,17 @@ jobs:
           curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       - name: Install dependencies
-        working-directory: protocol-contracts/solanaOFT
+        working-directory: protocol-contracts/contracts/solanaOFT
         run: make install
 
       - name: Run lint
-        working-directory: protocol-contracts/solanaOFT
+        working-directory: protocol-contracts/contracts/solanaOFT
         run: make lint-check
 
       - name: Run compile
-        working-directory: protocol-contracts/solanaOFT
+        working-directory: protocol-contracts/contracts/solanaOFT
         run: make compile
 
       - name: Run foundry tests
-        working-directory: protocol-contracts/solanaOFT
+        working-directory: protocol-contracts/contracts/solanaOFT
         run: make test
