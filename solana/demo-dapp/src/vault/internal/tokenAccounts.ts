@@ -1,13 +1,8 @@
 import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
-
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from './generated/confidentialToken/programAddress.js';
-import { findTotalSupplyAuthorityPda } from './generated/confidentialToken/pdas/totalSupplyAuthority.js';
 // The `__event_authority` seed and the canonical token-value derivation are owned by batcherPdas;
 // import them rather than re-declaring the seed / re-implementing the derivation here.
 import { EVENT_AUTHORITY_SEED } from './batcherPdas.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS, findTotalSupplyAuthorityPda } from '@fhevm/confidential-token';
 
 // Slot key shared with confidential_token::state.
 export const BALANCE_KEY = new TextEncoder().encode('balance_________________________');

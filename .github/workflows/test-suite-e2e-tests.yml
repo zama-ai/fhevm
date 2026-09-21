@@ -223,6 +223,10 @@ jobs:
         working-directory: sdk/js-sdk
         run: npm run build:esm && npm run build:types
 
+      - name: Install the confidential-token client's frozen dependency graph
+        working-directory: solana/clients/confidential-token
+        run: bun install --frozen-lockfile
+
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp
         run: bun install --frozen-lockfile

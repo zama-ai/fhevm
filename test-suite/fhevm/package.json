@@ -18,6 +18,7 @@
     "start": "bun run src/cli.ts"
   },
   "dependencies": {
+    "@fhevm/confidential-token": "file:../../solana/clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",

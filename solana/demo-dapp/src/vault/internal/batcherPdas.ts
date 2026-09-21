@@ -3,9 +3,9 @@ import { base58 } from '@scure/base';
 import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinRecord.js';
 
 import { solanaEncryptedStoreAddress } from '@fhevm/sdk/solana';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const encoder = new TextEncoder();
 const BATCH_SEED = encoder.encode('batch');

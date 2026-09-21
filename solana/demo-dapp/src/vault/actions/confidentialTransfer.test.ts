@@ -25,8 +25,8 @@ import {
 import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../internal/generated/confidentialToken/programAddress.js';
 import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenAccounts.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;

@@ -5,8 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { getConfidentialTransferInstruction } from './confidentialToken/instructions/confidentialTransfer.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './confidentialToken/programAddress.js';
+import { getConfidentialTransferInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function key(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

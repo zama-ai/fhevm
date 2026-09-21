@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fhevm/confidential-token": "file:../clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",

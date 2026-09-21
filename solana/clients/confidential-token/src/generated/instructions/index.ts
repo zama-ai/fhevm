@@ -6,9 +6,17 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './allowBalanceViewers.js';
+export * from './allowTotalSupplyViewers.js';
+export * from './cancelPendingBurn.js';
+export * from './confidentialBurn.js';
+export * from './confidentialBurnFromValue.js';
 export * from './confidentialTransfer.js';
+export * from './confidentialTransferFromValue.js';
 export * from './discloseSecp.js';
 export * from './initializeMint.js';
 export * from './initializeTokenAccount.js';
 export * from './makeTokenAccountHandlePublic.js';
+export * from './makeTotalSupplyHandlePublic.js';
+export * from './redeemBurnedAmount.js';
 export * from './wrapUsdc.js';

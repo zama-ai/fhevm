@@ -120,6 +120,8 @@ test-kit                        The fixture library every Rust test imports: Mol
 runtime-tests                   Fast evaluator contracts plus real-SBF Mollusk suites
                                 (docs/TESTING.md explains what each layer proves).
 demo-dapp                       The confidential vault demo frontend.
+clients/confidential-token      Codama client for the confidential-token program
+                                (`@fhevm/confidential-token`). Regenerated with the IDL.
 scripts/                        Workspace tooling (scripts/README.md). scripts/e2e is stack
                                 BRING-UP only (clean-e2e.sh, select-overrides.sh) — the e2e
                                 assertions themselves live in test-suite/fhevm/e2e.

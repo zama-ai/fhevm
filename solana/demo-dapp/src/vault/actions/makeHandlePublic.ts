@@ -1,7 +1,6 @@
 import type { Address, Instruction, ReadonlyUint8Array, TransactionSigner } from '@solana/kit';
-
-import { getMakeTokenAccountHandlePublicInstructionAsync } from '../internal/generated/confidentialToken/instructions/makeTokenAccountHandlePublic.js';
-import type { DisclosedValueKindArgs } from '../internal/generated/confidentialToken/types/disclosedValueKind.js';
+import { getMakeTokenAccountHandlePublicInstructionAsync } from '@fhevm/confidential-token';
+import type { DisclosedValueKindArgs } from '@fhevm/confidential-token';
 
 export type SolanaMakeTokenAccountHandlePublicParameters = {
   readonly payer: TransactionSigner;

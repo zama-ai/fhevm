@@ -33,8 +33,6 @@ import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
@@ -42,6 +40,7 @@ import {
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
