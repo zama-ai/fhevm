@@ -98,6 +98,13 @@ up)
   forward svc/anvil-host-anvil-node "$host_port:8545"
   forward svc/coprocessor-1-solana-host-listener "$leaf_proof_port:8080"
   sleep 2
+  while read -r forward_pid; do
+    if ! kill -0 "$forward_pid" 2>/dev/null; then
+      "$0" down "$state"
+      echo "A port-forward failed; inspect $state/port-forward.log and choose unused PREVIEW_*_PORT values." >&2
+      exit 1
+    fi
+  done <"$state/port-forward.pids"
 
   # Shell-escape values, including quotes in credentials, without executing or logging them.
   env_line() { printf "%s=%q\n" "$1" "$2"; }
