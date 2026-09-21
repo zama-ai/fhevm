@@ -241,6 +241,7 @@ mod tests {
             ErrorCode::Overloaded,
             ErrorCode::AclDenied,
             ErrorCode::UserSignatureRejected,
+            ErrorCode::UnsupportedAttestationType,
             ErrorCode::CiphertextNotFound,
             ErrorCode::CoproConsensusFailed,
             ErrorCode::KmsContextInvalid,

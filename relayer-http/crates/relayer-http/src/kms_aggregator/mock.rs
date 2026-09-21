@@ -22,9 +22,9 @@ use super::config::{
 };
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
-pub const USER_REQUEST_JSON: &str = r#"{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666","extraData":"0x00"}"#;
+pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
 pub const USER_REQUEST_ID: B256 =
-    b256!("0x0fc9151ca446462aeadbf740c1021d1c089413cb54940664dcb996a031268453");
+    b256!("0x87d71ab4145107e91e1ac6f1e1766739e2b231cd5d04323f40f1803417a95243");
 pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x00"}"#;
 pub const PUBLIC_REQUEST_ID: B256 =
     b256!("0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8");
@@ -173,7 +173,7 @@ pub fn result(variant: u8) -> AlloyBytes {
 fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
     if route == USER_DECRYPTION_ROUTE {
         let request: UserDecryptionRequest = serde_json::from_slice(body).expect("mock: user body");
-        (request.id(), request.extraData)
+        (request.id(), request.payload.extraData)
     } else {
         assert_eq!(route, PUBLIC_DECRYPTION_ROUTE, "mock: unknown route");
         let request: PublicDecryptionRequest =
