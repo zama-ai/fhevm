@@ -1,4 +1,3 @@
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, test } from 'vitest';
 import type { UiWalletAccount } from '@wallet-standard/react';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
