@@ -611,7 +611,8 @@ jobs:
           if kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
             echo "Namespace ${NAMESPACE} already exists, recovering it first..."
             if [[ "${DEPLOY_SOLANA}" == true ]]; then
-              export SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$(jq -r .solana_programs <<< "$TAGS_JSON")"
+              SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$(jq -r .solana_programs <<< "$TAGS_JSON")"
+              export SOLANA_RECOVERY_IMAGE
             fi
             SOLANA_KEEP_OPERATION=1 bash ci/preview-env/solana-host/recover.sh reset
             helm list -n "${NAMESPACE}" --short | xargs -r -L1 helm uninstall -n "${NAMESPACE}"

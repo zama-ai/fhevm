@@ -6,6 +6,7 @@ umask 077
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=ci/preview-env/scripts/lib.sh
 source "${script_dir}/../scripts/lib.sh"
+# shellcheck source=ci/preview-env/solana-host/ownership.sh
 source "$script_dir/ownership.sh"
 solana_acquire
 work=$(mktemp -d)

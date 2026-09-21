@@ -12,10 +12,14 @@ if [[ -z "$deployer_secret" ]]; then
   echo 'No Solana deployer in this namespace; no Solana recovery required.'
   exit 0
 fi
+# shellcheck source=ci/preview-env/solana-host/ownership.sh
 source "$(dirname "${BASH_SOURCE[0]}")/ownership.sh"
 if [[ "${SOLANA_OPERATION_HELD:-}" != 1 ]]; then
   solana_acquire
-  trap 'status=$?; if [[ "$status" != 0 || "${SOLANA_KEEP_OPERATION:-}" != 1 ]]; then solana_release_operation; fi' EXIT
+  release_on_exit() {
+    if [[ "$1" != 0 || "${SOLANA_KEEP_OPERATION:-}" != 1 ]]; then solana_release_operation; fi
+  }
+  trap 'release_on_exit "$?"' EXIT
 fi
 kubectl get secret solana-recovery -n "$NAMESPACE" -o name >/dev/null
 
