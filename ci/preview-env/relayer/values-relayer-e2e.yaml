@@ -45,7 +45,7 @@ service:
     - {name: metrics, port: 9898}
 
 # Without a probe the pod is Ready the instant the container starts, so the
-# rollout wait in scripts/deploy-relayer.sh passes while the process is still
+# rollout wait in scripts/deploy/deploy-relayer.sh passes while the process is still
 # crash-looping and the e2e suites open on a dead port. /v2/keyurl is the right
 # target rather than /healthz: the handler serves a clone of an in-memory watch
 # channel with a hardcoded 200, so it costs no chain call and can never flap,

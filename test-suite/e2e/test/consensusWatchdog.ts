@@ -11,7 +11,17 @@ const INPUT_VERIFICATION_ABI = [
   'event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures)',
 ];
 
-const CONSENSUS_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+/**
+ * How long a handle may sit with some but not all submissions before the
+ * watchdog calls it a stall.
+ *
+ * A case that deliberately removes an operator must allow its replacement to
+ * reclaim the expired lease and redo the work before submitting. Such a suite
+ * raises the ordinary stall budget through
+ * CONSENSUS_WATCHDOG_STALL_MS rather than disabling the watchdog, which would
+ * also give up the divergence detection that matters most during a fault.
+ */
+const CONSENSUS_TIMEOUT_MS = Number.parseInt(process.env.CONSENSUS_WATCHDOG_STALL_MS ?? '', 10) || 3 * 60 * 1000;
 const POLL_INTERVAL_MS = 2_000;
 
 interface CiphertextSubmission {
@@ -134,7 +144,10 @@ export class ConsensusWatchdog {
       this.resolvedProofs = proofResult.resolvedProofs;
       this.resolvedHandleCount += ciphertextResult.resolvedHandleDelta;
       this.resolvedProofCount += proofResult.resolvedProofDelta;
-      this.divergences.push(...ciphertextResult.divergences, ...proofResult.divergences);
+      this.divergences.push(
+        ...(await this.withBackendEvidence(ciphertextResult.divergences)),
+        ...proofResult.divergences,
+      );
       this.divergenceKeys = new Set([...ciphertextResult.divergenceKeys, ...proofResult.divergenceKeys]);
       this.lastBlock = toBlock;
     } catch (err) {
@@ -286,6 +299,77 @@ export class ConsensusWatchdog {
     }
   }
 
+  /**
+   * Appends what the operator databases say about the diverging handles.
+   *
+   * The watchdog reads the gateway chain only, so it can report that two
+   * operators submitted different digests but not why. The field that separates
+   * "one queue was served by two workers" from "the same backend disagreed with
+   * itself" is `ciphertext_digest.ciphertext128_format`, and it takes one query.
+   *
+   * CPU and GPU squash paths use distinct format variants. A mismatch can
+   * identify mixed backends; equal formats alone do not prove byte agreement.
+   * Block numbers and row presence still help locate the divergent submissions.
+   *
+   * Best-effort by construction: a divergence report must never be lost because
+   * a database was unreachable.
+   */
+  private async withBackendEvidence(divergences: string[]): Promise<string[]> {
+    if (divergences.length === 0) return divergences;
+    let urls: string[];
+    try {
+      const { getCoprocessorDbUrls } = await import('./consensus/helpers');
+      urls = getCoprocessorDbUrls(Number(process.env.COPROCESSOR_COUNT ?? '0'));
+    } catch {
+      return divergences;
+    }
+    if (urls.length === 0) return divergences;
+
+    const handles = [
+      ...new Set(divergences.flatMap((d) => [...d.matchAll(/handle (0x[0-9a-f]+)/g)].map((m) => m[1]))),
+    ];
+    if (handles.length === 0) return divergences;
+
+    const lines: string[] = [];
+    for (const [operator, databaseUrl] of urls.entries()) {
+      try {
+        const { Pool } = await import('pg');
+        const pool = new Pool({
+          connectionString: databaseUrl, max: 1,
+          connectionTimeoutMillis: 5_000, query_timeout: 5_000, statement_timeout: 5_000,
+        });
+        try {
+          const rows = await pool.query<{ handle: string; format: string | null; block: string | null }>(
+            `SELECT encode(d.handle, 'hex') AS handle,
+                    d.ciphertext128_format::text AS format,
+                    c.block_number::text AS block
+               FROM ciphertext_digest d
+               LEFT JOIN computations c ON c.output_handle = d.handle
+              WHERE encode(d.handle, 'hex') = ANY($1::text[])`,
+            [handles.map((handle) => handle.replace(/^0x/, ''))],
+          );
+          for (const row of rows.rows)
+            lines.push(
+              `    operator ${operator}: handle 0x${row.handle.slice(0, 16)} ` +
+                `ciphertext128_format=${row.format ?? 'null'} block=${row.block ?? '?'}`,
+            );
+        } finally {
+          await pool.end();
+        }
+      } catch {
+        lines.push(`    operator ${operator}: database unreachable, no backend evidence`);
+      }
+    }
+    if (lines.length === 0) return divergences;
+    return [
+      ...divergences,
+      '[consensus-watchdog] what the operator databases say about those handles:\n' +
+        lines.join('\n') +
+        '\n    (equal formats do not establish backend agreement while the squash path records CPU variants)',
+    ];
+  }
+
+
   private recordDivergence(key: string, msg: string, divergences: string[], divergenceKeys: Set<string>): void {
     if (divergenceKeys.has(key)) return;
     divergenceKeys.add(key);
@@ -399,7 +483,21 @@ export class ConsensusWatchdog {
 // Singleton — shared across all tests in a Mocha run.
 let watchdog: ConsensusWatchdog | null = null;
 
+/**
+ * The watchdog compares every operator's submissions for each handle and fails
+ * the current test on any disagreement or missing quorum. That is right for
+ * every topology where the whole fleet follows one chain.
+ *
+ * It cannot hold on a dual-Anvil fork topology, where operators deliberately
+ * observe competing branches: a handle minted only on the canonical branch
+ * gets submissions from the canonical operators alone and never reaches a
+ * fleet-wide quorum, which the watchdog reports as a stalled handle. That is
+ * the topology working as designed, so the fork suite opts out explicitly and
+ * makes its own per-branch assertions instead. The opt-out is deliberately not
+ * inferred from anything -- a suite has to ask for it.
+ */
 function isEnabled(): boolean {
+  if (process.env.CONSENSUS_WATCHDOG_DISABLED === '1') return false;
   return !!(process.env.GATEWAY_RPC_URL && process.env.CIPHERTEXT_COMMITS_ADDRESS);
 }
 

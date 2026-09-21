@@ -79,7 +79,7 @@ You should see a list of running pods. If you see an error, stop here and fix ac
 
 ## 3. The scripts you will use
 
-All of them live in `ci/preview-env/scripts/`. You never need to edit them.
+All of them live in `ci/preview-env/scripts/bg/`. You never need to edit them.
 
 | Script | What it does |
 | --- | --- |
@@ -188,7 +188,7 @@ never gets an encryption key and nothing works.
 ### Step A2. Check the starting point
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh baseline
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh baseline
 ```
 
 **Expect:** every line says `[PASS]`, and the last line says `baseline: all checks passed`.
@@ -199,7 +199,7 @@ Lines marked `[INFO]` are notes, not failures. If anything says `[FAIL]`, stop a
 ### Step A3. Deploy the test token and start traffic
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh setup
+bash ci/preview-env/scripts/bg/bg-traffic.sh setup
 ```
 
 Takes a few minutes. **Expect** one line per chain saying the token was deployed and
@@ -208,7 +208,7 @@ Takes a few minutes. **Expect** one line per chain saying the token was deployed
 Then start the traffic loop:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 ```
 
 **Expect:** `loop started (pid ...)` for each chain.
@@ -216,7 +216,7 @@ bash ci/preview-env/scripts/bg-traffic.sh start
 Let it run for about 10 minutes so there is real data. Check on it any time with:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 **Expect:** `loop running`, the counters increasing, and `mismatches 0  failures 0`.
@@ -226,13 +226,13 @@ bash ci/preview-env/scripts/bg-traffic.sh status
 Pause the traffic:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
 ```
 
 Check every balance:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line ends in `OK`, on both chains. This is your reference point: the system was
@@ -243,13 +243,13 @@ healthy before you changed anything.
 First look at what will change:
 
 ```bash
-bash ci/preview-env/scripts/bg-contracts.sh status
+bash ci/preview-env/scripts/bg/bg-contracts.sh status
 ```
 
 Then do it:
 
 ```bash
-bash ci/preview-env/scripts/bg-contracts.sh upgrade
+bash ci/preview-env/scripts/bg/bg-contracts.sh upgrade
 ```
 
 **Expect:** it finishes without error and reports which contracts were upgraded. Not all contracts
@@ -266,7 +266,7 @@ environment can only be used for Case B.
 **Do not skip this step.** It must happen *before* the cutover.
 
 ```bash
-TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg-stack.sh upgrade
+TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-stack.sh upgrade
 ```
 
 **Expect:** all the KMS connector lines show the new tag.
@@ -284,7 +284,7 @@ decryptions that hang forever after the cutover.
 Check what is deployed at any time with:
 
 ```bash
-TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg-stack.sh status
+TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-stack.sh status
 ```
 
 ### Step A7. Start Green
@@ -292,7 +292,7 @@ TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg-stack.sh status
 Prepare the database for Green. Blue keeps serving during this:
 
 ```bash
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh migrate
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh migrate
 ```
 
 **Expect:** `migrate done`, and a line per operator saying Blue is still on the old version.
@@ -300,7 +300,7 @@ GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh migrate
 Now start Green:
 
 ```bash
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh start
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh start
 ```
 
 **Expect:** `start done: Green ... shadowing Blue ... on 2 parties`.
@@ -318,14 +318,14 @@ upgrade.
 ### Step A8. Restart traffic and check the contract upgrade broke nothing
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 ```
 
 Let it run ~5 minutes, then:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh stop
-bash ci/preview-env/scripts/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line `OK`. This proves the contract upgrade did not break the running coprocessor.
@@ -333,7 +333,7 @@ bash ci/preview-env/scripts/bg-traffic.sh verify
 Start traffic again and **leave it running** for the rest of the test:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 ```
 
 ### Step A9. Send the proposal
@@ -356,7 +356,7 @@ need a new environment, so use Case A.
 ### Step B1. Stop any traffic that is still running
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
 ```
 
 It is fine if it says the loops are already stopped.
@@ -366,7 +366,7 @@ It is fine if it says the loops are already stopped.
 See what it would do, without doing it:
 
 ```bash
-DRY_RUN=true bash ci/preview-env/scripts/bg-reset.sh
+DRY_RUN=true bash ci/preview-env/scripts/bg/bg-reset.sh
 ```
 
 **Wait about two minutes after stopping traffic.** The reset refuses to run while the environment
@@ -377,7 +377,7 @@ run it again rather than reaching for `FORCE=true`.
 Then do it:
 
 ```bash
-bash ci/preview-env/scripts/bg-reset.sh
+bash ci/preview-env/scripts/bg/bg-reset.sh
 ```
 
 Takes a few minutes. **Expect** the last line to say
@@ -395,9 +395,9 @@ The reset deletes the encrypted data, so the old token's balances no longer exis
 start a new one:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh teardown
-bash ci/preview-env/scripts/bg-traffic.sh setup
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh teardown
+bash ci/preview-env/scripts/bg/bg-traffic.sh setup
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 ```
 
 **Expect:** setup reports a **new** token address per chain and `alice balance decrypts OK`, and the
@@ -408,13 +408,13 @@ hand and run setup again:
 
 ```bash
 kubectl delete configmap -n $NAMESPACE bg-traffic-state-sepolia bg-traffic-state-amoy
-bash ci/preview-env/scripts/bg-traffic.sh setup
+bash ci/preview-env/scripts/bg/bg-traffic.sh setup
 ```
 
 ### Step B4. Check the starting point
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh baseline
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh baseline
 ```
 
 **Expect:** `baseline: all checks passed`, versioning `0.14.0`.
@@ -422,7 +422,7 @@ bash ci/preview-env/scripts/bg-checkpoints.sh baseline
 ### Step B5. Confirm the other services are on v0.15
 
 ```bash
-bash ci/preview-env/scripts/bg-stack.sh status
+bash ci/preview-env/scripts/bg/bg-stack.sh status
 ```
 
 **Expect:** the KMS connector rows already show the new tag. They usually stay upgraded from the
@@ -431,9 +431,9 @@ previous round. If they show `v0.14.1`, upgrade them now, as in step A6.
 ### Step B6. Snapshot 1
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh stop
-bash ci/preview-env/scripts/bg-traffic.sh verify
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 ```
 
 **Expect:** every line `OK`. Traffic is running again and stays running.
@@ -441,8 +441,8 @@ bash ci/preview-env/scripts/bg-traffic.sh start
 ### Step B7. Start Green
 
 ```bash
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh migrate
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh start
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh migrate
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh start
 ```
 
 **Expect:** `migrate done`, then `start done: Green ... shadowing Blue`.
@@ -475,23 +475,23 @@ So the order is:
 
 ```bash
 # a token and some starting balances
-bash ci/preview-env/scripts/bg-traffic.sh setup
-bash ci/preview-env/scripts/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh setup
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
 
 # let it run ~5 minutes only, just to create balances worth checking later
-bash ci/preview-env/scripts/bg-traffic.sh stop
-bash ci/preview-env/scripts/bg-traffic.sh verify        # snapshot: every line OK
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify        # snapshot: every line OK
 
 # from here on, NO traffic
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh migrate
-GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg-green.sh start
-bash ci/preview-env/scripts/bg-propose.sh send
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh migrate
+GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh start
+bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 Confirm nothing is running before you propose:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 **Expect:** `loop not running` for both chains.
@@ -505,7 +505,7 @@ Then follow section 9 exactly as usual.
 - After the cutover, the balances you created before the quiet period must still decrypt:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line `OK`.
@@ -585,7 +585,7 @@ So the useful summary is: 5 minutes of waiting, then everything happens in about
 You can print the whole plan, including the windows and the skew, without touching the chain:
 
 ```bash
-bash ci/preview-env/scripts/bg-propose.sh calldata
+bash ci/preview-env/scripts/bg/bg-propose.sh calldata
 ```
 
 This is safe and read-only. It takes a few minutes because it starts a pod that compiles the
@@ -612,10 +612,10 @@ A normal round needs no overrides. To test something else:
 
 ```bash
 # override a parameter
-WINDOW_DURATION=2m bash ci/preview-env/scripts/bg-propose.sh send
+WINDOW_DURATION=2m bash ci/preview-env/scripts/bg/bg-propose.sh send
 
 # pass anything else straight to the task
-bash ci/preview-env/scripts/bg-propose.sh send -- --use-internal-proxy-address true
+bash ci/preview-env/scripts/bg/bg-propose.sh send -- --use-internal-proxy-address true
 ```
 
 A longer `WINDOW_DURATION` does **not** delay the cutover, which fires as soon as the operators
@@ -633,7 +633,7 @@ The window is only open for about a minute. At the normal rate of one transactio
 chain, often nothing at all is written while it is open. Speed the loop up first:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh burst on
+bash ci/preview-env/scripts/bg/bg-traffic.sh burst on
 ```
 
 **Expect:** `burst on (10s between steps)` for each chain. The loop re-reads this every step, so it
@@ -642,7 +642,7 @@ takes effect immediately without restarting anything. Turn it off again in step 
 Then send the proposal:
 
 ```bash
-bash ci/preview-env/scripts/bg-propose.sh send
+bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 **Expect:** a report of the windows and skew, then
@@ -654,7 +654,7 @@ until the dry run has started on every chain.
 Make sure traffic is still running while all this happens:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 ### Step 2. Watch the upgrade state
@@ -677,7 +677,7 @@ You will see it move through these stages:
 ### Step 3. Check the window timing (optional)
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh window-timing
 ```
 
 Reports each chain's block times and how much of the window is left. Not time-critical.
@@ -687,7 +687,7 @@ Reports each chain's block times and how much of the window is left. Not time-cr
 Instead of watching, you can let the script wait for you:
 
 ```bash
-bash ci/preview-env/scripts/bg-propose.sh wait-cutover
+bash ci/preview-env/scripts/bg/bg-propose.sh wait-cutover
 ```
 
 It returns when the version has changed to the new release.
@@ -706,13 +706,13 @@ kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
 The window is closed, so put the traffic loop back to its normal rate:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh burst off
+bash ci/preview-env/scripts/bg/bg-traffic.sh burst off
 ```
 
 Then check the cutover itself:
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh cutover
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh cutover
 ```
 
 **Expect:** `cutover: all checks passed`. This confirms Green is live, Blue is paused, and the
@@ -721,7 +721,7 @@ temporary Green database copy was removed.
 ### Step 6. Check the system is healthy after the cutover
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh post
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh post
 ```
 
 **Expect:** `post: all checks passed`.
@@ -729,8 +729,8 @@ bash ci/preview-env/scripts/bg-checkpoints.sh post
 ### Step 7. THE MAIN TEST — every balance must still decrypt
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh stop
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 **Wait until `status` says `loop not running` for both chains.** `stop` only takes effect between
@@ -739,7 +739,7 @@ iterations, and verifying while a loop is still going reports a `MISMATCH` that 
 Then check every balance:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line ends in `OK`, on both chains, and `0 mismatches, 0 failures`.
@@ -798,13 +798,13 @@ at data that is no longer there.
 **What to do.** Keep traffic running and watch how much of the window is left:
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh window-timing
 ```
 
 Let traffic keep running through the last few seconds before the switch. Then, after the switch:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh verify
+bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line says `OK`.
@@ -822,7 +822,7 @@ and the cutover all have to work while transactions keep arriving.
 Check the counter before and after:
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 **Expect:** the iteration number is higher after the cutover than before the proposal, and the
@@ -839,7 +839,7 @@ wait for it rather than going ahead without it.
 
 ```bash
 kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=0
-bash ci/preview-env/scripts/bg-propose.sh send
+bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 **Expect:** no cutover. The version stays on `v0.14` for as long as that worker is off.
@@ -860,7 +860,7 @@ agree.
 **What to do.** Before sending anything, print the plan. This is read-only and changes nothing:
 
 ```bash
-bash ci/preview-env/scripts/bg-propose.sh calldata
+bash ci/preview-env/scripts/bg/bg-propose.sh calldata
 ```
 
 Look at the **Cross-chain alignment** part of the output.
@@ -874,7 +874,7 @@ proposal.
 After sending, check the real blocks matched the estimate:
 
 ```bash
-bash ci/preview-env/scripts/bg-checkpoints.sh window-timing
+bash ci/preview-env/scripts/bg/bg-checkpoints.sh window-timing
 ```
 
 ### Edge case 5. The target version does not match Green
@@ -886,7 +886,7 @@ upgrading to the wrong thing.
 **What to do.** Send a proposal naming a version nobody is running:
 
 ```bash
-GCS_VERSION=v0.99.0 bash ci/preview-env/scripts/bg-propose.sh send
+GCS_VERSION=v0.99.0 bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 **Expect:** no cutover. The version stays on `v0.14`, and Blue keeps serving.
@@ -904,7 +904,7 @@ abandoned cleanly. A half-finished upgrade would be much worse than none.
 **What to do.** Send a proposal with a window far too short to reach agreement:
 
 ```bash
-WINDOW_DURATION=2m bash ci/preview-env/scripts/bg-propose.sh send
+WINDOW_DURATION=2m bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 Then watch the state:
@@ -930,7 +930,7 @@ attempt.
 **What to do.** Straight after edge case 6, send a normal proposal with a new id:
 
 ```bash
-PROPOSAL_ID=$(date +%s) bash ci/preview-env/scripts/bg-propose.sh send
+PROPOSAL_ID=$(date +%s) bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
 **Expect:** the round runs normally from there — the window opens, the operators agree, the version
@@ -974,7 +974,7 @@ minutes.
 **Check:**
 
 ```bash
-bash ci/preview-env/scripts/bg-stack.sh status
+bash ci/preview-env/scripts/bg/bg-stack.sh status
 ```
 
 **Confirm it:**
@@ -1008,7 +1008,7 @@ The state stays at `DryRunStarted` for a long time and the version never changes
 **Cause:** the operators do not agree, which is the design working as intended, or one chain is not
 keeping up.
 
-**Check:** run `bash ci/preview-env/scripts/bg-checkpoints.sh dry-run` and look for a `[FAIL]` about
+**Check:** run `bash ci/preview-env/scripts/bg/bg-checkpoints.sh dry-run` and look for a `[FAIL]` about
 state hashes differing across operators, or about a chain not ingesting.
 
 **This is a real finding.** Report it with the checkpoint output. Blue is still live, so nothing is
@@ -1028,7 +1028,7 @@ The wallets paying for transactions ran out.
 **Check:**
 
 ```bash
-bash ci/preview-env/scripts/bg-traffic.sh status
+bash ci/preview-env/scripts/bg/bg-traffic.sh status
 ```
 
 The bottom of the output prints the balances. Report it; the wallets need topping up.
@@ -1100,8 +1100,8 @@ Include all of this:
 - Which case (A or B) and which step number.
 - The namespace.
 - The full output of the command that failed.
-- The output of `bash ci/preview-env/scripts/bg-traffic.sh status`.
-- The output of `bash ci/preview-env/scripts/bg-stack.sh status`.
+- The output of `bash ci/preview-env/scripts/bg/bg-traffic.sh status`.
+- The output of `bash ci/preview-env/scripts/bg/bg-stack.sh status`.
 - If a decryption failed, the last 200 lines of the KMS worker log:
 
 ```bash

@@ -584,3 +584,25 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+
+## Consensus coverage
+
+The manual `test-suite-consensus` workflow runs the canonical byte/digest,
+materialization, alias, replacement-block, competing-branch and scheduling gates.
+`test-suite/fhevm/consensus/inventory.yaml` defines the cases in this layer.
+`smoke` selects CPU byte agreement, `standard` adds the harness, production
+regressions and fork cases, and `full` also requires single-GPU scheduling.
+See [the consensus suite documentation](../e2e/test/consensus/README.md).
+The [campaign runbook](consensus/RUNBOOK.md) explains each case's evidence and
+limits, CI backend coverage, recovery, and readiness changes affecting ordinary
+`fhevm-cli up` users.
+
+The GPU consensus launcher uses host systemd workers; the ordinary GPU E2E CI
+workflow uses GPU containers. Always restore a host-worker session with
+`scripts/gpu-consensus-workers.sh stop`. Ownership, readiness and writer-quiescence
+checks remain enabled for the launcher and database-revert command.
+
+Service fault campaigns, interrupted-work recovery, degraded availability,
+GPU lifecycle fault cases, and fork repair/replay are delivered separately.
+They are not counted as covered by this layer's `full` selection.

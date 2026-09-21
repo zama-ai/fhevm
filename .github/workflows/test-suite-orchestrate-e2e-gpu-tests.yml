@@ -259,7 +259,7 @@ jobs:
           LOCK_DIR: ${{ runner.temp }}/baseline-lock
         with:
           script: |
-            const createE2eInputs = require(`${process.env.GITHUB_WORKSPACE}/ci/preview-env/scripts/create-e2e-inputs.cjs`);
+            const createE2eInputs = require(`${process.env.GITHUB_WORKSPACE}/ci/preview-env/scripts/e2e/create-e2e-inputs.cjs`);
             await createE2eInputs({ core, gpuWorkerTag: process.env.GPU_WORKER_VERSION ?? "" });
 
   # A second GPU instance, for the suite. Separate from the build's: that one is

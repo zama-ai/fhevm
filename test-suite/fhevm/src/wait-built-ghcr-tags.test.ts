@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 const {
   selectBaselineGhcrImages,
-} = require("../../../ci/preview-env/scripts/wait-built-ghcr-tags.cjs") as {
+} = require("../../../ci/preview-env/scripts/resolve/wait-built-ghcr-tags.cjs") as {
   selectBaselineGhcrImages: (options: {
     lockEnv?: Record<string, string>;
     skipped?: Array<{ envKey: string; repo: string }>;
