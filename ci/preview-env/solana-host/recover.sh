@@ -79,7 +79,7 @@ import os,json
 secret=lambda name,key:{'valueFrom':{'secretKeyRef':{'name':name,'key':key}}}
 env=[{'name':'SOLANA_PREVIEW_NAMESPACE','value':os.environ['NAMESPACE']},{'name':'SOLANA_RPC_URL',**secret('solana-rpc','rpc-url')},{'name':'SOLANA_DEPLOYER_KEYPAIR_JSON',**secret('solana-deployer','deployer.json')},{'name':'SOLANA_RECOVERY_DIR','value':'/recovery'},{'name':'SOLANA_ENVIRONMENT','value':'preview-env'}]
 mode=os.environ['SOLANA_RECOVERY_MODE']
-command='set -eu; umask 077; cp /recovery-source/*.json /recovery/; '
+command='set -eu; umask 077; cp /recovery-source/*.json /recovery/; chmod 600 /recovery/*.json; '
 if mode=='reset': command+='node /app/cli.mjs environment recover-funding; node /app/cli.mjs environment prepare-reset; '
 command+=f'node /app/cli.mjs environment {mode}'
 pod={'serviceAccountName':'solana-recovery','restartPolicy':'Never','nodeSelector':{'kubernetes.io/arch':'amd64'},'securityContext':{'runAsUser':10000,'runAsGroup':10001,'fsGroup':10001},'containers':[{'name':'recover','image':os.environ['SOLANA_RECOVERY_IMAGE'],'command':['bash','-c',command],'env':env,'volumeMounts':[{'name':'keys','mountPath':'/recovery-source','readOnly':True},{'name':'work','mountPath':'/recovery'}]}],'volumes':[{'name':'keys','secret':{'secretName':'solana-recovery','defaultMode':0o440}},{'name':'work','emptyDir':{}}]}
