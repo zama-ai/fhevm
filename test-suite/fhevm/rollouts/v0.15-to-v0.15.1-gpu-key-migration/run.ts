@@ -11,12 +11,13 @@ import {
   DEFAULT_POSTGRES_USER,
   coprocessorDatabaseName,
   defaultHostChainKey,
+  envPath,
   MINIO_EXTERNAL_URL,
   REPO_ROOT,
   TEST_SUITE_CONTAINER,
 } from "../../src/layout";
 import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds, kmsPublicPrefix } from "../../src/kms-party";
-import { hostReachableRpcUrl } from "../../src/utils/fs";
+import { hostReachableRpcUrl, readEnvFile } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
 import {
   type ConnectorObservation,
@@ -146,6 +147,47 @@ const sqlScalar = async (database: string, sql: string): Promise<string> => {
     sql,
   ]);
   return result.stdout.trim();
+};
+
+export const driveBlueGreenUpgrade = async (
+  ctx: RolloutRunContext,
+  version: "0.15.0" | "0.15.1",
+  proposalId: "1" | "2",
+) => {
+  const state = await ctx.readState();
+  const env = await readEnvFile(envPath("test-suite"));
+  const hostChains = state.scenario.hostChains.map((_chain, index) => {
+    const chainId = env[index === 0 ? "CHAIN_ID_HOST" : `HOST_CHAIN_${index}_CHAIN_ID`];
+    const rpcUrl = env[index === 0 ? "RPC_URL" : `HOST_CHAIN_${index}_RPC_URL`];
+    if (!chainId || !rpcUrl) throw new Error(`Missing proposal RPC or chain ID for host ${index}`);
+    return { chainId: Number(chainId), rpcUrl, fallbackBlockTimeSeconds: 1 };
+  });
+  await ctx.runHostContractTask(
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
+      '--proposal-id "$PROPOSE_ID" --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    { env: {
+      LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+      LOCAL_HOST_CHAINS: JSON.stringify(hostChains),
+      PROPOSE_START_TIME: new Date(Date.now() + 30_000).toISOString(),
+      PROPOSE_ID: proposalId,
+      PROPOSE_SW_VERSION: version,
+    } },
+  );
+  // Synthetic work drives consensus. Observe durable completion, not a transient dry-run state.
+  for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
+    const database = coprocessorDatabaseName(operator);
+    await waitUntil(`${database} proposal ${proposalId} promoted to ${version}`, async () => {
+      const result = await sqlScalar(database,
+        `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+          AND BOOL_AND(state='LIVE' AND status='completed' AND version='${version}'
+            AND proposal_id=decode('${BigInt(proposalId).toString(16).padStart(64, "0")}', 'hex'))
+          AND (SELECT stack_version FROM versioning WHERE singleton=TRUE)='${version}'
+          THEN 'complete' ELSE 'waiting' END FROM upgrade_state WHERE stack_role='GCS';`);
+      return result === "complete";
+    }, 600);
+    console.log(`[key migration cutover] database=${database} proposal=${proposalId} version=${version} completed`);
+  }
 };
 
 const waitUntil = async (
@@ -674,8 +716,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await assertGreenWorkersParked();
 
   logPhase("08 cut over from 0.14 Blue to exact 0.15.0 Green");
-  process.env.FHEVM_SKIP_BLUE_GREEN_ROLLBACK = "1";
-  await ctx.test("blue-green", { parallel: false });
+  await driveBlueGreenUpgrade(ctx, "0.15.0", "1");
 
   logPhase("09 re-home promoted 0.15.0 as Blue and stage deferred 0.15.1 Green");
   await ctx.restagePromotedGreen({
@@ -783,16 +824,12 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await ctx.test("input-proof-compute-decrypt", { parallel: false });
 
   logPhase("13 cut over from 0.15.0 Blue to 0.15.1 Green");
-  await ctx.test("blue-green", {
-    blueGreenPredecessorVersion: "0.15.0",
-    blueGreenProposalId: "4",
-    parallel: false,
-  });
-  await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
+  await driveBlueGreenUpgrade(ctx, "0.15.1", "2");
 
   logPhase("14 verify post-cutover protocol paths with compressed material");
   await runKeyContinuity("reuse", continuityContract);
   await ctx.test("rollout-standard", { parallel: false });
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });
+  await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
 }
