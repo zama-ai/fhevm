@@ -49,13 +49,15 @@ pub use state::*;
 // Written by build.rs from solana/environments/<PROGRAM_ENVIRONMENT>.json (DD-053).
 include!(concat!(env!("OUT_DIR"), "/program_id.rs"));
 
-/// Anchor entrypoint module for the demo vault.
 #[cfg(feature = "admin-sweep")]
-#[path = "../../preview_cleanup.rs"]
-mod preview_cleanup;
+// Anchor's IDL parser does not resolve #[path] modules.
+mod preview_cleanup {
+    include!("../../preview_cleanup.rs");
+}
 #[cfg(feature = "admin-sweep")]
 use preview_cleanup::*;
 
+/// Anchor entrypoint module for the demo vault.
 #[program]
 pub mod demo_vault {
     use super::*;

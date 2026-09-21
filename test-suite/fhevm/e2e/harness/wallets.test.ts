@@ -89,7 +89,7 @@ describe("run wallets", () => {
   });
 });
 
-test("funding failure preserves a durable recovery key and a failed sweep can retry", async () => {
+test("funding failure preserves a persistent recovery key and a failed sweep can retry", async () => {
   const deployerPath = await writeKeypairFile();
   process.env.SOLANA_RECOVERY_DIR = await fs.mkdtemp(path.join(os.tmpdir(), "wallet-recovery-"));
   const { context, swept } = stubContext();

@@ -1,5 +1,5 @@
-//! Preview-only recovery, authorized by this program's upgrade authority.
-//! Recover PDA-owned external accounts before erasing the state used to discover them.
+// Preview-only recovery, authorized by this program's upgrade authority.
+// Recover PDA-owned external accounts before erasing the state used to discover them.
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{bpf_loader_upgradeable, system_program};
 use anchor_spl::token::{self, Burn, CloseAccount, Token, TokenAccount};

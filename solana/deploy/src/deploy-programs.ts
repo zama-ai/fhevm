@@ -142,7 +142,7 @@ export const deployProgramArtifacts = async (parameters: {
     ids[program] = programId;
   }
   for (const program of pending) {
-    // Derivable from the durable deployer key, so even a killed upload cannot lose its buffer.
+    // Derivable from the persistent deployer key, so even a killed upload cannot lose its buffer.
     const bufferPath = await writeKeypairJson(
       path.join(path.dirname(parameters.deployerKeypairPath), `${program}-buffer.json`),
       JSON.stringify([...(await uploadBufferBytes(parameters.deployerKeypairPath, ids[program]!))]),

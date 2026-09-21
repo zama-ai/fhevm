@@ -28,7 +28,6 @@ import {
   getBatchByIndex,
   getCurrentBatch,
   getOrCreateConfidentialTokenAccountInstruction,
-  getJoinRecord,
   joinBatch,
   TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
