@@ -54,6 +54,18 @@ export const ensureDemoRecoveryKey = async (role: string): Promise<void> => {
   await saveRecoveryKey(`demo-${role}`, wallet.bytes);
 };
 
+export const requireRecoverableWallet = async (recipient: string): Promise<void> => {
+  for (const name of await fs.readdir(recoveryDirectory())) {
+    if (!/^(run-|demo-|browser-).+\.json$/.test(name)) continue;
+    const wallet = await loadKeypairSigner(path.join(recoveryDirectory(), name));
+    if (wallet.address !== recipient) continue;
+    await mirrorRecoveryKeys();
+    return;
+  }
+  throw new Error('Preview funding requires a registered demo wallet; external wallets must self-fund');
+};
+
 export const recordRunWallet = async (wallet: GeneratedKeypair): Promise<void> => {
-  await saveRecoveryKey(`run-${wallet.signer.address}`, wallet.bytes);
+  const runId = process.env.SOLANA_RECOVERY_RUN_ID;
+  await saveRecoveryKey(`run-${runId ? `${runId}-` : ""}${wallet.signer.address}`, wallet.bytes);
 };

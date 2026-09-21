@@ -8,8 +8,8 @@ import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../../../solana/deploy/src/env
 import type { HostDeployContext } from '../../../../../solana/deploy/src/send';
 import { generateSolanaKeypair } from '../provision';
 
-for (const resumed of [false, true]) {
-  test(`recovery overlaps cooldowns across wallets (${resumed ? 'resumed' : 'fresh'})`, async () => {
+for (const [resumed, runId] of [[false, undefined], [true, undefined], [true, "current-run"]] as const) {
+  test(`recovery overlaps cooldowns across wallets (${resumed ? 'resumed' : 'fresh'}, ${runId ?? 'all'})`, async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'recovery-tables-'));
     const namespace = process.env.SOLANA_PREVIEW_NAMESPACE;
     delete process.env.SOLANA_PREVIEW_NAMESPACE;
@@ -17,10 +17,12 @@ for (const resumed of [false, true]) {
       const payer = await generateSolanaKeypair();
       const payerPath = path.join(directory, 'payer.json');
       await writeFile(payerPath, JSON.stringify([...payer.bytes]), { mode: 0o600 });
+      const activeBrowser = await generateSolanaKeypair();
+      if (runId) await writeFile(path.join(directory, 'browser-active.json'), JSON.stringify([...activeBrowser.bytes]), { mode: 0o600 });
       const tables = new Map<string, { owner: string; data: Buffer }>();
       for (let i = 0; i < 2; i++) {
         const wallet = await generateSolanaKeypair();
-        await writeFile(path.join(directory, `run-${i}.json`), JSON.stringify([...wallet.bytes]), { mode: 0o600 });
+        await writeFile(path.join(directory, `run-${runId ? `${runId}-` : ""}${i}.json`), JSON.stringify([...wallet.bytes]), { mode: 0o600 });
         const table = await generateSolanaKeypair();
         const data = Buffer.alloc(56);
         data.writeBigUInt64LE(resumed ? 100n : 0xffffffffffffffffn, 4);
@@ -33,7 +35,10 @@ for (const resumed of [false, true]) {
       const context = {
         rpc: {
           getGenesisHash: () => result('EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'),
-          getBalance: () => result({ value: 0n }),
+          getBalance: (account: string) => {
+            expect(account).not.toBe(activeBrowser.signer.address);
+            return result({ value: 0n });
+          },
           getTokenAccountsByOwner: () => result({ value: [] }),
           getProgramAccounts: (program: string, options: { filters: { memcmp: { bytes: string } }[] }) => result(
             program === 'AddressLookupTab1e1111111111111111111111111'
@@ -64,7 +69,7 @@ for (const resumed of [false, true]) {
           }
         },
       } as unknown as HostDeployContext;
-      await recoverPreview(context, payer.signer, DEFAULT_SOLANA_ENVIRONMENT, directory, true, payerPath);
+      await recoverPreview(context, payer.signer, DEFAULT_SOLANA_ENVIRONMENT, directory, !runId, payerPath, false, runId);
       expect(events).toEqual(resumed ? ['poll', 'close', 'close'] : ['deactivate', 'deactivate', 'poll', 'close', 'close']);
       expect(tables.size).toBe(0);
     } finally {

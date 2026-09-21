@@ -54,7 +54,10 @@ export async function recoverPreview(
   reset: boolean,
   deployerPath: string,
   fundingOnly = false,
+  runId?: string,
 ) {
+  if (runId && (reset || !/^[a-zA-Z0-9-]+$/.test(runId)))
+    throw new Error('run recovery requires a valid run id and cannot reset shared state');
   if ((await context.rpc.getGenesisHash().send()) !== 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG')
     throw new Error('preview recovery requires Solana devnet');
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -184,6 +187,7 @@ export async function recoverPreview(
   const legacyWallets = new Set<string>();
   for (const name of await readdir(directory)) {
     if (!/^(run-|demo-|browser-).+\.json$/.test(name)) continue;
+    if (runId && !name.startsWith(`run-${runId}-`)) continue;
     const wallet = await loadKeypairSigner(path.join(directory, name));
     wallets.set(wallet.address, wallet);
     if (name.startsWith('demo-legacy-')) legacyWallets.add(wallet.address);
@@ -331,7 +335,7 @@ export async function recoverPreview(
   }
   // Recover interrupted uploads; these are loader Buffer accounts, never ProgramData.
   {
-    for (const program of Object.values(programs)) {
+    for (const program of runId ? [] : Object.values(programs)) {
       const buffer = await createKeyPairSignerFromBytes(await uploadBufferBytes(deployerPath, program));
       const account = (
         await context.rpc.getAccountInfo(buffer.address, { encoding: 'base64', commitment: 'confirmed' }).send()

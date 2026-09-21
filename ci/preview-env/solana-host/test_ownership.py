@@ -9,7 +9,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent
 MOCK = '''#!/usr/bin/env python3
 import json,os,sys
-p=os.environ['CLUSTER_STATE']; s=json.load(open(p)); a=sys.argv[1:]
+p=os.environ['CLUSTER_STATE']; s=json.load(open(p)); a=sys.argv[1:]; changed=False
 if a[:2]==['get','namespace']:
  n=a[2]
  if n=='fhevm-ci-solana-owner':
@@ -22,13 +22,13 @@ elif a[:2]==['get','jobs']:
 elif a[:2]==['create','namespace']: print(json.dumps({'metadata':{}}))
 elif a[:2]==['create','-f']:
  if 'owner' in s: sys.exit(1)
- s['owner']=json.load(sys.stdin)['metadata']['annotations']['solana-preview-owner-uid']
+ s['owner']=json.load(sys.stdin)['metadata']['annotations']['solana-preview-owner-uid']; changed=True
 elif a[:2]==['create','configmap']:
  if s.get('locked'): sys.exit(1)
- s['locked']=True
-elif a[:2]==['delete','configmap']: s['locked']=False
+ s['locked']=True; changed=True
+elif a[:2]==['delete','configmap']: s['locked']=False; changed=True
 else: raise Exception(a)
-json.dump(s,open(p,'w'))
+if changed: json.dump(s,open(p,'w'))
 '''
 
 

@@ -279,7 +279,7 @@ export const connectWalletSession = async (
   assertActive();
   const signer = createTransactionSignerFromWalletAccount(account, `solana:${config.network}`);
   const messageSigner = createMessageSignerFromWalletAccount(account);
-  await ensureDemoFunding(config, signer.address);
+  if (config.network === 'localnet') await ensureDemoFunding(config, signer.address);
   assertActive();
   return {
     config,

@@ -47,7 +47,7 @@ import {
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
-import { saveRecoveryKey, mirrorRecoveryKeys } from "../src/solana/recovery";
+import { saveRecoveryKey, mirrorRecoveryKeys, requireRecoverableWallet } from "../src/solana/recovery";
 import { demoKeypairs, loadDemoEnv } from "./loadDemoEnv";
 import { createOperator, TAILSCALE_LOGIN_HEADER } from "./operator";
 
@@ -153,8 +153,14 @@ const main = async (): Promise<void> => {
         }
         return wallet.address;
       },
-      fundSol,
-      mintUsdc,
+      fundSol: async (recipient, sol) => {
+        if (env.network === "devnet") await requireRecoverableWallet(recipient);
+        return fundSol(recipient, sol);
+      },
+      mintUsdc: async (recipient, amount) => {
+        if (env.network === "devnet") await requireRecoverableWallet(recipient);
+        return mintUsdc(recipient, amount);
+      },
       // The page reaches the relayer through its own origin's proxy, never a raw relayer URL.
       readConfig: async () => ({
         ...(await readRuntimeConfig()),
