@@ -25,7 +25,7 @@ for name in solana-rpc solana-deployer; do
 done
 # The leaf-proof bearer token is only ever read inside this namespace, by the listeners and
 # the connectors, so each preview mints its own.
-openssl rand -base64 32 > "$work/proof-api-key"
+openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
 kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
   --from-file=api-key="$work/proof-api-key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
