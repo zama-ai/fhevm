@@ -11,7 +11,8 @@ pub struct RedundancyCase {
     pub requests: usize,
 }
 
-/// Number of events emitted by the user-decrypt success path (3+3+3+1).
+/// Number of events emitted by the user-decrypt success path: nine shares over three blocks,
+/// plus the consensus event riding in the third of them.
 pub const USER_DECRYPT_EVENT_COUNT: usize = 10;
 
 /// Cases that apply to all flow types (user-decrypt, public-decypt and input-proof).

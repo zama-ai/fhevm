@@ -49,9 +49,9 @@
             "name": "user_decrypt_req_type",
             "kind": {
               "Enum": [
-                "legacy",
                 "user_decrypt",
-                "delegated_user_decrypt"
+                "delegated_user_decrypt",
+                "unified"
               ]
             }
           }

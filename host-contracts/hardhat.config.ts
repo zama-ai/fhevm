@@ -105,6 +105,7 @@ const chainIds = {
   bnbTestnet: 97,
   mainnet: 1,
   polygon: 137,
+  bnb: 56,
   custom: 9999,
 };
 
@@ -154,6 +155,7 @@ const config: HardhatUserConfig = {
     bnbTestnet: getChainConfig('bnbTestnet'),
     mainnet: getChainConfig('mainnet'),
     polygon: getChainConfig('polygon'),
+    bnb: getChainConfig('bnb'),
     custom: getChainConfig('custom'),
   },
   paths: {

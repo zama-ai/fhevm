@@ -402,7 +402,7 @@ async fn plan_ct64_object(
         .await?
         .ok_or_else(|| {
             ExecutionError::MissingCiphertext64(format!(
-                "missing ct64 object for handle {}",
+                "no valid ct64 source available for handle {}",
                 to_hex(&material.handle)
             ))
         })?;
@@ -473,7 +473,7 @@ async fn plan_ct128_object(
                 .await?
                 .ok_or_else(|| {
                     ExecutionError::MissingCiphertext128(format!(
-                        "missing ct128 object for handle {}",
+                        "no valid ct128 source available for handle {}",
                         to_hex(&material.handle)
                     ))
                 })?;
