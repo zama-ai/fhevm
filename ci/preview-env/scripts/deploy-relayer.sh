@@ -60,6 +60,10 @@ case "${kind}" in
     kubectl patch deployment relayer -n "${NAMESPACE}" \
       -p '{"spec":{"progressDeadlineSeconds":2400}}'
     kubectl rollout status deployment/relayer -n "${NAMESPACE}" --timeout=35m
+    # Publish HTTP :3000 on the zws-dev tailnet (IngressClass tailscale). Metrics
+    # and the admin endpoint stay ClusterIP-only. Sets RELAYER_TS_URL for the
+    # deploy summary / PR comment (fhevm-internal#2000).
+    bash "${script_dir}/expose-relayer-tailscale.sh"
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \

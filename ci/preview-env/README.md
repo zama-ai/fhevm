@@ -21,6 +21,11 @@ dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'
 [`../../.github/workflows/preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 Torn down automatically when the PR closes
 ([`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
+The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
+MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
+`tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
+without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
+ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
