@@ -141,13 +141,14 @@ dominant-error algorithm (most frequent code) may need a priority order or a per
 
 ## 6. Request id and request hash
 
-Each HTTP request gets a UUIDv7 `requestId`: in the body, in `x-request-id`, on every log line, and passed to the
-aggregator, which uses it for its logs only. Nothing keys on it: there is no map of requests.
+Each HTTP request gets a UUIDv7 `requestId`, minted by `Log::new` in the handler: in the body, in `x-request-id`,
+on every log line, and passed to the aggregator, which uses it for its logs only. Nothing keys on it: there is no
+map of requests.
 
-The request hash is the connector's `decryptionId`: the aggregator computes it, with the connector's crate, from
-the connector request it forwards (never from the envelope the relayer received), so it is exactly the id every KMS
-node derives. Two identical payloads get two request ids and one hash; both appear on the same log lines
-(`request_id`, `decryption_id`).
+The request hash is the connector's `decryptionId`: computed with the connector's crate from the connector request
+the relayer forwards (never from the body it received), so it is exactly the id every KMS node derives. Two
+identical payloads get two request ids and one hash; both are identifiers of the request's `Log` (section 9), so
+every line of one request carries them once they are known.
 
 ## 7. Shutdown
 
@@ -164,17 +165,58 @@ readiness.
 
 ## 9. Logging
 
-Per request: `user decrypt request` / `public decrypt request` (info: request_id, decryption_id, handles) once the
-body is validated, then the aggregator's lines (its span carries `request_id`, `decryption_id`, `handles`, and
-`node` on every per-node line), then `request succeeded` (info: request_id, status) or `request rejected` (info,
-4xx: request_id, status, code, message) / `request failed` (warn, 5xx: request_id, status, code). Bodies, keys,
-signatures and shares are never logged. JSON output is the default (`log.format`); `RUST_LOG` sets the level.
+Every line the endpoint writes about a request carries the same four identifiers, so a request can be followed
+by any of them (handles are what the rest of the stack logs; the decryption id is what the KMS nodes log):
+
+| field | value | known from |
+|---|---|---|
+| `request_id` | the relayer's UUIDv7 (section 6) | the first line |
+| `flow` | `user_decrypt`, `public_decrypt`; `none` on the router fallbacks | the first line |
+| `handles` | `[0x…, 0x…]`, the ciphertext handles of the request | the body is parsed; `none` before |
+| `decryption_id` | `0x…`, the connector's content hash (section 6) | the connector request is built; `none` before |
+
+They live in `Log` (`src/logging.rs`): the handler creates it (`Log::new("user_decrypt")`), fills `handles` and
+`decryption_id` as it goes, and hands it to the reply or the error, which write the last line. One method per event:
+
+| event | level | own fields | when |
+|---|---|---|---|
+| `request received` | info | — | the body is parsed (handles known) |
+| `request body rejected` | info | `reason` | axum could not parse the body: invalid JSON, unknown field, wrong content type, oversized |
+| `request validation failed` | info | `field`, `issue` | a rule of section 3 failed; the client's error, named precisely |
+| `request forwarded` | info | — | the connector request is built and goes to the aggregator (decryption id known) |
+| `request succeeded` | info | `status` | 200 answered |
+| `request rejected` | info | `status`, `code`, `reason` | 4xx answered: the client's request is at fault |
+| `request failed` | warn | `status`, `code` | 5xx answered: the relayer or the nodes are at fault |
+
+Between `request forwarded` and the last line come the aggregator's lines (`aggregation started`, one line per node
+outcome, `aggregation succeeded` / `aggregation failed`; see `kms_aggregator/docs.md` §10), whose span carries the
+same `request_id`, `decryption_id` and `handles`. One successful user decrypt, JSON format, fields abridged:
+
+```json
+{"level":"INFO","fields":{"message":"request received","request_id":"019…","flow":"user_decrypt","handles":"[0x…0401]","decryption_id":"none"}}
+{"level":"INFO","fields":{"message":"request forwarded","request_id":"019…","flow":"user_decrypt","handles":"[0x…0401]","decryption_id":"0x…"}}
+{"level":"INFO","fields":{"message":"aggregation started","nodes":13,"threshold":9,"timeout_ms":10000},"span":{"request_id":"019…","decryption_id":"0x…","handles":"[0x…0401]","flow":"user_decrypt","name":"aggregation"}}
+{"level":"INFO","fields":{"message":"aggregation succeeded","counted":9,…},"span":{…}}
+{"level":"INFO","fields":{"message":"request succeeded","request_id":"019…","flow":"user_decrypt","handles":"[0x…0401]","decryption_id":"0x…","status":200}}
+```
+
+A validation failure is `request received`, `request validation failed` (`field`, `issue`), `request rejected`
+(`status` 400, `code` `malformed`); an unparseable body is `request body rejected` then `request rejected`, both with
+`handles` and `decryption_id` at `none`. Client-side outcomes are `info`, not `warn`: they are not relayer errors.
+
+Adding a line is one call: `log!(debug, log, attempts = 2, "retrying")` prints the four identifiers then the
+caller's fields; a recurring event becomes a method on `Log`. Adding an identifier is one field in `Log` and one
+line in the `log!` macro. `Log` is meant to be handed to the aggregator in a later iteration, so that its lines and
+the endpoint's share one shape. Bodies, keys, signatures and shares are never logged. JSON output is the default
+(`log.format`); `RUST_LOG` sets the level, default `warn,relayer_http=info`.
 
 ## 10. Testing
 
 Unit tests next to every function (types, validation rules, conversions, error mapping) and integration tests in
 `mod.rs` that drive the router in memory with the mock connector: the success envelopes, every 400 case, 404, 405,
-the oversized body, the dominant-error mapping, shutdown, the probes. `cargo test -p relayer-http endpoint`.
+the oversized body, the dominant-error mapping, shutdown, the probes, and the log lines of three requests (success,
+validation failure, unparseable body) captured through a thread-local JSON subscriber: every `request …` line has
+the four identifiers, with the expected values at each step. `cargo test -p relayer-http endpoint`.
 
 Manual smoke, with the API key env vars set:
 
