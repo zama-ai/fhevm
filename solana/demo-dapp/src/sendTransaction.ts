@@ -1,4 +1,3 @@
-import { rethrowTranslatedZamaHostError } from "@fhevm/sdk/solana";
 import {
   appendTransactionMessageInstructions,
   assertIsFullySignedTransaction,
@@ -31,24 +30,20 @@ export const sendTransaction = async (
   instructions: readonly Instruction[],
   computeUnitLimit: number,
 ): Promise<Signature> => {
-  try {
-    const rpc = createSolanaRpc(config.rpcUrl);
-    const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
-    const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
-    const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
-    const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
-    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Transaction");
-    const transaction = await signTransactionMessageWithSigners(message);
-    assertIsFullySignedTransaction(transaction);
-    assertIsTransactionWithBlockhashLifetime(transaction);
-    assertIsTransactionWithinSizeLimit(transaction);
-    await simulateSignedTransactionLocally(rpc, transaction, "Signed transaction");
-    await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
-    return getSignatureFromTransaction(transaction);
-  } catch (error) {
-    rethrowTranslatedZamaHostError(error);
-  }
+  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
+  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
+  const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
+  const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
+  const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
+  const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
+  await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), "Transaction");
+  const transaction = await signTransactionMessageWithSigners(message);
+  assertIsFullySignedTransaction(transaction);
+  assertIsTransactionWithBlockhashLifetime(transaction);
+  assertIsTransactionWithinSizeLimit(transaction);
+  await simulateSignedTransactionLocally(rpc, transaction, "Signed transaction");
+  await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
+  return getSignatureFromTransaction(transaction);
 };

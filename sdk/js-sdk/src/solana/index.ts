@@ -114,14 +114,6 @@ export {
   prepareTransientStore,
 } from './transientStore.js';
 export type { TransientStore } from './transientStore.js';
-export {
-  TRANSIENT_STORE_NOT_OPENED,
-  ZamaHostProgramError,
-  getZamaHostErrorMessage,
-  isZamaHostError,
-  rethrowTranslatedZamaHostError,
-  translateZamaHostProgramError,
-} from './programError.js';
 export { solanaHostProgram } from './clients/createFhevmBaseClient.js';
 
 export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';

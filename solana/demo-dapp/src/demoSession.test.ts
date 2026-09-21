@@ -4,6 +4,8 @@ import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { SolanaSignOffchainMessage } from '@solana/wallet-standard-features';
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
   assertWalletAccountCapabilities,
@@ -231,14 +233,36 @@ describe('Wallet Standard boundary', () => {
     expect(describeWalletError(new Error('User rejected the request'), 'reveal')).toContain('balance remains hidden');
   });
 
-  test('surfaces a translated zama-host program error', () => {
+  test('decodes a missing journal when the host program identity is in the logs', () => {
     expect(
       describeWalletError(
         new Error(
-          'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.',
+          [
+            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} invoke [1]`,
+            'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.',
+            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17c0`,
+          ].join('\n'),
         ),
         'transaction',
       ),
-    ).toContain('TransientStoreNotOpened (6080)');
+    ).toBe('TransientStoreNotOpened: transient store must be opened for this transaction and closed last');
+  });
+
+  test('leaves a token OwnerMismatch as the original diagnostic', () => {
+    const original = [
+      `Program ${CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS} invoke [1]`,
+      'Program log: AnchorError caused by account: authority. Error Code: OwnerMismatch. Error Number: 6000. Error Message: owner mismatch.',
+      `Program ${CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS} failed: custom program error: 0x1770`,
+    ].join('\n');
+    expect(describeWalletError(new Error(original), 'transaction')).toBe(original);
+  });
+
+  test('leaves a numeric 6000 without program identity unclassified', () => {
+    const original = 'InstructionError: [1, {"Custom":6000}]';
+    expect(describeWalletError(new Error(original), 'transaction')).toBe(original);
+  });
+
+  test('leaves a network failure unchanged', () => {
+    expect(describeWalletError(new Error('fetch failed'), 'transaction')).toBe('fetch failed');
   });
 });

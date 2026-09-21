@@ -1,4 +1,3 @@
-import { rethrowTranslatedZamaHostError } from '@fhevm/sdk/solana';
 import { createSolanaRpc, getBase64EncodedWireTransaction, type Transaction } from '@solana/kit';
 
 type SimulationValue = {
@@ -13,12 +12,11 @@ export const assertSimulationSucceeded = (label: string, simulation: SimulationV
   if (simulation.err === null) return;
   const error = stringifyError(simulation.err);
   const logs = simulation.logs?.join('\n') ?? '';
-  const failure = new Error(
+  throw new Error(
     logs.length > 0
       ? `${label} failed local simulation: ${error}\n${logs}`
       : `${label} failed local simulation: ${error}`,
   );
-  rethrowTranslatedZamaHostError(failure);
 };
 
 const simulateTransactionLocally = async (

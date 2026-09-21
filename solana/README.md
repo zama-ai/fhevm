@@ -222,8 +222,8 @@ its signature on the outer execution transaction. Transient store rent is refund
 that payer by the final close. Its fixed capacity is 112 result occurrences and
 32 explicit grants; packet and compute limits may bind earlier.
 Omitting `appendTransientStoreInstructions` fails the first FHE instruction as
-`TransientStoreNotOpened`. `translateZamaHostProgramError` maps that name, and
-the other host IDL codes, out of Kit, RPC, and simulation failures.
+`TransientStoreNotOpened`. The generated host client identifies that error when
+the failed instruction is the host; the demo formats it only then.
 
 ## Documentation
 
