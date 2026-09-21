@@ -76,6 +76,7 @@ const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
 const BATCH_STATUS_PENDING = 0;
 const BATCH_STATUS_DISPATCHED = 1;
 const BATCH_STATUS_SETTLED = 2;
+const BATCH_STATUS_REFUNDING = 4;
 
 import * as vault from "@demo-dapp/vault/index.js";
 import type { FhevmSolanaChain } from "@fhevm/sdk/solana";
@@ -607,3 +608,151 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
     SCENARIO_TIMEOUT_MS,
   );
 });
+
+// Kept separate from the successful settlement arc so cancellation never depends on that test.
+test.skipIf(!runsDemoScenarios)(
+  "deposit cancellation/refund: committed dispatch retry preserves state and quit restores the exact balance",
+  async () => {
+    const { env, config } = await loadDemoEnv();
+    const authorization = await readDemoAuthorization();
+    const { sendTransaction } = await import('@demo-dapp/sendTransaction');
+    const { dispatchVaultBatch } = await import('@demo-dapp/settlement');
+    const { associatedTokenAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } =
+      await import('@demo-dapp/vault/internal/tokenAccounts');
+    const { solanaBatchLookupTablesPath } = await import('../../src/layout');
+    const sdk = await loadSolanaSdkModule();
+    const aliceBytes = Uint8Array.from(JSON.parse(await fs.readFile(demoKeypairs(env).alice, 'utf8')));
+    const alice = await createKeyPairSignerFromBytes(aliceBytes);
+    const keeper = await loadSigner(demoKeypairs(env).keeper);
+    expect(alice.address).toBe(config.personas.alice);
+    expect(keeper.address).toBe(config.personas.keeper);
+    const readConfig = async () => parseRuntimeDemoConfig(
+      JSON.parse(await fs.readFile(resolveDemoConfigPath(), 'utf8')), authorization.bootId,
+    );
+    const dappConfig = await readConfig();
+    const rpc = createSolanaRpc(env.rpcUrl);
+    const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
+    const roots = depositRoots(config);
+    const personas = await loadPersonas(env, { alice: demoKeypairs(env).alice, keeper: demoKeypairs(env).keeper });
+    await personas.fund(personas.roles.keeper!, 0.2);
+    await prepareNextBatch(dappConfig, keeper, 'deposit', solanaBatchLookupTablesPath);
+    const current = await vault.getCurrentBatch(rpc, roots, { commitment: 'confirmed' });
+    expect(current.state.status).toBe(BATCH_STATUS_PENDING);
+    // Never cancel another participant's work, including an earlier failed run.
+    expect(current.state.joinCount).toBe(0n);
+    const { batch, batchAuthority, batchJoinTokenAccount } = current.addresses;
+    const position = { batch, batchIndex: current.index };
+    const amount = 1_000_000n;
+    await personas.fund(personas.roles.alice!);
+    const mintResponse = await fetch(`${OPERATOR_URL}/demo-faucet/mint-usdc`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${authorization.token}`, 'content-type': 'application/json',
+        'x-fhevm-demo-boot-id': authorization.bootId },
+      body: JSON.stringify({ address: alice.address, amount: 1 }),
+    });
+    if (!mintResponse.ok) throw new Error(`refund fixture mint failed (${mintResponse.status})`);
+    const fhe = await createSolanaFheTransaction({ payer: alice, programAddress: config.programs.host });
+    const mint = roots.joinConfidentialMint;
+    const init = await vault.getOrCreateConfidentialTokenAccountInstruction(rpc, {
+      fhe: fhe.accounts, payer: alice, owner: alice.address, mint, hostConfig: config.hostConfig,
+    });
+    if (init) await sendTransaction(dappConfig, alice, fhe.wrap([init]), WRAP_COMPUTE_UNIT_LIMIT);
+    await sendTransaction(dappConfig, alice, fhe.wrap([await vault.buildWrapUsdcInstruction({
+      fhe: fhe.accounts, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
+      tokenProgram: vault.TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, amount,
+    })]), WRAP_COMPUTE_UNIT_LIMIT);
+    sdk.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
+    const chain = sdk.defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
+      relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
+    } });
+    const decrypt = sdk.createFhevmDecryptClient({ chain, rpc, trust: {
+      kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
+      kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, '0')}`),
+      kmsEpochId: asBytes32Hex(config.kmsEpochId), fheParameter: config.fheParameter,
+      gatewayEip712Domain: { name: 'Decryption', version: '1', chainId: BigInt(config.gatewayChainId),
+        verifyingContract: config.gatewayDecryptionContract },
+    } });
+    await decrypt.ready;
+    const permit = await decrypt.signPermit({ wallet: sdk.solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
+    const userTokenAccount = await vault.tokenAccountAddress(mint, alice.address);
+    const userBalanceStore = await vault.tokenStateAddress(mint, userTokenAccount);
+    const readAmount = async (store: Address, key = 'balance_________________________'): Promise<bigint> => {
+      const state = await decrypt.fetchEncryptedStore(store, { commitment: 'confirmed' });
+      const handle = encryptedStoreHandle(state, new TextEncoder().encode(key));
+      await waitForSnsCommit(`0x${Buffer.from(handle).toString('hex')}`, env.coprocessorDbPsql);
+      const values = await decrypt.decryptValues({ session: permit,
+        entries: [{ handle, encryptedStore: addressBytes(store) }],
+        options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS } });
+      expect(values).toHaveLength(1);
+      expect(typeof values[0]!.value).toBe('bigint');
+      return values[0]!.value as bigint;
+    };
+    const beforeJoin = await readAmount(userBalanceStore);
+    expect(beforeJoin >= amount).toBe(true);
+    await withHostReachableFetch(async () => {
+      const encrypt = sdk.createFhevmEncryptClient({ chain, rpc });
+      const { inputProof } = await encrypt.encryptValues({
+        contractAddress: addressToBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+        userAddress: addressToBytes32Hex(alice.address), values: [{ type: 'uint64', value: amount }],
+      });
+      await vault.joinBatch({ solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) }, {
+        rpc, rpcSubscriptions, inputProof: inputProof as never, inputIndex: 0, user: alice, payer: alice,
+        batcher: roots.batcher, batch, joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
+        tokenProgram: vault.TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
+      });
+    });
+    expect((await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'confirmed' })).state.joinCount).toBe(1n);
+    expect(await readAmount(userBalanceStore)).toBe(beforeJoin - amount);
+    const joinStore = await vault.joinStoreAddress(batch, alice.address);
+    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(amount);
+    const batcher = await vault.getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
+    await until(async () => (await rpc.getSlot({ commitment: 'confirmed' }).send()) >=
+      current.state.openedSlot + batcher.minBatchAgeSlots, { description: 'refund batch dispatch age', timeoutMs: 120_000 });
+    const session = async () => {
+      await personas.fund(personas.roles.keeper!, 0.2);
+      return { config: await readConfig(), keeper: await loadSigner(demoKeypairs(env).keeper),
+        relayerApiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local', proofService: {
+          url: process.env.DEMO_PROOF_URL!, apiKey: process.env.DEMO_PROOF_API_KEY!,
+        } };
+    };
+    expect(await dispatchVaultBatch(await session(), position, 'deposit')).not.toBeNull();
+    const pendingBurn = await vault.pendingBurnAddress(mint, batchJoinTokenAccount);
+    const account = () => rpc.getAccountInfo(pendingBurn, { encoding: 'base64', commitment: 'confirmed' }).send();
+    const dispatched = await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'confirmed' });
+    expect(dispatched.state.status).toBe(BATCH_STATUS_DISPATCHED);
+    expect(dispatched.state.joinCount).toBe(1n);
+    const pendingBefore = (await account()).value;
+    expect(pendingBefore).not.toBeNull();
+    // Reconstruct every operator input from durable sources, as after losing the response/process.
+    expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
+    expect((await account()).value).toEqual(pendingBefore);
+    const keeperFhe = await createSolanaFheTransaction({ payer: keeper, programAddress: config.programs.host });
+    await sendTransaction(dappConfig, keeper, keeperFhe.wrap([await vault.buildCancelDispatchInstruction({
+      fhe: keeperFhe.accounts, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
+      hostConfig: config.hostConfig, authorityFundingLamports: BigInt(config.authorityFundingLamports),
+    })]), JOIN_COMPUTE_UNIT_LIMIT);
+    expect((await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'confirmed' })).state.status).toBe(BATCH_STATUS_REFUNDING);
+    expect((await account()).value).toBeNull();
+    await sendTransaction(dappConfig, keeper, [await vault.buildReclaimBatchAuthorityInstruction({
+      authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
+    })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
+    expect((await rpc.getBalance(batchAuthority, { commitment: 'confirmed' }).send()).value === 0n).toBe(true);
+    const quit = await vault.buildQuitInstruction({
+      ...fhe.accounts, user: alice, payer: alice, batcher: roots.batcher, batch,
+      joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
+      batchAuthorityAta: await associatedTokenAddress(batchAuthority, roots.joinUnderlyingMint, vault.TOKEN_PROGRAM_ADDRESS),
+      userAta: await associatedTokenAddress(alice.address, roots.joinUnderlyingMint, vault.TOKEN_PROGRAM_ADDRESS),
+      batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStateAddress(mint, batchJoinTokenAccount),
+      userBalanceStore, joinStore, hostConfig: config.hostConfig,
+      zamaEventAuthority: await zamaEventAuthorityAddress(), confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
+    });
+    await sendTransaction(dappConfig, alice, fhe.wrap([quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
+    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
+    // A retry cannot credit the original contribution twice.
+    await sendTransaction(dappConfig, alice, fhe.wrap([quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
+    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
+    console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);
+  }, SCENARIO_TIMEOUT_MS,
+);
