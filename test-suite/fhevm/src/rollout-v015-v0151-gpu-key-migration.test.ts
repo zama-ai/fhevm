@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as processUtils from "./utils/process";
+import * as fsUtils from "./utils/fs";
+import type { RolloutRunContext } from "./commands/rollout-run";
 
 import {
   type OperatorMaterial,
@@ -8,6 +11,7 @@ import {
 } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/checks";
 import {
   adoptionScenario,
+  driveBlueGreenUpgrade,
   gatewayContractUpgradePlan,
   hostContractUpgradePlan,
   predecessorImagePlan,
@@ -39,6 +43,45 @@ const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial =
 const greenCandidate = { RFC029_GREEN_SHA: "c9a9e929308973ed949dcea86c4c5f2f5e221c3a" };
 
 describe("RFC 029 rollout gates", () => {
+  test("drives one proposal and observes completed cutover on every operator without a dry-run gate", async () => {
+    const env = spyOn(fsUtils, "readEnvFile").mockResolvedValue({
+      CHAIN_ID_HOST: "12345", RPC_URL: "http://host:8545",
+      HOST_CHAIN_1_CHAIN_ID: "67890", HOST_CHAIN_1_RPC_URL: "http://host-1:8545",
+    });
+    const sql = spyOn(processUtils, "run").mockResolvedValue({ stdout: "complete\n", stderr: "", code: 0 });
+    const proposals: Array<{ command: string; env?: Record<string, string> }> = [];
+    const ctx = {
+      readState: async () => ({ scenario: { hostChains: [{}, {}] }, discovery: { endpoints: { gateway: { http: "http://gateway:8545" } } } }),
+      runHostContractTask: async (command: string, options: { env?: Record<string, string> }) => {
+        proposals.push({ command, env: options.env });
+      },
+      test: () => { throw new Error("Migration must not invoke the B/G test campaign"); },
+    } as unknown as RolloutRunContext;
+    try {
+      for (const [version, id] of [["0.15.0", "1"], ["0.15.1", "2"]] as const) {
+        sql.mockClear();
+        await driveBlueGreenUpgrade(ctx, version, id);
+        expect(sql.mock.calls.map(([args]) => args[args.indexOf("-d") + 1])).toEqual([
+          "coprocessor", "coprocessor_1", "coprocessor_2",
+        ]);
+        for (const [args] of sql.mock.calls) {
+          const query = args.at(-1)!;
+          expect(query).toContain("state='LIVE' AND status='completed'");
+          expect(query).toContain(`version='${version}'`);
+          expect(query).toContain(id.padStart(64, "0"));
+          expect(query).toContain("COUNT(*)=2");
+          expect(query).not.toContain("DryRunStarted");
+        }
+      }
+      expect(proposals.map(({ env }) => env?.PROPOSE_ID)).toEqual(["1", "2"]);
+      expect(proposals.every(({ command }) => command.includes("task:proposeCoprocessorUpgrade"))).toBe(true);
+      expect(JSON.parse(proposals[0]!.env!.LOCAL_HOST_CHAINS!)).toHaveLength(2);
+    } finally {
+      env.mockRestore();
+      sql.mockRestore();
+    }
+  });
+
   test("requires an exact 0.15 Blue tag", () => {
     expect(() => migrationVersions({})).toThrow("RFC029_BLUE_TAG is required");
     expect(() => migrationVersions({ RFC029_BLUE_TAG: "latest" })).toThrow("release tag or a full commit SHA");
