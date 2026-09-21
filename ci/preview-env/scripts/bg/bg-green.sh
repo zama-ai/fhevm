@@ -15,7 +15,7 @@
 # Keep the helm --set lists in sync with deploy-coprocessor.sh and
 # deploy-coprocessor-sidecars.sh (polygon-consumer-gcs).
 #
-# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-green.sh migrate|start
+# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-green.sh migrate|start
 # Env: NAMESPACE (required), NB_COPROCESSOR (2),
 #      DEPLOY_POLYGON (default: true when the Blue Polygon consumer release exists),
 #      GCS_IMAGE_TAG (default: the listener image tag of this env, else the checkout's HEAD SHA),
@@ -35,7 +35,7 @@ fi
 # image still prints 0.14.0), so read it from the binary rather than from a pin.
 BCS_STACK_VERSION="${BCS_STACK_VERSION:-$(kubectl exec -n "${NAMESPACE}" deploy/coprocessor-1-host-listener-consumer -- host_listener --stack-version)}"
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 values_dir="${root}/ci/preview-env/coprocessor"
 COPROCESSOR_CHART="${COPROCESSOR_CHART:-${root}/charts/coprocessor}"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${values_dir}/values-coprocessor-gcs-e2e.yaml")}"

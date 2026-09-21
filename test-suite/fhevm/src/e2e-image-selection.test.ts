@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-const { selectImages } = require('../../../ci/preview-env/scripts/create-e2e-inputs.cjs') as {
+const { selectImages } = require('../../../ci/preview-env/scripts/e2e/create-e2e-inputs.cjs') as {
   selectImages(input: {
     buildResults: Record<string, { result?: string; outputs: Record<string, string> }>;
     headTag: string;

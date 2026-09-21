@@ -15,7 +15,7 @@
 # reinitializeV<N> and a proxy already initialised at N would revert (fresh deploys initialise at N).
 # A release without code change does not bump N, so skipping is the correct outcome.
 #
-# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-contracts.sh status|upgrade
+# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-contracts.sh status|upgrade
 # Env: NAMESPACE (required); TARGET_TAG (default: the env's listener image tag, i.e. the deployed
 #      branch SHA); CONTRACTS_CHART (charts/contracts of this
 #      checkout); GATEWAY_RPC_URL (optional, implementation checks on the gateway);
@@ -26,7 +26,7 @@ DRY_RUN="${DRY_RUN:-false}"
 
 verb="${1:?usage: bg-contracts.sh status|upgrade}"
 : "${NAMESPACE:?}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 CONTRACTS_CHART="${CONTRACTS_CHART:-${root}/charts/contracts}"
 # Target = the tag the branch's images were published under. On the production path the contracts,
 # relayer and test-suite are all pinned to the previous release, so the listener (never pinned) is

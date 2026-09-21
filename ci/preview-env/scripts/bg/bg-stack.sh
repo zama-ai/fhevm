@@ -27,7 +27,7 @@
 set -euo pipefail
 
 : "${NAMESPACE:?NAMESPACE is required}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 KMS_CONNECTOR_CHART="${KMS_CONNECTOR_CHART:-${root}/charts/kms-connector}"
 COMMON_CHART="${COMMON_CHART:-oci://hub.zama.org/ghcr/zama-zws/helm-charts/common}"
 COMMON_CHART_VERSION="${COMMON_CHART_VERSION:-0.3.3}"

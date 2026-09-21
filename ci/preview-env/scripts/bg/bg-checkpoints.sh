@@ -16,7 +16,7 @@
 #   bg-checkpoints.sh post           state hashes still agree, versioning
 #                                    unchanged, traffic counters clean (run bg-traffic.sh verify too)
 #
-# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg-checkpoints.sh <phase>
+# Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-checkpoints.sh <phase>
 # Env: NAMESPACE (required); GCS_STACK_VERSION (default: gcs overlay); BCS_STACK_VERSION (default:
 #      what the Blue consumer binary prints); WINDOW_START (ISO time passed to the propose task,
 #      optional); WINDOW_ALIGN_SECS (12); GATEWAY_RPC_URL (optional, gateway checks).
@@ -24,7 +24,7 @@ set -euo pipefail
 
 phase="${1:?usage: bg-checkpoints.sh baseline|dry-run|window-timing|cutover|post}"
 : "${NAMESPACE:?}"
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${root}/ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml")}"
 schema="gcs-${GCS_STACK_VERSION}"
 WINDOW_ALIGN_SECS="${WINDOW_ALIGN_SECS:-12}"
