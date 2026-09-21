@@ -138,10 +138,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-          # `closed` runs the base branch's workflow and its merge ref may already be
-          # gone, so pin the default branch there; a dispatch takes the branch the
-          # operator picked, which is what makes this testable before merge.
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.repository.default_branch }}
+          # PR events use the trusted base branch, which owns the recovery scripts;
+          # the PR merge ref may be gone after closing. Dispatch keeps the selected ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.pull_request.base.ref }}
           sparse-checkout: |
             ci/preview-env/scripts/sweep-wallets.sh
             ci/preview-env/scripts/sweep-wallets.cjs
