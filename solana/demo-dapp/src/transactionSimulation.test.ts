@@ -21,16 +21,24 @@ describe("assertSimulationSucceeded", () => {
     expect(() => assertSimulationSucceeded("Shield transaction", { err: null })).not.toThrow();
   });
 
+  test("surfaces host IDL errors instead of the raw simulation payload", () => {
+    expect(() =>
+      assertSimulationSucceeded("Shield transaction", {
+        err: { InstructionError: [1, { Custom: 6080 }] },
+        logs: [
+          "Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.",
+        ],
+      }),
+    ).toThrow(/TransientStoreNotOpened \(6080\)/);
+  });
+
   test("surfaces the RPC error and program logs", () => {
     expect(() =>
       assertSimulationSucceeded("Shield transaction", {
         err: { InstructionError: [1, { Custom: 6_001n }] },
         logs: ["Program log: rejected", "Program failed"],
       }),
-    ).toThrow(
-      'Shield transaction failed local simulation: {"InstructionError":[1,{"Custom":"6001"}]}\n' +
-        "Program log: rejected\nProgram failed",
-    );
+    ).toThrow(/HostConfigPaused \(6001\)/);
   });
 
   test("reports failures that have no logs", () => {

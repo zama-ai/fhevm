@@ -1,4 +1,4 @@
-import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore, rethrowTranslatedZamaHostError } from '@fhevm/sdk/solana';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -325,29 +325,33 @@ export async function depositToVault(
     computeUnitLimit: number,
     beforeSend?: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
-    const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
-    const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
-    session.assertActive();
-    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), 'Shield transaction');
-    session.assertActive();
-    const transaction = await signTransactionMessageWithSigners(message);
-    session.assertActive();
-    assertIsFullySignedTransaction(transaction);
-    assertIsTransactionWithBlockhashLifetime(transaction);
-    assertIsTransactionWithinSizeLimit(transaction);
-    await simulateSignedTransactionLocally(rpc, transaction, 'Signed shield transaction');
-    session.assertActive();
-    const signature = getSignatureFromTransaction(transaction);
-    beforeSend?.({
-      signature,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
-    });
-    await sendAndConfirm(transaction, { commitment: 'confirmed', skipPreflight: true });
-    return signature;
+    try {
+      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+      const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
+      const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
+      const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
+      const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
+      session.assertActive();
+      await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), 'Shield transaction');
+      session.assertActive();
+      const transaction = await signTransactionMessageWithSigners(message);
+      session.assertActive();
+      assertIsFullySignedTransaction(transaction);
+      assertIsTransactionWithBlockhashLifetime(transaction);
+      assertIsTransactionWithinSizeLimit(transaction);
+      await simulateSignedTransactionLocally(rpc, transaction, 'Signed shield transaction');
+      session.assertActive();
+      const signature = getSignatureFromTransaction(transaction);
+      beforeSend?.({
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
+      });
+      await sendAndConfirm(transaction, { commitment: 'confirmed', skipPreflight: true });
+      return signature;
+    } catch (error) {
+      rethrowTranslatedZamaHostError(error);
+    }
   };
 
   let shieldAlreadyConfirmed = false;

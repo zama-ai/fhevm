@@ -221,6 +221,9 @@ For a stored multisig proposal, declare that transient store payer up front and 
 its signature on the outer execution transaction. Transient store rent is refunded to
 that payer by the final close. Its fixed capacity is 112 result occurrences and
 32 explicit grants; packet and compute limits may bind earlier.
+Omitting `appendTransientStoreInstructions` fails the first FHE instruction as
+`TransientStoreNotOpened`. `translateZamaHostProgramError` maps that name, and
+the other host IDL codes, out of Kit, RPC, and simulation failures.
 
 ## Documentation
 

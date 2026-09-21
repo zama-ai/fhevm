@@ -230,4 +230,15 @@ describe('Wallet Standard boundary', () => {
     expect(describeWalletError({ code: 4001 }, 'transaction')).toContain('any confirmed step is saved');
     expect(describeWalletError(new Error('User rejected the request'), 'reveal')).toContain('balance remains hidden');
   });
+
+  test('surfaces a translated zama-host program error', () => {
+    expect(
+      describeWalletError(
+        new Error(
+          'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.',
+        ),
+        'transaction',
+      ),
+    ).toContain('TransientStoreNotOpened (6080)');
+  });
 });

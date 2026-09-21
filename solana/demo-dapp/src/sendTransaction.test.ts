@@ -92,4 +92,15 @@ describe('sendTransaction simulation boundary', () => {
     });
     expect(mocks.simulateSigned.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendAndConfirm.mock.invocationCallOrder[0]);
   });
+
+  test('translates a host simulation failure before the wallet signs', async () => {
+    mocks.simulateUnsigned.mockRejectedValue(
+      new Error(
+        'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.',
+      ),
+    );
+
+    await expect(sendTransaction(config, payer, [], 100_000)).rejects.toThrow(/TransientStoreNotOpened \(6080\)/);
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
 });

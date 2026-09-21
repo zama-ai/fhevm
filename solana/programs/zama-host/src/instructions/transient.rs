@@ -148,3 +148,20 @@ fn final_close(instructions: &AccountInfo) -> Result<(u16, Instruction)> {
     );
     Ok((last, close))
 }
+
+/// Load the payer's journal. An unopened (system-owned or empty) account is
+/// `TransientStoreNotOpened`, not Anchor's generic owner error.
+pub(super) fn opened_transient_store<'info>(
+    account: &'info UncheckedAccount<'info>,
+) -> Result<AccountLoader<'info, TransientStore>> {
+    require_keys_eq!(
+        *account.owner,
+        crate::ID,
+        ZamaHostError::TransientStoreNotOpened
+    );
+    require!(
+        account.data_len() == TransientStore::SPACE,
+        ZamaHostError::TransientStoreNotOpened
+    );
+    AccountLoader::try_from(account).map_err(|_| error!(ZamaHostError::TransientAccountInvalid))
+}

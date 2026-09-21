@@ -13,7 +13,7 @@ import type { UiWalletAccount } from '@wallet-standard/react';
 import { SolanaSignOffchainMessage, type SolanaSignOffchainMessageFeature } from '@solana/wallet-standard-features';
 import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
-import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
+import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet, translateZamaHostProgramError } from '@fhevm/sdk/solana';
 
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
 import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
@@ -56,6 +56,8 @@ export type FundingPlan = {
 };
 
 export const describeWalletError = (error: unknown, context: 'connect' | 'transaction' | 'reveal'): string => {
+  const host = translateZamaHostProgramError(error);
+  if (host !== undefined) return host.message;
   const candidate = error as { readonly code?: unknown; readonly message?: unknown };
   const rejected =
     candidate?.code === 4001 ||
