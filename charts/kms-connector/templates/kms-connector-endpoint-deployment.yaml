@@ -82,13 +82,10 @@ spec:
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
+          {{- with .Values.kmsConnectorEndpoint.resources }}
           resources:
-            requests:
-              cpu: {{ .Values.kmsConnectorEndpoint.resources.requests.cpu }}
-              memory: {{ .Values.kmsConnectorEndpoint.resources.requests.memory }}
-            limits:
-              cpu: {{ .Values.kmsConnectorEndpoint.resources.limits.cpu }}
-              memory: {{ .Values.kmsConnectorEndpoint.resources.limits.memory }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if and .Values.kmsConnectorEndpoint.probes .Values.kmsConnectorEndpoint.probes.liveness.enabled }}
           livenessProbe:
             {{- toYaml (omit .Values.kmsConnectorEndpoint.probes.liveness "enabled") | nindent 12 }}
