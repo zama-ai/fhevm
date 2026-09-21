@@ -626,7 +626,7 @@ describe("applyKmsBootstrap", () => {
     const boot = applyKmsBootstrap(bundle, scenario);
     expect(boot.versions.env).toEqual({ ...bundle.env, CORE_VERSION: "v0.14.2-0" });
     expect(boot.versions.sources).toContain("kms-bootstrap=v0.14.2-0");
-    expect(boot.kmsBootstrapPending).toBe(true);
+    expect(boot.kmsBootstrapPending).toEqual({ targetCoreVersion: "v0.15.0-0" });
   });
 });
 

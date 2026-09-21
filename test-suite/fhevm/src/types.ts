@@ -65,7 +65,7 @@ export type KmsFheParams = "Test" | "Default";
  * resolved bundle, mirroring a production KMS upgrade over existing keys. The connector stays
  * on the bundle: it decodes the HEAD contracts' events, which an older connector cannot.
  */
-export type KmsBootstrapVersions = {
+export type KmsBootstrap = {
   coreVersion: string;
 };
 
@@ -78,7 +78,7 @@ export type KmsScenarioBlock = {
    *  as spares (peers=None) so a context switch can rotate one in (e.g. a node swap). */
   committeeSize?: number;
   fheParams?: KmsFheParams;
-  bootstrap?: KmsBootstrapVersions;
+  bootstrap?: KmsBootstrap;
 };
 
 /** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
@@ -90,7 +90,7 @@ export type ResolvedKmsTopology = {
   /** Initial on-chain committee (and the `3t+1` MPC group); `<= parties`. Cores beyond it are spares. */
   committeeSize: number;
   fheParams: KmsFheParams;
-  bootstrap?: KmsBootstrapVersions;
+  bootstrap?: KmsBootstrap;
 };
 
 export type CoprocessorScenario = {
@@ -264,8 +264,12 @@ export type State = {
    * marker only after readiness plus the post-boot health gate succeed.
    */
   e2eKmsConnectorRuntimeAdoptionPending?: boolean;
-  /** Set while the KMS core runs at `kms.bootstrap.coreVersion`; cleared once the bootstrap step upgrades it to the lock. */
-  kmsBootstrapPending?: boolean;
+  /**
+   * Set while the KMS core runs at `kms.bootstrap.coreVersion`; cleared once the bootstrap step
+   * upgrades it. Carries the bundle's core version so on-chain metadata written before the
+   * upgrade (ProtocolConfig's KMS software version) already names the core that ends up serving.
+   */
+  kmsBootstrapPending?: { targetCoreVersion: string };
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;

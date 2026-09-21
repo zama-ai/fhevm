@@ -21,7 +21,7 @@ import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
-  KmsBootstrapVersions,
+  KmsBootstrap,
   KmsMode,
   KmsScenarioBlock,
   LocalOverride,
@@ -68,12 +68,12 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
 
 const MAX_KMS_PARTIES = 7;
 
-/** Parses the optional `kms.bootstrap` versions; only the single centralized core has an in-place upgrade path. */
+/** Parses the optional `kms.bootstrap` block; only the single centralized core has an in-place upgrade path. */
 const resolveKmsBootstrap = (
   block: unknown,
   mode: KmsMode,
   sourceLabel: string,
-): KmsBootstrapVersions | undefined => {
+): KmsBootstrap | undefined => {
   if (block === undefined) {
     return undefined;
   }

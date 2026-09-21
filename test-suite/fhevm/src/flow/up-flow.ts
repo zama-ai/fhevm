@@ -1370,7 +1370,7 @@ export const applyKmsBootstrap = (
       env: { ...bundle.env, CORE_VERSION: bootstrap.coreVersion },
       sources: [...bundle.sources, `kms-bootstrap=${bootstrap.coreVersion}`],
     },
-    kmsBootstrapPending: true,
+    kmsBootstrapPending: { targetCoreVersion: bundle.env.CORE_VERSION },
   };
 };
 

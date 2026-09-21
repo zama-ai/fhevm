@@ -960,6 +960,15 @@ describe("assertBlueGreenKmsCompatibility", () => {
     ).not.toThrow();
   });
 
+  test("judges a SHA-pinned Blue by its compat tag", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(
+        { kind: "blue-green", bcs: { source: { mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" } } } as never,
+        { env: { CORE_VERSION: "v0.15.0-0" } },
+      ),
+    ).toThrow("set kms.bootstrap.coreVersion");
+  });
+
   test("ignores a 0.15 Blue and a locally built Blue", () => {
     expect(() =>
       assertBlueGreenKmsCompatibility(blueGreen("v0.15.0-0"), { env: { CORE_VERSION: "v0.15.0-0" } }),
