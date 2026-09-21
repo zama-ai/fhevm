@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   AccountRole,
   address,
@@ -104,6 +104,7 @@ describe('prepareTransientStore', () => {
       message,
     );
     expect(withStore.instructions).toEqual(expected.instructions);
+    expectTypeOf(withStore.feePayer).toEqualTypeOf(message.feePayer);
     expect(() => appendTransientStoreInstructions(transientStore, [body], withStore)).toThrow(
       'must not open or close the transient store',
     );

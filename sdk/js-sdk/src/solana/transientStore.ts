@@ -4,6 +4,7 @@ import {
   getProgramDerivedAddress,
   type Address,
   type Instruction,
+  type TransactionMessage,
   type TransactionSigner,
 } from '@solana/kit';
 
@@ -92,25 +93,22 @@ function sandwichTransientStore(
   return [open, ...instructions, close];
 }
 
-type KitTransactionMessage = Parameters<typeof appendTransactionMessageInstructions>[1];
-
 /** Surround `instructions` with the matching open (first) and close (last). Two arguments return the list; three append onto a Kit message. */
 export function appendTransientStoreInstructions(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
 ): Instruction[];
+export function appendTransientStoreInstructions<TMessage extends TransactionMessage>(
+  transientStore: TransientStore,
+  instructions: readonly Instruction[],
+  message: TMessage,
+): ReturnType<typeof appendTransactionMessageInstructions<TMessage, Instruction[]>>;
 export function appendTransientStoreInstructions(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
-  message: KitTransactionMessage,
-): ReturnType<typeof appendTransactionMessageInstructions>;
-export function appendTransientStoreInstructions(
-  transientStore: TransientStore,
-  instructions: readonly Instruction[],
-  message?: KitTransactionMessage,
-): Instruction[] | ReturnType<typeof appendTransactionMessageInstructions> {
-  const alreadyPresent =
-    message === undefined ? [] : ((message as { readonly instructions?: readonly Instruction[] }).instructions ?? []);
+  message?: TransactionMessage,
+): unknown {
+  const alreadyPresent = message === undefined ? [] : message.instructions;
   const sandwiched = sandwichTransientStore(transientStore, instructions, alreadyPresent);
   return message === undefined ? sandwiched : appendTransactionMessageInstructions(sandwiched, message);
 }
