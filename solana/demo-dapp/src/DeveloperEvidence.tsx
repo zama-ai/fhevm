@@ -189,16 +189,16 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
       <summary>
         <span>
           <strong>Developer evidence</strong>
-          <small>Localnet transactions & encrypted store</small>
+          <small>Solana transactions & encrypted store</small>
         </span>
       </summary>
       <div className="evidence-content">
         <div className="evidence-toolbar">
           <span role="status" aria-live="polite">
             {loading
-              ? 'Refreshing localnet evidence…'
+              ? 'Refreshing on-chain evidence…'
               : error === null
-                ? 'Verified localnet state'
+                ? 'Verified on-chain state'
                 : 'Evidence refresh failed'}
           </span>
           <button type="button" disabled={loading} onClick={() => setRefreshNonce((value) => value + 1)}>
