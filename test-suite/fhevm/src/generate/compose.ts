@@ -828,6 +828,17 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     }
   }
 
+  // A listener consumer's service name also identifies its broker queue.
+  // Sharing it across operator databases or Blue/Green roles load-balances
+  // blocks instead of delivering each block to every independent recipient.
+  for (const [serviceName, service] of Object.entries(services)) {
+    if (!serviceName.endsWith("-host-listener-consumer") || !Array.isArray(service.command)) continue;
+    if (service.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))) continue;
+    // Retain the original primary queue, including for single-operator stacks.
+    const identity = serviceName === "coprocessor-host-listener-consumer" ? "host-listener-consumer" : serviceName;
+    service.command = [...service.command, `--service-name=${identity}`];
+  }
+
   next.services = services;
   return next;
 };
