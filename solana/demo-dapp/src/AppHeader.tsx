@@ -12,7 +12,7 @@ export function AppHeader({ controller }: { readonly controller: DemoController 
       </a>
       <div className="network-pill">
         <span className="network-dot" />
-        Solana localnet
+        Solana{connection.kind === 'ready' ? ` ${connection.session.config.network}` : ''}
       </div>
       <WalletControl
         connection={connection}
