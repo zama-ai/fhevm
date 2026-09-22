@@ -6,6 +6,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {BytesOps} from "./shared/BytesOps.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
@@ -75,7 +76,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -93,8 +94,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         mapping(uint256 => bool) destroyedContexts;
     }
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV4`.
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV5`.
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// @notice Canonical ProtocolConfig used for context reads.
     IProtocolConfig private constant PROTOCOL_CONFIG = IProtocolConfig(protocolConfigAdd);
@@ -123,7 +124,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice                  Verifies multiple signatures for a given handlesList and a given decryptedResult.
@@ -159,20 +160,18 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             revert DeserializingDecryptionProofFail();
         }
 
+        /// @dev The length check above guarantees both copies below stay within the decryptionProof bytes.
         bytes[] memory signatures = new bytes[](numSigners);
-        for (uint256 j = 0; j < numSigners; j++) {
-            signatures[j] = new bytes(65);
-            for (uint256 i = 0; i < 65; i++) {
-                signatures[j][i] = decryptionProof[1 + 65 * j + i];
-            }
+        for (uint256 i = 0; i < numSigners; i++) {
+            signatures[i] = BytesOps.slice(decryptionProof, 1 + 65 * i, 65);
         }
 
         /// @dev Extract the extraData from the decryptionProof.
-        uint256 extraDataSize = decryptionProof.length - extraDataOffset;
-        bytes memory extraData = new bytes(extraDataSize);
-        for (uint i = 0; i < extraDataSize; i++) {
-            extraData[i] = decryptionProof[extraDataOffset + i];
-        }
+        bytes memory extraData = BytesOps.slice(
+            decryptionProof,
+            extraDataOffset,
+            decryptionProof.length - extraDataOffset
+        );
 
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             handlesList,
@@ -284,8 +283,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
      * @param maxIndex  The biggest index to take into account from the array - assumed to be less or equal to keys.length.
      */
     function _cleanTransientHashMap(address[] memory keys, uint256 maxIndex) internal virtual {
-        for (uint256 j = 0; j < maxIndex; j++) {
-            _tstore(keys[j], 0);
+        for (uint256 i = 0; i < maxIndex; i++) {
+            _tstore(keys[i], 0);
         }
     }
 
@@ -322,13 +321,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
             ) {
                 revert DeserializingExtraDataFail();
             }
-            uint256 contextId;
-            // Memory layout: [32-byte length][version byte][32-byte contextId][...]
-            // mload(add(extraData, 33)) reads 32 bytes starting at offset 1 (after version byte).
-            assembly {
-                contextId := mload(add(extraData, 33))
-            }
-            return contextId;
+            /// @dev The contextId is the 32 bytes following the version byte.
+            return uint256(BytesOps.readBytes32(extraData, 1));
         }
         revert UnsupportedExtraDataVersion(version);
     }
