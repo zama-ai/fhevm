@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -9,8 +9,8 @@ import {
   getCancelDispatchInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -36,7 +36,7 @@ describe('buildCancelDispatchInstruction', () => {
     const mint = addr(4);
     const hostConfig = addr(5);
     const instruction = await buildCancelDispatchInstruction({
-      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       batcher,
       batch,

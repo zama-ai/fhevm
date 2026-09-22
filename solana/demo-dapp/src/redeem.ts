@@ -11,12 +11,13 @@ import {
   deriveBatchAddresses,
   deriveJoinRecordAddress,
   getCurrentBatch,
+  getBatchByIndex,
   getJoinRecord,
   joinBatch,
   TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
-import type { BatchPosition } from './batchTypes';
+import { BatchStatus, type BatchPosition } from './batchTypes';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { recordTransactionEvidence } from './evidenceStore';
@@ -121,6 +122,10 @@ export const findCompletedRedeem = async (session: DemoSession): Promise<BatchPo
   const joinRecord = await deriveJoinRecordAddress(position.batch, session.signer.address);
   const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
   if (account.value === null) {
+    // A claimed join may have returned its rent. Keep the local completion record only
+    // while its original batch still exists and is settled.
+    const batch = await getBatchByIndex(rpc, vaultRoots(session.config, 'redeem'), position.batchIndex, { commitment: 'confirmed' });
+    if (batch.state.status === BatchStatus.Settled) return position;
     localStorage.removeItem(completedRedeemKey(session));
     return null;
   }

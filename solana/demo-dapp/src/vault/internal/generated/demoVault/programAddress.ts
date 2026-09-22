@@ -2,4 +2,4 @@
 import type { Address } from '@solana/kit';
 
 export const DEMO_VAULT_PROGRAM_ADDRESS =
-  '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>;
+  'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH' as Address<'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH'>;

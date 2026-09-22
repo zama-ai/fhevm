@@ -108,9 +108,13 @@ export type { SolanaZkProof, SolanaZkProofLike } from '../core/types/zkProof-p.j
 export type { FhevmSolanaChain } from '../core/types/fhevmSolanaChain.js';
 export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';
 
-export { createSolanaFheTransaction } from './fheTransaction.js';
+export {
+  INSTRUCTIONS_SYSVAR_ADDRESS,
+  appendTransientStoreInstructions,
+  prepareTransientStore,
+} from './transientStore.js';
+export type { TransientStore } from './transientStore.js';
 export { solanaHostProgram } from './clients/createFhevmBaseClient.js';
-export type { SolanaFheTransaction, SolanaFheTransactionAccounts } from './fheTransaction.js';
 
 export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';
 

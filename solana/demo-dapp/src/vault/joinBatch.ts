@@ -1,7 +1,6 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
-  appendTransactionMessageInstructions,
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
@@ -33,8 +32,6 @@ import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import {
   EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
@@ -42,6 +39,7 @@ import {
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
 import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -139,7 +137,7 @@ export async function joinBatch(
   const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
   const joinStore = await joinStoreAddress(parameters.batch, user.address);
-  const fhe = await createSolanaFheTransaction({ payer: parameters.payer, programAddress: zamaHostProgramAddress });
+  const transientStore = await prepareTransientStore({ payer: parameters.payer, host: zamaHostProgramAddress });
   const instruction = await getJoinInstructionAsync({
     user,
     payer: parameters.payer,
@@ -158,7 +156,8 @@ export async function joinBatch(
     userBalanceStore: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
     batchBalanceStore: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
     joinStore,
-    ...fhe.accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
@@ -178,11 +177,7 @@ export async function joinBatch(
     (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
     (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
-    (m) =>
-      appendTransactionMessageInstructions(
-        fhe.wrap([instruction]),
-        m,
-      ),
+    (m) => appendTransientStoreInstructions(transientStore, [instruction], m),
   );
   const unsignedTransaction = compileTransaction(message);
   assertIsTransactionWithinSizeLimit(unsignedTransaction);

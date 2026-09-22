@@ -23,7 +23,7 @@ def render(release, chart, values, *options):
 class SolanaCharts(unittest.TestCase):
     def test_host_and_demos_are_separate_jobs(self):
         for release, filename, operations in [
-            ("solana-host", "values-solana-programs-e2e.yaml", ["host wipe", "host deploy --allow-upgrade"]),
+            ("solana-host", "values-solana-programs-e2e.yaml", ["host deploy --allow-upgrade"]),
             ("solana-demos", "values-solana-demos-e2e.yaml", ["demos deploy --allow-upgrade"]),
         ]:
             documents = render(release, "contracts", [VALUES / filename])
@@ -34,7 +34,7 @@ class SolanaCharts(unittest.TestCase):
             config = next(d for d in documents if d and d["kind"] == "ConfigMap")
             script = config["data"]["deploy-contracts.sh"]
             positions = [script.index("node /app/cli.mjs " + operation) for operation in operations]
-            self.assertEqual(positions, sorted(positions))  # wipe runs before deploy
+            self.assertEqual(positions, sorted(positions))  # deployment commands keep their declared order
             if release == "solana-host":
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
@@ -90,7 +90,7 @@ class SolanaCharts(unittest.TestCase):
         names = [e["name"] for e in env]
         self.assertLess(names.index("SOLANA_PROOF_API_KEY"), names.index("KMS_CONNECTOR_HOST_CHAINS"))
         value = next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS")
-        self.assertIn('"chainId":72057594037940281', value)
+        self.assertIn('"chainId":130140237723663404', value)
         self.assertIn('"aclAddress"', value)
         self.assertIn('http://coprocessor-1-solana-host-listener:8080', value)
         self.assertIn('"solanaProofApiKey":"$(SOLANA_PROOF_API_KEY)"', value)

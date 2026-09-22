@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
   appendTransactionMessageInstructions,
@@ -26,10 +26,8 @@ import {
   deriveBatchAddresses,
   deriveJoinRecordAddress,
   getBatchByIndex,
-  getBatcher,
   getCurrentBatch,
   getOrCreateConfidentialTokenAccountInstruction,
-  getJoinRecord,
   joinBatch,
   TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
@@ -38,7 +36,7 @@ import type { BatchPosition, BatchTarget } from './batchTypes';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { recordTransactionEvidence } from './evidenceStore';
-import { readClaimedUsdcHandle } from './revealShares';
+import { hasConfidentialBalanceAccount, readClaimedUsdcHandle } from './revealShares';
 import { simulateSignedTransactionLocally, simulateUnsignedTransactionLocally } from './transactionSimulation';
 import { vaultRoots } from './vaultRoots';
 
@@ -257,21 +255,9 @@ export async function findExistingDeposit(session: DemoSession): Promise<BatchPo
   return result;
 }
 
-export const hasClaimedDeposit = async (session: DemoSession): Promise<boolean> => {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
-  const roots = depositRoots(session);
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
-  for (let batchIndex = 0n; batchIndex < batcher.nextBatchIndex; batchIndex += 1n) {
-    const batch = await deriveBatchAddresses(roots, batchIndex);
-    const joinRecordAddress = await deriveJoinRecordAddress(batch.batch, session.signer.address);
-    const account = await rpc.getAccountInfo(joinRecordAddress, { commitment: 'confirmed', encoding: 'base64' }).send();
-    if (account.value !== null) {
-      const joinRecord = await getJoinRecord(rpc, joinRecordAddress, { commitment: 'confirmed' });
-      if (joinRecord.claimed) return true;
-    }
-  }
-  return false;
-};
+// Claimed join records can be closed for rent; the balance account remains authoritative.
+export const hasClaimedDeposit = (session: DemoSession): Promise<boolean> =>
+  hasConfidentialBalanceAccount(session, session.config.mints.payoutConfidential);
 
 export async function depositToVault(
   session: DemoSession,
@@ -382,9 +368,9 @@ export async function depositToVault(
   }
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage('preparing');
-    const fhe = await createSolanaFheTransaction({ payer: signer, programAddress: config.programs.host });
+    const transientStore = await prepareTransientStore({ payer: signer, host: config.programs.host });
     const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       payer: signer,
       owner: signer.address,
       mint: config.mints.joinConfidential,
@@ -393,7 +379,7 @@ export async function depositToVault(
     const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
     shieldInstructions.push(
       await buildWrapUsdcInstruction({
-        fhe: fhe.accounts,
+        transientStore: transientStore,
         owner: signer,
         mint: config.mints.joinConfidential,
         underlyingMint: config.mints.joinUnderlying,
@@ -405,7 +391,7 @@ export async function depositToVault(
 
     onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;
-    const shieldSignature = await send(fhe.wrap(shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
+    const shieldSignature = await send(appendTransientStoreInstructions(transientStore, shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),

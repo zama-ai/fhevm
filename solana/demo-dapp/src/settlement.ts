@@ -1,5 +1,4 @@
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
 import type { ProofService } from './vault/internal/publicProof.js';
 import {
   createSolanaRpc,
@@ -8,14 +7,22 @@ import {
   type Signature,
   type TransactionSigner,
 } from '@solana/kit';
-import { createFhevmPublicDecryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
+import {
+  appendTransientStoreInstructions,
+  createFhevmPublicDecryptClient,
+  defineFhevmSolanaChain,
+  prepareTransientStore,
+  setFhevmRuntimeConfig,
+} from '@fhevm/sdk/solana';
 import {
   buildDispatchBatchInstruction,
+  buildReclaimBatchAuthorityInstruction,
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
   getDeactivateLookupTableInstruction,
   getJoinRecord,
+  buildCloseJoinRecordInstruction,
   settleBatch,
   TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
@@ -31,9 +38,10 @@ import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
 const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
-const DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT = 50_000;
+const SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT = 100_000;
 
 export type DemoOperatorSession = {
+  readonly relayerApiKey: string;
   readonly proofService: ProofService;
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
@@ -88,14 +96,16 @@ export const readVaultLifecycle = async (
     return { kind: 'dispatched' };
   }
   if (batch.state.status === BatchStatus.Settled) {
-    const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, session.signer.address), {
+    const recordAddress = await deriveJoinRecordAddress(position.batch, session.signer.address);
+    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64", commitment: "confirmed" }).send()).value !== null;
+    const joinRecord = exists ? await getJoinRecord(rpc, recordAddress, {
       commitment: 'confirmed',
-    });
+    }) : null;
     return {
       kind: 'settled',
       totalJoined: batch.state.totalJoined,
       payoutReceived: batch.state.payoutReceived,
-      claimed: joinRecord.claimed,
+      claimed: joinRecord === null || joinRecord.claimed,
     };
   }
   if (batch.state.status === BatchStatus.Canceled) return { kind: 'canceled' };
@@ -116,13 +126,13 @@ export const dispatchVaultBatch = async (
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
-  const fhe = await createSolanaFheTransaction({ payer: session.keeper, programAddress: session.config.programs.host });
+  const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
   return sendTransaction(
     session.config,
     session.keeper,
-    fhe.wrap([
+    appendTransientStoreInstructions(transientStore, [
       await buildDispatchBatchInstruction({
-        fhe: fhe.accounts,
+        transientStore: transientStore,
         payer: session.keeper,
         batcher: roots.batcher,
         batch: position.batch,
@@ -156,7 +166,7 @@ export const settleVaultBatch = async (
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
 
   const rpcSubscriptions = createSolanaRpcSubscriptions(session.config.wsUrl);
-  setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'local' } });
+  setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
@@ -173,22 +183,40 @@ export const settleVaultBatch = async (
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });
-  // The batch is settled, so its per-batch table has served its one purpose: deactivate it now and
-  // the crank in prepareNextBatch reclaims the rent once the cooldown has elapsed. A failed
-  // deactivation is a rent-hygiene miss, never a settlement failure — and no longer a permanent
-  // one either: the crank deactivates any table whose batch is settled or canceled, so this eager
-  // attempt is a shortcut on the happy path rather than the only chance the table gets.
+  // The batch is settled, so its per-batch table has served its one purpose and its authority PDA
+  // has paid its last owner-charged rent: deactivate the table (the crank in prepareNextBatch
+  // closes it once the cooldown has elapsed) and take the authority's unspent funding back. A
+  // failure here is a rent-hygiene miss, never a settlement failure — and not a permanent one:
+  // the cranks deactivate any table and drain any authority whose batch is finished, so this eager
+  // attempt is a shortcut on the happy path rather than the only chance either gets.
   try {
     await sendTransaction(
       session.config,
       session.keeper,
-      [getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper })],
-      DEACTIVATE_LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
+      [
+        getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper }),
+        await buildReclaimBatchAuthorityInstruction({
+          authority: session.keeper,
+          batcher: roots.batcher,
+          batch: batch.addresses.batch,
+          batchAuthority: batch.addresses.batchAuthority,
+          joinConfidentialMint: roots.joinConfidentialMint,
+        }),
+      ],
+      SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT,
     );
   } catch (error) {
     console.warn(
-      `settled, but deactivating lookup table ${lookupTableAddress} failed: ${error instanceof Error ? error.message : String(error)}`,
+      `settled, but retiring lookup table ${lookupTableAddress} and reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   return signature;
+};
+
+/** User-signed rent return after claim/cancel. Refunding records still authorize quit. */
+export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
+  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const record = await deriveJoinRecordAddress(position.batch, session.signer.address);
+  if ((await rpc.getAccountInfo(record, { encoding: 'base64', commitment: 'confirmed' }).send()).value === null) return;
+  await sendTransaction(session.config, session.signer, [await buildCloseJoinRecordInstruction({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
 };

@@ -609,10 +609,18 @@ jobs:
       - name: Reset namespace
         run: |
           if kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
-            echo "Namespace ${NAMESPACE} already exists, destroying it first..."
+            echo "Namespace ${NAMESPACE} already exists, recovering it first..."
+            if [[ "${DEPLOY_SOLANA}" == true ]]; then
+              SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$(jq -r .solana_programs <<< "$TAGS_JSON")"
+              export SOLANA_RECOVERY_IMAGE
+            fi
+            SOLANA_KEEP_OPERATION=1 bash ci/preview-env/solana-host/recover.sh reset
             helm list -n "${NAMESPACE}" --short | xargs -r -L1 helm uninstall -n "${NAMESPACE}"
             kubectl delete namespace "${NAMESPACE}" --grace-period=1 --timeout=5s --wait=false
             kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=180s
+            if [[ $(kubectl get namespace fhevm-ci-solana-owner --ignore-not-found -o jsonpath='{.metadata.annotations.solana-preview-owner}') == "$NAMESPACE" ]]; then
+              kubectl delete namespace fhevm-ci-solana-owner --wait=true --timeout=60s
+            fi
           fi
           kubectl create namespace "${NAMESPACE}"
 

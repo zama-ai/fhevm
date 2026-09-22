@@ -17,8 +17,8 @@ name: solana-e2e
 #   - `bun run demo reseed`: re-deploy the two demo programs, seed fresh, rotate authorization
 #   - deposit-arc smoke (bun run demo:smoke): the live exercise of the vault's full forward path
 #     (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
-#   - browser-reality: CORS preflight against the relayer (with RELAYER_PERMISSIVE_CORS set), and
-#     the faucet endpoints callable from a browser origin
+#   - browser-reality: same-origin relayer proxy checks, and
+#     the operator reachable from the dApp origin with the current boot capability
 # The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
 # solana/scripts/demo/demo-keypairs/ (see its README).
 on:
@@ -64,19 +64,11 @@ jobs:
       packages: "read" # pull repo-owned images from ghcr.io
     env:
       DEMO_DEPOSIT_AMOUNT: ${{ inputs.deposit-amount || '1000' }}
-      # Opt-in permissive CORS for the demo dApp origin (relayer default OFF; only demo mode sets
-      # this). Set at the job level so the relayer container comes up with the demo CORS layer on at
-      # bring-up time, delivered via the ${RELAYER_PERMISSIVE_CORS:-} passthrough in its compose
-      # file. Intentional in this per-PR lane: the browser-reality step below asserts the demo CORS
-      # behavior every run.
-      RELAYER_PERMISSIVE_CORS: "1"
       # Acceptance clients read the protected token file directly. Never persist the fragment token
       # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
       DEMO_PRINT_LAUNCH_URL: "0"
-      # Absolute demo-config path so every producer/consumer agrees regardless of the step's working
-      # directory (the seed and the smoke both run from test-suite/fhevm, but the path resolves to
-      # the same repo-root file demo-up.sh advertises). See demo/config.ts.
-      DEMO_CONFIG_PATH: ${{ github.workspace }}/.fhevm/runtime/solana-demo.json
+      # Every producer/consumer derives the demo config path from the fhevm layout under
+      # FHEVM_STATE_DIR (default <repo>/.fhevm), regardless of the step's working directory.
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -189,6 +181,10 @@ jobs:
       - name: Install the SDK's own dependency graph (SDK sources resolve their deps here)
         run: npm ci --prefix sdk/js-sdk
 
+      - name: Install the confidential-token client's frozen dependency graph
+        working-directory: solana/clients/confidential-token
+        run: bun install --frozen-lockfile
+
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
         # Lifecycle bring-up builds the SDK, then links each consumer graph to it. Assert the
         # public Solana entrypoint before spending the remainder of the job on the vertical. The
@@ -226,18 +222,16 @@ jobs:
         working-directory: test-suite/fhevm
         run: bun run demo:smoke
 
-      - name: Browser-reality checks (CORS preflight + faucet endpoints)
+      - name: Browser-reality checks (same-origin proxy + operator endpoints)
         # Runs even when the smoke fails (browser-reality is an independent acceptance criterion;
-        # an arc failure must not mask a CORS regression) — but only once the demo reseed
+        # an arc failure must not mask a proxy regression) — but only once the demo reseed
         # succeeded, so an earlier e2e-phase failure does not fire it against a stack with no
         # demo layer.
         if: ${{ !cancelled() && steps.demo-reseed.outcome == 'success' }}
         working-directory: test-suite/fhevm
-        # fetch() OPTIONS preflights (relayer with RELAYER_PERMISSIVE_CORS on, faucet)
-        # from the exact 127.0.0.1 dApp origin, then exercise the current boot capability against the
-        # protected faucet and the same-origin, current-boot Vite session. TS, not bash: the
-        # assertions are logic.
-        run: bun run demo:check-cors
+        # Check the same-origin relayer proxy without browser API credentials, then verify
+        # operator authorization and the dApp's proxied current-boot config.
+        run: bun run demo:check-browser
 
       - name: Collect stack logs on failure
         if: ${{ failure() }}

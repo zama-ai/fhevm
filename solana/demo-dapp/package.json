@@ -4,14 +4,15 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk",
-    "dev": "vite --host 127.0.0.1 --port 5173",
+    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk && rm -rf node_modules/@fhevm/confidential-token && ln -s ../../../clients/confidential-token node_modules/@fhevm/confidential-token",
+    "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b",
-    "lint": "oxlint src vite.config.ts demoServerPlugin.ts",
+    "lint": "oxlint src vite.config.ts",
     "test": "vitest run"
   },
   "dependencies": {
+    "@fhevm/confidential-token": "file:../clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",

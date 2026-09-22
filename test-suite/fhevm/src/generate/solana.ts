@@ -1,3 +1,4 @@
+import { SOLANA_LEAF_PROOF_PORT } from "../layout";
 import fs from "node:fs";
 
 import type { Discovery } from "../types";
@@ -23,11 +24,11 @@ const base58Encode = (bytes: Uint8Array): string => {
 };
 
 /**
- * Resolves a Solana program's base58 id from its keypair file (a 64-byte JSON array, the
- * `[secret(32) || public(32)]` ed25519 layout) — the deterministic id `solana address -k` prints,
- * computed without invoking the CLI.
+ * Reads the base58 public key of a Solana keypair file (a 64-byte JSON array, the
+ * `[secret(32) || public(32)]` ed25519 layout): a program id or a wallet address, what
+ * `solana address -k` prints, computed without invoking the CLI.
  */
-export const solanaProgramIdFromKeypairFile = (keypairPath: string): string => {
+export const solanaPubkeyFromKeypairFile = (keypairPath: string): string => {
   const bytes = Uint8Array.from(JSON.parse(fs.readFileSync(keypairPath, "utf8")) as number[]);
   if (bytes.length !== 64) {
     throw new Error(`${keypairPath}: expected a 64-byte solana keypair, got ${bytes.length} bytes`);
@@ -55,13 +56,12 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
   `http://host.docker.internal:${chain.rpcPort}`;
 
 /**
- * Port the Solana host listener serves its leaf-proof route on, and the bearer key that route
- * requires. Both sides of the same connection read these: `startHostListener` passes them to
- * `solana_host_listener` as `--http-port` / `--proof-api-key`, and `serializeKmsHostChains` puts
- * them in the connector's host-chain entry. Passed explicitly rather than relying on the
- * binary's own default, so the two cannot drift apart silently.
+ * Bearer key the Solana host listener's leaf-proof route requires (its port is
+ * `SOLANA_LEAF_PROOF_PORT` in the layout). Both sides of the same connection read these:
+ * `startHostListener` passes them to `solana_host_listener` as `--http-port` / `--proof-api-key`,
+ * and `serializeKmsHostChains` puts them in the connector's host-chain entry. Passed explicitly
+ * rather than relying on the binary's own default, so the two cannot drift apart silently.
  */
-export const SOLANA_LEAF_PROOF_PORT = 8080;
 export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 /**

@@ -5,6 +5,7 @@
     "": {
       "name": "@fhevm/local-cli",
       "dependencies": {
+        "@fhevm/confidential-token": "file:../../solana/clients/confidential-token",
         "@fhevm/sdk": "file:../../sdk/js-sdk/src",
         "@solana/kit": "6.10.0",
         "@solana/program-client-core": "6.10.0",
@@ -23,6 +24,8 @@
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
 
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
+
+    "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../../solana/clients/confidential-token", { "dependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@fhevm/sdk": ["@fhevm/sdk@file:../../sdk/js-sdk/src", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "@scure/base": "1.2.6", "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "wasm-feature-detect": "^1.8.0" }, "peerDependencies": { "ethers": ">=6.8.0", "typescript": ">=5.0.4", "viem": ">=2" }, "optionalPeers": ["ethers", "typescript", "viem"] }],
 

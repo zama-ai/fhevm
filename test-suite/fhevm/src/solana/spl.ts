@@ -1,6 +1,6 @@
 // spl — pure SPL/associated-token/system-program helpers shared by the typed scenario
 // provisioning (`./provision.ts`) and the live demo entrypoints (`demo/seed.ts`,
-// `demo/faucet-server.ts`). No top-level side effects, so this module is importable by offline
+// `demo/operator-server.ts`). No top-level side effects, so this module is importable by offline
 // tests (unlike the demo entrypoints, which run `await main()` against a live validator on
 // import).
 //
@@ -100,6 +100,26 @@ export const createAccountInstruction = (parameters: {
     accounts: [
       signerMeta(parameters.payer, AccountRole.WRITABLE_SIGNER),
       signerMeta(parameters.newAccount, AccountRole.WRITABLE_SIGNER),
+    ],
+    data,
+  };
+};
+
+/** System `Transfer` (index 2): moves `lamports` from the signing `from` to `to`. */
+export const transferSolInstruction = (parameters: {
+  readonly from: TransactionSigner;
+  readonly to: Address;
+  readonly lamports: bigint;
+}): Instruction => {
+  const data = new Uint8Array(4 + 8);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, parameters.lamports, true);
+  return {
+    programAddress: SYSTEM_PROGRAM_ADDRESS,
+    accounts: [
+      signerMeta(parameters.from, AccountRole.WRITABLE_SIGNER),
+      { address: parameters.to, role: AccountRole.WRITABLE },
     ],
     data,
   };

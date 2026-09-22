@@ -1,4 +1,4 @@
-import type { SolanaFheTransactionAccounts } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
@@ -12,12 +12,12 @@ import {
 
 /**
  * Roots for a permissionless claim. The builder derives the JoinRecord and payout States,
- * and forwards the supplied transaction context. The user need not sign: the recipient is fixed by the JoinRecord.
+ * and forwards the supplied transient store. The user need not sign: the recipient is fixed by the JoinRecord.
  * The user's payout token account must already exist.
  */
 export type SolanaVaultClaimParameters = {
-  readonly fhe: SolanaFheTransactionAccounts;
-  /** Pays State growth. The supplied FHE transaction may have a different transientStore sponsor. */
+  readonly transientStore: TransientStore;
+  /** Pays State growth. The transient store payer may be a different sponsor. */
   readonly payer: TransactionSigner;
   /** The user being claimed for (pins the join record). Not a signer. */
   readonly user: Address;
@@ -47,7 +47,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
   const userPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, user);
   const joinStore = await joinStoreAddress(parameters.batch, user);
   const instruction = await getClaimInstructionAsync({
-    ...parameters.fhe,
+    transientStore: parameters.transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
     user,
     batcher: parameters.batcher,

@@ -1,8 +1,12 @@
 import { address, getAddressDecoder, type Address } from "@solana/kit";
 import { hexToBytes } from "@fhevm/sdk/base";
 
+export type DemoNetwork = "localnet" | "devnet";
+
 export type DemoConfig = {
   readonly source: "demo-config";
+  /** The cluster the seed ran on. Localnet pins loopback endpoints; devnet takes TLS endpoints. */
+  readonly network: DemoNetwork;
   readonly demoBootId: string;
   readonly chainId: string;
   readonly rpcUrl: string;
@@ -77,6 +81,32 @@ const localUrl = (value: unknown, name: string, protocol: "http:" | "ws:"): stri
   return parsed.toString().replace(/\/$/, "");
 };
 
+const tlsUrl = (value: unknown, name: string, protocol: "https:" | "wss:"): string => {
+  const parsed = new URL(string(value, name));
+  if (parsed.protocol !== protocol) throw new Error(`${name} must use ${protocol}// on devnet`);
+  return parsed.toString().replace(/\/$/, "");
+};
+
+const network = (value: unknown): DemoNetwork => {
+  if (value !== "localnet" && value !== "devnet") throw new Error('demo config.network must be "localnet" or "devnet"');
+  return value;
+};
+
+// The validator endpoints the page talks to directly. Localnet is the seeded local validator and
+// nothing else; devnet is a TLS RPC provider (the URL may carry a provider key, so it is served to
+// the loopback page only). The relayer is always reached through the dev server's loopback proxy.
+const clusterUrls = (raw: Record<string, unknown>, net: DemoNetwork): { rpcUrl: string; wsUrl: string } => {
+  if (net === "devnet") {
+    return {
+      rpcUrl: tlsUrl(raw.rpcUrl, "demo config.rpcUrl", "https:"),
+      wsUrl: tlsUrl(raw.wsUrl, "demo config.wsUrl", "wss:"),
+    };
+  }
+  const rpcUrl = localUrl(raw.rpcUrl, "demo config.rpcUrl", "http:");
+  if (rpcUrl !== "http://127.0.0.1:8899") throw new Error(`demo refuses non-local RPC ${rpcUrl}`);
+  return { rpcUrl, wsUrl: localUrl(raw.wsUrl, "demo config.wsUrl", "ws:") };
+};
+
 export const parseDemoConfig = (value: unknown): DemoConfig => {
   const raw = object(value, "demo config");
   const personas = object(raw.personas, "demo config.personas");
@@ -86,8 +116,8 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
   const deposit = object(batchers.deposit, "demo config.batchers.deposit");
   const redeem = object(batchers.redeem, "demo config.batchers.redeem");
   if (raw.source !== "demo-config") throw new Error("demo config.source must be demo-config");
-  const rpcUrl = localUrl(raw.rpcUrl, "demo config.rpcUrl", "http:");
-  if (rpcUrl !== "http://127.0.0.1:8899") throw new Error(`demo refuses non-local RPC ${rpcUrl}`);
+  const net = network(raw.network);
+  const { rpcUrl, wsUrl } = clusterUrls(raw, net);
   const aclProgram = hexBytes(raw.aclProgram, "demo config.aclProgram", 32);
   const host = address(string(programs.host, "demo config.programs.host"));
   // Two spellings of one deployment: the chain definition takes bytes32, the instruction builders base58.
@@ -96,10 +126,11 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
   }
   return {
     source: "demo-config",
+    network: net,
     demoBootId: string(raw.demoBootId, "demo config.demoBootId"),
     chainId: string(raw.chainId, "demo config.chainId"),
     rpcUrl,
-    wsUrl: localUrl(raw.wsUrl, "demo config.wsUrl", "ws:"),
+    wsUrl,
     relayerUrl: localUrl(raw.relayerUrl, "demo config.relayerUrl", "http:"),
     aclProgram,
     userDecryptContextId: string(raw.userDecryptContextId, "demo config.userDecryptContextId"),

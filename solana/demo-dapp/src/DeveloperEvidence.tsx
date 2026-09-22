@@ -1,6 +1,7 @@
 import { createSolanaRpc, type Address, type Signature } from '@solana/kit';
 import { useEffect, useMemo, useState } from 'react';
 
+import type { DemoNetwork } from './demoConfig';
 import { readDecryptionEvidence, readTransactionEvidence, type DecryptionEvidenceRecord } from './evidenceStore';
 import {
   FHE_BATCH_P95_QUERY,
@@ -23,8 +24,12 @@ type TransactionEvidence = {
 
 const short = (value: string): string => `${value.slice(0, 7)}…${value.slice(-7)}`;
 
-const explorerUrl = (signature: Signature, rpcUrl: string): string =>
-  `https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=${encodeURIComponent(rpcUrl)}`;
+const explorerUrl = (signature: Signature, network: DemoNetwork, rpcUrl: string): string => {
+  const cluster = network === 'devnet'
+    ? 'cluster=devnet'
+    : `cluster=custom&customUrl=${encodeURIComponent(new URL(rpcUrl).origin)}`;
+  return `https://explorer.solana.com/tx/${signature}?${cluster}`;
+};
 
 const readOptionalBalanceEvidence = async (
   read: () => Promise<ConfidentialBalanceEvidence>,
@@ -189,16 +194,16 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
       <summary>
         <span>
           <strong>Developer evidence</strong>
-          <small>Localnet transactions & encrypted store</small>
+          <small>Solana transactions & encrypted store</small>
         </span>
       </summary>
       <div className="evidence-content">
         <div className="evidence-toolbar">
           <span role="status" aria-live="polite">
             {loading
-              ? 'Refreshing localnet evidence…'
+              ? 'Refreshing on-chain evidence…'
               : error === null
-                ? 'Verified localnet state'
+                ? 'Verified on-chain state'
                 : 'Evidence refresh failed'}
           </span>
           <button type="button" disabled={loading} onClick={() => setRefreshNonce((value) => value + 1)}>
@@ -223,7 +228,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
           <div>
             <dt>RPC</dt>
             <dd>
-              <CopyValue label="RPC URL" value={session.config.rpcUrl} />
+              <CopyValue label="RPC origin" value={new URL(session.config.rpcUrl).origin} />
             </dd>
           </div>
           <div>
@@ -285,7 +290,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                     </small>
                   </span>
                   <CopyValue label="transaction signature" value={transaction.signature} />
-                  <a href={explorerUrl(transaction.signature, session.config.rpcUrl)} target="_blank" rel="noreferrer">
+                  <a href={explorerUrl(transaction.signature, session.config.network, session.config.rpcUrl)} target="_blank" rel="noreferrer">
                     Explorer
                   </a>
                   {transaction.programIds.length > 0 && (

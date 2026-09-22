@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
-
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from './generated/confidentialToken/programAddress.js';
 import { tokenStateAddress } from './tokenAccounts.js';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));

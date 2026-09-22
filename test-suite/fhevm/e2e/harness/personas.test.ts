@@ -60,6 +60,21 @@ describe("loadPersonas roles", () => {
     expect(personas.roles).toEqual({});
   });
 
+  test("refuses devnet funding without recovery registration before opening RPC", async () => {
+    const dir = await makeDir();
+    const deployerPath = await writeKeypairFile(dir, "deployer");
+    const env = { ...envWith(deployerPath, false), network: "devnet" as const };
+    const personas = await loadPersonas(env);
+    const previous = process.env.SOLANA_RECOVERY_DIR;
+    process.env.SOLANA_RECOVERY_DIR = dir;
+    try {
+      await expect(personas.fund(personas.deployer, 0.1)).rejects.toThrow("external wallets must self-fund");
+    } finally {
+      if (previous === undefined) delete process.env.SOLANA_RECOVERY_DIR;
+      else process.env.SOLANA_RECOVERY_DIR = previous;
+    }
+  });
+
   test("rejects a keypair file that is not 64 bytes", async () => {
     const dir = await makeDir();
     const deployerPath = await writeKeypairFile(dir, "deployer");

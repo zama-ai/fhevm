@@ -33,7 +33,7 @@ import {
   revealClaimedUsdc,
   type RevealedBalance,
 } from './revealShares';
-import { readVaultLifecycle } from './settlement';
+import { closeSpentJoinRecord, readVaultLifecycle } from './settlement';
 import { harvestDemoVault, readDemoVaultMetrics } from './vaultYield';
 
 export type ConnectionState =
@@ -254,6 +254,7 @@ export function useDemoController() {
                 : {}),
             });
             if (action === 'claim' && completed) {
+              await closeSpentJoinRecord(session, position);
               void refreshWalletBalances(session, generation);
             }
           } catch (error) {
@@ -473,7 +474,9 @@ export function useDemoController() {
       revealUsdcError: null,
     });
     try {
-      await ensureDemoFunding(session.config, session.signer.address, source === 'usdc' ? usdcToBaseUnits(amount) : 0n);
+      if (session.config.network === 'localnet' || session.wallet.kind === 'burner') {
+        await ensureDemoFunding(session.config, session.signer.address, source === 'usdc' ? usdcToBaseUnits(amount) : 0n);
+      }
       session.assertActive();
       const target = await prepareDemoDepositBatch();
       session.assertActive();

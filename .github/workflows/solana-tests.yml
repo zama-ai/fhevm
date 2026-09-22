@@ -83,6 +83,7 @@ jobs:
             demo-dapp:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
+              - solana/clients/confidential-token/**
               - sdk/js-sdk/**
               # The source IDLs the generated clients are rendered from. The confidential_batcher
               # and demo_vault IDLs live under solana/demo-dapp/idl and are already matched above;
@@ -106,6 +107,7 @@ jobs:
               # tracked in fhevm-internal#1878; until then the filter has to name what tsc reads.
               - sdk/js-sdk/**
               - solana/demo-dapp/**
+              - solana/clients/confidential-token/**
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
@@ -185,14 +187,21 @@ jobs:
           npm ci --prefix sdk/js-sdk
           ( cd sdk/js-sdk && npm run clean && npm run build:esm && npm run build:types )
 
-      # The dapp does not hand-write the program clients under src/vault/internal/generated: the
-      # SDK's Codama codegen renders them from the committed IDLs. Its `--check` mode ran in no
-      # workflow, so a client could keep describing an instruction, account, or argument the
-      # program no longer has — and the confidential-token client had in fact drifted. The codegen
-      # lives with the SDK, so it runs off the graph the previous step installed.
+      # The dapp does not hand-write program clients. confidential-token is a workspace package
+      # (`solana/clients/confidential-token`); batcher and demo-vault stay under
+      # src/vault/internal/generated. The SDK's Codama codegen renders all of them from the
+      # committed IDLs. Its `--check` mode ran in no workflow, so a client could keep describing an
+      # instruction the program no longer has — and the confidential-token client had in fact
+      # drifted. The codegen lives with the SDK, so it runs off the graph the previous step installed.
       - name: Check the dapp's generated program clients still match the committed IDLs
         working-directory: sdk/js-sdk
         run: npm run codegen:solana:check
+
+      # tsc follows `@fhevm/confidential-token` into this package's source, which resolves
+      # `@solana/kit` from here rather than from the dapp's node_modules.
+      - name: Install the confidential-token client's frozen dependency graph
+        working-directory: solana/clients/confidential-token
+        run: bun install --frozen-lockfile
 
       - name: Install the dapp's frozen dependency graph
         working-directory: solana/demo-dapp
@@ -240,6 +249,10 @@ jobs:
       - name: Build public SDK exports used by the test suite
         working-directory: sdk/js-sdk
         run: npm run build:esm && npm run build:types
+
+      - name: Install the confidential-token client's frozen dependency graph
+        working-directory: solana/clients/confidential-token
+        run: bun install --frozen-lockfile
 
       - name: Install the demo-dapp's frozen dependency graph (tsc resolves the vault module)
         working-directory: solana/demo-dapp
@@ -380,10 +393,6 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-deployer == 'true' }}
     runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=100gb
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        environment: [localnet, preview-env]
     permissions:
       contents: read
     steps:
@@ -395,15 +404,12 @@ jobs:
         with:
           bun-version: "1.3.14"
       - name: Build deployer without private program keys
-        env:
-          PROGRAM_ENVIRONMENT: ${{ matrix.environment }}
         run: |
           docker buildx build --platform linux/amd64 --load \
-            -f solana/deploy/Dockerfile --build-arg "PROGRAM_ENVIRONMENT=$PROGRAM_ENVIRONMENT" -t solana-programs:ci .
+            -f solana/deploy/Dockerfile -t solana-programs:ci .
           docker run --rm solana-programs:ci --help
 
       - name: Install pinned native validator and Anchor
-        if: matrix.environment == 'localnet'
         run: |
           curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/solana-install.sh
           sh /tmp/solana-install.sh
@@ -413,7 +419,6 @@ jobs:
           chmod +x "$HOME/.local/bin/anchor"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Exercise packaged CLI against a disposable validator
-        if: matrix.environment == 'localnet'
         env:
           SOLANA_DEPLOY_TEST_IMAGE: solana-programs:ci
         run: |

@@ -3,8 +3,8 @@
   "description": "One PermitInvalidation account, byte for byte as the Solana host program writes it. The revoke_permits instruction takes this account unchecked, so no generated interface description carries its layout and the KMS Connector decodes the offsets below by hand out of an account snapshot.",
   "regenerate_with": "bash scripts/update-permit-invalidation-fixture.sh",
   "program": {
-    "id_base58": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu",
-    "id_hex": "4cd3022dff504a675caf2d9b4f4014d0b3dc3ea17ffb97ba355cec5a933a30ee"
+    "id_base58": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
+    "id_hex": "b825643b79bf4499ff31ccfe8a297aa0eb30a8a0cc1f2319e82176c1b4d65e71"
   },
   "address": {
     "seeds": [
@@ -20,9 +20,9 @@
         "hex": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427"
       }
     ],
-    "address_base58": "3YqHnYQXR35pwBSErYShtp7JdZ73rcjJf6wA6Z9tAkHX",
-    "address_hex": "25defadcdd9175cbb43980b8dfd7610208d181b5d8494e1ccbc3b2e0323060e2",
-    "bump": 254
+    "address_base58": "6ZG8to97LWv4XJwnrD5VyC14ztK7kdbBr7DxLu9Jx9hk",
+    "address_hex": "528e228c13c11770259c73d1f0c28b5903c16ad56a33eb26e4f064eb25a0f783",
+    "bump": 255
   },
   "produced_by": {
     "instruction": "revoke_permits",
@@ -30,9 +30,9 @@
     "clock_unix_timestamp": "1767229380"
   },
   "account": {
-    "owner_base58": "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu",
+    "owner_base58": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
     "data_len": 49,
-    "data_hex": "ec8bdba9b922e988c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427c4c7556900000000fe",
+    "data_hex": "ec8bdba9b922e988c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427c4c7556900000000ff",
     "discriminator_hex": "ec8bdba9b922e988",
     "discriminator_preimage_utf8": "account:PermitInvalidation",
     "layout": "discriminator(8) | user(32) | invalidation_watermark(u64 little-endian) | bump(u8)"
@@ -68,7 +68,7 @@
       "offset": 48,
       "length": 1,
       "encoding": "u8",
-      "value": "254",
+      "value": "255",
       "comment": "The bump the canonical derivation lands on for this user."
     }
   ]

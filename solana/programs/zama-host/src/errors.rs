@@ -286,4 +286,6 @@ pub enum ZamaHostError {
     EncryptedStoreCapacityExceeded,
     #[msg("invalid execution return selection")]
     InvalidReturnSelection,
+    #[msg("transient store must be opened for this transaction and closed last")]
+    TransientStoreNotOpened,
 }

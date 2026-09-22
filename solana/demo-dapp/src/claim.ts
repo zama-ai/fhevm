@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { createSolanaRpc, type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
   buildClaimInstruction as buildVaultClaimInstruction,
@@ -63,12 +63,12 @@ const buildClaimInstructions = async (
   }
 
   const initializesAccount = account === null || account.owner === SYSTEM_PROGRAM_ADDRESS;
-  const fhe = await createSolanaFheTransaction({ payer: session.keeper, programAddress: session.config.programs.host });
+  const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
   const instructions: Instruction[] = [];
   if (initializesAccount) {
     instructions.push(
       await buildInitializeTokenAccountInstruction({
-        fhe: fhe.accounts,
+        transientStore: transientStore,
         payer: session.keeper,
         owner: user,
         mint: roots.payoutConfidentialMint,
@@ -78,7 +78,7 @@ const buildClaimInstructions = async (
   }
   instructions.push(
     await buildVaultClaimInstruction({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       payer: session.keeper,
       user,
       batcher: roots.batcher,
@@ -89,7 +89,7 @@ const buildClaimInstructions = async (
       hostConfig: session.config.hostConfig,
     }),
   );
-  return { instructions: fhe.wrap(instructions), initializesAccount };
+  return { instructions: appendTransientStoreInstructions(transientStore, instructions), initializesAccount };
 };
 
 /**

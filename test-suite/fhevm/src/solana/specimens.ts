@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction, type SolanaFheTransactionAccounts } from "@fhevm/sdk/solana";
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore, type TransientStore } from "@fhevm/sdk/solana";
 // specimens — the typed drivers for the two specimen consumer programs the live scenarios stand
 // their encrypted values up through: encrypted-counter (the smallest complete consumer) and
 // dep-chain (the 32-step dependent-chain load shape).
@@ -91,23 +91,28 @@ const hostAccounts = async () => ({
   zamaEventAuthority: await zamaEventAuthorityAddress(),
 });
 
+const instructionAccounts = (transientStore: TransientStore) => ({
+  transientStore: transientStore.address,
+  instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+});
+
 /**
  * `encrypted_counter::initialize`: creates `owner`'s counter with its count trivially encrypted
  * to 0 and the owner allowed on that handle. Built separately from sending so a multisig can
  * propose it with a bare-address owner (`createNoopSigner`) — the vault PDA signs at execution.
  */
-export const buildInitializeCounterInstruction = async (owner: TransactionSigner, fhe: SolanaFheTransactionAccounts): Promise<Instruction> =>
+export const buildInitializeCounterInstruction = async (owner: TransactionSigner, transientStore: TransientStore): Promise<Instruction> =>
   getInitializeCounterInstructionAsync({
-    ...fhe,
+    ...instructionAccounts(transientStore),
     owner,
     encryptedStore: (await counterValue(owner.address)).encryptedStore,
     ...(await hostAccounts()),
   });
 
 /** `encrypted_counter::increment`: adds `amount` to the count; the owner is allowed on the new handle. */
-export const buildIncrementCounterInstruction = async (owner: TransactionSigner, amount: bigint, fhe: SolanaFheTransactionAccounts): Promise<Instruction> =>
+export const buildIncrementCounterInstruction = async (owner: TransactionSigner, amount: bigint, transientStore: TransientStore): Promise<Instruction> =>
   getIncrementInstructionAsync({
-    ...fhe,
+    ...instructionAccounts(transientStore),
     owner,
     encryptedStore: (await counterValue(owner.address)).encryptedStore,
     ...(await hostAccounts()),
@@ -123,11 +128,11 @@ const writeSpecimenValue = async (
   context: SolanaProvisioningContext,
   owner: TransactionSigner,
   value: SpecimenValue,
-  buildInstruction: (fhe: SolanaFheTransactionAccounts) => Promise<Instruction>,
+  buildInstruction: (transientStore: TransientStore) => Promise<Instruction>,
 ): Promise<SpecimenHandle> => {
-  const fhe = await createSolanaFheTransaction({ payer: owner, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
-  const instruction = await buildInstruction(fhe.accounts);
-  await context.sendTransaction(owner, fhe.wrap([instruction]), { skipPreflight: true });
+  const transientStore = await prepareTransientStore({ payer: owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  const instruction = await buildInstruction(transientStore);
+  await context.sendTransaction(owner, appendTransientStoreInstructions(transientStore, [instruction]), { skipPreflight: true });
   return { value, handle: await currentHandle(context, value.encryptedStore, value.key) };
 };
 
@@ -136,7 +141,7 @@ export const initializeCounter = async (
   context: SolanaProvisioningContext,
   owner: TransactionSigner,
 ): Promise<SpecimenHandle> =>
-  writeSpecimenValue(context, owner, await counterValue(owner.address), (fhe) => buildInitializeCounterInstruction(owner, fhe));
+  writeSpecimenValue(context, owner, await counterValue(owner.address), (transientStore) => buildInitializeCounterInstruction(owner, transientStore));
 
 /** Adds `amount` to `owner`'s count (the update form of a persistent output). */
 export const incrementCounter = async (
@@ -148,7 +153,7 @@ export const incrementCounter = async (
     context,
     owner,
     await counterValue(owner.address),
-    (fhe) => buildIncrementCounterInstruction(owner, amount, fhe),
+    (transientStore) => buildIncrementCounterInstruction(owner, amount, transientStore),
   );
 
 /** Creates `owner`'s chain with its tail at 0. */
@@ -161,7 +166,7 @@ export const initializeChain = async (
     context,
     owner,
     value,
-    async (fhe) => getInitializeChainInstructionAsync({ ...fhe, owner, encryptedStore: value.encryptedStore, ...(await hostAccounts()) }),
+    async (transientStore) => getInitializeChainInstructionAsync({ ...instructionAccounts(transientStore), owner, encryptedStore: value.encryptedStore, ...(await hostAccounts()) }),
   );
 };
 
@@ -180,8 +185,8 @@ export const extendChain = async (
     context,
     owner,
     value,
-    async (fhe) => getExtendInstructionAsync({
-      ...fhe,
+    async (transientStore) => getExtendInstructionAsync({
+      ...instructionAccounts(transientStore),
       owner,
       encryptedStore: value.encryptedStore,
       ...(await hostAccounts()),

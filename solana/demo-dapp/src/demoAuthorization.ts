@@ -1,25 +1,13 @@
-const DEMO_ORIGIN = 'http://127.0.0.1:5173';
-
-const localDemoFetch = (
-  path: string,
-  init: RequestInit = {},
-  fetcher: typeof fetch = fetch,
-): Promise<Response> => {
-  const url = new URL(path, DEMO_ORIGIN);
-  if (url.origin !== DEMO_ORIGIN || window.location.origin !== DEMO_ORIGIN) {
-    throw new Error(`refusing local demo request from ${window.location.origin}`);
-  }
-  return fetcher(url.toString(), { ...init, credentials: 'omit', redirect: 'error' });
-};
-
+// The page's own origin serves `/api/*`: the dev server proxies it to the demo operator and adds
+// the boot capability there, so no credential lives in the browser and none is sent from it.
 export const demoApiFetch = (
   path: `/api/${string}`,
-  init?: RequestInit,
-  fetcher?: typeof fetch,
-): Promise<Response> => localDemoFetch(path, init, fetcher);
+  init: RequestInit = {},
+  fetcher: typeof fetch = fetch,
+): Promise<Response> => fetcher(path, { ...init, credentials: 'omit', redirect: 'error' });
 
 export const demoFaucetFetch = (
   path: '/airdrop-sol' | '/mint-usdc',
   init?: RequestInit,
   fetcher?: typeof fetch,
-): Promise<Response> => localDemoFetch(`/api/demo-faucet${path}`, init, fetcher);
+): Promise<Response> => demoApiFetch(`/api/demo-faucet${path}`, init, fetcher);

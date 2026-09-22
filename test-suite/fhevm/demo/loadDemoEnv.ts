@@ -8,7 +8,7 @@
 
 import path from "node:path";
 
-import { resolveEnv, type TestEnv } from "../e2e/harness/loadEnv";
+import { envOverrides, resolveEnv, type TestEnv } from "../e2e/harness/loadEnv";
 import { readDemoConfig, resolveDemoConfigPath, type SolanaDemoConfig } from "./config";
 
 /** Repo root, resolved from this file's location (test-suite/fhevm/demo → repo root). */
@@ -19,12 +19,20 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
  * for the committed-key policy). Personas sign from these files; the demo-config JSON carries only
  * their pubkeys, so a scenario can cross-check the loaded key against the published address.
  */
-export const DEMO_KEYPAIRS = {
+const LOCAL_DEMO_KEYPAIRS = {
   keeper: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/keeper.json"),
   alice: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/alice.json"),
   bob: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/bob.json"),
   mintAuthority: path.join(REPO_ROOT, "solana/scripts/demo/demo-keypairs/mint-authority.json"),
 } as const;
+
+/** Devnet actors are private files in the recovery directory, never repository fixtures. */
+export const demoKeypairs = (env: TestEnv): typeof LOCAL_DEMO_KEYPAIRS => {
+  if (env.network === "localnet") return LOCAL_DEMO_KEYPAIRS;
+  const directory = process.env.SOLANA_RECOVERY_DIR;
+  if (!directory || !path.isAbsolute(directory)) throw new Error("devnet requires an absolute SOLANA_RECOVERY_DIR");
+  return Object.fromEntries(Object.keys(LOCAL_DEMO_KEYPAIRS).map(role => [role, path.join(directory, `demo-${role}.json`)])) as typeof LOCAL_DEMO_KEYPAIRS;
+};
 
 /** Maps the demo-config onto the harness's `TestEnvOverrides` (endpoint + identity fields only). */
 const toOverrides = (config: SolanaDemoConfig) => ({
@@ -37,11 +45,18 @@ const toOverrides = (config: SolanaDemoConfig) => ({
   userDecryptContextId: config.userDecryptContextId,
 });
 
-/** Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config. */
+/**
+ * Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config.
+ * The seeded config decides every endpoint and identity it carries; what it cannot carry because it
+ * is local to the machine (deployer keypair path, coprocessor psql, leaf-proof endpoint) comes from
+ * the process environment, as it does for `loadEnv`, so an operator or scenario started against a
+ * remote stack funds and probes through the same roots the seed used.
+ */
 export const loadDemoEnv = async (
   configPath = resolveDemoConfigPath(),
+  processEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<{ env: TestEnv; config: SolanaDemoConfig }> => {
   const config = await readDemoConfig(configPath);
-  const env = resolveEnv(toOverrides(config), "demo-config");
+  const env = resolveEnv({ ...envOverrides(processEnv), ...toOverrides(config) }, "demo-config", config.network);
   return { env, config };
 };

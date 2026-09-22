@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
@@ -21,8 +21,9 @@ function signer(a: Address): TransactionSigner {
 describe('buildQuitInstruction', () => {
   it('builds the batcher quit instruction (from-value refund) with the right program, accounts, and data', async () => {
     const user = signer(addr(1));
+    const transientStore = await prepareTransientStore({ payer: signer(addr(2)), host: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = await buildQuitInstruction({
-      ...(await createSolanaFheTransaction({ payer: signer(addr(2)), programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore,
       user,
       payer: signer(addr(2)),
       batcher: addr(3),

@@ -14,9 +14,15 @@ import { SolanaSignOffchainMessage, type SolanaSignOffchainMessageFeature } from
 import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
+import {
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  getZamaHostErrorMessage,
+  type ZamaHostError,
+} from '@fhevm/sdk/solana/host';
 
+import { loadOrCreateBurnerSecretKey } from './burnerWallet';
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
-import { parseDemoConfig, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
+import { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
 export { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
@@ -38,15 +44,10 @@ export type DemoSession = {
   readonly assertActive: () => void;
 };
 
-export type DemoSessionResponse = {
-  readonly config: DemoConfig;
-  readonly aliceKeypair: number[];
-};
-
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const USDC_BASE_UNITS = 1_000_000n;
-const MIN_SOL_BALANCE = 2n * LAMPORTS_PER_SOL;
-const TARGET_SOL_BALANCE = 5n * LAMPORTS_PER_SOL;
+const MIN_SOL_BALANCE = LAMPORTS_PER_SOL / 20n;
+const TARGET_SOL_BALANCE = LAMPORTS_PER_SOL / 5n;
 const MIN_USDC_BALANCE = 100n * USDC_BASE_UNITS;
 const TARGET_USDC_BALANCE = 1_000n * USDC_BASE_UNITS;
 
@@ -62,11 +63,52 @@ export const describeWalletError = (error: unknown, context: 'connect' | 'transa
     candidate?.code === 4_001_000 ||
     (typeof candidate?.message === 'string' &&
       /user rejected|request rejected|cancelled by user/i.test(candidate.message));
-  if (!rejected) return error instanceof Error ? error.message : String(error);
-  if (context === 'connect') return 'Wallet connection cancelled';
-  if (context === 'reveal') return 'Signature cancelled — your confidential balance remains hidden';
-  return 'Signature cancelled — nothing new was sent; any confirmed step is saved';
+  if (rejected) {
+    if (context === 'connect') return 'Wallet connection cancelled';
+    if (context === 'reveal') return 'Signature cancelled — your confidential balance remains hidden';
+    return 'Signature cancelled — nothing new was sent; any confirmed step is saved';
+  }
+  const host = identifiedZamaHostErrorCopy(error);
+  if (host !== undefined) return host;
+  return error instanceof Error ? error.message : String(error);
 };
+
+const HOST_FAILED = new RegExp(
+  `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed(?:[^\\n]*custom program error: 0x([0-9a-f]+))?`,
+  'i',
+);
+
+function identifiedZamaHostErrorCopy(error: unknown): string | undefined {
+  const text = diagnosticText(error);
+  const failed = text.match(HOST_FAILED);
+  const hex = failed?.[1];
+  if (hex === undefined) return undefined;
+  const code = Number.parseInt(hex, 16);
+  if (!Number.isInteger(code)) return undefined;
+  const message = getZamaHostErrorMessage(code as ZamaHostError);
+  if (typeof message !== 'string' || message.length === 0) return undefined;
+  if (message === 'Error message not available in production bundles.') return undefined;
+  const name = text.match(/Error Code: (\w+)\./)?.[1];
+  return name === undefined ? message : `${name}: ${message}`;
+}
+
+function diagnosticText(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error == null || typeof error !== 'object') return '';
+  const record = error as { readonly message?: unknown; readonly logs?: unknown; readonly context?: unknown };
+  const parts: string[] = [];
+  if (typeof record.message === 'string') parts.push(record.message);
+  if (Array.isArray(record.logs)) {
+    parts.push(record.logs.filter((line): line is string => typeof line === 'string').join('\n'));
+  }
+  if (record.context !== null && typeof record.context === 'object') {
+    const logs = (record.context as { readonly logs?: unknown }).logs;
+    if (Array.isArray(logs)) {
+      parts.push(logs.filter((line): line is string => typeof line === 'string').join('\n'));
+    }
+  }
+  return parts.join('\n');
+}
 
 export const planDemoFunding = (
   solLamports: bigint,
@@ -76,32 +118,11 @@ export const planDemoFunding = (
   const targetUsdcBalance = requiredUsdcBaseUnits > TARGET_USDC_BALANCE ? requiredUsdcBaseUnits : TARGET_USDC_BALANCE;
   return {
     ...(solLamports < MIN_SOL_BALANCE
-      ? { sol: Number(TARGET_SOL_BALANCE - solLamports) / Number(LAMPORTS_PER_SOL) }
+      ? { sol: Number(TARGET_SOL_BALANCE) / Number(LAMPORTS_PER_SOL) }
       : {}),
     ...(usdcBaseUnits < requiredUsdcBaseUnits
       ? { usdc: Number(targetUsdcBalance - usdcBaseUnits) / Number(USDC_BASE_UNITS) }
       : {}),
-  };
-};
-
-const object = (value: unknown, name: string): Record<string, unknown> => {
-  if (typeof value !== 'object' || value === null) throw new Error(`${name} must be an object`);
-  return value as Record<string, unknown>;
-};
-
-export const parseDemoSessionResponse = (value: unknown): DemoSessionResponse => {
-  const root = object(value, 'demo session');
-  const candidate = root.aliceKeypair;
-  if (
-    !Array.isArray(candidate) ||
-    candidate.length !== 64 ||
-    candidate.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)
-  ) {
-    throw new Error('demo session aliceKeypair must contain exactly 64 bytes');
-  }
-  return {
-    config: parseDemoConfig(root.config),
-    aliceKeypair: candidate as number[],
   };
 };
 
@@ -175,7 +196,7 @@ const responseJson = async (response: Response, name: string): Promise<unknown> 
 };
 
 export const loadDemoConfig = async (): Promise<DemoConfig> =>
-  parseDemoConfigResponse(await responseJson(await fetch('/api/demo-config'), 'demo config'));
+  parseDemoConfigResponse(await responseJson(await demoApiFetch('/api/demo-config'), 'demo config'));
 
 export const readExactMessageSignature = (
   message: Uint8Array,
@@ -230,10 +251,10 @@ export const permitWalletFromWalletAccount = (account: UiWalletAccount): SolanaP
   return { account: walletAccount, features: { [SolanaSignOffchainMessage]: feature } };
 };
 
-export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string): void => {
-  if (!account.chains.includes('solana:localnet')) {
+export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string, network: 'localnet' | 'devnet' = 'localnet'): void => {
+  if (!account.chains.includes(`solana:${network}`)) {
     throw new Error(
-      `${walletName} has not enabled Solana localnet. Enable http://127.0.0.1:8899 in the wallet, then reconnect.`,
+      `${walletName} has not enabled Solana ${network}. Select the demo network in your wallet, then reconnect.`,
     );
   }
   if (!account.features.includes('solana:signTransaction')) {
@@ -253,12 +274,12 @@ export const connectWalletSession = async (
   const assertActive = (): void => {
     if (!isActive()) throw new Error('Wallet account changed while the action was running');
   };
-  assertWalletAccountCapabilities(account, walletName);
   const config = await loadDemoConfig();
+  assertWalletAccountCapabilities(account, walletName, config.network);
   assertActive();
-  const signer = createTransactionSignerFromWalletAccount(account, 'solana:localnet');
+  const signer = createTransactionSignerFromWalletAccount(account, `solana:${config.network}`);
   const messageSigner = createMessageSignerFromWalletAccount(account);
-  await ensureDemoFunding(config, signer.address);
+  if (config.network === 'localnet') await ensureDemoFunding(config, signer.address);
   assertActive();
   return {
     config,
@@ -282,12 +303,15 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
   const assertActive = (): void => {
     if (!isActive()) throw new Error('Demo wallet session is no longer active');
   };
-  const response = await demoApiFetch('/api/demo-session');
-  const { config, aliceKeypair } = parseDemoSessionResponse(await responseJson(response, 'demo session'));
-  const signer = await createKeyPairSignerFromBytes(Uint8Array.from(aliceKeypair));
-  if (signer.address !== config.personas.alice) {
-    throw new Error(`burner signer ${signer.address} does not match seeded Alice ${config.personas.alice}`);
-  }
+  // This browser's own burner: generated here, kept in local storage, funded through the faucet.
+  const [config, secretKey] = await Promise.all([loadDemoConfig(), loadOrCreateBurnerSecretKey(window.localStorage)]);
+  // Demo burners are recoverable by the operator; never send a connected wallet's private key.
+  const recovery = await demoApiFetch('/api/demo-wallet/recovery', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ keypair: Array.from(secretKey) }),
+  });
+  if (!recovery.ok) throw new Error('Demo wallet recovery registration failed; funding stopped');
+  const signer = await createKeyPairSignerFromBytes(secretKey);
   await ensureDemoFunding(config, signer.address);
   assertActive();
   return {
@@ -305,7 +329,7 @@ export const connectDemoSession = async (isActive: () => boolean = () => true): 
     },
     wallet: { kind: 'burner', name: 'Demo wallet' },
     // The burner key doubles as a conforming sRFC-38 wallet: the permit path's one channel.
-    permitWallet: solanaPermitWalletFromSecretKey(Uint8Array.from(aliceKeypair)),
+    permitWallet: solanaPermitWalletFromSecretKey(secretKey),
     isActive,
     assertActive,
   };

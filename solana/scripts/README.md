@@ -9,7 +9,7 @@ Run from `solana/` unless a path below says otherwise.
 | Command | When to use | Writes? |
 |---|---|---|
 | `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity | `target/deploy` only |
-| `python3 scripts/check-pda-seeds.py` | Check explicit handwritten TypeScript/Rust PDA-seed counterparts | no |
+| `python3 scripts/check-pda-seeds.py` | Check confidential-token `PENDING_BURN_SEED` usage in Rust | no |
 | `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all six committed IDLs + ABI goldens |
 | `bash scripts/update-cost-snapshots.sh` | After an intentional CU / ix-shape change | `runtime-tests/cost-snapshots/*.json` |
 | `bash scripts/update-permit-vectors.sh` | After an intentional permit-canon change | `test-fixtures/permit/permit_v1.json` |
@@ -25,4 +25,4 @@ against a running stack (CI: `solana-e2e`).
 | Path | Role |
 |---|---|
 | `check_solana_abi.py` | Called by `check-` / `sync-zama-host-idl.sh`; owns the one list of committed IDLs, copying them out of `target/idl` with `--write` and comparing them back without it |
-| `e2e/test-keypairs/` | Well-known local program keypairs for reproducible deploys |
+| `e2e/test-keypairs/` | Well-known keypairs of the two e2e specimen programs; the deployed programs load at genesis without one |

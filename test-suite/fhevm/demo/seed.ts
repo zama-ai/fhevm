@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
+import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 // seed — the `demo:seed` entrypoint (#1760). Brings a freshly-deployed demo stack to the state the
 // dApp (#1761), the deposit-arc smoke and the rehearsal (#1762) expect, then writes the demo-config
 // JSON that every consumer reads.
@@ -15,7 +15,7 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
-//      `demo:faucet` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
+//      `demo:operator` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
@@ -34,7 +34,6 @@ import { createSolanaFheTransaction } from "@fhevm/sdk/solana";
 import fs from "node:fs/promises";
 
 import {
-  createKeyPairSignerFromBytes,
   generateKeyPairSigner,
   getAddressEncoder,
   getProgramDerivedAddress,
@@ -43,14 +42,15 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
-import { resolveEnv } from "../e2e/harness/loadEnv";
+import { loadEnv } from "../e2e/harness/loadEnv";
+import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import {
   BRINGUP_KMS_CONTEXT_ID,
   bytes32HexFromId,
   readActiveKmsPair,
   readGatewayBootstrapInputs,
 } from "../src/solana/addresses";
-import { createProvisioningContext, hostConfigAddress } from "../src/solana/provision";
+import { hostConfigAddress, loadKeypairSigner } from "../src/solana/provision";
 import {
   SPL_MINT_ACCOUNT_SPACE,
   SPL_TOKEN_PROGRAM_ADDRESS,
@@ -59,7 +59,8 @@ import {
   initializeMint2Instruction,
 } from "../src/solana/spl";
 import { kmsContextAddress } from "../src/solana/token-vertical";
-import { DEMO_KEYPAIRS } from "./loadDemoEnv";
+import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
+import { demoKeypairs } from "./loadDemoEnv";
 import {
   resolveDemoConfigPath,
   writeDemoConfig,
@@ -79,49 +80,46 @@ const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
-/** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
-const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
-  const bytes = Uint8Array.from(JSON.parse(await fs.readFile(keypairPath, "utf8")) as number[]);
-  return createKeyPairSignerFromBytes(bytes);
-};
 
 
 const main = async (): Promise<void> => {
-  const env = resolveEnv();
+  const env = loadEnv();
   const configPath = resolveDemoConfigPath();
 
-  // Remove any prior config up front: it is written only at the very end (step 7), so its presence
-  // means a completed prior seed. Deleting it now guarantees that if this run crashes mid-seed, no
-  // stale config survives pointing consumers at half-provisioned / now-defunct roots — the absence
-  // of the file is the honest signal that no usable stack was seeded.
-  await fs.rm(configPath, { force: true });
+  // Preserve the last inventory even if a reseed fails before publishing a replacement.
+  if (env.network === "devnet") {
+    try {
+      await fs.copyFile(configPath, `${configPath}.${Date.now()}.previous`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    for (const role of ["keeper", "alice", "bob", "mintAuthority"]) await ensureDemoRecoveryKey(role);
+    await mirrorRecoveryKeys();
+  }
 
-  // The shared provisioning send/confirm/airdrop closures, at the seeder's own CU ceiling.
-  const provisioning = createProvisioningContext(env.rpcUrl, env.wsUrl, {
-    computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT,
-  });
+  // The shared provisioning send/confirm/fund closures, at the seeder's own CU ceiling.
+  const provisioning = await openProvisioning(env, { computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT });
   const { rpc } = provisioning;
   const send = (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> =>
     provisioning.sendTransaction(payer, instructions);
-  const airdrop = provisioning.airdropSol;
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
-  // authority backs the faucet, and Alice/Bob are end users.
-  const deployer = await loadSigner(env.roots.deployerKeypairPath);
-  const mintAuthority = await loadSigner(DEMO_KEYPAIRS.mintAuthority);
-  const keeper = await loadSigner(DEMO_KEYPAIRS.keeper);
-  const alice = await loadSigner(DEMO_KEYPAIRS.alice);
-  const bob = await loadSigner(DEMO_KEYPAIRS.bob);
+  // authority backs the operator's faucet, and Alice/Bob are end users.
+  const deployer = await loadKeypairSigner(env.roots.deployerKeypairPath);
+  const mintAuthority = await loadKeypairSigner(demoKeypairs(env).mintAuthority);
+  const keeper = await loadKeypairSigner(demoKeypairs(env).keeper);
+  const alice = await loadKeypairSigner(demoKeypairs(env).alice);
+  const bob = await loadKeypairSigner(demoKeypairs(env).bob);
 
-  // Fund the payer + personas before provisioning so every subsequent step has fees available. The
-  // mint authority is funded too: `demo:faucet` makes it the fee payer AND the ATA rent payer for
-  // every /mint-usdc, so an unfunded mint authority fails the first faucet drip (and the smoke).
-  await airdrop(deployer.address, 100n);
-  await airdrop(mintAuthority.address, 10n);
-  await airdrop(keeper.address, 10n);
-  await airdrop(alice.address, 10n);
-  await airdrop(bob.address, 10n);
+  // Fund the personas before provisioning so every subsequent step has fees available. A local
+  // validator airdrops the deployer first; on devnet the deployer is the funder and pays from its
+  // own balance. The mint authority is funded too: `demo:operator` makes it the fee payer AND the ATA
+  // rent payer for every mint-usdc, so an unfunded mint authority fails the first faucet drip.
+  if (env.capabilities.faucet) await provisioning.fundSol(deployer.address, 100);
+  for (const actor of [mintAuthority, keeper, alice, bob]) {
+    await provisioning.fundSol(actor.address, env.funding.primarySol);
+  }
 
   // Fresh accounts created by this run.
   const mockUsdcMint = await generateKeyPairSigner();
@@ -153,6 +151,14 @@ const main = async (): Promise<void> => {
     seeds: [new TextEncoder().encode("shares"), encodeAddress(vaultAccount.address)],
   });
 
+  if (env.network === "devnet") {
+    await fs.writeFile(`${recoveryDirectory()}/inventory-${mockUsdcMint.address}.json`, JSON.stringify({
+      mints: [mockUsdcMint.address, shareMint],
+      accounts: [vaultAccount.address, cUsdcMint.address, cSharesMint.address, depositBatcher.address, redeemBatcher.address],
+    }), { mode: 0o600, flag: "wx" });
+    await mirrorRecoveryKeys();
+  }
+
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
   const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
   await send(deployer, [
@@ -179,20 +185,20 @@ const main = async (): Promise<void> => {
     }),
   ]);
 
-  const mintFhe = await createSolanaFheTransaction({ payer: deployer, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
+  const mintTransientStore = await prepareTransientStore({ payer: deployer, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
   // 3. Confidential mints: cUSDC wraps mock USDC, cShares wraps the share mint.
-  await send(deployer, mintFhe.wrap([
+  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
     await vault.buildInitializeMintInstruction({
-      fhe: mintFhe.accounts,
+      transientStore: mintTransientStore,
       authority: keeper,
       mint: cUsdcMint,
       underlyingMint: mockUsdcMint.address,
       hostConfig,
     }),
   ]));
-  await send(deployer, mintFhe.wrap([
+  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
     await vault.buildInitializeMintInstruction({
-      fhe: mintFhe.accounts,
+      transientStore: mintTransientStore,
       authority: keeper,
       mint: cSharesMint,
       underlyingMint: shareMint,
@@ -275,9 +281,9 @@ const main = async (): Promise<void> => {
   // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
   const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
     const recentSlot = await rpc.getSlot({ commitment: "finalized" }).send();
-    const fhe = await createSolanaFheTransaction({ payer: keeper, programAddress: vault.ZAMA_HOST_PROGRAM_ADDRESS });
+    const transientStore = await prepareTransientStore({ payer: keeper, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
     const opened = await vault.openBatchForBatcher({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       roots,
       batchIndex: 0n,
       payer: keeper,
@@ -285,7 +291,7 @@ const main = async (): Promise<void> => {
       authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
     });
     const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
-    await send(keeper, fhe.wrap([openBatchInstruction!]));
+    await send(keeper, appendTransientStoreInstructions(transientStore, [openBatchInstruction!]));
     // The create must land in the same transaction that first extends the table (or immediately
     // before it); pair it with the first chunk, then send each later chunk on its own.
     await send(keeper, [createLookupTable!, firstExtend!]);
@@ -314,6 +320,7 @@ const main = async (): Promise<void> => {
   // a malformed assembly fails at write with a named field rather than later inside an SDK call.
   const config: SolanaDemoConfig = {
     source: "demo-config",
+    network: env.network,
     chainId: env.chainId.toString(),
     rpcUrl: env.rpcUrl,
     wsUrl: env.wsUrl,

@@ -1,11 +1,12 @@
 //! Called from each program's `build.rs`. Reads `solana/environments/<PROGRAM_ENVIRONMENT>.json`
 //! and writes the program's `declare_id!` line to `OUT_DIR`, which `lib.rs` includes. Under
-//! `solana/`, `.cargo/config.toml` forces the variable to `localnet`; elsewhere it defaults to
-//! `localnet` when unset. See DESIGN_DECISIONS.md DD-053.
+//! `solana/`, `.cargo/config.toml` forces the variable to `preview-env`; elsewhere it defaults to
+//! `preview-env` when unset. One id serves every cluster, including the local test validator,
+//! which loads the programs at genesis. See DESIGN_DECISIONS.md DD-053.
 
 use std::path::{Path, PathBuf};
 
-const DEFAULT_ENVIRONMENT: &str = "localnet";
+const DEFAULT_ENVIRONMENT: &str = "preview-env";
 
 /// `program` is the key under `"programs"` in the environment file, e.g. `zama_host`.
 pub fn declare_program_id(program: &str) {

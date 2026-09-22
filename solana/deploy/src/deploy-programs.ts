@@ -1,28 +1,21 @@
 import { address, createSolanaRpc } from '@solana/kit';
+import { createHmac, createPrivateKey, createPublicKey } from 'node:crypto';
+import { writeKeypairJson, parseKeypairBytes } from './keypair';
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type SolanaDeployProgram } from './constants';
-import localnet from './generated/program-ids.json';
-import { type SolanaEnvironment, programIdsFor } from './environment';
+import generated from './generated/program-ids.json';
+import { DEFAULT_SOLANA_ENVIRONMENT, type SolanaEnvironment, deployedProgramIds } from './environment';
 
-const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => {
-  const ids = programIdsFor(environment);
-  return {
-    zama_host: ids.zamaHost,
-    confidential_token: ids.confidentialToken,
-    demo_vault: ids.demoVault,
-    confidential_batcher: ids.confidentialBatcher,
-    ...(environment === 'localnet'
-      ? {
-          encrypted_counter: localnet.encrypted_counter,
-          dep_chain: localnet.dep_chain,
-        }
-      : {}),
-  };
-};
+const declaredProgramId = (environment: SolanaEnvironment): Partial<Record<SolanaDeployProgram, string>> => ({
+  ...deployedProgramIds(environment),
+  // The e2e specimens exist only on the test validator; their ids come from the committed IDLs.
+  encrypted_counter: generated.encrypted_counter,
+  dep_chain: generated.dep_chain,
+});
 
 const run = (argv: string[], signal?: AbortSignal): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -31,25 +24,32 @@ const run = (argv: string[], signal?: AbortSignal): Promise<string> =>
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
-    let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => {
-      if (stderr.length < 16_000) stderr += chunk.toString();
-    });
-    child.on('error', reject);
+    child.stderr.resume(); // Drain private diagnostics without retaining or emitting them.
+    child.on('error', () => reject(new Error('Solana CLI could not start')));
     child.on('close', (code) => {
       if (code === 0) {
         resolve(stdout.trim());
         return;
       }
-      const diagnostic =
-        stderr.length >= 16_000
-          ? 'diagnostic omitted (too long)'
-          : stderr.replace(/https?:\/\/[^\s"'<>]+/g, '<RPC URL>');
-      reject(new Error(`${argv[0]} ${argv[1]} failed (exit ${code}): ${diagnostic.trim()}`));
+      // CLI failures can contain a buffer recovery mnemonic or credentials in RPC URLs.
+      reject(new Error(`${argv[0]} ${argv[1]} failed (exit ${code}); private CLI diagnostics suppressed`));
     });
   });
 
 const addressOf = (keypairPath: string): Promise<string> => run(['solana', 'address', '-k', keypairPath]);
+
+/** Stable private buffer key; an interrupted upload is recoverable without its ephemeral disk. */
+export const uploadBufferBytes = async (deployerPath: string, program: string): Promise<Uint8Array> => {
+  const parent = parseKeypairBytes(await readFile(deployerPath, 'utf8'));
+  const seed = createHmac('sha256', parent.subarray(0, 32)).update(`fhevm-preview-upload-v1:${program}`).digest();
+  const privateKey = createPrivateKey({
+    key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]),
+    format: 'der',
+    type: 'pkcs8',
+  });
+  const publicKey = createPublicKey(privateKey).export({ format: 'der', type: 'spki' }).subarray(-32);
+  return Uint8Array.from([...seed, ...publicKey]);
+};
 
 export const deployProgramArtifacts = async (parameters: {
   readonly rpcUrl: string;
@@ -64,11 +64,28 @@ export const deployProgramArtifacts = async (parameters: {
   readonly environment?: SolanaEnvironment;
 }): Promise<Partial<Record<SolanaDeployProgram, string>>> => {
   parameters.signal?.throwIfAborted();
-  const declared = declaredProgramId(parameters.environment ?? 'localnet');
+  const declared = declaredProgramId(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT);
   const rpc = createSolanaRpc(parameters.rpcUrl);
   const authority = await addressOf(parameters.deployerKeypairPath);
-  const command = (args: string[]) =>
-    run([...args, '-k', parameters.deployerKeypairPath, '--commitment', 'confirmed'], parameters.signal);
+  const configPath = path.join(path.dirname(parameters.deployerKeypairPath), 'solana-cli-config.json');
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      json_rpc_url: parameters.rpcUrl,
+      websocket_url: '',
+      keypair_path: parameters.deployerKeypairPath,
+      address_labels: {},
+      commitment: 'confirmed',
+    }),
+    { mode: 0o600 },
+  );
+  const command = (args: string[]) => {
+    const safeArgs = args.filter((_, index) => args[index] !== '-u' && args[index - 1] !== '-u');
+    return run(
+      [...safeArgs, '--config', configPath, '-k', parameters.deployerKeypairPath, '--commitment', 'confirmed'],
+      parameters.signal,
+    );
+  };
   const pending: SolanaDeployProgram[] = [];
   const ids: Partial<Record<SolanaDeployProgram, string>> = {};
   for (const program of parameters.programs) {
@@ -81,7 +98,7 @@ export const deployProgramArtifacts = async (parameters: {
     const programId = keypairPath ? await addressOf(keypairPath) : expected;
     if (programId !== expected) {
       throw new Error(
-        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for environment ${parameters.environment ?? 'localnet'}`,
+        `${program} keypair pubkey ${programId} does not match declare_id! ${expected} for environment ${parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT}`,
       );
     }
     let exists: boolean;
@@ -125,6 +142,11 @@ export const deployProgramArtifacts = async (parameters: {
     ids[program] = programId;
   }
   for (const program of pending) {
+    // Derivable from the persistent deployer key, so even a killed upload cannot lose its buffer.
+    const bufferPath = await writeKeypairJson(
+      path.join(path.dirname(parameters.deployerKeypairPath), `${program}-buffer.json`),
+      JSON.stringify([...(await uploadBufferBytes(parameters.deployerKeypairPath, ids[program]!))]),
+    );
     await command([
       'solana',
       'program',
@@ -133,6 +155,8 @@ export const deployProgramArtifacts = async (parameters: {
       parameters.rpcUrl,
       '--upgrade-authority',
       parameters.deployerKeypairPath,
+      '--buffer',
+      bufferPath,
       '--use-rpc',
       // ~800 write transactions for a 700 KB program; the default 5 re-sign rounds fail on
       // devnet with "Data writes to account failed: Max retries exceeded".

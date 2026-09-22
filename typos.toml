@@ -82,6 +82,9 @@ extend-exclude = [
 [default]
 # Locale for spell checking
 locale = "en-us"
+# Quoted Solana base58 addresses (32-44 chars, no 0/O/I/l) are PDA and program-id goldens whose
+# random fragments read as misspelled words.
+extend-ignore-re = ["['\"][1-9A-HJ-NP-Za-km-z]{32,44}['\"]"]
 
 [default.extend-words]
 # British English variants accepted

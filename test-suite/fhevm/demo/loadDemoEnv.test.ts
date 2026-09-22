@@ -12,6 +12,7 @@ const addr = (fill: number): string => getAddressDecoder().decode(new Uint8Array
 
 const sampleConfig = (): SolanaDemoConfig => ({
   source: "demo-config",
+  network: "localnet",
   chainId: "72057594037940281",
   rpcUrl: "http://127.0.0.1:9999",
   wsUrl: "ws://127.0.0.1:9998",
@@ -65,5 +66,23 @@ describe("loadDemoEnv", () => {
     // The vault roots stay in the config object, never leaking into TestEnv.
     expect(config.batchers.deposit.batcher).toBe(cfg.batchers.deposit.batcher);
     expect("vault" in env).toBe(false);
+  });
+
+  test("takes machine-local roots from the environment while the config keeps its endpoints", async () => {
+    const cfg = sampleConfig();
+    const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "demo-env-")), "solana-demo.json");
+    tmp.push(file);
+    await writeDemoConfig(cfg, file);
+
+    const { env } = await loadDemoEnv(file, {
+      SOLANA_DEPLOYER_KEYPAIR: "/keys/deployer.json",
+      COPROCESSOR_DB_PSQL: "psql -h db -U user coprocessor",
+      SOLANA_LEAF_PROOF_URL: "http://127.0.0.1:18080",
+      SOLANA_RPC_URL: "http://elsewhere:8899",
+    });
+    expect(env.roots.deployerKeypairPath).toBe("/keys/deployer.json");
+    expect(env.coprocessorDbPsql).toEqual(["psql", "-h", "db", "-U", "user", "coprocessor"]);
+    expect(env.leafProof.url).toBe("http://127.0.0.1:18080");
+    expect(env.rpcUrl).toBe(cfg.rpcUrl);
   });
 });

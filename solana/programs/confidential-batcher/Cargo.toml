@@ -12,6 +12,7 @@ name = "confidential_batcher"
 
 [features]
 default = []
+admin-sweep = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []

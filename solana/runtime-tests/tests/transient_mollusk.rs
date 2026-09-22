@@ -860,7 +860,7 @@ fn execution_cannot_substitute_an_unopened_transient_store_account() {
         grant_then_consume(GrantConsumptionCase::WrongTransientStore).program_result,
         TransactionProgramResult::Failure(
             2,
-            ProgramError::Custom(anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram as u32)
+            ProgramError::Custom(6000 + host::ZamaHostError::TransientStoreNotOpened as u32)
         )
     );
 }
@@ -1251,7 +1251,7 @@ fn sdk_transient_store_fixture_matches_host_address_and_lifecycle_bytes() {
     let payer = Pubkey::new_from_array([0x44; 32]);
     assert_eq!(
         host::transient_store_address(payer).0.to_string(),
-        "7HVhfpvm7TiBwHw8vFNeEqkMCDTU2cWpruEweWsRziAW"
+        "FQtss6FsWsNugVEsasKQ4vF8urWD7gkCzjTVgEaVy6xp"
     );
     assert_eq!(
         host::instruction::OpenTransientStore {}.data(),

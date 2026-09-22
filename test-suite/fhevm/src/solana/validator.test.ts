@@ -43,9 +43,23 @@ describe("validatorStartArgs genesis extras", () => {
     expect(args[accountFlag + 2]).toBe("/tmp/config.json");
   });
 
+  test("loads our programs upgradeable at genesis: address, artifact, then the authority", () => {
+    const args = validatorStartArgs({
+      ledgerDir: "/tmp/ledger",
+      genesisUpgradeablePrograms: [{ address: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ", soPath: "/tmp/zama_host.so", authority: "3VbwWz9pfrhqE7Xb65AdSVef2jfZoHd4rQWcZdzVm85f" }],
+    });
+    const flag = args.indexOf("--upgradeable-program");
+    expect(args.slice(flag + 1, flag + 4)).toEqual([
+      "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
+      "/tmp/zama_host.so",
+      "3VbwWz9pfrhqE7Xb65AdSVef2jfZoHd4rQWcZdzVm85f",
+    ]);
+  });
+
   test("adds no genesis flags when none are given — the existing arg shape is untouched", () => {
     const args = validatorStartArgs({ ledgerDir: "/tmp/ledger", geyserConfigPath: "/tmp/geyser.json" });
     expect(args).not.toContain("--bpf-program");
+    expect(args).not.toContain("--upgradeable-program");
     expect(args).not.toContain("--account");
   });
 });

@@ -1,4 +1,4 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -9,8 +9,8 @@ import {
   getClaimInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/claim.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from './internal/generated/confidentialToken/programAddress.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstructionDataDecoder,
@@ -60,9 +60,9 @@ describe('buildClaimInstruction', () => {
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
-    const fhe = await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS });
+    const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
     const instruction = await buildClaimInstruction({
-      fhe: fhe.accounts,
+      transientStore: transientStore,
       payer,
       user,
       batcher,
@@ -72,7 +72,7 @@ describe('buildClaimInstruction', () => {
       tokenProgram: SPL_TOKEN,
       hostConfig,
     });
-    const instructions = fhe.wrap([instruction]);
+    const instructions = appendTransientStoreInstructions(transientStore, [instruction]);
     expect(instructions).toHaveLength(3);
     const close = instructions[2]!;
 
@@ -96,7 +96,7 @@ describe('buildClaimInstruction', () => {
       base58.decode(user),
     ]);
     const state = await batcherValuePda(batch, record);
-    const transientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
+    const expectedTransientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]);
     const expected: Address[] = [
       payer.address,
       user,
@@ -105,7 +105,7 @@ describe('buildClaimInstruction', () => {
       batchAuthority,
       await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [utf8('join-record'), base58.decode(batch), base58.decode(user)]),
       state,
-      transientStore,
+      expectedTransientStore,
       address('Sysvar1nstructions1111111111111111111111111'),
       payoutConfidentialMint,
       payoutUnderlyingMint,
@@ -128,7 +128,7 @@ describe('buildClaimInstruction', () => {
     expect(close!.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(close!.accounts!.map((a) => a.address)).toEqual([
       address('Sysvar1nstructions1111111111111111111111111'),
-      transientStore,
+      expectedTransientStore,
       payer.address,
     ]);
     expect(Array.from(getCloseTransientStoreInstructionDataDecoder().decode(close!.data!).discriminator)).toEqual(
@@ -147,7 +147,7 @@ describe('buildClaimInstruction', () => {
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
     const instruction = await buildClaimInstruction({
-      fhe: (await createSolanaFheTransaction({ payer, programAddress: ZAMA_HOST_PROGRAM_ADDRESS })).accounts,
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       user,
       batcher,
@@ -158,9 +158,9 @@ describe('buildClaimInstruction', () => {
       hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
-    expect(addresses[13]).toBe('8iRxqzbzVoCDyN5ruCrtDs3HEJXL6S5khbmijMta8j6z'); // batchPayoutTokenAccount
-    expect(addresses[15]).toBe('Fc46oMpQnJjHqM1YNvc6TYgqRjTRyqu71rVKXAedUt4B'); // batchPayoutBalanceStore
-    expect(addresses[17]).toBe('7usNGbH9WupMAsyDeqdUEoKrjisKcgusGjDiju4vNog'); // zamaEventAuthority
-    expect(addresses[20]).toBe('2KQ5N8YEUTk8hQWXBnkGjsvKPzm2rh2nFH6PeoVt7q8U'); // tokenEventAuthority
+    expect(addresses[13]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchPayoutTokenAccount
+    expect(addresses[15]).toBe('4pn8uFyj9EnVWa8g8YGQedU4sCLBCNEQnhcJBZRnkwtw'); // batchPayoutBalanceStore
+    expect(addresses[17]).toBe('CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp'); // zamaEventAuthority
+    expect(addresses[20]).toBe('FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp'); // tokenEventAuthority
   });
 });

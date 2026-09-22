@@ -5,7 +5,7 @@ Last synced: 2026-09-11.
 The JavaScript/TypeScript SDK for building applications on **FHEVM** chains. Encrypt values client-side, send encrypted inputs to your smart contracts, and decrypt results — all without exposing plaintext to the blockchain.
 
 For the Solana PoC, see the [application composition guide](../../solana/README.md#integrating-an-app).
-It explains `createSolanaFheTransaction`, the shared transient-store accounts and the required transaction lifecycle.
+It explains `prepareTransientStore`, `appendTransientStoreInstructions` and the required transaction lifecycle.
 
 ## Features
 

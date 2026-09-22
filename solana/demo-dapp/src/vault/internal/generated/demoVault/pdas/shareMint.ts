@@ -23,7 +23,7 @@ export async function findShareMintPda(
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
-    programAddress = '6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9' as Address<'6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9'>,
+    programAddress = 'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH' as Address<'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH'>,
   } = config;
   return await getProgramDerivedAddress({
     programAddress,

@@ -26,11 +26,13 @@ import path from 'node:path';
 
 import { restartDemoSolanaListener } from '../../demo/lifecycle';
 import { REPO_ROOT } from '../../src/layout';
+import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../../solana/deploy/src/environment';
 import { readGatewayBootstrapInputs } from '../../src/solana/addresses';
 import { userDecryptExpect } from '../../src/solana/fhe-vertical';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { incrementCounter, initializeCounter } from '../../src/solana/specimens';
 import { runStreaming } from '../../src/utils/process';
+import { loadEnv } from '../harness/loadEnv';
 import { verticalSetup } from '../harness/solana/vertical';
 
 // Each phase does its own write + SNS commit wait (up to ~3min) + KMS round-trips.
@@ -42,7 +44,7 @@ describe('solana specimen decrypt vertical', () => {
   test(
     'counter: initialize -> increment(42) -> pure-SDK user-decrypt == 42',
     async () => {
-      const { stack, context, wallet, config, secretKey } = await verticalSetup();
+      const { stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
 
       await initializeCounter(context, wallet.signer);
       const { value, handle } = await incrementCounter(context, wallet.signer, 42n);
@@ -56,6 +58,7 @@ describe('solana specimen decrypt vertical', () => {
         expected: 42n,
       });
       expect(decrypted).toBe(42n);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
@@ -63,7 +66,7 @@ describe('solana specimen decrypt vertical', () => {
   test(
     'historical decrypt: increment again, then user-decrypt the OLD handle and the current one',
     async () => {
-      const { stack, context, wallet, config, secretKey } = await verticalSetup();
+      const { stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
 
       await initializeCounter(context, wallet.signer);
       const original = await incrementCounter(context, wallet.signer, 42n);
@@ -78,6 +81,7 @@ describe('solana specimen decrypt vertical', () => {
       const encryptedStore = original.value.encryptedStore;
       expect(await userDecryptExpect(config, { encryptedStore, handle: original.handle, secretKey, expected: 42n })).toBe(42n);
       expect(await userDecryptExpect(config, { encryptedStore, handle: updated.handle, secretKey, expected: 49n })).toBe(49n);
+      await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,
   );
@@ -85,10 +89,10 @@ describe('solana specimen decrypt vertical', () => {
 
 // The same source compiled with another optimization level supplies a genuinely different,
 // compatible executable without introducing a test-only instruction into the host program.
-test(
+test.skipIf(loadEnv().network !== 'localnet')(
   'host upgrade and listener restart retain old decryptable values',
   async () => {
-    const { env, stack, context, wallet, config, secretKey } = await verticalSetup();
+    const { env, stack, context, wallets, wallet, config, secretKey } = await verticalSetup();
     const directory = await mkdtemp(path.join(tmpdir(), 'solana-upgrade-'));
     const artifactsDir = path.join(REPO_ROOT, 'solana/target/deploy');
     const bootstrap = {
@@ -112,7 +116,7 @@ test(
       await stack.waitForSnsCommit(hex(original.handle));
       await rollout(artifactsDir, false);
       await cp(path.join(artifactsDir, 'zama_host.so'), path.join(directory, 'zama_host.so'));
-      await runStreaming(['bash', 'scripts/build-programs.sh', 'localnet', 'zama_host'], {
+      await runStreaming(['bash', 'scripts/build-programs.sh', DEFAULT_SOLANA_ENVIRONMENT, 'zama_host'], {
         cwd: path.join(REPO_ROOT, 'solana'),
         env: { CARGO_PROFILE_RELEASE_OPT_LEVEL: '2', SBF_OUT_PATH: path.join(directory, 'upgrade') },
       });
@@ -134,6 +138,7 @@ test(
       expect(
         await userDecryptExpect(config, { encryptedStore, handle: original.handle, secretKey, expected: 42n }),
       ).toBe(42n);
+      await wallets.sweep();
       passed = true;
     } finally {
       try {

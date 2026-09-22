@@ -1,8 +1,7 @@
-import { createSolanaFheTransaction } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   AccountRole,
   address,
-  appendTransactionMessageInstructions,
   assertIsFullySignedTransaction,
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
@@ -31,12 +30,8 @@ import { bytes32HexToHandle } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
-import { getConfidentialTransferInstruction } from '../internal/generated/confidentialToken/instructions/confidentialTransfer.js';
-import {
-  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from '../internal/generated/confidentialToken/programAddress.js';
 import { associatedTokenAddress } from '../internal/tokenAccounts.js';
+import { getConfidentialTransferInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
@@ -115,9 +110,10 @@ export async function confidentialTransfer(
 
   const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
   const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
-  const fhe = await createSolanaFheTransaction({ payer: feePayer, programAddress: zamaHostProgramAddress });
+  const transientStore = await prepareTransientStore({ payer: feePayer, host: zamaHostProgramAddress });
   const transferInstruction = getConfidentialTransferInstruction({
-    ...fhe.accounts,
+    transientStore: transientStore.address,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
     payer: feePayer,
     mint,
@@ -168,7 +164,7 @@ export async function confidentialTransfer(
     // A live transfer has been observed to exceed 400k CU (PDA bump search and
     // emit_cpi! overhead vary per run); 800k keeps headroom under the 1.4M/tx cap.
     (m) => setTransactionMessageComputeUnitLimit(800_000, m),
-    (m) => appendTransactionMessageInstructions(fhe.wrap([instruction]), m),
+    (m) => appendTransientStoreInstructions(transientStore, [instruction], m),
   );
   const transaction = await signTransactionMessageWithSigners(message);
   assertIsFullySignedTransaction(transaction);

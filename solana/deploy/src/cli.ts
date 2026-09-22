@@ -1,6 +1,5 @@
 // Solana deployer: host deploy|upgrade|wipe, demos deploy|upgrade, coprocessor register.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { writeSolanaAddressArtifact } from './artifact';
@@ -12,6 +11,7 @@ import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './ga
 import { loadKeypairSigner, resolveKeypairPath } from './keypair';
 import { programIdsFor, readSolanaEnvironment } from './environment';
 import { createHostDeployContext } from './send';
+import { recoverPreview } from './recover';
 import { wipeZamaHost } from './wipe';
 
 const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
@@ -28,12 +28,12 @@ const resolveProgramKeypairs = async (
   for (const program of programs) {
     const envName = `SOLANA_${program.toUpperCase()}_KEYPAIR`;
     const jsonName = `${envName}_JSON`;
-    const fallbackPath = path.join(ARTIFACTS_DIR, `${program}-keypair.json`);
-    if (!process.env[envName] && !process.env[jsonName] && !existsSync(fallbackPath)) continue;
+    // Only an explicit keypair (first deploy of a program on a cluster). The build writes a
+    // throwaway <program>-keypair.json next to the .so, which never matches the shipped id.
+    if (!process.env[envName] && !process.env[jsonName]) continue;
     paths[program] = await resolveKeypairPath({
       pathEnv: process.env[envName],
       jsonEnv: process.env[jsonName],
-      fallbackPath,
       writePath: path.join(KEYPAIR_DIR, `${program}-keypair.json`),
     });
   }
@@ -64,9 +64,20 @@ const main = async () => {
   if (flags.some((flag) => flag !== '--allow-upgrade') || (allowUpgrade && action !== 'deploy')) {
     throw new Error(USAGE);
   }
-  if (target === 'coprocessor' && action === 'register') {
+  if (target === 'environment' && action === 'prepare-reset') {
+    const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
+    for (const program of SOLANA_DEPLOY_PROGRAMS) {
+      const names = { zama_host: programIds.zamaHost, confidential_token: programIds.confidentialToken, demo_vault: programIds.demoVault, confidential_batcher: programIds.confidentialBatcher };
+      if (!(await context.rpc.getAccountInfo(names[program], { encoding: 'base64' }).send()).value) continue;
+      await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: [program], programKeypairPaths: {}, upgrade: true, environment });
+    }
+  } else if (target === 'environment' && (action === 'recover' || action === 'recover-funding' || action === 'reset')) {
+    await recoverPreview(createHostDeployContext(requiredEnv('SOLANA_RPC_URL')), await loadKeypairSigner(await resolveDeployerKeypairPath()), environment, requiredEnv('SOLANA_RECOVERY_DIR'), action === 'reset', await resolveDeployerKeypairPath(), action === 'recover-funding');
+  } else if (target === 'host' && action === 'upgrade-code') {
+    await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: ['zama_host'], programKeypairPaths: await resolveProgramKeypairs(['zama_host']), allowUpgrade: true, environment });
+  } else if (target === 'coprocessor' && action === 'register') {
     const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
-      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID')),
+      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'))),
       encoding: 'utf8',
     });
     if (result.error) throw new Error(`coprocessor registration failed: ${result.error.message}`);
@@ -95,6 +106,7 @@ const main = async () => {
     };
     let ids;
     if (target === 'host') {
+      const chainId = BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'));
       const gateway = await readGatewayBootstrapInputsFromEnv();
       console.log(`environment=${environment}; host=${programIds.zamaHost}; gateway_chain_id=${gateway.gatewayChainId}`);
       console.log(
@@ -102,6 +114,7 @@ const main = async () => {
       );
       ids = await deployHostProgram({
         ...parameters,
+        chainId,
         programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),

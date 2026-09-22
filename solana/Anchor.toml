@@ -6,14 +6,14 @@ solana_version = "4.1.2"
 resolution = true
 skip-lint = false
 
+# One id per program on every cluster (solana/environments/preview-env.json). The test validator
+# loads the programs at genesis, so no program keypair is committed; builds use --ignore-keys and
+# deploys go through solana/deploy.
 [programs.localnet]
-confidential_batcher = "Cr1Tyzov2Jq9AYVn5zLSLQdyd8CkZJLemHYkj6qDqFmG"
-confidential_token = "pS2gMMq6PNZKpjxiANeoN5XxJgwaFsUR6xaJkpUHcDg"
-demo_vault = "6JJTCTipqMjhq5djroouMgi1XZ1Rtc3RMp483F8Bz8b9"
-zama_host = "6AtbvED1rfX68aCT1tYgU1aeu4kFksPDxZG9gtB1Fgtu"
-
-# Other environments (preview-env on public Solana devnet) live in solana/environments/;
-# builds use --ignore-keys and deploys go through solana/deploy.
+confidential_batcher = "DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb"
+confidential_token = "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
+demo_vault = "DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH"
+zama_host = "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
 
 [provider]
 cluster = "localnet"
