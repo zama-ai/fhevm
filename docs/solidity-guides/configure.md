@@ -17,13 +17,13 @@ By inheriting these configuration contracts, you ensure seamless initialization 
 
 ## ZamaConfig.sol
 
-The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for supported networks: Ethereum mainnet, Sepolia testnet, and local Hardhat environments.
+The `ZamaConfig` library exposes functions to retrieve FHEVM configuration structs and contract addresses for supported networks: Ethereum mainnet (chain id `1`), Sepolia testnet (`11155111`) and the local Hardhat/Anvil network (`31337`). `getCoprocessorConfig()` picks the right entry from `block.chainid` and reverts with `ZamaProtocolUnsupported` on any other chain.
 
-Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`CoprocessorConfig`).
+Under the hood, this library encapsulates the network-specific addresses of Zama's FHEVM infrastructure into a single struct (`CoprocessorConfig`). It also exposes `getConfidentialProtocolId()`: `1` on mainnet, `10001` on testnet, `type(uint256).max` locally.
 
 ## ZamaEthereumConfig
 
-The `ZamaEthereumConfig` contract is designed to be inherited by a user contract. The constructor automatically sets up the FHEVM coprocessor using the configuration provided by the library for the respective network. When a contract inherits from `ZamaEthereumConfig`, the constructor calls `FHE.setCoprocessor` with the appropriate addresses. This ensures that the inheriting contract is automatically wired to the correct FHEVM contracts for the target network, abstracting away manual address management and reducing the risk of misconfiguration.
+The `ZamaEthereumConfig` contract is designed to be inherited by a user contract. Its constructor calls `FHE.setCoprocessor` with the addresses for the chain the contract is being deployed on, which removes manual address management and the risk of misconfiguration. It also exposes `confidentialProtocolId()`. Deploying on an unsupported chain reverts in the constructor with `ZamaProtocolUnsupported`.
 
 **Example**
 
@@ -63,4 +63,4 @@ require(FHE.isInitialized(counter), "Counter not initialized!");
 
 ## Summary
 
-By leveraging prebuilt a configuration contract like `ZamaEthereumConfig` in `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
+By leveraging a prebuilt configuration contract like `ZamaEthereumConfig` from `ZamaConfig.sol`, you can efficiently set up your smart contract for encrypted computations. These tools abstract the complexity of cryptographic initialization, allowing you to focus on building secure, confidential smart contracts.
