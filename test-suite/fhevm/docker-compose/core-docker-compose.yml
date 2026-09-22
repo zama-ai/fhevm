@@ -2,8 +2,9 @@ services:
 
   kms-core:
     container_name: kms-core
-    # The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
-    image: ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
+    # Repository follows CORE_VERSION (see compat kmsCoreImageRepository): 0.15+ runs the
+    # insecure build, the only one that allows no `[threshold.tls]` config.
+    image: ${CORE_IMAGE_REPOSITORY}:${CORE_VERSION}
     platform: linux/amd64
     user: root
     env_file:

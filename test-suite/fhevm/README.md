@@ -563,6 +563,13 @@ instances:
 
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
+Blue-green scenarios pin a previous-release Blue whose tfhe-rs cannot read key material from a newer KMS core. `bootstrap.tag` boots the contracts, the KMS core and connector and listener-core at that release (Green stays deferred), waits for the operators to ingest the generated keys, then upgrades them to the resolved bundle in place in production order: the changed contracts through their `task:upgrade*` tasks, the KMS core over the existing keys, the connector, listener-core, and finally the Green fleet. Local overrides for the bootstrapped components apply from the upgrade on; the relayer and test-suite start on the bundle. Centralized KMS only:
+
+```yaml
+bootstrap:
+  tag: v0.14.2-0
+```
+
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
 ## Troubleshooting

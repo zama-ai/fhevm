@@ -12,6 +12,10 @@ on:
         description: "Also run the non-gating threshold-KMS legs (keygen, context-switch, node-swap)"
         type: boolean
         default: false
+      run-blue-green-leg:
+        description: "Also run the non-gating RFC-021 blue-green upgrade leg (2-of-3 operators, two host chains)"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -407,6 +411,39 @@ jobs:
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       scenario: four-party-threshold-kms
       test-profile: kms-generation-abort
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
+
+  # RFC-021 blue-green upgrade leg (pinned 0.14 Blue, Green built from this commit, 2-of-3
+  # operators, two host chains). On demand only; never gates the merge queue or release PRs.
+  run-e2e-tests-blue-green:
+    needs: [create-e2e-tests-input]
+    if: github.event_name == 'workflow_dispatch' && inputs.run-blue-green-leg
+    uses:
+      ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: true
+      build: false
+      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
+      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
+      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      scenario: blue-green-two-of-three-multi-chain
+      test-profile: blue-green
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   # Full KMS-context lifecycle leg: kms-context-switch on a 5-core cluster with a 4-node committee +

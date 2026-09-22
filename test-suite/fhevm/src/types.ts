@@ -144,6 +144,17 @@ export type BlueGreenScenario = {
     args?: Record<string, string[]>;
   };
   kms?: KmsScenarioBlock;
+  bootstrap?: BlueGreenBootstrap;
+};
+
+/**
+ * Release the stack boots at before the Blue-Green upgrade. Contracts, KMS core and connector
+ * and listener-core run this release while the keys are generated, so the pinned Blue can read
+ * them; the bootstrap step then upgrades those components to the resolved bundle in place and
+ * starts Green, the same order as a production 0.14 to 0.15 rollout.
+ */
+export type BlueGreenBootstrap = {
+  tag: string;
 };
 
 export type ResolvedBlueGreenScenarioFleet = {
@@ -167,6 +178,7 @@ export type ResolvedBlueGreenScenario = {
   bcs: ResolvedBlueGreenScenarioFleet;
   gcs: ResolvedBlueGreenScenarioFleet & { deferredStart: boolean };
   kms: ResolvedKmsTopology;
+  bootstrap?: BlueGreenBootstrap;
 };
 
 // Union of every scenario shape the runtime accepts. Narrow on `kind`.
@@ -252,6 +264,12 @@ export type State = {
    * marker only after readiness plus the post-boot health gate succeed.
    */
   e2eKmsConnectorRuntimeAdoptionPending?: boolean;
+  /**
+   * Set while the stack runs at the scenario's `bootstrap.tag`; cleared once the bootstrap step
+   * has upgraded it and started Green. Carries the resolved bundle, the local overrides suspended
+   * for the boot, and the upgrade units already applied so `up --resume` does not repeat them.
+   */
+  bootstrapPending?: { target: VersionBundle; overrides: LocalOverride[]; completed?: string[] };
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
