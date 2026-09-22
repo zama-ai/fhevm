@@ -19,7 +19,12 @@ async fn solana_http_and_gateway_reconstruct_the_same_request() -> anyhow::Resul
     use zama_solana_request::{
         SolanaHandleEntryWire, SolanaUserDecryptRequestWire, encode_solana_request,
     };
-    let endpoint = setup().await?;
+    const CHAIN_ID: u64 = 72057594037940281;
+    let endpoint = setup_with(|mut config| {
+        config.supported_chain_ids = vec![CHAIN_ID];
+        config
+    })
+    .await?;
     let handle = rand_handle(CHAIN_ID);
     let typed =
         connector_utils::tests::rand::solana_user_decryption_request(U256::from(987), handle);
@@ -38,7 +43,6 @@ async fn solana_http_and_gateway_reconstruct_the_same_request() -> anyhow::Resul
             durationSeconds: permit.duration_seconds(),
         },
         hostProgramId: (*permit.verifying_program_id().as_bytes()).into(),
-        chainId: CHAIN_ID,
         extraData: permit.extra_data().to_extra_data().into(),
     };
     let request = SolanaUserDecryptionRequest {

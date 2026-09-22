@@ -1582,21 +1582,7 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::MissingProofBinding { index } => {
             panic!("connector proof planning defect at entry {index}: {failure}")
         }
-        AuthorizationFailure::Form(form) => match form {
-            RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
-            RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
-            RequestFormError::ChainId { .. } => rule::EMBEDDED_CHAIN_ID_MISMATCH,
-            RequestFormError::MixedEmbeddedChainIds { .. } => rule::MIXED_EMBEDDED_CHAIN_IDS,
-            RequestFormError::Permit(_)
-            | RequestFormError::Handle(_)
-            | RequestFormError::SignatureWidth { .. }
-            | RequestFormError::EntryIdentityWidth { .. } => {
-                panic!("the permit set covers this layer: {form}")
-            }
-        },
-        AuthorizationFailure::SignatureMismatch | AuthorizationFailure::UnusableUserPubkey => {
-            panic!("the permit set covers the signature rule")
-        }
+        AuthorizationFailure::Signature(_) => panic!("the permit set covers the signature rule"),
         AuthorizationFailure::Deployment(deployment) => match deployment {
             DeploymentFailure::ProgramIdMismatch { .. } => rule::DEPLOYMENT_PROGRAM_MISMATCH,
             DeploymentFailure::ChainIdMismatch { .. } => rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
@@ -1747,8 +1733,19 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
     let request = match SolanaUserDecryptRequest::decode(&wire) {
         Ok(request) => request,
         Err(form) => {
-            let failure = AuthorizationFailure::Form(form);
-            return Outcome::Rejected(rule_name(&failure), failure.is_recoverable());
+            let rule = match &form {
+                RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
+                RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
+                RequestFormError::ChainId { .. } => rule::EMBEDDED_CHAIN_ID_MISMATCH,
+                RequestFormError::MixedEmbeddedChainIds { .. } => rule::MIXED_EMBEDDED_CHAIN_IDS,
+                RequestFormError::Permit(_)
+                | RequestFormError::Handle(_)
+                | RequestFormError::SignatureWidth { .. }
+                | RequestFormError::EntryIdentityWidth { .. } => {
+                    panic!("the permit set covers this layer: {form}")
+                }
+            };
+            return Outcome::Rejected(rule, false);
         }
     };
     let reader = ScriptedReader::scripted(vec![world.clone(), world]);

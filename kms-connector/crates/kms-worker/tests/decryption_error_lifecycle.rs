@@ -43,7 +43,9 @@ impl Failure {
     fn error(self, solana: bool) -> ProcessingError {
         if solana {
             let failure = match self {
-                Self::Terminal => AuthorizationFailure::SignatureMismatch,
+                Self::Terminal => AuthorizationFailure::Signature(
+                    zama_solana_permit::PermitError::SignatureMismatch,
+                ),
                 Self::Transient => AuthorizationFailure::Snapshot(SnapshotError::Unavailable {
                     reason: "RPC unavailable".into(),
                 }),
@@ -170,7 +172,7 @@ async fn errors_preserve_the_shared_worker_lifecycle(
         db_fast_event_polling: Duration::from_millis(20),
         ..Default::default()
     };
-    // Insert before starting the picker, so the V3 discriminator update cannot race a claim.
+    // Insert before starting the picker so the initial state cannot race a claim.
     insert(&instance.db, 1, solana, source).await?;
     let picker = DbEventPicker::connect(instance.db.clone(), &config).await?;
     let attempts = Arc::new(AtomicUsize::new(0));

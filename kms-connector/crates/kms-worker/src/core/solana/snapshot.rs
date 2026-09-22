@@ -1,68 +1,24 @@
-//! The atomic host-state snapshot: the only place in the authorization path that reads chain state.
+//! Confirmed host account reads for authorization.
 //!
-//! ## One observation point, and the discovery read
-//!
-//! Authorization must never be assembled from states that never coexisted on any fork. The way that
-//! is guaranteed here is blunt: every rule is evaluated against one snapshot — the one produced by
-//! the **last** account read. Nothing is merged, because a merged observation is not one
-//! observation.
-//!
-//! For a request whose entries are all direct, that last read is also the only one: the encrypted
-//! value accounts are named by address, the invalidation record by the signer and the config
-//! singleton by the deployment, so every key is computable up front.
-//!
-//! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
-//! `(delegator, delegate, authority)`, and the authoritative
-//! `authority` is a field of the encrypted store — a request cannot
-//! supply it (see [`connector_utils::types::solana_request`]). So a first read is needed to learn it. That read is a
-//! **discovery read**: it produces addresses, not decisions, and its account values are discarded.
-//! The second read covers the first read's whole key set alongside the delegation records, and it
-//! alone is what the rules see.
-//!
-//! Discarding the first read costs nothing and avoids a hazard. Requiring the two reads to agree —
-//! same slot, identical bytes — would reject delegated requests at whatever rate the chain advances
-//! between two round trips, and a slot is about 400 milliseconds, while proving nothing that a
-//! single deciding snapshot does not already give. Nor can the discarded read smuggle a stale value
-//! in: the delegation address it produced is re-derived from the deciding snapshot's own encrypted
-//! value account inside [`super::delegation::check_delegation`], and an encrypted store that
-//! resolves at a given address has exactly one `authority`, because that
-//! field is one of the seeds the address is derived from. A discovery read
-//! that named the wrong record therefore surfaces as a key the deciding snapshot never read,
-//! reported as the key-planning defect it is.
-//!
-//! One thing is asked of the pair, and it is not agreement: order. The deciding read must not be
-//! older than the discovery read ([`HostSnapshot::deciding_after`]). A read that goes backwards is
-//! not a fresher view of the chain — behind a load balancer it is a second node that has fallen
-//! behind — and taking it as the deciding observation reports as absent a grant the discovery read
-//! demonstrably saw, blaming the delegation for what the read did. Absence is transient,
-//! so the request would only burn attempts rather than die, but the verdict would still be the
-//! wrong one: the disagreement is between two reads, and ordering names it as that —
-//! [`SnapshotError::DecidingReadOlderThanDiscovery`] — instead of as a per-entry finding about a
-//! record. Ordering costs one comparison and still compares no values: the chain advancing between
-//! the reads remains fine, which is the case that actually happens.
-//!
-//! Reads number exactly one for a direct-only request, exactly two when any entry is delegated, and
-//! never three: nothing after the deciding snapshot reads chain state at all. The leaf-proof read
-//! that follows ([`super::proof`]) is not an observation of the chain — it fetches sibling paths
-//! that are verified against this snapshot's peaks.
-//!
-//! ## Commitment
-//!
-//! `confirmed`, throughout — the recorded decision for this system. A grant observed on a
-//! supermajority-confirmed fork authorizes, and the accepted trade-off is that a rollback of a
-//! confirmed slot could resurrect a grant that canonically never existed.
+//! The first read checks pause and discovers encrypted-store authorities. Direct requests
+//! authorize against that snapshot. Delegated requests then read the same accounts (except
+//! the already-checked host config) together with the derived delegation PDAs. All remaining
+//! checks use this second snapshot, whose slot must not precede the discovery slot.
+//! Proofs are fetched separately and verified against the deciding snapshot's MMR peaks.
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
 use solana_rpc_client::{api::config::RpcAccountInfoConfig, nonblocking::rpc_client::RpcClient};
+use std::num::NonZeroUsize;
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
     sync::Arc,
     time::Duration,
 };
+use tokio::sync::Semaphore;
 use url::Url;
 
 /// The System program's id, which is the all-zero pubkey. The owner every account has before a
@@ -292,6 +248,7 @@ pub fn plan_second_read(
 pub struct SolanaRpcClient {
     client: Arc<RpcClient>,
     timeout: Duration,
+    permits: Arc<Semaphore>,
 }
 
 impl std::fmt::Debug for SolanaRpcClient {
@@ -303,7 +260,7 @@ impl std::fmt::Debug for SolanaRpcClient {
 }
 
 impl SolanaRpcClient {
-    pub fn new(url: Url, timeout: Duration) -> Self {
+    pub fn new(url: Url, timeout: Duration, max_concurrent_calls: NonZeroUsize) -> Self {
         Self {
             client: Arc::new(RpcClient::new_with_timeout_and_commitment(
                 url.to_string(),
@@ -311,6 +268,7 @@ impl SolanaRpcClient {
                 CommitmentConfig::confirmed(),
             )),
             timeout,
+            permits: Arc::new(Semaphore::new(max_concurrent_calls.get())),
         }
     }
 }
@@ -325,17 +283,23 @@ impl HostStateReader for SolanaRpcClient {
             .collect();
         // The UI-account method preserves malformed data as an error below, rather than
         // collapsing a failed decode into a missing account (or panicking inside the SDK).
-        let response = tokio::time::timeout(
-            self.timeout,
-            self.client.get_multiple_ui_accounts_with_config(
-                &pubkeys,
-                RpcAccountInfoConfig {
-                    encoding: Some(UiAccountEncoding::Base64),
-                    commitment: Some(CommitmentConfig::confirmed()),
-                    ..Default::default()
-                },
-            ),
-        )
+        let response = tokio::time::timeout(self.timeout, async {
+            let _permit = self
+                .permits
+                .acquire()
+                .await
+                .expect("Solana RPC semaphore closed");
+            self.client
+                .get_multiple_ui_accounts_with_config(
+                    &pubkeys,
+                    RpcAccountInfoConfig {
+                        encoding: Some(UiAccountEncoding::Base64),
+                        commitment: Some(CommitmentConfig::confirmed()),
+                        ..Default::default()
+                    },
+                )
+                .await
+        })
         .await
         .map_err(|error| SnapshotError::Unavailable {
             reason: format!("Solana account read timed out: {error}"),

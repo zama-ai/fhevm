@@ -1,7 +1,7 @@
 //! Authorization failure reasons and whether another observation may succeed.
 
 use super::delegation::DelegationFailure;
-use super::deployment::{DeploymentFailure, DeploymentIdentityError};
+use super::deployment::DeploymentFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
 use super::pause::PauseFailure;
@@ -9,11 +9,11 @@ use super::proof::ProofReadError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
-use connector_utils::types::solana_request::RequestFormError;
+use zama_solana_permit::PermitError;
 
 /// Why one request was not authorized.
 ///
-/// The variants follow the pipeline: form, signature, deployment, window, then the
+/// The variants follow the pipeline: signature, deployment, window, then the
 /// state-dependent rules. Each carries the entry index where the rule is per handle,
 /// because "some handle failed scope" is not an actionable diagnostic for a batch.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
@@ -24,15 +24,8 @@ pub enum AuthorizationFailure {
         /// Which entry.
         index: usize,
     },
-    /// The typed form of the request is wrong.
-    #[error("request form: {0}")]
-    Form(#[from] RequestFormError),
-    /// The signature does not verify over the locally reconstructed envelope.
-    #[error("permit signature does not verify over the reconstructed envelope")]
-    SignatureMismatch,
-    /// The permit's user pubkey is not a usable verifying key.
-    #[error("permit names a user pubkey that is not a usable Ed25519 key")]
-    UnusableUserPubkey,
+    #[error("signature: {0}")]
+    Signature(PermitError),
     /// The permit was signed for another deployment.
     #[error("deployment: {0}")]
     Deployment(#[from] DeploymentFailure),
@@ -88,10 +81,7 @@ pub enum AuthorizationFailure {
 impl AuthorizationFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Form(_) => false,
-            Self::SignatureMismatch
-            | Self::UnusableUserPubkey
-            | Self::MissingProofBinding { .. } => false,
+            Self::Signature(_) | Self::MissingProofBinding { .. } => false,
             Self::Deployment(source) => source.is_recoverable(),
             Self::Window(source) => source.is_recoverable(),
             Self::Watermark(source) => source.is_recoverable(),
@@ -212,14 +202,6 @@ impl DelegationFailure {
                 exact.is_recoverable() || wildcard.is_recoverable()
             }
             Self::Snapshot(source) => source.is_recoverable(),
-        }
-    }
-}
-
-impl DeploymentIdentityError {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::ChainTypeByteInvalid { .. } => false,
         }
     }
 }

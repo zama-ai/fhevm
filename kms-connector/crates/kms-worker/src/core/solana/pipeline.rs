@@ -16,9 +16,9 @@ use crate::core::event_processor::{ContextManager, RequestCheckError};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use alloy::primitives::U256;
 use connector_utils::types::extra_data::ExtraData;
-use connector_utils::types::solana_request::{RequestFormError, SolanaUserDecryptRequest};
+use connector_utils::types::solana_request::SolanaUserDecryptRequest;
 use tracing::info;
-use zama_solana_permit::{KmsRouting, PermitError, verify_signature};
+use zama_solana_permit::{KmsRouting, verify_signature};
 
 /// Everything authorization needs that is neither the request nor chain state.
 #[derive(Clone, Copy, Debug)]
@@ -72,26 +72,7 @@ impl std::fmt::Debug for DelegatedEntryAudit {
 /// permit vectors through *this* function. Reaching for the permit crate directly in a test
 /// would prove the crate correct and say nothing about the Connector.
 pub fn check_signature(request: &SolanaUserDecryptRequest) -> Result<(), AuthorizationFailure> {
-    verify_signature(request.permit(), request.signature()).map_err(|error| match error {
-        PermitError::SignatureMismatch => AuthorizationFailure::SignatureMismatch,
-        PermitError::UnusableUserPubkey => AuthorizationFailure::UnusableUserPubkey,
-        // The typed-form violations cannot arrive here: these fields came out of strict
-        // decoding, which rejects every one of them. Carried through as themselves rather than
-        // renamed into a signature failure, so that if the crate ever does produce one, it
-        // surfaces as what it is instead of as a wrong diagnosis.
-        typed_form @ (PermitError::IdentityWidth { .. }
-        | PermitError::ScopeWidth { .. }
-        | PermitError::TooManyScopes { .. }
-        | PermitError::ScopesNotAscending { .. }
-        | PermitError::DuplicateScope { .. }
-        | PermitError::DurationOutOfRange { .. }
-        | PermitError::StartTimestampOutOfRange { .. }
-        | PermitError::TransportKeyLength { .. }
-        | PermitError::UnknownKmsRoutingVersion { .. }
-        | PermitError::KmsRoutingLength { .. }) => {
-            AuthorizationFailure::Form(RequestFormError::Permit(typed_form))
-        }
-    })
+    verify_signature(request.permit(), request.signature()).map_err(AuthorizationFailure::Signature)
 }
 
 /// Checks the permit, its KMS context, and the host authorization state for this attempt.

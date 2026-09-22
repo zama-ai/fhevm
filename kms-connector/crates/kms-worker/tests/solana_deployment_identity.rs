@@ -22,7 +22,7 @@ mod solana_support;
 
 use kms_worker::core::solana::deployment::{
     DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, check_deployment,
-    embedded_chain_id, solana_host_chain_id,
+    solana_host_chain_id,
 };
 use solana_support::*;
 
@@ -55,7 +55,6 @@ fn a_configured_chain_id_without_type_byte_0x01_fails_at_startup() {
         error,
         DeploymentIdentityError::ChainTypeByteInvalid { chain_id } if chain_id == without_type_byte
     ));
-    assert!(!error.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -175,18 +174,4 @@ fn handles_embedding_a_cluster_other_than_the_signed_one_are_rejected() {
         RequestFormError::ChainId { handle: embedded, declared: signed }
             if embedded == foreign_chain && signed == CHAIN_ID
     ));
-}
-
-/// The embedded chain id is read from the bytes the handle format puts it in, big-endian, and
-/// the type byte comes along with it — the same u64 the permit signs.
-#[test]
-fn the_embedded_chain_id_is_read_from_the_handle_bytes() {
-    let live = handle(0x16, FHE_TYPE_UINT64);
-
-    assert_eq!(embedded_chain_id(&live), CHAIN_ID);
-    assert!(
-        kms_worker::core::solana::deployment::is_solana_host_chain_id(CHAIN_ID),
-        "the fixture chain id has type byte 0x01, so the read above proves the type byte \
-         survives the round trip"
-    );
 }

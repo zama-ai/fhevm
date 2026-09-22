@@ -77,6 +77,8 @@ The Gateway's `UserDecryptionRequest_4` overload is decoded and checked at ingre
 canonical request bytes are not persisted. `POST /v1/user-decrypt` accepts the same data
 under `{attestationType, payload, signature}` with `attestationType` set to
 `solana-srfc38-user-decrypt-v1`. The EVM value remains `eip712-unified-user-decrypt-v1`.
+The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
+`chainId` field. This preserves the full chain ID in JavaScript clients.
 
 The row stores the exact attestation type, common encryption key/handles/window/signature,
 and explicit Solana pubkey, allowed keys, encrypted stores, scopes and host program.

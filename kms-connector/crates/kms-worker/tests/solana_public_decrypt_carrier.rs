@@ -122,6 +122,7 @@ fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHo
         reader: SolanaRpcClient::new(
             rpc.base_url().expect("the mock RPC has a URL").clone(),
             std::time::Duration::from_secs(10),
+            std::num::NonZeroUsize::new(1).unwrap(),
         ),
         proofs: CoprocessorProofClient::new(&routes, API_KEY.to_owned(), client),
     }
@@ -220,7 +221,8 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
 
     let err = check_solana_handles_public_decrypt(&host, &[allowed], &carrier(&fixture))
         .await
-        .expect_err("an allow leaf must not prove public-ness");
+        .expect_err("an allow leaf must not prove public-ness")
+        .record();
     assert_eq!(
         err.kind,
         ProcessingErrorKind::Recoverable,
@@ -239,7 +241,8 @@ async fn a_handle_never_made_public_is_refused_terminally() {
 
     let err = check_solana_handles_public_decrypt(&host, &[private], &carrier(&fixture))
         .await
-        .expect_err("a handle nobody made public is not public");
+        .expect_err("a handle nobody made public is not public")
+        .record();
     irrecoverable_containing(err, "no leaf");
 }
 
@@ -296,7 +299,8 @@ async fn a_record_behind_the_chain_is_retried_not_refused() {
 
     let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
         .await
-        .expect_err("a record that has not sealed the leaf yet authorizes nothing yet");
+        .expect_err("a record that has not sealed the leaf yet authorizes nothing yet")
+        .record();
     assert_eq!(
         err.kind,
         ProcessingErrorKind::Recoverable,
@@ -348,7 +352,8 @@ async fn a_malformed_carrier_refuses_before_any_read() {
         let err =
             check_solana_handles_public_decrypt(&host, &[handle(0x60, FHE_TYPE_UINT64)], &blob)
                 .await
-                .expect_err("a carrier that is not the version-4 layout names no state");
+                .expect_err("a carrier that is not the version-4 layout names no state")
+                .record();
         irrecoverable_containing(err, "requires the version-4 extraData");
     }
 }
@@ -364,7 +369,8 @@ async fn public_decrypt_authorizes_one_handle_per_request() {
         &carrier(&fixture),
     )
     .await
-    .expect_err("a public decrypt names exactly one handle");
+    .expect_err("a public decrypt names exactly one handle")
+    .record();
     irrecoverable_containing(err, "exactly one handle");
 }
 
@@ -406,7 +412,8 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
 
     let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
         .await
-        .expect_err("a foreign program's account is not an encrypted store");
+        .expect_err("a foreign program's account is not an encrypted store")
+        .record();
     irrecoverable_containing(err, "is owned by");
 }
 
@@ -450,6 +457,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             reader: SolanaRpcClient::new(
                 rpc.base_url().unwrap().clone(),
                 std::time::Duration::from_millis(100),
+                std::num::NonZeroUsize::new(1).unwrap(),
             ),
             proofs: CoprocessorProofClient::new(
                 &[stalled.clone(), good.base_url().unwrap().clone()],
@@ -464,14 +472,19 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
         .await
         .expect("fanout must finish")
         .expect("healthy peer still authorizes");
-        host.reader = SolanaRpcClient::new(stalled, std::time::Duration::from_millis(100));
+        host.reader = SolanaRpcClient::new(
+            stalled,
+            std::time::Duration::from_millis(100),
+            std::num::NonZeroUsize::new(1).unwrap(),
+        );
         let error = timeout(
             Duration::from_secs(3),
             check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),
         )
         .await
         .expect("RPC must finish")
-        .expect_err("stalled RPC has no observation");
+        .expect_err("stalled RPC has no observation")
+        .record();
         assert_eq!(error.kind, ProcessingErrorKind::Recoverable);
         server.abort();
     }

@@ -91,7 +91,6 @@ sol! {
         bytes[] allowedScopes;
         RequestValidity requestValidity;
         bytes32 hostProgramId;
-        uint64 chainId;
         bytes extraData;
     }
 
@@ -205,7 +204,6 @@ mod tests {
                     durationSeconds: 60,
                 },
                 hostProgramId: B256::ZERO,
-                chainId: 1,
                 extraData: Bytes::new(),
             },
             signature: vec![4; 64].into(),
@@ -214,7 +212,7 @@ mod tests {
         // Independently encoded EIP-712 words, hashed with Foundry cast keccak.
         assert_eq!(
             id,
-            "0x36b0480eb616e722f9d1d48cff8987bb886783efb6a173ec906f6eff91b5177e"
+            "0xabeb80c387bc0a6230f6dcec41d773616a6f7e6f0c7008c27bb96cf9643879e9"
                 .parse::<B256>()
                 .unwrap()
         );

@@ -90,8 +90,12 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
 /// The Connector's mapping for the signature rule.
 fn rule_name_of_signature_failure(failure: &AuthorizationFailure) -> Option<&'static str> {
     match failure {
-        AuthorizationFailure::SignatureMismatch => Some(rule::SIGNATURE_MISMATCH),
-        AuthorizationFailure::UnusableUserPubkey => Some(rule::UNUSABLE_USER_PUBKEY),
+        AuthorizationFailure::Signature(PermitError::SignatureMismatch) => {
+            Some(rule::SIGNATURE_MISMATCH)
+        }
+        AuthorizationFailure::Signature(PermitError::UnusableUserPubkey) => {
+            Some(rule::UNUSABLE_USER_PUBKEY)
+        }
         _ => None,
     }
 }

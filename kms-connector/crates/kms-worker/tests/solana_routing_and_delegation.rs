@@ -1130,3 +1130,52 @@ async fn the_delegators_permit_watermark_is_not_read() {
     outcome.expect("the delegator's permit watermark plays no part in a delegated request");
     assert_eq!(reads, 2, "no extra read fetches the delegator's watermark");
 }
+
+#[tokio::test]
+async fn prefunded_delegations_remain_absent_until_initialized() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x3f, FHE_TYPE_UINT64);
+    let store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
+    let request = RequestBuilder::new(&signer)
+        .delegated(&store, live, delegator.pubkey())
+        .typed();
+    let mut exact = live_delegation();
+    exact.revoked = true;
+    let wildcard = live_wildcard();
+    let empty = SnapshotAccount {
+        owner: [0; 32],
+        data: vec![],
+    };
+    let base = world_with(&store, signer.pubkey());
+    for exact_account in [exact.account(), empty.clone()] {
+        let world = base
+            .clone()
+            .with_account(exact.address().0, exact_account)
+            .with_account(wildcard.address().0, empty.clone());
+        let failure = authorize_in(world, &request).await.0.unwrap_err();
+        assert!(
+            failure.is_recoverable(),
+            "prefunding must not make a missing grant terminal: {failure}"
+        );
+    }
+    let invalid = base.clone().with_delegation(&exact).with_account(
+        wildcard.address().0,
+        SnapshotAccount {
+            owner: [0; 32],
+            data: vec![1],
+        },
+    );
+    let failure = authorize_in(invalid, &request).await.0.unwrap_err();
+    assert!(
+        !failure.is_recoverable(),
+        "nonempty foreign accounts remain invalid"
+    );
+    authorize_in(
+        base.with_delegation(&exact).with_delegation(&wildcard),
+        &request,
+    )
+    .await
+    .0
+    .expect("a later initialized grant authorizes the same request");
+}

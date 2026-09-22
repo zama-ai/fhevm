@@ -97,16 +97,6 @@ pub fn check_deployment(
     Ok(())
 }
 
-/// Offset of the embedded chain id inside a handle.
-const HANDLE_CHAIN_ID_RANGE: std::ops::Range<usize> = 22..30;
-
-/// The chain id embedded in a handle's bytes `[22..30]`.
-pub fn embedded_chain_id(handle: &[u8; 32]) -> u64 {
-    let mut bytes = [0; 8];
-    bytes.copy_from_slice(&handle[HANDLE_CHAIN_ID_RANGE]);
-    u64::from_be_bytes(bytes)
-}
-
 /// Why an identity could not be resolved at startup.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DeploymentIdentityError {

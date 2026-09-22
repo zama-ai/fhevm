@@ -29,6 +29,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+zama-solana-request.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 alloy = { workspace = true, features = ["json-rpc"] }
 rstest.workspace = true

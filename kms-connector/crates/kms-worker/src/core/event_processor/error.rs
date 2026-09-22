@@ -186,14 +186,6 @@ impl RequestCheckError {
         Self::new(RequestCheckKind::Network, ProcessingError::transient(err))
     }
 
-    /// Tags an already-classified [`ProcessingError`] with the check family that produced it,
-    /// preserving its recoverable/irrecoverable variant. Used at the request-check boundary for
-    /// lower-level checks that return a bare `ProcessingError` (e.g. the Solana ACL verifier).
-    /// The natural inverse of [`RequestCheckError::record`].
-    pub fn from_processing(kind: RequestCheckKind, source: ProcessingError) -> Self {
-        Self { kind, source }
-    }
-
     /// Wraps the inner error with additional context.
     pub fn context(mut self, ctx: String) -> Self {
         self.source = self.source.context(ctx);
@@ -204,12 +196,6 @@ impl RequestCheckError {
     pub fn record(self) -> ProcessingError {
         self.kind.inc_metric();
         self.source
-    }
-
-    /// Whether this failure is worth retrying. A recoverable/aborted source is transient; an
-    /// irrecoverable one is terminal.
-    pub fn is_recoverable(&self) -> bool {
-        !matches!(self.source.kind, ProcessingErrorKind::Irrecoverable)
     }
 }
 

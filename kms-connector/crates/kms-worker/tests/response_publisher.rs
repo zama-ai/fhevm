@@ -7,7 +7,7 @@ use connector_utils::{
         setup::TestInstanceBuilder,
     },
     types::{
-        KmsGrpcResponse, KmsResponse, KmsResponseKind,
+        KmsGrpcResponse, KmsResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
         db::{KeyDigestDbItem, KeyType, OperationStatus, RequestSource},
         u256_to_request_id,
     },
@@ -367,7 +367,7 @@ async fn test_publish_public_decryption_error_response() -> anyhow::Result<()> {
             ErrorCode::AclDenied,
             "handles not allowed for public decryption",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -411,6 +411,9 @@ async fn test_publish_public_decryption_error_response() -> anyhow::Result<()> {
     .await?;
     assert_eq!(request_status, OperationStatus::Failed);
     info!("Error response successfully stored!");
+    let attempt: (bool, i16) = sqlx::query_as("SELECT already_sent, error_counter FROM public_decryption_requests WHERE decryption_id = $1")
+        .bind(rand_decryption_id.as_le_slice()).fetch_one(test_instance.db()).await?;
+    assert_eq!(attempt, (true, 3));
     Ok(())
 }
 
@@ -421,13 +424,21 @@ async fn test_publish_user_decryption_error_response() -> anyhow::Result<()> {
 
     info!("Publishing error response for a user decryption request...");
     let rand_decryption_id = rand_u256();
+    insert_rand_request(
+        test_instance.db(),
+        TestEventType::UserDecryptionV2,
+        InsertRequestOptions::default()
+            .with_id(rand_decryption_id)
+            .with_source(RequestSource::Http),
+    )
+    .await?;
     publisher
         .publish_user_decryption_error(
             rand_decryption_id,
             ErrorCode::UpstreamTransient,
             "KMS Core is unavailable",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -456,6 +467,13 @@ async fn test_publish_user_decryption_error_response() -> anyhow::Result<()> {
         RequestSource::Http
     );
     info!("Error response successfully stored!");
+    let attempt: (bool, i16) = sqlx::query_as(
+        "SELECT already_sent, error_counter FROM user_decryption_requests WHERE decryption_id = $1",
+    )
+    .bind(rand_decryption_id.as_le_slice())
+    .fetch_one(test_instance.db())
+    .await?;
+    assert_eq!(attempt, (true, 3));
     Ok(())
 }
 
@@ -476,7 +494,7 @@ async fn test_public_error_response_does_not_overwrite_payload() -> anyhow::Resu
             ErrorCode::Unprocessable,
             "should not be stored",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -510,7 +528,7 @@ async fn test_public_error_response_overrides_previous_error() -> anyhow::Result
             ErrorCode::UpstreamTransient,
             "KMS Core is unavailable",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -521,7 +539,7 @@ async fn test_public_error_response_overrides_previous_error() -> anyhow::Result
             ErrorCode::AclDenied,
             "handles not allowed for public decryption",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -569,7 +587,7 @@ async fn test_public_payload_response_overrides_previous_error() -> anyhow::Resu
             ErrorCode::UpstreamTransient,
             "KMS Core is unavailable",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -639,7 +657,7 @@ async fn test_user_error_response_does_not_overwrite_payload() -> anyhow::Result
             ErrorCode::Unprocessable,
             "should not be stored",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -673,7 +691,7 @@ async fn test_user_error_response_overrides_previous_error() -> anyhow::Result<(
             ErrorCode::UpstreamTransient,
             "KMS Core is unavailable",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -684,7 +702,7 @@ async fn test_user_error_response_overrides_previous_error() -> anyhow::Result<(
             ErrorCode::AclDenied,
             "user not allowed to decrypt the handles",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -732,7 +750,7 @@ async fn test_user_payload_response_overrides_previous_error() -> anyhow::Result
             ErrorCode::UpstreamTransient,
             "KMS Core is unavailable",
             &[],
-            &PropagationContext::empty(),
+            &http_attempt(),
         )
         .await?;
 
@@ -783,4 +801,16 @@ async fn test_user_payload_response_overrides_previous_error() -> anyhow::Result
     assert_eq!(request_status, OperationStatus::Completed);
     info!("Payload response successfully overrode the error response!");
     Ok(())
+}
+
+fn http_attempt() -> ProtocolEvent {
+    let mut event = ProtocolEvent::new(
+        ProtocolEventKind::PublicDecryption(Default::default()),
+        None,
+        PropagationContext::empty(),
+        RequestSource::Http,
+    );
+    event.already_sent = true;
+    event.error_counter = 3;
+    event
 }

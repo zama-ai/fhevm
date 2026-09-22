@@ -307,7 +307,7 @@ impl DbKmsResponsePublisher {
         error_code: ErrorCode,
         error_details: &str,
         extra_data: &[u8],
-        otlp_ctx: &PropagationContext,
+        event: &ProtocolEvent,
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
@@ -329,7 +329,8 @@ impl DbKmsResponsePublisher {
                 WHERE existing.decrypted_result IS NULL
                 RETURNING decryption_id
             )
-            UPDATE public_decryption_requests AS request SET status = 'failed'
+            UPDATE public_decryption_requests AS request SET status = 'failed',
+                already_sent = $7, error_counter = $8
             FROM written_response
             WHERE request.decryption_id = written_response.decryption_id",
             decryption_id.as_le_slice(),
@@ -337,7 +338,9 @@ impl DbKmsResponsePublisher {
             error_details,
             extra_data,
             Utc::now(),
-            bc2wrap::serialize(otlp_ctx)?,
+            bc2wrap::serialize(&event.otlp_context)?,
+            event.already_sent,
+            event.error_counter,
         )
         .execute(&self.db_pool)
         .await?;
@@ -354,7 +357,7 @@ impl DbKmsResponsePublisher {
         error_code: ErrorCode,
         error_details: &str,
         extra_data: &[u8],
-        otlp_ctx: &PropagationContext,
+        event: &ProtocolEvent,
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
@@ -376,7 +379,8 @@ impl DbKmsResponsePublisher {
                 WHERE existing.user_decrypted_shares IS NULL
                 RETURNING decryption_id
             )
-            UPDATE user_decryption_requests AS request SET status = 'failed'
+            UPDATE user_decryption_requests AS request SET status = 'failed',
+                already_sent = $7, error_counter = $8
             FROM written_response
             WHERE request.decryption_id = written_response.decryption_id",
             decryption_id.as_le_slice(),
@@ -384,7 +388,9 @@ impl DbKmsResponsePublisher {
             error_details,
             extra_data,
             Utc::now(),
-            bc2wrap::serialize(otlp_ctx)?,
+            bc2wrap::serialize(&event.otlp_context)?,
+            event.already_sent,
+            event.error_counter,
         )
         .execute(&self.db_pool)
         .await?;

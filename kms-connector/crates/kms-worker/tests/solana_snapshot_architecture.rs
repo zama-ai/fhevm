@@ -659,6 +659,7 @@ async fn rpc_read(
     SolanaRpcClient::new(
         server.base_url().unwrap().clone(),
         std::time::Duration::from_secs(1),
+        std::num::NonZeroUsize::new(1).unwrap(),
     )
     .read_accounts(keys)
     .await
@@ -798,6 +799,7 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
     let client = SolanaRpcClient::new(
         server.base_url().unwrap().clone(),
         std::time::Duration::from_millis(50),
+        std::num::NonZeroUsize::new(1).unwrap(),
     );
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(250),
@@ -809,4 +811,50 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
             .expect("SDK retries must fit inside the request deadline")
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn rpc_limit_is_shared_across_clones_and_cancellation_releases_it() {
+    use std::{num::NonZeroUsize, time::Duration};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::timeout,
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = SolanaRpcClient::new(
+        format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap(),
+        Duration::from_secs(5),
+        NonZeroUsize::new(1).unwrap(),
+    );
+    let first_client = client.clone();
+    let first = tokio::spawn(async move {
+        first_client
+            .read_accounts(&SnapshotKeys::new([[1; 32]]))
+            .await
+    });
+    let (_held, _) = timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let second =
+        tokio::spawn(async move { client.read_accounts(&SnapshotKeys::new([[2; 32]])).await });
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+    let (mut stream, _) = timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    stream.read_exact(&mut [0]).await.unwrap();
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":42},"value":[null]}}"#;
+    stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
+    assert_eq!(second.await.unwrap().unwrap().observed_slot(), 42);
 }

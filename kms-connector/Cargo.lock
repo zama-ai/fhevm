@@ -3948,6 +3948,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "url",
+ "zama-solana-request",
 ]
 
 [[package]]

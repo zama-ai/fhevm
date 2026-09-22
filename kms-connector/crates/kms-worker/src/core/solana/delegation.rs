@@ -32,7 +32,7 @@
 //! delegation for: they cannot name it at all.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegation_witness};
+use crate::core::solana_acl::SolanaPubkeyBytes;
 
 /// The sentinel a wildcard row carries in place of an encrypted store authority.
 /// Reserved by the host program, which is why no real encrypted store authority can
@@ -40,16 +40,7 @@ use crate::core::solana_acl::{SolanaPubkeyBytes, decode_user_decryption_delegati
 pub use crate::core::solana_acl::WILDCARD_AUTHORITY;
 
 /// The canonical delegation-record address for a `(delegator, delegate, authority)` tuple.
-pub fn delegation_address(
-    program_id: SolanaPubkeyBytes,
-    delegator: SolanaPubkeyBytes,
-    delegate: SolanaPubkeyBytes,
-    authority: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    crate::core::solana_acl::user_decryption_delegation_address(
-        program_id, delegator, delegate, authority,
-    )
-}
+pub use crate::core::solana_acl::user_decryption_delegation_address as delegation_address;
 
 /// The canonical address of the wildcard row of `(delegator, delegate)`.
 ///
@@ -145,6 +136,12 @@ fn check_row(
         }));
     };
 
+    if account.is_uninitialized_pda() {
+        return Ok(RowOutcome::NotLive(DelegationFailure::Absent {
+            account_key,
+        }));
+    }
+
     if account.owner != program_id {
         return Ok(RowOutcome::NotLive(DelegationFailure::ForeignOwner {
             account_key,
@@ -153,18 +150,11 @@ fn check_row(
         }));
     }
 
-    // The layout decoder is the one this connector already reads delegation records with, so the
-    // two paths cannot drift on the byte layout. Every failure it can report — wrong length,
-    // wrong discriminator, an invalid field — says the same thing about these bytes, which is
-    // what the variant below is named for.
-    let Ok(witness) =
-        decode_user_decryption_delegation_witness(account_key, account.owner, &account.data)
-    else {
+    let Ok(record) = zama_solana_acl::decode_user_decryption_delegation(&account.data) else {
         return Ok(RowOutcome::NotLive(
             DelegationFailure::NotADelegationRecord { account_key },
         ));
     };
-    let record = &witness.record;
 
     // The address is not taken as proof of what the record says.
     if record.delegator != delegator || record.delegate != delegate || record.authority != authority

@@ -11,7 +11,7 @@
 //! whole path from outside the modules that make it up.
 
 use crate::core::{
-    event_processor::ProcessingError,
+    event_processor::{RequestCheckError, RequestCheckKind},
     solana::{
         deployment::DeploymentIdentity,
         encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store},
@@ -48,7 +48,7 @@ pub async fn check_solana_handles_public_decrypt(
     host: &SolanaHost,
     handles: &[HandleBytes],
     extra_data: &[u8],
-) -> Result<(), ProcessingError> {
+) -> Result<(), RequestCheckError> {
     check_public_decrypt(
         &host.deployment,
         &host.reader,
@@ -60,8 +60,16 @@ pub async fn check_solana_handles_public_decrypt(
     .map_err(|failure| {
         let message = anyhow!("Solana public-decryption authorization failed: {failure}");
         match failure.is_recoverable() {
-            false => ProcessingError::irrecoverable(ErrorCode::Unprocessable, message),
-            true => ProcessingError::recoverable(ErrorCode::UpstreamTransient, message),
+            false => RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::Unprocessable,
+                message,
+            ),
+            true => RequestCheckError::recoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::UpstreamTransient,
+                message,
+            ),
         }
     })
 }

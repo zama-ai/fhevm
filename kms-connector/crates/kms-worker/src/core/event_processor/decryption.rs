@@ -146,9 +146,7 @@ where
                 HostChainAclBackend::Solana(host) => {
                     // Public access is proven by a PublicDecryptLeaf MMR proof and verified
                     // against the live confirmed encrypted value account.
-                    check_solana_handles_public_decrypt(host, &[handle.0], extra_data)
-                        .await
-                        .map_err(|e| RequestCheckError::from_processing(RequestCheckKind::Acl, e))
+                    check_solana_handles_public_decrypt(host, &[handle.0], extra_data).await
                 }
                 HostChainAclBackend::Evm(host_client) => {
                     if !host_client.is_allowed_for_decryption(*handle).await? {
@@ -279,8 +277,7 @@ where
 
     /// Verify that a RFC 016 EVM `UserDecryptionRequestV2` is internally consistent before the
     /// ACL phase: every handle resolves to the same host chain id. Returns that shared chain id.
-    /// Solana `SolanaUserDecryptionRequestV1` extracts the chain id from `ctHandles` in
-    /// [`Self::check_solana_user_decryption_request`] instead.
+    /// Solana uses the permit chain id, already checked against every handle at ingestion.
     fn validate_handles_and_extract_chain_id(
         handles: &[HandleEntry],
     ) -> Result<u64, RequestCheckError> {
@@ -664,15 +661,6 @@ where
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.client_address;
             let enc_key = user_decrypt_data.public_key.to_vec();
-            let signing_metadata = user_decrypt_data
-                .solana
-                .map(|solana| {
-                    vec![kms_grpc::kms::v1::SigningMetadata::solana(
-                        solana.user_pubkey.to_vec(),
-                        solana.verifying_program_id.to_vec(),
-                    )]
-                })
-                .unwrap_or_default();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
@@ -683,7 +671,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-                signing_metadata,
+                signing_metadata: user_decrypt_data.signing_metadata,
                 signing_schemes: vec![],
             };
 
@@ -751,17 +739,7 @@ pub struct UserDecryptionExtraData {
     /// The checksummed EVM user address. Empty for Solana requests.
     pub client_address: String,
     pub public_key: Bytes,
-    /// The Solana half of the request's `SigningMetadata` envelope: the exact 32-byte ed25519
-    /// user identity (RFC-021) and the ZamaHost program id of the deployment. Unset for EVM
-    /// requests, whose envelope list stays empty.
-    pub solana: Option<SolanaSigningMetadata>,
-}
-
-/// What the KMS `SigningMetadata` envelope carries for a Solana request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SolanaSigningMetadata {
-    pub user_pubkey: [u8; 32],
-    pub verifying_program_id: [u8; 32],
+    pub signing_metadata: Vec<kms_grpc::kms::v1::SigningMetadata>,
 }
 
 impl UserDecryptionExtraData {
@@ -769,7 +747,7 @@ impl UserDecryptionExtraData {
         Self {
             client_address: user_address.to_checksum(None),
             public_key,
-            solana: None,
+            signing_metadata: vec![],
         }
     }
 
@@ -783,10 +761,10 @@ impl UserDecryptionExtraData {
         Self {
             client_address: String::new(),
             public_key,
-            solana: Some(SolanaSigningMetadata {
-                user_pubkey: identity,
-                verifying_program_id,
-            }),
+            signing_metadata: vec![kms_grpc::kms::v1::SigningMetadata::solana(
+                identity.to_vec(),
+                verifying_program_id.to_vec(),
+            )],
         }
     }
 }
@@ -919,6 +897,7 @@ mod tests {
                     reader: crate::core::solana::snapshot::SolanaRpcClient::new(
                         config.host_chains[0].url.clone(),
                         config.host_rpc_call_timeout,
+                        std::num::NonZeroUsize::new(1).unwrap(),
                     ),
                     proofs: CoprocessorProofClient::new(
                         &config.host_chains[0].solana_proof_endpoints,
@@ -2061,7 +2040,7 @@ mod tests {
         let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
 
         assert_eq!(data.client_address, address.to_checksum(None));
-        assert_eq!(data.solana, None);
+        assert!(data.signing_metadata.is_empty());
     }
 
     #[test]
@@ -2073,11 +2052,11 @@ mod tests {
 
         assert!(data.client_address.is_empty());
         assert_eq!(
-            data.solana,
-            Some(SolanaSigningMetadata {
-                user_pubkey: identity,
-                verifying_program_id: program_id,
-            })
+            data.signing_metadata,
+            vec![kms_grpc::kms::v1::SigningMetadata::solana(
+                identity.to_vec(),
+                program_id.to_vec(),
+            )]
         );
     }
 

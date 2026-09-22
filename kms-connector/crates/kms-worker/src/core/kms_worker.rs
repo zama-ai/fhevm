@@ -227,7 +227,7 @@ where
                         error.code,
                         &details,
                         &req.extraData,
-                        &event.otlp_context,
+                        event,
                     )
                     .await
             }
@@ -238,7 +238,7 @@ where
                         error.code,
                         &details,
                         &req.payload.extraData,
-                        &event.otlp_context,
+                        event,
                     )
                     .await
             }
@@ -249,7 +249,7 @@ where
                         error.code,
                         &details,
                         &req.request.permit().extra_data().to_extra_data(),
-                        &event.otlp_context,
+                        event,
                     )
                     .await
             }
@@ -397,6 +397,7 @@ async fn register_host_chain_backends(
                     reader: SolanaRpcClient::new(
                         host_chain.url.clone(),
                         config.host_rpc_call_timeout,
+                        config.host_rpc_max_concurrent_calls,
                     ),
                     proofs: CoprocessorProofClient::new(
                         &host_chain.solana_proof_endpoints,

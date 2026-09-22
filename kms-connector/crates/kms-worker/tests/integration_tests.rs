@@ -451,3 +451,124 @@ async fn wait_for_no_response_event_completed(
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn http_poll_retry_preserves_send_state_and_rechecks_authorization() -> anyhow::Result<()> {
+    use connector_utils::types::{db::RequestSource, event::from_user_decryption_row};
+    use sqlx::Row;
+
+    let instance = TestInstanceBuilder::db_setup().await?;
+    let s3 = S3Instance::setup().await?;
+    let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, &s3.url);
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let handle = FixedBytes::<32>::from_hex(S3_CT_HANDLE)?;
+    // First authorization succeeds; a retry observes revoked permission; the next succeeds.
+    let mut checks = Vec::new();
+    for allowed in [true, false, true] {
+        checks.extend([
+            erc1271_magic_response(),
+            U256::ZERO.abi_encode(),
+            allowed.abi_encode(),
+        ]);
+    }
+    let acl = init_host_chains_acl_contracts_mock(handle, checks);
+    let request = insert_rand_request(
+        instance.db(),
+        TestEventType::UserDecryptionV2,
+        InsertRequestOptions::new()
+            .with_ct_handles(vec![handle])
+            .with_source(RequestSource::Http),
+    )
+    .await?;
+    let ProtocolEventKind::UserDecryptionV2(ref user) = request else {
+        unreachable!()
+    };
+    let id = user.decryptionId;
+    let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
+    kms.mock_with_options(5, Some(1), |when, then| {
+        when.path("/kms_service.v1.CoreServiceEndpoint/UserDecrypt");
+        then.pb(Empty::default());
+    });
+    kms.mock_with_options(5, Some(1), |when, then| {
+        when.path("/kms_service.v1.CoreServiceEndpoint/GetUserDecryptionResult");
+        then.status(StatusCode::SERVICE_UNAVAILABLE);
+    });
+    kms.start().await?;
+    let config = Config {
+        kms_core_endpoints: vec![kms.base_url().unwrap().to_string()],
+        grpc_request_retries: 1,
+        db_fast_event_polling: Duration::from_millis(20),
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        ..Default::default()
+    };
+    let worker = init_kms_worker(config, provider, acl, instance.db()).await?;
+    let cancel = CancellationToken::new();
+    let _guard = cancel.clone().drop_guard();
+    let task = tokio::spawn(worker.start(cancel.clone()));
+    let load_failed = || async {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let row =
+                    sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
+                        .bind(id.as_le_slice())
+                        .fetch_one(instance.db())
+                        .await?;
+                if row.get::<connector_utils::types::db::OperationStatus, _>("status")
+                    == connector_utils::types::db::OperationStatus::Failed
+                {
+                    return Ok::<_, anyhow::Error>(row);
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await?
+    };
+    let row = load_failed().await?;
+    let event = from_user_decryption_row(&row)?;
+    assert!(event.already_sent);
+    assert_eq!(event.error_counter, 1);
+    assert!(kms.mocks().iter().all(|mock| mock.match_count() == 1));
+
+    // A poll must succeed without ciphertext storage or a second send endpoint.
+    s3._container.stop().await?;
+    *kms.mocks() = prepare_mocks(&request, true)
+        .into_iter()
+        .map(|mock| mock.with_limit(1))
+        .collect();
+    let reopen = || async {
+        sqlx::query("UPDATE user_decryption_requests SET status = 'pending' WHERE decryption_id = $1 AND status = 'failed'")
+            .bind(id.as_le_slice()).execute(instance.db()).await
+    };
+    reopen().await?;
+    let row = load_failed().await?;
+    let event = from_user_decryption_row(&row)?;
+    assert!(event.already_sent);
+    assert_eq!(event.error_counter, 2);
+    let code: String = sqlx::query_scalar(
+        "SELECT error_code FROM user_decryption_responses WHERE decryption_id = $1",
+    )
+    .bind(id.as_le_slice())
+    .fetch_one(instance.db())
+    .await?;
+    assert_eq!(code, "acl_denied");
+    assert!(kms.mocks().iter().all(|mock| mock.match_count() == 0));
+
+    reopen().await?;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let completed: bool = sqlx::query_scalar("SELECT status = 'completed' FROM user_decryption_requests WHERE decryption_id = $1")
+                .bind(id.as_le_slice()).fetch_one(instance.db()).await?;
+            if completed { return Ok::<_, anyhow::Error>(()); }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }).await??;
+    assert!(kms.mocks().iter().all(|mock| mock.match_count() == 1));
+    cancel.cancel();
+    task.await?;
+    Ok(())
+}

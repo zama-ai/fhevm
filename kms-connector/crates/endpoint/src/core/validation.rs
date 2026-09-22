@@ -115,7 +115,7 @@ pub fn validate_solana_user_decryption(
         ));
     }
     let payload = &request.payload;
-    validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    let chain_id = validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     let wire = SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
             user_pubkey: payload.userPubkey.to_vec(),
@@ -124,7 +124,7 @@ pub fn validate_solana_user_decryption(
             start_timestamp: payload.requestValidity.startTimestamp,
             duration_seconds: payload.requestValidity.durationSeconds,
             verifying_program_id: payload.hostProgramId.to_vec(),
-            chain_id: payload.chainId,
+            chain_id,
             extra_data: payload.extraData.to_vec(),
         },
         signature: request.signature.to_vec(),
