@@ -217,37 +217,68 @@ gcs: {}
       expect(parsed.gcs.source).toBeUndefined();
     });
 
-    test("carries kms.bootstrap versions through to the resolved topology", () => {
+    test("resolves the bootstrap release, defaults its KMS core tag and defers Green", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap:
+  tag: v0.14.2-0
+`);
+      expect(parsed.bootstrap).toEqual({ tag: "v0.14.2-0" });
+      const resolved = resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed);
+      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0", coreVersion: "v0.14.2-0" });
+      expect(resolved.gcs.deferredStart).toBe(true);
+      expect(resolveBlueGreenScenario("/tmp/bootstrap.yaml", { ...parsed, bootstrap: undefined }).gcs.deferredStart).toBe(false);
+    });
+
+    test("keeps an explicit bootstrap KMS core tag", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap:
+  tag: v0.14.2-0
+  coreVersion: v0.14.1-0
+`);
+      expect(resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed).bootstrap).toEqual({
+        tag: "v0.14.2-0",
+        coreVersion: "v0.14.1-0",
+      });
+    });
+
+    test("rejects a bootstrap block without a tag", () => {
+      expect(() =>
+        parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap:
+  coreVersion: v0.14.2-0
+`),
+      ).toThrow("bootstrap.tag must be a non-empty release tag");
+    });
+
+    test("rejects bootstrap for a threshold KMS cluster", () => {
       const parsed = parseBlueGreenScenario(`
 version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
 kms:
-  bootstrap:
-    coreVersion: v0.14.2-0
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Test
+bootstrap:
+  tag: v0.14.2-0
 `);
-      expect(resolveKmsTopology(parsed.kms)).toMatchObject({
-        mode: "centralized",
-        bootstrap: { coreVersion: "v0.14.2-0" },
-      });
-    });
-
-    test("rejects kms.bootstrap without a core version", () => {
-      expect(() => resolveKmsTopology({ bootstrap: {} } as never)).toThrow(
-        "scenario.kms.bootstrap.coreVersion must be a non-empty version tag",
+      expect(() => resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed)).toThrow(
+        "bootstrap is only supported with a centralized KMS",
       );
-    });
-
-    test("rejects kms.bootstrap for a threshold cluster", () => {
-      expect(() =>
-        resolveKmsTopology({
-          mode: "threshold",
-          parties: 4,
-          threshold: 1,
-          bootstrap: { coreVersion: "v0.14.2-0" },
-        }),
-      ).toThrow("only supported for centralized mode");
     });
 
     test("rejects missing gcs block", () => {

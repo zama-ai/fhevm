@@ -283,14 +283,14 @@ const applyProtocolConfigKmsGlobals = (
 const applyKmsCentralizedHostEnv = (
   envs: Record<string, Record<string, string>>,
   plan: StackSpec,
-  state: Pick<State, "discovery" | "kmsBootstrapPending">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
 ) => {
   if (plan.kms.mode === "threshold") {
     return;
   }
   const hostSc = envs["host-sc"];
   // A bootstrapped core is upgraded after keygen; name the core that will serve, not the one generating.
-  applyProtocolConfigKmsGlobals(hostSc, plan, state.kmsBootstrapPending?.targetCoreVersion);
+  applyProtocolConfigKmsGlobals(hostSc, plan, state.bootstrapPending?.target.env.CORE_VERSION);
   hostSc.KMS_NODE_PARTY_ID_0 = "1";
   hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
   hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
@@ -532,7 +532,7 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
-  state: Pick<State, "discovery" | "kmsBootstrapPending">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
   plan: StackSpec,
   templateEnvs: Record<string, Record<string, string>>,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,

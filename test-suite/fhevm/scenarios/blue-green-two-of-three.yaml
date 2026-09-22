@@ -19,9 +19,9 @@ gcs:
   source:
     mode: local
 
-# The pinned Blue (tfhe-rs 1.6) cannot read key material from a 0.15+ KMS core, so the core boots
-# on the last 0.14 release, generates the keys, and is upgraded to the resolved bundle once the
-# operators have ingested them: the same order as a production KMS upgrade over existing keys.
-kms:
-  bootstrap:
-    coreVersion: v0.14.2-0
+# The pinned Blue (tfhe-rs 1.6) cannot read key material from a 0.15+ KMS core, so the contracts,
+# KMS core and connector and listener-core boot on the last 0.14 release and generate the keys
+# there. The bootstrap step then upgrades them to the resolved bundle in place and starts Green:
+# the same order as a production 0.14 to 0.15 rollout.
+bootstrap:
+  tag: v0.14.2-0

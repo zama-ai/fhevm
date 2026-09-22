@@ -21,7 +21,6 @@ import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
-  KmsBootstrap,
   KmsMode,
   KmsScenarioBlock,
   LocalOverride,
@@ -68,28 +67,6 @@ export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
 
 const MAX_KMS_PARTIES = 7;
 
-/** Parses the optional `kms.bootstrap` block; only the single centralized core has an in-place upgrade path. */
-const resolveKmsBootstrap = (
-  block: unknown,
-  mode: KmsMode,
-  sourceLabel: string,
-): KmsBootstrap | undefined => {
-  if (block === undefined) {
-    return undefined;
-  }
-  if (block === null || typeof block !== "object" || Array.isArray(block)) {
-    throw new Error(`${sourceLabel} must be a map with coreVersion`);
-  }
-  if (mode !== "centralized") {
-    throw new Error(`${sourceLabel} is only supported for centralized mode; threshold clusters upgrade per operator`);
-  }
-  const { coreVersion } = block as Record<string, unknown>;
-  if (typeof coreVersion !== "string" || !coreVersion.trim()) {
-    throw new Error(`${sourceLabel}.coreVersion must be a non-empty version tag`);
-  }
-  return { coreVersion: coreVersion.trim() };
-};
-
 /**
  * Parses + validates the optional `kms` block from a scenario.
  * Returns the centralized default when the block is absent.
@@ -109,7 +86,6 @@ export const resolveKmsTopology = (
   if (mode !== "centralized" && mode !== "threshold") {
     throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
   }
-  const bootstrap = resolveKmsBootstrap(block.bootstrap, mode, `${sourceLabel}.bootstrap`);
   if (mode === "centralized") {
     // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
     // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
@@ -128,7 +104,6 @@ export const resolveKmsTopology = (
       threshold: 1,
       committeeSize: 1,
       fheParams: "Default",
-      ...(bootstrap ? { bootstrap } : {}),
     };
   }
   const parties = block.parties ?? 4;
@@ -712,6 +687,8 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
   }
   const bcsObj = (bcs ?? undefined) as Record<string, unknown> | undefined;
 
+  const bootstrap = parseBootstrap(parsed.bootstrap, `${sourceLabel}.bootstrap`);
+
   return {
     version: BLUE_GREEN_SCENARIO_VERSION,
     kind: BLUE_GREEN_SCENARIO_KIND,
@@ -739,7 +716,26 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       ),
     },
     kms: parsed.kms as KmsScenarioBlock | undefined,
+    ...(bootstrap ? { bootstrap } : {}),
   };
+};
+
+/** Parses the optional blue-green `bootstrap` block: a release tag plus an optional KMS core tag. */
+const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenScenario["bootstrap"] => {
+  if (block === undefined) {
+    return undefined;
+  }
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel} must be a map with tag`);
+  }
+  const { tag, coreVersion } = block as Record<string, unknown>;
+  if (typeof tag !== "string" || !tag.trim()) {
+    throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
+  }
+  if (coreVersion !== undefined && (typeof coreVersion !== "string" || !coreVersion.trim())) {
+    throw new Error(`${sourceLabel}.coreVersion must be a non-empty version tag when set`);
+  }
+  return { tag: tag.trim(), ...(typeof coreVersion === "string" ? { coreVersion: coreVersion.trim() } : {}) };
 };
 
 /** Applies defaults and resolves derived fields. */
@@ -752,9 +748,17 @@ export const resolveBlueGreenScenario = (
     env: { ...(input.bcs?.env ?? {}) },
     args: input.bcs?.args ?? {},
   };
+  const kms = resolveKmsTopology(input.kms, "scenario.kms");
+  const bootstrap = input.bootstrap
+    ? { tag: input.bootstrap.tag, coreVersion: input.bootstrap.coreVersion ?? input.bootstrap.tag }
+    : undefined;
+  if (bootstrap && kms.mode !== "centralized") {
+    throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
+  }
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
-    deferredStart: input.gcs.deferredStart ?? false,
+    // Green starts once the bootstrapped stack has been upgraded, never against the old release.
+    deferredStart: (input.gcs.deferredStart ?? false) || bootstrap !== undefined,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };
@@ -772,7 +776,8 @@ export const resolveBlueGreenScenario = (
     topology: input.topology ?? { count: 1, threshold: 1 },
     bcs,
     gcs,
-    kms: resolveKmsTopology(input.kms, "scenario.kms"),
+    kms,
+    ...(bootstrap ? { bootstrap } : {}),
   };
 };
 

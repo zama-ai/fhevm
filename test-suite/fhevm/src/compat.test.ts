@@ -950,7 +950,7 @@ describe("assertBlueGreenKmsCompatibility", () => {
 
   test("rejects a pre-0.15 Blue booting against a 0.15 KMS core", () => {
     expect(() => assertBlueGreenKmsCompatibility(blueGreen("v0.14.0-7"), { env: { CORE_VERSION: "v0.15.0-0" } })).toThrow(
-      "set kms.bootstrap",
+      "set bootstrap.tag",
     );
   });
 
@@ -966,7 +966,7 @@ describe("assertBlueGreenKmsCompatibility", () => {
         { kind: "blue-green", bcs: { source: { mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" } } } as never,
         { env: { CORE_VERSION: "v0.15.0-0" } },
       ),
-    ).toThrow("set kms.bootstrap.coreVersion");
+    ).toThrow("set bootstrap.tag");
   });
 
   test("ignores a 0.15 Blue and a locally built Blue", () => {
