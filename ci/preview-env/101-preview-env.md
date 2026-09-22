@@ -65,7 +65,7 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
   stack and switch on OTLP tracing in components supporting it (off by
   default; see [Observe your environment](#observe-your-environment)).
-- `lifetime` — hours until a **dispatch** preview is destroyed (integer `1`–`96`,
+- `lifetime` — hours until a **dispatch** preview is destroyed (integer `4`–`96`,
   default `8`). Ignored on PR-label deploys, which have no clock. A later
   `preview-env extend` adds at most `48` hours from now and can be repeated.
 **Topology**
@@ -269,12 +269,13 @@ namespace. All handled by
   `preview-env-e2e` stays keeps the env alive).
 
 **Manual (dispatch) env.** The deploy stamps `preview.zama.ai/expires-at` on the
-namespace (`lifetime` hours from create, default 8, max 96). An hourly job
+namespace (`lifetime` hours from create, default 8, min 4, max 96). An hourly job
 ([`preview-env-cleanup.yml`](../../.github/workflows/preview-env-cleanup.yml)) posts
 once to `#ci-alerts` when that deadline is within 2 hours, then dispatches
-**preview-env-destroy** after `expires-at`. A re-dispatch restarts the clock,
-because deploy recreates the namespace. Namespaces created before this clock
-existed are not annotated and are never reaped.
+**preview-env-destroy** after `expires-at`. Each dispatch is a new namespace
+(`fhevm-ci-<actor>-<run id>`), so launching again leaves the previous one on
+its own clock. `extend` is what keeps that namespace. Namespaces created before
+this clock existed are not annotated and are never reaped.
 
 Keep a run alive (repeat as needed; each call sets the deadline to now plus
 the hours, at most 48):
@@ -332,7 +333,7 @@ kubectl delete namespace <namespace>
   and teardown always agree.
 - **`nb_coprocessor > 1` is expensive** (each party is a full stack with its own
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
-- **Dispatch envs expire on a clock** (`lifetime`, default 8h, max 96h). Within
+- **Dispatch envs expire on a clock** (`lifetime`, default 8h, min 4h, max 96h). Within
   2h of `expires-at`, `#ci-alerts` gets one message. `preview-env extend` adds
   1–48h from now and can be repeated. PR-label envs are not on this clock.
   Namespaces without `preview.zama.ai/source=dispatch` are never reaped.

@@ -20,6 +20,11 @@ permissions:
 jobs:
   cleanup:
     name: cleanup
+    # One sweep at a time. A manual dispatch overlapping the hourly run would
+    # otherwise post twice and queue a second destroy.
+    concurrency:
+      group: preview-env-cleanup
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -49,11 +54,12 @@ jobs:
             .items[]
             | select(.metadata.name | startswith("fhevm-ci-"))
             | select(.metadata.annotations["preview.zama.ai/source"] == "dispatch")
-            | [
+              | [
                 .metadata.name,
                 (.metadata.annotations["preview.zama.ai/expires-at"] // ""),
                 (.metadata.annotations["preview.zama.ai/warned-at"] // ""),
-                (.metadata.annotations["preview.zama.ai/actor"] // "unknown")
+                (.metadata.annotations["preview.zama.ai/actor"] // "unknown"),
+                (.metadata.annotations["preview.zama.ai/destroy-dispatched-at"] // "")
               ]
             | @tsv
           ')
@@ -63,13 +69,12 @@ jobs:
             exit 0
           fi
 
-          while IFS=$'\t' read -r ns expires warned actor; do
+          while IFS=$'\t' read -r ns expires warned actor dispatched; do
             [[ -n "${ns}" ]] || continue
-            if [[ ! "${expires}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]]; then
-              echo "::warning::${ns} has no parseable expires-at; skipping"
+            if ! exp_epoch=$(date -u -d "${expires}" +%s); then
+              echo "::warning::${ns} has an unparseable expires-at ('${expires}'); skipping"
               continue
             fi
-            exp_epoch=$(date -u -d "${expires}" +%s)
             remaining=$((exp_epoch - now))
 
             if (( remaining > 0 && remaining <= 7200 )) && [[ "${warned}" != "${expires}" ]]; then
@@ -89,8 +94,19 @@ jobs:
             fi
 
             if (( remaining <= 0 )); then
+              if [[ "${dispatched}" == "${expires}" ]]; then
+                echo "${ns} destroy already dispatched for ${expires}"
+                continue
+              fi
               echo "Dispatching destroy for ${ns} (expired ${expires})"
-              gh workflow run preview-env-destroy.yml --ref "${GITHUB_REF_NAME}" \
-                -f "namespace=${ns}"
+              # No checkout: gh needs -R, and it must not consume the loop's stdin.
+              if gh workflow run preview-env-destroy.yml --ref "${GITHUB_REF_NAME}" \
+                  -R "${GITHUB_REPOSITORY}" \
+                  -f "namespace=${ns}" < /dev/null; then
+                kubectl annotate namespace "${ns}" \
+                  "preview.zama.ai/destroy-dispatched-at=${expires}" --overwrite
+              else
+                echo "::warning::failed to dispatch destroy for ${ns}; will retry next hour"
+              fi
             fi
           done <<< "${rows}"

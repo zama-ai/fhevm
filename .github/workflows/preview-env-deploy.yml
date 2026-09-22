@@ -120,7 +120,7 @@ on:
           - "blockchain-dev"
           - "testnets"
       lifetime:
-        description: "Hours until this dispatch preview is destroyed (integer 1-96, default 8). Ignored on PR-label deploys, which have no clock. Extend later with preview-env extend (at most 48h per call)."
+        description: "Hours until this dispatch preview is destroyed (integer 4-96, default 8), counted from namespace creation, before the stack is ready. Ignored on PR-label deploys, which have no clock. A new dispatch is a new namespace; keep this one with preview-env extend (at most 48h per call)."
         required: false
         default: "8"
         type: string
@@ -222,6 +222,16 @@ jobs:
       overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
       stack_version: ${{ steps.stack_version.outputs.stack_version }}
     steps:
+      - name: Validate dispatch lifetime
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          LIFETIME: ${{ inputs.lifetime }}
+        run: |
+          if [[ ! "${LIFETIME}" =~ ^[0-9]+$ ]] || (( 10#$LIFETIME < 4 || 10#$LIFETIME > 96 )); then
+            echo "::error::lifetime must be an integer from 4 to 96 (got '${LIFETIME}')"
+            exit 1
+          fi
+
       - name: Checkout parse-overrides script and the stack version
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -601,16 +611,6 @@ jobs:
       # Dispatch runs also stamp a lifetime (preview.zama.ai/expires-at).
       # PR-label runs are not stamped and are never reaped on a clock.
       ######################################################################
-      - name: Validate dispatch lifetime
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          LIFETIME: ${{ inputs.lifetime }}
-        run: |
-          if [[ ! "${LIFETIME}" =~ ^[0-9]+$ ]] || (( 10#$LIFETIME < 1 || 10#$LIFETIME > 96 )); then
-            echo "::error::lifetime must be an integer from 1 to 96 (got '${LIFETIME}')"
-            exit 1
-          fi
-
       - name: Reset namespace
         env:
           EVENT_NAME: ${{ github.event_name }}

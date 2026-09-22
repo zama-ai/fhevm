@@ -43,7 +43,7 @@ preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
 
 launch options:
   --ref <branch>            required (must be pushed to origin)
-  --lifetime <hours>        dispatch clock, integer 1-96 (default 8). Ignored
+  --lifetime <hours>        dispatch clock, integer 4-96 (default 8). Ignored
                             for PR-label deploys, which have no clock.
   --parties 1|2|3|5         identities (default 1). 2 is two-party, not blue-green
   --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
@@ -221,7 +221,7 @@ cmd_launch() {
     4|13) ;;
     *) die "--kms-parties must be 4 or 13" ;;
   esac
-  require_hours "--lifetime" "${lifetime}" 1 96
+  require_hours "--lifetime" "${lifetime}" 4 96
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
