@@ -68,10 +68,10 @@ insertion_chunk_size = 10
 # Configuration section for stress test using the Connectors' HTTP endpoints.
 [http]
 urls = [
-    "https://kms-connector-proxy:8443",
-    "https://kms-connector-2-proxy:8443",
-    "https://kms-connector-3-proxy:8443",
-    "https://kms-connector-4-proxy:8443",
+    "https://kms-connector-1-kms-connector-proxy:8443",
+    "https://kms-connector-2-kms-connector-proxy:8443",
+    "https://kms-connector-3-kms-connector-proxy:8443",
+    "https://kms-connector-4-kms-connector-proxy:8443",
 ]
 
 # The API key the proxies check. Testing only.
