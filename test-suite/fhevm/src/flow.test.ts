@@ -7,6 +7,7 @@ import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
 import { ensureRuntimeArtifacts } from "./flow/artifacts";
 import {
+  applyBootstrap,
   assertNoUnrestoredGpuSession,
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
@@ -22,6 +23,7 @@ import {
   kmsThresholdGenKeysConfigName,
 } from "./generate/kms-core";
 import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import { loadBlueGreenScenario } from "./scenario/resolve";
 import {
   type Discovery,
   OVERRIDE_GROUPS,
@@ -594,6 +596,62 @@ describe("runtime helpers", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.CORE_VERSION).toBe("c57f52f");
+  });
+});
+
+describe("applyBootstrap", () => {
+  const bundle = {
+    target: "latest-main" as const,
+    lockName: "latest-main.json",
+    env: {
+      CORE_VERSION: "v0.15.0-0",
+      GATEWAY_VERSION: "abc1234",
+      HOST_VERSION: "abc1234",
+      LISTENER_CORE_VERSION: "abc1234",
+      CONNECTOR_DB_MIGRATION_VERSION: "abc1234",
+      CONNECTOR_GW_LISTENER_VERSION: "abc1234",
+      CONNECTOR_KMS_WORKER_VERSION: "abc1234",
+      CONNECTOR_TX_SENDER_VERSION: "abc1234",
+      CONNECTOR_PROXY_VERSION: "abc1234",
+      RELAYER_VERSION: "abc1234",
+      COPROCESSOR_TFHE_WORKER_VERSION: "abc1234",
+    },
+    sources: ["preset=latest-main"],
+  };
+  const overrides = [
+    { group: "coprocessor" as const },
+    { group: "kms-connector" as const },
+    { group: "gateway-contracts" as const },
+    { group: "host-contracts" as const },
+    { group: "listener-core" as const },
+    { group: "relayer" as const },
+    { group: "test-suite" as const },
+  ];
+
+  test("leaves a scenario without bootstrap untouched", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const plain = { ...scenario, bootstrap: undefined };
+    expect(applyBootstrap(bundle, plain, overrides)).toEqual({ versions: bundle, overrides });
+  });
+
+  test("boots the pre-key components at the release and suspends their local overrides", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const boot = applyBootstrap(bundle, scenario, overrides);
+    expect(boot.versions.env).toEqual({
+      CORE_VERSION: "v0.14.2-0",
+      GATEWAY_VERSION: "v0.14.2-0",
+      HOST_VERSION: "v0.14.2-0",
+      LISTENER_CORE_VERSION: "v0.14.2-0",
+      CONNECTOR_DB_MIGRATION_VERSION: "v0.14.2-0",
+      CONNECTOR_GW_LISTENER_VERSION: "v0.14.2-0",
+      CONNECTOR_KMS_WORKER_VERSION: "v0.14.2-0",
+      CONNECTOR_TX_SENDER_VERSION: "v0.14.2-0",
+      RELAYER_VERSION: "abc1234",
+      COPROCESSOR_TFHE_WORKER_VERSION: "abc1234",
+    });
+    expect(boot.versions.sources).toContain("bootstrap=v0.14.2-0");
+    expect(boot.overrides.map((override) => override.group)).toEqual(["coprocessor", "relayer", "test-suite"]);
+    expect(boot.bootstrapPending).toEqual({ target: bundle, overrides });
   });
 });
 

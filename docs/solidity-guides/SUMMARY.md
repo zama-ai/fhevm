@@ -20,6 +20,7 @@
 - [Supported types](types.md)
 - [Handles](handles.md)
 - [Operations on encrypted types](operations/README.md)
+  - [Operator semantics](operations/semantics.md)
   - [Casting and trivial encryption](operations/casting.md)
   - [Generate random numbers](operations/random.md)
 - [Encrypted inputs](inputs.md)
@@ -32,6 +33,8 @@
   - [Dealing with branches and conditions](logics/loop.md)
   - [Error handling](logics/error_handling.md)
 - [Public Decryption](decryption/oracle.md)
+  - [Verifying public decryptions](decryption/verification.md)
+- [Confidential bridge](bridge.md)
 - [FHEVM API reference](functions.md)
 
 ## Development Guide
@@ -50,3 +53,4 @@
   - [forge-fhevm API reference](foundry/api.md)
 - [HCU](hcu.md)
 - [How to Transform Your Smart Contract into a FHEVM Smart Contract?](transform_smart_contract_with_fhevm.md)
+- [Migrating to v0.15](migrating-to-0.15.md)

@@ -8485,9 +8485,11 @@ dependencies = [
  "rayon",
  "serde",
  "sha3 0.10.8",
+ "tfhe-cuda-common",
  "tfhe-safe-serialize",
  "tfhe-versionable",
  "zeroize",
+ "zk-cuda-backend",
 ]
 
 [[package]]
@@ -10173,11 +10175,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "zk-cuda-backend"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8632b549d64d8ca165c2b72b82ccd61da33c5b3a4d03929a9b26e1479c501d8"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.6.0",
+ "bindgen",
+ "cmake",
+ "pkg-config",
+ "tfhe-cuda-common",
+]
+
+[[package]]
 name = "zkproof-worker"
 version = "0.7.0"
 dependencies = [
  "alloy-primitives",
  "anyhow",
+ "bincode",
  "clap",
  "fhevm-engine-common",
  "hex",
