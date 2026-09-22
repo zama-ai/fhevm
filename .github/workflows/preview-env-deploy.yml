@@ -119,6 +119,11 @@ on:
           - "anvil"
           - "blockchain-dev"
           - "testnets"
+      lifetime:
+        description: "Hours until this dispatch preview is destroyed (integer 1-96, default 8). Ignored on PR-label deploys, which have no clock. Extend later with preview-env extend (at most 48h per call)."
+        required: false
+        default: "8"
+        type: string
 
 concurrency:
   # pull_request: one preview per PR, new pushes cancel the in-flight run.
@@ -593,8 +598,24 @@ jobs:
       ######################################################################
       # NAMESPACE: destroy-then-recreate every run, cascading deletion of any
       # leftover Crossplane claims (coprocessor-infra, tkms-infra).
+      # Dispatch runs also stamp a lifetime (preview.zama.ai/expires-at).
+      # PR-label runs are not stamped and are never reaped on a clock.
       ######################################################################
+      - name: Validate dispatch lifetime
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          LIFETIME: ${{ inputs.lifetime }}
+        run: |
+          if [[ ! "${LIFETIME}" =~ ^[0-9]+$ ]] || (( 10#$LIFETIME < 1 || 10#$LIFETIME > 96 )); then
+            echo "::error::lifetime must be an integer from 1 to 96 (got '${LIFETIME}')"
+            exit 1
+          fi
+
       - name: Reset namespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          LIFETIME: ${{ inputs.lifetime }}
+          ACTOR: ${{ github.actor }}
         run: |
           if kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
             echo "Namespace ${NAMESPACE} already exists, destroying it first..."
@@ -603,6 +624,16 @@ jobs:
             kubectl wait --for=delete "namespace/${NAMESPACE}" --timeout=180s
           fi
           kubectl create namespace "${NAMESPACE}"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            created=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            expires=$(date -u -d "+${LIFETIME} hours" +%Y-%m-%dT%H:%M:%SZ)
+            kubectl annotate namespace "${NAMESPACE}" \
+              preview.zama.ai/source=dispatch \
+              "preview.zama.ai/created-at=${created}" \
+              "preview.zama.ai/expires-at=${expires}" \
+              "preview.zama.ai/actor=${ACTOR}"
+            echo "Dispatch preview expires at ${expires} (lifetime ${LIFETIME}h)"
+          fi
 
       - name: Provision testnets secrets (sync-secrets → rpc + faucets)
         if: env.CHAIN_MODE == 'testnets'

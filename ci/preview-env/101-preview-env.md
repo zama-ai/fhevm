@@ -65,6 +65,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
   stack and switch on OTLP tracing in components supporting it (off by
   default; see [Observe your environment](#observe-your-environment)).
+- `lifetime` — hours until a **dispatch** preview is destroyed (integer `1`–`96`,
+  default `8`). Ignored on PR-label deploys, which have no clock. A later
+  `preview-env extend` adds at most `48` hours from now and can be repeated.
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor **identities** (default
@@ -265,11 +268,25 @@ namespace. All handled by
 - **remove** the `preview-env-e2e` label (removing only `-tests` while
   `preview-env-e2e` stays keeps the env alive).
 
-**Manual (dispatch) env.** A dispatch env has no PR to key off, so tear it down
-by hand: GitHub → **Actions** → **preview-env-destroy** → **Run workflow**, and
-set the `namespace` input to the **exact** namespace from your deploy run's
-summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
-refuses anything else, so it can't nuke an unrelated namespace).
+**Manual (dispatch) env.** The deploy stamps `preview.zama.ai/expires-at` on the
+namespace (`lifetime` hours from create, default 8, max 96). An hourly job
+([`preview-env-reap.yml`](../../.github/workflows/preview-env-reap.yml)) posts
+once to `#ci-alerts` when that deadline is within 2 hours, then dispatches
+**preview-env-destroy** after `expires-at`. A re-dispatch restarts the clock,
+because deploy recreates the namespace. Namespaces created before this clock
+existed are not annotated and are never reaped.
+
+Keep a run alive (repeat as needed; each call sets the deadline to now plus
+the hours, at most 48):
+
+```bash
+ci/preview-env/preview-env extend fhevm-ci-<exact-name> <hours>
+```
+
+Tear one down early: GitHub → **Actions** → **preview-env-destroy** → **Run
+workflow**, and set `namespace` to the **exact** name from the deploy summary
+(e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard refuses
+anything else).
 
 Or:
 
@@ -315,8 +332,10 @@ kubectl delete namespace <namespace>
   and teardown always agree.
 - **`nb_coprocessor > 1` is expensive** (each party is a full stack with its own
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
-- **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
-  the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
+- **Dispatch envs expire on a clock** (`lifetime`, default 8h, max 96h). Within
+  2h of `expires-at`, `#ci-alerts` gets one message. `preview-env extend` adds
+  1–48h from now and can be repeated. PR-label envs are not on this clock.
+  Namespaces without `preview.zama.ai/source=dispatch` are never reaped.
 - **`chain_mode=blockchain-dev` on dispatch, or via `preview-env-blue-green`.** Plain
   `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
   unique per run. Destroying the namespace does **not** remove contracts from
