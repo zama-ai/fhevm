@@ -211,8 +211,8 @@ const SHIM_PROFILES = {
   // Before it, BOTH artifacts used the bare `{handle}/{ctx}` key and the separate
   // buckets were the only thing keeping them apart — sharing a bucket would make
   // them overwrite each other. On the 0.14 line #3372 first shipped in v0.14.0-7,
-  // the floor for any BCS baseline against this stack (the blue-green scenarios pin
-  // a later 0.14 release); earlier 0.14.0-N prereleases must not be used.
+  // which is what the blue-green scenarios pin; earlier 0.14.0-N prereleases must
+  // not be used as a BCS baseline against this stack.
   "legacy-sns-worker-split-bucket-flags": {
     coprocessorArgs: {
       "sns-worker": [

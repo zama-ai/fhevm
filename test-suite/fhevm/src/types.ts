@@ -144,10 +144,7 @@ export type BlueGreenScenario = {
     args?: Record<string, string[]>;
   };
   kms?: KmsScenarioBlock;
-  bootstrap?: {
-    tag: string;
-    coreVersion?: string;
-  };
+  bootstrap?: BlueGreenBootstrap;
 };
 
 /**
@@ -158,7 +155,6 @@ export type BlueGreenScenario = {
  */
 export type BlueGreenBootstrap = {
   tag: string;
-  coreVersion: string;
 };
 
 export type ResolvedBlueGreenScenarioFleet = {
@@ -270,10 +266,10 @@ export type State = {
   e2eKmsConnectorRuntimeAdoptionPending?: boolean;
   /**
    * Set while the stack runs at the scenario's `bootstrap.tag`; cleared once the bootstrap step
-   * has upgraded it. Carries the resolved bundle and the local overrides suspended for the boot,
-   * which the upgrade restores.
+   * has upgraded it and started Green. Carries the resolved bundle, the local overrides suspended
+   * for the boot, and the upgrade units already applied so `up --resume` does not repeat them.
    */
-  bootstrapPending?: { target: VersionBundle; overrides: LocalOverride[] };
+  bootstrapPending?: { target: VersionBundle; overrides: LocalOverride[]; completed?: string[] };
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;

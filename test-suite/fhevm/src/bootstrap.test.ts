@@ -34,9 +34,9 @@ describe("blue-green bootstrap", () => {
   };
 
   test("pins contracts, KMS core and connector and listener-core to the release", () => {
-    const boot = bootstrapBootVersions(bundle, { tag: "v0.14.2-0", coreVersion: "v0.14.1-0" });
+    const boot = bootstrapBootVersions(bundle, { tag: "v0.14.2-0" });
     expect(boot.env).toEqual({
-      CORE_VERSION: "v0.14.1-0",
+      CORE_VERSION: "v0.14.2-0",
       GATEWAY_VERSION: "v0.14.2-0",
       HOST_VERSION: "v0.14.2-0",
       LISTENER_CORE_VERSION: "v0.14.2-0",
@@ -71,7 +71,7 @@ describe("blue-green bootstrap", () => {
   });
 
   test("advances one deployment unit per phase and restores optional connector services", () => {
-    const boot = bootstrapBootVersions(bundle, { tag: "v0.14.2-0", coreVersion: "v0.14.2-0" }).env;
+    const boot = bootstrapBootVersions(bundle, { tag: "v0.14.2-0" }).env;
     const contracts = bootstrapPhaseEnv(boot, bundle.env, ["GATEWAY_VERSION", "HOST_VERSION"]);
     expect(contracts).toEqual({ ...boot, GATEWAY_VERSION: "main", HOST_VERSION: "main" });
     const connector = bootstrapPhaseEnv(contracts, bundle.env, [
@@ -82,19 +82,27 @@ describe("blue-green bootstrap", () => {
     expect(connector.CONNECTOR_KMS_WORKER_VERSION).toBe("main");
     expect(connector.CONNECTOR_ENDPOINT_VERSION).toBe("main");
     expect(connector.CONNECTOR_TX_SENDER_VERSION).toBe("v0.14.2-0");
-    expect(bootstrapPhaseEnv(connector, { ...bundle.env, CONNECTOR_PROXY_VERSION: undefined as never }, ["CONNECTOR_PROXY_VERSION"]))
-      .not.toHaveProperty("CONNECTOR_PROXY_VERSION");
+    const { CONNECTOR_PROXY_VERSION: _proxy, ...withoutProxy } = bundle.env;
+    expect(bootstrapPhaseEnv(contracts, withoutProxy, ["CONNECTOR_PROXY_VERSION"])).toEqual(contracts);
   });
 
-  test("upgrades every contract whose reinitializer moved since 0.14 through its task", () => {
+  test("lists every upgradeable contract through its task and lets the task skip an unmoved reinitializer", () => {
     expect(GATEWAY_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
       "Decryption",
       "CiphertextCommits",
       "InputVerification",
       "GatewayConfig",
+      "KMSGeneration",
     ]);
     expect(CANONICAL_HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["KMSGeneration"]);
-    expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["FHEVMExecutor", "ProtocolConfig"]);
+    expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
+      "FHEVMExecutor",
+      "ACL",
+      "HCULimit",
+      "InputVerifier",
+      "KMSVerifier",
+      "ProtocolConfig",
+    ]);
     for (const [task, contract] of [
       ...GATEWAY_CONTRACT_UPGRADES,
       ...CANONICAL_HOST_CONTRACT_UPGRADES,
@@ -102,7 +110,10 @@ describe("blue-green bootstrap", () => {
     ]) {
       expect(task).toBe(`task:upgrade${contract}`);
     }
-    expect(contractUpgradeCommand("task:upgradeDecryption", "Decryption")).toBe(
+    const command = contractUpgradeCommand("task:upgradeDecryption", "Decryption");
+    expect(command).toContain("previous-contracts/Decryption.sol | grep");
+    expect(command).toContain('[ "$prev" = "$next" ]');
+    expect(command.split("\n").at(-1)).toBe(
       "npx hardhat task:upgradeDecryption --current-implementation previous-contracts/Decryption.sol:Decryption " +
         "--new-implementation contracts/Decryption.sol:Decryption --verify-contract false --use-internal-proxy-address true",
     );

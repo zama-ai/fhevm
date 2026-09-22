@@ -17,6 +17,7 @@ import {
   resolveServiceOverrides,
 } from "../layout";
 import type {
+  BlueGreenBootstrap,
   BlueGreenScenario,
   CoprocessorInstanceSource,
   CoprocessorScenario,
@@ -720,22 +721,19 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
   };
 };
 
-/** Parses the optional blue-green `bootstrap` block: a release tag plus an optional KMS core tag. */
-const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenScenario["bootstrap"] => {
+/** Parses the optional blue-green `bootstrap` block: the release the stack boots at. */
+const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenBootstrap | undefined => {
   if (block === undefined) {
     return undefined;
   }
   if (block === null || typeof block !== "object" || Array.isArray(block)) {
     throw new Error(`${sourceLabel} must be a map with tag`);
   }
-  const { tag, coreVersion } = block as Record<string, unknown>;
+  const { tag } = block as Record<string, unknown>;
   if (typeof tag !== "string" || !tag.trim()) {
     throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
   }
-  if (coreVersion !== undefined && (typeof coreVersion !== "string" || !coreVersion.trim())) {
-    throw new Error(`${sourceLabel}.coreVersion must be a non-empty version tag when set`);
-  }
-  return { tag: tag.trim(), ...(typeof coreVersion === "string" ? { coreVersion: coreVersion.trim() } : {}) };
+  return { tag: tag.trim() };
 };
 
 /** Applies defaults and resolves derived fields. */
@@ -749,9 +747,7 @@ export const resolveBlueGreenScenario = (
     args: input.bcs?.args ?? {},
   };
   const kms = resolveKmsTopology(input.kms, "scenario.kms");
-  const bootstrap = input.bootstrap
-    ? { tag: input.bootstrap.tag, coreVersion: input.bootstrap.coreVersion ?? input.bootstrap.tag }
-    : undefined;
+  const bootstrap = input.bootstrap;
   if (bootstrap && kms.mode !== "centralized") {
     throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
   }

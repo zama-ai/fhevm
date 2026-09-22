@@ -217,7 +217,7 @@ gcs: {}
       expect(parsed.gcs.source).toBeUndefined();
     });
 
-    test("resolves the bootstrap release, defaults its KMS core tag and defers Green", () => {
+    test("resolves the bootstrap release and defers Green", () => {
       const parsed = parseBlueGreenScenario(`
 version: 1
 kind: blue-green
@@ -228,25 +228,9 @@ bootstrap:
 `);
       expect(parsed.bootstrap).toEqual({ tag: "v0.14.2-0" });
       const resolved = resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed);
-      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0", coreVersion: "v0.14.2-0" });
+      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0" });
       expect(resolved.gcs.deferredStart).toBe(true);
       expect(resolveBlueGreenScenario("/tmp/bootstrap.yaml", { ...parsed, bootstrap: undefined }).gcs.deferredStart).toBe(false);
-    });
-
-    test("keeps an explicit bootstrap KMS core tag", () => {
-      const parsed = parseBlueGreenScenario(`
-version: 1
-kind: blue-green
-gcs:
-  source: { mode: local }
-bootstrap:
-  tag: v0.14.2-0
-  coreVersion: v0.14.1-0
-`);
-      expect(resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed).bootstrap).toEqual({
-        tag: "v0.14.2-0",
-        coreVersion: "v0.14.1-0",
-      });
     });
 
     test("rejects a bootstrap block without a tag", () => {
@@ -256,8 +240,7 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-bootstrap:
-  coreVersion: v0.14.2-0
+bootstrap: {}
 `),
       ).toThrow("bootstrap.tag must be a non-empty release tag");
     });
