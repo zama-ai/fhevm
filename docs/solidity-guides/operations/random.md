@@ -64,7 +64,7 @@ Document the choice in your contract. For games of chance or lotteries, prefer r
 
 ## What the randomness guarantees
 
-- **Source.** The seed is derived on-chain by the `FHEVMExecutor` from a domain separator, a counter that advances on every call, the ACL address, the chain id, the previous block hash and the block timestamp. The coprocessors expand that seed into an encrypted value with the TFHE-rs encrypted PRF, so the plaintext is never materialised anywhere.
+- **Source.** The seed is derived on-chain by the `FHEVMExecutor` from a domain separator, a counter that advances on every call, the ACL address, the chain id, the previous block hash and the block timestamp. The coprocessors expand that seed into an encrypted value with the TFHE-rs encrypted PRF, so the plaintext is never materialized anywhere.
 - **Unpredictability.** Nobody can read the value before an authorized decryption: not the contract, not the caller, not the coprocessor operators. Two calls in the same transaction produce independent values because the counter advances between them.
 - **Block producer influence.** Because the seed includes the previous block hash and the timestamp, a block producer has the usual, limited influence over which seed a transaction gets. They still cannot learn the resulting value. If your application must resist a block producer choosing between a handful of candidate outcomes, combine on-chain randomness with a commit-reveal scheme or with user-supplied encrypted inputs.
 - **Determinism across coprocessors.** All coprocessors derive the same ciphertext from the same seed, which is what lets a multi-coprocessor deployment reach consensus on the result.

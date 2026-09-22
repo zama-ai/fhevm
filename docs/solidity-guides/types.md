@@ -10,7 +10,7 @@ The `FHE` library offers a robust type system with encrypted integer types, enab
 
 - Encrypted integers function similarly to Solidity’s native integer types, but they operate on **Fully Homomorphic Encryption (FHE)** ciphertexts.
 - Arithmetic operations on `e(u)int` types are **unchecked**, meaning they wrap around on overflow. This design choice ensures confidentiality by avoiding the leakage of information through error detection.
-- There is no checked arithmetic: detecting an overflow would reveal information about the operands. When an overflow must be handled, test for it with a comparison and neutralise it with `FHE.select` (see [Operator semantics](operations/semantics.md#arithmetic)).
+- There is no checked arithmetic: detecting an overflow would reveal information about the operands. When an overflow must be handled, test for it with a comparison and neutralize it with `FHE.select` (see [Operator semantics](operations/semantics.md#arithmetic)).
 
 Encrypted integers in FHEVM are represented as FHE ciphertexts, abstracted using ciphertext handles. These types, prefixed with `e` (for example, `euint64`) act as secure wrappers over the ciphertext handles.
 

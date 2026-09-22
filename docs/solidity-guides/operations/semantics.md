@@ -1,6 +1,6 @@
 # Operator semantics
 
-This page is the reference for what each `FHE` operator computes, which operand shapes it accepts, and what happens at the edges: overflow, division by zero, oversized shift amounts, narrowing casts. Treat it as the specification the [operations overview](README.md) summarises. Behaviour is the same on every host chain and with every number of coprocessors, because the coprocessors must agree on results.
+This page is the reference for what each `FHE` operator computes, which operand shapes it accepts, and what happens at the edges: overflow, division by zero, oversized shift amounts, narrowing casts. Treat it as the specification the [operations overview](README.md) summarizes. Behaviour is the same on every host chain and with every number of coprocessors, because the coprocessors must agree on results.
 
 ## Notation
 
@@ -36,7 +36,7 @@ This page is the reference for what each `FHE` operator computes, which operand 
 | `mulDiv(a, b, s)`        | `floor((a * b) / s)` on 2N bits  | `s` **must be a scalar**, non-zero. See below.                            |
 | `sum(values)`            | `(v_0 + ... + v_k) mod 2^N`      | Fixed-size array of one type. See below.                                  |
 
-Overflow is unchecked by design: a checked operation would have to reveal whether the overflow happened. When an overflow must be detected, test for it explicitly and neutralise it with `FHE.select`, as shown in the [overflow pattern](README.md#beware-of-overflows-of-fhe-arithmetic-operators).
+Overflow is unchecked by design: a checked operation would have to reveal whether the overflow happened. When an overflow must be detected, test for it explicitly and neutralize it with `FHE.select`, as shown in the [overflow pattern](README.md#beware-of-overflows-of-fhe-arithmetic-operators).
 
 Division and remainder by an **encrypted** divisor are not available. The only overloads are `div(euintN, uintN)` and `rem(euintN, uintN)`, for `N` up to 128.
 
