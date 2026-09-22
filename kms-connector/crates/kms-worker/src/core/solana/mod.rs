@@ -35,8 +35,6 @@ pub mod deployment;
 /// Encrypted store resolution: presence, ownership, type, address binding, and the
 /// authority and application the account carries.
 pub mod encrypted_store;
-/// Parity between the gateway event's typed fields and the signed request they carry.
-pub mod event_parity;
 /// Failure taxonomy and the terminal / transient / retryable classification.
 pub mod failure;
 /// Handle binding: a sealed leaf proven against the account's own peaks.
@@ -49,8 +47,6 @@ pub mod pause;
 pub mod pipeline;
 /// The leaf-proof reader — the only reader of the coprocessors' record.
 pub mod proof;
-/// The normalized request and its strict decoding.
-pub mod request;
 /// The signed application scope.
 pub mod scope;
 /// The atomic host-state snapshot — the only reader of chain state.

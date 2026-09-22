@@ -11,7 +11,6 @@ use alloy::{
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
 };
-use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
@@ -30,20 +29,6 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::PublicDecryptionRequest,
     EventType::UserDecryptionRequest,
 ];
-
-fn solana_trace_attributes(event: &ProtocolEventKind) -> Option<(String, String, Option<String>)> {
-    let ProtocolEventKind::UserDecryptionV3(request) = event else {
-        return None;
-    };
-    let handles = request
-        .ctHandles
-        .iter()
-        .map(|handle| format!("{handle:#x}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let single_handle = (request.ctHandles.len() == 1).then(|| handles.clone());
-    Some((request.decryptionId.to_string(), handles, single_handle))
-}
 
 /// Struct monitoring and storing Gateway's decryption events.
 pub struct GatewayListener<P>
@@ -187,32 +172,22 @@ where
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = DecryptionEvents::decode_log(&log.inner)
-                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?
-                .data
-                .try_into()?;
+            let event_kind = match DecryptionEvents::decode_log(&log.inner)
+                .map_err(anyhow::Error::from)
+                .and_then(|event| ProtocolEventKind::try_from(event.data))
+            {
+                Ok(event) => event,
+                Err(error) => {
+                    warn!(tx_hash = ?log.transaction_hash, log_index = ?log.log_index,
+                        "Rejecting malformed decryption event: {error:#}");
+                    EVENT_LISTENING_ERRORS.with_label_values(&["gateway"]).inc();
+                    continue;
+                }
+            };
             EVENT_RECEIVED_COUNTER
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();
-
-            let span = match solana_trace_attributes(&event_kind) {
-                Some((decryption_id, ciphertext_handles, Some(ciphertext_handle))) => info_span!(
-                    "handle_gateway_event",
-                    event = %event_kind,
-                    operation = "solana-user-decryption-v2",
-                    decryption_id = %decryption_id,
-                    ciphertext_handle = %ciphertext_handle,
-                    ciphertext_handles = %ciphertext_handles,
-                ),
-                Some((decryption_id, ciphertext_handles, None)) => info_span!(
-                    "handle_gateway_event",
-                    event = %event_kind,
-                    operation = "solana-user-decryption-v2",
-                    decryption_id = %decryption_id,
-                    ciphertext_handles = %ciphertext_handles,
-                ),
-                None => info_span!("handle_gateway_event", event = %event_kind),
-            };
+            let span = info_span!("handle_gateway_event", event = %event_kind, source = "onchain");
             let otlp_ctx = PropagationContext::inject(&span.context());
             events.push(ProtocolEvent::new(
                 event_kind,
@@ -259,34 +234,48 @@ mod tests {
     };
     use alloy::rpc::json_rpc::ErrorPayload;
     use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
-    use fhevm_gateway_bindings::decryption::{
-        Decryption::UserDecryptionRequest_4 as UserDecryptionRequestV3,
-        IDecryption::RequestValiditySeconds,
-    };
+    use fhevm_gateway_bindings::decryption::IDecryption::RequestValiditySeconds;
     use std::time::Duration;
 
     #[test]
-    fn solana_trace_attributes_include_every_ciphertext_handle() {
-        let handle = FixedBytes::from([0x12; 32]);
-        let request = UserDecryptionRequestV3 {
+    fn malformed_solana_event_does_not_discard_valid_peers() {
+        use alloy::sol_types::SolEvent;
+        use fhevm_gateway_bindings::decryption::Decryption::{
+            PublicDecryptionRequest_1, UserDecryptionRequest_4,
+        };
+        let invalid = UserDecryptionRequest_4 {
             decryptionId: U256::from(42),
-            ctHandles: vec![handle],
-            requestValidity: RequestValiditySeconds {
-                startTimestamp: U256::ZERO,
-                durationSeconds: U256::ZERO,
-            },
+            ctHandles: vec![],
+            requestValidity: RequestValiditySeconds::default(),
             publicKey: Bytes::new(),
             extraData: Bytes::new(),
             solanaRequest: Bytes::new(),
         };
-
-        assert_eq!(
-            solana_trace_attributes(&ProtocolEventKind::UserDecryptionV3(request)),
-            Some((
-                "42".to_owned(),
-                format!("{handle:#x}"),
-                Some(format!("{handle:#x}")),
-            )),
+        let valid = PublicDecryptionRequest_1 {
+            decryptionId: U256::from(43),
+            ctHandles: vec![FixedBytes::ZERO],
+            extraData: Bytes::new(),
+        };
+        let logs = vec![
+            Log {
+                inner: alloy::primitives::Log {
+                    address: Default::default(),
+                    data: invalid.encode_log_data(),
+                },
+                ..Default::default()
+            },
+            Log {
+                inner: alloy::primitives::Log {
+                    address: Default::default(),
+                    data: valid.encode_log_data(),
+                },
+                ..Default::default()
+            },
+        ];
+        let events = GatewayListener::<RootProvider>::prepare_events(logs).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0].kind, ProtocolEventKind::PublicDecryption(e) if e.decryptionId == U256::from(43))
         );
     }
 

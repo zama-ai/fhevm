@@ -42,6 +42,9 @@ const EUINT64: u8 = FheTypes::Uint64 as u8;
 const PUBLIC_REQUESTS: &str = "public_decryption_requests";
 const USER_REQUESTS: &str = "user_decryption_requests";
 
+#[path = "cases/solana_user_decrypt.rs"]
+mod solana_user_decrypt;
+
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]

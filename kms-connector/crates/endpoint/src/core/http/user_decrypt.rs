@@ -6,31 +6,62 @@ use crate::core::{
         AppState,
         decrypt::{self, DecryptionRoute},
     },
-    validation::validate_user_decryption,
+    validation::{validate_solana_user_decryption, validate_user_decryption},
 };
 use actix_web::{
     HttpResponse,
     web::{Data, Json},
 };
-use alloy::primitives::B256;
+use alloy::primitives::{B256, U256};
 use connector_utils::monitoring::otlp::PropagationContext;
+use connector_utils::types::{
+    db::RequestSource,
+    solana_request::{SolanaUserDecryptionRequestV1, insert_solana_user_decryption},
+};
+use kms_connector_api::SolanaUserDecryptionRequest;
 use kms_connector_api::{ErrorCode, ErrorResponse, UserDecryptionRequest, UserDecryptionResponse};
+use serde::Deserialize;
 use sqlx::{
     PgExecutor,
     postgres::PgQueryResult,
     types::chrono::{DateTime, Utc},
 };
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum UserDecryptionBody {
+    Eip712(UserDecryptionRequest),
+    Solana(SolanaUserDecryptionRequest),
+}
+
+pub enum ValidatedUserDecryption {
+    Eip712(UserDecryptionRequest),
+    Solana(SolanaUserDecryptionRequestV1),
+}
+
 /// `POST /v1/user-decrypt`
 #[tracing::instrument(skip_all, fields(decryption_id))]
 pub async fn user_decrypt(
     state: Data<AppState>,
-    body: Json<UserDecryptionRequest>,
+    body: Json<UserDecryptionBody>,
 ) -> Result<HttpResponse, ErrorResponse> {
-    let request = body.into_inner();
-    validate_user_decryption(&request, &state.config)
-        .map_err(|e| ErrorResponse::new(e.code(), e.to_string(), None))?;
-    let id = request.id();
+    let validated = match body.into_inner() {
+        UserDecryptionBody::Eip712(request) => validate_user_decryption(&request, &state.config)
+            .map(|()| (request.id(), ValidatedUserDecryption::Eip712(request))),
+        UserDecryptionBody::Solana(request) => {
+            validate_solana_user_decryption(&request, &state.config).map(|body| {
+                let id = request.id();
+                (
+                    id,
+                    ValidatedUserDecryption::Solana(SolanaUserDecryptionRequestV1 {
+                        decryption_id: U256::from_be_bytes(id.0),
+                        request: body,
+                    }),
+                )
+            })
+        }
+    };
+    let (id, request) = validated.map_err(|e| ErrorResponse::new(e.code(), e.to_string(), None))?;
     tracing::Span::current().record("decryption_id", id.to_string());
 
     decrypt::handle::<UserRoute>(&state, id, &request).await
@@ -39,7 +70,7 @@ pub async fn user_decrypt(
 pub struct UserRoute;
 
 impl DecryptionRoute for UserRoute {
-    type Request = UserDecryptionRequest;
+    type Request = ValidatedUserDecryption;
     type ResponseRow = UserDecryptionResponseRow;
 
     async fn read_response<'e>(
@@ -55,7 +86,22 @@ impl DecryptionRoute for UserRoute {
         request: &Self::Request,
         otlp_ctx: &PropagationContext,
     ) -> anyhow::Result<PgQueryResult> {
-        upsert_user_decryption_request(executor, id, request, otlp_ctx).await
+        match request {
+            ValidatedUserDecryption::Eip712(request) => {
+                upsert_user_decryption_request(executor, id, request, otlp_ctx).await
+            }
+            ValidatedUserDecryption::Solana(request) => {
+                insert_solana_user_decryption(
+                    executor,
+                    request,
+                    None,
+                    Utc::now(),
+                    otlp_ctx,
+                    RequestSource::Http,
+                )
+                .await
+            }
+        }
     }
 
     fn created_at(response_row: &Self::ResponseRow) -> DateTime<Utc> {

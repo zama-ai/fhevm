@@ -21,6 +21,9 @@
 //! minimal request with one synthetic entry. A control test runs the whole set a second time with
 //! a different synthetic entry and requires identical outcomes, so the wrapper cannot be quietly
 //! deciding anything.
+use connector_utils::types::solana_request::{
+    RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+};
 
 mod solana_support;
 
@@ -31,14 +34,7 @@ mod solana_support;
 #[path = "../../../../solana/test-fixtures/permit/permit_vectors.rs"]
 mod schema;
 
-use kms_worker::core::solana::{
-    failure::AuthorizationFailure,
-    pipeline::check_signature,
-    request::{
-        RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
-        SolanaUserDecryptRequestWire,
-    },
-};
+use kms_worker::core::solana::{failure::AuthorizationFailure, pipeline::check_signature};
 use schema::{PERMIT_VECTOR_SCHEMA, PermitVector, PermitVectorFile, VectorResult, from_hex, rule};
 use solana_support::*;
 use std::collections::BTreeSet;
@@ -81,7 +77,9 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
         }),
         // Rules of the request layer rather than the permit layer. A permit vector that lands here
         // is either malformed or the Connector is rejecting it for the wrong reason.
-        RequestFormError::SignatureWidth { .. }
+        RequestFormError::Handle(_)
+        | RequestFormError::ChainId { .. }
+        | RequestFormError::SignatureWidth { .. }
         | RequestFormError::EntryIdentityWidth { .. }
         | RequestFormError::EmptyHandles
         | RequestFormError::TooManyHandles { .. } => None,

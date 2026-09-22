@@ -29,6 +29,10 @@
 //! * every rule in the dictionary is exercised by some record, and every rule some record declares
 //!   is one the Connector actually produces. Both directions, or a regeneration could quietly drop
 //!   a class.
+use connector_utils::types::solana_request::{
+    MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
+    SolanaUserDecryptRequestWire,
+};
 
 mod solana_support;
 
@@ -46,10 +50,6 @@ use kms_worker::core::solana::{
     pause::PauseFailure,
     pipeline::{AuthorizationContext, authorize_request},
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
-    request::{
-        MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
-        SolanaUserDecryptRequestWire,
-    },
     snapshot::SnapshotAccount,
     watermark::{WatermarkFailure, WindowFailure, permit_invalidation_address},
 };
@@ -1585,6 +1585,8 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
             RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
             RequestFormError::Permit(_)
+            | RequestFormError::Handle(_)
+            | RequestFormError::ChainId { .. }
             | RequestFormError::SignatureWidth { .. }
             | RequestFormError::EntryIdentityWidth { .. } => {
                 panic!("the permit set covers this layer: {form}")

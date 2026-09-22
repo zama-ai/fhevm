@@ -165,7 +165,7 @@ impl From<&ProtocolEventKind> for EventType {
             // for `last_block_polled`.
             ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
-            | ProtocolEventKind::UserDecryptionV3(_) => Self::UserDecryptionRequest,
+            | ProtocolEventKind::SolanaUserDecryptionV1(_) => Self::UserDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,

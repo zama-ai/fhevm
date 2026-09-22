@@ -72,6 +72,46 @@ sol! {
     }
 }
 
+sol! {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaHandleEntry {
+        bytes32 handle;
+        bytes32 allowedKey;
+        bytes32 encryptedStore;
+    }
+
+    /// Solana permit fields and the ordered ciphertext entries authorized under that permit.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaUserDecryptionPayload {
+        SolanaHandleEntry[] handles;
+        bytes32 userPubkey;
+        bytes publicKey;
+        bytes[] allowedScopes;
+        RequestValidity requestValidity;
+        bytes32 hostProgramId;
+        uint64 chainId;
+        bytes extraData;
+    }
+
+    /// The Solana body of `POST v1/user-decrypt`. The signature covers the canonical permit;
+    /// the HTTP request ID additionally binds every ordered handle entry.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaUserDecryptionRequest {
+        string attestationType;
+        SolanaUserDecryptionPayload payload;
+        bytes signature;
+    }
+}
+
+impl SolanaUserDecryptionRequest {
+    pub fn id(&self) -> B256 {
+        self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
+    }
+}
+
 impl PublicDecryptionRequest {
     /// Derives the content-derived `decryption_id`: the EIP-712 signing hash of the body.
     pub fn id(&self) -> B256 {
@@ -145,6 +185,53 @@ mod tests {
             },
             signature: Bytes::from(vec![0x66; 65]),
         }
+    }
+
+    #[test]
+    fn solana_id_binds_scheme_signature_and_ordered_entries() {
+        let request = SolanaUserDecryptionRequest {
+            attestationType: "solana-srfc38-user-decrypt-v1".into(),
+            payload: SolanaUserDecryptionPayload {
+                handles: vec![SolanaHandleEntry {
+                    handle: B256::repeat_byte(1),
+                    allowedKey: B256::repeat_byte(2),
+                    encryptedStore: B256::repeat_byte(3),
+                }],
+                userPubkey: B256::ZERO, publicKey: Bytes::new(), allowedScopes: vec![],
+                requestValidity: RequestValidity { startTimestamp: 1, durationSeconds: 60 },
+                hostProgramId: B256::ZERO, chainId: 1, extraData: Bytes::new()
+            },
+            signature: vec![4; 64].into(),
+        };
+        let id = request.id();
+        let roundtrip: SolanaUserDecryptionRequest =
+            serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
+        assert_eq!(id, roundtrip.id());
+        let mut other = request.clone();
+        other.attestationType.push('2');
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.signature = vec![5; 64].into();
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].allowedKey = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].encryptedStore = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].handle = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles.push(other.payload.handles[0].clone());
+        assert_ne!(id, other.id());
+        other.payload.handles[1].handle = B256::repeat_byte(9);
+        let ordered = other.id();
+        other.payload.handles.swap(0, 1);
+        assert_ne!(ordered, other.id());
+        let mut json = serde_json::to_value(&request).unwrap();
+        json["payload"]["authority"] = serde_json::json!("invented");
+        assert!(serde_json::from_value::<SolanaUserDecryptionRequest>(json).is_err());
     }
 
     #[test]

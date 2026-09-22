@@ -39,6 +39,8 @@ pub enum ValidationError {
         supported = supported_attestation_types()
     )]
     UnsupportedAttestationType,
+    #[error("invalid Solana payload: {0}")]
+    InvalidSolanaPayload(String),
 }
 
 fn supported_attestation_types() -> String {
@@ -50,7 +52,8 @@ impl ValidationError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
-            Self::NoHandles
+            Self::InvalidSolanaPayload(_)
+            | Self::NoHandles
             | Self::BitSizeExceeded(..)
             | Self::TooManyAllowedContracts(..)
             | Self::InvalidHandle { .. }
@@ -74,10 +77,15 @@ pub fn validate_user_decryption(
     request: &UserDecryptionRequest,
     config: &Config,
 ) -> Result<(), ValidationError> {
-    let _attestation_type = request
+    let attestation_type = request
         .attestationType
         .parse::<AttestationType>()
         .map_err(|_| ValidationError::UnsupportedAttestationType)?;
+    if attestation_type != AttestationType::Eip712UnifiedUserDecryptV1 {
+        return Err(ValidationError::InvalidSolanaPayload(
+            "attestationType does not match the payload".into(),
+        ));
+    }
     let payload = &request.payload;
     validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     if payload.allowedContracts.len() > config.max_allowed_contracts {
@@ -88,6 +96,50 @@ pub fn validate_user_decryption(
     }
     validate_request_validity(&payload.requestValidity)?;
     validate_extra_data(&payload.extraData)
+}
+
+pub fn validate_solana_user_decryption(
+    request: &kms_connector_api::SolanaUserDecryptionRequest,
+    config: &Config,
+) -> Result<connector_utils::types::solana_request::SolanaUserDecryptRequest, ValidationError> {
+    use connector_utils::types::solana_request::SolanaUserDecryptRequest;
+    use zama_solana_permit::PermitWireFields;
+    use zama_solana_request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
+    let attestation_type = request
+        .attestationType
+        .parse::<AttestationType>()
+        .map_err(|_| ValidationError::UnsupportedAttestationType)?;
+    if attestation_type != AttestationType::SolanaSrfc38UserDecryptV1 {
+        return Err(ValidationError::InvalidSolanaPayload(
+            "attestationType does not match the payload".into(),
+        ));
+    }
+    let payload = &request.payload;
+    validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    let wire = SolanaUserDecryptRequestWire {
+        permit: PermitWireFields {
+            user_pubkey: payload.userPubkey.to_vec(),
+            transport_key: payload.publicKey.to_vec(),
+            allowed_scopes: payload.allowedScopes.iter().map(|s| s.to_vec()).collect(),
+            start_timestamp: payload.requestValidity.startTimestamp,
+            duration_seconds: payload.requestValidity.durationSeconds,
+            verifying_program_id: payload.hostProgramId.to_vec(),
+            chain_id: payload.chainId,
+            extra_data: payload.extraData.to_vec(),
+        },
+        signature: request.signature.to_vec(),
+        handles: payload
+            .handles
+            .iter()
+            .map(|e| SolanaHandleEntryWire {
+                handle: e.handle.to_vec(),
+                allowed_key: e.allowedKey.to_vec(),
+                encrypted_store: e.encryptedStore.to_vec(),
+            })
+            .collect(),
+    };
+    SolanaUserDecryptRequest::decode(&wire)
+        .map_err(|e| ValidationError::InvalidSolanaPayload(e.to_string()))
 }
 
 fn validate_request_validity(validity: &RequestValidity) -> Result<(), ValidationError> {

@@ -12,16 +12,19 @@
 //! account, delegation record, invalidation record), seals the leaves the record serves, and
 //! signs real permits with a real wallet key, so no test depends on a signature the code under
 //! test produced.
+#![allow(dead_code)]
+
+use connector_utils::types::solana_request::{
+    SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+};
 
 // Groups land one at a time; a builder written for a later group is early, not dead.
-#![allow(dead_code)]
 
 use kms_worker::core::solana::{
     delegation::WILDCARD_AUTHORITY,
     deployment::{DeploymentIdentity, solana_host_chain_id},
     kms_pair::{KmsPairFailure, KmsPairValidator},
     proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
-    request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
     snapshot::{
         HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
         SnapshotKeys,

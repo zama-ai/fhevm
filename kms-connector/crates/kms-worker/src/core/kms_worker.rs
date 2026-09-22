@@ -187,7 +187,7 @@ where
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
                 | ProtocolEventKind::UserDecryptionV2(_)
-                | ProtocolEventKind::UserDecryptionV3(_),
+                | ProtocolEventKind::SolanaUserDecryptionV1(_),
             ) if event.error_counter as u16 >= max_decryption_attempts => {
                 error!(
                     "Processing failed with irrecoverable error: {:#}. Maximum number of \
@@ -242,13 +242,13 @@ where
                     )
                     .await
             }
-            ProtocolEventKind::UserDecryptionV3(req) => {
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
                 response_publisher
                     .publish_user_decryption_error(
-                        req.decryptionId,
+                        req.decryption_id,
                         error.code,
                         &details,
-                        &req.extraData,
+                        &req.request.permit().extra_data().to_extra_data(),
                         &event.otlp_context,
                     )
                     .await

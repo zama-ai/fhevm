@@ -367,10 +367,12 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::UserDecryptionV3(e) => {
-            // Solana rows store the opaque request blob, which is also what identifies them.
+        ProtocolEventKind::SolanaUserDecryptionV1(e) => {
+            // The reader must reconstruct the same typed attestation.
             for r in rows {
-                if e.solanaRequest.to_vec() == r.try_get::<Vec<u8>, _>("solana_request")? {
+                if connector_utils::types::solana_request::SolanaUserDecryptRequest::from_row(r)?
+                    == e.request
+                {
                     return Ok(());
                 }
             }

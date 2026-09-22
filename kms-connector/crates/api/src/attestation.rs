@@ -9,6 +9,9 @@ pub enum AttestationType {
     /// signature over the `payload` (except `handles`, which are excluded from the signature).
     #[strum(serialize = "eip712-unified-user-decrypt-v1")]
     Eip712UnifiedUserDecryptV1,
+    /// Ed25519 signature over the canonical SRFC38 Solana permit.
+    #[strum(serialize = "solana-srfc38-user-decrypt-v1")]
+    SolanaSrfc38UserDecryptV1,
 }
 
 impl AttestationType {

@@ -24,6 +24,7 @@
 //! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
+use connector_utils::types::solana_request::SolanaUserDecryptRequest;
 
 mod solana_support;
 
@@ -33,7 +34,6 @@ use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
-    request::SolanaUserDecryptRequest,
     snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
 };
 use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};

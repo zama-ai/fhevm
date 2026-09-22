@@ -17,10 +17,10 @@ use super::handle_binding::HandleBindingFailure;
 use super::kms_pair::KmsPairFailure;
 use super::pause::PauseFailure;
 use super::proof::ProofReadError;
-use super::request::RequestFormError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
+use connector_utils::types::solana_request::RequestFormError;
 
 /// What a client should do about a rejection.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -119,7 +119,7 @@ impl AuthorizationFailure {
     /// action its own outcomes imply once, next to the outcomes themselves.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::Form(source) => source.class(),
+            Self::Form(_) => FailureClass::Terminal,
             Self::SignatureMismatch
             | Self::UnusableUserPubkey
             | Self::MissingProofBinding { .. } => FailureClass::Terminal,
@@ -134,20 +134,6 @@ impl AuthorizationFailure {
             Self::HandleBinding { source, .. } => source.class(),
             Self::Scope { source, .. } => source.class(),
             Self::Delegation { source, .. } => source.class(),
-        }
-    }
-}
-
-impl RequestFormError {
-    /// A request whose form is wrong is wrong forever: no observation changes its bytes. The
-    /// client's move is to build a different request, which is what terminal means.
-    pub fn class(&self) -> FailureClass {
-        match self {
-            Self::Permit(_)
-            | Self::SignatureWidth { .. }
-            | Self::EntryIdentityWidth { .. }
-            | Self::EmptyHandles
-            | Self::TooManyHandles { .. } => FailureClass::Terminal,
         }
     }
 }

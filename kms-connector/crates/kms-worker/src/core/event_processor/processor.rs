@@ -203,7 +203,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
-            ProtocolEventKind::UserDecryptionV3(req) => self.check_context(&req.extraData).await,
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
+                self.check_context(&req.request.permit().extra_data().to_extra_data())
+                    .await
+            }
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -268,22 +271,23 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
-            ProtocolEventKind::UserDecryptionV3(req) => {
-                // Host-generic Solana path: the whole permit and per-handle evidence ride in the
-                // opaque `solanaRequest`. The check decodes it, holds its handle list to the typed
-                // `ctHandles`, and authorizes through the connector pipeline; it returns the
-                // KMS-request identity data built from the decoded permit.
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
                 let user_decrypt_data = self
                     .decryption_processor
-                    .check_user_decryption_request_v3(req)
+                    .check_solana_user_decryption_request(req)
                     .await
                     .map_err(RequestCheckError::record)?;
-                let handles: Vec<B256> = req.ctHandles.clone();
+                let handles: Vec<B256> = req
+                    .request
+                    .handles()
+                    .iter()
+                    .map(|e| B256::from(e.handle()))
+                    .collect();
                 self.decryption_processor
                     .prepare_decryption_request(
-                        req.decryptionId,
+                        req.decryption_id,
                         &handles,
-                        &req.extraData,
+                        &req.request.permit().extra_data().to_extra_data().into(),
                         Some(user_decrypt_data),
                     )
                     .await

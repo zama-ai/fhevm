@@ -236,7 +236,7 @@ pub trait HostStateReader: Send + Sync {
 /// The config singleton is one key however many entries a request names — it is the deployment's,
 /// not the request's — which is what lets the pause switch be read without a round trip of its own.
 pub fn plan_first_read(
-    request: &super::request::SolanaUserDecryptRequest,
+    request: &connector_utils::types::solana_request::SolanaUserDecryptRequest,
     deployment: &super::deployment::DeploymentIdentity,
 ) -> SnapshotKeys {
     let program_id = deployment.program_id();

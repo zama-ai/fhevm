@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_decryption_requests AS existing (\n            decryption_id, attestation_type, ct_handles, public_key, extra_data, signature,\n            start_timestamp, duration_seconds, user_pubkey, allowed_keys, encrypted_stores,\n            allowed_scopes, host_program_id, tx_hash, created_at, otlp_context, source\n        ) VALUES ($1, 'solana-srfc38-user-decrypt-v1', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            status = 'pending', created_at = EXCLUDED.created_at, otlp_context = EXCLUDED.otlp_context\n        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "ByteaArray",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "ByteaArray",
+        "ByteaArray",
+        "ByteaArray",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "request_source",
+            "kind": {
+              "Enum": [
+                "onchain",
+                "http"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8616564692cf661c9aa4260771fb3fa33efa806ee3153e8ec4633b5222653936"
+}

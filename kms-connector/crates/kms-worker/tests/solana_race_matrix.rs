@@ -25,6 +25,7 @@
 //! 4. an append the record has not seen, which does not merge the proof's peak;
 //! 5. an append the record has not seen, which merges the proof's peak;
 //! 6. the record is ahead of this connector.
+use connector_utils::types::solana_request::SolanaUserDecryptRequest;
 
 mod solana_support;
 
@@ -33,7 +34,6 @@ use kms_worker::core::solana::{
     failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
-    request::SolanaUserDecryptRequest,
 };
 use solana_support::*;
 

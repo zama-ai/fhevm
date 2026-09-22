@@ -73,7 +73,7 @@ impl DeploymentIdentity {
 /// Connector's configured value. There is no "first handle as source of truth" — a batch mixing
 /// clusters is a rejection, not a majority vote.
 pub fn check_deployment(
-    request: &super::request::SolanaUserDecryptRequest,
+    request: &connector_utils::types::solana_request::SolanaUserDecryptRequest,
     deployment: &DeploymentIdentity,
 ) -> Result<(), DeploymentFailure> {
     let permit = request.permit();

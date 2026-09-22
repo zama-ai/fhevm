@@ -21,16 +21,13 @@
 //! through verbatim. Nothing here trims, deduplicates or reorders it, because the response binds
 //! every occurrence at its position, and a client whose list was silently changed can no longer
 //! reconstruct the binding of its own request.
+use connector_utils::types::solana_request::{
+    MAX_REQUEST_HANDLES, RequestFormError, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+};
 
 mod solana_support;
 
-use kms_worker::core::solana::{
-    pipeline::{AuthorizationContext, authorize_request},
-    request::{
-        MAX_REQUEST_HANDLES, RequestFormError, SolanaUserDecryptRequest,
-        SolanaUserDecryptRequestWire,
-    },
-};
+use kms_worker::core::solana::pipeline::{AuthorizationContext, authorize_request};
 use solana_support::*;
 
 /// A handle distinguished by an index rather than a repeated byte, so a long list is a list of

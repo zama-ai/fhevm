@@ -84,7 +84,7 @@ impl EventProcessor for Processor {
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
         let id = match (&event.kind, self.solana) {
-            (ProtocolEventKind::UserDecryptionV3(request), true) => request.decryptionId,
+            (ProtocolEventKind::SolanaUserDecryptionV1(request), true) => request.decryption_id,
             (ProtocolEventKind::UserDecryptionV2(request), false) => request.decryptionId,
             _ => panic!("picker routed the request to the wrong protocol"),
         };
@@ -107,23 +107,29 @@ impl EventProcessor for Processor {
 }
 
 async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> anyhow::Result<()> {
-    insert_rand_request(
-        db,
-        TestEventType::UserDecryptionV2,
-        InsertRequestOptions::new()
-            .with_id(U256::from(id))
-            .with_source(source)
-            .with_status(OperationStatus::UnderProcess),
-    )
-    .await?;
     if solana {
-        // The processor is the injection boundary: only the picker needs the V3 discriminator.
-        sqlx::query(
-            "UPDATE user_decryption_requests SET solana_request = $1 WHERE decryption_id = $2",
+        let request = connector_utils::tests::rand::solana_user_decryption_request(
+            U256::from(id),
+            [0; 32].into(),
+        );
+        connector_utils::types::solana_request::insert_solana_user_decryption(
+            db,
+            &request,
+            None,
+            sqlx::types::chrono::Utc::now(),
+            &connector_utils::monitoring::otlp::PropagationContext::default(),
+            source,
         )
-        .bind(b"{}".as_slice())
-        .bind(U256::from(id).to_le_bytes::<32>().as_slice())
-        .execute(db)
+        .await?;
+    } else {
+        insert_rand_request(
+            db,
+            TestEventType::UserDecryptionV2,
+            InsertRequestOptions::new()
+                .with_id(U256::from(id))
+                .with_source(source)
+                .with_status(OperationStatus::UnderProcess),
+        )
         .await?;
     }
     sqlx::query("UPDATE user_decryption_requests SET status = 'pending' WHERE decryption_id = $1")

@@ -58,11 +58,11 @@ use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
 use super::kms_pair::KmsPairValidator;
 use super::pause::check_not_paused;
 use super::proof::{HostProofReader, LeafKind, LeafQuery, ProofBatch};
-use super::request::{RequestFormError, SolanaUserDecryptRequest};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use connector_utils::types::solana_request::{RequestFormError, SolanaUserDecryptRequest};
 use tracing::info;
 use zama_solana_permit::{KmsRouting, PermitError, verify_signature};
 
