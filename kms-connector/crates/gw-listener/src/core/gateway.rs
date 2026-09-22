@@ -233,10 +233,8 @@ mod tests {
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_consecutive_get_logs_error_stops_listener() {
-        let (_test_instance, asserter, gw_listener) = test_setup(None).await;
-
-        // Initial get_block_number succeeds
-        asserter.push_success(&100_u64);
+        // `from_block_number` is configured so the poll loop doesn't read the cursor from DB.
+        let (_test_instance, asserter, gw_listener) = test_setup(Some(100));
 
         for _ in 0..MAX_CONSECUTIVE_POLLING_ERRORS {
             // Loop get_block_number succeeds
@@ -257,7 +255,7 @@ mod tests {
     #[timeout(Duration::from_secs(90))]
     #[tokio::test]
     async fn test_listener_ended_by_cancel_token() {
-        let (mut test_instance, _asserter, gw_listener) = test_setup(None).await;
+        let (mut test_instance, _asserter, gw_listener) = test_setup(None);
 
         gw_listener.cancel_token.cancel();
 
@@ -277,10 +275,12 @@ mod tests {
 
     const MAX_CONSECUTIVE_POLLING_ERRORS: usize = 2;
 
-    async fn test_setup(
+    fn test_setup(
         decryption_from_block_number: Option<u64>,
     ) -> (TestInstance, Asserter, GatewayListener<MockProvider>) {
-        let test_instance = TestInstanceBuilder::db_setup().await.unwrap();
+        let test_instance = TestInstanceBuilder::default().build();
+        // Use a lazy DB pool as tests do not need a real Postgres server
+        let db_pool = Pool::<Postgres>::connect_lazy("postgres://unused").unwrap();
 
         let asserter = Asserter::new();
         let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
@@ -291,12 +291,8 @@ mod tests {
             max_consecutive_polling_errors: MAX_CONSECUTIVE_POLLING_ERRORS,
             ..Default::default()
         };
-        let listener = GatewayListener::new(
-            test_instance.db().clone(),
-            mock_provider,
-            &config,
-            CancellationToken::new(),
-        );
+        let listener =
+            GatewayListener::new(db_pool, mock_provider, &config, CancellationToken::new());
         (test_instance, asserter, listener)
     }
 }
