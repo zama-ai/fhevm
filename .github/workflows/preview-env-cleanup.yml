@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
+  actions: write # zizmor: ignore[excessive-permissions] gh workflow run needs actions:write to dispatch preview-env-destroy
   contents: read
 
 jobs:
