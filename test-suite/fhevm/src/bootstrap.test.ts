@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   BOOTSTRAP_SUSPENDED_GROUPS,
+  CANONICAL_HOST_CONTRACT_UPGRADES,
   GATEWAY_CONTRACT_UPGRADES,
   HOST_CONTRACT_UPGRADES,
   bootstrapBootOverrides,
@@ -92,8 +93,13 @@ describe("blue-green bootstrap", () => {
       "InputVerification",
       "GatewayConfig",
     ]);
-    expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["KMSGeneration", "FHEVMExecutor", "ProtocolConfig"]);
-    for (const [task, contract] of [...GATEWAY_CONTRACT_UPGRADES, ...HOST_CONTRACT_UPGRADES]) {
+    expect(CANONICAL_HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["KMSGeneration"]);
+    expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["FHEVMExecutor", "ProtocolConfig"]);
+    for (const [task, contract] of [
+      ...GATEWAY_CONTRACT_UPGRADES,
+      ...CANONICAL_HOST_CONTRACT_UPGRADES,
+      ...HOST_CONTRACT_UPGRADES,
+    ]) {
       expect(task).toBe(`task:upgrade${contract}`);
     }
     expect(contractUpgradeCommand("task:upgradeDecryption", "Decryption")).toBe(

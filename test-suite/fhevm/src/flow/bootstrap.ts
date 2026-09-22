@@ -74,8 +74,11 @@ export const GATEWAY_CONTRACT_UPGRADES = [
   ["task:upgradeGatewayConfig", "GatewayConfig"],
 ] as const;
 
+/** Deployed on the canonical host chain only. */
+export const CANONICAL_HOST_CONTRACT_UPGRADES = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+
+/** Deployed on every host chain. */
 export const HOST_CONTRACT_UPGRADES = [
-  ["task:upgradeKMSGeneration", "KMSGeneration"],
   ["task:upgradeFHEVMExecutor", "FHEVMExecutor"],
   ["task:upgradeProtocolConfig", "ProtocolConfig"],
 ] as const;

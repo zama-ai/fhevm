@@ -164,6 +164,7 @@ import {
 } from "./runtime-compose";
 import {
   BOOTSTRAP_SUSPENDED_GROUPS,
+  CANONICAL_HOST_CONTRACT_UPGRADES,
   CONNECTOR_OPTIONAL_VERSION_KEYS,
   CONNECTOR_VERSION_KEYS,
   CONTRACT_VERSION_KEYS,
@@ -2311,6 +2312,9 @@ const completeBootstrap = async (state: State) => {
   await generateRuntime(state, stackSpecForState(state));
   for (const [task, contract] of GATEWAY_CONTRACT_UPGRADES) {
     await runContractTask("gateway-sc", "gateway-sc-deploy", contractUpgradeCommand(task, contract));
+  }
+  for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
+    await runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract));
   }
   for (const [task, contract] of HOST_CONTRACT_UPGRADES) {
     const command = contractUpgradeCommand(task, contract);
