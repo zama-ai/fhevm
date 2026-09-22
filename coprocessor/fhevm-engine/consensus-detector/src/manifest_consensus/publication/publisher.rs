@@ -517,6 +517,8 @@ pub(crate) async fn publish_block_manifest(
         block_hash = %hex::encode(&block.block_hash),
         revision = block.manifest_revision,
         manifest_digest = %manifest_digest,
+        detailed_handle_count = signed.payload.detailed_range.blocks.iter()
+            .map(|block| block.ciphertexts.len()).sum::<usize>(),
         frontier_range_count,
         bucket,
         key,
