@@ -15,6 +15,12 @@
 //! version is renumbered, or the leaf-proof route moves, these tests fail by construction rather
 //! than following the rename.
 
+fn multiple_accounts_request_body(keys: &SnapshotKeys) -> serde_json::Value {
+    serde_json::json!({"jsonrpc":"2.0","id":0,"method":"getMultipleAccounts",
+        "params":[keys.as_slice().iter().map(|key| Pubkey::new_from_array(*key).to_string()).collect::<Vec<_>>(),
+        {"encoding":"base64","commitment":"confirmed","dataSlice":null,"minContextSlot":null}]})
+}
+
 mod solana_support;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -22,10 +28,8 @@ use kms_worker::core::event_processor::{
     ProcessingErrorKind,
     solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
 };
-use kms_worker::core::solana::proof::{HttpHostProofReader, LeafProofOutcome, LeafQuery};
-use kms_worker::core::solana::snapshot::{
-    RpcHostStateReader, SnapshotKeys, multiple_accounts_request_body,
-};
+use kms_worker::core::solana::proof::{CoprocessorProofClient, LeafProofOutcome, LeafQuery};
+use kms_worker::core::solana::snapshot::{SnapshotKeys, SolanaRpcClient};
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
 use solana_support::{EncryptedStoreFixture, deployment, handle};
@@ -115,11 +119,11 @@ fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHo
         .collect();
     SolanaHost {
         deployment: deployment(),
-        reader: RpcHostStateReader::new(
+        reader: SolanaRpcClient::new(
             rpc.base_url().expect("the mock RPC has a URL").clone(),
-            client.clone(),
+            std::time::Duration::from_secs(10),
         ),
-        proofs: HttpHostProofReader::new(&routes, API_KEY.to_owned(), client),
+        proofs: CoprocessorProofClient::new(&routes, API_KEY.to_owned(), client),
     }
 }
 
@@ -443,8 +447,11 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             .unwrap();
         let mut host = SolanaHost {
             deployment: deployment(),
-            reader: RpcHostStateReader::new(rpc.base_url().unwrap().clone(), client.clone()),
-            proofs: HttpHostProofReader::new(
+            reader: SolanaRpcClient::new(
+                rpc.base_url().unwrap().clone(),
+                std::time::Duration::from_millis(100),
+            ),
+            proofs: CoprocessorProofClient::new(
                 &[stalled.clone(), good.base_url().unwrap().clone()],
                 API_KEY.into(),
                 client.clone(),
@@ -457,7 +464,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
         .await
         .expect("fanout must finish")
         .expect("healthy peer still authorizes");
-        host.reader = RpcHostStateReader::new(stalled, client);
+        host.reader = SolanaRpcClient::new(stalled, std::time::Duration::from_millis(100));
         let error = timeout(
             Duration::from_secs(3),
             check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),

@@ -13,8 +13,8 @@ use crate::{
         },
         kms_response_publisher::DbKmsResponsePublisher,
         solana::{
-            deployment::DeploymentIdentity, proof::HttpHostProofReader,
-            snapshot::RpcHostStateReader,
+            deployment::DeploymentIdentity, proof::CoprocessorProofClient,
+            snapshot::SolanaRpcClient,
         },
     },
     monitoring::{
@@ -346,7 +346,7 @@ async fn register_host_chain_backends(
     let mut backends = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
     // the Solana readers are typed against the workspace crate.
-    let solana_client = ::reqwest::Client::builder()
+    let proof_client = ::reqwest::Client::builder()
         .connect_timeout(config.host_rpc_call_timeout)
         .timeout(config.host_rpc_call_timeout)
         .build()?;
@@ -394,11 +394,14 @@ async fn register_host_chain_backends(
                 })?;
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
                     deployment,
-                    reader: RpcHostStateReader::new(host_chain.url.clone(), solana_client.clone()),
-                    proofs: HttpHostProofReader::new(
+                    reader: SolanaRpcClient::new(
+                        host_chain.url.clone(),
+                        config.host_rpc_call_timeout,
+                    ),
+                    proofs: CoprocessorProofClient::new(
                         &host_chain.solana_proof_endpoints,
                         api_key,
-                        solana_client.clone(),
+                        proof_client.clone(),
                     ),
                 }))
             }

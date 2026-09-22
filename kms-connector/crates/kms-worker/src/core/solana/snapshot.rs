@@ -14,7 +14,7 @@
 //! A delegated entry breaks the up-front part. Its delegation record lives at a PDA seeded by
 //! `(delegator, delegate, authority)`, and the authoritative
 //! `authority` is a field of the encrypted store — a request cannot
-//! supply it (see [`super::request`]). So a first read is needed to learn it. That read is a
+//! supply it (see [`connector_utils::types::solana_request`]). So a first read is needed to learn it. That read is a
 //! **discovery read**: it produces addresses, not decisions, and its account values are discarded.
 //! The second read covers the first read's whole key set alongside the delegation records, and it
 //! alone is what the rules see.
@@ -53,15 +53,17 @@
 //! confirmed slot could resurrect a grant that canonically never existed.
 
 use crate::core::solana_acl::SolanaPubkeyBytes;
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use serde_json::Value;
+use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
+use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
-use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
+use solana_rpc_client::{api::config::RpcAccountInfoConfig, nonblocking::rpc_client::RpcClient};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    sync::Arc,
+    time::Duration,
+};
 use url::Url;
-
-/// The commitment level of every authorization read.
-pub const SOLANA_COMMITMENT_CONFIRMED: &str = "confirmed";
 
 /// The System program's id, which is the all-zero pubkey. The owner every account has before a
 /// program takes it over, and the one this module reads as "nothing has been written here yet".
@@ -217,7 +219,7 @@ impl HostSnapshot {
 ///
 /// Authorization is generic over it, which is what lets a test drive the whole pipeline
 /// against canned state and count the reads. Production has exactly one implementation
-/// ([`RpcHostStateReader`]); nothing else in this module tree performs I/O.
+/// ([`SolanaRpcClient`]); nothing else in this module tree performs I/O.
 pub trait HostStateReader: Send + Sync {
     /// Reads every key at `confirmed` commitment, returning one observed slot.
     fn read_accounts(
@@ -285,139 +287,100 @@ pub fn plan_second_read(
     )
 }
 
-/// Builds the JSON-RPC `getMultipleAccounts` body, pinned to `confirmed` commitment and
-/// base64 encoding. Split out so the pinning is assertable without a live RPC.
-pub fn multiple_accounts_request_body(keys: &SnapshotKeys) -> serde_json::Value {
-    let addresses: Vec<String> = keys
-        .as_slice()
-        .iter()
-        .map(|key| Pubkey::new_from_array(*key).to_string())
-        .collect();
-    serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getMultipleAccounts",
-        "params": [
-            addresses,
-            {
-                "encoding": "base64",
-                "commitment": SOLANA_COMMITMENT_CONFIRMED,
-            }
-        ],
-    })
+/// Confirmed account reads through the asynchronous Solana RPC client.
+#[derive(Clone)]
+pub struct SolanaRpcClient {
+    client: Arc<RpcClient>,
+    timeout: Duration,
 }
 
-/// Parses a `getMultipleAccounts` response into a snapshot.
-///
-/// The observed slot is the response's `context.slot` — the state's own account of when it
-/// was observed, never a locally chosen slot.
-pub fn parse_multiple_accounts_response(
-    body: &str,
-    keys: &SnapshotKeys,
-) -> Result<HostSnapshot, SnapshotError> {
-    let json: Value = serde_json::from_str(body)
-        .map_err(|error| unavailable(format!("response is not valid JSON: {error}")))?;
-    if let Some(error) = json.get("error") {
-        return Err(unavailable(format!("RPC returned an error: {error}")));
-    }
-    let result = json
-        .get("result")
-        .ok_or_else(|| unavailable("response carries no result".to_string()))?;
-    let observed_slot = result
-        .get("context")
-        .and_then(|context| context.get("slot"))
-        .and_then(Value::as_u64)
-        .ok_or_else(|| unavailable("response carries no context slot".to_string()))?;
-    let values = result
-        .get("value")
-        .and_then(Value::as_array)
-        .ok_or_else(|| unavailable("response carries no account list".to_string()))?;
-    if values.len() != keys.len() {
-        return Err(SnapshotError::ResponseLengthMismatch {
-            requested: keys.len(),
-            returned: values.len(),
-        });
-    }
-    let accounts = values
-        .iter()
-        .map(parse_account)
-        .collect::<Result<Vec<_>, _>>()?;
-    HostSnapshot::new(observed_slot, keys, accounts)
-}
-
-/// Parses one element of the `value` array: `null` is an account that does not exist, which is
-/// an observation and not a failure.
-fn parse_account(value: &Value) -> Result<Option<SnapshotAccount>, SnapshotError> {
-    if value.is_null() {
-        return Ok(None);
-    }
-    let owner = value
-        .get("owner")
-        .and_then(Value::as_str)
-        .ok_or_else(|| unavailable("account carries no owner".to_string()))?;
-    let owner = Pubkey::try_from(owner)
-        .map_err(|error| unavailable(format!("account owner '{owner}' is not a pubkey: {error}")))?
-        .to_bytes();
-    let encoded = value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| unavailable("account data is not [payload, encoding]".to_string()))?;
-    let encoding = encoded.get(1).and_then(Value::as_str).unwrap_or_default();
-    if encoding != "base64" {
-        return Err(unavailable(format!(
-            "account data arrived as '{encoding}', the request asked for base64"
-        )));
-    }
-    let payload = encoded
-        .first()
-        .and_then(Value::as_str)
-        .ok_or_else(|| unavailable("account data carries no payload".to_string()))?;
-    let data = BASE64_STANDARD
-        .decode(payload)
-        .map_err(|error| unavailable(format!("account data does not base64-decode: {error}")))?;
-    Ok(Some(SnapshotAccount { owner, data }))
-}
-
-/// A read that produced no observation at all. Every parse failure lands here: a response the
-/// Connector cannot read says nothing about any account, which is not the same as an account
-/// being absent.
-fn unavailable(reason: String) -> SnapshotError {
-    SnapshotError::Unavailable { reason }
-}
-
-/// The production reader: one `getMultipleAccounts` per call against the configured host
-/// RPC.
-#[derive(Clone, Debug)]
-pub struct RpcHostStateReader {
-    url: Url,
-    client: reqwest::Client,
-}
-
-impl RpcHostStateReader {
-    /// Binds the reader to an RPC endpoint.
-    pub fn new(url: Url, client: reqwest::Client) -> Self {
-        Self { url, client }
+impl std::fmt::Debug for SolanaRpcClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("SolanaRpcClient")
+            .field(&self.client.url())
+            .finish()
     }
 }
 
-impl HostStateReader for RpcHostStateReader {
+impl SolanaRpcClient {
+    pub fn new(url: Url, timeout: Duration) -> Self {
+        Self {
+            client: Arc::new(RpcClient::new_with_timeout_and_commitment(
+                url.to_string(),
+                timeout,
+                CommitmentConfig::confirmed(),
+            )),
+            timeout,
+        }
+    }
+}
+
+impl HostStateReader for SolanaRpcClient {
     async fn read_accounts(&self, keys: &SnapshotKeys) -> Result<HostSnapshot, SnapshotError> {
-        let body = serde_json::to_vec(&multiple_accounts_request_body(keys))
-            .map_err(|error| unavailable(format!("request body does not serialize: {error}")))?;
-        let response = self
-            .client
-            .post(self.url.clone())
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await
-            .map_err(|error| unavailable(format!("request failed: {error}")))?
-            .error_for_status()
-            .map_err(|error| unavailable(format!("RPC answered with an HTTP error: {error}")))?
-            .text()
-            .await
-            .map_err(|error| unavailable(format!("response body could not be read: {error}")))?;
-        parse_multiple_accounts_response(&response, keys)
+        let pubkeys: Vec<_> = keys
+            .as_slice()
+            .iter()
+            .copied()
+            .map(Pubkey::new_from_array)
+            .collect();
+        // The UI-account method preserves malformed data as an error below, rather than
+        // collapsing a failed decode into a missing account (or panicking inside the SDK).
+        let response = tokio::time::timeout(
+            self.timeout,
+            self.client.get_multiple_ui_accounts_with_config(
+                &pubkeys,
+                RpcAccountInfoConfig {
+                    encoding: Some(UiAccountEncoding::Base64),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .map_err(|error| SnapshotError::Unavailable {
+            reason: format!("Solana account read timed out: {error}"),
+        })?
+        .map_err(|error| SnapshotError::Unavailable {
+            reason: error.to_string(),
+        })?;
+        if response.value.len() != keys.len() {
+            return Err(SnapshotError::ResponseLengthMismatch {
+                requested: keys.len(),
+                returned: response.value.len(),
+            });
+        }
+        let accounts = response
+            .value
+            .into_iter()
+            .zip(keys.as_slice())
+            .map(|(account, key)| {
+                account
+                    .map(|account| {
+                        let malformed = || SnapshotError::Unavailable {
+                            reason: format!(
+                                "malformed Solana account at {}",
+                                Pubkey::new_from_array(*key)
+                            ),
+                        };
+                        if !matches!(
+                            account.data,
+                            UiAccountData::Binary(_, UiAccountEncoding::Base64)
+                        ) {
+                            return Err(malformed());
+                        }
+                        Ok(SnapshotAccount {
+                            owner: account
+                                .owner
+                                .parse::<Pubkey>()
+                                .map_err(|_| malformed())?
+                                .to_bytes(),
+                            data: account.data.decode().ok_or_else(malformed)?,
+                        })
+                    })
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>, SnapshotError>>()?;
+        HostSnapshot::new(response.context.slot, keys, accounts)
     }
 }
 

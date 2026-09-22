@@ -101,13 +101,12 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
         failure,
         EncryptedStoreFailure::Absent { account_key } if account_key == encrypted_store.account_key
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -131,13 +130,12 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
         failure,
         EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
     ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -195,13 +193,12 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
         EncryptedStoreFailure::AddressMismatch { account_key, derived: Some(derived) }
             if account_key == claimed.account_key && derived == foreign.account_key
     ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -460,7 +457,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         ),
         "the rejection names the offending entry, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
     assert_eq!(
         proofs.call_count(),
         0,

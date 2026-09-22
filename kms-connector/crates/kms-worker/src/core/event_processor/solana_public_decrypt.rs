@@ -19,9 +19,10 @@ use crate::core::{
             HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
         },
         proof::{
-            HostProofReader, HttpHostProofReader, LeafKind, LeafQuery, ProofBatch, ProofReadError,
+            CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, ProofBatch,
+            ProofReadError,
         },
-        snapshot::{HostStateReader, RpcHostStateReader, SnapshotError, SnapshotKeys},
+        snapshot::{HostStateReader, SnapshotError, SnapshotKeys, SolanaRpcClient},
     },
     solana_acl::HandleBytes,
 };
@@ -37,9 +38,9 @@ pub struct SolanaHost {
     /// Which program and cluster this Connector authorizes against.
     pub deployment: DeploymentIdentity,
     /// The atomic `getMultipleAccounts` snapshot reader.
-    pub reader: RpcHostStateReader,
+    pub reader: SolanaRpcClient,
     /// The leaf-proof reader, fanning out to every configured coprocessor.
-    pub proofs: HttpHostProofReader,
+    pub proofs: CoprocessorProofClient,
 }
 
 /// The public-decrypt check as the event processor calls it.

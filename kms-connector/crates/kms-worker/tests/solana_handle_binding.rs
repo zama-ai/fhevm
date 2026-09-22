@@ -129,13 +129,12 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
-        AuthorizationFailure::HandleBinding {
+    assert!(
+        !AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -196,13 +195,12 @@ fn assert_does_not_verify(verdict: Result<(), HandleBindingFailure>) {
         matches!(failure, HandleBindingFailure::ProofDoesNotVerify { .. }),
         "expected a proof that does not verify, got {failure}"
     );
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -340,13 +338,12 @@ fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
-        AuthorizationFailure::HandleBinding {
+    assert!(
+        !AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -393,13 +390,12 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -423,13 +419,12 @@ fn an_account_unknown_to_the_record_is_retryable() {
         failure,
         HandleBindingFailure::AccountUnknownToProofRecord
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -450,13 +445,12 @@ fn an_incomplete_history_is_terminal() {
     .expect_err("a broken record proves nothing");
 
     assert!(matches!(failure, HandleBindingFailure::HistoryIncomplete));
-    assert_eq!(
-        AuthorizationFailure::HandleBinding {
+    assert!(
+        !AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -508,13 +502,12 @@ fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
             live_leaf_count: 2
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -538,13 +531,12 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
             leaf_count: 0
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        true
+        .is_recoverable()
     );
 }
 
@@ -568,13 +560,12 @@ fn resolver_rejects_inconsistent_mmr_state_as_terminal() {
         failure,
         kms_worker::core::solana::encrypted_store::EncryptedStoreFailure::Malformed { .. }
     ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .is_recoverable(),
-        false
+        .is_recoverable()
     );
 }
 
@@ -697,7 +688,7 @@ async fn an_unreachable_record_rejects_transiently() {
     .expect_err("no record, no verdict");
 
     assert!(matches!(failure, AuthorizationFailure::ProofRead(_)));
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 }
 
 /// In a batch, the failure names the entry whose leaf is missing — in request coordinates.
@@ -792,7 +783,7 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
 async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
     use kms_worker::core::solana::{
         handle_binding::verify_proofs_with_one_retry,
-        proof::{HostProofReader, ProofBatch, ProofReadError},
+        proof::{HostProofReader, ProofBatch, ProofReadError, ProofResponses},
     };
     use std::{collections::VecDeque, sync::Mutex};
 
@@ -804,13 +795,17 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
         async fn read_proofs(
             &self,
             queries: &[LeafQuery],
-        ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+        ) -> Result<ProofResponses, ProofReadError> {
             self.calls.lock().unwrap().push(queries.to_vec());
             self.replies
                 .lock()
                 .unwrap()
                 .pop_front()
                 .expect("no extra reads")
+                .map(|candidates| ProofResponses {
+                    candidates,
+                    unavailable: None,
+                })
         }
     }
 
@@ -862,4 +857,55 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
+    use kms_worker::core::solana::{
+        handle_binding::verify_proofs_with_one_retry,
+        proof::{CoprocessorProofClient, ProofBatch},
+    };
+    use mocktail::{StatusCode, server::MockServer};
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x71, FHE_TYPE_UINT64);
+    let fixture = EncryptedStoreFixture::allowing(sealed, key);
+    let account = resolved(&fixture);
+    let query = fixture.allowed_query(sealed, key);
+    let batch = ProofBatch::new([(query, ())]);
+    let mut absent = MockServer::new_http("no-leaf");
+    absent.mock(|when, then| {
+        when.post();
+        then.json(serde_json::json!({"proofs":[{"status":"notFound","leafCount":1}]}));
+    });
+    absent.start().await.unwrap();
+    let mut unavailable = MockServer::new_http("unavailable-peer");
+    unavailable.mock(|when, then| {
+        when.post();
+        then.status(StatusCode::BAD_GATEWAY);
+    });
+    unavailable.start().await.unwrap();
+    let client = CoprocessorProofClient::new(
+        &[
+            absent.base_url().unwrap().clone(),
+            unavailable.base_url().unwrap().clone(),
+        ],
+        "secret".into(),
+        reqwest::Client::new(),
+    );
+    let error = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
+        check_handle_binding(&account, sealed, key, proof)
+    })
+    .await
+    .unwrap_err();
+    assert!(error.is_recoverable());
+    assert!(error.to_string().contains("502"));
+
+    absent.mocks().clear();
+    absent.mock(|when, then| { when.post(); then.json(serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":[]}]})); });
+    let results = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
+        check_handle_binding(&account, sealed, key, proof)
+    })
+    .await
+    .unwrap();
+    assert_eq!(results, vec![Ok(())]);
 }

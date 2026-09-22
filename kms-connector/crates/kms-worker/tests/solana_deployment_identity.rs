@@ -55,7 +55,7 @@ fn a_configured_chain_id_without_type_byte_0x01_fails_at_startup() {
         error,
         DeploymentIdentityError::ChainTypeByteInvalid { chain_id } if chain_id == without_type_byte
     ));
-    assert_eq!(error.is_recoverable(), false);
+    assert!(!error.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------

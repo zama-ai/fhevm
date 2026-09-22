@@ -370,8 +370,8 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
         ProtocolEventKind::SolanaUserDecryptionV1(e) => {
             // The reader must reconstruct the same typed attestation.
             for r in rows {
-                if connector_utils::types::solana_request::SolanaUserDecryptRequest::from_row(r)?
-                    == e.request
+                if connector_utils::types::event::from_user_decryption_row(r)?.kind
+                    == ProtocolEventKind::SolanaUserDecryptionV1(e.clone())
                 {
                     return Ok(());
                 }

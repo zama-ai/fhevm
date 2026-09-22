@@ -796,7 +796,7 @@ mod tests {
     use super::*;
     use crate::core::config::solana_host_chain_id;
     use crate::core::event_processor::ProcessingErrorKind;
-    use crate::core::solana::proof::HttpHostProofReader;
+    use crate::core::solana::proof::CoprocessorProofClient;
     use alloy::{
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -916,11 +916,11 @@ mod tests {
                         [7; 32], chain_id,
                     )
                     .expect("fixture deployment resolves"),
-                    reader: crate::core::solana::snapshot::RpcHostStateReader::new(
+                    reader: crate::core::solana::snapshot::SolanaRpcClient::new(
                         config.host_chains[0].url.clone(),
-                        ::reqwest::Client::new(),
+                        config.host_rpc_call_timeout,
                     ),
-                    proofs: HttpHostProofReader::new(
+                    proofs: CoprocessorProofClient::new(
                         &config.host_chains[0].solana_proof_endpoints,
                         config.host_chains[0]
                             .solana_proof_api_key
@@ -1651,11 +1651,12 @@ mod tests {
 
     /// Runs one Solana user-decryption request through `check_solana_user_decryption_request`
     /// against a fully authorizing on-chain snapshot, and returns the outcome together with the
-    /// victim's signed transport key.
+    /// victim's signed transport key. The successful case also pauses the host and verifies
+    /// that an already-sent worker attempt rechecks authorization before polling.
     ///
     /// Everything the connector authorizes is the victim's: the permit is signed over
     /// `permit_window`, binds the victim's wallet and transport key, and names one handle the
-    /// victim directly owns through a live encrypted value account. The two knobs are the fields a
+    /// victim directly owns through a live encrypted value account. The knobs are the fields a
     /// relayer controls without the victim's signature: the event's `publicKey` (the seal target),
     /// the event's `requestValidity`, and the event's `extraData` (the KMS routing). A caller
     /// drives the divergence by passing an `event_public_key` other than the signed transport key,
@@ -1671,7 +1672,7 @@ mod tests {
         use crate::core::solana::proof::{
             LEAF_PROOFS_PATH, LeafKind, LeafQuery, leaf_proof_request_body,
         };
-        use crate::core::solana::snapshot::{multiple_accounts_request_body, plan_first_read};
+        use crate::core::solana::snapshot::plan_first_read;
         use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
         use mocktail::server::MockServer;
         use ring::signature::{Ed25519KeyPair, KeyPair};
@@ -1788,7 +1789,9 @@ mod tests {
             &SolanaUserDecryptRequest::decode(&wire).expect("fixture request is well formed"),
             &deployment,
         );
-        let request_body = multiple_accounts_request_body(&first_keys);
+        let request_body = serde_json::json!({"jsonrpc":"2.0","id":0,"method":"getMultipleAccounts",
+            "params":[first_keys.as_slice().iter().map(|key| Pubkey::new_from_array(*key).to_string()).collect::<Vec<_>>(),
+            {"encoding":"base64","commitment":"confirmed","dataSlice":null,"minContextSlot":null}]});
         let response = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,

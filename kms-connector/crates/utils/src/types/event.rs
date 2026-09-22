@@ -1,4 +1,10 @@
-use super::solana_request::{SolanaUserDecryptRequest, SolanaUserDecryptionRequestV1};
+use super::{
+    handle::extract_chain_id_from_handle,
+    solana_request::{
+        SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+        SolanaUserDecryptionRequestV1,
+    },
+};
 use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{OperationStatus, ParamsTypeDb, RequestSource},
@@ -8,6 +14,7 @@ use alloy::{
     sol_types::SolValue,
 };
 use anyhow::anyhow;
+use zama_solana_permit::PermitWireFields;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
@@ -294,9 +301,44 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let attestation_type: String = row.try_get("attestation_type")?;
     let kind = match attestation_type.as_str() {
         "solana-srfc38-user-decrypt-v1" => {
+            let allowed_keys: Vec<Vec<u8>> = row.try_get("allowed_keys")?;
+            let encrypted_stores: Vec<Vec<u8>> = row.try_get("encrypted_stores")?;
+            anyhow::ensure!(
+                ct_handles.len() == allowed_keys.len()
+                    && ct_handles.len() == encrypted_stores.len(),
+                "Solana handle/key/store array length mismatch"
+            );
+            let first = ct_handles
+                .first()
+                .ok_or_else(|| anyhow!("request names no handles"))?;
+            let wire = SolanaUserDecryptRequestWire {
+                permit: PermitWireFields {
+                    user_pubkey: row.try_get("user_pubkey")?,
+                    transport_key: public_key,
+                    allowed_scopes: row.try_get("allowed_scopes")?,
+                    start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
+                    duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
+                    verifying_program_id: row.try_get("host_program_id")?,
+                    chain_id: extract_chain_id_from_handle(first)?,
+                    extra_data,
+                },
+                signature: row.try_get("signature")?,
+                handles: ct_handles
+                    .into_iter()
+                    .zip(allowed_keys)
+                    .zip(encrypted_stores)
+                    .map(
+                        |((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
+                            handle: handle.to_vec(),
+                            allowed_key,
+                            encrypted_store,
+                        },
+                    )
+                    .collect(),
+            };
             ProtocolEventKind::SolanaUserDecryptionV1(SolanaUserDecryptionRequestV1 {
                 decryption_id,
-                request: SolanaUserDecryptRequest::from_row(row)?,
+                request: SolanaUserDecryptRequest::decode(&wire)?,
             })
         }
         "legacy" => ProtocolEventKind::UserDecryption(UserDecryptionRequest {

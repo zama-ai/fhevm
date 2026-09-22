@@ -3,7 +3,6 @@
 use crate::types::handle::extract_chain_id_from_handle;
 use alloy::primitives::{B256, U256};
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
-use zama_solana_permit::PermitWireFields;
 use zama_solana_permit::{PermitFields, Signature};
 
 pub use zama_solana_request::{
@@ -241,93 +240,4 @@ impl TryFrom<UserDecryptionRequest_4> for SolanaUserDecryptionRequestV1 {
             request,
         })
     }
-}
-
-impl SolanaUserDecryptRequest {
-    pub fn from_row(row: &sqlx::postgres::PgRow) -> anyhow::Result<Self> {
-        use sqlx::Row;
-        let handles: Vec<Vec<u8>> = row.try_get("ct_handles")?;
-        let allowed_keys: Vec<Vec<u8>> = row.try_get("allowed_keys")?;
-        let encrypted_stores: Vec<Vec<u8>> = row.try_get("encrypted_stores")?;
-        anyhow::ensure!(
-            handles.len() == allowed_keys.len() && handles.len() == encrypted_stores.len(),
-            "Solana handle/key/store array length mismatch"
-        );
-        let first = handles
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("request names no handles"))?;
-        let chain_id = extract_chain_id_from_handle(&B256::try_from(first.as_slice())?)?;
-        let wire = SolanaUserDecryptRequestWire {
-            permit: PermitWireFields {
-                user_pubkey: row.try_get("user_pubkey")?,
-                transport_key: row.try_get("public_key")?,
-                allowed_scopes: row.try_get("allowed_scopes")?,
-                start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
-                duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
-                verifying_program_id: row.try_get("host_program_id")?,
-                chain_id,
-                extra_data: row.try_get("extra_data")?,
-            },
-            signature: row.try_get("signature")?,
-            handles: handles
-                .into_iter()
-                .zip(allowed_keys)
-                .zip(encrypted_stores)
-                .map(
-                    |((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
-                        handle,
-                        allowed_key,
-                        encrypted_store,
-                    },
-                )
-                .collect(),
-        };
-        Ok(Self::decode(&wire)?)
-    }
-}
-
-/// Both ingress paths store the same authorization columns. Only HTTP retries reset failed work.
-pub async fn insert_solana_user_decryption<'e>(
-    executor: impl sqlx::PgExecutor<'e>,
-    request: &SolanaUserDecryptionRequestV1,
-    tx_hash: Option<B256>,
-    created_at: sqlx::types::chrono::DateTime<sqlx::types::chrono::Utc>,
-    otlp_context: &crate::monitoring::otlp::PropagationContext,
-    source: super::db::RequestSource,
-) -> anyhow::Result<sqlx::postgres::PgQueryResult> {
-    let body = &request.request;
-    let permit = body.permit();
-    let handles: Vec<Vec<u8>> = body.handles().iter().map(|e| e.handle().to_vec()).collect();
-    let keys: Vec<Vec<u8>> = body
-        .handles()
-        .iter()
-        .map(|e| e.allowed_key().to_vec())
-        .collect();
-    let stores: Vec<Vec<u8>> = body
-        .handles()
-        .iter()
-        .map(|e| e.encrypted_store().to_vec())
-        .collect();
-    let scopes: Vec<Vec<u8>> = permit
-        .allowed_scopes()
-        .as_slice()
-        .iter()
-        .map(|s| s.as_bytes().to_vec())
-        .collect();
-    Ok(sqlx::query!(
-        "INSERT INTO user_decryption_requests AS existing (
-            decryption_id, attestation_type, ct_handles, public_key, extra_data, signature,
-            start_timestamp, duration_seconds, user_pubkey, allowed_keys, encrypted_stores,
-            allowed_scopes, host_program_id, tx_hash, created_at, otlp_context, source
-        ) VALUES ($1, 'solana-srfc38-user-decrypt-v1', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        ON CONFLICT (decryption_id) DO UPDATE SET
-            status = 'pending', created_at = EXCLUDED.created_at, otlp_context = EXCLUDED.otlp_context
-        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
-        request.decryption_id.as_le_slice(), &handles, permit.transport_key().as_bytes().as_slice(),
-        permit.extra_data().to_extra_data(), body.signature().as_bytes().as_slice(),
-        i64::try_from(permit.start_timestamp())?, i64::try_from(permit.duration_seconds())?,
-        permit.user_pubkey().as_bytes().as_slice(), &keys, &stores, &scopes,
-        permit.verifying_program_id().as_bytes().as_slice(), tx_hash.map(|h| h.to_vec()),
-        created_at, bc2wrap::serialize(otlp_context)?, source as super::db::RequestSource,
-    ).execute(executor).await?)
 }

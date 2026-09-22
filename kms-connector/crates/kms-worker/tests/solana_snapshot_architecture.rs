@@ -8,8 +8,7 @@
 //! * authorization cannot be assembled from states that never coexisted — every rule is
 //!   evaluated against one read, and when a delegated entry forces a second one, the earlier
 //!   read produces addresses rather than decisions;
-//! * a request accepted at its observation point is not re-evaluated, because after the reads
-//!   nothing in the path can read anything;
+//! * each invocation uses one deciding snapshot; worker retries authorize again;
 //! * a permit is reusable, but no authorization result is cached — every request pays for its
 //!   own observation.
 //!
@@ -31,8 +30,8 @@ use kms_worker::core::solana::{
     proof::LeafProofOutcome,
     scope::{ScopeFailure, check_scope},
     snapshot::{
-        HostSnapshot, SnapshotAccount, SnapshotError, SnapshotKeys, multiple_accounts_request_body,
-        parse_multiple_accounts_response,
+        HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys,
+        SolanaRpcClient,
     },
     watermark::{WatermarkFailure, read_watermark},
 };
@@ -447,7 +446,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         ),
         "expected the ordering failure, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 }
 
 /// Equal slots are not a regression: two reads of one slot are the ordinary case when the chain
@@ -570,7 +569,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
         ),
         "expected the deciding read's peaks to decide, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 }
 
 /// Missing leaves from a lagging record are fetched once more. If still missing, the request
@@ -639,90 +638,89 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
             source: HandleBindingFailure::ProofRecordBehind { .. }
         }
     ));
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 }
 
-/// Every authorization read asks for `confirmed`. A grant observed on a supermajority-confirmed
-/// fork is sufficient authorization here, and the level is pinned in the request body rather
-/// than left to whatever the endpoint defaults to.
-#[test]
-fn the_account_read_pins_confirmed_commitment() {
-    let keys = SnapshotKeys::new([[3; 32], [4; 32]]);
-
-    let body = multiple_accounts_request_body(&keys);
-
-    assert_eq!(body["method"], "getMultipleAccounts");
-    let params = &body["params"];
-    assert_eq!(
-        params[0][0].as_str().unwrap(),
-        Pubkey::new_from_array([3; 32]).to_string(),
-        "keys are sent in the planned order, so the response can be zipped back onto it"
-    );
-    assert_eq!(
-        params[0][1].as_str().unwrap(),
-        Pubkey::new_from_array([4; 32]).to_string()
-    );
-    assert_eq!(params[1]["commitment"], "confirmed");
-    assert_eq!(params[1]["encoding"], "base64");
+/// Exercise the actual SDK transport; the mock matches commitment, encoding and ordered keys.
+async fn rpc_read(
+    keys: &SnapshotKeys,
+    value: serde_json::Value,
+) -> Result<HostSnapshot, SnapshotError> {
+    let expected = serde_json::json!({"jsonrpc":"2.0","id":0,"method":"getMultipleAccounts",
+        "params":[keys.as_slice().iter().map(|key| Pubkey::new_from_array(*key).to_string()).collect::<Vec<_>>(),
+        {"encoding":"base64","commitment":"confirmed","dataSlice":null,"minContextSlot":null}]});
+    let response = serde_json::json!({"jsonrpc":"2.0","id":0,"result":{"context":{"slot":4242},"value":value}});
+    let mut server = mocktail::server::MockServer::new_http("solana-accounts");
+    server.mock(move |when, then| {
+        when.post().json(expected.clone());
+        then.json(response.clone());
+    });
+    server.start().await.unwrap();
+    SolanaRpcClient::new(
+        server.base_url().unwrap().clone(),
+        std::time::Duration::from_secs(1),
+    )
+    .read_accounts(keys)
+    .await
 }
 
-/// The observation point is the state's own account of when it was observed — the response's
-/// context slot — never a locally chosen number. Every slot comparison in the delegation rules
-/// is against this value, so sourcing it locally would silently decide those rules.
-#[test]
-fn the_observed_slot_is_the_context_slot_of_the_response() {
-    let key = [5; 32];
-    let keys = SnapshotKeys::new([key]);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "context": { "slot": 4_242 },
-            "value": [{
-                "owner": Pubkey::new_from_array(PROGRAM_ID).to_string(),
-                "data": ["AQID", "base64"],
-                "lamports": 1,
-                "executable": false,
-                "rentEpoch": 0,
-            }]
-        }
-    })
-    .to_string();
+fn rpc_account() -> serde_json::Value {
+    serde_json::json!({"owner":Pubkey::new_from_array(PROGRAM_ID).to_string(),
+        "data":["AQID","base64"],"lamports":1,"executable":false,"rentEpoch":0})
+}
 
-    let snapshot = parse_multiple_accounts_response(&body, &keys).expect("the response parses");
-
-    assert_eq!(snapshot.observed_slot(), 4_242);
+#[tokio::test]
+async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
+    let keys = SnapshotKeys::new([[5; 32], [6; 32]]);
+    let snapshot = rpc_read(&keys, serde_json::json!([rpc_account(), null]))
+        .await
+        .unwrap();
+    assert_eq!(snapshot.observed_slot(), 4242);
     assert_eq!(
-        snapshot.account(&key).unwrap(),
+        snapshot.account(&[5; 32]).unwrap(),
         Some(&SnapshotAccount {
             owner: PROGRAM_ID,
-            data: vec![1, 2, 3],
+            data: vec![1, 2, 3]
         })
     );
+    assert_eq!(snapshot.account(&[6; 32]).unwrap(), None);
 }
 
-/// A key that has no account is an absence *inside* the snapshot, not a failure of the read. The
-/// distinction decides the outcome: an absent encrypted store is a rule outcome that may
-/// resolve itself at a later observation, while a failed read tells us nothing about any account.
-#[test]
-fn a_missing_account_is_an_absence_in_the_snapshot_not_a_read_failure() {
-    let key = [6; 32];
-    let keys = SnapshotKeys::new([key]);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": { "context": { "slot": 7 }, "value": [null] }
-    })
-    .to_string();
+#[tokio::test]
+async fn malformed_rpc_accounts_are_errors_never_missing_accounts() {
+    let mut bad_base64 = rpc_account();
+    bad_base64["data"][0] = "not base64!".into();
+    let mut wrong_encoding = rpc_account();
+    wrong_encoding["data"][1] = "base64+zstd".into();
+    let mut bad_owner = rpc_account();
+    bad_owner["owner"] = "not a pubkey".into();
+    let mut missing_owner = rpc_account();
+    missing_owner.as_object_mut().unwrap().remove("owner");
+    let keys = SnapshotKeys::new([[5; 32]]);
+    for account in [bad_base64, wrong_encoding, bad_owner, missing_owner] {
+        assert!(matches!(
+            rpc_read(&keys, serde_json::json!([account])).await,
+            Err(SnapshotError::Unavailable { .. })
+        ));
+    }
+    assert!(matches!(
+        rpc_read(&keys, serde_json::json!([])).await,
+        Err(SnapshotError::ResponseLengthMismatch {
+            requested: 1,
+            returned: 0
+        })
+    ));
+}
 
-    let snapshot = parse_multiple_accounts_response(&body, &keys).expect("the response parses");
-
-    assert_eq!(snapshot.observed_slot(), 7);
-    assert_eq!(
-        snapshot.account(&key).expect("the key was read"),
-        None,
-        "an account that does not exist is a known absence"
-    );
+#[tokio::test]
+async fn a_full_hundred_account_snapshot_is_one_rpc_call() {
+    let keys = SnapshotKeys::new((0..100).map(|i| [i; 32]));
+    let snapshot = rpc_read(&keys, serde_json::json!(vec![None::<()>; 100]))
+        .await
+        .unwrap();
+    for key in keys.as_slice() {
+        assert_eq!(snapshot.account(key).unwrap(), None);
+    }
 }
 
 /// Asking the snapshot for an account nobody planned is a defect in key planning, and it is
@@ -753,14 +751,7 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
     ));
 }
 
-/// Every state-dependent check takes the observation and no way to reach the network. This is
-/// the type-level half of "a request accepted at its observation point is not re-evaluated":
-/// there is no check that *could* re-read, whatever a future caller wanted. The binding rule
-/// takes the record's answer as a value for the same reason: it verifies, it does not fetch.
-///
-/// The delegation signature is also where the delegation counter used to be. It takes a
-/// snapshot, a program id and three identities — the counter is not a parameter, because
-/// pinning it would invalidate in-flight requests on every unrelated delegation update.
+/// Individual checks use the deciding snapshot. A later worker attempt obtains a fresh one.
 #[test]
 fn authorization_checks_take_the_observation_and_never_a_reader() {
     let _resolve_encrypted_store: fn(
@@ -794,4 +785,28 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
         &zama_solana_permit::AllowedScopes,
         &ResolvedEncryptedStore,
     ) -> Result<(), ScopeFailure> = check_scope;
+}
+
+#[tokio::test]
+async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
+    let mut server = mocktail::server::MockServer::new_http("throttled-rpc");
+    server.mock(|when, then| {
+        when.post();
+        then.status(mocktail::StatusCode::TOO_MANY_REQUESTS);
+    });
+    server.start().await.unwrap();
+    let client = SolanaRpcClient::new(
+        server.base_url().unwrap().clone(),
+        std::time::Duration::from_millis(50),
+    );
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(250),
+        client.read_accounts(&SnapshotKeys::new([[1; 32]])),
+    )
+    .await;
+    assert!(
+        result
+            .expect("SDK retries must fit inside the request deadline")
+            .is_err()
+    );
 }

@@ -211,6 +211,13 @@ mod tests {
             signature: vec![4; 64].into(),
         };
         let id = request.id();
+        // Independently encoded EIP-712 words, hashed with Foundry cast keccak.
+        assert_eq!(
+            id,
+            "0x36b0480eb616e722f9d1d48cff8987bb886783efb6a173ec906f6eff91b5177e"
+                .parse::<B256>()
+                .unwrap()
+        );
         let roundtrip: SolanaUserDecryptionRequest =
             serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
         assert_eq!(id, roundtrip.id());

@@ -74,14 +74,14 @@ async fn observe(
 }
 
 /// Each authorization invocation uses exactly the planned account and proof reads.
-fn assert_frozen_at(_authorized: &(), reads: Reads, expected_account_reads: usize) {
+fn assert_planned_reads(_authorized: &(), reads: Reads, expected_account_reads: usize) {
     assert_eq!(
         reads.accounts, expected_account_reads,
-        "nothing re-reads state after acceptance, so the transition cannot reach this request"
+        "one authorization attempt uses only its planned account reads"
     );
     assert_eq!(
         reads.proofs, 1,
-        "a record in step with the chain is read once, and never again after acceptance"
+        "one proof read suffices when the record matches the deciding snapshot"
     );
 }
 
@@ -90,8 +90,8 @@ fn assert_frozen_at(_authorized: &(), reads: Reads, expected_account_reads: usiz
 // ---------------------------------------------------------------------------
 
 /// A handle update does not race a request for the handle it replaces: the allow leaf names the
-/// handle, and the update seals nothing about it. Both observations authorize, and the request
-/// accepted before the update was not reopened by it.
+/// handle, and the update seals nothing about it. Reauthorizing the same request after the
+/// update still succeeds.
 #[tokio::test]
 async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
     let signer = Wallet::new(1);
@@ -108,7 +108,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
         &request,
     )
     .await;
-    assert_frozen_at(
+    assert_planned_reads(
         &accepted.expect("before the update the leaf authorizes"),
         reads,
         1,
@@ -154,7 +154,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
@@ -208,7 +208,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
 // ---------------------------------------------------------------------------
 
 /// A delegated entry racing a revocation fails at the later observation. The revocation reaches
-/// the next request rather than the next permit, which is what "immediately" means here.
+/// the next authorization attempt, including a poll of the same request.
 #[tokio::test]
 async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let signer = Wallet::new(1);
@@ -231,7 +231,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
         &request,
     )
     .await;
-    assert_frozen_at(
+    assert_planned_reads(
         &accepted.expect("before the revocation the delegation is live"),
         reads,
         2,
@@ -246,15 +246,12 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     )
     .await;
 
-    assert!(matches!(
-        exact_with_missing_wildcard(
-            outcome.expect_err("after the revocation the delegation is dead")
-        ),
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Revoked
-        }
-    ));
+    let failure = outcome.expect_err("after revocation the exact delegation is dead");
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(failure, AuthorizationFailure::Delegation { index:0, source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(*exact, DelegationFailure::Revoked) && matches!(*wildcard, DelegationFailure::Absent { .. }))
+    );
 }
 
 /// The direct branch is untouched by a delegation revocation: the signer's own leaves are not
@@ -364,7 +361,7 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
         ),
         "expected a proof that does not verify, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
     assert_eq!(
         reads.proofs, 2,
         "a proof that does not verify gets one refresh against the same observation"
@@ -421,7 +418,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
         ),
         "expected a position the observation does not have, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
     assert_eq!(
         reads.proofs, 2,
         "an out-of-range leaf is retryable and gets one refresh against the same observation"

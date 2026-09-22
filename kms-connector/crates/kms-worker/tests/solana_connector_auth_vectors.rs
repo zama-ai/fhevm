@@ -28,7 +28,7 @@
 //!   for an unrelated reason;
 //! * every rule in the dictionary is exercised by some record, and every rule some record declares
 //!   is one the Connector actually produces. Both directions, or a regeneration could quietly drop
-//!   a class.
+//!   recoverability.
 use connector_utils::types::solana_request::{
     MAX_REQUEST_HANDLES, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest,
     SolanaUserDecryptRequestWire,
@@ -55,8 +55,8 @@ use kms_worker::core::solana::{
 use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
 use schema::{
     CONNECTOR_AUTH_VECTOR_SCHEMA, ConnectorAuthVector, ConnectorAuthVectorFile, Deployment,
-    FailureClass, KmsPairStatus, LeafProofStatus, Observation, RecordedAccount, RecordedLeafProof,
-    VectorResult, WireHandleEntry, WirePermit, WireRequest, from_hex, rule, to_hex,
+    KmsPairStatus, LeafProofStatus, Observation, RecordedAccount, RecordedLeafProof, VectorResult,
+    WireHandleEntry, WirePermit, WireRequest, from_hex, rule, to_hex,
 };
 use solana_support::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -87,7 +87,7 @@ struct Scenario {
     comment: &'static str,
     result: VectorResult,
     rule: Option<&'static str>,
-    class: Option<FailureClass>,
+    recoverable: Option<bool>,
     derived_from: Option<&'static str>,
     mutation: Option<&'static str>,
     request: SolanaUserDecryptRequestWire,
@@ -112,7 +112,7 @@ impl Scenario {
             comment,
             result: VectorResult::Valid,
             rule: None,
-            class: None,
+            recoverable: None,
             derived_from: None,
             mutation: None,
             request,
@@ -125,7 +125,7 @@ impl Scenario {
 
     /// A rejecting record, derived from an accepted one by one mutation.
     ///
-    /// Eight arguments, deliberately: name, comment, base, mutation, rule, class, request, state
+    /// Eight arguments, deliberately: name, comment, base, mutation, rule, recoverable, request, state
     /// are exactly what a record is, and grouping some of them into a struct would move the
     /// argument list into the call site without making it shorter. The same suppression is used by
     /// the permit crate for the same reason.
@@ -136,7 +136,7 @@ impl Scenario {
         derived_from: &'static str,
         mutation: &'static str,
         rule: &'static str,
-        class: FailureClass,
+        recoverable: bool,
         request: SolanaUserDecryptRequestWire,
         world: World,
     ) -> Self {
@@ -145,7 +145,7 @@ impl Scenario {
             comment,
             result: VectorResult::Invalid,
             rule: Some(rule),
-            class: Some(class),
+            recoverable: Some(recoverable),
             derived_from: Some(derived_from),
             mutation: Some(mutation),
             request,
@@ -566,7 +566,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the permit's verifying program id is replaced with another program",
         rule::DEPLOYMENT_PROGRAM_MISMATCH,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair([0x55; 32], CHAIN_ID))
             .direct(&encrypted_store, live)
@@ -585,7 +585,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the permit's chain id, and the chain id embedded in its handle, name another cluster",
         rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .permit(PermitBuilder::new(wallet.pubkey()).deployment_pair(PROGRAM_ID, other_chain))
             .direct(&other_chain_encrypted_store, other_chain_handle)
@@ -603,7 +603,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "a second entry is appended whose handle embeds another cluster",
         rule::MIXED_EMBEDDED_CHAIN_IDS,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .direct(&encrypted_store, live)
             .entry(
@@ -624,7 +624,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the entry's handle embeds another cluster while the permit still names this one",
         rule::EMBEDDED_CHAIN_ID_MISMATCH,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .direct(&elsewhere_encrypted_store, elsewhere)
             .wire(),
@@ -641,7 +641,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "direct",
             "the request is authorized after the permit's window ends",
             rule::WINDOW_EXPIRED,
-            FailureClass::Terminal,
+            false,
             expired_request,
             expired_world,
         )
@@ -657,7 +657,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "direct",
             "the request is authorized before the permit's window starts",
             rule::WINDOW_NOT_YET_VALID,
-            FailureClass::Transient,
+            true,
             early_request,
             early_world,
         )
@@ -672,7 +672,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the signer's invalidation record holds a watermark above the permit's start",
         rule::PERMIT_INVALIDATED,
-        FailureClass::Terminal,
+        false,
         invalidated_request,
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_store(&invalidated_encrypted_store)
@@ -689,7 +689,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the signer's invalidation address holds a record naming a different user",
         rule::WATERMARK_RECORD_INVALID,
-        FailureClass::Terminal,
+        false,
         foreign_record_request,
         World::running_at_slot(OBSERVED_SLOT)
             .with_encrypted_store(&foreign_record_encrypted_store)
@@ -709,7 +709,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         "direct",
         "the deployment's config singleton carries paused = true",
         rule::HOST_PAUSED,
-        FailureClass::Transient,
+        true,
         paused_request,
         paused_world.paused(),
     ));
@@ -727,7 +727,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "direct",
             "the KMS management state reports the signed epoch as destroyed",
             rule::KMS_PAIR_UNSERVABLE,
-            FailureClass::Transient,
+            true,
             destroyed_request,
             destroyed_world,
         )
@@ -739,12 +739,12 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
         Scenario::rejected(
             "not-yet-active-kms-epoch",
             "The epoch exists but is not active yet. The reference case of the transient outcome, \
-             and the reason the two records around it share both its rule and its class: all three \
+             and the reason the two records around it share both its rule and its recoverability: all three \
              arrive as the same boolean.",
             "direct",
             "the KMS management state reports the signed epoch as not active yet",
             rule::KMS_PAIR_UNSERVABLE,
-            FailureClass::Transient,
+            true,
             pending_request,
             pending_world,
         )
@@ -761,7 +761,7 @@ fn deployment_and_permit_state_scenarios() -> Vec<Scenario> {
             "direct",
             "the KMS management state reports the signed epoch as belonging to another context",
             rule::KMS_PAIR_UNSERVABLE,
-            FailureClass::Transient,
+            true,
             other_context_request,
             other_context_world,
         )
@@ -781,7 +781,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
         "direct",
         "the handle list is emptied",
         rule::EMPTY_HANDLES,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet).wire(),
         world.clone(),
     ));
@@ -801,7 +801,7 @@ fn request_form_scenarios() -> Vec<Scenario> {
         "direct",
         "the live handle is repeated until the list is one entry past the cap",
         rule::TOO_MANY_HANDLES,
-        FailureClass::Terminal,
+        false,
         past_cap.wire(),
         world.clone(),
     ));
@@ -821,7 +821,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "the encrypted store is removed from the observation",
         rule::ENCRYPTED_VALUE_ACCOUNT_ABSENT,
-        FailureClass::Transient,
+        true,
         request.clone(),
         World::running_at_slot(OBSERVED_SLOT).with_watermark(wallet.pubkey(), 0),
     ));
@@ -835,7 +835,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "the encrypted store's owner is replaced with another program",
         rule::ENCRYPTED_VALUE_ACCOUNT_FOREIGN_OWNER,
-        FailureClass::Terminal,
+        false,
         request.clone(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_store.account_key, foreign_owner)
@@ -851,7 +851,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "the encrypted store address holds a delegation record instead",
         rule::ENCRYPTED_VALUE_ACCOUNT_WRONG_TYPE,
-        FailureClass::Terminal,
+        false,
         request.clone(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_store.account_key, delegation.account())
@@ -870,7 +870,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "eight bytes are removed from the end of the encrypted store",
         rule::ENCRYPTED_VALUE_ACCOUNT_MALFORMED,
-        FailureClass::Terminal,
+        false,
         request.clone(),
         World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_store.account_key, truncated)
@@ -887,7 +887,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "the encrypted store address holds an encrypted store of another authority",
         rule::ENCRYPTED_VALUE_ACCOUNT_ADDRESS_MISMATCH,
-        FailureClass::Terminal,
+        false,
         request,
         World::running_at_slot(OBSERVED_SLOT)
             .with_account(encrypted_store.account_key, another_app.account())
@@ -910,7 +910,7 @@ fn encrypted_store_scenarios() -> Vec<Scenario> {
         "direct",
         "the entry names an encrypted store whose scope is outside the signed scopes",
         rule::SCOPE_NOT_ALLOWED,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .direct(&unsigned_scope_encrypted_store, unsigned_scope_handle)
             .wire(),
@@ -942,7 +942,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         "direct",
         "the encrypted store's allow leaf names another key",
         rule::NO_ALLOW_LEAF,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .direct(&others_encrypted_store, live)
             .wire(),
@@ -960,7 +960,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
         "allowed-then-handle-replaced",
         "the request names the replacement handle, which no leaf allows",
         rule::NO_ALLOW_LEAF,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&wallet)
             .direct(&moved_on, replacement)
             .wire(),
@@ -981,7 +981,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "direct",
             "the leaf record has not sealed the append that holds the allow leaf",
             rule::LEAF_RECORD_BEHIND,
-            FailureClass::Retryable,
+            true,
             RequestBuilder::new(&wallet)
                 .direct(&after_the_allow, pending)
                 .wire(),
@@ -999,7 +999,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "direct",
             "the encrypted store is unknown to the leaf record",
             rule::LEAF_RECORD_UNKNOWN_ACCOUNT,
-            FailureClass::Retryable,
+            true,
             unknown_request,
             unknown_world,
         )
@@ -1015,7 +1015,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "direct",
             "the leaf record reports its history for the account as incomplete",
             rule::LEAF_HISTORY_INCOMPLETE,
-            FailureClass::Terminal,
+            false,
             gapped_request,
             gapped_world,
         )
@@ -1037,7 +1037,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "direct",
             "the observation holds an earlier state than the one the record has sealed",
             rule::LEAF_RECORD_AHEAD,
-            FailureClass::Retryable,
+            true,
             RequestBuilder::new(&wallet)
                 .direct(&record_ahead, early)
                 .wire(),
@@ -1101,7 +1101,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "direct",
             mutation,
             rule::LEAF_PROOF_DOES_NOT_VERIFY,
-            FailureClass::Retryable,
+            true,
             RequestBuilder::new(&wallet)
                 .direct(&substituted, sealed)
                 .wire(),
@@ -1124,7 +1124,7 @@ fn handle_binding_scenarios() -> Vec<Scenario> {
             "leaf-record-behind-by-a-non-merging-append",
             "the append the record has not sealed merges the leaf's peak",
             rule::LEAF_PROOF_DOES_NOT_VERIFY,
-            FailureClass::Retryable,
+            true,
             RequestBuilder::new(&wallet)
                 .direct(&chain_after_the_merge, merged)
                 .wire(),
@@ -1155,7 +1155,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation record is removed from the observation",
         rule::DELEGATION_ABSENT,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world(),
     ));
@@ -1169,7 +1169,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation record is marked revoked",
         rule::DELEGATION_REVOKED,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_delegation(&revoked),
     ));
@@ -1182,7 +1182,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation's expiration slot falls below the observed slot",
         rule::DELEGATION_EXPIRED,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_delegation(&expired),
     ));
@@ -1200,7 +1200,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation's last update slot is above the observed slot",
         rule::DELEGATION_NEWER_THAN_OBSERVATION,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_delegation(&from_the_future),
     ));
@@ -1216,7 +1216,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds a record naming another delegator",
         rule::DELEGATION_TUPLE_MISMATCH,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_account(expected_key, other_tuple.account()),
     ));
@@ -1231,7 +1231,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds a record naming another delegate",
         rule::DELEGATION_TUPLE_MISMATCH,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_account(expected_key, other_delegate.account()),
     ));
@@ -1245,7 +1245,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation record's owner is replaced with another program",
         rule::DELEGATION_FOREIGN_OWNER,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_account(expected_key, foreign),
     ));
@@ -1257,7 +1257,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds an encrypted store instead",
         rule::DELEGATION_WRONG_ACCOUNT_TYPE,
-        FailureClass::Transient,
+        true,
         request.clone(),
         base_world().with_account(expected_key, encrypted_store.account()),
     ));
@@ -1275,7 +1275,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "both the authority-specific and the wildcard delegation rows are marked revoked",
         rule::DELEGATION_NO_LIVE_GRANT,
-        FailureClass::Terminal,
+        false,
         request.clone(),
         base_world()
             .with_delegation(&revoked)
@@ -1305,7 +1305,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated-via-wildcard-row",
         "the encrypted store names the wildcard sentinel as its authority",
         rule::ENCRYPTED_VALUE_ACCOUNT_SENTINEL_AUTHORITY,
-        FailureClass::Terminal,
+        false,
         RequestBuilder::new(&signer)
             .delegated(&sentinel_encrypted_store, sentinel_live, delegator.pubkey())
             .wire(),
@@ -1340,7 +1340,7 @@ fn record_of(scenario: &Scenario) -> ConnectorAuthVector {
         comment: scenario.comment.to_owned(),
         result: scenario.result,
         rule: scenario.rule.map(str::to_owned),
-        class: scenario.class,
+        recoverable: scenario.recoverable,
         derived_from: scenario.derived_from.map(str::to_owned),
         mutation: scenario.mutation.map(str::to_owned),
         request: WireRequest {
@@ -1572,7 +1572,7 @@ enum Outcome {
     Rejected(&'static str, bool),
 }
 
-/// The Connector's mapping from its own failure onto this set's rule names and classes.
+/// The Connector's mapping from its own failure onto this set's rule names and recoverability.
 ///
 /// Panics for failures this set does not cover, rather than inventing a name for them: the permit
 /// layer has its own set, and a snapshot divergence cannot arise from a record that carries one
@@ -1646,7 +1646,7 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             HandleBindingFailure::LeafIndexOutOfRange { .. } => rule::LEAF_RECORD_AHEAD,
             HandleBindingFailure::ProofDoesNotVerify { .. } => rule::LEAF_PROOF_DOES_NOT_VERIFY,
             HandleBindingFailure::MmrStateInconsistent => {
-                panic!("internally inconsistent host state is not a class of this set")
+                panic!("internally inconsistent host state is not a rule of this set")
             }
         },
         AuthorizationFailure::Scope { .. } => rule::SCOPE_NOT_ALLOWED,
@@ -1850,7 +1850,9 @@ async fn every_vector_behaves_as_declared() {
                     .rule
                     .as_deref()
                     .expect("a rejecting record names a rule");
-                let declared_class = record.class.expect("a rejecting record names a class");
+                let declared_recoverable = record
+                    .recoverable
+                    .expect("a rejecting record declares recoverability");
                 assert_eq!(
                     outcome,
                     Outcome::Rejected(
@@ -1863,9 +1865,9 @@ async fn every_vector_behaves_as_declared() {
                                  dictionary",
                                 record.name
                             )),
-                        declared_class != FailureClass::Terminal
+                        declared_recoverable
                     ),
-                    "record '{}' must be rejected by '{declared_rule}' as {declared_class:?}",
+                    "record '{}' must be rejected by '{declared_rule}' with recoverable={declared_recoverable}",
                     record.name
                 );
             }
@@ -1909,7 +1911,7 @@ async fn the_base_of_every_rejecting_record_is_authorized() {
 }
 
 /// Every rule is exercised, and every rule the set declares is one the dictionary names. Both
-/// directions: a regeneration that dropped a class would otherwise pass.
+/// directions: a regeneration that dropped a rule would otherwise pass.
 #[test]
 fn the_set_covers_the_rule_dictionary_in_both_directions() {
     let file = committed_file();
@@ -1958,8 +1960,8 @@ fn records_carry_the_required_fields() {
                     record.name
                 );
                 assert!(
-                    record.class.is_some(),
-                    "record '{}' rejects without a class",
+                    record.recoverable.is_some(),
+                    "record '{}' rejects without recoverability",
                     record.name
                 );
                 assert!(
@@ -1970,7 +1972,7 @@ fn records_carry_the_required_fields() {
             }
             VectorResult::Valid | VectorResult::Acceptable => {
                 assert!(
-                    record.rule.is_none() && record.class.is_none(),
+                    record.rule.is_none() && record.recoverable.is_none(),
                     "record '{}' is accepted and must name no rule",
                     record.name
                 );

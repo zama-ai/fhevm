@@ -214,9 +214,7 @@ fn check_row(
 
 /// Why a delegated entry was not authorized.
 ///
-/// The row-level variants describe one record. They reach a client as themselves when the delegator
-/// holds no wildcard row — the ordinary case — and as the two halves of
-/// [`DelegationFailure::NoLiveGrant`] when both rows exist and neither authorizes.
+/// Row-level reasons are retained together when either may affect whether a later observation succeeds.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DelegationFailure {
     /// No delegation record exists for the tuple at this observation point.
@@ -248,8 +246,7 @@ pub enum DelegationFailure {
         /// The address that was read.
         account_key: SolanaPubkeyBytes,
     },
-    /// The delegator revoked it. Subsequent requests stop immediately, even while the
-    /// delegate's own permit remains valid.
+    /// The delegator revoked this record; a separate wildcard grant may still authorize.
     #[error("delegation is revoked")]
     Revoked,
     /// It expired at or before the observed slot.

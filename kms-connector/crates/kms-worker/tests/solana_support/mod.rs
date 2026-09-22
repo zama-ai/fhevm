@@ -23,7 +23,9 @@ use connector_utils::types::solana_request::{
 use kms_worker::core::solana::{
     delegation::WILDCARD_AUTHORITY,
     deployment::{DeploymentIdentity, solana_host_chain_id},
-    proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
+    proof::{
+        HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
+    },
     snapshot::{
         HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
         SnapshotKeys,
@@ -973,10 +975,7 @@ impl ScriptedProofReader {
 }
 
 impl HostProofReader for ScriptedProofReader {
-    async fn read_proofs(
-        &self,
-        queries: &[LeafQuery],
-    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
         let index = {
             let mut calls = self.calls.lock().expect("proof reader lock");
             calls.push(queries.to_vec());
@@ -989,10 +988,13 @@ impl HostProofReader for ScriptedProofReader {
                 self.records.len()
             )
         });
-        Ok(queries
-            .iter()
-            .map(|query| vec![record.answer(query)])
-            .collect())
+        Ok(ProofResponses {
+            candidates: queries
+                .iter()
+                .map(|query| vec![record.answer(query)])
+                .collect(),
+            unavailable: None,
+        })
     }
 }
 
@@ -1000,10 +1002,7 @@ impl HostProofReader for ScriptedProofReader {
 pub struct UnavailableProofReader;
 
 impl HostProofReader for UnavailableProofReader {
-    async fn read_proofs(
-        &self,
-        _queries: &[LeafQuery],
-    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+    async fn read_proofs(&self, _queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
         Err(ProofReadError::Unavailable {
             reason: "no coprocessor answered".to_owned(),
         })
@@ -1060,31 +1059,4 @@ pub async fn authorize(
             .downcast::<kms_worker::core::solana::failure::AuthorizationFailure>()
             .expect("scenario must have a valid KMS context")
     })
-}
-
-/// Check that a missing wildcard leaves the request retryable and return the exact-row diagnostic.
-pub fn exact_with_missing_wildcard(
-    failure: kms_worker::core::solana::failure::AuthorizationFailure,
-) -> kms_worker::core::solana::failure::AuthorizationFailure {
-    assert!(
-        failure.is_recoverable(),
-        "the wildcard may become visible on a later observation"
-    );
-    match failure {
-        kms_worker::core::solana::failure::AuthorizationFailure::Delegation {
-            index,
-            source:
-                kms_worker::core::solana::delegation::DelegationFailure::NoLiveGrant { exact, wildcard },
-        } => {
-            assert!(matches!(
-                *wildcard,
-                kms_worker::core::solana::delegation::DelegationFailure::Absent { .. }
-            ));
-            kms_worker::core::solana::failure::AuthorizationFailure::Delegation {
-                index,
-                source: *exact,
-            }
-        }
-        other => panic!("expected the exact and missing-wildcard reasons, got {other}"),
-    }
 }

@@ -96,7 +96,7 @@ async fn publish_event_inner<'e>(
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::SolanaUserDecryptionV1(e) => {
-            connector_utils::types::solana_request::insert_solana_user_decryption(
+            connector_utils::types::db::insert_solana_user_decryption(
                 executor,
                 &e,
                 tx_hash,

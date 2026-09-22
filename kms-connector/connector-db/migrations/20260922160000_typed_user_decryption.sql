@@ -15,9 +15,12 @@ ALTER TABLE user_decryption_requests
     ALTER COLUMN user_address DROP NOT NULL,
     DROP COLUMN solana_request;
 
+-- Tagging is not a processing attempt; retain the existing retry and recovery timestamps.
+ALTER TABLE user_decryption_requests DISABLE TRIGGER refresh_updated_at_user_decryption_requests_on_update;
 UPDATE user_decryption_requests
 SET attestation_type = 'eip712-unified-user-decrypt-v1'
 WHERE signature IS NOT NULL;
+ALTER TABLE user_decryption_requests ENABLE TRIGGER refresh_updated_at_user_decryption_requests_on_update;
 
 -- PostgreSQL CHECK accepts NULL. Check elements and dimensions explicitly, including empty arrays.
 CREATE FUNCTION bytea_array_has_width(items BYTEA[], width INTEGER) RETURNS BOOLEAN

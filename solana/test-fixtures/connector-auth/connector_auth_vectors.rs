@@ -15,11 +15,9 @@
 //! * **Every 64-bit number is a decimal string.** A JSON number reaches a TypeScript consumer as
 //!   a double and silently loses precision above 2^53; chain ids, slots and leaf counts all go
 //!   there.
-//! * **A rejection names both its rule and its class.** The rule says which check refused the
-//!   request; the class says whether repeating it can ever help. The two are recorded separately
-//!   because a consumer acts on the class and reviews the rule, and because the same observable
-//!   outcome — no proof — is terminal from a record with the chain's history and retryable from
-//!   one behind it.
+//! * **A rejection names its rule and whether it is recoverable.** The rule identifies the
+//!   failed check; recoverability uses the connector's existing retry policy. An absent proof
+//!   is irrecoverable when the record has caught up with the chain and recoverable when behind.
 //!
 //! Only serde is required, so this file compiles in any consumer's test target. The permit fields
 //! use the same names and encodings as the permit set on purpose: a consumer that already reads
@@ -80,18 +78,6 @@ pub enum VectorResult {
     Acceptable,
 }
 
-/// What a client should do about a rejection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum FailureClass {
-    /// Nothing about this request will ever be authorized.
-    Terminal,
-    /// The same request may be authorized from a later observation.
-    Transient,
-    /// A disagreement between observers that is expected to converge.
-    Retryable,
-}
-
 /// The KMS management state a record is authorized against.
 ///
 /// Declared rather than derived: servability lives in KMS management state, not in host accounts,
@@ -127,7 +113,7 @@ pub struct ConnectorAuthVector {
     pub rule: Option<String>,
     /// For a rejecting record: what the client should do.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub class: Option<FailureClass>,
+    pub recoverable: Option<bool>,
     /// For a rejecting record: the accepted record it was derived from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub derived_from: Option<String>,
@@ -280,7 +266,7 @@ pub mod rule {
     pub const PERMIT_INVALIDATED: &str = "permit-invalidated";
     /// The invalidation record is not a readable watermark for this user.
     pub const WATERMARK_RECORD_INVALID: &str = "watermark-record-invalid";
-    /// The signed KMS pair is not servable. The class distinguishes why.
+    /// The signed KMS pair is not servable; the observation records why.
     pub const KMS_PAIR_UNSERVABLE: &str = "kms-pair-unservable";
     /// The operator has paused the host, or its config singleton is not readable at the
     /// deployment's address.

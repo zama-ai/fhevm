@@ -59,7 +59,7 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
         failure,
         AuthorizationFailure::Pause(PauseFailure::Paused)
     ));
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 
     authorize(
         &ScriptedReader::constant(running),

@@ -81,7 +81,7 @@ under `{attestationType, payload, signature}` with `attestationType` set to
 The row stores the exact attestation type, common encryption key/handles/window/signature,
 and explicit Solana pubkey, allowed keys, encrypted stores, scopes and host program.
 `user_address` is an Ethereum address and is NULL for Solana. SQL constraints enforce the
-row shape; `from_user_decryption_row` reconstructs `SolanaUserDecryptionV1`.
+row shape; `from_user_decryption_row` returns the `SolanaUserDecryptionV1` enum variant.
 
 For the undeployed Solana preview, deploy the schema and all connector binaries together
 using fresh disposable connector state and an intentional Gateway replay/start block.

@@ -112,7 +112,7 @@ async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> an
             U256::from(id),
             [0; 32].into(),
         );
-        connector_utils::types::solana_request::insert_solana_user_decryption(
+        connector_utils::types::db::insert_solana_user_decryption(
             db,
             &request,
             None,

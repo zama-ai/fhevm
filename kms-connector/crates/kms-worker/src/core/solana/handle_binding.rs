@@ -32,7 +32,9 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
     verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let queries = batch.queries();
-    let candidates = reader.read_proofs(&queries).await?;
+    let response = reader.read_proofs(&queries).await?;
+    let candidates = response.candidates;
+    let mut unavailable = response.unavailable;
     check_length(queries.len(), candidates.len())?;
     let mut results: Vec<_> = candidates
         .iter()
@@ -46,7 +48,9 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
         .zip(batch.contexts())
         .enumerate()
         .filter_map(|(position, (result, context))| match result {
-            Err(error) if error.is_recoverable() => Some((position, context)),
+            Err(error) if error.is_recoverable() || unavailable.is_some() => {
+                Some((position, context))
+            }
             _ => None,
         })
         .collect();
@@ -56,13 +60,19 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
             .map(|&(position, _)| queries[position])
             .collect();
         if let Ok(again) = reader.read_proofs(&queries).await
-            && check_length(queries.len(), again.len()).is_ok()
+            && check_length(queries.len(), again.candidates.len()).is_ok()
         {
-            for ((position, context), candidates) in unresolved.into_iter().zip(again) {
+            unavailable = again.unavailable;
+            for ((position, context), candidates) in unresolved.into_iter().zip(again.candidates) {
                 results[position] =
                     verify_candidates(&candidates, |candidate| verify(context, candidate));
             }
         }
+    }
+    if results.iter().any(Result::is_err)
+        && let Some(error) = unavailable
+    {
+        return Err(error);
     }
     Ok(results)
 }

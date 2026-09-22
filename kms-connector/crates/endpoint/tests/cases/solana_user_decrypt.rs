@@ -5,9 +5,8 @@ async fn solana_http_and_gateway_reconstruct_the_same_request() -> anyhow::Resul
     use connector_utils::{
         monitoring::otlp::PropagationContext,
         types::{
-            ProtocolEventKind,
-            event::from_user_decryption_row,
-            solana_request::{SolanaUserDecryptionRequestV1, insert_solana_user_decryption},
+            ProtocolEventKind, db::insert_solana_user_decryption, event::from_user_decryption_row,
+            solana_request::SolanaUserDecryptionRequestV1,
         },
     };
     use fhevm_gateway_bindings::decryption::{

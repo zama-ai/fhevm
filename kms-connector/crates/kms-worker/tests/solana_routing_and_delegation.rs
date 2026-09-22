@@ -223,8 +223,7 @@ fn live_delegation() -> DelegationFixture {
     )
 }
 
-/// A revoked delegation stops the request immediately — while the signer's own permit is
-/// untouched, which is the whole point of having two independent levers.
+/// A revoked exact delegation denies this attempt; the missing wildcard may become visible later.
 #[tokio::test]
 async fn a_revoked_delegation_rejects_its_entry() {
     let mut revoked = live_delegation();
@@ -234,15 +233,13 @@ async fn a_revoked_delegation_rejects_its_entry() {
         .await
         .expect_err("a revoked delegation authorizes nothing");
 
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Revoked
-        }
-    ));
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// Expiry is measured against the observed slot, not against a local clock.
@@ -255,17 +252,13 @@ async fn a_delegation_expired_at_the_observation_rejects_its_entry() {
         .await
         .expect_err("an expired delegation authorizes nothing");
 
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Expired {
-                expiration_slot,
-                observed_slot
-            }
-        } if expiration_slot == OBSERVED_SLOT - 1 && observed_slot == OBSERVED_SLOT
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Expired { expiration_slot, observed_slot } if expiration_slot == OBSERVED_SLOT-1 && observed_slot == OBSERVED_SLOT) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// The expiration slot is inclusive: a delegation valid through slot N is valid at slot N.
@@ -304,7 +297,7 @@ async fn a_delegation_written_after_the_observation_rejects_its_entry() {
     // Transient, and pinned as such: a coherent node cannot return a record written after its own
     // context slot, so this names a bad observation rather than a dead grant. Terminal would let
     // one bad RPC response kill a valid request.
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 }
 
 /// A record written exactly at the observation is part of it.
@@ -430,7 +423,7 @@ async fn two_dead_rows_report_both_reasons() {
         }
         other => panic!("expected both reasons, got {other}"),
     }
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 }
 
 /// A revoked exact row cannot settle a wildcard grant that may not be visible yet.
@@ -443,14 +436,13 @@ async fn a_missing_wildcard_preserves_the_exact_reason_and_retryability() {
         .await
         .expect_err("a revoked row authorizes nothing");
 
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Revoked
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// A wildcard row is per delegator: somebody else's covers nothing here, because its address is
@@ -621,7 +613,7 @@ async fn a_missing_delegation_rejects_its_entry() {
     // Transient, and pinned as such: this reader and the relayer read through their own RPCs and
     // can sit at different confirmed slots, so "not here" can mean "not here yet". Terminal would
     // fail a valid delegated request permanently over ordinary replica lag.
-    assert_eq!(failure.is_recoverable(), true);
+    assert!(failure.is_recoverable());
 }
 
 /// The other side of the same rule: a revoked, expired or mismatched record stays terminal,
@@ -663,9 +655,8 @@ async fn a_dead_exact_row_with_missing_wildcard_stays_retryable() {
         )
         .await;
         let failure = outcome.expect_err("none of these authorize");
-        assert_eq!(
+        assert!(
             failure.is_recoverable(),
-            true,
             "a {what} exact row does not settle the missing wildcard"
         );
     }
@@ -729,14 +720,13 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a record must name the tuple it was read for");
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::TupleMismatch { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::TupleMismatch { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// The delegate half of the same rule: a record at the canonical address naming a different
@@ -766,14 +756,13 @@ async fn a_delegation_record_naming_another_delegate_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a record delegating to somebody else authorizes nothing");
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::TupleMismatch { account_key }
-        } if account_key == expected_key
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::TupleMismatch { account_key } if account_key == expected_key) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// A record storing a bump other than the canonical one for its address is not the record this
@@ -806,14 +795,13 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a non-canonical bump is not this record");
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::NotADelegationRecord { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::NotADelegationRecord { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// An account under another program's ownership is not a delegation, whatever it contains.
@@ -838,19 +826,17 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("only the host program grants delegations");
-    let failure = exact_with_missing_wildcard(failure);
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::ForeignOwner { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::ForeignOwner { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
-/// The same permit, twice, across a revocation: the first request authorizes and the second does
-/// not. Reuse of a permit is not reuse of an authorization — there is no cached verdict, so the
-/// delegator's revocation takes effect on the next request rather than on the next permit.
+/// The same request across a revocation: the first authorization succeeds and the next fails.
+/// Each attempt observes the delegation again, including polls of already-sent requests.
 #[tokio::test]
 async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     let signer = Wallet::new(1);
@@ -877,15 +863,11 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
         &request,
     )
     .await;
+    let failure = second.expect_err("the second request is no longer authorized");
+    assert!(failure.is_recoverable());
     assert!(
-        matches!(
-            exact_with_missing_wildcard(second.expect_err("the second request is not")),
-            AuthorizationFailure::Delegation {
-                source: DelegationFailure::Revoked,
-                ..
-            }
-        ),
-        "the identical request must be re-authorized from scratch"
+        matches!(failure, AuthorizationFailure::Delegation { source: DelegationFailure::NoLiveGrant { exact, wildcard }, .. }
+        if matches!(*exact, DelegationFailure::Revoked) && matches!(*wildcard, DelegationFailure::Absent { .. }))
     );
 }
 
@@ -1004,7 +986,7 @@ async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_delegated_entry()
         ),
         "the rejection belongs to the encrypted store resolution, got {failure}"
     );
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 }
 
 /// The guard lives in the resolution of the encrypted store, so a direct entry under a
@@ -1032,7 +1014,7 @@ async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_direct_entry_too(
             source: EncryptedStoreFailure::SentinelAuthority { .. }
         }
     ));
-    assert_eq!(failure.is_recoverable(), false);
+    assert!(!failure.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,16 +1097,12 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     let (outcome, _) = authorize_in(world, &request).await;
 
     let failure = outcome.expect_err("one dead delegation rejects the request");
-    let failure = exact_with_missing_wildcard(failure);
+    assert!(failure.is_recoverable());
     assert!(
-        matches!(
-            failure,
-            AuthorizationFailure::Delegation {
-                index: 2,
-                source: DelegationFailure::Revoked
-            }
-        ),
-        "the failure must name the entry whose delegation is dead, got {failure}"
+        matches!(&failure, AuthorizationFailure::Delegation { index: 2,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
     );
 }
 

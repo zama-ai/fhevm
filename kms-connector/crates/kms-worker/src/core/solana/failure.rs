@@ -13,7 +13,7 @@ use connector_utils::types::solana_request::RequestFormError;
 
 /// Why one request was not authorized.
 ///
-/// The variants follow the pipeline: form, signature, deployment, window, KMS pair, then the
+/// The variants follow the pipeline: form, signature, deployment, window, then the
 /// state-dependent rules. Each carries the entry index where the rule is per handle,
 /// because "some handle failed scope" is not an actionable diagnostic for a batch.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]

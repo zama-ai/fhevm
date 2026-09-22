@@ -97,10 +97,7 @@ fn an_expired_permit_is_terminal() {
 
     let failure = check_window(DEFAULT_START, DEFAULT_DURATION, now).expect_err("expired");
 
-    assert_eq!(
-        AuthorizationFailure::Window(failure).is_recoverable(),
-        false
-    );
+    assert!(!AuthorizationFailure::Window(failure).is_recoverable());
 }
 
 /// A permit whose window has not opened is rejected — without this rule the duration cap is
@@ -123,7 +120,7 @@ fn a_permit_whose_window_has_not_opened_is_transient() {
         WindowFailure::NotYetValid { start_timestamp, now: n }
             if start_timestamp == DEFAULT_START && n == now
     ));
-    assert_eq!(AuthorizationFailure::Window(failure).is_recoverable(), true);
+    assert!(AuthorizationFailure::Window(failure).is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -200,9 +197,8 @@ fn a_permit_starting_below_the_watermark_is_dead() {
             watermark
         } if start_timestamp == DEFAULT_START && watermark == DEFAULT_START + 1
     ));
-    assert_eq!(
-        AuthorizationFailure::Watermark(failure).is_recoverable(),
-        false,
+    assert!(
+        !AuthorizationFailure::Watermark(failure).is_recoverable(),
         "no later observation resurrects it"
     );
 }

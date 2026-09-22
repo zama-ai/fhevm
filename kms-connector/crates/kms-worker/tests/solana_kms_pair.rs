@@ -146,7 +146,7 @@ async fn a_rotation_alone_does_not_invalidate_an_outstanding_permit() {
 }
 
 struct RejectedContext {
-    destroyed: bool,
+    code: ErrorCode,
 }
 impl ContextManager for RejectedContext {
     async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
@@ -155,11 +155,17 @@ impl ContextManager for RejectedContext {
             Some(U256::from_be_bytes(KMS_CONTEXT))
         );
         assert_eq!(extra_data.epoch_id, Some(U256::from_be_bytes(KMS_EPOCH)));
-        if self.destroyed {
+        if self.code == ErrorCode::KmsContextDestroyed {
             Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::KmsContext,
                 ErrorCode::KmsContextDestroyed,
                 anyhow::anyhow!("destroyed signed context"),
+            ))
+        } else if self.code == ErrorCode::KmsContextInvalid {
+            Err(RequestCheckError::recoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextInvalid,
+                anyhow::anyhow!("unservable context"),
             ))
         } else {
             Err(RequestCheckError::network(anyhow::anyhow!(
@@ -171,37 +177,32 @@ impl ContextManager for RejectedContext {
 
 #[tokio::test]
 async fn context_errors_keep_their_code_cause_and_retry_policy_before_any_account_read() {
-    for destroyed in [false, true] {
+    for (code, kind, message) in [
+        (
+            ErrorCode::KmsContextDestroyed,
+            ProcessingErrorKind::Irrecoverable,
+            "destroyed signed context",
+        ),
+        (
+            ErrorCode::KmsContextInvalid,
+            ProcessingErrorKind::Recoverable,
+            "unservable context",
+        ),
+        (
+            ErrorCode::UpstreamTransient,
+            ProcessingErrorKind::Recoverable,
+            "management state unavailable",
+        ),
+    ] {
         let (outcome, reads) = authorize_with(
-            &RejectedContext { destroyed },
+            &RejectedContext { code },
             PermitBuilder::new(Wallet::new(1).pubkey()),
         )
         .await;
         let error = outcome.unwrap_err().record();
         assert_eq!(reads, 0);
-        assert_eq!(
-            error.kind,
-            if destroyed {
-                ProcessingErrorKind::Irrecoverable
-            } else {
-                ProcessingErrorKind::Recoverable
-            }
-        );
-        assert_eq!(
-            error.code,
-            if destroyed {
-                ErrorCode::KmsContextDestroyed
-            } else {
-                ErrorCode::UpstreamTransient
-            }
-        );
-        assert_eq!(
-            error.source.to_string(),
-            if destroyed {
-                "destroyed signed context"
-            } else {
-                "management state unavailable"
-            }
-        );
+        assert_eq!(error.kind, kind);
+        assert_eq!(error.code, code);
+        assert_eq!(error.source.to_string(), message);
     }
 }

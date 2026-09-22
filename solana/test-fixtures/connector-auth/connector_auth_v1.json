@@ -1507,7 +1507,7 @@
       "comment": "A permit signed for another host program authorizes nothing here, even on the right cluster.",
       "result": "invalid",
       "rule": "deployment-program-mismatch",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the permit's verifying program id is replaced with another program",
       "request": {
@@ -1571,7 +1571,7 @@
       "comment": "A permit signed for another cluster authorizes nothing here, even under the same program id — which is why the cluster is signed at all.",
       "result": "invalid",
       "rule": "deployment-chain-id-mismatch",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the permit's chain id, and the chain id embedded in its handle, name another cluster",
       "request": {
@@ -1635,7 +1635,7 @@
       "comment": "Handles of one request must embed one chain id. A mixed batch is refused rather than resolved by taking the first handle as the truth.",
       "result": "invalid",
       "rule": "mixed-embedded-chain-ids",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "a second entry is appended whose handle embeds another cluster",
       "request": {
@@ -1711,7 +1711,7 @@
       "comment": "Handles agreeing among themselves is not enough: every embedded chain id must equal the signed one, or the request is about another cluster's ciphertexts.",
       "result": "invalid",
       "rule": "embedded-chain-id-mismatch",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the entry's handle embeds another cluster while the permit still names this one",
       "request": {
@@ -1775,7 +1775,7 @@
       "comment": "The validity window has closed. No later observation makes a permit younger.",
       "result": "invalid",
       "rule": "window-expired",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the request is authorized after the permit's window ends",
       "request": {
@@ -1839,7 +1839,7 @@
       "comment": "The window has not opened. Transient, because this is the one rejection that the passage of time repairs on its own.",
       "result": "invalid",
       "rule": "window-not-yet-valid",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the request is authorized before the permit's window starts",
       "request": {
@@ -1903,7 +1903,7 @@
       "comment": "The permit started before its signer's last revocation, so it is dead permanently. This is the mechanism behind revoking every outstanding signature with one transaction.",
       "result": "invalid",
       "rule": "permit-invalidated",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the signer's invalidation record holds a watermark above the permit's start",
       "request": {
@@ -1967,7 +1967,7 @@
       "comment": "The invalidation record's contents are checked against the address it was read from: a record naming another user is refused rather than read as that user's watermark, and refused rather than read as zero.",
       "result": "invalid",
       "rule": "watermark-record-invalid",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the signer's invalidation address holds a record naming a different user",
       "request": {
@@ -2031,7 +2031,7 @@
       "comment": "The operator paused the host. User decryption is served entirely by the Connector, so the pause switch reaches it only through this rule — without it a paused deployment would keep releasing plaintext while refusing every on-chain write. Transient: the permit and the handles survive the pause, so the same request authorizes once the operator lifts it.",
       "result": "invalid",
       "rule": "host-paused",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the deployment's config singleton carries paused = true",
       "request": {
@@ -2095,7 +2095,7 @@
       "comment": "Governance destroyed the epoch the permit signed. Transient, and deliberately so: the Connector learns about the pair from a single boolean that is true only when the epoch is active and belongs to the signed context, so a destroyed epoch is indistinguishable from one that is not active yet. The request is retried within the attempt budget and never succeeds — inherited behaviour of the pair validation the EVM path shares, not a decision of the Solana path, and fail-closed either way.",
       "result": "invalid",
       "rule": "kms-pair-unservable",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the KMS management state reports the signed epoch as destroyed",
       "request": {
@@ -2156,10 +2156,10 @@
     },
     {
       "name": "not-yet-active-kms-epoch",
-      "comment": "The epoch exists but is not active yet. The reference case of the transient outcome, and the reason the two records around it share both its rule and its class: all three arrive as the same boolean.",
+      "comment": "The epoch exists but is not active yet. The reference case of the transient outcome, and the reason the two records around it share both its rule and its recoverability: all three arrive as the same boolean.",
       "result": "invalid",
       "rule": "kms-pair-unservable",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the KMS management state reports the signed epoch as not active yet",
       "request": {
@@ -2223,7 +2223,7 @@
       "comment": "The signed epoch belongs to a different context, so the pair will never be servable — and it is transient for the same reason as the destroyed epoch: the view returns one boolean, and no view exposes the epoch's context on its own.",
       "result": "invalid",
       "rule": "kms-pair-unservable",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the KMS management state reports the signed epoch as belonging to another context",
       "request": {
@@ -2287,7 +2287,7 @@
       "comment": "A request naming no handles has nothing to authorize and nothing for a response to bind.",
       "result": "invalid",
       "rule": "empty-handles",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the handle list is emptied",
       "request": {
@@ -2336,7 +2336,7 @@
       "comment": "Every rule is evaluated against one atomic account snapshot, and a standard RPC node serves at most 100 accounts per call — in the worst case three per entry plus the signer's invalidation record, so the list is capped at 33. The Gateway refuses a longer request at admission, before the fee; the Connector rejects it too, so the snapshot's readability is its own invariant rather than an assumption about the contract upstream. Duplicates count: the cap is on the list, not on the distinct handles in it.",
       "result": "invalid",
       "rule": "too-many-handles",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the live handle is repeated until the list is one entry past the cap",
       "request": {
@@ -2565,7 +2565,7 @@
       "comment": "The encrypted store does not exist at this observation. Transient by nature: the account may simply not have reached the observed commitment yet.",
       "result": "invalid",
       "rule": "encrypted-value-account-absent",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the encrypted store is removed from the observation",
       "request": {
@@ -2622,7 +2622,7 @@
       "comment": "Program ownership is the sole trust anchor: an account with impeccable contents under another program's ownership proves nothing.",
       "result": "invalid",
       "rule": "encrypted-value-account-foreign-owner",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the encrypted store's owner is replaced with another program",
       "request": {
@@ -2684,7 +2684,7 @@
       "comment": "A host-owned account of another type is caught by the discriminator rather than by what its bytes happen to mean when read as an encrypted store.",
       "result": "invalid",
       "rule": "encrypted-value-account-wrong-type",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the encrypted store address holds a delegation record instead",
       "request": {
@@ -2746,7 +2746,7 @@
       "comment": "A body cut short is not the same thing as a body followed by extra bytes: the first cannot be read, the second is an account with room to spare.",
       "result": "invalid",
       "rule": "encrypted-value-account-malformed",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "eight bytes are removed from the end of the encrypted store",
       "request": {
@@ -2808,7 +2808,7 @@
       "comment": "The account's own fields must derive the address it was read from. This is the backstop that makes a substituted encrypted store a rejection rather than a redirection.",
       "result": "invalid",
       "rule": "encrypted-value-account-address-mismatch",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the encrypted store address holds an encrypted store of another authority",
       "request": {
@@ -2870,7 +2870,7 @@
       "comment": "With a non-empty signed scope list, every entry's encrypted store must have its (program, scope) in it. The pair tested is the account's — a request has no field for it.",
       "result": "invalid",
       "rule": "scope-not-allowed",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the entry names an encrypted store whose scope is outside the signed scopes",
       "request": {
@@ -2934,7 +2934,7 @@
       "comment": "The only allow leaf on the handle names somebody else, and the leaf record has the chain's whole history: the signer was never allowed, and repeating the request changes nothing.",
       "result": "invalid",
       "rule": "no-allow-leaf",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the encrypted store's allow leaf names another key",
       "request": {
@@ -2997,7 +2997,7 @@
       "comment": "Being allowed on the handle the account used to hold says nothing about the one it holds now: access is per handle, and each handle needs its own leaf.",
       "result": "invalid",
       "rule": "no-allow-leaf",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "allowed-then-handle-replaced",
       "mutation": "the request names the replacement handle, which no leaf allows",
       "request": {
@@ -3060,7 +3060,7 @@
       "comment": "The observation shows one leaf and the record has sealed none: the record is behind, and its answer says nothing about the leaf yet. Retryable — the record catches up.",
       "result": "invalid",
       "rule": "leaf-record-behind",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the leaf record has not sealed the append that holds the allow leaf",
       "request": {
@@ -3123,7 +3123,7 @@
       "comment": "The chain has the account and the record has never seen it: the record has not indexed the account's creation yet. Retryable for the same reason as a record behind.",
       "result": "invalid",
       "rule": "leaf-record-unknown-account",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the encrypted store is unknown to the leaf record",
       "request": {
@@ -3185,7 +3185,7 @@
       "comment": "The record's history for the account has a gap it cannot close. It can prove nothing about the account until rebuilt, and no retry within a request's budget rebuilds it.",
       "result": "invalid",
       "rule": "leaf-history-incomplete",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "direct",
       "mutation": "the leaf record reports its history for the account as incomplete",
       "request": {
@@ -3247,7 +3247,7 @@
       "comment": "The record has sealed a leaf this observation does not have yet. There is nothing for the proof to be a proof of, and it is refused before any hashing. Retryable: the same request authorizes once the observation catches up.",
       "result": "invalid",
       "rule": "leaf-record-ahead",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the observation holds an earlier state than the one the record has sealed",
       "request": {
@@ -3311,7 +3311,7 @@
       "comment": "A leaf sealed for another encrypted store authorizes nothing here.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the sealed leaf commits to another encrypted store",
       "request": {
@@ -3375,7 +3375,7 @@
       "comment": "A leaf sealed for another key authorizes only that key.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the sealed leaf commits to another key",
       "request": {
@@ -3439,7 +3439,7 @@
       "comment": "A leaf sealed for another handle authorizes only that handle.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the sealed leaf commits to another handle",
       "request": {
@@ -3503,7 +3503,7 @@
       "comment": "A leaf whose committed position is not the position it occupies authorizes nothing.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the sealed leaf commits to leaf index one while occupying index zero",
       "request": {
@@ -3567,7 +3567,7 @@
       "comment": "Public decryptability is a separate flow with its own leaf domain. Its leaf says nothing about any key and must not double as evidence that one was allowed.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "direct",
       "mutation": "the sealed leaf is a public-decrypt leaf rather than an allow leaf",
       "request": {
@@ -3631,7 +3631,7 @@
       "comment": "The record is one append behind and the append merged the proof's peak, so the sibling path it serves no longer reaches any peak the observation holds. Retryable: once the record catches up it serves the longer path, and the same request authorizes.",
       "result": "invalid",
       "rule": "leaf-proof-does-not-verify",
-      "class": "retryable",
+      "recoverable": true,
       "derived_from": "leaf-record-behind-by-a-non-merging-append",
       "mutation": "the append the record has not sealed merges the leaf's peak",
       "request": {
@@ -3695,7 +3695,7 @@
       "comment": "No delegation record at the canonical address for the tuple, so the delegated entry has nothing standing behind it. Transient, not terminal: a grant confirmed on another RPC is simply not here yet for a reader sitting at an earlier confirmed slot, and refusing it terminally would fail a valid request permanently over ordinary replica lag.",
       "result": "invalid",
       "rule": "delegation-absent",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation record is removed from the observation",
       "request": {
@@ -3759,7 +3759,7 @@
       "comment": "The delegator revoked it. Subsequent requests stop immediately, while the signer's own permit remains valid — two independent levers, one per party.",
       "result": "invalid",
       "rule": "delegation-revoked",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation record is marked revoked",
       "request": {
@@ -3828,7 +3828,7 @@
       "comment": "Expiry is measured against the observed slot, not against a local clock.",
       "result": "invalid",
       "rule": "delegation-expired",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation's expiration slot falls below the observed slot",
       "request": {
@@ -3897,7 +3897,7 @@
       "comment": "A record written after the observation is not part of the state this authorization saw. Accepting it would mean authorizing from two points in time at once. Transient, not terminal: the record's last update slot comes from the on-chain clock and the observed slot is the response's own context slot, so a coherent node cannot produce this, and it reports an incoherent observation rather than a dead grant. A repeat against a coherent node authorizes.",
       "result": "invalid",
       "rule": "delegation-newer-than-observation",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation's last update slot is above the observed slot",
       "request": {
@@ -3966,7 +3966,7 @@
       "comment": "A record sitting at the canonical address while naming a different tuple is refused: the address alone is not taken as proof of what the record says.",
       "result": "invalid",
       "rule": "delegation-tuple-mismatch",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation address holds a record naming another delegator",
       "request": {
@@ -4035,7 +4035,7 @@
       "comment": "The delegate half of the tuple rule: a record at the canonical address delegating to somebody else is refused. Sitting at the address derived from the delegate is not taken as proof of naming them.",
       "result": "invalid",
       "rule": "delegation-tuple-mismatch",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation address holds a record naming another delegate",
       "request": {
@@ -4104,7 +4104,7 @@
       "comment": "Only the host program grants delegations; an account under another program's ownership is not one.",
       "result": "invalid",
       "rule": "delegation-foreign-owner",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation record's owner is replaced with another program",
       "request": {
@@ -4173,7 +4173,7 @@
       "comment": "A host-owned account of another type at the delegation address is caught by its discriminator, the mirror of the same substitution against an encrypted store.",
       "result": "invalid",
       "rule": "delegation-wrong-account-type",
-      "class": "transient",
+      "recoverable": true,
       "derived_from": "delegated",
       "mutation": "the delegation address holds an encrypted store instead",
       "request": {
@@ -4242,7 +4242,7 @@
       "comment": "The delegator holds both an authority-specific row and a wildcard row, and both are revoked. The rejection names both reasons: either row could have authorized this entry on its own, so naming one of them would describe half of the state the delegate has to fix.",
       "result": "invalid",
       "rule": "delegation-no-live-grant",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "delegated",
       "mutation": "both the authority-specific and the wildcard delegation rows are marked revoked",
       "request": {
@@ -4316,7 +4316,7 @@
       "comment": "An encrypted store naming the wildcard sentinel as its authority is rejected at resolution, before any delegation row is read. A live wildcard row is present — exactly the row a sentinel authority would resolve to — so an implementation without this guard authorizes the request, with its authority-specific check structurally a wildcard check.",
       "result": "invalid",
       "rule": "encrypted-value-account-sentinel-authority",
-      "class": "terminal",
+      "recoverable": false,
       "derived_from": "delegated-via-wildcard-row",
       "mutation": "the encrypted store names the wildcard sentinel as its authority",
       "request": {

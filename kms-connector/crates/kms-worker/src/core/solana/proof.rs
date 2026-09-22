@@ -27,11 +27,13 @@ pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
 const MAX_LEAVES_PER_READ: usize = 64;
 
 /// Which leaf a query asks for.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LeafKind {
     /// A historical-access leaf: `key` was allowed on the handle.
     Allowed {
         /// The key the leaf names.
+        #[serde(with = "alloy::hex::serde::no_prefix")]
         key: SolanaPubkeyBytes,
     },
     /// A public-decrypt leaf: the handle was made public.
@@ -39,18 +41,27 @@ pub enum LeafKind {
 }
 
 /// One leaf to prove.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LeafQuery {
     /// The encrypted store whose MMR holds the leaf.
+    #[serde(with = "alloy::hex::serde::no_prefix")]
     pub encrypted_store: SolanaPubkeyBytes,
     /// The handle the leaf names.
+    #[serde(with = "alloy::hex::serde::no_prefix")]
     pub handle: HandleBytes,
     /// Which leaf.
+    #[serde(flatten)]
     pub kind: LeafKind,
 }
 
 /// What the record said about one query.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    tag = "status",
+    rename_all_fields = "camelCase"
+)]
 pub enum LeafProofOutcome {
     /// The leaf is recorded. `leaf_count` is the history the record had sealed when it built the
     /// proof; the verifier checks the sibling path against the on-chain peaks, not this number.
@@ -60,6 +71,7 @@ pub enum LeafProofOutcome {
         /// How many leaves the record had sealed on this account.
         leaf_count: u64,
         /// The sibling path.
+        #[serde(deserialize_with = "decode_siblings")]
         siblings: Vec<[u8; 32]>,
     },
     /// The record knows the account and has no such leaf in the history it has sealed.
@@ -74,17 +86,24 @@ pub enum LeafProofOutcome {
     HistoryIncomplete,
 }
 
+/// Per-query candidates plus any peers that could not answer the batch.
+#[derive(Debug)]
+pub struct ProofResponses {
+    pub candidates: Vec<Vec<LeafProofOutcome>>,
+    pub unavailable: Option<ProofReadError>,
+}
+
 /// The single proof-reading abstraction of the authorization path.
 ///
 /// Authorization is generic over it for the same reason it is generic over the state reader: a
 /// test drives the pipeline against canned proofs and counts the reads. Production has exactly one
-/// implementation ([`HttpHostProofReader`]).
+/// implementation ([`CoprocessorProofClient`]).
 pub trait HostProofReader: Send + Sync {
     /// One list of peer candidates per query, in query order. No candidate is trusted here.
     fn read_proofs(
         &self,
         queries: &[LeafQuery],
-    ) -> impl Future<Output = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>> + Send;
+    ) -> impl Future<Output = Result<ProofResponses, ProofReadError>> + Send;
 }
 
 /// An ordered, duplicate-free batch of queries and their verification context.
@@ -169,110 +188,40 @@ pub enum ProofReadError {
 // The HTTP transport. Field names mirror the coprocessor's `http_server.rs`.
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LeafQueryWire {
-    encrypted_store: String,
-    handle: String,
-    kind: LeafKindWire,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    key: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum LeafKindWire {
-    Allowed,
-    Public,
-}
-
-#[derive(Serialize)]
-struct LeafProofRequestWire {
-    leaves: Vec<LeafQueryWire>,
+struct LeafProofRequest<'a> {
+    leaves: &'a [LeafQuery],
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", tag = "status")]
-enum LeafProofWire {
-    #[serde(rename_all = "camelCase")]
-    Found {
-        leaf_index: u64,
-        leaf_count: u64,
-        siblings: Vec<String>,
-    },
-    #[serde(rename_all = "camelCase")]
-    NotFound {
-        leaf_count: u64,
-    },
-    UnknownAccount,
-    HistoryIncomplete,
+struct LeafProofResponse {
+    proofs: Vec<LeafProofOutcome>,
 }
 
-#[derive(Deserialize)]
-struct LeafProofResponseWire {
-    proofs: Vec<LeafProofWire>,
+pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> impl Serialize + '_ {
+    LeafProofRequest { leaves: queries }
 }
 
-/// Builds the request body the coprocessor route expects. Split out so the shape is assertable
-/// against the shared vectors without a live service.
-pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> impl Serialize {
-    let leaves = queries
+fn decode_siblings<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<[u8; 32]>, D::Error> {
+    let siblings = Vec::<String>::deserialize(deserializer)?;
+    if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
+        return Err(serde::de::Error::custom("too many proof siblings"));
+    }
+    siblings
         .iter()
-        .map(|query| LeafQueryWire {
-            encrypted_store: alloy::hex::encode(query.encrypted_store),
-            handle: alloy::hex::encode(query.handle),
-            kind: match query.kind {
-                LeafKind::Allowed { .. } => LeafKindWire::Allowed,
-                LeafKind::Public => LeafKindWire::Public,
-            },
-            key: match query.kind {
-                LeafKind::Allowed { key } => Some(alloy::hex::encode(key)),
-                LeafKind::Public => None,
-            },
-        })
-        .collect();
-    LeafProofRequestWire { leaves }
+        .map(|s| alloy::hex::decode_to_array(s).map_err(serde::de::Error::custom))
+        .collect()
 }
 
-/// Parses one coprocessor's answer to a batch.
 pub fn parse_leaf_proof_response(
     body: &str,
     requested: usize,
 ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
-    let response: LeafProofResponseWire = serde_json::from_str(body)
+    let response: LeafProofResponse = serde_json::from_str(body)
         .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
     check_length(requested, response.proofs.len())?;
-    response
-        .proofs
-        .into_iter()
-        .map(|proof| match proof {
-            LeafProofWire::Found {
-                leaf_index,
-                leaf_count,
-                siblings,
-            } => Ok(LeafProofOutcome::Found {
-                leaf_index,
-                leaf_count,
-                siblings: siblings
-                    .iter()
-                    .map(|sibling| decode_hex32(sibling))
-                    .collect::<Result<_, _>>()?,
-            }),
-            LeafProofWire::NotFound { leaf_count } => Ok(LeafProofOutcome::NotFound { leaf_count }),
-            LeafProofWire::UnknownAccount => Ok(LeafProofOutcome::UnknownAccount),
-            LeafProofWire::HistoryIncomplete => Ok(LeafProofOutcome::HistoryIncomplete),
-        })
-        .collect()
-}
-
-fn decode_hex32(text: &str) -> Result<[u8; 32], ProofReadError> {
-    let bytes = alloy::hex::decode(text)
-        .map_err(|error| unavailable(format!("sibling '{text}' is not hex: {error}")))?;
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        unavailable(format!(
-            "sibling '{text}' is {} bytes, expected 32",
-            bytes.len()
-        ))
-    })
+    Ok(response.proofs)
 }
 
 fn unavailable(reason: String) -> ProofReadError {
@@ -281,13 +230,13 @@ fn unavailable(reason: String) -> ProofReadError {
 
 /// The production reader: one authenticated `POST` per coprocessor per read, grouped per query.
 #[derive(Clone, Debug)]
-pub struct HttpHostProofReader {
+pub struct CoprocessorProofClient {
     routes: Vec<Url>,
     api_key: String,
     client: reqwest::Client,
 }
 
-impl HttpHostProofReader {
+impl CoprocessorProofClient {
     /// Binds the reader to the coprocessors' base URLs and the bearer key they expect.
     pub fn new(endpoints: &[Url], api_key: String, client: reqwest::Client) -> Self {
         let routes = endpoints
@@ -321,22 +270,33 @@ impl HttpHostProofReader {
             .await
             .map_err(|error| unavailable(format!("{route}: request failed: {error}")))?;
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .map_err(|error| unavailable(format!("{route}: body could not be read: {error}")))?;
         if !status.is_success() {
-            return Err(unavailable(format!("{route}: HTTP {status}: {text}")));
+            return Err(unavailable(format!("{route}: HTTP {status}")));
         }
-        parse_leaf_proof_response(&text, requested)
+        // At most 64 queries, each with 64 hex siblings and bounded numeric metadata.
+        const MAX_RESPONSE_BYTES: usize =
+            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 68 + 256);
+        let mut response = response;
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| unavailable(format!("{route}: body could not be read: {error}")))?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+                return Err(unavailable(format!(
+                    "{route}: proof response exceeds {MAX_RESPONSE_BYTES} bytes"
+                )));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{route}: {e}")))?;
+        parse_leaf_proof_response(text, requested)
     }
 }
 
-impl HostProofReader for HttpHostProofReader {
-    async fn read_proofs(
-        &self,
-        queries: &[LeafQuery],
-    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+impl HostProofReader for CoprocessorProofClient {
+    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
         if queries.len() > MAX_LEAVES_PER_READ {
             return Err(ProofReadError::TooManyQueries {
                 count: queries.len(),
@@ -369,7 +329,10 @@ impl HostProofReader for HttpHostProofReader {
             }
         }
         if answered {
-            Ok(candidates)
+            Ok(ProofResponses {
+                candidates,
+                unavailable: (!failures.is_empty()).then(|| unavailable(failures.join("; "))),
+            })
         } else {
             Err(unavailable(if failures.is_empty() {
                 "no leaf proof endpoint is configured".to_string()
@@ -437,5 +400,41 @@ mod tests {
                 LeafProofOutcome::HistoryIncomplete,
             ]
         );
+    }
+    #[tokio::test]
+    async fn malformed_and_oversized_proof_responses_are_recoverable_read_errors() {
+        use mocktail::server::MockServer;
+        let invalid_sibling = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":["00"]}]}).to_string();
+        let too_many_siblings = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":vec!["00".repeat(32);65]}]}).to_string();
+        for body in [
+            "not JSON".to_owned(),
+            "{\"proofs\":[]}".to_owned(),
+            invalid_sibling,
+            too_many_siblings,
+            " ".repeat(300_000),
+        ] {
+            let mut server = MockServer::new_http("proof-response");
+            server.mock(move |when, then| {
+                when.post()
+                    .path(LEAF_PROOFS_PATH)
+                    .header("authorization", "Bearer secret");
+                then.text(body.clone());
+            });
+            server.start().await.unwrap();
+            let client = CoprocessorProofClient::new(
+                &[server.base_url().unwrap().clone()],
+                "secret".into(),
+                reqwest::Client::new(),
+            );
+            let error = client
+                .read_proofs(&[LeafQuery {
+                    encrypted_store: [1; 32],
+                    handle: [2; 32],
+                    kind: LeafKind::Public,
+                }])
+                .await
+                .unwrap_err();
+            assert!(error.is_recoverable());
+        }
     }
 }

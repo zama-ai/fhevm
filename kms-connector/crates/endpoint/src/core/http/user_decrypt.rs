@@ -15,8 +15,8 @@ use actix_web::{
 use alloy::primitives::{B256, U256};
 use connector_utils::monitoring::otlp::PropagationContext;
 use connector_utils::types::{
-    db::RequestSource,
-    solana_request::{SolanaUserDecryptionRequestV1, insert_solana_user_decryption},
+    db::{RequestSource, insert_solana_user_decryption},
+    solana_request::SolanaUserDecryptionRequestV1,
 };
 use kms_connector_api::SolanaUserDecryptionRequest;
 use kms_connector_api::{ErrorCode, ErrorResponse, UserDecryptionRequest, UserDecryptionResponse};
