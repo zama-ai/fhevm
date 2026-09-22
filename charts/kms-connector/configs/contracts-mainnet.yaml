@@ -1,9 +1,16 @@
-gateway.chain_id: "261131"
-gateway.decryption.address: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
-gateway.gateway_config.address: "0xDE537Be194777A56f8B19d14079E6a78249390ab"
-gateway.kms_generation.address: "0x290947F9fed2d91fdB22f35E162aDfA744b7aEe3"
-ethereum.chain_id: "1"
-ethereum.acl.address: "0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6"
-ethereum.protocol_config.address: "0x77627828a55156b04Ac0DC0eb30467f1a552BB03"
-polygon.chain_id: "137"
-polygon.acl.address: "0x6737F17e31cf26a1b62fb0362acC5a16CB156F49"
+gateway:
+  chainId: "261131"
+  decryption: "0x0f6024a97684f7d90ddb0fAAD79cB15F2C888D24"
+  gatewayConfig: "0xDE537Be194777A56f8B19d14079E6a78249390ab"
+  kmsGeneration: "0x290947F9fed2d91fdB22f35E162aDfA744b7aEe3"
+ethereum:
+  protocolConfig: "0x77627828a55156b04Ac0DC0eb30467f1a552BB03"
+# Host chains deployed on this network. Every entry needs a URL in
+# commonConfig.hostChains.<name>.url.
+hostChains:
+  ethereum:
+    chainId: "1"
+    aclAddress: "0xcA2E8f1F656CD25C01F05d0b243Ab1ecd4a8ffb6"
+  polygon:
+    chainId: "137"
+    aclAddress: "0x6737F17e31cf26a1b62fb0362acC5a16CB156F49"

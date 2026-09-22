@@ -54,13 +54,10 @@ spec:
           {{- end }}
           - name: DATABASE_URL
             value: {{ .Values.commonConfig.databaseUrl | quote }}
+        {{- with .Values.kmsConnectorDbMigration.resources }}
         resources:
-          requests:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory }}
-          limits:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       volumes:
         - name: cache-volume
           emptyDir:
