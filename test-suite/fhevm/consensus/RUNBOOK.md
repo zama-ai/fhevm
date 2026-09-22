@@ -8,6 +8,17 @@ inventory at the recorded revision and topology, not every failure mode of the
 coprocessor fleet. Campaign results are recorded separately from these contracts;
 see the [validation notes for e9180f14c](VALIDATION-e9180f14c.md).
 
+## Local object-store routing
+
+The managed stack discovers MinIO through its published port on the Docker
+IPv4 bridge gateway. A stopped container releases its leased address, which a
+restarting worker can acquire before MinIO returns. The gateway endpoint stays
+stable across that sequence and is reachable from both the host and containers.
+Its numeric address preserves path-style S3 requests in released SNS workers.
+Discovery rejects an ambiguous gateway or a port published only on host loopback.
+Existing saved discovery keeps its original address; use a fresh stack to
+validate this routing behavior.
+
 ## What the cases establish
 
 | Cases | Checks and evidence | Limits |

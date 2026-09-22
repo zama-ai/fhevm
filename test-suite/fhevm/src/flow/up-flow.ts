@@ -109,7 +109,7 @@ import {
   writeEnvFile,
   writeJson,
 } from "../utils/fs";
-import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioPublishedEndpoint, validateDiscovery } from "./discovery";
 import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
@@ -187,7 +187,7 @@ export {
   dockerInspect,
   ensureDiscovery,
   ensureMaterial,
-  minioIp,
+  minioPublishedEndpoint,
   multiChainCoprocessorUpgradeTargets,
   pause,
   postBootHealthGate,
