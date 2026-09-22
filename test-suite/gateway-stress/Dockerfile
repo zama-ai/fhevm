@@ -21,6 +21,8 @@ WORKDIR /app
 
 COPY gateway-contracts/rust_bindings gateway-contracts/rust_bindings
 COPY shared/user-decryption-signature shared/user-decryption-signature
+COPY kms-connector/Cargo.toml kms-connector/Cargo.toml
+COPY kms-connector/crates/api kms-connector/crates/api
 COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
