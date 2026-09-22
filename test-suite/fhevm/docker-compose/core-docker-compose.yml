@@ -3,6 +3,8 @@ services:
   kms-core:
     container_name: kms-core
     image: ghcr.io/zama-ai/kms/core-service:${CORE_VERSION}
+    # v0.14.2-0 and later core tags are published amd64-only; pin so arm64 hosts run it emulated.
+    platform: linux/amd64
     user: root
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/core.env
@@ -18,13 +20,31 @@ services:
           export AWS_ACCESS_KEY_ID=$$(cat /minio_secrets/access_key)
           export AWS_SECRET_ACCESS_KEY=$$(cat /minio_secrets/secret_key)
           echo "=================GENERATING SIGNING KEYS================="
-          # The kms-gen-keys CLI changed across core images: newer cores take a single TOML
+          # The kms-gen-keys CLI changed across core images: newer cores (v0.14.1+) take a single TOML
           # --config-file (centralized = no [threshold] section; private vault is file-backed),
-          # while older cores took --public-storage/--aws-region/... flags with a `centralized`
-          # subcommand (and a --cmd signing-keys selector on the oldest). Probe --help and use the
-          # matching form so a pinned old or new CORE_VERSION both boot.
+          # while older cores (v0.13.x, still pinned by the devnet/testnet/mainnet targets) took
+          # --public-storage/--aws-region/... flags with a `centralized` subcommand (and a
+          # --cmd signing-keys selector on the oldest). Probe --help for "--config-file" — the same
+          # string the threshold gen-keys job probes (KMS_GEN_KEYS_CONFIG_PROBE in kms-core.ts) — so
+          # a pinned old or new CORE_VERSION both boot.
           if kms-gen-keys --help 2>&1 | grep -q -- "--config-file"; then
-            printf "[keygen]\noverwrite = false\nshow_existing = false\n\n[aws]\nregion = \"%s\"\ns3_endpoint = \"%s\"\n\n[public_vault.storage.s3]\nbucket = \"%s\"\nprefix = \"%s\"\n\n[private_vault.storage.file]\npath = \"%s\"\n" "$$S3_REGION" "$$S3_ENDPOINT" "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET" "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX" "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH" > /tmp/kms-gen-keys.toml
+            # Heredoc body sits at the block-scalar indent so its lines (and EOF) land at column 0.
+            cat > /tmp/kms-gen-keys.toml <<EOF
+        [keygen]
+        overwrite = false
+        show_existing = false
+
+        [aws]
+        region = "$$S3_REGION"
+        s3_endpoint = "$$S3_ENDPOINT"
+
+        [public_vault.storage.s3]
+        bucket = "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET"
+        prefix = "$$KMS_CORE__PUBLIC_VAULT__STORAGE__S3__PREFIX"
+
+        [private_vault.storage.file]
+        path = "$$KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH"
+        EOF
             kms-gen-keys --config-file /tmp/kms-gen-keys.toml
           else
             if kms-gen-keys --help 2>&1 | grep -q -- "--cmd"; then CMD="--cmd signing-keys"; else CMD=""; fi

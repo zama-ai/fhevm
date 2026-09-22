@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
@@ -6,6 +7,7 @@ import { resolveUpgradePlan } from "./flow/repair";
 import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
+  KMS_GEN_KEYS_CONFIG_PROBE,
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   THRESHOLD_PEERS_MARKER,
@@ -25,7 +27,7 @@ import {
   kmsCoreName,
   reconstructionThreshold,
 } from "./kms-party";
-import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
+import { COMPONENTS, TEMPLATE_COMPOSE_DIR, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { resolveKmsTopology } from "./scenario/resolve";
 import { stackSpecForState, type StackSpec } from "./stack-spec/stack-spec";
@@ -167,14 +169,25 @@ describe("buildKmsThresholdOverride", () => {
 
   test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
-    // keep the probes so a pinned newer CORE_VERSION still boots.
-    expect(entrypoint).toContain("if kms-gen-keys --help");
+    // Config-based cores (v0.14.1+) are detected by the shared probe and get one config per party.
+    expect(entrypoint).toContain(`grep -q -- '${KMS_GEN_KEYS_CONFIG_PROBE}'`);
+    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+    // Flag-based cores (v0.13.x) take the other branch; `--cmd signing-keys` and `--num-parties` are
+    // gated by their own `--help` probes there, since the oldest images need them and later ones dropped them.
     expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
-    // Config-based cores (v0.14.1+) take the other branch of the same probe.
-    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+  });
+
+  test("threshold gen-keys and the centralized template probe the CLI with the same string", async () => {
+    const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
+    const centralized = await readFile(path.join(TEMPLATE_COMPOSE_DIR, "core-docker-compose.yml"), "utf8");
+    const probe = (quote: string) => `kms-gen-keys --help 2>&1 | grep -q -- ${quote}${KMS_GEN_KEYS_CONFIG_PROBE}${quote}`;
+    expect(entrypoint).toContain(probe("'"));
+    expect(centralized).toContain(probe('"'));
+    // No second, differently-worded probe (e.g. `--public-storage`) hiding in either file.
+    expect(entrypoint).not.toContain("grep -q -- '--public-storage'");
+    expect(centralized).not.toContain('grep -q -- "--public-storage"');
   });
 
   test("config-based keygen keeps each party's storage and identity separate", () => {
@@ -189,6 +202,13 @@ describe("buildKmsThresholdOverride", () => {
     const volumes = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].volumes);
     for (const partyId of [1, 2, 3, 4]) {
       expect(volumes).toContain(kmsThresholdGenKeysConfigName(partyId));
+    }
+  });
+
+  test("core services pin the amd64 platform (v0.14.2-0+ core tags are published amd64-only)", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS).services;
+    for (const name of ["kms-core-gen-keys", "kms-core", "kms-core-4", "kms-core-init"]) {
+      expect(services[name].platform).toBe("linux/amd64");
     }
   });
 
