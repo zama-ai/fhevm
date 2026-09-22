@@ -34,13 +34,15 @@ pub struct BoundedClient {
     max_concurrent_heads_per_bucket: NonZeroUsize,
     /// Deadline of a single attestation `HEAD`.
     head_timeout: Duration,
-    /// Coprocessor context whose object keys are probed (RFC 023).
+    /// Coprocessor context whose object keys are probed.
     context_id: U256,
     /// The `GET` ceiling, global rather than per bucket: ciphertexts are big, so too many
     /// buffered at once would exhaust memory whichever buckets they came from.
     get_semaphore: Option<Arc<Semaphore>>,
     /// Ceiling on the size of a single ciphertext body, in bytes.
     max_ciphertext_size: Option<NonZeroUsize>,
+    /// Deadline of a single ciphertext `GET`.
+    get_timeout: Option<Duration>,
 }
 
 impl BoundedClient {
@@ -59,13 +61,11 @@ impl BoundedClient {
             context_id,
             get_semaphore: None,
             max_ciphertext_size: None,
+            get_timeout: None,
         }
     }
 
     /// HEAD probes and ciphertext GET retrieval.
-    ///
-    /// A `HEAD` carries `head_timeout`; a `GET` carries whatever deadline `client` was built
-    /// with, so a `Client` with none lets a silent bucket hold a retrieval open indefinitely.
     pub fn for_attestations_and_ciphertexts(
         client: Client,
         max_concurrent_heads_per_bucket: NonZeroUsize,
@@ -73,16 +73,17 @@ impl BoundedClient {
         context_id: U256,
         max_concurrent_gets: NonZeroUsize,
         max_ciphertext_size: NonZeroUsize,
+        get_timeout: Duration,
     ) -> Self {
         Self {
+            client,
+            head_semaphores: Arc::new(Mutex::new(HashMap::new())),
+            max_concurrent_heads_per_bucket,
+            head_timeout,
+            context_id,
             get_semaphore: Some(Arc::new(Semaphore::new(max_concurrent_gets.get()))),
             max_ciphertext_size: Some(max_ciphertext_size),
-            ..Self::for_attestations_only(
-                client,
-                max_concurrent_heads_per_bucket,
-                head_timeout,
-                context_id,
-            )
+            get_timeout: Some(get_timeout),
         }
     }
 
@@ -128,9 +129,11 @@ impl BoundedClient {
         handle: B256,
         expected_digest: B256,
     ) -> Result<Vec<u8>, FetchCiphertextError> {
-        let (Some(get_semaphore), Some(max_ciphertext_size)) =
-            (&self.get_semaphore, self.max_ciphertext_size)
-        else {
+        let (Some(get_semaphore), Some(max_ciphertext_size), Some(get_timeout)) = (
+            &self.get_semaphore,
+            self.max_ciphertext_size,
+            self.get_timeout,
+        ) else {
             return Err(FetchCiphertextError::NotConfigured);
         };
         let _permit = get_semaphore
@@ -143,6 +146,7 @@ impl BoundedClient {
         let mut response = self
             .client
             .get(&url)
+            .timeout(get_timeout)
             .send()
             .await
             .map_err(|e| FetchCiphertextError::Http(e.to_string()))?;
@@ -304,6 +308,7 @@ mod tests {
             CONTEXT_ID,
             NonZeroUsize::MIN,
             NonZeroUsize::new(max_ciphertext_size).unwrap(),
+            Duration::from_secs(5),
         )
     }
 
@@ -348,10 +353,8 @@ mod tests {
         (url, accept_loop)
     }
 
-    /// A `HEAD` carries its own deadline: a bucket that accepts the connection then goes silent
-    /// cannot hang it.
     #[tokio::test]
-    async fn a_head_is_bounded_by_its_own_deadline() {
+    async fn a_head_is_bounded_by_its_deadline() {
         let (bucket, accept_loop) = black_hole_server().await;
         let client = BoundedClient::for_attestations_only(
             Client::new(),
@@ -365,8 +368,32 @@ mod tests {
             client.fetch_single_attestation(&bucket, B256::ZERO),
         )
         .await
-        .expect("the HEAD should have ended on its own deadline");
+        .expect("the HEAD should have ended on its deadline");
         assert!(matches!(head, Err(FetchAttestationError::Timeout)));
+
+        accept_loop.abort();
+    }
+
+    #[tokio::test]
+    async fn a_get_is_bounded_by_its_deadline() {
+        let (bucket, accept_loop) = black_hole_server().await;
+        let bounded = BoundedClient::for_attestations_and_ciphertexts(
+            Client::new(),
+            NonZeroUsize::MIN,
+            Duration::from_secs(5),
+            CONTEXT_ID,
+            NonZeroUsize::MIN,
+            NonZeroUsize::new(1024).unwrap(),
+            Duration::from_millis(100),
+        );
+
+        let get = tokio::time::timeout(
+            Duration::from_secs(5),
+            bounded.fetch_ciphertext(&bucket, B256::ZERO, B256::ZERO),
+        )
+        .await
+        .expect("the GET should have ended on its deadline");
+        assert!(matches!(get, Err(FetchCiphertextError::Http(_))));
 
         accept_loop.abort();
     }
