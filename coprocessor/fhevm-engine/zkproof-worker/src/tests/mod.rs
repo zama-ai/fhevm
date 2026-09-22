@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 
 use crate::MAX_INPUT_INDEX;
 
+mod backend;
 mod utils;
 
 #[tokio::test]
