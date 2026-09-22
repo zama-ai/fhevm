@@ -48,7 +48,6 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # request_read_timeout = "30s"
 
 # How long in-flight requests are given to complete after SIGTERM (optional, defaults to "60s").
-# The pod's `terminationGracePeriodSeconds` must exceed this value.
 # ENV: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
 # shutdown_grace_period = "60s"
 
