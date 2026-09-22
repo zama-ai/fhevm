@@ -1,0 +1,97 @@
+{{- if .Values.kmsConnectorEndpoint.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-endpoint
+    app.kubernetes.io/name: {{ include "kmsConnectorEndpointName" . }}
+  name: {{ include "kmsConnectorEndpointName" . }}
+spec:
+  replicas: {{ .Values.kmsConnectorEndpoint.replicas }}
+  selector:
+    matchLabels:
+      app: kms-connector-endpoint
+  {{- if .Values.kmsConnectorEndpoint.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.kmsConnectorEndpoint.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: kms-connector-endpoint
+        app.kubernetes.io/name: {{ include "kmsConnectorEndpointName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with .Values.kmsConnectorEndpoint.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorEndpoint.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorEndpoint.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorEndpoint.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorEndpoint.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: kms-connector-endpoint
+          image: {{ .Values.kmsConnectorEndpoint.image.name }}:{{ .Values.kmsConnectorEndpoint.image.tag }}
+          env:
+            # Listen addresses derived from `ports`. Declared first so entries in
+            # `commonConfig.env` / `kmsConnectorEndpoint.env` take precedence.
+            - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorEndpoint.ports.monitoring | quote }}
+            - name: KMS_CONNECTOR_HTTP_ENDPOINT
+              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorEndpoint.ports.http | quote }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorEndpoint.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            {{- with include "kmsConnector.endpointSupportedChainIds" . }}
+            - name: KMS_CONNECTOR_SUPPORTED_CHAIN_IDS
+              value: {{ . | quote }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorEndpoint.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint }}
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          ports:
+            {{- range $portName, $portValue := .Values.kmsConnectorEndpoint.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          {{- with .Values.kmsConnectorEndpoint.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorEndpoint.probes .Values.kmsConnectorEndpoint.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit .Values.kmsConnectorEndpoint.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorEndpoint.probes .Values.kmsConnectorEndpoint.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit .Values.kmsConnectorEndpoint.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}

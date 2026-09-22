@@ -1,0 +1,16 @@
+{{- if and .Values.kmsConnectorProxy.enabled .Values.kmsConnectorProxy.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+  name: {{ include "kmsConnectorProxyName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-connector-proxy
+      app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+  endpoints:
+  - port: monitoring
+{{- end -}}
