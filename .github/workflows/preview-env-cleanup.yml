@@ -1,4 +1,4 @@
-name: preview-env-reap
+name: preview-env-cleanup
 
 ##############################################################################
 # Hourly clock for dispatch preview namespaces. PR-label namespaces are not
@@ -18,8 +18,8 @@ permissions:
   contents: read
 
 jobs:
-  reap:
-    name: reap
+  cleanup:
+    name: cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

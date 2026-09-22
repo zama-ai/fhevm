@@ -270,7 +270,7 @@ namespace. All handled by
 
 **Manual (dispatch) env.** The deploy stamps `preview.zama.ai/expires-at` on the
 namespace (`lifetime` hours from create, default 8, max 96). An hourly job
-([`preview-env-reap.yml`](../../.github/workflows/preview-env-reap.yml)) posts
+([`preview-env-cleanup.yml`](../../.github/workflows/preview-env-cleanup.yml)) posts
 once to `#ci-alerts` when that deadline is within 2 hours, then dispatches
 **preview-env-destroy** after `expires-at`. A re-dispatch restarts the clock,
 because deploy recreates the namespace. Namespaces created before this clock
