@@ -263,9 +263,13 @@ export type KmsParty = { party: number; endpoint: string; privateKey: string; db
  * softwareVersion must be valid semver
  * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
  */
-const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
+const applyProtocolConfigKmsGlobals = (
+  hostSc: Record<string, string>,
+  plan: StackSpec,
+  coreVersion = plan.versions.env.CORE_VERSION ?? "",
+) => {
   const zeroPcr = `0x${"00".repeat(48)}`;
-  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  coreVersion = coreVersion.replace(/^v/, "");
   hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
   hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
 };
@@ -279,13 +283,14 @@ const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: Sta
 const applyKmsCentralizedHostEnv = (
   envs: Record<string, Record<string, string>>,
   plan: StackSpec,
-  state: Pick<State, "discovery">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
 ) => {
   if (plan.kms.mode === "threshold") {
     return;
   }
   const hostSc = envs["host-sc"];
-  applyProtocolConfigKmsGlobals(hostSc, plan);
+  // A bootstrapped core is upgraded after keygen; name the core that will serve, not the one generating.
+  applyProtocolConfigKmsGlobals(hostSc, plan, state.bootstrapPending?.target.env.CORE_VERSION);
   hostSc.KMS_NODE_PARTY_ID_0 = "1";
   hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
   hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
@@ -527,7 +532,7 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
-  state: Pick<State, "discovery">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
   plan: StackSpec,
   templateEnvs: Record<string, Record<string, string>>,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,

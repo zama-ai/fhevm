@@ -5,8 +5,12 @@ import {
   LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
+  LEGACY_KMS_CORE_IMAGE_REPOSITORY,
+  MODERN_KMS_CORE_IMAGE_REPOSITORY,
+  assertBlueGreenKmsCompatibility,
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
+  kmsCoreImageRepository,
   canonicalProtocolConfigSeedingUsesEnv,
   compatArgPolicyForPinnedTag,
   compatPolicyForState,
@@ -909,4 +913,71 @@ test.each(["v0.11.0", "v0.12.0", "v0.13.4", "v0.14.0-7", "v0.14.1", "v0.14.1-1"]
 test.each(["v0.13.5", "v0.13.6", "v0.14.2-0", "v0.14.2", "v0.15.0", "main", "c2f416b"])("uses HTTP for current sender %s", (tag) => {
   expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
     .toContainEqual(["--gateway-url", { env: "GATEWAY_URL" }]);
+});
+
+describe("kms core image repository", () => {
+  test("pre-0.15 cores come from the plain core-service repository", () => {
+    expect(kmsCoreImageRepository("v0.14.0-1")).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+    expect(kmsCoreImageRepository("v0.14.2-0")).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+  });
+
+  test("0.15+ and unparsed tags use the insecure build", () => {
+    expect(kmsCoreImageRepository("v0.15.0-0")).toBe(MODERN_KMS_CORE_IMAGE_REPOSITORY);
+    expect(kmsCoreImageRepository("target-core")).toBe(MODERN_KMS_CORE_IMAGE_REPOSITORY);
+  });
+
+  test("compat policy exposes the repository to compose", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: { CORE_VERSION: "v0.14.0-1" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.CORE_IMAGE_REPOSITORY).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+  });
+});
+
+describe("assertBlueGreenKmsCompatibility", () => {
+  const blueGreen = (tag: string) =>
+    ({
+      kind: "blue-green",
+      bcs: { source: { mode: "registry", tag } },
+    }) as never;
+
+  test("rejects a pre-0.15 Blue booting against a 0.15 KMS core", () => {
+    expect(() => assertBlueGreenKmsCompatibility(blueGreen("v0.14.0-7"), { env: { CORE_VERSION: "v0.15.0-0" } })).toThrow(
+      "set bootstrap.tag",
+    );
+  });
+
+  test("accepts a pre-0.15 Blue once the KMS boots at a 0.14 core", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(blueGreen("v0.14.0-7"), { env: { CORE_VERSION: "v0.14.0-1" } }),
+    ).not.toThrow();
+  });
+
+  test("judges a SHA-pinned Blue by its compat tag", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(
+        { kind: "blue-green", bcs: { source: { mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" } } } as never,
+        { env: { CORE_VERSION: "v0.15.0-0" } },
+      ),
+    ).toThrow("set bootstrap.tag");
+  });
+
+  test("ignores a 0.15 Blue and a locally built Blue", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(blueGreen("v0.15.0-0"), { env: { CORE_VERSION: "v0.15.0-0" } }),
+    ).not.toThrow();
+    expect(() =>
+      assertBlueGreenKmsCompatibility(
+        { kind: "blue-green", bcs: { source: { mode: "local" } } } as never,
+        { env: { CORE_VERSION: "v0.15.0-0" } },
+      ),
+    ).not.toThrow();
+  });
 });

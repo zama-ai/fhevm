@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
+  assertBlueGreenKmsCompatibility,
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
@@ -74,6 +75,7 @@ import {
   STATE_DIR,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
+  composePath,
   coprocessorHostKey,
   envPath,
   gatewayAddressesPath,
@@ -160,7 +162,21 @@ import {
   stepComposeTask,
   stepComposeUp,
 } from "./runtime-compose";
-import { pause, runContractTask, unpause } from "./contracts";
+import {
+  BOOTSTRAP_SUSPENDED_GROUPS,
+  CANONICAL_HOST_CONTRACT_UPGRADES,
+  CONNECTOR_OPTIONAL_VERSION_KEYS,
+  CONNECTOR_VERSION_KEYS,
+  CONTRACT_VERSION_KEYS,
+  GATEWAY_CONTRACT_UPGRADES,
+  HOST_CONTRACT_UPGRADES,
+  LISTENER_CORE_VERSION_KEYS,
+  bootstrapBootOverrides,
+  bootstrapBootVersions,
+  bootstrapPhaseEnv,
+  contractUpgradeCommand,
+} from "./bootstrap";
+import { pause, runContractTask, snapshotContractSources, unpause } from "./contracts";
 
 export {
   castBool,
@@ -1162,7 +1178,7 @@ export const runStep = async (state: State, step: StepName) => {
       if (bootstrapDone) {
         state.discovery!.actualFheKeyId = bootstrapDone.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapDone.actualCrsKeyId;
-        await generateRuntime(state, stackSpecForState(state));
+        await completeBootstrap(state);
         break;
       }
       const [hostEnv, gatewayEnv] = await Promise.all([readEnvFile(envPath("host-sc")), readEnvFile(envPath("gateway-sc"))]);
@@ -1190,7 +1206,7 @@ export const runStep = async (state: State, step: StepName) => {
       if (bootstrapReady) {
         state.discovery!.actualFheKeyId = bootstrapReady.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapReady.actualCrsKeyId;
-        await generateRuntime(state, stackSpecForState(state));
+        await completeBootstrap(state);
         break;
       }
       const bootstrapHost = defaultHostChain(state);
@@ -1257,7 +1273,7 @@ export const runStep = async (state: State, step: StepName) => {
       // ingested it. Without the second wait `up` reports ready while operators
       // hold no key rows, and everything downstream races the ingest (F-1).
       await timed("[bootstrap] wait-for-key-material", () => waitForCoprocessorKeyMaterial(state));
-      await generateRuntime(state, stackSpecForState(state));
+      await completeBootstrap(state);
       break;
     }
     case "relayer":
@@ -1351,6 +1367,36 @@ const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["s
   }
 };
 
+/**
+ * Boots the components that exist before the keys do at the scenario's `bootstrap` release, so
+ * the pinned Blue can read the generated key material; the bootstrap step upgrades them to the
+ * bundle afterwards. Local overrides for those components are suspended until then.
+ */
+export const applyBootstrap = (
+  bundle: VersionBundle,
+  scenario: State["scenario"],
+  overrides: LocalOverride[],
+): Pick<State, "versions" | "overrides" | "bootstrapPending"> => {
+  const bootstrap = scenario.kind === "blue-green" ? scenario.bootstrap : undefined;
+  if (!bootstrap) {
+    return { versions: bundle, overrides };
+  }
+  return {
+    versions: bootstrapBootVersions(bundle, bootstrap),
+    overrides: bootstrapBootOverrides(overrides),
+    bootstrapPending: { target: bundle, overrides },
+  };
+};
+
+const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions">) => {
+  if (state.bootstrapPending) {
+    console.log(
+      `[bootstrap] contracts, KMS core/connector and listener-core boot at ${state.versions.env.HOST_VERSION} ` +
+        `(core ${state.versions.env.CORE_VERSION}); upgraded to the bundle once the operators ingest the keys, then Green starts`,
+    );
+  }
+};
+
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
   options: Pick<UpOptions, "overrides" | "lockFile" | "e2ePublicRuntime">,
@@ -1358,13 +1404,14 @@ export const previewStateFromBundle = (
   scenario: State["scenario"],
 ): State => {
   assertSupportedTargetScenario(bundle.target, scenario);
-  assertSupportedBundleScenario({ versions: bundle, overrides: options.overrides, scenario });
+  const boot = applyBootstrap(bundle, scenario, options.overrides);
+  assertBlueGreenKmsCompatibility(scenario, boot.versions);
+  assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   return {
     target: bundle.target,
     lockPath: "",
     requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
-    versions: bundle,
-    overrides: options.overrides,
+    ...boot,
     e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
@@ -1381,15 +1428,17 @@ const bootstrapState = async (options: UpOptions) => {
   const resolved = await resolveBundle(options, process.env);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
   assertSupportedTargetScenario(resolved.bundle.target, scenario);
-  assertSupportedBundleScenario({ versions: resolved.bundle, overrides: options.overrides, scenario });
+  const boot = applyBootstrap(resolved.bundle, scenario, options.overrides);
+  assertBlueGreenKmsCompatibility(scenario, boot.versions);
+  assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
+  logBootstrap(boot);
   return {
     target: resolved.bundle.target,
     lockPath: resolved.lockPath,
     requiresGitHub: targetNeedsGitHub({ target: resolved.bundle.target, lockFile: options.lockFile }),
-    versions: resolved.bundle,
-    overrides: options.overrides,
+    ...boot,
     e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
@@ -1522,6 +1571,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
+  logBootstrap(state);
   await preflight(state, false, state.requiresGitHub);
   printBundle(state, { detailed: true });
   printPlan(state, options.fromStep);
@@ -2203,6 +2253,14 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   }
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   console.log(`[upgrade] ${plan.group}`);
+  await executeUpgradePlan(nextState, plan);
+  for (const step of plan.steps) {
+    await markStep(nextState, step);
+  }
+};
+
+/** Persists `nextState`, regenerates the runtime and recreates the plan's components against it. */
+const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof resolveUpgradePlan>) => {
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
   if (plan.group === "listener-core") {
@@ -2224,9 +2282,98 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
     await composeUp(component.component, component.runtimeServices, { noDeps: true });
   }
   await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
-  for (const step of plan.steps) {
-    await markStep(nextState, step);
+};
+
+/**
+ * Ends the bootstrap step: regenerates the runtime and, when the stack booted at the scenario's
+ * `bootstrap` release, upgrades it to the bundle now that the key material is ingested, in
+ * production order: contracts, KMS core, KMS connector, listener-core, then the deferred Green
+ * fleet. Mutates `state` so the remaining steps and the step marker see the upgraded stack.
+ */
+const completeBootstrap = async (state: State) => {
+  const pending = state.bootstrapPending;
+  if (!pending) {
+    await generateRuntime(state, stackSpecForState(state));
+    return;
   }
+  const completed = new Set(pending.completed ?? []);
+  // Every unit is recorded once it succeeds, so `up --resume` after a failure skips it instead
+  // of repeating an upgrade task that reverts on an already upgraded proxy.
+  const once = async (unit: string, action: () => Promise<void>) => {
+    if (completed.has(unit)) {
+      return;
+    }
+    await action();
+    completed.add(unit);
+    pending.completed = [...completed];
+    // Contract tasks build their images against the persisted state; keep those build records,
+    // or every later contract task rebuilds first and time-boxed tasks miss their window.
+    state.builtImages = (await loadState())?.builtImages ?? state.builtImages;
+    await saveState(state);
+  };
+  const advance = (label: string, keys: readonly string[], groups: readonly OverrideGroup[]) => {
+    console.log(`[bootstrap] key material ingested; upgrading ${label} to the bundle`);
+    state.versions = { ...state.versions, env: bootstrapPhaseEnv(state.versions.env, pending.target.env, keys) };
+    state.overrides = mergeLocalOverrides(
+      state.overrides,
+      pending.overrides.filter((override) => groups.includes(override.group)),
+    );
+  };
+
+  await once("contracts", async () => {
+    await snapshotContractSources("gateway");
+    await snapshotContractSources("host");
+    advance("the contracts", CONTRACT_VERSION_KEYS, ["gateway-contracts", "host-contracts"]);
+    await saveState(state);
+    await generateRuntime(state, stackSpecForState(state));
+    for (const [task, contract] of GATEWAY_CONTRACT_UPGRADES) {
+      await once(`gateway:${contract}`, () =>
+        runContractTask("gateway-sc", "gateway-sc-deploy", contractUpgradeCommand(task, contract)),
+      );
+    }
+    for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
+      await once(`host:${contract}`, () =>
+        runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract)),
+      );
+    }
+    for (const [task, contract] of HOST_CONTRACT_UPGRADES) {
+      const command = contractUpgradeCommand(task, contract);
+      await once(`host:${contract}`, () => runContractTask("host-sc", "host-sc-deploy", command));
+      for (const chain of extraHostChains(state)) {
+        await once(`host:${contract}@${chain.key}`, () =>
+          runContractTask("host-sc", `${chain.sc}-deploy`, command, {
+            envComponent: chain.sc,
+            composeFile: composePath(chain.sc),
+          }),
+        );
+      }
+    }
+  });
+  await once("kms-core", async () => {
+    advance("the KMS core", ["CORE_VERSION"], []);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-core", { lockFile: true }));
+    // The core has no healthcheck; let it serve before the connector reconnects to it.
+    await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+  });
+  await once("kms-connector", async () => {
+    advance("the KMS connector", [...CONNECTOR_VERSION_KEYS, ...CONNECTOR_OPTIONAL_VERSION_KEYS], ["kms-connector"]);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-connector", { lockFile: true }));
+  });
+  await once("listener-core", async () => {
+    advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "listener-core", { lockFile: true }));
+  });
+
+  state.versions = pending.target;
+  state.overrides = pending.overrides;
+  await saveState(state);
+  console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
+  // Green was built alongside Blue in the coprocessor step. The marker stays until Green runs,
+  // so a failed start is retried by `up --resume` rather than left deferred for good.
+  await startDeferredGreen(deferredGreenOperations, { rebuild: false });
+  Object.assign(state, await loadState());
+  delete state.bootstrapPending;
+  await saveState(state);
 };
 
 type DeferredGreenOperations = {
@@ -2263,7 +2410,10 @@ const deferredGreenOperations: DeferredGreenOperations = {
 };
 
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
-export const startDeferredGreen = async (operations: DeferredGreenOperations = deferredGreenOperations) => {
+export const startDeferredGreen = async (
+  operations: DeferredGreenOperations = deferredGreenOperations,
+  options: { rebuild?: boolean } = {},
+) => {
   const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
     throw new PreflightError("startDeferredGreen requires a running Blue-Green scenario with gcs.deferredStart=true");
@@ -2294,7 +2444,7 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
 
   try {
     await operations.generateRuntime(nextState, stackSpecForState(nextState));
-    await operations.maybeBuild("coprocessor", nextState, { force: true, persistState: false });
+    await operations.maybeBuild("coprocessor", nextState, { force: options.rebuild ?? true, persistState: false });
     await operations.composeUp("coprocessor", migrationServices, { forceRecreate: true });
     for (const service of migrationServices) {
       await operations.waitForContainer(service, "complete");
