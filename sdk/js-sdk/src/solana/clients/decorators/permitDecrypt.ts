@@ -63,7 +63,7 @@ export interface SolanaDecryptTrust {
   readonly kmsEpochId: Bytes32Hex;
   /** The FHE parameter choice this deployment runs, e.g. `default` or `test`. */
   readonly fheParameter: string;
-  /** The gateway EIP-712 domain used to authenticate KMS response signatures. */
+  /** The gateway EIP-712 domain the response link is hashed under and KMS signatures verify against. */
   readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
 }
 

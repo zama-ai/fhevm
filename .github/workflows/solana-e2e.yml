@@ -67,6 +67,12 @@ jobs:
       # Acceptance clients read the protected token file directly. Never persist the fragment token
       # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
       DEMO_PRINT_LAUNCH_URL: "0"
+      # KMS corruption threshold t, job-wide: the bring-up deploys the host with it (the live
+      # client derives the 2t+1 on-chain certificate thresholds), and the host-upgrade scenario
+      # declares the same t when it rolls the program — bootstrap.ts refuses an upgrade whose
+      # declared inputs differ from the deployed KMS context. Empty (PR runs) keeps the
+      # centralized defaults on both sides.
+      KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
       # Every producer/consumer derives the demo config path from the fhevm layout under
       # FHEVM_STATE_DIR (default <repo>/.fhevm), regardless of the step's working directory.
     steps:
@@ -157,10 +163,9 @@ jobs:
           SOLANA_E2E_OVERRIDES: ${{ steps.select-overrides.outputs.overrides }}
           SOLANA_E2E_LOCK_PINS: ${{ steps.select-overrides.outputs.lock_pins }}
           # KMS topology. Empty (PR runs) keeps clean-e2e.sh's centralized defaults, so the PR lane
-          # is unchanged. `threshold` selects the 4-party scenario and sets the corruption threshold
-          # t=1, from which the live client derives the 2t+1=3 on-chain certificate thresholds.
+          # is unchanged. `threshold` selects the 4-party scenario; the matching corruption
+          # threshold is the job-level KMS_THRESHOLD, which the scenario step needs as well.
           SOLANA_E2E_SCENARIO: ${{ inputs.kms-mode == 'threshold' && 'solana-threshold-kms' || '' }}
-          KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
           # This lane is where the 2-of-3 Squads delegation arc runs at all, so an unavailable
           # fixture fails the bring-up instead of leaving a green run that skipped it. Offline
           # local runs leave this unset and keep the skip.

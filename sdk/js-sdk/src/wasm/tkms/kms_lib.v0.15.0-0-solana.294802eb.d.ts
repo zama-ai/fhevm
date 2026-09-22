@@ -194,15 +194,19 @@ export class UserDecryptionRequest {
     set context_id(value: RequestId | null | undefined);
     /**
      * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
+     * For Solana requests it is also the domain the response link is computed under: the Gateway
+     * `Decryption` contract's domain, not one derived from the Solana host chain.
      */
     get domain(): Eip712DomainMsg | undefined;
     /**
      * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for EVM requests, be distinct from `client_address`.
+     * For Solana requests it is also the domain the response link is computed under: the Gateway
+     * `Decryption` contract's domain, not one derived from the Solana host chain.
      */
     set domain(value: Eip712DomainMsg | null | undefined);
     /**
-     * Encoding of the user's public encryption key for this request.
-     * This must be a bincode (v.1) encoded ML-KEM 512 key.
+     * Encoding of the user's public encryption key for this request: the tfhe-rs `safe_serialize`d
+     * `UnifiedPublicEncKey` (869 bytes for ML-KEM-512). The response link hashes these exact bytes.
      */
     enc_key: Uint8Array;
     /**
@@ -216,7 +220,8 @@ export class UserDecryptionRequest {
      */
     set epoch_id(value: RequestId | null | undefined);
     /**
-     * Extra data used in the EIP712 signature - external_signature.
+     * Extra data used in the EIP712 signature - external_signature. Not an input to the response
+     * link on either host path.
      */
     extra_data: Uint8Array;
     /**
@@ -241,8 +246,8 @@ export class UserDecryptionRequest {
     set request_id(value: RequestId | null | undefined);
     /**
      * The signature schemes to include in the response `signatures` field.
-     * If empty, the response `signatures` list is empty; legacy ECDSA signatures
-     * remain available via the deprecated scalar fields for backward compatibility.
+     * If empty, it defaults to ECDSA256K1, so the response carries a single ECDSA
+     * entry.
      */
     signing_schemes: Int32Array;
     /**
@@ -331,10 +336,11 @@ export class UserDecryptionResponsePayload {
  * Compute the link a Solana user-decryption request expects its response to carry.
  *
  * The request half of the same contract [process_user_decryption_resp_solana_from_js] enforces:
- * given the fields the client already holds, it returns the 32-byte value a KMS node must have
- * signcrypted against. A caller can use it to check a response digest without running the whole
- * response path, and the JS vector suite (tests/js/linker_vectors.test.js) uses it to check this
- * build against the committed normative set (see the module docs).
+ * given the fields the client already holds and its configured Gateway domain, it returns the
+ * 32-byte value a KMS node must have signcrypted against. A caller can use it to check a response
+ * digest without running the whole response path, and the JS vector suite
+ * (tests/js/linker_vectors.test.js) uses it to check this build against the committed normative
+ * set (see the module docs).
  *
  * This is marshalling and nothing else — JS values in, the typed request built, and the one
  * canonical link computation in [crate::client::solana_response] called. No part of the
@@ -351,17 +357,21 @@ export class UserDecryptionResponsePayload {
  * "0x"), in request order and with duplicates preserved, exactly as the request lists them: order
  * and multiplicity are bound.
  *
- * * `enc_key` - the serialized transport (ephemeral ML-KEM) public key, as the request carries it.
- * The bytes are bound verbatim and no width is enforced.
+ * * `enc_key` - the safe-serialized transport (ephemeral ML-KEM) public key, as the request
+ * carries it. The bytes are bound verbatim and no width is enforced here.
  *
- * * `extra_data` - the request's `extra_data`, verbatim. Opaque bytes bound as they are: nothing
- * here parses them.
+ * * `eip712_domain` - the Gateway `Decryption` contract's EIP-712 domain, in the same JS shape
+ * [process_user_decryption_resp_solana_from_js] takes it. The link is hashed under it; required.
+ *
+ * Not an input: the request's `extra_data`. It is authenticated by the external response
+ * signature alone, so it has no place in the link and no place here.
  *
  * Returns the 32-byte link, or throws if the fields are not a valid request — a wrong-width
- * identity, a handle that is not a 32-byte Solana handle, an empty handle list, handles disagreeing
- * on the embedded chain id, or a `host_chain_id` that is not the one the handles embed.
+ * identity, a handle that is not a 32-byte Solana handle, an empty handle list, handles
+ * disagreeing on the embedded chain id, a `host_chain_id` that is not the one the handles embed,
+ * or a missing domain.
  */
-export function compute_solana_user_decrypt_link_from_js(solana_request: any, handles: any, enc_key: Uint8Array, extra_data: Uint8Array): Uint8Array;
+export function compute_solana_user_decrypt_link_from_js(solana_request: any, handles: any, enc_key: Uint8Array, eip712_domain: any): Uint8Array;
 
 export function get_client_address(client: Client): string;
 
@@ -505,9 +515,9 @@ export function process_user_decryption_resp_from_js(client: Client, request: an
 
 /**
  * Solana variant of [process_user_decryption_resp_from_js]. The signed link is the Solana
- * user-decryption binding over the deployment pair (`verifying_program_id`, host chain id), the
- * recipient, the handles, the transport key and the request's `extra_data`, not the EVM EIP-712
- * `UserDecryptionLinker`; de-signcryption is otherwise identical to the EVM path.
+ * user-decryption binding — the EIP-712 `SolanaUserDecryptionLinker` over the host program, the
+ * recipient, the handles and the transport key, hashed under the Gateway `Decryption` domain —
+ * not the EVM `UserDecryptionLinker`; de-signcryption is otherwise identical to the EVM path.
  *
  * * `client` - the client built with [new_solana_client] from trusted configuration: the
  * registered KMS signer set — on Solana, the host program's KMS-context signer set, which the
@@ -522,12 +532,12 @@ export function process_user_decryption_resp_from_js(client: Client, request: an
  * Identities are 32-byte hex strings; `host_chain_id` is a decimal string, the vector-set
  * convention, because a Solana chain id has type byte `0x01` and does not fit a JS number.
  *
- * * `eip712_domain` - the EIP-712 domain a KMS node produced the response's `external_signature`
- * under, in the same JS shape [process_user_decryption_resp_from_js] takes it. A wasm response
- * never carries an internal ECDSA signature (see [js_to_resp]), so this is the domain every share
- * is authenticated against. It is a trailing argument, and omitting it is treated as the empty
- * domain — under which no real external signature verifies, so such a response is rejected by the
- * signature rule rather than accepted unchecked.
+ * * `eip712_domain` - the Gateway `Decryption` contract's EIP-712 domain, in the same JS shape
+ * [process_user_decryption_resp_from_js] takes it. It is an input to the link and the domain a
+ * KMS node produced the response's `external_signature` under — a wasm response never carries an
+ * internal ECDSA signature (see [js_to_resp]), so every share is authenticated against it as
+ * well. Required: omitting it is an error, because without it there is no expected link to hold a
+ * response against.
  */
 export function process_user_decryption_resp_solana_from_js(client: Client, request: any, solana_request: any, agg_resp: any, enc_pk: PublicEncKeyMlKem512, enc_sk: PrivateEncKeyMlKem512, eip712_domain: any): TypedPlaintext[];
 
@@ -545,10 +555,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_client_free: (a: number, b: number) => void;
     readonly __wbg_privateenckeymlkem512_free: (a: number, b: number) => void;
     readonly __wbg_publicenckeymlkem512_free: (a: number, b: number) => void;
     readonly __wbg_serveridaddr_free: (a: number, b: number) => void;
-    readonly compute_solana_user_decrypt_link_from_js: (a: any, b: any, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly compute_solana_user_decrypt_link_from_js: (a: any, b: any, c: number, d: number, e: any) => [number, number, number, number];
     readonly get_client_address: (a: number) => [number, number];
     readonly get_client_secret_key: (a: number) => number;
     readonly get_server_addrs: (a: number) => [number, number];
@@ -571,11 +582,10 @@ export interface InitOutput {
     readonly u8vec_to_ml_kem_pke_sk: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_private_sig_key: (a: number, b: number) => [number, number, number];
     readonly u8vec_to_public_sig_key: (a: number, b: number) => [number, number, number];
-    readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
-    readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
-    readonly __wbg_client_free: (a: number, b: number) => void;
     readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
     readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
+    readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
+    readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
     readonly __wbg_eip712domainmsg_free: (a: number, b: number) => void;
     readonly __wbg_get_eip712domainmsg_chain_id: (a: number) => [number, number];
     readonly __wbg_get_eip712domainmsg_name: (a: number) => [number, number];

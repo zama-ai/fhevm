@@ -1,11 +1,13 @@
 // One permit session, from signed permit to verified plaintexts.
 //
 // The pieces are already built — the retry session, the response verification — and this module
-// only fastens them together. Its one substantive rule is where the link inputs come from: the
-// signed permit's own fields, including the KMS routing decoded out of the permit's extraData.
-// Configuration hands the routing in once, at permit creation; from then on the permit is the
-// single source, and a verification that read the routing from configuration again could disagree
-// with what the wallet actually signed.
+// only fastens them together. Its one substantive rule is where the request inputs come from: the
+// signed permit's own fields, including the KMS routing decoded out of the permit's extraData, plus
+// the gateway domain from trust configuration. Configuration hands the routing in once, at permit
+// creation; from then on the permit is the single source, and a verification that read the routing
+// from configuration again could disagree with what the wallet actually signed. The domain is the
+// exception by nature: the permit does not carry it, so it comes from the same trust configuration
+// as the signer set and is bound into the link there.
 
 import type { SolanaPermitFields, SolanaPermitWarning, SolanaSignedPermit } from '../permit/index.js';
 import type {
@@ -13,8 +15,8 @@ import type {
   SolanaKmsSigner,
   SolanaSigncryptedShare,
   SolanaTransportKeyPair,
-  SolanaUserDecryptLinkInputs,
   SolanaUserDecryptPlaintext,
+  SolanaUserDecryptRequestInputs,
 } from './response.js';
 import type { SolanaUserDecryptHandleEntry } from './request.js';
 import type { SolanaUserDecryptClock, SolanaUserDecryptTransport } from './session.js';
@@ -39,31 +41,35 @@ export interface SolanaPermitSession {
 export interface SolanaUserDecryptVerification {
   readonly signers: readonly SolanaKmsSigner[];
   readonly fheParameter: string;
-  readonly gatewayEip712Domain?: SolanaGatewayEip712Domain | undefined;
+  /** The gateway domain the link is hashed under and node signatures verify against. */
+  readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
 }
 
 /**
- * The link inputs a permit's fields pin, for the given handles.
+ * The request inputs a permit's fields pin, for the given handles under the given gateway domain.
  *
- * Everything but the handles is the permit's own: the extra_data is the KMS routing the wallet
- * signed, re-encoded to the exact wire bytes the request carries, not read from configuration — so
- * the link this client computes and the link the KMS computes can only disagree if the permit
- * itself does.
+ * Everything but the handles and the domain is the permit's own: the extra_data is the KMS routing
+ * the wallet signed, re-encoded to the exact wire bytes the request carries, not read from
+ * configuration — so the link this client computes and the link the KMS computes can only disagree
+ * if the permit itself does, or if the configured domain is not the gateway's.
  *
  * @param fields - The signed permit's validated fields.
  * @param handles - The requested handles, in the order the request carries them.
+ * @param gatewayEip712Domain - The gateway domain, from trust configuration.
  */
-export function solanaUserDecryptLinkInputs(
+export function solanaUserDecryptRequestInputs(
   fields: SolanaPermitFields,
   handles: readonly Uint8Array[],
-): SolanaUserDecryptLinkInputs {
+  gatewayEip712Domain: SolanaGatewayEip712Domain,
+): SolanaUserDecryptRequestInputs {
   return {
     userPubkey: fields.userPubkey,
     hostChainId: fields.chainId,
     verifyingProgramId: fields.verifyingProgramId,
-    extraData: encodeSolanaKmsRouting(fields.kmsRouting),
     handles,
     transportKey: fields.transportKey,
+    gatewayEip712Domain,
+    extraData: encodeSolanaKmsRouting(fields.kmsRouting),
   };
 }
 
@@ -96,14 +102,14 @@ export async function executeSolanaUserDecrypt(run: {
   });
 
   return verifySolanaUserDecryptResponse({
-    link: solanaUserDecryptLinkInputs(
+    request: solanaUserDecryptRequestInputs(
       run.session.signedPermit.fields,
       run.entries.map((entry) => entry.handle),
+      run.verification.gatewayEip712Domain,
     ),
     shares,
     keyPair: run.session.keyPair,
     signers: run.verification.signers,
     fheParameter: run.verification.fheParameter,
-    gatewayEip712Domain: run.verification.gatewayEip712Domain,
   });
 }

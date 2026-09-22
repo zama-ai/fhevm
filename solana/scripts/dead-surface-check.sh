@@ -639,7 +639,7 @@ if run_check 3; then
   # the connector and in the generated auth vectors, so under plain `all` this entry passed vacuously.
   #
   # The one exception is a sentence we do not own: the linker vector set is vendored verbatim from
-  # the kms repo and pinned byte-for-byte by `solana_linker_v1.sha256`, so its `description` cannot
+  # the kms repo and pinned byte-for-byte by `solana_linker_v2.sha256`, so its `description` cannot
   # be reworded here without breaking the checksum that makes it the same file on both sides. The
   # word is retired upstream too; until that lands, the exception is written narrowly enough to
   # match only that phrase, so a fresh `lineage` anywhere — including elsewhere in the same file —

@@ -62,7 +62,7 @@ pub(crate) fn prepare_xof_key_set_for_db(
     // attempt to cross-check the two would fire on every migrated
     // key.
     let (_public_key, server_key) =
-        compressed_key_set.decompress()?.into_raw_parts();
+        compressed_key_set.decompress().into_raw_parts();
     let sns_pk = safe_serialize_key(&server_key);
     let sks_key = extract_server_key_without_ns_from_server_key(server_key)?;
 
@@ -112,7 +112,7 @@ pub(crate) fn extract_server_key_without_ns(
     let compressed_key_set: CompressedXofKeySet =
         safe_deserialize_sns_key(key_bytes)?;
     let (_public_key, server_key) =
-        compressed_key_set.decompress()?.into_raw_parts();
+        compressed_key_set.decompress().into_raw_parts();
     extract_server_key_without_ns_from_server_key(server_key)
 }
 
@@ -138,6 +138,7 @@ fn extract_server_key_without_ns_from_server_key(
         noise_squashing_compression_key,
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     ) = server_key.into_raw_parts();
 
@@ -162,6 +163,7 @@ fn extract_server_key_without_ns_from_server_key(
         None, // noise squashing compression key excluded
         re_randomization_keyswitching_key,
         oprf_key,
+        transciphering_key,
         tag,
     )))
 }
@@ -228,7 +230,7 @@ mod test {
         )?;
 
         let (_public_key, server_key) =
-            compressed_key_set.decompress()?.into_raw_parts();
+            compressed_key_set.decompress().into_raw_parts();
         let server_key_bytes = safe_serialize_key(&server_key);
         let compressed_key_set_bytes = safe_serialize_key(&compressed_key_set);
 
@@ -265,7 +267,7 @@ mod test {
         let kxs: CompressedXofKeySet =
             safe_deserialize_sns_key(&compressed_blob)?;
         let (_public_key, decompressed_full) =
-            kxs.decompress()?.into_raw_parts();
+            kxs.decompress().into_raw_parts();
         assert_eq!(safe_serialize_key(&decompressed_full), prepared.sns_pk);
 
         // The legacy stripped ServerKey has the expected NS layout.
@@ -280,6 +282,7 @@ mod test {
             noise_squashing_compression_key,
             re_randomization_keyswitching_key,
             _oprf_key,
+            _transciphering_key,
             _tag,
         ) = stripped_server_key.into_raw_parts();
 

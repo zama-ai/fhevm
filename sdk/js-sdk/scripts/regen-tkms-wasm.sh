@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Regenerate the vendored TKMS WASM bindings from a kms checkout. SINGLE producer of
 # sdk/js-sdk/src/wasm/tkms/kms_lib* and of the linker vector set it is checked against
-# (solana/test-fixtures/user-decrypt/solana_linker_v1.*). See FI#1546.
+# (solana/test-fixtures/user-decrypt/solana_linker_v2.*). See FI#1546.
 #
 # DESIGNED TO BE DELETED: this exists only because the Solana de-signcryption
 # (process_user_decryption_resp_solana / compute_link_solana) is not yet in a published
-# @zama-fhe TKMS package — it lives on the kms `feature/solana` branch. When kms ships those
+# @zama-fhe TKMS package — it lives on the kms `solana` branch. When kms ships those
 # bits in a real release, delete this script + .regen-tkms.env + the vendored blob and
 # `npm i` the published package instead.
 #
@@ -16,7 +16,7 @@
 # scripts/.regen-tkms.env > sibling default. The kms source is also required:
 # positional source selector > $KMS_COMMIT > scripts/.regen-tkms.env.
 # Pass an exact commit for reproducibility, or --feature-head to resolve the freshly fetched
-# origin/feature/solana head to an exact commit before building.
+# origin/$KMS_BRANCH head (default `solana`) to an exact commit before building.
 # Usage:
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh [/path/to/kms] <40-character-kms-commit|--feature-head>
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh <40-character-kms-commit|--feature-head>
@@ -42,7 +42,7 @@ FIRST_ARG="${1:-}"
 SECOND_ARG="${2:-}"
 SIBLING_KMS_DIR="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || true)"
 KMS_DIR_DEFAULT="${KMS_DIR_INPUT:-${KMS_DIR:-$SIBLING_KMS_DIR}}"
-KMS_BRANCH="${KMS_BRANCH_INPUT:-${KMS_BRANCH:-feature/solana}}"
+KMS_BRANCH="${KMS_BRANCH_INPUT:-${KMS_BRANCH:-solana}}"
 if [[ "$FIRST_ARG" = "--feature-head" || "$FIRST_ARG" =~ ^[0-9a-fA-F]{40}$ ]]; then
   if [ -n "$SECOND_ARG" ]; then
     echo "ERROR: pass the kms source either after the optional checkout path or as the only argument." >&2
@@ -152,21 +152,21 @@ EOF
 #    runner re-checks — the same cross-repository contract the kms-side suites assert.
 VECTORS_SRC="$BUILD_DIR/core/grpc/test-vectors"
 VECTORS_DST="$ROOT/solana/test-fixtures/user-decrypt"
-for vector_file in solana_linker_v1.json solana_linker_v1.sha256; do
+for vector_file in solana_linker_v2.json solana_linker_v2.sha256; do
   [ -f "$VECTORS_SRC/$vector_file" ] || {
     echo "ERROR: kms commit $HEAD_SHA carries no $vector_file — the linker vector set moved or was renamed." >&2
     exit 1
   }
   cp "$VECTORS_SRC/$vector_file" "$VECTORS_DST/$vector_file"
 done
-( cd "$VECTORS_DST" && shasum -a 256 -c solana_linker_v1.sha256 >/dev/null ) || {
+( cd "$VECTORS_DST" && shasum -a 256 -c solana_linker_v2.sha256 >/dev/null ) || {
   echo "ERROR: the copied linker vector set does not match its own digest file." >&2
   exit 1
 }
-echo "[regen] vendored linker vectors: solana/test-fixtures/user-decrypt/solana_linker_v1.json (digest verified)"
+echo "[regen] vendored linker vectors: solana/test-fixtures/user-decrypt/solana_linker_v2.json (digest verified)"
 
 # 7. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
-#    `feature/solana` is a newer kms snapshot whose TKMS JS API differs from the EVM-vendored
+#    `solana` is a newer kms snapshot whose TKMS JS API differs from the EVM-vendored
 #    blob (e.g. `getWasmInfo` removed, `process_user_decryption_resp_from_js` gained a `threshold`
 #    arg), so reusing it for EVM would break the EVM path. Only the Solana de-signcryption path
 #    imports this blob by its versioned filename. The two blobs coexist until fhevm upgrades the

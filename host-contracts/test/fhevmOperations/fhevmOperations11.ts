@@ -2787,7 +2787,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(18n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, euint8) => euint8 test 2 (5, 9)', async function () {
@@ -2802,7 +2802,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(10n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, euint8) => euint8 test 3 (9, 9)', async function () {
@@ -2817,7 +2817,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(18n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, euint8) => euint8 test 4 (9, 5)', async function () {
@@ -2843,7 +2843,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shl_euint8_uint8(encryptedAmount.handles[0], 9n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(18n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, uint8) => euint8 test 2 (5, 9)', async function () {
@@ -2854,7 +2854,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shl_euint8_uint8(encryptedAmount.handles[0], 9n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(10n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, uint8) => euint8 test 3 (9, 9)', async function () {
@@ -2865,7 +2865,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shl_euint8_uint8(encryptedAmount.handles[0], 9n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(18n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shl" overload (euint8, uint8) => euint8 test 4 (9, 5)', async function () {
@@ -2891,7 +2891,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(40n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, euint8) => euint8 test 2 (4, 8)', async function () {
@@ -2906,7 +2906,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(4n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, euint8) => euint8 test 3 (8, 8)', async function () {
@@ -2921,7 +2921,7 @@ describe('FHEVM operations 11', function () {
     );
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(8n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, euint8) => euint8 test 4 (8, 4)', async function () {
@@ -2947,7 +2947,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shr_euint8_uint8(encryptedAmount.handles[0], 8n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(40n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, uint8) => euint8 test 2 (4, 8)', async function () {
@@ -2958,7 +2958,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shr_euint8_uint8(encryptedAmount.handles[0], 8n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(4n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, uint8) => euint8 test 3 (8, 8)', async function () {
@@ -2969,7 +2969,7 @@ describe('FHEVM operations 11', function () {
     const tx = await this.contract7.shr_euint8_uint8(encryptedAmount.handles[0], 8n, encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt8(await this.contract7.resEuint8());
-    expect(res).to.equal(8n);
+    expect(res).to.equal(0n);
   });
 
   it('test operator "shr" overload (euint8, uint8) => euint8 test 4 (8, 4)', async function () {

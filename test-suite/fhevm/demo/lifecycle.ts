@@ -118,7 +118,8 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
   ]),
 ];
 const PROCESS_NAMES = ["validator", "listener", "operator", "dapp"] as const;
-const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service:${solanaImages.CORE_VERSION}`;
+// The core runs the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
+const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service-insecure:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
     path.join(
