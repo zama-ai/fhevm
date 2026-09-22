@@ -122,7 +122,6 @@ impl ProtocolEvent {
                 update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
-            // V2 (incl. Solana) rows live in the same `user_decryption_requests` table.
             ProtocolEventKind::SolanaUserDecryptionV1(e) => {
                 update_user_decryption_status(db, e.decryption_id, status, already_sent, err_count)
                     .await

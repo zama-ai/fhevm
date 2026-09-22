@@ -1146,7 +1146,7 @@ mod tests {
         }
     }
 
-    /// Builds a `SolanaUserDecryptionRequestV1` whose payload carries a valid 65-byte ECDSA signature
+    /// Builds a `UserDecryptionRequestV2` whose payload carries a valid 65-byte ECDSA signature
     /// over the EIP-712 digest.
     ///
     /// `user_address` and `signing_key` are intentionally decoupled: the EOA-direct case

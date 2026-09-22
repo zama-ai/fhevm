@@ -245,19 +245,9 @@ async fn authorize_accounts(
 
 /// Derives the delegation-record addresses a delegated request needs, from the discovery read.
 ///
-/// This is the only use the first read of a delegated request is put to, and it is why the read
-/// happens at all. The encrypted store is resolved here to learn its authority and for no other
-/// purpose: every rule, including the resolution of this same
-/// encrypted store, is applied again against the deciding observation.
-///
-/// Two addresses per delegated entry, because two rows can carry the grant: the encrypted store's
-/// authority and the delegator's wildcard row. Both are planned unconditionally rather
-/// than the wildcard being fetched only when the authority-specific row is missing — that would
-/// be a third read, and a rule that reads state after the deciding observation is the thing this
-/// pipeline does not do. Repeats collapse in the key set, so a batch under one delegator costs
-/// one wildcard key.
-///
-/// Empty for a direct-only request, which is what makes that request cost one read.
+/// After the first-read pause check, resolve each delegated store's authority to derive both
+/// exact and wildcard delegation PDAs. Authorization resolves the stores again against the
+/// deciding snapshot. Direct-only requests need no second read.
 fn discover_delegation_keys(
     first: &HostSnapshot,
     program_id: SolanaPubkeyBytes,

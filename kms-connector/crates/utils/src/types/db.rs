@@ -166,9 +166,7 @@ impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            // Legacy, RFC016 EVM and host-generic V2 variants share the same
-            // `user_decryption_requests` table and the same `UserDecryptionRequest` event type
-            // for `last_block_polled`.
+            // All user-decrypt attestations share one table and polling cursor.
             ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
             | ProtocolEventKind::SolanaUserDecryptionV1(_) => Self::UserDecryptionRequest,
