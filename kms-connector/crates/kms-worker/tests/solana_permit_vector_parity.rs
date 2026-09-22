@@ -78,6 +78,7 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
         // Rules of the request layer rather than the permit layer. A permit vector that lands here
         // is either malformed or the Connector is rejecting it for the wrong reason.
         RequestFormError::Handle(_)
+        | RequestFormError::MixedEmbeddedChainIds { .. }
         | RequestFormError::ChainId { .. }
         | RequestFormError::SignatureWidth { .. }
         | RequestFormError::EntryIdentityWidth { .. }
@@ -124,6 +125,14 @@ fn wire_of(
     wrapper: Wrapper,
 ) -> SolanaUserDecryptRequestWire {
     let permit = &record.permit;
+    let mut entry = wrapper.entry();
+    entry.handle[22..30].copy_from_slice(
+        &permit
+            .chain_id
+            .parse::<u64>()
+            .expect("chain id")
+            .to_be_bytes(),
+    );
     SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
             user_pubkey: from_hex(&permit.user_pubkey).expect("hex"),
@@ -142,7 +151,7 @@ fn wire_of(
             extra_data: from_hex(&permit.extra_data).expect("hex"),
         },
         signature: from_hex(&record.signature).expect("hex"),
-        handles: vec![wrapper.entry()],
+        handles: vec![entry],
     }
 }
 

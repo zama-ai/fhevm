@@ -1,32 +1,4 @@
-//! Solana user-decryption authorization: permit reconstruction, deployment identity, the
-//! atomic state snapshot, the leaf-proof read, and the per-handle rules.
-//!
-//! The shape of this module tree is part of the contract, not organization. Every check is
-//! a pure function of `(typed request, snapshot, proofs, deployment, now)`; the only place that
-//! reads host state is [`snapshot`], and the only place that reads the coprocessors' leaf
-//! record is [`proof`]. Two properties follow from that split, and neither survives if it is
-//! blurred:
-//!
-//! * race behaviour is testable without a network — a scenario is two snapshot values, not
-//!   two moments in time;
-//! * "re-check the state just before handing the request to the KMS" cannot be written,
-//!   because a check has no way to read anything. A request accepted at its observation
-//!   point is accepted; nothing downstream can reopen it.
-//!
-//! Failure classification is an enumeration ([`failure::FailureClass`]) and every taxonomy
-//! in this tree is matched exhaustively — a new variant breaks the build instead of landing
-//! in a catch-all arm that silently picks someone else's retry policy.
-//!
-//! What lives above this module: the permit canon itself (the `zama-solana-permit` crate —
-//! typed form, canonical text, envelope, signature), the request canon (the
-//! `zama-solana-request` crate — the wire form and the one encoder/decoder the relayer and
-//! this connector share), and the ACL model (the `zama-solana-acl` crate — account layout,
-//! seeds, leaf commitments, MMR). None is reimplemented here; this module is the host policy
-//! that consumes all three.
-//!
-//! PDA derivations of the two singleton-shaped records the pipeline reads (host config and a
-//! delegation row) live in [`super::solana_acl`], which re-exports `HOST_CONFIG_SEED` from
-//! `zama-solana-acl` rather than restating the byte string.
+//! Solana account authorization, using the shared permit and ACL crates.
 
 /// Delegation-record freshness.
 pub mod delegation;
@@ -35,12 +7,10 @@ pub mod deployment;
 /// Encrypted store resolution: presence, ownership, type, address binding, and the
 /// authority and application the account carries.
 pub mod encrypted_store;
-/// Failure taxonomy and the terminal / transient / retryable classification.
+/// Authorization failures.
 pub mod failure;
 /// Handle binding: a sealed leaf proven against the account's own peaks.
 pub mod handle_binding;
-/// KMS context/epoch servability.
-pub mod kms_pair;
 /// The host pause switch.
 pub mod pause;
 /// The authorization pipeline.

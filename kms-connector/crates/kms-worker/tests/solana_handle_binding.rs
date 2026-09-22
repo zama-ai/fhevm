@@ -24,9 +24,9 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
-    pipeline::{AuthorizationContext, authorize_request},
+    pipeline::AuthorizationContext,
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
     snapshot::SnapshotKeys,
 };
@@ -134,8 +134,8 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -201,8 +201,8 @@ fn assert_does_not_verify(verdict: Result<(), HandleBindingFailure>) {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable(),
+        true
     );
 }
 
@@ -345,8 +345,8 @@ fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -398,8 +398,8 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable(),
+        true
     );
 }
 
@@ -428,8 +428,8 @@ fn an_account_unknown_to_the_record_is_retryable() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable(),
+        true
     );
 }
 
@@ -455,8 +455,8 @@ fn an_incomplete_history_is_terminal() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -513,8 +513,8 @@ fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable(),
+        true
     );
 }
 
@@ -543,8 +543,8 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable(),
+        true
     );
 }
 
@@ -573,8 +573,8 @@ fn resolver_rejects_inconsistent_mmr_state_as_terminal() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -600,9 +600,9 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -648,9 +648,9 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let authorized = authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -658,11 +658,6 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
     .await
     .expect("every entry holds a leaf");
 
-    assert_eq!(
-        authorized.entries().len(),
-        3,
-        "the entry set is the request's"
-    );
     let calls = proofs.calls();
     assert_eq!(calls.len(), 1, "one batch");
     assert_eq!(
@@ -691,9 +686,9 @@ async fn an_unreachable_record_rejects_transiently() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &UnavailableProofReader,
         context(&deployment),
         &request,
@@ -702,7 +697,7 @@ async fn an_unreachable_record_rejects_transiently() {
     .expect_err("no record, no verdict");
 
     assert!(matches!(failure, AuthorizationFailure::ProofRead(_)));
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert_eq!(failure.is_recoverable(), true);
 }
 
 /// In a batch, the failure names the entry whose leaf is missing — in request coordinates.
@@ -724,9 +719,9 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -781,9 +776,9 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
-    authorize_request(
+    authorize(
         &ScriptedReader::constant(world),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment()),
         &request,

@@ -44,9 +44,8 @@ use kms_worker::core::solana::{
     delegation::DelegationFailure,
     deployment::{DeploymentFailure, solana_host_chain_id},
     encrypted_store::EncryptedStoreFailure,
-    failure::{AuthorizationFailure, FailureClass as ConnectorClass},
+    failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    kms_pair::{KmsPairFailure, KmsPairValidator},
     pause::PauseFailure,
     pipeline::{AuthorizationContext, authorize_request},
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
@@ -1170,7 +1169,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation record is marked revoked",
         rule::DELEGATION_REVOKED,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_delegation(&revoked),
     ));
@@ -1183,7 +1182,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation's expiration slot falls below the observed slot",
         rule::DELEGATION_EXPIRED,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_delegation(&expired),
     ));
@@ -1217,7 +1216,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds a record naming another delegator",
         rule::DELEGATION_TUPLE_MISMATCH,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_account(expected_key, other_tuple.account()),
     ));
@@ -1232,7 +1231,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds a record naming another delegate",
         rule::DELEGATION_TUPLE_MISMATCH,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_account(expected_key, other_delegate.account()),
     ));
@@ -1246,7 +1245,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation record's owner is replaced with another program",
         rule::DELEGATION_FOREIGN_OWNER,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_account(expected_key, foreign),
     ));
@@ -1258,7 +1257,7 @@ fn delegation_scenarios() -> Vec<Scenario> {
         "delegated",
         "the delegation address holds an encrypted store instead",
         rule::DELEGATION_WRONG_ACCOUNT_TYPE,
-        FailureClass::Terminal,
+        FailureClass::Transient,
         request.clone(),
         base_world().with_account(expected_key, encrypted_store.account()),
     ));
@@ -1543,23 +1542,25 @@ fn build_file() -> ConnectorAuthVectorFile {
 /// A validator that answers with whatever the record declares.
 struct DeclaredKmsPair(KmsPairStatus);
 
-impl KmsPairValidator for DeclaredKmsPair {
-    async fn validate_pair(
+impl kms_worker::core::event_processor::ContextManager for DeclaredKmsPair {
+    async fn validate_context(
         &self,
-        _kms_context_id: &SolanaPubkeyBytes,
-        _kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
+        _extra_data: &connector_utils::types::extra_data::ExtraData,
+    ) -> Result<(), kms_worker::core::event_processor::RequestCheckError> {
+        use kms_connector_api::ErrorCode;
+        use kms_worker::core::event_processor::{RequestCheckError, RequestCheckKind};
         match self.0 {
             KmsPairStatus::Servable => Ok(()),
-            KmsPairStatus::ContextUnknown => Err(KmsPairFailure::ContextUnknown),
-            KmsPairStatus::ContextDestroyed => Err(KmsPairFailure::ContextDestroyed),
-            // A record describes the management state; the Connector learns about all three of
-            // these from one boolean and cannot tell which applies. The collapse belongs here, in
-            // the adapter, rather than in the record — the world is more precise than the view of
-            // it, and the set says so by keeping both.
-            KmsPairStatus::EpochNotYetActive
-            | KmsPairStatus::EpochOfAnotherContext
-            | KmsPairStatus::EpochDestroyed => Err(KmsPairFailure::PairNotServable),
+            KmsPairStatus::ContextDestroyed => Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextDestroyed,
+                anyhow::anyhow!("destroyed context"),
+            )),
+            _ => Err(RequestCheckError::recoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::UpstreamTransient,
+                anyhow::anyhow!("unservable context or epoch"),
+            )),
         }
     }
 }
@@ -1568,7 +1569,7 @@ impl KmsPairValidator for DeclaredKmsPair {
 #[derive(Debug, PartialEq, Eq)]
 enum Outcome {
     Authorized,
-    Rejected(&'static str, FailureClass),
+    Rejected(&'static str, bool),
 }
 
 /// The Connector's mapping from its own failure onto this set's rule names and classes.
@@ -1584,9 +1585,10 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::Form(form) => match form {
             RequestFormError::EmptyHandles => rule::EMPTY_HANDLES,
             RequestFormError::TooManyHandles { .. } => rule::TOO_MANY_HANDLES,
+            RequestFormError::ChainId { .. } => rule::EMBEDDED_CHAIN_ID_MISMATCH,
+            RequestFormError::MixedEmbeddedChainIds { .. } => rule::MIXED_EMBEDDED_CHAIN_IDS,
             RequestFormError::Permit(_)
             | RequestFormError::Handle(_)
-            | RequestFormError::ChainId { .. }
             | RequestFormError::SignatureWidth { .. }
             | RequestFormError::EntryIdentityWidth { .. } => {
                 panic!("the permit set covers this layer: {form}")
@@ -1598,8 +1600,6 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
         AuthorizationFailure::Deployment(deployment) => match deployment {
             DeploymentFailure::ProgramIdMismatch { .. } => rule::DEPLOYMENT_PROGRAM_MISMATCH,
             DeploymentFailure::ChainIdMismatch { .. } => rule::DEPLOYMENT_CHAIN_ID_MISMATCH,
-            DeploymentFailure::MixedEmbeddedChainIds { .. } => rule::MIXED_EMBEDDED_CHAIN_IDS,
-            DeploymentFailure::EmbeddedChainIdMismatch { .. } => rule::EMBEDDED_CHAIN_ID_MISMATCH,
         },
         AuthorizationFailure::Window(window) => match window {
             WindowFailure::NotYetValid { .. } => rule::WINDOW_NOT_YET_VALID,
@@ -1612,7 +1612,6 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             | WatermarkFailure::ForeignOwner { .. } => rule::WATERMARK_RECORD_INVALID,
             WatermarkFailure::Snapshot(_) => panic!("a record carries one observation"),
         },
-        AuthorizationFailure::KmsPair(_) => rule::KMS_PAIR_UNSERVABLE,
         AuthorizationFailure::Snapshot(_) => panic!("a record carries one observation"),
         AuthorizationFailure::Pause(pause) => match pause {
             PauseFailure::Paused
@@ -1651,27 +1650,26 @@ fn rule_name(failure: &AuthorizationFailure) -> &'static str {
             }
         },
         AuthorizationFailure::Scope { .. } => rule::SCOPE_NOT_ALLOWED,
-        AuthorizationFailure::Delegation { source, .. } => match source {
-            DelegationFailure::Absent { .. } => rule::DELEGATION_ABSENT,
-            DelegationFailure::Revoked => rule::DELEGATION_REVOKED,
-            DelegationFailure::Expired { .. } => rule::DELEGATION_EXPIRED,
-            DelegationFailure::NewerThanObservation { .. } => {
-                rule::DELEGATION_NEWER_THAN_OBSERVATION
-            }
-            DelegationFailure::TupleMismatch { .. } => rule::DELEGATION_TUPLE_MISMATCH,
-            DelegationFailure::ForeignOwner { .. } => rule::DELEGATION_FOREIGN_OWNER,
-            DelegationFailure::NotADelegationRecord { .. } => rule::DELEGATION_WRONG_ACCOUNT_TYPE,
-            DelegationFailure::NoLiveGrant { .. } => rule::DELEGATION_NO_LIVE_GRANT,
-            DelegationFailure::Snapshot(_) => panic!("a record carries one observation"),
-        },
+        AuthorizationFailure::Delegation { source, .. } => delegation_rule_name(source),
     }
 }
 
-fn class_name(class: ConnectorClass) -> FailureClass {
-    match class {
-        ConnectorClass::Terminal => FailureClass::Terminal,
-        ConnectorClass::Transient => FailureClass::Transient,
-        ConnectorClass::Retryable => FailureClass::Retryable,
+fn delegation_rule_name(source: &DelegationFailure) -> &'static str {
+    match source {
+        DelegationFailure::Absent { .. } => rule::DELEGATION_ABSENT,
+        DelegationFailure::Revoked => rule::DELEGATION_REVOKED,
+        DelegationFailure::Expired { .. } => rule::DELEGATION_EXPIRED,
+        DelegationFailure::NewerThanObservation { .. } => rule::DELEGATION_NEWER_THAN_OBSERVATION,
+        DelegationFailure::TupleMismatch { .. } => rule::DELEGATION_TUPLE_MISMATCH,
+        DelegationFailure::ForeignOwner { .. } => rule::DELEGATION_FOREIGN_OWNER,
+        DelegationFailure::NotADelegationRecord { .. } => rule::DELEGATION_WRONG_ACCOUNT_TYPE,
+        DelegationFailure::NoLiveGrant { exact, wildcard }
+            if matches!(**wildcard, DelegationFailure::Absent { .. }) =>
+        {
+            delegation_rule_name(exact)
+        }
+        DelegationFailure::NoLiveGrant { .. } => rule::DELEGATION_NO_LIVE_GRANT,
+        DelegationFailure::Snapshot(_) => panic!("a record carries one observation"),
     }
 }
 
@@ -1750,7 +1748,7 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
         Ok(request) => request,
         Err(form) => {
             let failure = AuthorizationFailure::Form(form);
-            return Outcome::Rejected(rule_name(&failure), class_name(failure.class()));
+            return Outcome::Rejected(rule_name(&failure), failure.is_recoverable());
         }
     };
     let reader = ScriptedReader::scripted(vec![world.clone(), world]);
@@ -1777,7 +1775,18 @@ async fn replay(record: &ConnectorAuthVector, file: &ConnectorAuthVectorFile) ->
     .await
     {
         Ok(_) => Outcome::Authorized,
-        Err(failure) => Outcome::Rejected(rule_name(&failure), class_name(failure.class())),
+        Err(error) => {
+            let error = error.record();
+            let rule = error
+                .source
+                .downcast_ref::<AuthorizationFailure>()
+                .map(rule_name)
+                .unwrap_or(rule::KMS_PAIR_UNSERVABLE);
+            Outcome::Rejected(
+                rule,
+                error.kind == kms_worker::core::event_processor::ProcessingErrorKind::Recoverable,
+            )
+        }
     }
 }
 
@@ -1854,7 +1863,7 @@ async fn every_vector_behaves_as_declared() {
                                  dictionary",
                                 record.name
                             )),
-                        declared_class
+                        declared_class != FailureClass::Terminal
                     ),
                     "record '{}' must be rejected by '{declared_rule}' as {declared_class:?}",
                     record.name

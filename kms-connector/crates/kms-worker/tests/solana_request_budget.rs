@@ -27,7 +27,7 @@ use connector_utils::types::solana_request::{
 
 mod solana_support;
 
-use kms_worker::core::solana::pipeline::{AuthorizationContext, authorize_request};
+use kms_worker::core::solana::pipeline::AuthorizationContext;
 use solana_support::*;
 
 /// A handle distinguished by an index rather than a repeated byte, so a long list is a list of
@@ -195,17 +195,13 @@ async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let authorized = authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
     )
     .await
     .expect("a duplicate of an authorized handle is authorized");
-
-    assert_eq!(authorized.entries().len(), 2);
-    assert_eq!(authorized.entries()[0].handle, repeated);
-    assert_eq!(authorized.entries()[1].handle, repeated);
 }

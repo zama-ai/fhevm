@@ -1,26 +1,14 @@
-//! KMS context and epoch servability: the rule that decides which share generation a request
-//! may be answered from.
-//!
-//! The pair comes out of the permit's signed routing field, so it is the pair the wallet agreed
-//! to. Two things follow that the tests here pin.
-//!
-//! First, rotation is not invalidation. A context switch or an epoch rotation does not kill
-//! outstanding permits: old-epoch shares are retained for in-flight use, and the signed pair
-//! stays servable until the permit expires, is invalidated, or governance destroys that epoch or
-//! context explicitly. Treating rotation as invalidation would turn every key resharing into a
-//! mass revocation of every permit in the wild.
-//!
-//! Second, the classification is the reason this is not a boolean. Unknown and not-yet-active
-//! may become servable and are worth repeating; destroyed never will be. Getting the two
-//! backwards means clients either retry forever or bury a request that would have succeeded.
+//! Signed KMS routing uses the connector context manager without translating its errors.
 
 mod solana_support;
 
-use kms_worker::core::solana::{
-    failure::{AuthorizationFailure, FailureClass},
-    kms_pair::{KmsPairFailure, KmsPairValidator},
-    pipeline::{AuthorizationContext, authorize_request},
+use alloy::primitives::U256;
+use connector_utils::types::extra_data::ExtraData;
+use kms_connector_api::ErrorCode;
+use kms_worker::core::event_processor::{
+    ContextManager, ProcessingErrorKind, RequestCheckError, RequestCheckKind,
 };
+use kms_worker::core::solana::pipeline::{AuthorizationContext, authorize_request};
 use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use std::sync::Mutex;
@@ -44,20 +32,20 @@ impl RecordingValidator {
     }
 }
 
-impl KmsPairValidator for RecordingValidator {
-    async fn validate_pair(
-        &self,
-        kms_context_id: &SolanaPubkeyBytes,
-        kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
+impl ContextManager for RecordingValidator {
+    async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
+        let kms_context_id = extra_data.context_id.unwrap().to_be_bytes::<32>();
+        let kms_epoch_id = extra_data.epoch_id.unwrap().to_be_bytes::<32>();
         self.asked
             .lock()
             .expect("validator lock")
-            .push((*kms_context_id, *kms_epoch_id));
-        if self.servable.contains(&(*kms_context_id, *kms_epoch_id)) {
+            .push((kms_context_id, kms_epoch_id));
+        if self.servable.contains(&(kms_context_id, kms_epoch_id)) {
             Ok(())
         } else {
-            Err(KmsPairFailure::ContextUnknown)
+            Err(RequestCheckError::network(anyhow::anyhow!(
+                "context unknown"
+            )))
         }
     }
 }
@@ -81,10 +69,10 @@ fn context<'a>(
 
 /// Authorizes the reference request against a given validator, returning the outcome and the
 /// number of account reads it cost.
-async fn authorize_with<V: KmsPairValidator>(
+async fn authorize_with<V: ContextManager>(
     validator: &V,
     permit: PermitBuilder,
-) -> (Result<(), AuthorizationFailure>, usize) {
+) -> (Result<(), RequestCheckError>, usize) {
     let (wallet, encrypted_store, live) = scenario();
     let request = RequestBuilder::new(&wallet)
         .permit(permit)
@@ -107,7 +95,7 @@ async fn authorize_with<V: KmsPairValidator>(
 #[tokio::test]
 async fn a_servable_pair_authorizes() {
     let (outcome, _) = authorize_with(
-        &ServableKmsPair,
+        &ServableKmsContext,
         PermitBuilder::new(Wallet::new(1).pubkey()),
     )
     .await;
@@ -157,121 +145,63 @@ async fn a_rotation_alone_does_not_invalidate_an_outstanding_permit() {
     outcome.expect("a permit signed before the rotation is still servable after it");
 }
 
-/// A destroyed context is terminal: governance has said this material is gone, and no retry
-/// brings it back.
-#[tokio::test]
-async fn a_destroyed_context_is_terminal() {
-    let (outcome, _) = authorize_with(
-        &UnservableKmsPair(KmsPairFailure::ContextDestroyed),
-        PermitBuilder::new(Wallet::new(1).pubkey()),
-    )
-    .await;
-
-    let failure = outcome.expect_err("a destroyed context serves nothing");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::KmsPair(KmsPairFailure::ContextDestroyed)
-    ));
-    assert_eq!(failure.class(), FailureClass::Terminal);
+struct RejectedContext {
+    destroyed: bool,
 }
-
-/// Everything the source cannot tell apart arrives as one transient outcome.
-///
-/// Three different worlds land here — the epoch is not active yet, it belongs to another context,
-/// it was destroyed — because the inherited validation learns about all three from a single
-/// boolean that is true only when the epoch is active *and* belongs to the signed context. Nothing
-/// exposes the epoch's state or its context separately.
-///
-/// The uncomfortable half of that is the destroyed epoch: it will never become servable, and it is
-/// still retried within the attempt budget. That is inherited behaviour rather than a decision of
-/// this path, and it is fail-closed either way. Making it terminal means feeding epoch destruction
-/// into the local database — validation the EVM path shares, so a change to EVM behaviour.
-#[tokio::test]
-async fn every_epoch_level_reason_arrives_as_one_transient_outcome() {
-    let (outcome, _) = authorize_with(
-        &UnservableKmsPair(KmsPairFailure::PairNotServable),
-        PermitBuilder::new(Wallet::new(1).pubkey()),
-    )
-    .await;
-
-    let failure = outcome.expect_err("a pair that is not servable authorizes nothing");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::KmsPair(KmsPairFailure::PairNotServable)
-    ));
-    assert_eq!(failure.class(), FailureClass::Transient);
-}
-
-/// The classification has exactly two outcomes, because exactly two are distinguishable. Written
-/// as a table so that adding a terminal case without adding a source of knowledge fails here —
-/// the tempting edit is to call a destroyed epoch terminal, and this is where that stops.
-#[test]
-fn the_classification_is_the_two_outcomes_the_shared_validation_can_tell_apart() {
-    for (failure, expected) in [
-        (KmsPairFailure::ContextDestroyed, FailureClass::Terminal),
-        (KmsPairFailure::ContextUnknown, FailureClass::Transient),
-        (KmsPairFailure::PairNotServable, FailureClass::Transient),
-        (
-            KmsPairFailure::Unavailable {
-                reason: "connection refused".to_owned(),
-            },
-            FailureClass::Transient,
-        ),
-    ] {
+impl ContextManager for RejectedContext {
+    async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
         assert_eq!(
-            AuthorizationFailure::KmsPair(failure.clone()).class(),
-            expected,
-            "{failure} is classified as {expected:?}"
+            extra_data.context_id,
+            Some(U256::from_be_bytes(KMS_CONTEXT))
         );
+        assert_eq!(extra_data.epoch_id, Some(U256::from_be_bytes(KMS_EPOCH)));
+        if self.destroyed {
+            Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::KmsContextDestroyed,
+                anyhow::anyhow!("destroyed signed context"),
+            ))
+        } else {
+            Err(RequestCheckError::network(anyhow::anyhow!(
+                "management state unavailable"
+            )))
+        }
     }
 }
 
-/// An unknown context may simply not have reached this party's view of management state yet.
 #[tokio::test]
-async fn an_unknown_context_is_transient() {
-    let (outcome, _) = authorize_with(
-        &UnservableKmsPair(KmsPairFailure::ContextUnknown),
-        PermitBuilder::new(Wallet::new(1).pubkey()),
-    )
-    .await;
-
-    assert_eq!(
-        outcome
-            .expect_err("an unknown context is not servable yet")
-            .class(),
-        FailureClass::Transient
-    );
-}
-
-/// Management state being unreachable says nothing about the pair, so it is transient — the
-/// request is not condemned by an outage.
-#[tokio::test]
-async fn unreachable_management_state_is_transient() {
-    let (outcome, _) = authorize_with(
-        &UnservableKmsPair(KmsPairFailure::Unavailable {
-            reason: "connection refused".to_owned(),
-        }),
-        PermitBuilder::new(Wallet::new(1).pubkey()),
-    )
-    .await;
-
-    assert_eq!(
-        outcome.expect_err("an outage is not an answer").class(),
-        FailureClass::Transient
-    );
-}
-
-/// The pair is checked before host state is read. A request that cannot be answered by this KMS
-/// generation costs no account read — the ordering is not an optimization detail, it is what
-/// keeps a misrouted flood of requests from becoming a flood of RPC calls.
-#[tokio::test]
-async fn an_unservable_pair_costs_no_account_read() {
-    let (outcome, reads) = authorize_with(
-        &UnservableKmsPair(KmsPairFailure::ContextDestroyed),
-        PermitBuilder::new(Wallet::new(1).pubkey()),
-    )
-    .await;
-
-    assert!(outcome.is_err());
-    assert_eq!(reads, 0, "state-free rules run before the snapshot");
+async fn context_errors_keep_their_code_cause_and_retry_policy_before_any_account_read() {
+    for destroyed in [false, true] {
+        let (outcome, reads) = authorize_with(
+            &RejectedContext { destroyed },
+            PermitBuilder::new(Wallet::new(1).pubkey()),
+        )
+        .await;
+        let error = outcome.unwrap_err().record();
+        assert_eq!(reads, 0);
+        assert_eq!(
+            error.kind,
+            if destroyed {
+                ProcessingErrorKind::Irrecoverable
+            } else {
+                ProcessingErrorKind::Recoverable
+            }
+        );
+        assert_eq!(
+            error.code,
+            if destroyed {
+                ErrorCode::KmsContextDestroyed
+            } else {
+                ErrorCode::UpstreamTransient
+            }
+        );
+        assert_eq!(
+            error.source.to_string(),
+            if destroyed {
+                "destroyed signed context"
+            } else {
+                "management state unavailable"
+            }
+        );
+    }
 }

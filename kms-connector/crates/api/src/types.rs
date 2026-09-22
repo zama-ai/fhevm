@@ -197,9 +197,16 @@ mod tests {
                     allowedKey: B256::repeat_byte(2),
                     encryptedStore: B256::repeat_byte(3),
                 }],
-                userPubkey: B256::ZERO, publicKey: Bytes::new(), allowedScopes: vec![],
-                requestValidity: RequestValidity { startTimestamp: 1, durationSeconds: 60 },
-                hostProgramId: B256::ZERO, chainId: 1, extraData: Bytes::new()
+                userPubkey: B256::ZERO,
+                publicKey: Bytes::new(),
+                allowedScopes: vec![],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1,
+                    durationSeconds: 60,
+                },
+                hostProgramId: B256::ZERO,
+                chainId: 1,
+                extraData: Bytes::new(),
             },
             signature: vec![4; 64].into(),
         };

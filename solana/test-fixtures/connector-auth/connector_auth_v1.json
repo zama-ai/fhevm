@@ -3759,7 +3759,7 @@
       "comment": "The delegator revoked it. Subsequent requests stop immediately, while the signer's own permit remains valid — two independent levers, one per party.",
       "result": "invalid",
       "rule": "delegation-revoked",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation record is marked revoked",
       "request": {
@@ -3828,7 +3828,7 @@
       "comment": "Expiry is measured against the observed slot, not against a local clock.",
       "result": "invalid",
       "rule": "delegation-expired",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation's expiration slot falls below the observed slot",
       "request": {
@@ -3966,7 +3966,7 @@
       "comment": "A record sitting at the canonical address while naming a different tuple is refused: the address alone is not taken as proof of what the record says.",
       "result": "invalid",
       "rule": "delegation-tuple-mismatch",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation address holds a record naming another delegator",
       "request": {
@@ -4035,7 +4035,7 @@
       "comment": "The delegate half of the tuple rule: a record at the canonical address delegating to somebody else is refused. Sitting at the address derived from the delegate is not taken as proof of naming them.",
       "result": "invalid",
       "rule": "delegation-tuple-mismatch",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation address holds a record naming another delegate",
       "request": {
@@ -4104,7 +4104,7 @@
       "comment": "Only the host program grants delegations; an account under another program's ownership is not one.",
       "result": "invalid",
       "rule": "delegation-foreign-owner",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation record's owner is replaced with another program",
       "request": {
@@ -4173,7 +4173,7 @@
       "comment": "A host-owned account of another type at the delegation address is caught by its discriminator, the mirror of the same substitution against an encrypted store.",
       "result": "invalid",
       "rule": "delegation-wrong-account-type",
-      "class": "terminal",
+      "class": "transient",
       "derived_from": "delegated",
       "mutation": "the delegation address holds an encrypted store instead",
       "request": {

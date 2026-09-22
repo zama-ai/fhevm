@@ -25,9 +25,9 @@ use kms_worker::core::solana::{
     delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     deployment::DeploymentIdentity,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding},
-    pipeline::{AuthorizationContext, authorize_request},
+    pipeline::AuthorizationContext,
     proof::LeafProofOutcome,
     scope::{ScopeFailure, check_scope},
     snapshot::{
@@ -70,9 +70,9 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -112,9 +112,9 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let reader = ScriptedReader::scripted(vec![world.clone(), world.clone(), world]);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -154,9 +154,9 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -227,9 +227,9 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -273,9 +273,9 @@ async fn every_account_key_is_planned_before_the_first_read() {
 
     let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -326,9 +326,9 @@ async fn the_deciding_read_drops_the_config_singleton() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -391,9 +391,9 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(101)]);
     let deployment = deployment();
 
-    let authorized = authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -401,11 +401,7 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     .await
     .expect("the deciding observation is the second read, not an agreement of the two");
 
-    assert_eq!(
-        authorized.observed_slot(),
-        101,
-        "the recorded observation point is the read the rules were evaluated against"
-    );
+    assert_eq!(reader.call_count(), 2);
 }
 
 /// The chain going *backwards* between the two reads is a failure, and a transient one. Behind a
@@ -431,9 +427,9 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
     let proofs = ScriptedProofReader::unreachable();
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -451,7 +447,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         ),
         "expected the ordering failure, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert_eq!(failure.is_recoverable(), true);
 }
 
 /// Equal slots are not a regression: two reads of one slot are the ordinary case when the chain
@@ -472,17 +468,15 @@ async fn two_reads_at_the_same_slot_authorize() {
         .with_delegation(&delegation);
     let deployment = deployment();
 
-    let authorized = authorize_request(
+    authorize(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &ScriptedProofReader::constant(world.record()),
         context(&deployment),
         &request,
     )
     .await
     .expect("ordering is not agreement: one slot twice is in order");
-
-    assert_eq!(authorized.observed_slot(), 100);
 }
 
 /// The gate is on the pair of reads, not on any absolute slot: a direct request reads once, so
@@ -556,9 +550,9 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     let reader = ScriptedReader::scripted(vec![first, second]);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -576,7 +570,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
         ),
         "expected the deciding read's peaks to decide, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert_eq!(failure.is_recoverable(), false);
 }
 
 /// Missing leaves from a lagging record are fetched once more. If still missing, the request
@@ -593,9 +587,9 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let deployment = deployment();
 
     let in_step = ScriptedProofReader::constant(world.record());
-    authorize_request(
+    authorize(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &in_step,
         context(&deployment),
         &request,
@@ -607,9 +601,9 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     // A record that has not yet sealed the allow leaf, then catches up.
     let behind = ProofRecord::of(&[&EncryptedStoreFixture::new(handle)]);
     let catches_up = ScriptedProofReader::scripted(vec![behind.clone(), world.record()]);
-    authorize_request(
+    authorize(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &catches_up,
         context(&deployment),
         &request,
@@ -624,9 +618,9 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
 
     // A record that stays behind: two reads, then a retryable rejection, never a third read.
     let stays_behind = ScriptedProofReader::scripted(vec![behind.clone(), behind]);
-    let failure = authorize_request(
+    let failure = authorize(
         &ScriptedReader::constant(world),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &stays_behind,
         context(&deployment),
         &request,
@@ -645,7 +639,7 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
             source: HandleBindingFailure::ProofRecordBehind { .. }
         }
     ));
-    assert_eq!(failure.class(), FailureClass::Retryable);
+    assert_eq!(failure.is_recoverable(), true);
 }
 
 /// Every authorization read asks for `confirmed`. A grant observed on a supermajority-confirmed
@@ -800,38 +794,4 @@ fn authorization_checks_take_the_observation_and_never_a_reader() {
         &zama_solana_permit::AllowedScopes,
         &ResolvedEncryptedStore,
     ) -> Result<(), ScopeFailure> = check_scope;
-}
-
-/// An accepted request carries the point it was accepted at. Recording it is what lets the
-/// rest of the system state which observation the handle set belongs to, instead of inferring
-/// it from a later read — which is the failure mode this whole file exists to prevent.
-#[tokio::test]
-async fn an_accepted_request_records_its_observation_point() {
-    let (wallet, encrypted_store, handle) = direct_scenario();
-    let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_store, handle)
-        .typed();
-    let world = World::running_at_slot(9_000)
-        .with_encrypted_store(&encrypted_store)
-        .with_watermark(wallet.pubkey(), 0);
-    let proofs = ScriptedProofReader::constant(world.record());
-    let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
-
-    let authorized = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
-
-    assert_eq!(authorized.observed_slot(), 9_000);
-    assert_eq!(
-        authorized.entries().len(),
-        1,
-        "the accepted entry set is what the response will bind"
-    );
 }

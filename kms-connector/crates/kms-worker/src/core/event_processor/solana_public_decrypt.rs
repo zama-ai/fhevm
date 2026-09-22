@@ -15,7 +15,6 @@ use crate::core::{
     solana::{
         deployment::DeploymentIdentity,
         encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store},
-        failure::FailureClass,
         handle_binding::{
             HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
         },
@@ -59,13 +58,9 @@ pub async fn check_solana_handles_public_decrypt(
     .await
     .map_err(|failure| {
         let message = anyhow!("Solana public-decryption authorization failed: {failure}");
-        match failure.class() {
-            FailureClass::Terminal => {
-                ProcessingError::irrecoverable(ErrorCode::Unprocessable, message)
-            }
-            FailureClass::Transient | FailureClass::Retryable => {
-                ProcessingError::recoverable(ErrorCode::UpstreamTransient, message)
-            }
+        match failure.is_recoverable() {
+            false => ProcessingError::irrecoverable(ErrorCode::Unprocessable, message),
+            true => ProcessingError::recoverable(ErrorCode::UpstreamTransient, message),
         }
     })
 }
@@ -151,13 +146,13 @@ pub enum PublicDecryptFailure {
 impl PublicDecryptFailure {
     /// Which action the failure implies, delegating to the taxonomy that produced it; the two
     /// local variants describe a request that is wrong forever.
-    pub fn class(&self) -> FailureClass {
+    pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::NotSingleHandle { .. } | Self::MalformedExtraData => FailureClass::Terminal,
-            Self::Snapshot(source) => source.class(),
-            Self::EncryptedStore(source) => source.class(),
-            Self::ProofRead(source) => source.class(),
-            Self::HandleBinding(source) => source.class(),
+            Self::NotSingleHandle { .. } | Self::MalformedExtraData => false,
+            Self::Snapshot(source) => source.is_recoverable(),
+            Self::EncryptedStore(source) => source.is_recoverable(),
+            Self::ProofRead(source) => source.is_recoverable(),
+            Self::HandleBinding(source) => source.is_recoverable(),
         }
     }
 }

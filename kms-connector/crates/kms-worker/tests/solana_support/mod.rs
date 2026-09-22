@@ -23,7 +23,6 @@ use connector_utils::types::solana_request::{
 use kms_worker::core::solana::{
     delegation::WILDCARD_AUTHORITY,
     deployment::{DeploymentIdentity, solana_host_chain_id},
-    kms_pair::{KmsPairFailure, KmsPairValidator},
     proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
     snapshot::{
         HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
@@ -1012,35 +1011,80 @@ impl HostProofReader for UnavailableProofReader {
 }
 
 // ---------------------------------------------------------------------------
-// KMS pair validators
+// KMS context fixtures
 // ---------------------------------------------------------------------------
 
-/// A KMS pair validator that serves the fixture pair and nothing else.
-pub struct ServableKmsPair;
+pub struct ServableKmsContext;
 
-impl KmsPairValidator for ServableKmsPair {
-    async fn validate_pair(
+impl kms_worker::core::event_processor::ContextManager for ServableKmsContext {
+    async fn validate_context(
         &self,
-        kms_context_id: &SolanaPubkeyBytes,
-        kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
-        if kms_context_id == &KMS_CONTEXT && kms_epoch_id == &KMS_EPOCH {
+        extra: &connector_utils::types::extra_data::ExtraData,
+    ) -> Result<(), kms_worker::core::event_processor::RequestCheckError> {
+        use alloy::primitives::U256;
+        use kms_worker::core::event_processor::{RequestCheckError, RequestCheckKind};
+        if extra.context_id == Some(U256::from_be_bytes(KMS_CONTEXT))
+            && extra.epoch_id == Some(U256::from_be_bytes(KMS_EPOCH))
+        {
             Ok(())
         } else {
-            Err(KmsPairFailure::ContextUnknown)
+            Err(RequestCheckError::recoverable(
+                RequestCheckKind::KmsContext,
+                kms_connector_api::ErrorCode::UpstreamTransient,
+                anyhow::anyhow!("context unknown"),
+            ))
         }
     }
 }
 
-/// A KMS pair validator that always fails with a given reason.
-pub struct UnservableKmsPair(pub KmsPairFailure);
+/// Exposes rule diagnostics in scenarios whose KMS context is known to be valid.
+pub async fn authorize(
+    reader: &impl kms_worker::core::solana::snapshot::HostStateReader,
+    context_manager: &impl kms_worker::core::event_processor::ContextManager,
+    proofs: &impl kms_worker::core::solana::proof::HostProofReader,
+    context: kms_worker::core::solana::pipeline::AuthorizationContext<'_>,
+    request: &SolanaUserDecryptRequest,
+) -> Result<(), kms_worker::core::solana::failure::AuthorizationFailure> {
+    kms_worker::core::solana::pipeline::authorize_request(
+        reader,
+        context_manager,
+        proofs,
+        context,
+        request,
+    )
+    .await
+    .map_err(|error| {
+        error
+            .record()
+            .source
+            .downcast::<kms_worker::core::solana::failure::AuthorizationFailure>()
+            .expect("scenario must have a valid KMS context")
+    })
+}
 
-impl KmsPairValidator for UnservableKmsPair {
-    async fn validate_pair(
-        &self,
-        _kms_context_id: &SolanaPubkeyBytes,
-        _kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
-        Err(self.0.clone())
+/// Check that a missing wildcard leaves the request retryable and return the exact-row diagnostic.
+pub fn exact_with_missing_wildcard(
+    failure: kms_worker::core::solana::failure::AuthorizationFailure,
+) -> kms_worker::core::solana::failure::AuthorizationFailure {
+    assert!(
+        failure.is_recoverable(),
+        "the wildcard may become visible on a later observation"
+    );
+    match failure {
+        kms_worker::core::solana::failure::AuthorizationFailure::Delegation {
+            index,
+            source:
+                kms_worker::core::solana::delegation::DelegationFailure::NoLiveGrant { exact, wildcard },
+        } => {
+            assert!(matches!(
+                *wildcard,
+                kms_worker::core::solana::delegation::DelegationFailure::Absent { .. }
+            ));
+            kms_worker::core::solana::failure::AuthorizationFailure::Delegation {
+                index,
+                source: *exact,
+            }
+        }
+        other => panic!("expected the exact and missing-wildcard reasons, got {other}"),
     }
 }

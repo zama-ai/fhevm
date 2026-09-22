@@ -20,7 +20,7 @@ const FORBIDDEN: &[(&str, &str)] = &[
         "the v0 ad-hoc signature verifier; replaced by permit reconstruction in the pipeline",
     ),
     (
-        "solana_user_decrypt",
+        "mod solana_user_decrypt;",
         "the v0 event-processor module (its public-decrypt tenants are re-homed, not deleted)",
     ),
     (

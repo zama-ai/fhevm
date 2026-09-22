@@ -83,15 +83,24 @@ impl SolanaUserDecryptRequest {
             .map(|(index, entry)| decode_entry(index, entry))
             .collect::<Result<Vec<_>, _>>()?;
 
-        for entry in &handles {
-            let chain_id = extract_chain_id_from_handle(&B256::from(entry.handle))
+        let first_chain = extract_chain_id_from_handle(&B256::from(handles[0].handle))
+            .map_err(|e| RequestFormError::Handle(e.to_string()))?;
+        for (index, entry) in handles.iter().enumerate().skip(1) {
+            let found = extract_chain_id_from_handle(&B256::from(entry.handle))
                 .map_err(|e| RequestFormError::Handle(e.to_string()))?;
-            if chain_id != permit.chain_id() {
-                return Err(RequestFormError::ChainId {
-                    declared: permit.chain_id(),
-                    handle: chain_id,
+            if found != first_chain {
+                return Err(RequestFormError::MixedEmbeddedChainIds {
+                    index,
+                    found,
+                    expected: first_chain,
                 });
             }
+        }
+        if first_chain != permit.chain_id() {
+            return Err(RequestFormError::ChainId {
+                declared: permit.chain_id(),
+                handle: first_chain,
+            });
         }
         Ok(Self {
             permit,
@@ -151,6 +160,12 @@ pub enum RequestFormError {
     Handle(String),
     #[error("signed chain id {declared} does not match handle chain id {handle}")]
     ChainId { declared: u64, handle: u64 },
+    #[error("handle {index} embeds chain id {found}, an earlier handle embeds {expected}")]
+    MixedEmbeddedChainIds {
+        index: usize,
+        found: u64,
+        expected: u64,
+    },
     /// A permit field violated its own typed rule.
     #[error("permit field: {0}")]
     Permit(#[from] zama_solana_permit::PermitError),

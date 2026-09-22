@@ -24,9 +24,9 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    pipeline::{AuthorizationContext, authorize_request},
+    pipeline::AuthorizationContext,
     scope::{ScopeFailure, check_scope},
     snapshot::{SnapshotAccount, SnapshotKeys},
 };
@@ -106,8 +106,8 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Transient
+        .is_recoverable(),
+        true
     );
 }
 
@@ -136,8 +136,8 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -200,8 +200,8 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable(),
+        false
     );
 }
 
@@ -440,9 +440,9 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     let proofs = ScriptedProofReader::unreachable();
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -460,7 +460,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         ),
         "the rejection names the offending entry, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert_eq!(failure.is_recoverable(), false);
     assert_eq!(
         proofs.call_count(),
         0,
@@ -487,9 +487,9 @@ async fn a_permissive_permit_does_not_widen_the_allow_leaf() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,

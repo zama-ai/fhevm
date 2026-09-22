@@ -9,9 +9,7 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::{AuthorizationFailure, FailureClass},
-    pause::PauseFailure,
-    pipeline::{AuthorizationContext, authorize_request},
+    failure::AuthorizationFailure, pause::PauseFailure, pipeline::AuthorizationContext,
     snapshot::SnapshotAccount,
 };
 use solana_support::*;
@@ -48,9 +46,9 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
     let deployment = deployment();
 
     let proofs = ScriptedProofReader::constant(running.record());
-    let failure = authorize_request(
+    let failure = authorize(
         &ScriptedReader::constant(running.clone().paused()),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -61,11 +59,11 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
         failure,
         AuthorizationFailure::Pause(PauseFailure::Paused)
     ));
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert_eq!(failure.is_recoverable(), true);
 
-    authorize_request(
+    authorize(
         &ScriptedReader::constant(running),
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -97,9 +95,9 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
 
     let proofs = ScriptedProofReader::constant(running.record());
     let paused_first = ScriptedReader::scripted(vec![running.clone().paused(), running.clone()]);
-    let failure = authorize_request(
+    let failure = authorize(
         &paused_first,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -117,9 +115,9 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     );
 
     let running_first = ScriptedReader::scripted(vec![running.clone(), running.paused()]);
-    authorize_request(
+    authorize(
         &running_first,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context(&deployment),
         &request,
@@ -175,9 +173,9 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
     ];
 
     for (what, world, expected) in cases {
-        let outcome = authorize_request(
+        let outcome = authorize(
             &ScriptedReader::constant(world),
-            &ServableKmsPair,
+            &ServableKmsContext,
             &ScriptedProofReader::unreachable(),
             context(&deployment),
             &request,

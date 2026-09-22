@@ -172,17 +172,20 @@ where
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = match DecryptionEvents::decode_log(&log.inner)
-                .map_err(anyhow::Error::from)
-                .and_then(|event| ProtocolEventKind::try_from(event.data))
-            {
-                Ok(event) => event,
-                Err(error) => {
-                    warn!(tx_hash = ?log.transaction_hash, log_index = ?log.log_index,
-                        "Rejecting malformed decryption event: {error:#}");
-                    EVENT_LISTENING_ERRORS.with_label_values(&["gateway"]).inc();
-                    continue;
+            let event_kind = match DecryptionEvents::decode_log(&log.inner)?.data {
+                DecryptionEvents::UserDecryptionRequest_4(event) => {
+                    let decryption_id = event.decryptionId;
+                    match connector_utils::types::solana_request::SolanaUserDecryptionRequestV1::try_from(event) {
+                        Ok(request) => ProtocolEventKind::SolanaUserDecryptionV1(request),
+                        Err(error) => {
+                            warn!(%decryption_id, tx_hash = ?log.transaction_hash, log_index = ?log.log_index,
+                                "Rejecting malformed Solana user decryption: {error:#}");
+                            EVENT_LISTENING_ERRORS.with_label_values(&["gateway"]).inc();
+                            continue;
+                        }
+                    }
                 }
+                event => ProtocolEventKind::try_from(event)?,
             };
             EVENT_RECEIVED_COUNTER
                 .with_label_values(&[EventType::from(&event_kind).as_str()])
@@ -237,8 +240,8 @@ mod tests {
     use fhevm_gateway_bindings::decryption::IDecryption::RequestValiditySeconds;
     use std::time::Duration;
 
-    #[test]
-    fn malformed_solana_event_does_not_discard_valid_peers() {
+    #[tokio::test]
+    async fn malformed_solana_event_does_not_discard_valid_peers() {
         use alloy::sol_types::SolEvent;
         use fhevm_gateway_bindings::decryption::Decryption::{
             PublicDecryptionRequest_1, UserDecryptionRequest_4,
@@ -277,6 +280,32 @@ mod tests {
         assert!(
             matches!(&events[0].kind, ProtocolEventKind::PublicDecryption(e) if e.decryptionId == U256::from(43))
         );
+        let db = connector_utils::tests::setup::DbInstance::setup_external()
+            .await
+            .unwrap();
+        publish_batch(&db.db, events, ChainName::Gateway, 123)
+            .await
+            .unwrap();
+        let saved: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM public_decryption_requests WHERE decryption_id = $1",
+        )
+        .bind(U256::from(43).as_le_slice())
+        .fetch_one(&db.db)
+        .await
+        .unwrap();
+        let cursor: i64 = sqlx::query_scalar(
+            "SELECT block_number FROM last_block_polled_by_chain WHERE chain_name = 'gateway'",
+        )
+        .fetch_one(&db.db)
+        .await
+        .unwrap();
+        assert_eq!(saved, 1);
+        assert_eq!(cursor, 123);
+    }
+
+    #[test]
+    fn malformed_abi_still_stops_the_batch() {
+        assert!(GatewayListener::<RootProvider>::prepare_events(vec![Log::default()]).is_err());
     }
 
     #[rstest::rstest]

@@ -207,8 +207,7 @@ impl RequestCheckError {
     }
 
     /// Whether this failure is worth retrying. A recoverable/aborted source is transient; an
-    /// irrecoverable one is terminal. Read by the Solana pipeline's KMS-pair adapter to map a
-    /// context-servability outcome onto the pipeline's terminal/transient taxonomy.
+    /// irrecoverable one is terminal.
     pub fn is_recoverable(&self) -> bool {
         !matches!(self.source.kind, ProcessingErrorKind::Irrecoverable)
     }
@@ -230,15 +229,12 @@ impl From<Erc1271Error> for RequestCheckError {
 
 impl From<crate::core::solana::failure::AuthorizationFailure> for RequestCheckError {
     fn from(failure: crate::core::solana::failure::AuthorizationFailure) -> Self {
-        use crate::core::solana::failure::FailureClass;
-        let message = anyhow!("Solana user-decryption authorization failed: {failure}");
-        match failure.class() {
-            FailureClass::Terminal => {
-                Self::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, message)
-            }
-            FailureClass::Transient | FailureClass::Retryable => {
-                Self::recoverable(RequestCheckKind::Acl, ErrorCode::UpstreamTransient, message)
-            }
+        let recoverable = failure.is_recoverable();
+        let message = anyhow::Error::new(failure);
+        if recoverable {
+            Self::recoverable(RequestCheckKind::Acl, ErrorCode::UpstreamTransient, message)
+        } else {
+            Self::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, message)
         }
     }
 }

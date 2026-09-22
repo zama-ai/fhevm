@@ -17,14 +17,12 @@
 //! handle, configured here. There is no first-handle-wins and no majority: a batch that mixes
 //! clusters is refused.
 
+use connector_utils::types::solana_request::{RequestFormError, SolanaUserDecryptRequest};
 mod solana_support;
 
-use kms_worker::core::solana::{
-    deployment::{
-        DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, check_deployment,
-        embedded_chain_id, solana_host_chain_id,
-    },
-    failure::FailureClass,
+use kms_worker::core::solana::deployment::{
+    DeploymentFailure, DeploymentIdentity, DeploymentIdentityError, check_deployment,
+    embedded_chain_id, solana_host_chain_id,
 };
 use solana_support::*;
 
@@ -57,7 +55,7 @@ fn a_configured_chain_id_without_type_byte_0x01_fails_at_startup() {
         error,
         DeploymentIdentityError::ChainTypeByteInvalid { chain_id } if chain_id == without_type_byte
     ));
-    assert_eq!(error.class(), FailureClass::Terminal);
+    assert_eq!(error.is_recoverable(), false);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,14 +136,15 @@ fn handles_embedding_different_chain_ids_are_rejected() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, local)
         .entry(foreign, wallet.pubkey(), encrypted_store.account_key)
-        .typed();
+        .wire();
 
-    let failure = check_deployment(&request, &deployment()).expect_err("one request, one cluster");
+    let failure = SolanaUserDecryptRequest::decode(&request)
+        .expect_err("signed and embedded chains must agree");
 
     assert!(
         matches!(
             failure,
-            DeploymentFailure::MixedEmbeddedChainIds {
+            RequestFormError::MixedEmbeddedChainIds {
                 index: 1,
                 found,
                 expected
@@ -166,14 +165,14 @@ fn handles_embedding_a_cluster_other_than_the_signed_one_are_rejected() {
     let encrypted_store = EncryptedStoreFixture::allowing(foreign, wallet.pubkey());
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, foreign)
-        .typed();
+        .wire();
 
-    let failure = check_deployment(&request, &deployment())
-        .expect_err("the signed chain id and the embedded one are one value");
+    let failure = SolanaUserDecryptRequest::decode(&request)
+        .expect_err("signed and embedded chains must agree");
 
     assert!(matches!(
         failure,
-        DeploymentFailure::EmbeddedChainIdMismatch { index: 0, embedded, signed }
+        RequestFormError::ChainId { handle: embedded, declared: signed }
             if embedded == foreign_chain && signed == CHAIN_ID
     ));
 }

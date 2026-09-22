@@ -18,7 +18,6 @@
 //! it. The first is terminal, the second is retried.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::failure::FailureClass;
 use super::proof::{HostProofReader, LeafProofOutcome, ProofBatch, ProofReadError, check_length};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{
@@ -47,7 +46,7 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
         .zip(batch.contexts())
         .enumerate()
         .filter_map(|(position, (result, context))| match result {
-            Err(error) if error.class() == FailureClass::Retryable => Some((position, context)),
+            Err(error) if error.is_recoverable() => Some((position, context)),
             _ => None,
         })
         .collect();
@@ -78,7 +77,7 @@ fn verify_candidates(
             Ok(()) => return Ok(()),
             Err(error) => {
                 // One peer's absence cannot make another peer's temporary failure terminal.
-                if failure.is_none() || error.class() == FailureClass::Retryable {
+                if failure.is_none() || error.is_recoverable() {
                     failure = Some(error);
                 }
             }

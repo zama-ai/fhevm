@@ -20,8 +20,8 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::{AuthorizationFailure, FailureClass},
-    pipeline::{AuthorizationContext, authorize_request},
+    failure::AuthorizationFailure,
+    pipeline::AuthorizationContext,
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
@@ -98,8 +98,8 @@ fn an_expired_permit_is_terminal() {
     let failure = check_window(DEFAULT_START, DEFAULT_DURATION, now).expect_err("expired");
 
     assert_eq!(
-        AuthorizationFailure::Window(failure).class(),
-        FailureClass::Terminal
+        AuthorizationFailure::Window(failure).is_recoverable(),
+        false
     );
 }
 
@@ -123,10 +123,7 @@ fn a_permit_whose_window_has_not_opened_is_transient() {
         WindowFailure::NotYetValid { start_timestamp, now: n }
             if start_timestamp == DEFAULT_START && n == now
     ));
-    assert_eq!(
-        AuthorizationFailure::Window(failure).class(),
-        FailureClass::Transient
-    );
+    assert_eq!(AuthorizationFailure::Window(failure).is_recoverable(), true);
 }
 
 // ---------------------------------------------------------------------------
@@ -204,8 +201,8 @@ fn a_permit_starting_below_the_watermark_is_dead() {
         } if start_timestamp == DEFAULT_START && watermark == DEFAULT_START + 1
     ));
     assert_eq!(
-        AuthorizationFailure::Watermark(failure).class(),
-        FailureClass::Terminal,
+        AuthorizationFailure::Watermark(failure).is_recoverable(),
+        false,
         "no later observation resurrects it"
     );
 }
@@ -353,9 +350,9 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
@@ -383,9 +380,9 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
@@ -419,9 +416,9 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    authorize_request(
+    authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context_at(&deployment, NOW_INSIDE_WINDOW),
         &request,
@@ -448,9 +445,9 @@ async fn a_permit_that_expired_before_processing_is_refused() {
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
 
-    let failure = authorize_request(
+    let failure = authorize(
         &reader,
-        &ServableKmsPair,
+        &ServableKmsContext,
         &proofs,
         context_at(&deployment, DEFAULT_START + DEFAULT_DURATION + 1),
         &request,

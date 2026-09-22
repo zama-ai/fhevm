@@ -6,11 +6,7 @@ use crate::core::{
         context::ContextManager,
         solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
     },
-    solana::{
-        kms_pair::{KmsPairFailure, KmsPairValidator},
-        pipeline::{AuthorizationContext, authorize_request},
-    },
-    solana_acl::SolanaPubkeyBytes,
+    solana::pipeline::{AuthorizationContext, authorize_request},
 };
 use alloy::{
     consensus::Transaction,
@@ -20,7 +16,6 @@ use alloy::{
     sol_types::{Eip712Domain, SolCall},
 };
 use anyhow::anyhow;
-use connector_utils::types::extra_data::ExtraData;
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use connector_utils::types::{
     KmsGrpcRequest, extra_data::parse_extra_data, handle::extract_chain_id_from_handle,
@@ -49,35 +44,6 @@ pub enum HostChainAclBackend<HP: Provider> {
     // Boxed: a `SolanaHost` carries a deployment identity plus two readers, far larger than the
     // EVM variant's contract handle, so keeping it inline would bloat every backend map entry.
     Solana(Box<SolanaHost>),
-}
-
-/// Bridges the Solana pipeline's [`KmsPairValidator`] seam to the connector's existing
-/// [`ContextManager`] — the same context/epoch servability source the EVM path validates
-/// against, so the two paths cannot diverge on which KMS pairs are servable. The 32-byte
-/// context and epoch ids are the big-endian `U256`s the manager keys on (matching
-/// `parse_extra_data`'s `0x02` form). The manager's recoverable/irrecoverable outcome maps onto
-/// the pipeline's terminal/transient taxonomy: an irrecoverable outcome is a destroyed context
-/// (terminal), everything else is transient.
-struct ContextManagerPairValidator<'a, C>(&'a C);
-
-impl<C: ContextManager> KmsPairValidator for ContextManagerPairValidator<'_, C> {
-    async fn validate_pair(
-        &self,
-        kms_context_id: &SolanaPubkeyBytes,
-        kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
-        let extra = ExtraData {
-            context_id: Some(U256::from_be_bytes(*kms_context_id)),
-            epoch_id: Some(U256::from_be_bytes(*kms_epoch_id)),
-        };
-        self.0.validate_context(&extra).await.map_err(|error| {
-            if error.is_recoverable() {
-                KmsPairFailure::PairNotServable
-            } else {
-                KmsPairFailure::ContextDestroyed
-            }
-        })
-    }
 }
 
 #[derive(Clone)]
@@ -482,21 +448,12 @@ where
         Ok(())
     }
 
-    /// Host-generic Solana user-decryption check. The gateway forwarded the request's
-    /// host-specific material as one opaque `solanaRequest`; here it is decoded, its handle list is
-    /// held to exactly the event's typed `ctHandles`, and the whole permit is authorized through
-    /// the connector pipeline (`authorize_request`) — one funnel doing signature, window,
-    /// deployment, KMS-pair servability, the atomic host-state snapshot, and every per-entry rule.
-    /// Returns the KMS-request identity data built from the decoded permit (the transport key from
-    /// the typed event, the Solana identity from the signed permit), since the Solana event carries
-    /// no typed identity field of its own.
+    /// Rechecks the Solana permit and account authorization on every worker attempt.
     pub async fn check_solana_user_decryption_request(
         &self,
         request: &SolanaUserDecryptionRequestV1,
-    ) -> Result<UserDecryptionExtraData, RequestCheckError> {
-        let typed_request = &request.request;
-        let permit = typed_request.permit();
-        let chain_id = permit.chain_id();
+    ) -> Result<(), RequestCheckError> {
+        let chain_id = request.request.permit().chain_id();
         let host = match self.host_chain_backend(chain_id)? {
             HostChainAclBackend::Solana(host) => host,
             HostChainAclBackend::Evm(_) => {
@@ -510,41 +467,28 @@ where
             }
         };
 
-        let solana_identity = *permit.user_pubkey().as_bytes();
-        let seal_target = Bytes::copy_from_slice(permit.transport_key().as_bytes());
-        let verifying_program_id = *permit.verifying_program_id().as_bytes();
-        let pair_validator = ContextManagerPairValidator(&self.context_manager);
-        let context = AuthorizationContext {
-            deployment: &host.deployment,
-            now_unix_seconds: Utc::now().timestamp() as u64,
-        };
-        let authorized = authorize_request(
+        authorize_request(
             &host.reader,
-            &pair_validator,
+            &self.context_manager,
             &host.proofs,
-            context,
-            typed_request,
+            AuthorizationContext {
+                deployment: &host.deployment,
+                now_unix_seconds: Utc::now().timestamp() as u64,
+            },
+            &request.request,
         )
         .await
-        .map_err(RequestCheckError::from)?;
+    }
 
-        // The per-entry audit fields live in the pipeline's own log event; this line only says
-        // which branches the request exercised.
-        let delegated_entries = authorized
-            .entries()
-            .iter()
-            .filter(|entry| entry.allowed_key != solana_identity)
-            .count();
-        info!(
-            "Solana user-decryption authorization passed for {} handles, {} of them delegated!",
-            typed_request.handles().len(),
-            delegated_entries
-        );
-        Ok(UserDecryptionExtraData::new_solana(
-            solana_identity,
-            seal_target,
-            verifying_program_id,
-        ))
+    pub fn user_decryption_extra_data_for_solana(
+        request: &SolanaUserDecryptionRequestV1,
+    ) -> UserDecryptionExtraData {
+        let permit = request.request.permit();
+        UserDecryptionExtraData::new_solana(
+            *permit.user_pubkey().as_bytes(),
+            Bytes::copy_from_slice(permit.transport_key().as_bytes()),
+            *permit.verifying_program_id().as_bytes(),
+        )
     }
 
     pub fn user_decryption_extra_data_for_v2(
@@ -948,8 +892,11 @@ mod tests {
         handle: B256,
         config: Config,
         backend: TestHostBackend,
-    ) -> DecryptionProcessor<impl Provider + Clone + use<>, impl Provider + use<>, MockContextManager>
-    {
+    ) -> DecryptionProcessor<
+        alloy::providers::RootProvider,
+        alloy::providers::RootProvider,
+        MockContextManager,
+    > {
         let mock_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
             .connect_mocked_client(asserter);
@@ -1868,9 +1815,10 @@ mod tests {
         });
 
         let mut server = MockServer::new_http("solana-rpc");
+        let live_response = response.clone();
         server.mock(move |when, then| {
             when.post().json(request_body.clone());
-            then.json(response.clone());
+            then.json(live_response.clone());
         });
         server.start().await.expect("the mock RPC starts");
         let rpc_url = server.base_url().expect("the mock RPC has a URL").clone();
@@ -1927,15 +1875,74 @@ mod tests {
         let processor = setup_test_processor_inner(
             Asserter::new(),
             B256::from(handle),
-            config,
+            config.clone(),
             TestHostBackend::Solana,
         );
 
         let result = match SolanaUserDecryptionRequestV1::try_from(event) {
             Ok(request) => {
-                processor
+                let checked = processor
                     .check_solana_user_decryption_request(&request)
-                    .await
+                    .await;
+                let extra = DecryptionProcessor::<
+                    alloy::providers::RootProvider,
+                    alloy::providers::RootProvider,
+                    MockContextManager,
+                >::user_decryption_extra_data_for_solana(&request);
+                if checked.is_ok() {
+                    use crate::core::event_processor::{
+                        DbEventProcessor, EventProcessor, KMSGenerationProcessor, KmsClient,
+                        ProtocolConfigProcessor,
+                    };
+                    use crate::core::solana::{failure::AuthorizationFailure, pause::PauseFailure};
+                    use connector_utils::types::{
+                        ProtocolEvent, ProtocolEventKind, db::RequestSource,
+                    };
+                    let mut paused_response = response;
+                    paused_response["result"]["value"][0]["data"][0] = BASE64_STANDARD
+                        .encode(zama_solana_acl::encode_host_config(&HostConfigRecord {
+                            paused: true,
+                            bump: host_config_bump,
+                        }))
+                        .into();
+                    server.mocks().clear();
+                    server.mock(move |when, then| {
+                        when.post();
+                        then.json(paused_response.clone());
+                    });
+                    let provider = ProviderBuilder::new()
+                        .disable_recommended_fillers()
+                        .connect_mocked_client(Asserter::new());
+                    let mut worker = DbEventProcessor::new(
+                        KmsClient::new(vec![], 0),
+                        MockContextManager,
+                        processor,
+                        KMSGenerationProcessor::new(&config),
+                        ProtocolConfigProcessor::new(&config, provider),
+                        sqlx::postgres::PgPoolOptions::new()
+                            .connect_lazy("postgresql://unused/unused")
+                            .unwrap(),
+                    );
+                    let mut event = ProtocolEvent::new(
+                        ProtocolEventKind::SolanaUserDecryptionV1(request),
+                        None,
+                        connector_utils::monitoring::otlp::PropagationContext::default(),
+                        RequestSource::Http,
+                    );
+                    event.already_sent = true;
+                    // With no KMS channels or ciphertext store, skipping authorization or resending fails this test.
+                    let error = worker
+                        .process(&mut event)
+                        .await
+                        .expect_err("poll must reject the newly paused host");
+                    assert!(matches!(
+                        error.source.downcast_ref::<AuthorizationFailure>(),
+                        Some(AuthorizationFailure::Pause(PauseFailure::Paused))
+                    ));
+                    assert!(event.already_sent);
+                    assert_eq!(event.error_counter, 1);
+                }
+                checked.map(|()| extra)
             }
             Err(error) => Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Acl,
@@ -1973,7 +1980,7 @@ mod tests {
     /// signed permit rather than from the event. The values are equal by then, so what this pins
     /// is the provenance: the field that cannot have been substituted is the one that is read.
     #[tokio::test]
-    async fn seal_target_is_taken_from_the_signed_permit() {
+    async fn signed_recipient_is_retained_and_poll_rechecks_host_state() {
         let now = Utc::now().timestamp() as u64;
         let window = (now - 60, 3_600);
         let victim_transport_key = vec![0xa5u8; zama_solana_permit::TRANSPORT_KEY_LEN];

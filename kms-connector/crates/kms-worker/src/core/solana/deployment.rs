@@ -94,36 +94,6 @@ pub fn check_deployment(
         });
     }
 
-    let Some(first) = request.handles().first() else {
-        // A validated request always names at least one handle; decoding rejects an empty list.
-        return Ok(());
-    };
-    let first_embedded = embedded_chain_id(&first.handle());
-
-    // The handles agree among themselves before any of them is compared with the signed value.
-    // Testing each handle against the signature directly would report the second cluster of a
-    // mixed batch as an ordinary mismatch and hide that the batch was mixed at all.
-    for (index, entry) in request.handles().iter().enumerate().skip(1) {
-        let embedded = embedded_chain_id(&entry.handle());
-        if embedded != first_embedded {
-            return Err(DeploymentFailure::MixedEmbeddedChainIds {
-                index,
-                found: embedded,
-                expected: first_embedded,
-            });
-        }
-    }
-
-    // One equality, three values: at this point the handles are unanimous, so comparing one of
-    // them with the signed chain id compares all of them.
-    if first_embedded != signed_chain_id {
-        return Err(DeploymentFailure::EmbeddedChainIdMismatch {
-            index: 0,
-            embedded: first_embedded,
-            signed: signed_chain_id,
-        });
-    }
-
     Ok(())
 }
 
@@ -168,25 +138,5 @@ pub enum DeploymentFailure {
         signed: u64,
         /// This Connector's derived chain id.
         own: u64,
-    },
-    /// Handles of the same request embed different chain ids.
-    #[error("handle {index} embeds chain id {found}, an earlier handle embeds {expected}")]
-    MixedEmbeddedChainIds {
-        /// Which entry disagreed.
-        index: usize,
-        /// The value it embeds.
-        found: u64,
-        /// The value the earlier handles embed.
-        expected: u64,
-    },
-    /// A handle embeds a chain id other than the signed one.
-    #[error("handle {index} embeds chain id {embedded}, the permit signs {signed}")]
-    EmbeddedChainIdMismatch {
-        /// Which entry.
-        index: usize,
-        /// The value it embeds.
-        embedded: u64,
-        /// What the permit signed.
-        signed: u64,
     },
 }

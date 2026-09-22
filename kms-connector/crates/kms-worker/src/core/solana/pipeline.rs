@@ -1,52 +1,4 @@
-//! The authorization pipeline: one explicit sequence, one observation point, no second
-//! thoughts.
-//!
-//! ```text
-//! strict decode (typed form, non-empty handle list)
-//!   → signature over the reconstructed envelope
-//!   → validity window
-//!   → deployment identity and chain-id agreement
-//!   → KMS pair servability
-//!   → READ host state
-//!   → host pause switch, from that first read
-//!   → if any entry is delegated: resolve its encrypted store to learn its
-//!     authority, then READ again with the delegation records added — that read is the
-//!     deciding observation and the first read's values are discarded
-//!   → invalidation watermark
-//!   → per entry: encrypted store → scope
-//!   → READ the leaf proofs, one batch for the request, once more if the record is behind
-//!   → per entry: handle binding against the account's own peaks
-//!   → per delegated entry: delegation freshness
-//!   → accepted
-//! ```
-//!
-//! The state-free rules come first because a request that fails them costs no RPC. The
-//! watermark sits after the read because its value is snapshot state, even though it is a
-//! permit-level rule — which is the one place the rule numbering and the execution order
-//! disagree, and the numbering is not normative.
-//!
-//! Every rule below the account reads takes the *deciding* snapshot: the last read, whole and on
-//! its own. A delegated request reads twice because a delegation address is not computable before
-//! an encrypted store has been read, and the earlier read is a discovery step whose values
-//! decide nothing (see [`super::snapshot`]). The two are held to their order and nothing else: a
-//! deciding read older than the discovery read is refused as the lagging node it is, transiently.
-//!
-//! The proof read is not a third observation of the chain. It reads the coprocessors' record of
-//! the chain's events, and nothing it returns is a decision: every proof is verified against the
-//! deciding snapshot's own peaks (see [`super::proof`]). It comes after the accounts are resolved
-//! because the batch is planned from them, and after scope because a request outside its signed
-//! scope should not cost a round trip to the record.
-//!
-//! The pause switch is the one exception, and it is not an authorization rule: it says whether
-//! this Connector serves user decryptions at all. Reading it on the first read stops a paused
-//! host before the second round trip and keeps the singleton off the deciding read, whose worst
-//! case is sized to the RPC's account limit exactly (see [`super::pause`]).
-//!
-//! Once a request is accepted nothing re-reads state for it. A later handle update or delegation
-//! revocation does not affect it: the normalized request, its linker and its response bind
-//! exactly the handles resolved at the observation point. There is also no cache in the other
-//! direction — a permit is reusable, but every request under it is authorized from scratch
-//! against its own observation, so a revoked delegation stops the next request immediately.
+//! User-decrypt authorization. Each worker attempt reads and validates a fresh host snapshot.
 
 use super::delegation::{
     AuthorizedRow, check_delegation, delegation_address, wildcard_delegation_address,
@@ -55,13 +7,15 @@ use super::deployment::{DeploymentIdentity, check_deployment};
 use super::encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store};
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
-use super::kms_pair::KmsPairValidator;
 use super::pause::check_not_paused;
 use super::proof::{HostProofReader, LeafKind, LeafQuery, ProofBatch};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
+use crate::core::event_processor::{ContextManager, RequestCheckError};
 use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use alloy::primitives::U256;
+use connector_utils::types::extra_data::ExtraData;
 use connector_utils::types::solana_request::{RequestFormError, SolanaUserDecryptRequest};
 use tracing::info;
 use zama_solana_permit::{KmsRouting, PermitError, verify_signature};
@@ -74,49 +28,6 @@ pub struct AuthorizationContext<'a> {
     /// The wall-clock second the validity window is evaluated at. A parameter rather than a
     /// call to the clock, so that every window test states its own time.
     pub now_unix_seconds: u64,
-}
-
-/// One entry as authorization resolved it.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AuthorizedEntry {
-    /// The handle, exactly as named by the request.
-    pub handle: HandleBytes,
-    /// The key whose allow leaf was proven: the signer for a direct entry, the delegator for a
-    /// delegated one.
-    pub allowed_key: SolanaPubkeyBytes,
-    /// The authority, read from the validated encrypted store.
-    pub store_authority: SolanaPubkeyBytes,
-    /// The application program, read from the validated encrypted store.
-    pub program: SolanaPubkeyBytes,
-    /// The program-declared scope, read from the validated encrypted store.
-    pub scope: SolanaPubkeyBytes,
-}
-
-/// An authorized request: the handle set is frozen here and nowhere later.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct AuthorizedRequest {
-    observed_slot: u64,
-    request: SolanaUserDecryptRequest,
-    entries: Vec<AuthorizedEntry>,
-}
-
-impl AuthorizedRequest {
-    /// The observation point this authorization was decided at. Recorded rather than
-    /// recomputed: it is what makes "accepted at slot N" a statement anyone downstream can
-    /// read instead of infer.
-    pub fn observed_slot(&self) -> u64 {
-        self.observed_slot
-    }
-
-    /// The validated request, for the KMS normalization that follows.
-    pub fn request(&self) -> &SolanaUserDecryptRequest {
-        &self.request
-    }
-
-    /// The resolved entries, in request order — same order, same count, duplicates included.
-    pub fn entries(&self) -> &[AuthorizedEntry] {
-        &self.entries
-    }
 }
 
 /// The audit record of one authorized delegated entry, for the per-request log event: whose
@@ -183,45 +94,52 @@ pub fn check_signature(request: &SolanaUserDecryptRequest) -> Result<(), Authori
     })
 }
 
-/// Authorizes one request, or says why not.
-///
-/// Generic over the three seams that are not pure functions — the state reader, the KMS pair
-/// validator and the proof reader — and takes nothing else it could read the world through. That
-/// is what makes a scenario in a test a value rather than a moment in time.
-pub async fn authorize_request<R, V, P>(
+/// Checks the permit, its KMS context, and the host authorization state for this attempt.
+pub async fn authorize_request<R, C, P>(
     reader: &R,
-    pair_validator: &V,
+    context_manager: &C,
     proofs: &P,
     context: AuthorizationContext<'_>,
     request: &SolanaUserDecryptRequest,
-) -> Result<AuthorizedRequest, AuthorizationFailure>
+) -> Result<(), RequestCheckError>
 where
     R: HostStateReader,
-    V: KmsPairValidator,
+    C: ContextManager,
     P: HostProofReader,
 {
     let permit = request.permit();
-    let signer = *permit.user_pubkey().as_bytes();
-    let program_id = context.deployment.program_id();
-
-    // Everything that needs no state, first: a request that fails any of these costs no RPC.
     check_signature(request)?;
     check_window(
         permit.start_timestamp(),
         permit.duration_seconds(),
         context.now_unix_seconds,
-    )?;
-    check_deployment(request, context.deployment)?;
-    let (kms_context_id, kms_epoch_id) = match permit.extra_data() {
-        KmsRouting::ContextAndEpoch {
-            kms_context_id,
-            kms_epoch_id,
-        } => (kms_context_id, kms_epoch_id),
-    };
-    pair_validator
-        .validate_pair(kms_context_id.as_bytes(), kms_epoch_id.as_bytes())
+    )
+    .map_err(AuthorizationFailure::from)?;
+    check_deployment(request, context.deployment).map_err(AuthorizationFailure::from)?;
+    let KmsRouting::ContextAndEpoch {
+        kms_context_id,
+        kms_epoch_id,
+    } = permit.extra_data();
+    context_manager
+        .validate_context(&ExtraData {
+            context_id: Some(U256::from_be_bytes(*kms_context_id.as_bytes())),
+            epoch_id: Some(U256::from_be_bytes(*kms_epoch_id.as_bytes())),
+        })
         .await?;
+    authorize_accounts(reader, proofs, context, request)
+        .await
+        .map_err(Into::into)
+}
 
+async fn authorize_accounts(
+    reader: &impl HostStateReader,
+    proofs: &impl HostProofReader,
+    context: AuthorizationContext<'_>,
+    request: &SolanaUserDecryptRequest,
+) -> Result<(), AuthorizationFailure> {
+    let permit = request.permit();
+    let signer = *permit.user_pubkey().as_bytes();
+    let program_id = context.deployment.program_id();
     // The reads. The first covers the deployment's config singleton, the signer's invalidation
     // record and one account per named encrypted store; a delegated entry then needs a
     // second, because its record's address is a function of an authority only its encrypted store
@@ -288,7 +206,6 @@ where
         })
         .await?;
 
-    let mut entries = Vec::with_capacity(request.handles().len());
     let mut delegated = Vec::new();
     for (index, (entry, encrypted_store)) in request.handles().iter().zip(&accounts).enumerate() {
         let query = LeafQuery {
@@ -313,13 +230,6 @@ where
                 entry.handle(),
             ));
         }
-        entries.push(AuthorizedEntry {
-            handle: entry.handle(),
-            allowed_key: entry.allowed_key(),
-            store_authority: encrypted_store.authority(),
-            program: encrypted_store.program(),
-            scope: encrypted_store.scope(),
-        });
     }
 
     let mut audit = Vec::with_capacity(delegated.len());
@@ -349,11 +259,7 @@ where
         );
     }
 
-    Ok(AuthorizedRequest {
-        observed_slot: observation.observed_slot(),
-        request: request.clone(),
-        entries,
-    })
+    Ok(())
 }
 
 /// Derives the delegation-record addresses a delegated request needs, from the discovery read.

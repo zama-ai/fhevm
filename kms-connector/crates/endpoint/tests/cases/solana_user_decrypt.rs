@@ -123,6 +123,9 @@ async fn solana_http_and_gateway_reconstruct_the_same_request() -> anyhow::Resul
         "allowed_keys = ARRAY[allowed_keys]",
         "host_program_id = decode('00', 'hex')",
         "allowed_scopes = ARRAY[decode('00','hex')]",
+        "allowed_scopes = ARRAY[decode(repeat('ff',64),'hex'),decode(repeat('00',64),'hex')]",
+        "allowed_scopes = ARRAY[decode(repeat('00',64),'hex'),decode(repeat('00',64),'hex')]",
+        "ct_handles = ARRAY[ct_handles[1],set_byte(ct_handles[1],23,99)], allowed_keys = ARRAY[allowed_keys[1],allowed_keys[1]], encrypted_stores = ARRAY[encrypted_stores[1],encrypted_stores[1]]",
         "attestation_type = 'legacy'",
         "duration_seconds = 0",
     ] {

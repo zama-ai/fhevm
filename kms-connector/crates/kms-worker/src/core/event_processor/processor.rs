@@ -203,10 +203,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
-            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
-                self.check_context(&req.request.permit().extra_data().to_extra_data())
-                    .await
-            }
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => self
+                .decryption_processor
+                .check_solana_user_decryption_request(req)
+                .await
+                .map_err(RequestCheckError::record),
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -272,11 +273,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::SolanaUserDecryptionV1(req) => {
-                let user_decrypt_data = self
-                    .decryption_processor
-                    .check_solana_user_decryption_request(req)
-                    .await
-                    .map_err(RequestCheckError::record)?;
+                let user_decrypt_data =
+                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
                 let handles: Vec<B256> = req
                     .request
                     .handles()

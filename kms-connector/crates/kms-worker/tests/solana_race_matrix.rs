@@ -6,11 +6,7 @@
 //! of an observation rather than of a moment: there is no timing to arrange, no sleep to tune, and
 //! no flake to chase.
 //!
-//! Each scenario also asserts its mirror image — that a request accepted before the transition is
-//! not reopened by it. The mirror is enforced structurally as much as asserted: the scripted
-//! readers panic if authorization reads state, or the leaf record, more times than the scenario
-//! allows, so an implementation that "checked once more before sending" would fail the mirror
-//! rather than quietly making the accept conditional on a later state.
+//! Each invocation uses its planned snapshot reads. The worker reauthorizes on later attempts.
 //!
 //! Two of the observers can disagree here — the chain this connector reads and the coprocessors'
 //! record it fetches proofs from — and the last three rows are about that disagreement: a record
@@ -30,10 +26,8 @@ use connector_utils::types::solana_request::SolanaUserDecryptRequest;
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::DelegationFailure,
-    failure::{AuthorizationFailure, FailureClass},
-    handle_binding::HandleBindingFailure,
-    pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
+    delegation::DelegationFailure, failure::AuthorizationFailure,
+    handle_binding::HandleBindingFailure, pipeline::AuthorizationContext,
 };
 use solana_support::*;
 
@@ -52,7 +46,7 @@ async fn observe_with_record(
     world: World,
     record: ProofRecord,
     request: &SolanaUserDecryptRequest,
-) -> (Result<AuthorizedRequest, AuthorizationFailure>, Reads) {
+) -> (Result<(), AuthorizationFailure>, Reads) {
     let proofs = ScriptedProofReader::constant(record);
     let reader = ScriptedReader::constant(world);
     let deployment = deployment();
@@ -60,7 +54,7 @@ async fn observe_with_record(
         deployment: &deployment,
         now_unix_seconds: NOW_INSIDE_WINDOW,
     };
-    let outcome = authorize_request(&reader, &ServableKmsPair, &proofs, context, request).await;
+    let outcome = authorize(&reader, &ServableKmsContext, &proofs, context, request).await;
     (
         outcome,
         Reads {
@@ -74,19 +68,13 @@ async fn observe_with_record(
 async fn observe(
     world: World,
     request: &SolanaUserDecryptRequest,
-) -> (Result<AuthorizedRequest, AuthorizationFailure>, Reads) {
+) -> (Result<(), AuthorizationFailure>, Reads) {
     let record = world.record();
     observe_with_record(world, record, request).await
 }
 
-/// Asserts the mirror: accepted at the pre-transition observation, recorded at that observation,
-/// and nothing read afterwards.
-fn assert_frozen_at(authorized: &AuthorizedRequest, reads: Reads, expected_account_reads: usize) {
-    assert_eq!(
-        authorized.observed_slot(),
-        BEFORE,
-        "an accepted request records the observation it was accepted at"
-    );
+/// Each authorization invocation uses exactly the planned account and proof reads.
+fn assert_frozen_at(_authorized: &(), reads: Reads, expected_account_reads: usize) {
     assert_eq!(
         reads.accounts, expected_account_reads,
         "nothing re-reads state after acceptance, so the transition cannot reach this request"
@@ -166,7 +154,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert_eq!(failure.is_recoverable(), false);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +190,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert_eq!(failure.is_recoverable(), false);
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
@@ -259,7 +247,9 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     .await;
 
     assert!(matches!(
-        outcome.expect_err("after the revocation the delegation is dead"),
+        exact_with_missing_wildcard(
+            outcome.expect_err("after the revocation the delegation is dead")
+        ),
         AuthorizationFailure::Delegation {
             index: 0,
             source: DelegationFailure::Revoked
@@ -374,7 +364,7 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
         ),
         "expected a proof that does not verify, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Retryable);
+    assert_eq!(failure.is_recoverable(), true);
     assert_eq!(
         reads.proofs, 2,
         "a proof that does not verify gets one refresh against the same observation"
@@ -431,7 +421,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
         ),
         "expected a position the observation does not have, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Retryable);
+    assert_eq!(failure.is_recoverable(), true);
     assert_eq!(
         reads.proofs, 2,
         "an out-of-range leaf is retryable and gets one refresh against the same observation"

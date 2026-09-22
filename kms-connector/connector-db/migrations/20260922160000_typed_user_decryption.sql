@@ -27,6 +27,17 @@ LANGUAGE SQL IMMUTABLE PARALLEL SAFE AS $$
         AND NOT EXISTS (SELECT FROM unnest(items) item WHERE item IS NULL OR octet_length(item) <> width)
 $$;
 
+-- These are admission invariants: the row decoder must be able to reconstruct the signed permit.
+CREATE FUNCTION solana_user_decryption_arrays_valid(handles BYTEA[], scopes BYTEA[]) RETURNS BOOLEAN
+LANGUAGE SQL IMMUTABLE PARALLEL SAFE AS $$
+    SELECT NOT EXISTS (
+        SELECT FROM unnest(handles) handle
+        WHERE substring(handle FROM 23 FOR 8) <> substring(handles[1] FROM 23 FOR 8)
+    ) AND NOT EXISTS (
+        SELECT FROM generate_subscripts(scopes, 1) i WHERE i > 1 AND scopes[i-1] >= scopes[i]
+    )
+$$;
+
 ALTER TABLE user_decryption_requests ADD CONSTRAINT user_decryption_attestation_shape CHECK (
     (
         attestation_type IN ('legacy', 'eip712-unified-user-decrypt-v1')
@@ -65,5 +76,6 @@ ALTER TABLE user_decryption_requests ADD CONSTRAINT user_decryption_attestation_
         AND bytea_array_has_width(allowed_keys, 32) AND cardinality(allowed_keys) = cardinality(ct_handles)
         AND bytea_array_has_width(encrypted_stores, 32) AND cardinality(encrypted_stores) = cardinality(ct_handles)
         AND bytea_array_has_width(allowed_scopes, 64) AND cardinality(allowed_scopes) <= 7
+        AND solana_user_decryption_arrays_valid(ct_handles, allowed_scopes)
     )
 );
