@@ -38,7 +38,7 @@ extend-exclude = [
     # hardhat-deploy records of live deployments (address, ABI, compiler metadata).
     # The metadata embeds upstream LayerZero source verbatim; editing it would
     # falsify the record of what is on chain.
-    "protocol-contracts/solanaOFT/deployments/",
+    "protocol-contracts/contracts/solanaOFT/deployments/",
 
     # Lock files and binaries
     "*.lock",
