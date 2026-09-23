@@ -516,7 +516,7 @@ jobs:
        needs.build-coprocessor.result == 'skipped')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
-    # (8 tests, each recompiling contracts). Blue-green + tests runs that DAG
+    # (9 tests, each recompiling contracts). Blue-green + tests runs that DAG
     # twice (DryRunStarted, then after cutover), so allow a second suite.
     timeout-minutes: 360
     permissions:

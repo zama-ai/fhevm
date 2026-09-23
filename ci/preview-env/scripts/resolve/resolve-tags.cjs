@@ -29,6 +29,8 @@ const IMAGES = [
   { key: 'kms_connector_gw_listener', repo: 'fhevm/kms-connector/gw-listener', job: 'build-kms-connector', output: 'gw_listener_build_result', component: 'kms_connector', label: 'kms-connector/gw-listener' },
   { key: 'kms_connector_kms_worker', repo: 'fhevm/kms-connector/kms-worker', job: 'build-kms-connector', output: 'kms_worker_build_result', component: 'kms_connector', label: 'kms-connector/kms-worker' },
   { key: 'kms_connector_tx_sender', repo: 'fhevm/kms-connector/tx-sender', job: 'build-kms-connector', output: 'tx_sender_build_result', component: 'kms_connector', label: 'kms-connector/tx-sender' },
+  { key: 'kms_connector_endpoint', repo: 'fhevm/kms-connector/endpoint', job: 'build-kms-connector', output: 'endpoint_build_result', component: 'kms_connector', label: 'kms-connector/endpoint' },
+  { key: 'kms_connector_proxy', repo: 'fhevm/kms-connector/proxy', job: 'build-kms-connector', output: 'proxy_build_result', component: 'kms_connector', label: 'kms-connector/proxy' },
   { key: 'coprocessor_db_migration', repo: 'fhevm/coprocessor/db-migration', job: 'build-coprocessor', output: 'db_migration_build_result', component: 'coprocessor', label: 'coprocessor/db-migration' },
   { key: 'coprocessor_gw_listener', repo: 'fhevm/coprocessor/gw-listener', job: 'build-coprocessor', output: 'gw_listener_build_result', component: 'coprocessor', label: 'coprocessor/gw-listener' },
   { key: 'coprocessor_host_listener', repo: 'fhevm/coprocessor/host-listener', job: 'build-coprocessor', output: 'host_listener_build_result', component: 'coprocessor', label: 'coprocessor/host-listener' },
