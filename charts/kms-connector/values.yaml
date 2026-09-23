@@ -235,10 +235,10 @@ kmsConnectorKmsWorker:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 4Gi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 8Gi
 
   # Health check probes
   probes:
