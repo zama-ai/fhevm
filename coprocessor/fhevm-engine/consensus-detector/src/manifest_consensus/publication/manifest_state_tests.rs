@@ -917,6 +917,50 @@ async fn local_statement_timeout_bounds_manifest_work_selection() {
 
 #[tokio::test]
 #[serial(db)]
+async fn discovery_retries_finalized_parent_when_child_arrives_after_first_poll() {
+    let (_instance, pool) = setup_pool().await;
+    let parent = [0x64; 32];
+    let child = [0x65; 32];
+
+    // The listener has persisted a finalized anchor, but not its successor yet.
+    insert_host_block(&pool, 100, &parent, &[0x63; 32], "finalized").await;
+    assert_eq!(discover_blocks(&pool).await.expect("bootstrap anchor"), 1);
+    assert_eq!(
+        discover_children(&pool)
+            .await
+            .expect("poll before child arrives"),
+        0
+    );
+
+    // A later listener transaction supplies the child and real computation work.
+    insert_host_block(&pool, 101, &child, &parent, "pending").await;
+    insert_producer_block(&pool, 101, &child, &[0x71; 32]).await;
+    for _ in 0..3 {
+        discover_blocks(&pool)
+            .await
+            .expect("poll producer discovery");
+        discover_children(&pool)
+            .await
+            .expect("poll child discovery");
+    }
+
+    let parent_closed = sqlx::query_scalar::<_, bool>(
+        "SELECT child_block_discovery_closed FROM block_manifest_state
+         WHERE host_chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(parent.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("read anchor discovery state");
+    assert!(
+        manifest_state_exists(&pool, &child).await,
+        "three discovery polls missed child 101 after finalized anchor 100; parent discovery closed={parent_closed}"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn discovers_all_direct_children_before_advancing_the_global_frontier() {
     let (_instance, pool) = setup_pool().await;
     let parent = vec![0x40; 32];
