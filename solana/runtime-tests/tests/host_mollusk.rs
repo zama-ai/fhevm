@@ -1831,7 +1831,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
 }
 
 // ---------------------------------------------------------------------------
-// fhe_execute: public outputs and the event CPI
+// fhe_execute: public outputs and event readers
 // ---------------------------------------------------------------------------
 
 /// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
@@ -1917,7 +1917,7 @@ fn expected_public_output_peaks(
 }
 
 #[test]
-fn mollusk_fhe_execute_seals_each_public_outputs_leaves_in_step_order() {
+fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
     let execution = created_public_batch(3, &[0, 2]);
     let payer = execution.instruction.accounts[0].pubkey;
     let result = check_host_instruction(

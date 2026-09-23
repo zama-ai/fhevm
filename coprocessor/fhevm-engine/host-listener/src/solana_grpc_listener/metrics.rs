@@ -14,6 +14,7 @@ use solana_commitment_config::CommitmentConfig;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+use super::StartPosition;
 use crate::solana_grpc_source::SealedBlock;
 
 const CONFIRMED_SLOT_POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -66,9 +67,17 @@ pub(super) fn record_applied(host_chain_id: u64, block: &SealedBlock) {
     }
 }
 
-/// Exports the reconnect counter at zero, so `increase()` counts the first reconnect.
-pub(super) fn init(host_chain_id: u64) {
-    RECONNECTS.with_label_values(&[&host_chain_id.to_string()]);
+/// Exports the reconnect counter at zero, so `increase()` counts the first reconnect, and on a
+/// resume the committed checkpoint's slot, so the slot lag reads from the first scrape even if
+/// the listener never applies another block.
+pub(super) fn record_start(host_chain_id: u64, start: &StartPosition) {
+    let label = host_chain_id.to_string();
+    RECONNECTS.with_label_values(&[&label]);
+    if let StartPosition::Resume(checkpoint) = start {
+        APPLIED_SLOT
+            .with_label_values(&[&label])
+            .set(checkpoint.slot as i64);
+    }
 }
 
 pub(super) fn inc_reconnects(host_chain_id: u64) {
@@ -97,7 +106,7 @@ pub async fn track_confirmed_slot(
         {
             Ok(slot) => gauge.set(slot as i64),
             Err(error) => {
-                warn!(error = %error, "poll the confirmed Solana slot")
+                warn!(error = %error, "confirmed-slot poll failed")
             }
         }
     }

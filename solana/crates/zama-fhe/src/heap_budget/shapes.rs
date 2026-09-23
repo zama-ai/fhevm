@@ -182,25 +182,36 @@ pub(crate) fn persist_shape(
     chain_with_outputs(steps, input, outputs)
 }
 
-/// The invariant #61 counterexample shape: `creates` public outputs that all allow the same
-/// eight keys. The shared keys intern once in the dictionary, so the app-side ceilings price
-/// this shape like a narrow one — while the host seals one leaf per key per output in
-/// its own CPI frame.
-pub(crate) fn shared_audience_public_creates_shape(
-    creates: usize,
+/// The invariant #61 counterexample shape: `updates` outputs, each to its own Store of one app
+/// holding `peak_count` MMR peaks, all allowing the same eight keys. The shared keys intern
+/// once and the builder never reads a Store's peaks, so it prices this shape like a narrow one,
+/// while the host appends eight leaves per output to each Store's peaks in its own heap.
+pub(crate) fn shared_audience_mature_updates_shape(
+    updates: usize,
+    peak_count: u32,
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
-    let account = shape_state(balance_handle(1));
-    let store = Store::new(&account);
-    let input = store.get([0; 32]).expect("input handle");
-    let outputs = (0..creates)
+    let app = fresh_app();
+    let mature_store = |handle: [u8; 32]| zama_host::EncryptedStore {
+        leaf_count: ((1u64 << peak_count) - 1) << 8,
+        peaks: vec![[0xAB; 32]; peak_count as usize],
+        program: app.program,
+        scope: app.scope,
+        ..shape_state(handle)
+    };
+    let input_account = mature_store(balance_handle(1));
+    let input = Store::new(&input_account)
+        .get([0; 32])
+        .expect("input handle");
+    let outputs = (0..updates)
         .map(|index| {
+            let account = mature_store(balance_handle(0xC0 + index as u8));
             allow_all(
-                store.set([index as u8; 32]).make_public(),
+                Store::new(&account).set([0; 32]),
                 allow_keys(0x60, WIDE_ALLOW_LIST),
             )
         })
         .collect();
-    chain_with_outputs(MAX_FHE_EXECUTION_STEPS, input, outputs)
+    chain_with_outputs(updates, input, outputs)
 }
 
 /// Which reduction op a reduction-heavy shape drives — the only caller-sized operand

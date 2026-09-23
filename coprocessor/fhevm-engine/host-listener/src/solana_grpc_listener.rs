@@ -247,8 +247,8 @@ pub async fn run(
         grpc_url = %config.grpc_url,
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
+    metrics::record_start(config.chain_id, &start);
     let mut progress = IngestionProgress::from(start);
-    metrics::init(config.chain_id);
 
     loop {
         if cancel.is_cancelled() {

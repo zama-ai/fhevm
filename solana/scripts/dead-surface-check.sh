@@ -668,8 +668,8 @@ if run_check 3; then
   # the rule. The English word "allowed" is untouched — subject membership really is an allow-list.
   check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient' all \
     '' -E '\bAllowedPersistent\b|\bAllowedLocal\b'
-  # decoded op records <- `Fhe*Event` structs. The two compute events keep their names
-  # (they are emitted); the nine per-op value types must not come back as events.
+  # decoded op records <- `Fhe*Event` structs. The random-seeds event keeps its name
+  # (it is emitted); the nine per-op value types must not come back as events.
   check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
     'FheExecuteRandomSeedsEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
   # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its

@@ -81,7 +81,7 @@ are written as one narrative instead.
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
 | [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
-| [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The Ledger Is The Work Log, Not A PDA Queue                                                                                    |
+| [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -667,11 +667,8 @@ Open for debate:
 
 The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
-`programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-gone, and so is the created-public lifecycle batch that replaced it (DD-038, removed by
-fhevm-internal#2079). (An earlier revision cited
-DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
-event transport.)
+`programs/zama-host/src/constants.rs`). The per-operation replay-event transport and the
+created-public batch that replaced it are gone (DD-038, in DESIGN_HISTORY.md).
 
 ## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
@@ -1440,7 +1437,7 @@ already-decoded record against its canonical PDA and fetches nothing, its only c
 tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
 will have to fetch the record and hand it to that checker.
 
-`fhe_execute`'s two compute events are unchanged in behaviour and now share one emitter with the
+`fhe_execute`'s random-seeds event is unchanged in behaviour and now shares one emitter with the
 admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
 
 Rationale:
@@ -1454,8 +1451,7 @@ but not its other half, which is that authorization never rests on an event.
 Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
 `ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
 no `ctx`; using the macro would mean copying a nine-field event literal into each of them. One
-hand-written emitter takes the event authority as an argument and serves all eight call sites, covering
-thirteen emissions.
+hand-written emitter takes the event authority as an argument and serves every call site.
 
 The tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is
 ours. What happens if the assembly itself drifts is worth stating precisely, because it is less than it
@@ -1601,9 +1597,9 @@ Why not ship an allocator:
    heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
 3. Store outputs no longer create an account per result, so the old create cap and
    per-result system-CPI trace argument no longer apply. The runtime snapshots now show
-   32-step dependent chains reaching the step cap, shared-audience public outputs reaching
-   24 before the host heap fails at 25, and updates across Stores with 8, 32 and 64 MMR peaks
-   reaching 15, 7 and 4 steps. These are shape limits; the allocator decision does not make
+   32-step dependent chains and 32 public outputs with eight viewers each reaching the step
+   cap, and updates across Stores with 8, 32 and 55 MMR peaks reaching 16, 7 and 4 steps.
+   These are shape limits; the allocator decision does not make
    a host heap failure acceptable for an application we intend to support. A failing application
    benchmark is grounds to reopen fhevm-internal#1872.
 
@@ -2024,7 +2020,7 @@ Reopening condition: Anchor v2 published on crates.io with an audit. Measure a p
 runtime cost snapshots first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
 fields become a `Slab`. A port after the external audit needs its own audit.
 
-## DD-055: The Ledger Is The Work Log, Not A PDA Queue
+## DD-055: The ledger is the work log, not a PDA queue
 
 Status: adopted
 
@@ -2044,7 +2040,7 @@ on-chain until handled, so a listener that missed it could find it again. It is 
 
 The ledger is already the durable log. The risk is a listener that falls behind until the
 provider's replay window closes, and the answer is to see it early: the listener exports its lag and
-error counts (fhevm-internal#2079), and a self-describing execution makes archive replay possible
+reconnects (fhevm-internal#2079), and a self-describing execution makes archive replay possible
 (fhevm-internal#2081).
 
 ## Open product decisions

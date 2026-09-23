@@ -191,12 +191,14 @@ async fn main() -> Result<()> {
         }
     });
 
-    metrics_server::spawn(args.metrics_addr, cancel.child_token());
-    tokio::spawn(track_confirmed_slot(
-        rpc,
-        host_config_chain_id,
-        cancel.child_token(),
-    ));
+    if args.metrics_addr.is_some() {
+        metrics_server::spawn(args.metrics_addr, cancel.child_token());
+        tokio::spawn(track_confirmed_slot(
+            rpc,
+            host_config_chain_id,
+            cancel.child_token(),
+        ));
+    }
 
     let http_server = HttpServer::new(
         pool,

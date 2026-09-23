@@ -161,7 +161,7 @@ pub fn fhe_execute<'info>(
         &ctx.accounts.system_program.to_account_info(),
     )?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
-    // Event CPIs may replace return data; restore the selected handles afterwards.
+    // The event CPI may replace return data; restore the selected handles afterwards.
     return_execution_handles(
         &*transient_store_account.load()?,
         call_start,

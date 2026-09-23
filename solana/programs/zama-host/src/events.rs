@@ -6,8 +6,8 @@
 //!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent`, which carries the one
 //!   datum an indexer cannot recompute from instruction data (seeds derived from block entropy).
-//!   Nothing here uses `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
-//!   rather than the event. Authorization still comes from host-owned account state and never from
+//!   Nothing here uses `emit!`: a log can be truncated by the RPC provider a reader goes
+//!   through, so it delivers a hint rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
 //! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
 //!   in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
