@@ -5,10 +5,11 @@
 //! scenario suite covers the same arc live, but only this test pins the reconstruct-to-worker
 //! seam against real ciphertexts.
 //!
-//! What it deliberately does not cross: the geyser/gRPC transport. Records are decoded straight
-//! out of LiteSVM's transaction metadata instead of arriving over Yellowstone, and the block
-//! metadata is supplied by the fixture because LiteSVM computes no bank hash. Everything from
-//! `reconstruct_fhe_execute` inward is the production path; the wire above it is not.
+//! What it deliberately does not cross: the geyser/gRPC transport. The execution and its
+//! `FheExecutedEvent` are decoded straight out of LiteSVM's transaction metadata instead of
+//! arriving over Yellowstone, and the block metadata is supplied by the fixture because LiteSVM
+//! computes no bank hash. Everything from `reconstruct_fhe_execute` inward is the production
+//! path; the wire above it is not.
 
 use std::path::PathBuf;
 
@@ -23,7 +24,9 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use host_listener::{
     database::tfhe_event_propagate::{Handle, TransactionId},
     solana_adapter::{insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord},
-    solana_reconstruct::{decode_fhe_execute_args, reconstruct_fhe_execute, ReconstructContext},
+    solana_reconstruct::{
+        decode_fhe_execute_args, decode_fhe_executed_event, reconstruct_fhe_execute,
+    },
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
@@ -54,8 +57,8 @@ use zama_host as host;
 const BALANCE_FHE_TYPE: u8 = 5;
 const SECP_GATEWAY_CHAIN_ID: u64 = 31337;
 const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCD; 20];
-/// The parent slot's bank hash: seeded into `SlotHashes`, consumed by the reconstructor as the
-/// previous bank hash, and carried as the parent hash of the block the transfers land in.
+/// The parent slot's bank hash: seeded into `SlotHashes`, read by the host and emitted in each
+/// `FheExecutedEvent`, and carried as the parent hash of the block the transfers land in.
 const PREVIOUS_BANK_HASH: [u8; 32] = [0x42; 32];
 /// LiteSVM computes no bank hash, so the fixture supplies the current slot's. Deliberately
 /// distinct from `PREVIOUS_BANK_HASH` so a parent/child mix-up cannot pass unnoticed.
@@ -301,27 +304,36 @@ fn reconstruct_transfer_events(
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
 ) -> Vec<SolanaHostRecord> {
-    let batch = meta
+    let mut host_instructions = meta
         .inner_instructions
         .iter()
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
-        .find_map(|inner| decode_fhe_execute_args(&inner.instruction.data))
+        .map(|inner| inner.instruction.data.as_slice());
+    let batch = host_instructions
+        .by_ref()
+        .find_map(decode_fhe_execute_args)
         .expect("confidential transfer must CPI into zama-host fhe_execute");
+    let event = host_instructions
+        .find_map(decode_fhe_executed_event)
+        .expect("fhe_execute must emit its FheExecutedEvent");
     let clock = fixture.svm.get_sysvar::<Clock>();
-    reconstruct_fhe_execute(
+    assert_eq!(event.previous_bank_hash, PREVIOUS_BANK_HASH);
+    assert_eq!(event.unix_timestamp, clock.unix_timestamp);
+    let rebuilt = reconstruct_fhe_execute(
         &batch,
-        &[],
-        &ReconstructContext {
-            program_id: host::ID,
-            chain_id: host::SOLANA_POC_CHAIN_ID,
-            previous_bank_hash: PREVIOUS_BANK_HASH,
-            unix_timestamp: clock.unix_timestamp,
-        },
+        &event,
+        host::ID,
+        host::SOLANA_POC_CHAIN_ID,
         &mut std::collections::HashSet::new(),
     )
-    .expect("the token's accepted transfer batch must reconstruct")
-    .records
+    .expect("the token's accepted transfer batch must reconstruct");
+    assert!(
+        rebuilt.mismatches.is_empty(),
+        "the listener must re-derive every handle the host emitted: {:?}",
+        rebuilt.mismatches
+    );
+    rebuilt.records
 }
 
 struct TokenFixture {

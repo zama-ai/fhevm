@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE computations\n            SET is_error = true, is_completed = false, error_message = $3\n            WHERE output_handle = $1 AND transaction_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dcfef145d169d910595fc9a792ccc7a1e9be75f70ddfae6d032a78b8cf58ea06"
+}

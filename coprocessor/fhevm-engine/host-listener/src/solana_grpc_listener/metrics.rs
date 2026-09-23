@@ -1,7 +1,8 @@
 //! Ingestion progress of the Solana host listener. Once its checkpoint leaves the provider's
 //! replay window the listener cannot resume, so these exist to alert well before that:
 //! `time() - applied_block_timestamp_seconds` is the lag in seconds, and
-//! `confirmed_slot - applied_slot` the lag in slots.
+//! `confirmed_slot - applied_slot` the lag in slots. `handle_check_failures_total` counts steps
+//! whose emitted handle this listener could not re-derive, which means its software is wrong.
 
 use std::{sync::LazyLock, time::Duration};
 
@@ -55,24 +56,34 @@ static RECONNECTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
+static HANDLE_CHECK_FAILURES: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_solana_host_listener_handle_check_failures_total",
+        "fhe_execute steps whose emitted result handle the listener did not re-derive; each is held back as an errored computation",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
 pub(super) fn record_applied(host_chain_id: u64, block: &SealedBlock) {
     let label = host_chain_id.to_string();
     APPLIED_SLOT
         .with_label_values(&[&label])
         .set(block.slot as i64);
-    if let Some(timestamp) = block.unix_timestamp() {
+    if let Some(timestamp) = block.block_time {
         APPLIED_BLOCK_TIMESTAMP
             .with_label_values(&[&label])
             .set(timestamp);
     }
 }
 
-/// Exports the reconnect counter at zero, so `increase()` counts the first reconnect, and on a
-/// resume the committed checkpoint's slot, so the slot lag reads from the first scrape even if
-/// the listener never applies another block.
+/// Exports the counters at zero, so `increase()` counts the first event, and on a resume the
+/// committed checkpoint's slot, so the slot lag reads from the first scrape even if the listener
+/// never applies another block.
 pub(super) fn record_start(host_chain_id: u64, start: &StartPosition) {
     let label = host_chain_id.to_string();
     RECONNECTS.with_label_values(&[&label]);
+    HANDLE_CHECK_FAILURES.with_label_values(&[&label]);
     if let StartPosition::Resume(checkpoint) = start {
         APPLIED_SLOT
             .with_label_values(&[&label])
@@ -84,6 +95,12 @@ pub(super) fn inc_reconnects(host_chain_id: u64) {
     RECONNECTS
         .with_label_values(&[&host_chain_id.to_string()])
         .inc();
+}
+
+pub(super) fn add_handle_check_failures(host_chain_id: u64, count: usize) {
+    HANDLE_CHECK_FAILURES
+        .with_label_values(&[&host_chain_id.to_string()])
+        .inc_by(count as u64);
 }
 
 /// Polls the cluster's confirmed slot until `cancel` fires. It reads RPC, not the gRPC

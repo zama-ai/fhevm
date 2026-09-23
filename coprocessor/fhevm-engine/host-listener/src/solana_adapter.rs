@@ -228,6 +228,45 @@ pub async fn insert_solana_block_records(
     })
 }
 
+/// A computation row the listener inserted but must not let the worker compute.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldBackComputation {
+    pub transaction_id: TransactionId,
+    pub output_handle: [u8; 32],
+    pub reason: String,
+}
+
+/// Marks rows inserted in `tx` as terminal errors. Without a retry marker in the message the
+/// tfhe-worker treats them as dead boundaries and drains their dependents, so nothing derived
+/// from a held-back handle is computed.
+pub async fn hold_back_computations(
+    tx: &mut Transaction<'_>,
+    held_back: &[HeldBackComputation],
+) -> Result<(), SqlxError> {
+    for held in held_back {
+        let updated = sqlx::query!(
+            r#"
+            UPDATE computations
+            SET is_error = true, is_completed = false, error_message = $3
+            WHERE output_handle = $1 AND transaction_id = $2
+            "#,
+            held.output_handle.as_slice(),
+            held.transaction_id.as_slice(),
+            held.reason,
+        )
+        .execute(tx.as_mut())
+        .await?;
+        if updated.rows_affected() != 1 {
+            return Err(SqlxError::Protocol(format!(
+                "held-back computation {} in transaction {} has no row",
+                hex::encode(held.output_handle),
+                held.transaction_id
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {
     BlockSummary {
         number: block.block_number,

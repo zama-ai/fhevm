@@ -168,7 +168,8 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
 async fn solana_records_reach_the_shared_sql_and_scheduler_path(
 ) -> anyhow::Result<()> {
     use host_listener::solana_adapter::{
-        insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord,
+        hold_back_computations, insert_solana_block_records,
+        HeldBackComputation, SolanaBlockMeta, SolanaHostRecord,
     };
     use zama_host::{
         records::{FheMulDiv, TrivialEncrypt},
@@ -238,7 +239,54 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
             .await?,
         1
     );
-    tx.commit().await?;
+
+    // A held-back producer becomes the terminal error the tfhe-worker drains its
+    // consumers for; its consumer is left for the worker to drain.
+    hold_back_computations(
+        &mut tx,
+        &[HeldBackComputation {
+            transaction_id,
+            output_handle: [1; 32],
+            reason: "solana handle check failed: test".to_owned(),
+        }],
+    )
+    .await?;
+    let rows = sqlx::query("SELECT output_handle, is_error, is_completed, error_message FROM computations ORDER BY output_handle")
+        .fetch_all(&mut *tx).await?;
+    let states = rows
+        .iter()
+        .map(|row| {
+            (
+                row.get::<Vec<u8>, _>("output_handle")[0],
+                row.get::<bool, _>("is_error"),
+                row.get::<bool, _>("is_completed"),
+                row.get::<Option<String>, _>("error_message"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        states,
+        vec![
+            (
+                1,
+                true,
+                false,
+                Some("solana handle check failed: test".to_owned())
+            ),
+            (4, false, false, None),
+        ]
+    );
+    let missing = hold_back_computations(
+        &mut tx,
+        &[HeldBackComputation {
+            transaction_id,
+            output_handle: [9; 32],
+            reason: "solana handle check failed: test".to_owned(),
+        }],
+    )
+    .await;
+    assert!(missing.is_err(), "a held-back step always has its row");
+    tx.rollback().await?;
     Ok(())
 }
 

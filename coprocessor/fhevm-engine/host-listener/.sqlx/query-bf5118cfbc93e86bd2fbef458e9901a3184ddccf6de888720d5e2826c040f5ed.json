@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT encrypted_state, leaf_count, peaks, history_complete\n        FROM solana_encrypted_states\n        WHERE encrypted_state = ANY($1)\n        FOR UPDATE\n        ",
+  "query": "\n        SELECT encrypted_state, leaf_count, peaks, history_complete, last_slot\n        FROM solana_encrypted_states\n        WHERE encrypted_state = ANY($1)\n        FOR UPDATE\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "history_complete",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_slot",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "abd3aa8ed623972e575f45dd036333a2b3e014c60d73e0342d22d5e98a35f51b"
+  "hash": "bf5118cfbc93e86bd2fbef458e9901a3184ddccf6de888720d5e2826c040f5ed"
 }

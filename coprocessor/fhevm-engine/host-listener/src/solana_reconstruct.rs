@@ -1,10 +1,10 @@
 //! Reconstruct zama-host operations and State effects from instruction data and
-//! block context. Random operations additionally use their signed seed event CPI.
+//! each execution's `FheExecutedEvent`.
 //!
-//! Covers the `fhe_execute` execution walk (recomputing each step's handle via the
-//! program's own `computed_*` functions, byte-identical to on-chain emission), the
-//! encrypted-state history the effects append (the keys they allow and whether a result
-//! is made public: the leaf record of RFC 035).
+//! Covers the `fhe_execute` execution walk (records carry the result handles the host
+//! emitted, and each is re-derived through the program's own `computed_*` functions as a
+//! check), and the encrypted-state history the effects append (the keys they allow and
+//! whether a result is made public: the leaf record of RFC 035).
 
 use std::collections::HashSet;
 
@@ -14,9 +14,9 @@ use zama_host::state::{
     computed_eval_ternary_handle, computed_eval_trivial_handle,
     computed_eval_unary_handle, computed_rand_bounded_handle,
     computed_rand_handle, FheExecuteArgs, FheExecuteEffect, FheExecuteOperand,
-    FheExecuteStep,
+    FheExecuteStep, HandleDerivationContext,
 };
-use zama_host::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent};
+use zama_host::FheExecutedEvent;
 
 use crate::solana_adapter::SolanaHostRecord;
 use zama_host::records::{
@@ -25,15 +25,8 @@ use zama_host::records::{
 };
 use zama_host::EVENT_VERSION;
 
+use anchor_lang::prelude::Pubkey;
 use anchor_lang::{AnchorDeserialize, Discriminator};
-
-/// Block + config context the deterministic handle derivation needs, taken from
-/// the transaction's slot/block (`previous_bank_hash`, `unix_timestamp`), the
-/// host's on-chain config (`chain_id`) and the listener's own `--program-id`
-/// (`program_id`: the deployment followed, not the id this crate was compiled
-/// with). This IS the program's own derivation context type — re-exported so
-/// reconstruction cannot drift from it.
-pub use zama_host::state::HandleDerivationContext as ReconstructContext;
 
 pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
     zama_host::decode::is_fhe_execute_instruction(instruction_data)
@@ -42,8 +35,8 @@ pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
 /// execution through `zama_host::decode` (so there is no bespoke decoder to
 /// drift from the on-chain layout). The decoded execution is the input to the execution
-/// walk that reconstructs one op record per step — a separate pass that
-/// recomputes each step's handle and therefore depends on `previous_bank_hash`.
+/// walk that reconstructs one op record per step, together with the execution's
+/// `FheExecutedEvent`.
 pub fn decode_fhe_execute_args(
     instruction_data: &[u8],
 ) -> Option<FheExecuteArgs> {
@@ -55,10 +48,10 @@ pub fn decode_fhe_execute_args(
     }
 }
 
-pub fn decode_fhe_execute_random_seeds_event(
+pub fn decode_fhe_executed_event(
     instruction_data: &[u8],
-) -> Option<FheExecuteRandomSeedsEvent> {
-    let event: FheExecuteRandomSeedsEvent =
+) -> Option<FheExecutedEvent> {
+    let event: FheExecutedEvent =
         zama_host::decode::decode_event_cpi(instruction_data)?;
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
@@ -94,12 +87,6 @@ pub struct DecodedInstruction {
     pub is_inner: bool,
 }
 
-// `previous_bank_hash` sourcing lives in `solana_slot_hashes` (feature-independent
-// so the gRPC transport can use it too); re-exported here for the reconstruction API.
-pub use crate::solana_slot_hashes::{
-    previous_bank_hash_from_slot_hashes, SLOT_HASHES_SYSVAR,
-};
-
 /// Seed for the singleton HostConfig PDA (`PDA("host-config")`), re-exported so the
 /// transport can derive its address to fetch the on-chain config.
 pub use zama_host::constants::HOST_CONFIG_SEED;
@@ -114,8 +101,8 @@ pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
     Ok(config.chain_id)
 }
 
-/// Resolves an execution operand to its handle by reusing already-produced step
-/// results and the execution's interned dictionary — no on-chain account reads.
+/// Resolves an execution operand to its handle from the emitted results of earlier
+/// steps and the execution's interned dictionary — no on-chain account reads.
 /// `Scalar` is only valid as a binary rhs (handled by [`resolve_rhs`]); seeing
 /// it here means a malformed execution.
 fn resolve_operand(
@@ -159,25 +146,38 @@ fn resolve_rhs(
     }
 }
 
-/// Reconstructs the per-step op records a `fhe_execute` execution produces, mirroring
-/// the program's `walk_steps`: walk steps in order, resolve operands
-/// (`EarlierStep` referring to earlier steps' produced handles), recompute each
-/// step's result handle via the program's execution primitives, and produce one record
-/// per step. Persistent and instruction-local outputs derive the identical base
-/// handle — no per-output binding (matches EVM `FHEVMExecutor`).
+/// A step whose result handle, re-derived from the decoded step and the emitted
+/// context, differs from the handle the host emitted for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HandleMismatch {
+    pub step_index: u16,
+    pub emitted: [u8; 32],
+    pub derived: [u8; 32],
+}
+
+/// Reconstructs the per-step op records of one `fhe_execute` from its instruction data
+/// and its `FheExecutedEvent`, mirroring the program's `walk_steps`.
 ///
-/// Returns `None` on a malformed execution (operand or dictionary reference out of range,
-/// or a `Scalar` where only an encrypted operand is valid). `ctx` supplies
-/// chain_id / previous_bank_hash / unix_timestamp. Random seeds are supplied by
-/// the host's signed event-CPI execution because their anchor includes the live
-/// rand nonce, which is not caller-provided instruction data.
+/// Every record carries the handle the host emitted, and operands resolve to the emitted
+/// handles of earlier steps, so a record names the chain's handles even where this
+/// listener's derivation disagrees. Each result is also re-derived through the program's
+/// own `computed_*` functions from the decoded step and the emitted context; a result
+/// that differs is reported in `mismatches`, never substituted. Random steps use the
+/// emitted seeds, which bind the host's rand nonce and cannot be recomputed.
+///
+/// Returns `None` when the instruction and the event do not describe the same walk: an
+/// operand or dictionary reference out of range, a `Scalar` where only an encrypted
+/// operand is valid, a result count other than the step count, or seeds that are not
+/// exactly the random steps. `program_id` is the deployment followed, not the id this
+/// crate was compiled with; `chain_id` comes from the on-chain `HostConfig`.
 pub fn reconstruct_fhe_execute(
     execution: &FheExecuteArgs,
-    random_seeds: &[FheExecuteRandomSeed],
-    ctx: &ReconstructContext,
+    event: &FheExecutedEvent,
+    program_id: Pubkey,
+    chain_id: u64,
     produced_in_tx: &mut HashSet<[u8; 32]>,
 ) -> Option<ReconstructedExecution> {
-    let expected_random_steps = execution
+    let random_steps = execution
         .steps
         .iter()
         .enumerate()
@@ -190,21 +190,38 @@ pub fn reconstruct_fhe_execute(
             .then_some(index as u16)
         })
         .collect::<Vec<_>>();
-    if expected_random_steps.len() != random_seeds.len()
-        || expected_random_steps
+    if event.results.len() != execution.steps.len()
+        || random_steps.len() != event.seeds.len()
+        || random_steps
             .iter()
-            .zip(random_seeds)
+            .zip(&event.seeds)
             .any(|(expected, actual)| *expected != actual.step_index)
     {
         return None;
     }
-    let mut produced: Vec<[u8; 32]> = Vec::with_capacity(execution.steps.len());
+    let ctx = HandleDerivationContext {
+        program_id,
+        chain_id,
+        previous_bank_hash: event.previous_bank_hash,
+        unix_timestamp: event.unix_timestamp,
+    };
+    let seed_of = |op_index: u16| {
+        event
+            .seeds
+            .iter()
+            .find(|entry| entry.step_index == op_index)
+            .map(|entry| entry.seed)
+    };
+    let dictionary = &execution.dictionary;
     let mut records: Vec<SolanaHostRecord> =
         Vec::with_capacity(execution.steps.len());
+    let mut mismatches = Vec::new();
 
     for (index, step) in execution.steps.iter().enumerate() {
         let op_index = index as u16;
-        let record = match step {
+        let earlier = &event.results[..index];
+        let result = event.results[index];
+        let (record, derived) = match step {
             FheExecuteStep::Binary {
                 op,
                 lhs,
@@ -212,11 +229,10 @@ pub fn reconstruct_fhe_execute(
                 output_fhe_type,
                 ..
             } => {
-                let lhs_handle =
-                    resolve_operand(lhs, &execution.dictionary, &produced)?;
+                let lhs_handle = resolve_operand(lhs, dictionary, earlier)?;
                 let (rhs_handle, scalar) =
-                    resolve_rhs(rhs, &execution.dictionary, &produced)?;
-                let result = computed_eval_handle(
+                    resolve_rhs(rhs, dictionary, earlier)?;
+                let derived = computed_eval_handle(
                     *op,
                     lhs_handle,
                     rhs_handle,
@@ -226,18 +242,17 @@ pub fn reconstruct_fhe_execute(
                         [Some(lhs_handle), (!scalar).then_some(rhs_handle)],
                         produced_in_tx,
                     )?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheBinaryOp(FheBinaryOp {
+                let record = SolanaHostRecord::FheBinaryOp(FheBinaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     lhs: lhs_handle,
                     rhs: rhs_handle,
                     scalar,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::Ternary {
                 op,
@@ -247,70 +262,54 @@ pub fn reconstruct_fhe_execute(
                 output_fhe_type,
                 ..
             } => {
-                let c =
-                    resolve_operand(control, &execution.dictionary, &produced)?;
-                let t =
-                    resolve_operand(if_true, &execution.dictionary, &produced)?;
-                let f = resolve_operand(
-                    if_false,
-                    &execution.dictionary,
-                    &produced,
-                )?;
-                let result = computed_eval_ternary_handle(
+                let c = resolve_operand(control, dictionary, earlier)?;
+                let t = resolve_operand(if_true, dictionary, earlier)?;
+                let f = resolve_operand(if_false, dictionary, earlier)?;
+                let derived = computed_eval_ternary_handle(
                     *op,
                     c,
                     t,
                     f,
                     *output_fhe_type,
                     boundary_mask([Some(c), Some(t), Some(f)], produced_in_tx)?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheTernaryOp(FheTernaryOp {
+                let record = SolanaHostRecord::FheTernaryOp(FheTernaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     control: c,
                     if_true: t,
                     if_false: f,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
                 fhe_type,
                 ..
             } => {
-                let result =
-                    computed_eval_trivial_handle(*plaintext, *fhe_type, ctx);
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
+                let derived =
+                    computed_eval_trivial_handle(*plaintext, *fhe_type, &ctx);
+                let record = SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
                     version: EVENT_VERSION,
                     plaintext: *plaintext,
                     fhe_type: *fhe_type,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::Rand { fhe_type, .. } => {
-                let seed = random_seeds
-                    .iter()
-                    .find(|entry| entry.step_index == op_index)?
-                    .seed;
-                let result = computed_rand_handle(
-                    seed,
-                    *fhe_type,
-                    ctx.program_id,
-                    ctx.chain_id,
-                );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheRand(FheRand {
+                let seed = seed_of(op_index)?;
+                let derived =
+                    computed_rand_handle(seed, *fhe_type, program_id, chain_id);
+                let record = SolanaHostRecord::FheRand(FheRand {
                     version: EVENT_VERSION,
                     seed,
                     fhe_type: *fhe_type,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::Unary {
                 op,
@@ -318,96 +317,81 @@ pub fn reconstruct_fhe_execute(
                 output_fhe_type,
             } => {
                 let operand_handle =
-                    resolve_operand(operand, &execution.dictionary, &produced)?;
-                let result = computed_eval_unary_handle(
+                    resolve_operand(operand, dictionary, earlier)?;
+                let derived = computed_eval_unary_handle(
                     *op,
                     operand_handle,
                     *output_fhe_type,
                     boundary_mask([Some(operand_handle)], produced_in_tx)?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
+                let record = SolanaHostRecord::FheUnaryOp(FheUnaryOp {
                     version: EVENT_VERSION,
                     op: *op,
                     operand: operand_handle,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
                 fhe_type,
                 ..
             } => {
-                let seed = random_seeds
-                    .iter()
-                    .find(|entry| entry.step_index == op_index)?
-                    .seed;
-                let result = computed_rand_bounded_handle(
+                let seed = seed_of(op_index)?;
+                let derived = computed_rand_bounded_handle(
                     *upper_bound,
                     seed,
                     *fhe_type,
-                    ctx.program_id,
-                    ctx.chain_id,
+                    program_id,
+                    chain_id,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheRandBounded(FheRandBounded {
+                let record = SolanaHostRecord::FheRandBounded(FheRandBounded {
                     version: EVENT_VERSION,
                     upper_bound: *upper_bound,
                     seed,
                     fhe_type: *fhe_type,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::Sum { operands, fhe_type } => {
                 let operand_handles: Vec<[u8; 32]> = operands
                     .iter()
                     .map(|operand| {
-                        resolve_operand(
-                            operand,
-                            &execution.dictionary,
-                            &produced,
-                        )
+                        resolve_operand(operand, dictionary, earlier)
                     })
                     .collect::<Option<_>>()?;
-                let result = computed_eval_sum_handle(
+                let derived = computed_eval_sum_handle(
                     &operand_handles,
                     *fhe_type,
                     boundary_mask(
                         operand_handles.iter().copied().map(Some),
                         produced_in_tx,
                     )?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheSum(FheSum {
+                let record = SolanaHostRecord::FheSum(FheSum {
                     version: EVENT_VERSION,
                     operands: operand_handles,
                     fhe_type: *fhe_type,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::IsIn {
                 value,
                 set,
                 fhe_type,
             } => {
-                let value_handle =
-                    resolve_operand(value, &execution.dictionary, &produced)?;
+                let value_handle = resolve_operand(value, dictionary, earlier)?;
                 let set_handles: Vec<[u8; 32]> = set
                     .iter()
                     .map(|operand| {
-                        resolve_operand(
-                            operand,
-                            &execution.dictionary,
-                            &produced,
-                        )
+                        resolve_operand(operand, dictionary, earlier)
                     })
                     .collect::<Option<_>>()?;
-                let result = computed_eval_is_in_handle(
+                let derived = computed_eval_is_in_handle(
                     value_handle,
                     &set_handles,
                     *fhe_type,
@@ -416,17 +400,16 @@ pub fn reconstruct_fhe_execute(
                             .chain(set_handles.iter().copied().map(Some)),
                         produced_in_tx,
                     )?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheIsIn(FheIsIn {
+                let record = SolanaHostRecord::FheIsIn(FheIsIn {
                     version: EVENT_VERSION,
                     value: value_handle,
                     set: set_handles,
                     fhe_type: *fhe_type,
                     result,
-                })
+                });
+                (record, derived)
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -435,10 +418,10 @@ pub fn reconstruct_fhe_execute(
                 output_fhe_type,
             } => {
                 let factor1_handle =
-                    resolve_operand(factor1, &execution.dictionary, &produced)?;
+                    resolve_operand(factor1, dictionary, earlier)?;
                 let (factor2_handle, scalar) =
-                    resolve_rhs(factor2, &execution.dictionary, &produced)?;
-                let result = computed_eval_mul_div_handle(
+                    resolve_rhs(factor2, dictionary, earlier)?;
+                let derived = computed_eval_mul_div_handle(
                     factor1_handle,
                     factor2_handle,
                     *divisor,
@@ -451,20 +434,27 @@ pub fn reconstruct_fhe_execute(
                         ],
                         produced_in_tx,
                     )?,
-                    ctx,
+                    &ctx,
                 );
-                produced.push(result);
-                produced_in_tx.insert(result);
-                SolanaHostRecord::FheMulDiv(FheMulDiv {
+                let record = SolanaHostRecord::FheMulDiv(FheMulDiv {
                     version: EVENT_VERSION,
                     factor1: factor1_handle,
                     factor2: factor2_handle,
                     divisor: *divisor,
                     scalar,
                     result,
-                })
+                });
+                (record, derived)
             }
         };
+        if derived != result {
+            mismatches.push(HandleMismatch {
+                step_index: op_index,
+                emitted: result,
+                derived,
+            });
+        }
+        produced_in_tx.insert(result);
         records.push(record);
     }
     let mut store_outputs = Vec::new();
@@ -472,22 +462,20 @@ pub fn reconstruct_fhe_execute(
         if effect.result.output_index != 0 {
             return None;
         }
-        let handle = *produced.get(usize::from(effect.result.step_index))?;
+        let handle =
+            *event.results.get(usize::from(effect.result.step_index))?;
         // A computation-only grant does not ask the worker to persist its result.
         if effect.slot.is_some()
             || !effect.allow_indexes.is_empty()
             || effect.make_public
         {
-            store_outputs.push(state_leaf_output(
-                effect,
-                &execution.dictionary,
-                handle,
-            )?);
+            store_outputs.push(state_leaf_output(effect, dictionary, handle)?);
         }
     }
     Some(ReconstructedExecution {
         records,
         store_outputs,
+        mismatches,
     })
 }
 
@@ -504,6 +492,7 @@ fn boundary_mask(
 pub struct ReconstructedExecution {
     pub records: Vec<SolanaHostRecord>,
     pub store_outputs: Vec<StoreLeafOutput>,
+    pub mismatches: Vec<HandleMismatch>,
 }
 
 /// The leaves a `State` output appends, read from instruction data the host
@@ -539,14 +528,51 @@ fn state_leaf_output(
     })
 }
 
+/// The event a host would emit for `execution`: its results are this listener's own
+/// derivation, step by step, so tests can build consistent instructions without a runtime.
+/// `produced_in_tx` holds the results of earlier executions in the same transaction.
+#[cfg(test)]
+pub(crate) fn event_with_derived_results(
+    execution: &FheExecuteArgs,
+    ctx: &HandleDerivationContext,
+    seeds: Vec<zama_host::FheExecuteRandomSeed>,
+    produced_in_tx: &HashSet<[u8; 32]>,
+) -> FheExecutedEvent {
+    let mut event = FheExecutedEvent {
+        version: EVENT_VERSION,
+        previous_bank_hash: ctx.previous_bank_hash,
+        unix_timestamp: ctx.unix_timestamp,
+        results: vec![[0; 32]; execution.steps.len()],
+        seeds,
+    };
+    for index in 0..execution.steps.len() {
+        let rebuilt = reconstruct_fhe_execute(
+            execution,
+            &event,
+            ctx.program_id,
+            ctx.chain_id,
+            &mut produced_in_tx.clone(),
+        )
+        .expect("a well-formed execution");
+        if let Some(mismatch) = rebuilt
+            .mismatches
+            .iter()
+            .find(|mismatch| usize::from(mismatch.step_index) == index)
+        {
+            event.results[index] = mismatch.derived;
+        }
+    }
+    event
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use anchor_lang::{prelude::Pubkey, AnchorSerialize};
     use zama_host::state::{FheBinaryOpCode, FheUnaryOpCode};
 
-    fn ctx() -> ReconstructContext {
-        ReconstructContext {
+    fn ctx() -> HandleDerivationContext {
+        HandleDerivationContext {
             // Not the compiled-in id: every expected handle below must follow this one.
             program_id: "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3"
                 .parse()
@@ -555,6 +581,55 @@ mod tests {
             previous_bank_hash: [3u8; 32],
             unix_timestamp: 1_700_000_000,
         }
+    }
+
+    /// Reconstructs `execution` against the event a host would emit for it.
+    fn walk(
+        execution: &FheExecuteArgs,
+        seeds: Vec<zama_host::FheExecuteRandomSeed>,
+    ) -> ReconstructedExecution {
+        let event = event_with_derived_results(
+            execution,
+            &ctx(),
+            seeds,
+            &HashSet::new(),
+        );
+        let rebuilt = reconstruct_fhe_execute(
+            execution,
+            &event,
+            ctx().program_id,
+            ctx().chain_id,
+            &mut HashSet::new(),
+        )
+        .expect("walk");
+        assert!(rebuilt.mismatches.is_empty());
+        rebuilt
+    }
+
+    fn event(
+        results: Vec<[u8; 32]>,
+        seeds: Vec<zama_host::FheExecuteRandomSeed>,
+    ) -> FheExecutedEvent {
+        FheExecutedEvent {
+            version: EVENT_VERSION,
+            previous_bank_hash: ctx().previous_bank_hash,
+            unix_timestamp: ctx().unix_timestamp,
+            results,
+            seeds,
+        }
+    }
+
+    /// An event of the right shape whose results are placeholders.
+    fn placeholder_event(execution: &FheExecuteArgs) -> FheExecutedEvent {
+        event(vec![[0; 32]; execution.steps.len()], vec![])
+    }
+
+    fn event_instruction_data(event: &FheExecutedEvent) -> Vec<u8> {
+        anchor_lang::event::EVENT_IX_TAG_LE
+            .iter()
+            .copied()
+            .chain(anchor_lang::Event::data(event))
+            .collect()
     }
 
     #[test]
@@ -637,39 +712,26 @@ mod tests {
     }
 
     #[test]
-    fn decodes_host_derived_random_seed_batch() {
-        let event = FheExecuteRandomSeedsEvent {
-            version: zama_host::EVENT_VERSION,
-            seeds: vec![FheExecuteRandomSeed {
-                step_index: 3,
+    fn decodes_the_executed_event_and_rejects_other_versions() {
+        let mut event = FheExecutedEvent {
+            version: EVENT_VERSION,
+            previous_bank_hash: [3; 32],
+            unix_timestamp: 1_700_000_000,
+            results: vec![[5; 32]],
+            seeds: vec![zama_host::FheExecuteRandomSeed {
+                step_index: 0,
                 seed: [7; 16],
             }],
         };
-        let data = anchor_lang::event::EVENT_IX_TAG_LE
-            .iter()
-            .copied()
-            .chain(anchor_lang::Event::data(&event))
-            .collect::<Vec<_>>();
-
         let decoded =
-            decode_fhe_execute_random_seeds_event(&data).expect("decode event");
-        assert_eq!(decoded.version, zama_host::EVENT_VERSION);
+            decode_fhe_executed_event(&event_instruction_data(&event))
+                .expect("decode event");
+        assert_eq!(decoded.results, event.results);
         assert_eq!(decoded.seeds, event.seeds);
-    }
 
-    #[test]
-    fn rejects_unknown_random_seed_event_version() {
-        let event = FheExecuteRandomSeedsEvent {
-            version: zama_host::EVENT_VERSION.wrapping_add(1),
-            seeds: vec![],
-        };
-        let data = anchor_lang::event::EVENT_IX_TAG_LE
-            .iter()
-            .copied()
-            .chain(anchor_lang::Event::data(&event))
-            .collect::<Vec<_>>();
-
-        assert!(decode_fhe_execute_random_seeds_event(&data).is_none());
+        event.version = EVENT_VERSION.wrapping_add(1);
+        assert!(decode_fhe_executed_event(&event_instruction_data(&event))
+            .is_none());
     }
 
     #[test]
@@ -694,14 +756,7 @@ mod tests {
                 },
             ],
         };
-        let records = reconstruct_fhe_execute(
-            &execution,
-            &[],
-            &ctx(),
-            &mut HashSet::new(),
-        )
-        .map(|execution| execution.records)
-        .expect("walk");
+        let records = walk(&execution, vec![]).records;
         assert_eq!(records.len(), 2);
         let step0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => {
@@ -758,18 +813,14 @@ mod tests {
             }],
         };
 
-        let random_seeds = [FheExecuteRandomSeed {
-            step_index: 0,
-            seed: [7; 16],
-        }];
-        let records = reconstruct_fhe_execute(
+        let records = walk(
             &execution,
-            &random_seeds,
-            &ctx(),
-            &mut HashSet::new(),
+            vec![zama_host::FheExecuteRandomSeed {
+                step_index: 0,
+                seed: [7; 16],
+            }],
         )
-        .map(|execution| execution.records)
-        .expect("walk");
+        .records;
         match &records[..] {
             [SolanaHostRecord::FheRandBounded(event)] => {
                 assert_eq!(event.upper_bound, upper_bound);
@@ -857,17 +908,14 @@ mod tests {
             ],
         };
         let random_seed = [9; 16];
-        let records = reconstruct_fhe_execute(
+        let records = walk(
             &execution,
-            &[FheExecuteRandomSeed {
+            vec![zama_host::FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,
             }],
-            &cx,
-            &mut HashSet::new(),
         )
-        .map(|execution| execution.records)
-        .expect("walk");
+        .records;
         assert_eq!(records.len(), 7);
         let h0 = match &records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => e.result,
@@ -951,6 +999,119 @@ mod tests {
         }
     }
 
+    /// A wrong emitted handle is reported for its step alone. The record keeps the
+    /// emitted handle, and a later step consuming it is re-derived from that handle, so
+    /// the mismatch does not cascade.
+    #[test]
+    fn reports_a_wrong_emitted_handle_without_substituting_it() {
+        let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+            returned_results: Vec::new(),
+            account_count: 0,
+            dictionary: vec![[2u8; 32]],
+            steps: vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext: [7u8; 32],
+                    fhe_type: 5,
+                },
+                FheExecuteStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
+                    output_fhe_type: 5,
+                },
+            ],
+        };
+        let honest = event_with_derived_results(
+            &execution,
+            &ctx(),
+            vec![],
+            &HashSet::new(),
+        );
+        let wrong = [0xEE; 32];
+        let consumer = computed_eval_handle(
+            FheBinaryOpCode::Add,
+            wrong,
+            [2u8; 32],
+            true,
+            5,
+            [0; 32],
+            &ctx(),
+        );
+        let event = event(vec![wrong, consumer], vec![]);
+
+        let rebuilt = reconstruct_fhe_execute(
+            &execution,
+            &event,
+            ctx().program_id,
+            ctx().chain_id,
+            &mut HashSet::new(),
+        )
+        .expect("walk");
+        assert_eq!(
+            rebuilt.mismatches,
+            vec![HandleMismatch {
+                step_index: 0,
+                emitted: wrong,
+                derived: honest.results[0],
+            }]
+        );
+        match &rebuilt.records[..] {
+            [SolanaHostRecord::TrivialEncrypt(first), SolanaHostRecord::FheBinaryOp(second)] =>
+            {
+                assert_eq!(first.result, wrong);
+                assert_eq!(second.lhs, wrong);
+                assert_eq!(second.result, consumer);
+            }
+            other => panic!("unexpected records {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_an_event_that_describes_other_steps() {
+        let execution = FheExecuteArgs {
+            execution_store_index: 0,
+            effects: vec![],
+            returned_results: Vec::new(),
+            account_count: 0,
+            dictionary: vec![],
+            steps: vec![FheExecuteStep::Rand { fhe_type: 5 }],
+        };
+        let seed = zama_host::FheExecuteRandomSeed {
+            step_index: 0,
+            seed: [7; 16],
+        };
+        let result = event_with_derived_results(
+            &execution,
+            &ctx(),
+            vec![seed.clone()],
+            &HashSet::new(),
+        )
+        .results;
+        let malformed = [
+            event(vec![], vec![seed.clone()]),
+            event(result.clone(), vec![]),
+            event(
+                result,
+                vec![zama_host::FheExecuteRandomSeed {
+                    step_index: 1,
+                    ..seed
+                }],
+            ),
+        ];
+        for event in malformed {
+            assert!(reconstruct_fhe_execute(
+                &execution,
+                &event,
+                ctx().program_id,
+                ctx().chain_id,
+                &mut HashSet::new(),
+            )
+            .is_none());
+        }
+    }
+
     #[test]
     fn fhe_execute_walk_rejects_forward_transient_reference() {
         // A first step referencing a not-yet-produced step -> None.
@@ -970,8 +1131,9 @@ mod tests {
         };
         assert!(reconstruct_fhe_execute(
             &execution,
-            &[],
-            &ctx(),
+            &placeholder_event(&execution),
+            ctx().program_id,
+            ctx().chain_id,
             &mut HashSet::new()
         )
         .map(|execution| execution.records)
@@ -1005,13 +1167,7 @@ mod tests {
                 fhe_type: 5,
             }],
         };
-        let steps = reconstruct_fhe_execute(
-            &execution,
-            &[],
-            &ctx(),
-            &mut HashSet::new(),
-        )
-        .expect("walk");
+        let steps = walk(&execution, vec![]);
         let handle = match &steps.records[0] {
             SolanaHostRecord::TrivialEncrypt(e) => e.result,
             other => panic!("expected TrivialEncrypt, got {other:?}"),
@@ -1042,13 +1198,7 @@ mod tests {
                 fhe_type: 5,
             }],
         };
-        let steps = reconstruct_fhe_execute(
-            &execution,
-            &[],
-            &ctx(),
-            &mut HashSet::new(),
-        )
-        .expect("walk");
+        let steps = walk(&execution, vec![]);
         assert!(steps.store_outputs.is_empty());
     }
 
@@ -1079,8 +1229,9 @@ mod tests {
         };
         assert!(reconstruct_fhe_execute(
             &execution,
-            &[],
-            &ctx(),
+            &placeholder_event(&execution),
+            ctx().program_id,
+            ctx().chain_id,
             &mut HashSet::new()
         )
         .is_none());

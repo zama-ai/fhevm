@@ -7,7 +7,7 @@ license.workspace = true
 [features]
 default = []
 test_bypass_key_extraction = []
-solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic", "dep:zama-solana-transaction"]
+solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic", "dep:zama-solana-transaction", "dep:solana-transaction-status-client-types"]
 solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl", "dep:axum", "dep:utoipa"]
 
 [[bin]]
@@ -70,6 +70,8 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
+# `getBlock` response types, for rebuilding a slot from an archive.
+solana-transaction-status-client-types = { version = "3.1", optional = true }
 
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
 # TLS is needed for hosted Yellowstone endpoints (https://); the local plugin in e2e is plaintext.
@@ -115,6 +117,7 @@ primitives = { path = "../../../listener/crates/shared/primitives" }
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
+bincode = "1.3"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 tracing-test = { workspace = true }

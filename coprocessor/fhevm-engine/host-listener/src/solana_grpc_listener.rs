@@ -14,11 +14,12 @@
 //!
 //! Each sealed block is applied in one database transaction: its compute rows, the
 //! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
-//! A leaf handle is derived from the same slot context as the compute row that
-//! produced it, so the two records are built from the same input and committed
-//! together.
+//! Compute rows and leaves both carry the result handles each `FheExecutedEvent`
+//! emitted, so they name the chain's handles even where re-derivation disagrees.
+//! A step whose handle this listener does not re-derive is held back: its row is
+//! inserted as a terminal error, and the tfhe-worker drains everything that depends
+//! on it. The rest of the block is ingested normally.
 
-use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::time::Duration;
 
@@ -29,42 +30,41 @@ use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
+use anchor_lang::prelude::Pubkey;
+
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
-    SubscribeRequest, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
+    SubscribeRequest, TransactionStatusMeta,
 };
-use yellowstone_grpc_proto::prost::Message as _;
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
     InnerInstructionGroup as CanonicalInnerInstructionGroup,
 };
 
 use crate::database::solana_leaves::{
-    load_encrypted_store_histories, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, EncryptedStoreWrite, StoredCheckpoint,
-    TransactionStoreWrites,
+    load_block_leaves, load_encrypted_store_histories, reduce_block_leaves,
+    store_block_leaves, store_checkpoint, EncryptedStoreWrite,
+    StoredCheckpoint, TransactionStoreWrites,
 };
 use crate::database::tfhe_event_propagate::{Database, TransactionId};
 use crate::solana_adapter::{
-    insert_solana_block_records, SolanaBlockMeta, SolanaIngestStats,
+    hold_back_computations, insert_solana_block_records, HeldBackComputation,
+    SolanaBlockMeta, SolanaIngestStats,
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
 };
+use crate::solana_reconstruct::HandleMismatch;
 
 mod metrics;
+mod rpc_block;
 
 pub use metrics::track_confirmed_slot;
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
-const MAX_PENDING_CONTEXT_BLOCKS: usize = 256;
-// A single decoded gRPC message is capped at 64 MiB. Keeping the cumulative
-// encoded size of queued blocks within the same bound prevents the 256-block
-// count limit from multiplying the transport's worst-case allocation.
-const MAX_PENDING_BLOCK_BYTES: usize = MAX_DECODING_MESSAGE_SIZE;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -224,13 +224,9 @@ impl IngestionProgress {
         }
     }
 
-    fn commit(
-        &mut self,
-        checkpoint: BlockCheckpoint,
-        next_unapplied: Option<BlockCheckpoint>,
-    ) {
+    fn commit(&mut self, checkpoint: BlockCheckpoint) {
         self.applied = Some(checkpoint);
-        self.retry = next_unapplied;
+        self.retry = None;
     }
 }
 
@@ -304,11 +300,11 @@ fn validated_account_keys<'a>(
         .collect()
 }
 
-fn decode_transaction_instructions(
-    message: &TransactionMessage,
-    meta: &TransactionStatusMeta,
+/// The instruction list reconstruction reads, from either wire format's resolution.
+fn decoded_instructions(
+    resolved: Vec<zama_solana_transaction::ResolvedInstruction>,
 ) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
-    resolve_transaction_instructions(message, meta)?
+    resolved
         .into_iter()
         .map(|instruction| {
             Ok(crate::solana_reconstruct::DecodedInstruction {
@@ -433,8 +429,6 @@ async fn subscribe_loop(
         result = client.subscribe(outbound) => result.context("subscribe")?,
     };
     let mut stream = response.into_inner();
-    let mut pending_blocks = VecDeque::new();
-    let mut pending_encoded_bytes = 0;
 
     loop {
         tokio::select! {
@@ -460,59 +454,30 @@ async fn subscribe_loop(
                     return Err(anyhow!("grpc stream closed by server"));
                 };
                 match update.update_oneof {
-                    Some(UpdateOneof::Account(acc)) => {
-                        validator.observe_account(acc).map_err(|error| {
-                            FatalListenerError::new(error.context(
-                                "validate Solana sysvar update",
-                            ))
-                        })?;
-                        drain_pending_blocks(
-                            db,
-                            config,
-                            &mut validator,
-                            &mut pending_blocks,
-                            &mut pending_encoded_bytes,
-                            progress,
-                            cancel,
-                        )
-                        .await?;
-                    }
                     Some(UpdateOneof::Block(block)) => {
-                        let encoded_len = block.encoded_len();
                         let decision = validator.seal(block).map_err(|error| {
                             FatalListenerError::new(error.context(
                                 "validate sealed Solana block",
                             ))
                         })?;
                         if let SealDecision::Process(block) = decision {
-                            if pending_blocks.len()
-                                == MAX_PENDING_CONTEXT_BLOCKS
-                            {
-                                return Err(FatalListenerError::new(anyhow!(
-                                    "sealed Solana blocks exceeded {MAX_PENDING_CONTEXT_BLOCKS} pending context slots"
-                                )).into());
-                            }
-                            let pending = prepare_block(config, block, encoded_len).map_err(|error| {
+                            let prepared = prepare_block(block).map_err(|error| {
                                 FatalListenerError::new(error.context(
                                     "prepare sealed Solana block",
                                 ))
                             })?;
-                            pending_encoded_bytes = checked_pending_bytes(
-                                pending_encoded_bytes,
-                                pending.encoded_len,
-                            ).map_err(FatalListenerError::new)?;
-                            progress.observe_unapplied(pending.block.checkpoint());
-                            pending_blocks.push_back(pending);
-                            drain_pending_blocks(
+                            if !apply_prepared_block(
                                 db,
                                 config,
                                 &mut validator,
-                                &mut pending_blocks,
-                                &mut pending_encoded_bytes,
+                                &prepared,
                                 progress,
                                 cancel,
                             )
-                            .await?;
+                            .await?
+                            {
+                                return Ok(());
+                            }
                         }
                     }
                     Some(UpdateOneof::Ping(_)) => debug!("grpc ping"),
@@ -523,49 +488,24 @@ async fn subscribe_loop(
     }
 }
 
+/// A sealed block whose successful transactions are decoded into the transport-neutral
+/// instruction list reconstruction reads.
 #[derive(Debug)]
-struct PendingBlock {
+struct PreparedBlock {
     block: SealedBlock,
     transactions: Vec<PreparedTransaction>,
-    requirement: ContextRequirement,
     matching_transaction_count: usize,
-    encoded_len: usize,
 }
 
 #[derive(Debug)]
 struct PreparedTransaction {
-    info: SubscribeUpdateTransactionInfo,
+    signature: Signature,
+    index: u64,
     instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
-    requirement: ContextRequirement,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct ContextRequirement {
-    slot_hashes: bool,
-    clock: bool,
-}
-
-impl ContextRequirement {
-    fn union(self, other: Self) -> Self {
-        Self {
-            slot_hashes: self.slot_hashes || other.slot_hashes,
-            clock: self.clock || other.clock,
-        }
-    }
-
-    fn is_satisfied_by(self, block: &SealedBlock) -> bool {
-        (!self.slot_hashes || block.previous_bank_hash.is_some())
-            && (!self.clock || block.clock_unix_timestamp.is_some())
-    }
-}
-
-fn prepare_block(
-    config: &SolanaGrpcListenerConfig,
-    mut block: SealedBlock,
-    encoded_len: usize,
-) -> Result<PendingBlock> {
+fn prepare_block(mut block: SealedBlock) -> Result<PreparedBlock> {
     let matching_transaction_count = block.transactions.len();
-    let mut requirement = ContextRequirement::default();
     let mut transactions = Vec::new();
     for info in std::mem::take(&mut block.transactions) {
         let meta = info
@@ -582,116 +522,49 @@ fn prepare_block(
             .message
             .as_ref()
             .ok_or_else(|| anyhow!("successful transaction has no message"))?;
-        let instructions = decode_transaction_instructions(message, meta)?;
-        let transaction_requirement = transaction_context_requirement(
-            config,
-            &instructions,
-            block.block_time.is_some(),
-        );
-        requirement = requirement.union(transaction_requirement);
         transactions.push(PreparedTransaction {
-            info,
-            instructions,
-            requirement: transaction_requirement,
+            signature: Signature::try_from(info.signature.as_slice())
+                .context("invalid Solana signature")?,
+            index: info.index,
+            instructions: decoded_instructions(
+                resolve_transaction_instructions(message, meta)?,
+            )?,
         });
     }
-    Ok(PendingBlock {
+    Ok(PreparedBlock {
         block,
         transactions,
-        requirement,
         matching_transaction_count,
-        encoded_len,
     })
 }
 
-fn transaction_context_requirement(
-    config: &SolanaGrpcListenerConfig,
-    instructions: &[crate::solana_reconstruct::DecodedInstruction],
-    has_block_time: bool,
-) -> ContextRequirement {
-    use crate::solana_reconstruct::{
-        is_fhe_execute_instruction, is_make_store_handle_public_instruction,
-    };
-
-    let mut requirement = ContextRequirement::default();
-    for instruction in instructions
-        .iter()
-        .filter(|instruction| instruction.program == config.program_id)
-    {
-        if is_fhe_execute_instruction(&instruction.data) {
-            requirement.slot_hashes = true;
-            requirement.clock = true;
-        } else if !has_block_time
-            && is_make_store_handle_public_instruction(&instruction.data)
-        {
-            requirement.clock = true;
-        }
-    }
-    requirement
-}
-
-fn checked_pending_bytes(current: usize, added: usize) -> Result<usize> {
-    let total = current
-        .checked_add(added)
-        .ok_or_else(|| anyhow!("pending sealed block byte count overflow"))?;
-    if total > MAX_PENDING_BLOCK_BYTES {
-        anyhow::bail!(
-            "sealed Solana blocks exceeded {MAX_PENDING_BLOCK_BYTES} pending encoded bytes"
-        );
-    }
-    Ok(total)
-}
-
-async fn drain_pending_blocks(
+/// Applies one prepared block and advances the checkpoint. Returns `false` when cancelled.
+async fn apply_prepared_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
     validator: &mut BlockValidator,
-    pending_blocks: &mut VecDeque<PendingBlock>,
-    pending_encoded_bytes: &mut usize,
+    prepared: &PreparedBlock,
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
-) -> Result<()> {
-    while let Some(front) = pending_blocks.front_mut() {
-        validator.refresh_context(&mut front.block);
-        if !front.requirement.is_satisfied_by(&front.block) {
-            return Ok(());
+) -> Result<bool> {
+    progress.observe_unapplied(prepared.block.checkpoint());
+    match ingest_block(db, config, prepared, cancel).await {
+        Ok(BlockIngestOutcome::Complete) => {
+            validator.commit(&prepared.block);
+            progress.commit(prepared.block.checkpoint());
+            metrics::record_applied(config.chain_id, &prepared.block);
+            Ok(true)
         }
-
-        let pending = pending_blocks
-            .pop_front()
-            .expect("front was present immediately before pop");
-        *pending_encoded_bytes -= pending.encoded_len;
-        match ingest_block(db, config, &pending, cancel).await {
-            Ok(BlockIngestOutcome::Complete) => {
-                validator.commit(
-                    &pending.block,
-                    pending.requirement.slot_hashes,
-                    pending.requirement.clock,
-                );
-                progress.commit(
-                    pending.block.checkpoint(),
-                    pending_blocks
-                        .front()
-                        .map(|pending| pending.block.checkpoint()),
-                );
-                metrics::record_applied(config.chain_id, &pending.block);
-            }
-            Ok(BlockIngestOutcome::Cancelled) => return Ok(()),
-            Err(err) if err.kind() == IngestFailureKind::Retryable => {
-                return Err(err
-                    .into_error()
-                    .context("retryable sealed block ingest failure"));
-            }
-            Err(err) => {
-                return Err(FatalListenerError::new(
-                    err.into_error()
-                        .context("fatal sealed block ingest failure"),
-                )
-                .into());
-            }
-        }
+        Ok(BlockIngestOutcome::Cancelled) => Ok(false),
+        Err(err) if err.kind() == IngestFailureKind::Retryable => Err(err
+            .into_error()
+            .context("retryable sealed block ingest failure")),
+        Err(err) => Err(FatalListenerError::new(
+            err.into_error()
+                .context("fatal sealed block ingest failure"),
+        )
+        .into()),
     }
-    Ok(())
 }
 
 fn is_terminal_replay_status(status: &tonic::Status) -> bool {
@@ -704,14 +577,10 @@ fn is_terminal_replay_status(status: &tonic::Status) -> bool {
 #[cfg(test)]
 mod replay_status_tests {
     use super::{
-        checked_pending_bytes, is_terminal_replay_status,
-        sealed_block_timestamp, BlockCheckpoint, IngestionProgress,
-        MAX_PENDING_BLOCK_BYTES,
+        is_terminal_replay_status, BlockCheckpoint, IngestionProgress,
     };
     use crate::solana_grpc_listener::StartPosition;
-    use crate::solana_grpc_source::{
-        BlockValidator, SealDecision, SealedBlock,
-    };
+    use crate::solana_grpc_source::{BlockValidator, SealDecision};
     use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
     #[test]
@@ -762,8 +631,8 @@ mod replay_status_tests {
         else {
             panic!()
         };
-        retry_validator.commit(&retried, false, false);
-        progress.commit(retried.checkpoint(), None);
+        retry_validator.commit(&retried);
+        progress.commit(retried.checkpoint());
 
         assert_eq!(progress.applied, Some(checkpoint));
         assert!(progress.retry.is_none());
@@ -800,7 +669,7 @@ mod replay_status_tests {
         else {
             panic!("bootstrap block must be applied")
         };
-        progress.commit(block.checkpoint(), None);
+        progress.commit(block.checkpoint());
         let start = progress.subscription_start();
         assert_eq!(start, StartPosition::Resume(checkpoint));
         let mut restarted = BlockValidator::new(start);
@@ -830,36 +699,6 @@ mod replay_status_tests {
                 .is_err());
         }
     }
-
-    #[test]
-    fn pending_byte_budget_fails_without_large_allocations() {
-        assert_eq!(
-            checked_pending_bytes(MAX_PENDING_BLOCK_BYTES - 1, 1).unwrap(),
-            MAX_PENDING_BLOCK_BYTES
-        );
-        assert!(checked_pending_bytes(MAX_PENDING_BLOCK_BYTES - 1, 2).is_err());
-    }
-
-    #[test]
-    fn clock_timestamp_is_the_block_time_fallback() {
-        let block = SealedBlock {
-            slot: 5,
-            block_hash: [5; 32],
-            parent_slot: 4,
-            parent_block_hash: [4; 32],
-            block_time: None,
-            block_height: None,
-            executed_transaction_count: 0,
-            transactions: vec![],
-            previous_bank_hash: None,
-            clock_unix_timestamp: Some(1_700_000_000),
-        };
-
-        assert_eq!(
-            sealed_block_timestamp(&block),
-            super::unix_to_pdt(1_700_000_000)
-        );
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -871,18 +710,9 @@ enum BlockIngestOutcome {
 async fn ingest_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    pending: &PendingBlock,
+    pending: &PreparedBlock,
     cancel: &CancellationToken,
 ) -> std::result::Result<BlockIngestOutcome, IngestFailure> {
-    for transaction in &pending.transactions {
-        if !transaction.requirement.is_satisfied_by(&pending.block) {
-            return Err(IngestFailure::fatal(anyhow!(
-                "missing required Solana reconstruction context for transaction {} in slot {}",
-                transaction.info.index,
-                pending.block.slot
-            )));
-        }
-    }
     let result = tokio::select! {
         _ = cancel.cancelled() => return Ok(BlockIngestOutcome::Cancelled),
         result = tokio::time::timeout(
@@ -915,26 +745,25 @@ async fn ingest_block(
 async fn apply_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    pending: &PendingBlock,
+    pending: &PreparedBlock,
 ) -> std::result::Result<(), IngestFailure> {
     let sealed_block = &pending.block;
-    let slot_bank_hash = sealed_block
-        .previous_bank_hash
-        .map(|hash| HashMap::from([(sealed_block.slot, hash)]))
-        .unwrap_or_default();
-    let slot_clock_ts = sealed_block
-        .clock_unix_timestamp
-        .map(|timestamp| HashMap::from([(sealed_block.slot, timestamp)]))
-        .unwrap_or_default();
+    // The deployment this listener follows, not the id the crate was compiled with: handles
+    // hash the program id, so a listener built for one profile can still derive another's.
+    let program_id: Pubkey = config.program_id.parse().map_err(|err| {
+        IngestFailure::fatal(anyhow!(
+            "program_id {} is not a Solana pubkey: {err}",
+            config.program_id
+        ))
+    })?;
 
     let mut reconstructed = Vec::new();
     for transaction in &pending.transactions {
         let outcome = reconstruct_records_for_insert(
             config,
+            program_id,
             &transaction.instructions,
             sealed_block.slot,
-            &slot_bank_hash,
-            &slot_clock_ts,
         )
         .map_err(|err| {
             IngestFailure::fatal(err).context("reconstruct Solana host records")
@@ -960,22 +789,24 @@ async fn apply_block(
 
     let mut records_by_transaction = Vec::new();
     let mut leaf_sources = Vec::new();
+    let mut held_back = Vec::new();
+    let mut check_failures = Vec::new();
     for (transaction, records) in reconstructed {
-        records_by_transaction.push((
-            TransactionId::from(
-                Signature::try_from(transaction.info.signature.as_slice())
-                    .map_err(|err| {
-                        IngestFailure::fatal(err)
-                            .context("invalid Solana signature")
-                    })?,
-            ),
-            records.records,
-        ));
+        let transaction_id = TransactionId::from(transaction.signature);
+        records_by_transaction.push((transaction_id, records.records));
         if !records.leaf_sources.is_empty() {
             leaf_sources.push(TransactionStoreWrites {
-                transaction_index: transaction.info.index,
+                transaction_index: transaction.index,
                 sources: records.leaf_sources,
             });
+        }
+        for failure in records.check_failures {
+            held_back.push(HeldBackComputation {
+                transaction_id,
+                output_handle: failure.mismatch.emitted,
+                reason: failure.describe(sealed_block.slot),
+            });
+            check_failures.push((transaction.signature, failure));
         }
     }
     let stats = if records_by_transaction.is_empty() {
@@ -1006,6 +837,11 @@ async fn apply_block(
             IngestFailure::retryable(err).context("insert_solana_block_records")
         })?
     };
+    hold_back_computations(&mut db_tx, &held_back)
+        .await
+        .map_err(|err| {
+            IngestFailure::retryable(err).context("hold back computations")
+        })?;
 
     let mut touched: Vec<[u8; 32]> = leaf_sources
         .iter()
@@ -1022,9 +858,29 @@ async fn apply_block(
     // The chain accepted every write; a write this record cannot follow means the
     // record diverged from chain state, and continuing would seal wrong leaves.
     let reduction =
-        reduce_block_leaves(&leaf_sources, existing).map_err(|err| {
-            IngestFailure::fatal(err).context("reduce Solana leaves")
+        reduce_block_leaves(sealed_block.slot, &leaf_sources, existing)
+            .map_err(|err| {
+                IngestFailure::fatal(err).context("reduce Solana leaves")
+            })?;
+    // A replayed slot must reproduce its recorded leaves exactly; anything else means
+    // the record and the chain disagree about history the proofs already cover.
+    if !reduction.replayed.is_empty() {
+        let recorded = load_block_leaves(
+            &mut db_tx,
+            sealed_block.slot,
+            reduction.replayed.keys().copied(),
+        )
+        .await
+        .map_err(|err| {
+            IngestFailure::retryable(err).context("load replayed Solana leaves")
         })?;
+        if recorded != reduction.replayed {
+            return Err(IngestFailure::fatal(anyhow!(
+                "replayed slot {} does not reproduce its recorded leaves",
+                sealed_block.slot
+            )));
+        }
+    }
     store_block_leaves(&mut db_tx, sealed_block.slot, &reduction)
         .await
         .map_err(|err| {
@@ -1043,6 +899,24 @@ async fn apply_block(
         .commit()
         .await
         .map_err(|err| IngestFailure::retryable(err).context("commit db tx"))?;
+
+    for (signature, failure) in &check_failures {
+        error!(
+            slot = sealed_block.slot,
+            signature = %signature,
+            execution_index = failure.execution_index,
+            step_index = failure.mismatch.step_index,
+            emitted = %hex::encode(failure.mismatch.emitted),
+            derived = %hex::encode(failure.mismatch.derived),
+            "held back an fhe_execute step whose emitted handle this listener does not re-derive"
+        );
+    }
+    if !check_failures.is_empty() {
+        metrics::add_handle_check_failures(
+            config.chain_id,
+            check_failures.len(),
+        );
+    }
 
     if stats.inserted_rows > 0 || !reduction.leaves.is_empty() {
         info!(
@@ -1063,43 +937,43 @@ fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
     Some(PrimitiveDateTime::new(dt.date(), dt.time()))
 }
 
+/// Geyser's block time is the bank's `Clock::unix_timestamp`, the value every handle in the
+/// block was derived with.
 fn sealed_block_timestamp(block: &SealedBlock) -> Option<PrimitiveDateTime> {
-    block.unix_timestamp().and_then(unix_to_pdt)
+    block.block_time.and_then(unix_to_pdt)
 }
 
-/// Builds the handle-derivation context for `slot` from the streamed sysvars.
-/// Returns `Ok(None)` until both the Clock and SlotHashes value for the slot have been cached.
-fn reconstruct_context(
-    config: &SolanaGrpcListenerConfig,
-    slot: u64,
-    slot_bank_hash: &HashMap<u64, [u8; 32]>,
-    slot_clock_ts: &HashMap<u64, i64>,
-) -> Result<Option<crate::solana_reconstruct::ReconstructContext>> {
-    // The deployment this listener follows, not the id the crate was compiled with: handles
-    // hash the program id, so a listener built for one profile can still derive another's.
-    let program_id = config.program_id.parse().with_context(|| {
-        format!("program_id {} is not a Solana pubkey", config.program_id)
-    })?;
-    let (Some(unix_timestamp), Some(previous_bank_hash)) = (
-        slot_clock_ts.get(&slot).copied(),
-        slot_bank_hash.get(&slot).copied(),
-    ) else {
-        return Ok(None);
-    };
-    Ok(Some(crate::solana_reconstruct::ReconstructContext {
-        program_id,
-        chain_id: config.chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    }))
-}
-
-/// One covered transaction, rebuilt off-chain: the compute rows to insert and the
-/// leaf sources its host instructions sealed, in on-chain order.
+/// One covered transaction, rebuilt off-chain: the compute rows to insert, the
+/// leaf sources its host instructions sealed, in on-chain order, and the steps
+/// whose emitted handle re-derivation did not reproduce.
 #[derive(Debug, Default)]
 struct ReconstructedTransaction {
     records: Vec<crate::solana_adapter::SolanaHostRecord>,
     leaf_sources: Vec<EncryptedStoreWrite>,
+    check_failures: Vec<HandleCheckFailure>,
+}
+
+/// A [`HandleMismatch`] located in its transaction: `execution_index` counts the
+/// transaction's `fhe_execute` invocations from zero.
+#[derive(Debug)]
+struct HandleCheckFailure {
+    execution_index: usize,
+    mismatch: HandleMismatch,
+}
+
+impl HandleCheckFailure {
+    /// The held-back row's `error_message`. The row's `transaction_id` already names the
+    /// transaction; leaving the base58 signature out keeps the message from ever spelling
+    /// the tfhe-worker's retry marker, which would make the hold-back retryable.
+    fn describe(&self, slot: u64) -> String {
+        format!(
+            "solana handle check failed: slot {slot}, execution {}, step {}: emitted 0x{}, re-derived 0x{}",
+            self.execution_index,
+            self.mismatch.step_index,
+            hex::encode(self.mismatch.emitted),
+            hex::encode(self.mismatch.derived),
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -1111,17 +985,16 @@ enum ReconstructionOutcome {
 /// Rebuilds the ingestable record set off-chain from a transaction's instructions.
 /// Covers `fhe_execute` (one op record per step, plus a material request and
 /// history append for each state output), decoded from the same ordered
-/// instruction list.
+/// instruction list together with each execution's `FheExecutedEvent`.
 fn reconstruct_records_for_insert(
     config: &SolanaGrpcListenerConfig,
+    program_id: Pubkey,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
     slot: u64,
-    slot_bank_hash: &HashMap<u64, [u8; 32]>,
-    slot_clock_ts: &HashMap<u64, i64>,
 ) -> Result<ReconstructionOutcome> {
     use crate::solana_adapter::{material_request, SolanaHostRecord};
     use crate::solana_reconstruct::{
-        decode_fhe_execute_args, decode_fhe_execute_random_seeds_event,
+        decode_fhe_execute_args, decode_fhe_executed_event,
         decode_make_store_handle_public, is_fhe_execute_instruction,
         is_make_store_handle_public_instruction, reconstruct_fhe_execute,
         MAKE_STATE_ENCRYPTED_STORE_INDEX,
@@ -1157,49 +1030,54 @@ fn reconstruct_records_for_insert(
         return Ok(ReconstructionOutcome::NotCovered);
     }
 
-    let ctx = reconstruct_context(config, slot, slot_bank_hash, slot_clock_ts)?;
-    if has_fhe_execute && ctx.is_none() {
-        anyhow::bail!(
-            "reconstruct: missing slot derivation context for covered fhe_execute in slot {slot}"
-        );
-    }
-
     let mut reconstructed = ReconstructedTransaction::default();
     let mut produced_in_tx = std::collections::HashSet::new();
+    let mut execution_index = 0;
 
     for (instruction_index, ix) in instructions.iter().enumerate() {
         if ix.program != config.program_id {
             continue;
         }
         if let Some(execution) = decode_fhe_execute_args(&ix.data) {
-            let ctx = ctx
-                .as_ref()
-                .expect("covered fhe_execute requires reconstruction context");
-            let random_seeds = instructions[instruction_index + 1..]
+            // The execution's own event CPI follows it, before the next execution. Only
+            // this program can sign its event authority, so a host instruction carrying
+            // the event tag was emitted by the host.
+            let mut events = instructions[instruction_index + 1..]
                 .iter()
                 .take_while(|later| {
                     later.program != config.program_id
                         || !is_fhe_execute_instruction(&later.data)
                 })
                 .filter(|later| later.program == config.program_id)
-                .find_map(|later| {
-                    decode_fhe_execute_random_seeds_event(&later.data)
-                })
-                .map(|event| event.seeds)
-                .unwrap_or_default();
-            // Deterministic output handles are reconstructed from the operation
-            // and operands. Random outputs use the host-signed seed batch.
+                .filter_map(|later| decode_fhe_executed_event(&later.data));
+            let (Some(event), None) = (events.next(), events.next()) else {
+                anyhow::bail!(
+                    "reconstruct: fhe_execute in slot {slot} is not followed by exactly one \
+                     FheExecutedEvent of version {}",
+                    zama_host::EVENT_VERSION
+                );
+            };
             let Some(steps) = reconstruct_fhe_execute(
                 &execution,
-                &random_seeds,
-                ctx,
+                &event,
+                program_id,
+                config.chain_id,
                 &mut produced_in_tx,
             ) else {
                 anyhow::bail!(
-                    "reconstruct: incomplete fhe_execute reconstruction in slot {slot}; \
-                     malformed execution or missing handle context"
+                    "reconstruct: fhe_execute in slot {slot} and its FheExecutedEvent \
+                     do not describe the same steps"
                 );
             };
+            reconstructed.check_failures.extend(
+                steps.mismatches.into_iter().map(|mismatch| {
+                    HandleCheckFailure {
+                        execution_index,
+                        mismatch,
+                    }
+                }),
+            );
+            execution_index += 1;
             reconstructed.records.extend(steps.records);
             for output in steps.store_outputs {
                 let Some(encrypted_store) = fhe_execute_dynamic_account(
@@ -1405,22 +1283,30 @@ mod account_resolution_tests {
 mod fhe_execute_acl_tests {
     use super::{
         fhe_execute_dynamic_account, reconstruct_records_for_insert,
-        transaction_context_requirement, ReconstructionOutcome,
+        HandleCheckFailure, ReconstructedTransaction, ReconstructionOutcome,
         SolanaGrpcListenerConfig, FHE_EXECUTE_REMAINING_BASE,
     };
+    use anchor_lang::prelude::Pubkey;
     use anchor_lang::{AnchorSerialize, Discriminator};
-    use std::collections::HashMap;
+    use std::collections::HashSet;
     use zama_host::state::{FheExecuteArgs, FheExecuteStep};
+    use zama_host::{
+        FheExecuteRandomSeed, FheExecutedEvent, HandleDerivationContext,
+    };
 
     use crate::database::solana_leaves::EncryptedStoreWrite;
-    use crate::solana_reconstruct::DecodedInstruction;
+    use crate::solana_reconstruct::{
+        decode_fhe_execute_args, event_with_derived_results,
+        DecodedInstruction, HandleMismatch,
+    };
 
     // A valid pubkey that is not the compiled-in `zama_host::ID`: derivation must follow the
     // configured deployment.
-    const ZAMA_HOST: &str = "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
-    const STATE: [u8; 32] = [0x22; 32];
+    pub(super) const ZAMA_HOST: &str =
+        "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
+    pub(super) const STATE: [u8; 32] = [0x22; 32];
 
-    fn config() -> SolanaGrpcListenerConfig {
+    pub(super) fn config() -> SolanaGrpcListenerConfig {
         SolanaGrpcListenerConfig {
             grpc_url: "http://127.0.0.1:1".to_owned(),
             x_token: None,
@@ -1442,11 +1328,90 @@ mod fhe_execute_acl_tests {
         assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
 
-    fn encoded_execution(args: FheExecuteArgs) -> Vec<u8> {
+    pub(super) fn encoded_execution(args: FheExecuteArgs) -> Vec<u8> {
         let mut data =
             zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
         args.serialize(&mut data).unwrap();
         data
+    }
+
+    pub(super) fn context() -> HandleDerivationContext {
+        HandleDerivationContext {
+            program_id: ZAMA_HOST.parse().unwrap(),
+            chain_id: config().chain_id,
+            previous_bank_hash: [0x44; 32],
+            unix_timestamp: 1_700_000_000,
+        }
+    }
+
+    pub(super) fn event_instruction(
+        execution: &DecodedInstruction,
+        event: &FheExecutedEvent,
+    ) -> DecodedInstruction {
+        DecodedInstruction {
+            data: anchor_lang::event::EVENT_IX_TAG_LE
+                .iter()
+                .copied()
+                .chain(anchor_lang::Event::data(event))
+                .collect(),
+            accounts: vec![],
+            ..execution.clone()
+        }
+    }
+
+    /// Follows every host `fhe_execute` with the event a host would emit for it.
+    pub(super) fn with_events(
+        instructions: impl IntoIterator<Item = DecodedInstruction>,
+    ) -> Vec<DecodedInstruction> {
+        let mut produced = HashSet::new();
+        let mut transaction = Vec::new();
+        for instruction in instructions {
+            let execution = (instruction.program == ZAMA_HOST)
+                .then(|| decode_fhe_execute_args(&instruction.data))
+                .flatten();
+            transaction.push(instruction.clone());
+            if let Some(execution) = execution {
+                let seeds = execution
+                    .steps
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, step)| {
+                        matches!(
+                            step,
+                            FheExecuteStep::Rand { .. }
+                                | FheExecuteStep::RandBounded { .. }
+                        )
+                    })
+                    .map(|(index, _)| FheExecuteRandomSeed {
+                        step_index: index as u16,
+                        seed: [7; 16],
+                    })
+                    .collect();
+                let event = event_with_derived_results(
+                    &execution,
+                    &context(),
+                    seeds,
+                    &produced,
+                );
+                produced.extend(event.results.iter().copied());
+                transaction.push(event_instruction(&instruction, &event));
+            }
+        }
+        transaction
+    }
+
+    pub(super) fn reconstruct(
+        instructions: &[DecodedInstruction],
+    ) -> anyhow::Result<ReconstructedTransaction> {
+        match reconstruct_records_for_insert(
+            &config(),
+            ZAMA_HOST.parse::<Pubkey>().unwrap(),
+            instructions,
+            42,
+        )? {
+            ReconstructionOutcome::Complete(reconstructed) => Ok(reconstructed),
+            other => panic!("expected a covered transaction, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1458,7 +1423,7 @@ mod fhe_execute_acl_tests {
     }
 
     #[test]
-    fn random_seed_lookup_respects_program_discriminator_namespace() {
+    fn executed_event_is_paired_with_its_own_host_execution() {
         let execute = DecodedInstruction {
             program: ZAMA_HOST.to_owned(),
             data: encoded_execution(FheExecuteArgs {
@@ -1474,45 +1439,84 @@ mod fhe_execute_acl_tests {
             top_level_index: 0,
             is_inner: true,
         };
-        let event = zama_host::FheExecuteRandomSeedsEvent {
-            version: zama_host::EVENT_VERSION,
-            seeds: vec![zama_host::FheExecuteRandomSeed {
-                step_index: 0,
-                seed: [7; 16],
-            }],
+        let [_, event] = &with_events([execute.clone()])[..] else {
+            panic!("one execution, one event")
         };
-        let seed_event = DecodedInstruction {
-            data: anchor_lang::event::EVENT_IX_TAG_LE
-                .iter()
-                .copied()
-                .chain(anchor_lang::Event::data(&event))
-                .collect(),
-            ..execute.clone()
+        let foreign = |instruction: &DecodedInstruction| DecodedInstruction {
+            program: "foreign-program".to_owned(),
+            ..instruction.clone()
         };
-        for same_program in [false, true] {
-            let mut collision = execute.clone();
-            if !same_program {
-                collision.program = "foreign-program".to_owned();
-            }
-            let outcome = reconstruct_records_for_insert(
-                &config(),
-                &[execute.clone(), collision, seed_event.clone()],
-                42,
-                &HashMap::from([(42, [0x44; 32])]),
-                &HashMap::from([(42, 1_700_000_000)]),
-            );
-            if same_program {
-                assert!(outcome
-                    .unwrap_err()
-                    .to_string()
-                    .contains("incomplete fhe_execute reconstruction"));
-            } else {
-                assert!(matches!(
-                    outcome.unwrap(),
-                    ReconstructionOutcome::Complete(_)
-                ));
-            }
+
+        // Another program's instructions sharing the discriminators are ignored.
+        let covered = [
+            execute.clone(),
+            foreign(&execute),
+            foreign(event),
+            event.clone(),
+        ];
+        assert_eq!(reconstruct(&covered).unwrap().records.len(), 1);
+
+        // The next host execution ends the search, and an execution has exactly one event.
+        for unpaired in [
+            vec![execute.clone(), execute.clone(), event.clone()],
+            vec![execute.clone(), foreign(event)],
+            vec![execute, event.clone(), event.clone()],
+        ] {
+            let error = reconstruct(&unpaired).unwrap_err().to_string();
+            assert!(error.contains("exactly one FheExecutedEvent"), "{error}");
         }
+    }
+
+    #[test]
+    fn check_failures_name_the_execution_and_keep_the_emitted_handle() {
+        let execute = |plaintext| DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(FheExecuteArgs {
+                execution_store_index: 0,
+                effects: vec![],
+                returned_results: Vec::new(),
+                account_count: 0,
+                dictionary: vec![],
+                steps: vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext,
+                    fhe_type: 5,
+                }],
+            }),
+            accounts: vec![],
+            top_level_index: 0,
+            is_inner: true,
+        };
+        let mut instructions =
+            with_events([execute([1; 32]), execute([2; 32])]);
+        let mut event = crate::solana_reconstruct::decode_fhe_executed_event(
+            &instructions[3].data,
+        )
+        .unwrap();
+        let derived = event.results[0];
+        event.results[0] = [0xEE; 32];
+        instructions[3] = event_instruction(&instructions[2], &event);
+
+        let reconstructed = reconstruct(&instructions).unwrap();
+        let [HandleCheckFailure {
+            execution_index: 1,
+            mismatch,
+        }] = &reconstructed.check_failures[..]
+        else {
+            panic!("{:?}", reconstructed.check_failures)
+        };
+        assert_eq!(
+            mismatch,
+            &HandleMismatch {
+                step_index: 0,
+                emitted: [0xEE; 32],
+                derived,
+            }
+        );
+        assert!(reconstructed.records.iter().any(|record| matches!(
+            record,
+            crate::solana_adapter::SolanaHostRecord::TrivialEncrypt(op)
+                if op.result == [0xEE; 32]
+        )));
     }
 
     #[test]
@@ -1522,12 +1526,7 @@ mod fhe_execute_acl_tests {
             ExecutionResultRef, FheBinaryOpCode, FheExecuteEffect,
             FheExecuteOperand, SlotWrite,
         };
-        let context = zama_host::HandleDerivationContext {
-            program_id: ZAMA_HOST.parse().unwrap(),
-            chain_id: config().chain_id,
-            previous_bank_hash: [0x44; 32],
-            unix_timestamp: 1_700_000_000,
-        };
+        let context = context();
         let handle =
             zama_host::computed_eval_trivial_handle([7; 32], 5, &context);
         let mut accounts = vec![[0; 32]; FHE_EXECUTE_REMAINING_BASE];
@@ -1587,18 +1586,7 @@ mod fhe_execute_acl_tests {
         for (instructions, boundary) in
             [(vec![first, second.clone()], 0), (vec![second], 1)]
         {
-            let ReconstructionOutcome::Complete(rebuilt) =
-                reconstruct_records_for_insert(
-                    &config(),
-                    &instructions,
-                    42,
-                    &HashMap::from([(42, context.previous_bank_hash)]),
-                    &HashMap::from([(42, context.unix_timestamp)]),
-                )
-                .unwrap()
-            else {
-                panic!("covered execution")
-            };
+            let rebuilt = reconstruct(&with_events(instructions)).unwrap();
             let result = rebuilt
                 .records
                 .iter()
@@ -1651,24 +1639,14 @@ mod fhe_execute_acl_tests {
         };
         let mut accounts: Vec<[u8; 32]> = (0..12).map(|n| [n; 32]).collect();
         accounts[FHE_EXECUTE_REMAINING_BASE] = STATE;
-        let instructions = [DecodedInstruction {
+        let reconstructed = reconstruct(&with_events([DecodedInstruction {
             program: ZAMA_HOST.to_owned(),
             data: encoded_execution(args),
             accounts,
             top_level_index: 0,
             is_inner: true,
-        }];
-        let outcome = reconstruct_records_for_insert(
-            &config(),
-            &instructions,
-            42,
-            &HashMap::from([(42, [0x44; 32])]),
-            &HashMap::from([(42, 1_700_000_000)]),
-        )
+        }]))
         .unwrap();
-        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
-            panic!("expected covered transaction")
-        };
         let handle = reconstructed.leaf_sources[0].handle;
         assert_eq!(
             reconstructed.leaf_sources,
@@ -1711,23 +1689,14 @@ mod fhe_execute_acl_tests {
         };
         let mut accounts: Vec<[u8; 32]> = (0..13).map(|n| [n; 32]).collect();
         accounts[FHE_EXECUTE_REMAINING_BASE] = STATE;
-        let outcome = reconstruct_records_for_insert(
-            &config(),
-            &[DecodedInstruction {
-                program: ZAMA_HOST.to_owned(),
-                data: encoded_execution(args),
-                accounts,
-                top_level_index: 0,
-                is_inner: true,
-            }],
-            42,
-            &HashMap::from([(42, [0x44; 32])]),
-            &HashMap::from([(42, 1_700_000_000)]),
-        )
+        let reconstructed = reconstruct(&with_events([DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(args),
+            accounts,
+            top_level_index: 0,
+            is_inner: true,
+        }]))
         .unwrap();
-        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
-            panic!("expected covered transaction")
-        };
         assert!(reconstructed.leaf_sources.is_empty());
         assert_eq!(reconstructed.records.len(), 1);
     }
@@ -1757,19 +1726,13 @@ mod fhe_execute_acl_tests {
                 fhe_type: 5,
             }],
         };
-        let error = reconstruct_records_for_insert(
-            &config(),
-            &[DecodedInstruction {
-                program: ZAMA_HOST.to_owned(),
-                data: encoded_execution(args),
-                accounts: vec![[0; 32]; FHE_EXECUTE_REMAINING_BASE],
-                top_level_index: 0,
-                is_inner: false,
-            }],
-            42,
-            &HashMap::from([(42, [0x44; 32])]),
-            &HashMap::from([(42, 1_700_000_000)]),
-        )
+        let error = reconstruct(&with_events([DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(args),
+            accounts: vec![[0; 32]; FHE_EXECUTE_REMAINING_BASE],
+            top_level_index: 0,
+            is_inner: false,
+        }]))
         .unwrap_err();
         assert!(error.to_string().contains("state output out of range"));
     }
@@ -1794,33 +1757,7 @@ mod fhe_execute_acl_tests {
             top_level_index: 0,
             is_inner: true,
         };
-        assert!(
-            !transaction_context_requirement(
-                &config(),
-                std::slice::from_ref(&instruction),
-                true,
-            )
-            .clock
-        );
-        assert!(
-            transaction_context_requirement(
-                &config(),
-                std::slice::from_ref(&instruction),
-                false,
-            )
-            .clock
-        );
-        let outcome = reconstruct_records_for_insert(
-            &config(),
-            &[instruction],
-            42,
-            &HashMap::new(),
-            &HashMap::new(),
-        )
-        .unwrap();
-        let ReconstructionOutcome::Complete(reconstructed) = outcome else {
-            panic!("expected covered transaction")
-        };
+        let reconstructed = reconstruct(&[instruction]).unwrap();
         assert_eq!(
             reconstructed.leaf_sources,
             vec![EncryptedStoreWrite {
@@ -1831,5 +1768,408 @@ mod fhe_execute_acl_tests {
                 make_public: true,
             }]
         );
+    }
+}
+
+#[cfg(test)]
+mod apply_block_tests {
+    use super::fhe_execute_acl_tests::{
+        config, context, encoded_execution, event_instruction, with_events,
+        STATE, ZAMA_HOST,
+    };
+    use super::FHE_EXECUTE_REMAINING_BASE;
+    use super::{apply_block, PreparedBlock, PreparedTransaction};
+    use crate::database::solana_leaves::load_checkpoint;
+    use crate::database::tfhe_event_propagate::Database;
+    use crate::solana_grpc_source::SealedBlock;
+    use crate::solana_reconstruct::{
+        decode_fhe_executed_event, DecodedInstruction,
+    };
+    use fhevm_engine_common::chain_id::ChainId;
+    use solana_sdk::signature::Signature;
+    use sqlx::Row;
+    use test_harness::instance::{setup_test_db, ImportMode};
+    use zama_host::state::{
+        FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
+    };
+
+    fn handle_check_failures() -> f64 {
+        let label = config().chain_id.to_string();
+        prometheus::gather()
+            .iter()
+            .find(|family| {
+                family.name()
+                    == "coprocessor_solana_host_listener_handle_check_failures_total"
+            })
+            .and_then(|family| {
+                family
+                    .get_metric()
+                    .iter()
+                    .find(|metric| {
+                        metric.get_label().iter().any(|pair| pair.value() == label)
+                    })
+                    .map(|metric| metric.get_counter().value())
+            })
+            .unwrap_or(0.0)
+    }
+
+    fn execution(
+        steps: Vec<FheExecuteStep>,
+        dictionary: Vec<[u8; 32]>,
+    ) -> DecodedInstruction {
+        DecodedInstruction {
+            program: ZAMA_HOST.to_owned(),
+            data: encoded_execution(FheExecuteArgs {
+                execution_store_index: 0,
+                effects: vec![],
+                returned_results: vec![],
+                account_count: 0,
+                dictionary,
+                steps,
+            }),
+            accounts: vec![],
+            top_level_index: 0,
+            is_inner: true,
+        }
+    }
+
+    /// Stores step `step_index`'s result into [`STATE`], allowing the dictionary key at
+    /// `key_index`: one historical-access leaf.
+    fn storing(
+        mut instruction: DecodedInstruction,
+        step_index: u8,
+        key_index: u8,
+        previous_leaf_count: u64,
+    ) -> DecodedInstruction {
+        let mut args = crate::solana_reconstruct::decode_fhe_execute_args(
+            &instruction.data,
+        )
+        .unwrap();
+        args.account_count = 1;
+        args.effects = vec![zama_host::FheExecuteEffect {
+            result: zama_host::ExecutionResultRef {
+                step_index,
+                output_index: 0,
+            },
+            store_index: 0,
+            previous_leaf_count,
+            slot: None,
+            allow_indexes: vec![key_index],
+            make_public: false,
+            grants: vec![],
+        }];
+        instruction.data = encoded_execution(args);
+        instruction.accounts = vec![[0; 32]; FHE_EXECUTE_REMAINING_BASE];
+        instruction.accounts.push(STATE);
+        instruction
+    }
+
+    fn sealed(
+        slot: u64,
+        block_hash: [u8; 32],
+        parent_block_hash: [u8; 32],
+    ) -> SealedBlock {
+        SealedBlock {
+            slot,
+            block_hash,
+            parent_slot: slot - 1,
+            parent_block_hash,
+            block_time: Some(1_700_000_000),
+            block_height: Some(slot - 2),
+            executed_transaction_count: 1,
+            transactions: vec![],
+        }
+    }
+
+    /// The repair: rewind the checkpoint and revert the rows past a slot with the operator
+    /// scripts, then replay. The consumer the worker drained comes back as a fresh row, the
+    /// replay reproduces the recorded leaves, and the checkpoint returns to the tip.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_reverted_slot_replays_with_fresh_rows_and_its_recorded_leaves() {
+        let key = [0x33; 32];
+        let slot_41 = PreparedBlock {
+            block: sealed(41, [0x41; 32], [0x40; 32]),
+            transactions: vec![PreparedTransaction {
+                signature: Signature::from([1; 64]),
+                index: 0,
+                instructions: with_events([storing(
+                    execution(
+                        vec![FheExecuteStep::TrivialEncrypt {
+                            plaintext: [1; 32],
+                            fhe_type: 5,
+                        }],
+                        vec![key],
+                    ),
+                    0,
+                    0,
+                    0,
+                )]),
+            }],
+            matching_transaction_count: 1,
+        };
+        let mut tampered = with_events([storing(
+            execution(
+                vec![
+                    FheExecuteStep::TrivialEncrypt {
+                        plaintext: [2; 32],
+                        fhe_type: 5,
+                    },
+                    FheExecuteStep::Binary {
+                        op: FheBinaryOpCode::Add,
+                        lhs: FheExecuteOperand::EarlierStep {
+                            producer_index: 0,
+                        },
+                        rhs: FheExecuteOperand::Scalar { value_index: 0 },
+                        output_fhe_type: 5,
+                    },
+                ],
+                vec![[3; 32], key],
+            ),
+            1,
+            1,
+            1,
+        )]);
+        let wrong = [0xEE; 32];
+        let consumer = zama_host::computed_eval_handle(
+            FheBinaryOpCode::Add,
+            wrong,
+            [3; 32],
+            true,
+            5,
+            [0; 32],
+            &context(),
+        );
+        let mut event = decode_fhe_executed_event(&tampered[1].data).unwrap();
+        event.results = vec![wrong, consumer];
+        tampered[1] = event_instruction(&tampered[0], &event);
+        let slot_42 = PreparedBlock {
+            block: sealed(42, [0x42; 32], [0x41; 32]),
+            transactions: vec![PreparedTransaction {
+                signature: Signature::from([2; 64]),
+                index: 0,
+                instructions: tampered,
+            }],
+            matching_transaction_count: 1,
+        };
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let chain_id = ChainId::from_canonical_u64(config().chain_id);
+        let db = Database::new(&instance.db_url, chain_id, 100)
+            .await
+            .unwrap();
+        let pool = db.pool().await;
+        for block in [&slot_41, &slot_42] {
+            apply_block(&db, &config(), block)
+                .await
+                .map_err(|failure| failure.into_error())
+                .unwrap();
+        }
+        // The worker drained the consumer of the held step.
+        sqlx::query("UPDATE computations SET is_error = true, error_message = 'drained' WHERE output_handle = $1")
+            .bind(consumer.to_vec())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let leaves = || async {
+            sqlx::query("SELECT leaf_index, commitment, block_slot FROM solana_encrypted_state_leaves ORDER BY leaf_index")
+                .fetch_all(&pool)
+                .await
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row.get::<i64, _>("leaf_index"),
+                        row.get::<Vec<u8>, _>("commitment"),
+                        row.get::<i64, _>("block_slot"),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        let recorded_leaves = leaves().await;
+        assert_eq!(recorded_leaves.len(), 2);
+
+        sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
+            .await
+            .unwrap();
+        let revert = test_harness::db_utils::revert_coprocessor_db_state_sql(
+            chain_id.as_i64(),
+            41,
+        );
+        // A refused script leaves its session in the aborted transaction, as psql would
+        // before exiting, so it gets a connection of its own.
+        let mut session: sqlx::PgConnection =
+            sqlx::Connection::connect(instance.db_url()).await.unwrap();
+        let refused = sqlx::raw_sql(&revert)
+            .execute(&mut session)
+            .await
+            .unwrap_err();
+        drop(session);
+        assert!(
+            refused
+                .to_string()
+                .contains("rewind_solana_listener_checkpoint.sql"),
+            "{refused}"
+        );
+        let rewind = include_str!(
+            "../../db-migration/db-scripts/rewind_solana_listener_checkpoint.sql"
+        )
+        .lines()
+        .filter(|line| !line.starts_with("\\set "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace(":'slot'", "41")
+        .replace(":'block_hash'", &format!("'{}'", hex::encode([0x41; 32])));
+        sqlx::raw_sql(&rewind).execute(&pool).await.unwrap();
+        sqlx::raw_sql(&revert).execute(&pool).await.unwrap();
+        let checkpoint = load_checkpoint(&pool).await.unwrap().unwrap();
+        assert_eq!((checkpoint.slot, checkpoint.block_hash), (41, [0x41; 32]));
+        let reverted: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM computations WHERE block_number = 42",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(reverted, 0);
+
+        apply_block(&db, &config(), &slot_42)
+            .await
+            .map_err(|failure| failure.into_error())
+            .unwrap();
+        let consumer_errored: bool = sqlx::query_scalar(
+            "SELECT is_error FROM computations WHERE output_handle = $1",
+        )
+        .bind(consumer.to_vec())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(
+            !consumer_errored,
+            "the replay re-inserts the drained consumer fresh"
+        );
+        assert_eq!(leaves().await, recorded_leaves);
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
+    }
+
+    /// A block whose second transaction emits a wrong handle for its first step: that step
+    /// is held back, its consumer and the other transaction are ingested, the checkpoint
+    /// advances and the alert counter moves.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_wrong_emitted_handle_holds_back_only_its_step() {
+        let honest = with_events([execution(
+            vec![FheExecuteStep::TrivialEncrypt {
+                plaintext: [1; 32],
+                fhe_type: 5,
+            }],
+            vec![],
+        )]);
+        let mut tampered = with_events([execution(
+            vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext: [2; 32],
+                    fhe_type: 5,
+                },
+                FheExecuteStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
+                    output_fhe_type: 5,
+                },
+            ],
+            vec![[3; 32]],
+        )]);
+        let wrong = [0xEE; 32];
+        let consumer = zama_host::computed_eval_handle(
+            FheBinaryOpCode::Add,
+            wrong,
+            [3; 32],
+            true,
+            5,
+            [0; 32],
+            &context(),
+        );
+        let mut event = decode_fhe_executed_event(&tampered[1].data).unwrap();
+        let derived = event.results[0];
+        event.results = vec![wrong, consumer];
+        tampered[1] = event_instruction(&tampered[0], &event);
+
+        let block = PreparedBlock {
+            block: SealedBlock {
+                slot: 42,
+                block_hash: [5; 32],
+                parent_slot: 41,
+                parent_block_hash: [4; 32],
+                block_time: Some(1_700_000_000),
+                block_height: Some(40),
+                executed_transaction_count: 2,
+                transactions: vec![],
+            },
+            transactions: vec![
+                PreparedTransaction {
+                    signature: Signature::from([1; 64]),
+                    index: 0,
+                    instructions: honest,
+                },
+                PreparedTransaction {
+                    signature: Signature::from([2; 64]),
+                    index: 1,
+                    instructions: tampered,
+                },
+            ],
+            matching_transaction_count: 2,
+        };
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let db = Database::new(
+            &instance.db_url,
+            ChainId::from_canonical_u64(config().chain_id),
+            100,
+        )
+        .await
+        .unwrap();
+        let failures_before = handle_check_failures();
+
+        apply_block(&db, &config(), &block)
+            .await
+            .map_err(|failure| failure.into_error())
+            .unwrap();
+
+        let pool = db.pool().await;
+        let rows = sqlx::query(
+            "SELECT output_handle, transaction_id, is_error, error_message FROM computations",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let mut held = Vec::new();
+        let mut ingested = Vec::new();
+        for row in &rows {
+            let handle = row.get::<Vec<u8>, _>("output_handle");
+            if row.get::<bool, _>("is_error") {
+                held.push((
+                    handle,
+                    row.get::<Vec<u8>, _>("transaction_id"),
+                    row.get::<Option<String>, _>("error_message").unwrap(),
+                ));
+            } else {
+                ingested.push(handle);
+            }
+        }
+        assert_eq!(
+            held,
+            vec![(
+                wrong.to_vec(),
+                vec![2; 64],
+                format!(
+                    "solana handle check failed: slot 42, execution 0, step 0: emitted 0x{}, re-derived 0x{}",
+                    hex::encode(wrong),
+                    hex::encode(derived)
+                )
+            )]
+        );
+        assert_eq!(ingested.len(), 2, "the honest step and the consumer");
+        assert!(ingested.contains(&consumer.to_vec()));
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
+        assert_eq!(handle_check_failures() - failures_before, 1.0);
     }
 }

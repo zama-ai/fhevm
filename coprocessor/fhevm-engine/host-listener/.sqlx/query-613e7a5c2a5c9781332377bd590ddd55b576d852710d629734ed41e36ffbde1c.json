@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle, allowed_key,\n               transaction_index\n        FROM solana_encrypted_state_leaves\n        WHERE encrypted_state = ANY($1) AND block_slot = $2\n        ORDER BY encrypted_state, leaf_index\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "encrypted_state",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "leaf_index",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "commitment",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "leaf_kind",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "allowed_key",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "transaction_index",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "613e7a5c2a5c9781332377bd590ddd55b576d852710d629734ed41e36ffbde1c"
+}
