@@ -131,10 +131,7 @@ struct Actors {
 }
 
 fn actors() -> Actors {
-    actors_of(Keypair::new().pubkey())
-}
-
-fn actors_of(delegator: Pubkey) -> Actors {
+    let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
     let authority = Pubkey::new_unique();
     let (record_key, record_bump) =
@@ -371,7 +368,7 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
 /// the delegate position — a real party has to be named on the receiving end.
 #[test]
 fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
-    let delegator = Pubkey::new_unique();
+    let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
     let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
     let (record_key, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
@@ -1232,16 +1229,12 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
     assert_eq!(record.delegation_counter, 2);
 }
 
-/// A program the user calls cannot delegate in the user's name. The wallet's signature reaches
-/// the CPI, which is exactly the forwarding `check_cpi_return` does with every signer flag
-/// intact, so only the host's top-level rule stops it.
+/// A program the user calls cannot delegate in the user's name. `check_cpi_return` forwards
+/// every account with its signer flag, as a malicious program would, so the wallet's signature
+/// reaches the host and only the top-level rule stops the grant.
 #[test]
 fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
     let actors = actors();
-    assert!(
-        actors.delegator.is_on_curve(),
-        "the delegator is a wallet key"
-    );
     let grant = grant_ix(
         actors.payer,
         actors.delegator,
@@ -1404,7 +1397,6 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 #[test]
 fn cost_snapshot_delegate_for_user_decryption() {
     let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
-    assert!(delegator.is_on_curve(), "the delegator is a wallet key");
     let delegate = Pubkey::new_from_array([0x43; 32]);
     let authority = Pubkey::new_from_array([0x44; 32]);
     let (record_key, record_bump) =
@@ -1432,7 +1424,7 @@ fn cost_snapshot_delegate_for_user_decryption() {
         &[Check::success()],
     );
     cost_snapshot::assert_cost_snapshot(
-        "delegation_mollusk",
+        "user_decryption_delegation_mollusk",
         "delegate_for_user_decryption/first_grant",
         &ix,
         &result,

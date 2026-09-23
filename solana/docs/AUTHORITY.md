@@ -21,7 +21,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 | Trust roots | KMS contexts, coprocessor signers, EIP-712 domain, `verify_public_decrypt` | admin | confidential-token redemption, KMS connector |
 | Execution | `fhe_execute`, HCU metering, type gate, handle derivation, transient store | no role | host listener, `zama-fhe` |
 | Stores and ACL | `EncryptedStore`, MMR, public release | the store's authority, a PDA of its program | host listener, KMS connector (`zama-solana-acl`) |
-| User rights | delegation, permit revocation | the user's wallet | KMS connector |
+| User rights | delegation, permit revocation | the user: a wallet, or a PDA its program signs for | KMS connector |
 
 ## Governance
 
@@ -66,7 +66,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
-| `delegate_for_user_decryption` | `payer`: pays rent; no authority<br>`delegator`: the user granting the delegation | `payer`, `delegation_record` | `host_config` | System | — |
+| `delegate_for_user_decryption` | `payer`: pays rent; no authority<br>`delegator`: the user granting the delegation; a wallet must call at the top level, a PDA may call through CPI | `payer`, `delegation_record` | `host_config` | System | — |
 | `revoke_delegation_for_user_decryption` | `delegator`: the user who granted the delegation | `delegation_record` | `host_config` | — | — |
 | `revoke_permits` | `user`: the user whose permits are revoked; also pays rent | `user`, `invalidation` | — | System | — |
 

@@ -39,7 +39,7 @@ pub fn delegate_for_user_decryption(
     // user calls could delegate the user's decryption rights. A PDA signs only through its own
     // program's `invoke_signed`, so a PDA delegator may still delegate through CPI.
     require!(
-        !delegator.is_on_curve() || get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT,
+        get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT || !delegator.is_on_curve(),
         ZamaHostError::WalletDelegationThroughCpi
     );
     require!(

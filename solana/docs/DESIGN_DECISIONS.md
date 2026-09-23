@@ -1634,10 +1634,10 @@ signer to a program. The EVM has no such problem: `msg.sender` _is_ the contract
 Decision:
 
 The application identity is the pair `(program, scope)` carried by every encrypted store.
-`program` is never taken on the caller's word: a Store's authority must be a PDA of `program`, proven
-once when `create_encrypted_store` derives it from `authority_seeds` (`EncryptedStoreAuthorityNotProgramPda`),
-and every later write needs that authority's signature. Only `program` can sign for such an authority, so
-only `program` can write a value that claims it. `scope` is whatever
+`program` is never taken on the caller's word: a Store's authority must be a PDA of `program`,
+proven once when `create_encrypted_store` derives it from `authority_seeds`
+(`EncryptedStoreAuthorityNotProgramPda`), and every later write needs that authority's signature.
+Only `program` can sign for such an authority, so only `program` can write a value that claims it. `scope` is whatever
 `program` declares within itself — the mint for the token program, one constant for a program with
 a single namespace — and is trustworthy exactly as half of the pair. Both are seeds of the Store
 (`["encrypted-state", program, authority, scope]`), so the identity is the address.
