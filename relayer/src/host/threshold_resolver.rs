@@ -36,6 +36,7 @@ pub enum ThresholdResolverError {
 ///
 /// Thresholds are cached permanently (no TTL) since they don't change after
 /// context creation. Context ID 0 is pre-seeded with the static config default.
+/// Cache misses require an active context before reading its stored threshold.
 pub struct ThresholdResolver {
     protocol_config_contract: HostProtocolConfig,
     /// Cached thresholds keyed by context ID. The on-chain uint256 is narrowed
@@ -118,12 +119,19 @@ async fn fetch_with_retry(
     let mut last_error = String::new();
 
     for attempt in 0..max_attempts {
-        match contract
-            .getUserDecryptionThresholdForContext(context_id)
-            .call()
-            .await
-        {
-            Ok(ret) => {
+        let result = async {
+            if !contract.isValidKmsContext(context_id).call().await? {
+                return Ok(None);
+            }
+            contract
+                .getUserDecryptionThresholdForContext(context_id)
+                .call()
+                .await
+                .map(Some)
+        }
+        .await;
+        match result {
+            Ok(Some(ret)) => {
                 let threshold: u32 =
                     u32::try_from(ret).map_err(|_| ThresholdResolverError::FetchFailed {
                         context_id,
@@ -137,19 +145,20 @@ async fn fetch_with_retry(
                 );
                 return Ok(threshold);
             }
-            Err(e) => {
-                last_error = redact_alloy_error(&e);
-                if attempt + 1 < max_attempts {
-                    warn!(
-                        context_id = %context_id,
-                        attempt = attempt + 1,
-                        max_attempts,
-                        error = %last_error,
-                        "Threshold fetch failed, retrying"
-                    );
-                    tokio::time::sleep(retry_interval).await;
-                }
+            Ok(None) => {
+                last_error = format!("KMS context {context_id} is not active");
             }
+            Err(e) => last_error = redact_alloy_error(&e),
+        }
+        if attempt + 1 < max_attempts {
+            warn!(
+                context_id = %context_id,
+                attempt = attempt + 1,
+                max_attempts,
+                error = %last_error,
+                "Threshold fetch failed, retrying"
+            );
+            tokio::time::sleep(retry_interval).await;
         }
     }
 

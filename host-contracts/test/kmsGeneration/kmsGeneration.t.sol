@@ -601,6 +601,27 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygenResponse(KEY_COUNTER_BASE + 1, _mockKeyDigests(), hex"");
     }
 
+    function test_allResponsePathsRejectDestroyedContext() public {
+        (uint256 prepKeygenId, uint256 keyId) = _runFullKeygenCycle();
+        uint256 crsId = _runFullCrsCycle();
+        uint256 contextId = protocolConfig.getCurrentKmsContextId();
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
+        vm.prank(owner);
+        protocolConfig.destroyKmsContext(contextId);
+
+        vm.prank(kmsTxSender1);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        kmsGeneration.prepKeygenResponse(prepKeygenId, hex"");
+        vm.prank(kmsTxSender1);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        kmsGeneration.keygenResponse(keyId, _mockKeyDigests(), hex"");
+        vm.prank(kmsTxSender1);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        kmsGeneration.crsgenResponse(crsId, hex"deadbeef", hex"");
+    }
+
     function test_pendingKeygenCompletesAfterContextRotationUsingPinnedContext() public {
         bytes memory oldExtraData = _buildExtraData();
         vm.prank(owner);
@@ -767,7 +788,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
         kmsGeneration.prepKeygenResponse(prepKeygenId, replaySig);
     }
 
@@ -795,7 +816,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
         kmsGeneration.keygenResponse(keyId, digests, replaySig);
     }
 
@@ -820,7 +841,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory replaySig = _computeSignature(kmsPk0, replayDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectPartialRevert(IKMSGeneration.NotKmsSigner.selector);
+        vm.expectPartialRevert(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector);
         kmsGeneration.crsgenResponse(crsId, crsDigestData, replaySig);
     }
 
@@ -975,7 +996,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.keygenResponse(keyId, digests, keySig);
     }
 
-    function test_revertNotKmsSigner() public {
+    function test_revertUnknownSignerDoesNotMatchTxSender() public {
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
 
@@ -993,7 +1014,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         bytes memory keySig = _computeSignature(unknownPk, keyDigest);
 
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.NotKmsSigner.selector, unknownSigner));
+        vm.expectRevert(
+            abi.encodeWithSelector(IKMSGeneration.KmsSignerDoesNotMatchTxSender.selector, unknownSigner, kmsTxSender0)
+        );
         kmsGeneration.keygenResponse(keyId, digests, keySig);
     }
 

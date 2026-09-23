@@ -698,3 +698,8 @@ check_dupes "mpc identities" "${mpcs[@]}"
 
 echo "OK: $n nodes, ids contiguous 1..$n, no duplicate identities, gateway spellings consistent"
 ```
+
+### Reading context data
+
+The ProtocolConfig context getters (signers, nodes, thresholds) return stored data for any context and do not check validity.
+Call `isValidKmsContext` first before using their values for verification or deployment.

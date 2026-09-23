@@ -206,18 +206,17 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertFalse(kmsVerifier.isSigner(signer0));
     }
 
-    function test_GetSignersForKmsContextRevertsForInvalid() public {
+    function test_GetSignersForKmsContextReturnsStoredSignersAfterDestruction() public {
         (uint256 ctx1, ) = _setupHistoricalAndCurrentContexts();
+        address[] memory signers = kmsVerifier.getSignersForKmsContext(ctx1);
 
         vm.prank(owner);
         protocolConfig.destroyKmsContext(ctx1);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
-        kmsVerifier.getSignersForKmsContext(ctx1);
+        assertEq(kmsVerifier.getSignersForKmsContext(ctx1), signers);
 
         uint256 nonExistent = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, nonExistent));
-        kmsVerifier.getSignersForKmsContext(nonExistent);
+        assertEq(kmsVerifier.getSignersForKmsContext(nonExistent).length, 0);
     }
 
     function test_VerifyDecryptionEIP712KMSSignaturesWork() public {
@@ -435,6 +434,18 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
     }
 
+    function test_InvalidContextIsRejectedBeforeSignatureCount() public {
+        uint256 unknown = KMS_CONTEXT_COUNTER_BASE + 999;
+        bytes memory decryptionProof = abi.encodePacked(uint8(0), uint8(0x01), unknown);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, unknown));
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(
+            _generateMockHandlesList(3),
+            _mockDecryptedResult(),
+            decryptionProof
+        );
+    }
+
     function test_VerificationFailsForDestroyedContext() public {
         (uint256 ctx1, ) = _setupHistoricalAndCurrentContexts();
 
@@ -442,11 +453,13 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(ctx1);
 
         bytes memory extraData = abi.encodePacked(uint8(0x01), ctx1);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
+        kmsVerifier.getContextSignersAndThresholdFromExtraData(extraData);
+
         (bytes32[] memory handlesList, bytes memory decryptedResult, bytes memory proof) = _buildSingleSignerProof(
             privateKeySigner0,
             extraData
         );
-
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, ctx1));
         kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, proof);
     }

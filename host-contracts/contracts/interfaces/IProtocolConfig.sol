@@ -521,6 +521,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the signer addresses for a given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns an empty array for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @return The list of signer addresses.
      */
@@ -535,6 +537,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Checks whether an address is a signer in the given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns false for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @param signer The address to check.
      * @return True if the address is a signer.
@@ -543,6 +547,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the KMS nodes for a given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns an empty array for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @return The list of KMS nodes.
      */
@@ -572,6 +578,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the public decryption threshold for a given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns zero for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @return The public decryption threshold for the context.
      */
@@ -585,6 +593,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the user decryption threshold for a given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns zero for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @return The user decryption threshold for the context.
      */
@@ -598,9 +608,7 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
-     * @dev The other threshold getters require an `Active` context. This one returns a value for any
-     *      live context, whatever its state, so the kmsGen threshold stays readable even before the
-     *      context becomes `Active`.
+     * @dev Returns a value for pending, created, and active contexts. Reverts for destroyed or unknown contexts.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */
@@ -614,6 +622,8 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the MPC threshold for a given context.
+     * @dev Returns stored data for pending, created, active, and destroyed contexts.
+     *      Returns zero for unknown contexts. Call isValidKmsContext separately when validity is required.
      * @param kmsContextId The context ID.
      * @return The MPC threshold for the context.
      */

@@ -180,7 +180,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
         );
         bytes32 digest = _hashDecryptionResult(publicDecryptVerification);
 
-        uint256 kmsContextId = _extractKmsContextId(extraData);
+        uint256 kmsContextId = _resolveValidKmsContextId(extraData);
         return _verifySignaturesDigestForContext(digest, signatures, kmsContextId);
     }
 
@@ -221,7 +221,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
 
     /**
      * @notice              Returns the list of signers for a given KMS context.
-     * @dev                 Reverts if the context doesn't exist or has been destroyed.
+     * @dev                 Returns stored signers regardless of context validity, or an empty array for unknown contexts.
      * @param kmsContextId  The context ID.
      * @return signers      The list of signers for the context.
      */
@@ -232,9 +232,9 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     /**
      * @notice              Resolves extraData into the context-specific signers and threshold.
      * @dev                 Parses the version-tagged extraData to extract the context ID, validates
-     *                      that the context exists and is not destroyed, then returns the corresponding
-     *                      signer set and threshold. Reverts on invalid extraData, non-existent, or
-     *                      destroyed contexts.
+     *                      that the context is active, then returns its signer set and threshold.
+     *                      Historical active contexts are accepted. Invalid extraData or inactive
+     *                      contexts revert.
      * @param extraData     The extra data bytes from the decryption proof.
      * @return signers      The list of signers for the resolved context.
      * @return threshold    The threshold for the resolved context.
@@ -242,7 +242,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     function getContextSignersAndThresholdFromExtraData(
         bytes calldata extraData
     ) external view virtual returns (address[] memory signers, uint256 threshold) {
-        uint256 kmsContextId = _extractKmsContextId(extraData);
+        uint256 kmsContextId = _resolveValidKmsContextId(extraData);
         return (
             PROTOCOL_CONFIG.getKmsSignersForContext(kmsContextId),
             PROTOCOL_CONFIG.getPublicDecryptionThresholdForContext(kmsContextId)
@@ -301,11 +301,14 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice              Extracts the KMS context ID from extra data.
+     * @notice              Extracts the KMS context ID from extra data and checks that it is active.
+     * @dev                 The v0 branch returns the current context, which is always active, so
+     *                      only explicit v1/v2 context IDs are checked. Reverts with
+     *                      `InvalidKmsContext` before any other verification step.
      * @param extraData     The extra data bytes from the decryption proof.
      * @return contextId    The extracted KMS context ID.
      */
-    function _extractKmsContextId(bytes memory extraData) internal view virtual returns (uint256) {
+    function _resolveValidKmsContextId(bytes memory extraData) internal view virtual returns (uint256) {
         // v0 (0x00 prefix or empty): uses the current context. Trailing bytes are
         // ignored for forward-compatibility with potential v0 extensions.
         if (extraData.length == 0 || uint8(extraData[0]) == 0x00) {
@@ -322,7 +325,11 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
                 revert DeserializingExtraDataFail();
             }
             /// @dev The contextId is the 32 bytes following the version byte.
-            return uint256(BytesOps.readBytes32(extraData, 1));
+            uint256 kmsContextId = uint256(BytesOps.readBytes32(extraData, 1));
+            if (!PROTOCOL_CONFIG.isValidKmsContext(kmsContextId)) {
+                revert IProtocolConfig.InvalidKmsContext(kmsContextId);
+            }
+            return kmsContextId;
         }
         revert UnsupportedExtraDataVersion(version);
     }
