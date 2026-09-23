@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   build:
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@5a839cbdad9f818cf0f95e6f4614d798a292e874 # ci-templates PR #35
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
