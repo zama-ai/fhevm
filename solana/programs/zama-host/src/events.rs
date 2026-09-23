@@ -4,13 +4,16 @@
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
 //!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated` —
 //!   because an admin change is a protocol-level fact a component must be able to read without
-//!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent`, which carries the one
-//!   datum an indexer cannot recompute from instruction data (seeds derived from block entropy).
+//!   replaying instruction data to find it. And `FheExecutedEvent`, emitted by every `fhe_execute`:
+//!   the instruction carries what the caller asked for, and the event carries what the host decided
+//!   — the block context, the random seeds and the result handle of each step. An indexer cannot
+//!   recompute the seeds, and it should not depend on its own copy of the handle derivation or on
+//!   live sysvar state to learn the rest, so a block from any archive is enough to ingest it.
 //!   Nothing here uses `emit!`: a log can be truncated by the RPC provider a reader goes
 //!   through, so it delivers a hint rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
-//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
-//!   in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
+//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes and
+//!   operands (they live in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
 //!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
 //!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
 //!   reconstructible. Delegating is a user ability rather than administration, which is why its event
@@ -27,12 +30,18 @@ pub struct FheExecuteRandomSeed {
     pub seed: [u8; 16],
 }
 
-/// Emitted once for the random steps in an `fhe_execute` execution.
+/// Emitted once by every `fhe_execute`, after its account writes.
 #[event]
-pub struct FheExecuteRandomSeedsEvent {
+pub struct FheExecutedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Random seeds in execution step order.
+    /// Bank hash of the parent slot, folded into every deterministic result handle.
+    pub previous_bank_hash: [u8; 32],
+    /// The slot's `Clock::unix_timestamp`, folded into every deterministic result handle.
+    pub unix_timestamp: i64,
+    /// Result handle of each step, in step order.
+    pub results: Vec<[u8; 32]>,
+    /// Seeds of the random steps, in step order.
     pub seeds: Vec<FheExecuteRandomSeed>,
 }
 

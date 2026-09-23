@@ -240,11 +240,9 @@
     },
     {
       "category": "event",
-      "fixture_hex": "00925498bbf0001401010000001200030405060708090a0b0c0d0e0f101112",
-      "fixture_len": 31,
-      "name": "FheExecuteRandomSeedsEvent",
+      "name": "FheExecutedEvent",
       "program": "zama_host",
-      "schema_hash": "605997fd6e7388b326b0596ac0b58fc911a8e64c5ddefbb850b0c3a4963a2856"
+      "schema_hash": "a3f673bfe71b45204845cf1ace0c37edda664b074c76be4978f6a1f103309469"
     },
     {
       "category": "event",

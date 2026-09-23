@@ -1821,16 +1821,16 @@
       ]
     },
     {
-      "name": "FheExecuteRandomSeedsEvent",
+      "name": "FheExecutedEvent",
       "discriminator": [
-        0,
-        146,
-        84,
-        152,
+        234,
+        26,
+        200,
+        201,
         187,
-        240,
-        0,
-        20
+        114,
+        93,
+        208
       ]
     },
     {
@@ -2919,37 +2919,6 @@
       }
     },
     {
-      "name": "FheExecuteRandomSeedsEvent",
-      "docs": [
-        "Emitted once for the random steps in an `fhe_execute` execution."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "seeds",
-            "docs": [
-              "Random seeds in execution step order."
-            ],
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "FheExecuteRandomSeed"
-                }
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
       "name": "FheExecuteStep",
       "docs": [
         "One step inside a composed fhe_execute."
@@ -3258,6 +3227,70 @@
                 "type": "u8"
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "FheExecutedEvent",
+      "docs": [
+        "Emitted once by every `fhe_execute`, after its account writes."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "previous_bank_hash",
+            "docs": [
+              "Bank hash of the parent slot, folded into every deterministic result handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "unix_timestamp",
+            "docs": [
+              "The slot's `Clock::unix_timestamp`, folded into every deterministic result handle."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "results",
+            "docs": [
+              "Result handle of each step, in step order."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "seeds",
+            "docs": [
+              "Seeds of the random steps, in step order."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "FheExecuteRandomSeed"
+                }
+              }
+            }
           }
         ]
       }

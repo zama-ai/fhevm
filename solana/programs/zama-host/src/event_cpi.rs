@@ -16,7 +16,7 @@
 //! after the first. An extra account, or a changed payload encoding, would reach no check at all. The
 //! tests are what pin it — `event_transport.rs`'s assertion on the built `Instruction`, and
 //! `host_mollusk.rs`'s `sole_emitted_event`, which reads an event back out of the inner instructions.
-//! Between them they cover `FheExecuteRandomSeedsEvent` and `NewKmsContextEvent`. Keep it that way: if
+//! Between them they cover `FheExecutedEvent` and `NewKmsContextEvent`. Keep it that way: if
 //! those stop being covered, this becomes an unchecked copy of an upstream wire format.
 
 use anchor_lang::prelude::*;
@@ -28,23 +28,29 @@ use anchor_lang::solana_program::{
 /// The self-CPI instruction carrying `event`: the event tag, then the event's own discriminator and
 /// borsh body, addressed to this program with the event authority as its lone readonly signer.
 ///
-/// One deliberate divergence from `emit_cpi!`, which takes the meta's pubkey from the passed account:
-/// this takes it from the constant. `#[event_cpi]` pins that account with an `address` constraint, so
-/// they are the same key, and a mismatch would fail `invoke_signed` rather than emit to the wrong PDA.
+/// Two deliberate divergences from `emit_cpi!`. It takes the meta's pubkey from the constant, not
+/// from the passed account: `#[event_cpi]` pins that account with an `address` constraint, so they
+/// are the same key, and a mismatch would fail `invoke_signed` rather than emit to the wrong PDA. And
+/// it writes the bytes `Event::data` would produce into one buffer of the exact size: the heap is a
+/// bump allocator that never frees, and `Event::data`'s growing and copied buffers cost several
+/// times the event on every `fhe_execute`.
 pub(crate) fn event_cpi_instruction<T: anchor_lang::Event>(event: &T) -> Instruction {
-    let data = anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(anchor_lang::Event::data(event))
-        .collect::<Vec<_>>();
-    Instruction::new_with_bytes(
-        crate::ID,
-        &data,
-        vec![AccountMeta::new_readonly(
+    let tag = anchor_lang::event::EVENT_IX_TAG_LE;
+    let body_len = borsh::object_length(event).expect("an event's borsh length is computable");
+    let mut data = Vec::with_capacity(tag.len() + T::DISCRIMINATOR.len() + body_len);
+    data.extend_from_slice(tag);
+    data.extend_from_slice(T::DISCRIMINATOR);
+    event
+        .serialize(&mut data)
+        .expect("serializing into a Vec cannot fail");
+    Instruction {
+        program_id: crate::ID,
+        accounts: vec![AccountMeta::new_readonly(
             crate::EVENT_AUTHORITY_AND_BUMP.0,
             true,
         )],
-    )
+        data,
+    }
 }
 
 /// Emits `event` as an inner instruction. `event_authority` is the account `#[event_cpi]` adds to the

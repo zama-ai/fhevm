@@ -92,7 +92,8 @@ after CPI; a subsequent CPI or the final close can overwrite the return channel.
 
 Every operand-bearing handle preimage includes a mask derived from earlier production in the transaction. Slot,
 grant and earlier-step witnesses all use the same origin rule. The listener reconstructs operations and effects in
-order from instruction data; random operations also use their execution's `FheExecuteRandomSeedsEvent`.
+order from instruction data; each execution's `FheExecutedEvent` supplies the block context, the random seeds and
+the result handles, which the listener re-derives only as a check.
 
 The host checks pause, canonical accounts, signers, all touched application deny records, operand types and current
 slot handles. Transaction HCU total and depth span calls and applications; block meters charge each execution to

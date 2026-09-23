@@ -13,7 +13,7 @@ use super::input_verification::verify_input_attestation;
 use super::store_history::grow_account_if_needed;
 use crate::{
     errors::ZamaHostError,
-    events::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent},
+    events::{FheExecuteRandomSeed, FheExecutedEvent},
     state::*,
 };
 
@@ -26,7 +26,7 @@ mod store_output;
 mod walk;
 
 use account_table::ExecutionAccountTable;
-use event_transport::emit_execution_random_seeds;
+use event_transport::emit_executed_event;
 use preflight::preflight_execution;
 use walk::{walk_steps, ExecutionHandleContext, RandContext};
 
@@ -143,7 +143,7 @@ pub fn fhe_execute<'info>(
     // Execution is the single walk: it validates each step as it mutates. A failure mid-execution
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
-    // stays last so no event describes state that did not commit.
+    // follows the account writes so no event describes state that did not commit.
     execute_steps(
         &mut account_table,
         &mut transient_store,
@@ -160,13 +160,17 @@ pub fn fhe_execute<'info>(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
     )?;
-    emit_execution_random_seeds(&ctx, random_seeds)?;
-    // The event CPI may replace return data; restore the selected handles afterwards.
-    return_execution_handles(
-        &*transient_store_account.load()?,
+    let transient_store = transient_store_account.load()?;
+    emit_executed_event(
+        &ctx,
+        &handle_context.derivation,
+        &transient_store,
         call_start,
-        &args.returned_results,
-    );
+        args.steps.len(),
+        random_seeds,
+    )?;
+    // The event CPI may replace return data; restore the selected handles afterwards.
+    return_execution_handles(&transient_store, call_start, &args.returned_results);
     Ok(())
 }
 

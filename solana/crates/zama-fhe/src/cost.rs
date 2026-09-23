@@ -40,17 +40,14 @@ pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 /// Lazy block-meter creation can transfer, allocate and assign.
 pub const CPIS_PER_SQUAT_CREATE: usize = 3;
 
-/// One app instruction, one host CPI, and the random-seeds event CPI when the host emits it.
-pub fn instruction_trace_floor(random_event: bool) -> usize {
-    2 + usize::from(random_event)
-}
+/// One app instruction, one host CPI, and the host's executed-event CPI.
+pub const INSTRUCTION_TRACE_FLOOR: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FheExecutionCost {
     pub steps: usize,
     /// Conservative bound on Store rent top-ups; multiple outputs may share one Store.
     pub store_outputs: usize,
-    pub emits_random_seeds_event: bool,
     /// Exact serialized `fhe_execute` instruction data, discriminator included — what the CPI
     /// carries and what [`CPI_INSTRUCTION_DATA_LIMIT`] bounds.
     pub packet_bytes: usize,
@@ -75,14 +72,10 @@ pub struct FheExecutionCost {
 }
 
 impl FheExecutionCost {
-    pub fn instruction_trace_floor(&self) -> usize {
-        instruction_trace_floor(self.emits_random_seeds_event)
-    }
-
     /// Includes a possible rent transfer per Store output and lazy meter creation.
     /// App-level Store/transient store creation, final close and other CPIs must be added by the caller.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        self.instruction_trace_floor() + self.store_outputs + CPIS_PER_SQUAT_CREATE
+        INSTRUCTION_TRACE_FLOOR + self.store_outputs + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -90,11 +83,10 @@ impl FheExecutionCost {
 mod tests {
     use super::*;
 
-    fn cost(store_outputs: usize, random: bool) -> FheExecutionCost {
+    fn cost(store_outputs: usize) -> FheExecutionCost {
         FheExecutionCost {
             steps: 1,
             store_outputs,
-            emits_random_seeds_event: random,
             packet_bytes: 0,
             build_heap_bytes: 0,
             invoke_heap_bytes: 0,
@@ -105,18 +97,10 @@ mod tests {
     }
 
     #[test]
-    fn trace_floor_counts_only_the_wrapper_and_the_random_seeds_event() {
-        assert_eq!(instruction_trace_floor(false), 2);
-        assert_eq!(instruction_trace_floor(true), 3);
-    }
-
-    #[test]
     fn worst_case_charges_each_store_output_and_one_lazy_meter_creation() {
-        let cost = cost(3, true);
-        assert_eq!(cost.instruction_trace_floor(), 3);
         assert_eq!(
-            cost.instruction_trace_worst_case(),
-            3 + 3 + CPIS_PER_SQUAT_CREATE
+            cost(3).instruction_trace_worst_case(),
+            INSTRUCTION_TRACE_FLOOR + 3 + CPIS_PER_SQUAT_CREATE
         );
     }
 }

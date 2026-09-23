@@ -583,9 +583,9 @@ struct BoundaryShape {
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
 ///
 /// No row is now limited by `instruction_trace`: the common-path create is one CPI, so 20
-/// creates plus the random-seeds event sit well under 64. That floor is pinned by `zama-fhe`'s
-/// `instruction_trace_floor` unit test; squat creates that would exhaust the trace are a
-/// worst-case number on `FheExecutionCost`, not a swept shape.
+/// creates plus the executed event sit well under 64. That floor is `zama-fhe`'s
+/// `INSTRUCTION_TRACE_FLOOR`; squat creates that would exhaust the trace are a worst-case number
+/// on `FheExecutionCost`, not a swept shape.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,

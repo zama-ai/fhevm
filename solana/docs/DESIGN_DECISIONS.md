@@ -1356,7 +1356,7 @@ previous_bank_hash, unix_timestamp)`. `rand_nonce` is the host's `RandNonce` sin
    caller-supplied, so two executions in one slot cannot share a seed whatever they persist.
    `(program, scope)` is the execution's verified application (DD-047), so a seed is bound to the
    values it will land in. The host emits the resolved seeds through the event CPI
-   (`FheExecuteRandomSeedsEvent`) so the listener needs no historical account read. The original
+   (`FheExecutedEvent`, DD-056) so the listener needs no historical account read. The original
    design anchored freshness to the execution's persistent writes instead — every persistent
    output's live `(account, tag, handle, leaf_count)` in wire order — which forced a rand step to
    declare a persistent output; the nonce removes that requirement and the account-state
@@ -1437,8 +1437,8 @@ already-decoded record against its canonical PDA and fetches nothing, its only c
 tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
 will have to fetch the record and hand it to that checker.
 
-`fhe_execute`'s random-seeds event is unchanged in behaviour and now shares one emitter with the
-admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
+`fhe_execute`'s event shares one emitter with the admin events (`event_cpi.rs`), instead of keeping
+its own copy of the expansion.
 
 Rationale:
 
@@ -1461,9 +1461,10 @@ signer and is the canonical event authority — and nothing else. It never reads
 ignores any account after the first. So an extra account or a changed payload encoding would not be
 caught by the runtime at all. What catches those is two tests, and they are the reason the emitter
 returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
-program, account count, signer and writable flags, and data length, and `host_mollusk.rs`'s
+program, account count, signer and writable flags, data length, and that its data is the bytes
+`emit_cpi!` would send, and `host_mollusk.rs`'s
 `sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
-canonical authority, and every payload field. Those two cover `FheExecuteRandomSeedsEvent` and
+canonical authority, and every payload field. Those two cover `FheExecutedEvent` and
 `NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
 of an upstream wire format.
 

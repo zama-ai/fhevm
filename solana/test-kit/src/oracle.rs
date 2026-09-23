@@ -762,11 +762,7 @@ impl CleartextLedger {
             .as_ref()
             .expect("Mollusk result must include its compiled message");
         enum HostReplay<'a> {
-            Execute(
-                FheExecuteArgs,
-                &'a [u8],
-                Vec<zama_host::FheExecuteRandomSeed>,
-            ),
+            Execute(FheExecuteArgs, &'a [u8], zama_host::FheExecutedEvent),
             MakePublic(zama_host::instruction::MakeStoreHandlePublic, &'a [u8]),
         }
         let host_instructions = result
@@ -791,22 +787,16 @@ impl CleartextLedger {
                                 == zama_host::ID
                         })
                         .filter_map(|child| {
-                            crate::decode_anchor_event::<zama_host::FheExecuteRandomSeedsEvent>(
+                            crate::decode_anchor_event::<zama_host::FheExecutedEvent>(
                                 &child.instruction.data,
                             )
                         });
-                    let seeds = events
+                    let event = events
                         .next()
-                        .map(|event| {
-                            assert_eq!(event.version, zama_host::EVENT_VERSION);
-                            event.seeds
-                        })
-                        .unwrap_or_default();
-                    assert!(
-                        events.next().is_none(),
-                        "one random-seeds event per execution"
-                    );
-                    return Some(HostReplay::Execute(args, accounts, seeds));
+                        .expect("every execution emits FheExecutedEvent");
+                    assert_eq!(event.version, zama_host::EVENT_VERSION);
+                    assert!(events.next().is_none(), "one executed event per execution");
+                    return Some(HostReplay::Execute(args, accounts, event));
                 }
                 let payload = inner
                     .instruction
@@ -822,7 +812,7 @@ impl CleartextLedger {
         let mut executions = 0;
         let mut persistent_outputs = 0;
         for instruction in host_instructions {
-            let HostReplay::Execute(args, accounts, random_seeds) = instruction else {
+            let HostReplay::Execute(args, accounts, event) = instruction else {
                 let HostReplay::MakePublic(args, accounts) = instruction else {
                     unreachable!()
                 };
@@ -853,15 +843,24 @@ impl CleartextLedger {
                 .find(|(candidate, _)| *candidate < slot)
                 .map(|(_, hash)| hash.to_bytes())
                 .expect("test runtime must contain a previous bank hash");
+            assert_eq!(event.previous_bank_hash, previous_bank_hash);
+            assert_eq!(
+                event.unix_timestamp,
+                context.mollusk.sysvars.clock.unix_timestamp
+            );
             let handle_context = HandleDerivationContext {
                 program_id: zama_host::ID,
                 chain_id: zama_host::SOLANA_POC_CHAIN_ID,
-                previous_bank_hash,
-                unix_timestamp: context.mollusk.sysvars.clock.unix_timestamp,
+                previous_bank_hash: event.previous_bank_hash,
+                unix_timestamp: event.unix_timestamp,
             };
             let handles =
-                reconstruct_handles(&args, &handle_context, &random_seeds, &mut produced_in_tx)
-                    .expect("host CPI and its random-seeds event must reconstruct every result");
+                reconstruct_handles(&args, &handle_context, &event.seeds, &mut produced_in_tx)
+                    .expect("the executed event's seeds must reconstruct every result");
+            assert_eq!(
+                handles, event.results,
+                "re-derived handles must equal the emitted results"
+            );
             for (&handle, value) in handles.iter().zip(outputs) {
                 self.values.insert(handle, value);
             }

@@ -138,8 +138,8 @@ mod tests {
             sha256_discriminator("global", "make_store_handle_public")
         );
         assert_eq!(
-            crate::events::FheExecuteRandomSeedsEvent::DISCRIMINATOR,
-            sha256_discriminator("event", "FheExecuteRandomSeedsEvent")
+            crate::events::FheExecutedEvent::DISCRIMINATOR,
+            sha256_discriminator("event", "FheExecutedEvent")
         );
     }
 

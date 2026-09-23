@@ -4163,8 +4163,8 @@ fn mollusk_fhe_execute_rand_consumes_the_nonce_and_never_repeats_a_seed() {
     let first = check_host_context(&fixture.context, &ix, &[Check::success()]);
     let second = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
-    let first_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&first);
-    let second_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&second);
+    let first_seeds = sole_emitted_event::<host::FheExecutedEvent>(&first);
+    let second_seeds = sole_emitted_event::<host::FheExecutedEvent>(&second);
     assert_eq!(first_seeds.version, host::EVENT_VERSION);
     assert_eq!(first_seeds.seeds.len(), 1);
     assert_eq!(first_seeds.seeds[0].step_index, 0);
