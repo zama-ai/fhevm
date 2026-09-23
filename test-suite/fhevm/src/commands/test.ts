@@ -2031,7 +2031,8 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return runGrep();
   };
 
-  const runSuite = async (label: string, profiles: readonly string[]) => {
+  type Suite = { profiles: readonly string[]; skip?: "standard" | "connector" };
+  const runSuite = async (label: string, suite: Suite) => {
     if (options.grep) {
       throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--grep\`; run a named profile instead`);
     }
@@ -2041,8 +2042,8 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     console.log(`[test] ${label} (${options.network})`);
     const started = Date.now();
     await runLogged(label, started, async () => {
-      const standardSuite = label === "standard" || label.startsWith("standard-shard-");
-      for (const profile of profiles) {
+      const standardSuite = suite.skip === "standard";
+      for (const profile of suite.profiles) {
         if (standardSuite && (profile === "multi-chain-isolation" || profile === "confidential-bridge")) {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
@@ -2064,7 +2065,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
             continue;
           }
         }
-        if ((standardSuite || label === "rollout-standard") && profile.startsWith("connector-http")) {
+        if (suite.skip && profile.startsWith("connector-http")) {
           const skipReason = connectorEndpointSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
@@ -2077,19 +2078,19 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   // CI shards of the standard suite — see layout.ts for the split rationale.
-  const suites: Record<string, readonly string[]> = {
-    standard: STANDARD_TEST_PROFILES,
-    "standard-shard-stateful": STANDARD_SHARD_STATEFUL_TEST_PROFILES,
-    "standard-shard-decryption": STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
-    "standard-shard-compute": STANDARD_SHARD_COMPUTE_TEST_PROFILES,
-    light: LIGHT_TEST_PROFILES,
-    "rollout-standard": ROLLOUT_STANDARD_TEST_PROFILES,
-    heavy: HEAVY_TEST_PROFILES,
+  const suites: Record<string, Suite> = {
+    standard: { profiles: STANDARD_TEST_PROFILES, skip: "standard" },
+    "standard-shard-stateful": { profiles: STANDARD_SHARD_STATEFUL_TEST_PROFILES, skip: "standard" },
+    "standard-shard-decryption": { profiles: STANDARD_SHARD_DECRYPTION_TEST_PROFILES, skip: "standard" },
+    "standard-shard-compute": { profiles: STANDARD_SHARD_COMPUTE_TEST_PROFILES, skip: "standard" },
+    light: { profiles: LIGHT_TEST_PROFILES },
+    "rollout-standard": { profiles: ROLLOUT_STANDARD_TEST_PROFILES, skip: "connector" },
+    heavy: { profiles: HEAVY_TEST_PROFILES },
   };
 
-  const suiteProfiles = testName && suites[testName];
-  if (suiteProfiles) {
-    await runSuite(testName, suiteProfiles);
+  const suite = testName && suites[testName];
+  if (suite) {
+    await runSuite(testName, suite);
     return;
   }
 
