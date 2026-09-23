@@ -191,17 +191,23 @@ set_poller_flag "${poller}" "--finality-lag" "${HOST_FINALITY_LAG}"
 
 # --- kms-connector ---
 kms="${root}/kms-connector/values-kms-connector-e2e.yaml"
-GATEWAY_HTTP="${GATEWAY_HTTP}" HOST_HTTP="${HOST_HTTP}" \
-GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i '
+set_kms_host_chain() {
+  # $1 file, $2 entry name, $3 url, $4 chain id
+  local file="$1" name="$2" url="$3" chain_id="$4"
+  NAME="${name}" URL="${url}" CHAIN_ID="${chain_id}" yq -i '
+    .commonConfig.hostChains[strenv(NAME)].url = strenv(URL) |
+    .commonConfig.hostChains[strenv(NAME)].chainId = strenv(CHAIN_ID)
+  ' "${file}"
+}
+GATEWAY_HTTP="${GATEWAY_HTTP}" GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" yq -i '
   .commonConfig.gatewayUrl = strenv(GATEWAY_HTTP) |
-  .commonConfig.ethereumUrl = strenv(HOST_HTTP) |
-  .commonConfig.gatewayChainId = strenv(GATEWAY_CHAIN_ID) |
-  .commonConfig.ethereumChainId = strenv(HOST_CHAIN_ID)
+  .commonConfig.gatewayChainId = strenv(GATEWAY_CHAIN_ID)
 ' "${kms}"
+set_kms_host_chain "${kms}" ethereum "${HOST_HTTP}" "${HOST_CHAIN_ID}"
 if rpc_from_secret; then
   set_named_env_secret "${kms}" ".commonConfig.env" RPC_ETH_URL ethereum-rpc-url
   # shellcheck disable=SC2016  # literal for k8s env / shell expansion inside the pod
-  yq -i '.commonConfig.ethereumUrl = "$(RPC_ETH_URL)"' "${kms}"
+  set_kms_host_chain "${kms}" ethereum '$(RPC_ETH_URL)' "${HOST_CHAIN_ID}"
 fi
 
 # --- relayer ---
@@ -355,14 +361,11 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
   set_poller_flag "${ppoller}" "--finality-lag" "${POLYGON_FINALITY_LAG}"
 
   pkms="${root}/kms-connector/values-kms-connector-polygon-e2e.yaml"
-  POLYGON_HTTP="${POLYGON_HTTP}" POLYGON_CHAIN_ID="${POLYGON_CHAIN_ID}" yq -i '
-    .commonConfig.polygonUrl = strenv(POLYGON_HTTP) |
-    .commonConfig.polygonChainId = strenv(POLYGON_CHAIN_ID)
-  ' "${pkms}"
+  set_kms_host_chain "${pkms}" polygon "${POLYGON_HTTP}" "${POLYGON_CHAIN_ID}"
   if rpc_from_secret; then
     set_named_env_secret "${kms}" ".commonConfig.env" RPC_POLYGON_URL polygon-rpc-url
     # shellcheck disable=SC2016  # literal for k8s env / shell expansion inside the pod
-    yq -i '.commonConfig.polygonUrl = "$(RPC_POLYGON_URL)"' "${pkms}"
+    set_kms_host_chain "${pkms}" polygon '$(RPC_POLYGON_URL)' "${POLYGON_CHAIN_ID}"
   fi
 
   # The Polygon DAG picks its network via `-n polygonAmoy`, so no NETWORK override here.
