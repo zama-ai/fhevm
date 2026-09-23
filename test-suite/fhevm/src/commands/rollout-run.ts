@@ -56,8 +56,6 @@ type RolloutVersionLockOptions = {
 type RolloutTestOptions = {
   /** Resolved baseline commit for fixtures that must also run on an older host ABI. */
   solidityLibraryRevision?: string;
-  blueGreenProposalId?: string;
-  blueGreenPredecessorVersion?: string;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -143,13 +141,7 @@ const refreshTestSuiteContainer = async () => {
 const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options: RolloutTestOptions) => {
   await refreshTestSuiteContainer();
   await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
-    details: {
-      profile,
-      ...(options.blueGreenProposalId ? { blueGreenProposalId: options.blueGreenProposalId } : {}),
-      ...(options.blueGreenPredecessorVersion
-        ? { blueGreenPredecessorVersion: options.blueGreenPredecessorVersion }
-        : {}),
-    },
+    details: { profile },
   });
   if (options.solidityLibraryRevision) {
     const library = await prepareRolloutSolidity(options.solidityLibraryRevision);
@@ -163,8 +155,6 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
-    blueGreenProposalId: options.blueGreenProposalId,
-    blueGreenPredecessorVersion: options.blueGreenPredecessorVersion,
   });
 };
 

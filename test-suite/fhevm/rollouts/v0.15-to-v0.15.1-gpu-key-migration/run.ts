@@ -149,6 +149,8 @@ const sqlScalar = async (database: string, sql: string): Promise<string> => {
   return result.stdout.trim();
 };
 
+// Drive a normal upgrade for the key-migration checks; failure/retry/rollback
+// coverage belongs to the shared blue-green test profile.
 export const driveBlueGreenUpgrade = async (
   ctx: RolloutRunContext,
   version: "0.15.0" | "0.15.1",
@@ -166,13 +168,15 @@ export const driveBlueGreenUpgrade = async (
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
       '--proposal-id "$PROPOSE_ID" --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
-    { env: {
-      LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
-      LOCAL_HOST_CHAINS: JSON.stringify(hostChains),
-      PROPOSE_START_TIME: new Date(Date.now() + 30_000).toISOString(),
-      PROPOSE_ID: proposalId,
-      PROPOSE_SW_VERSION: version,
-    } },
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: JSON.stringify(hostChains),
+        PROPOSE_START_TIME: new Date(Date.now() + 30_000).toISOString(),
+        PROPOSE_ID: proposalId,
+        PROPOSE_SW_VERSION: version,
+      },
+    },
   );
   // Synthetic work drives consensus. Observe durable completion, not a transient dry-run state.
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
