@@ -138,6 +138,7 @@ url = { version = "=2.5.8", default-features = false, features = ["serde"] }
 #                       Testing dependencies                        #
 #####################################################################
 mocktail = "=0.3.2"
+prost = { version = "=0.14.4", default-features = false }
 rand = "=0.9.2"
 rcgen = { version = "=0.14.10", default-features = false, features = [
     "aws_lc_rs",

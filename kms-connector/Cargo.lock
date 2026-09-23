@@ -4770,6 +4770,7 @@ dependencies = [
  "kms-grpc",
  "mocktail",
  "prometheus",
+ "prost 0.14.4",
  "reqwest 0.12.24",
  "ring",
  "rstest",

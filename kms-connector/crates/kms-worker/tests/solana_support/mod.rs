@@ -215,6 +215,12 @@ impl PermitBuilder {
         self
     }
 
+    /// Replaces the signed chain, which every handle of the request must name.
+    pub fn chain_id(mut self, chain_id: u64) -> Self {
+        self.wire.chain_id = chain_id;
+        self
+    }
+
     /// Replaces the signed KMS routing pair.
     pub fn kms_pair(mut self, context: SolanaPubkeyBytes, epoch: SolanaPubkeyBytes) -> Self {
         self.wire.extra_data = KmsRouting::ContextAndEpoch {

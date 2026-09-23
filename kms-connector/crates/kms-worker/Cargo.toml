@@ -51,6 +51,7 @@ base64.workspace = true
 borsh.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
+prost.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
 sha2.workspace = true
