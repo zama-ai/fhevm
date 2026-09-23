@@ -3,7 +3,7 @@
 //! program can write data into an account it owns.
 
 use super::SolanaPubkeyBytes;
-use super::snapshot::{HostSnapshot, SnapshotError};
+use super::snapshot::{HostSnapshot, UnreadAccount};
 use solana_pubkey::Pubkey;
 use zama_solana_acl::WILDCARD_AUTHORITY;
 use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
@@ -111,5 +111,5 @@ pub enum EncryptedStoreFailure {
     #[error("encrypted store {account_key:?} names the wildcard sentinel as its authority")]
     SentinelAuthority { account_key: SolanaPubkeyBytes },
     #[error(transparent)]
-    Snapshot(#[from] SnapshotError),
+    UnreadAccount(#[from] UnreadAccount),
 }

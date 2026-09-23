@@ -7,7 +7,7 @@
 //! observation. The record's `delegation_counter` is not checked: pinning it would invalidate
 //! in-flight requests on every unrelated delegation update.
 
-use super::snapshot::{HostSnapshot, SnapshotError};
+use super::snapshot::{HostSnapshot, UnreadAccount};
 use super::{SolanaPubkeyBytes, delegation_address};
 use zama_solana_acl::WILDCARD_AUTHORITY;
 
@@ -56,7 +56,7 @@ fn check_row(
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
     authority: SolanaPubkeyBytes,
-) -> Result<Result<(), DelegationFailure>, SnapshotError> {
+) -> Result<Result<(), DelegationFailure>, UnreadAccount> {
     let (account_key, canonical_bump) =
         delegation_address(program_id, delegator, delegate, authority);
     let Some(account) = snapshot
@@ -133,5 +133,5 @@ pub enum DelegationFailure {
         wildcard: Box<DelegationFailure>,
     },
     #[error(transparent)]
-    Snapshot(#[from] SnapshotError),
+    UnreadAccount(#[from] UnreadAccount),
 }

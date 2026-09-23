@@ -71,7 +71,12 @@ pub fn solana_user_decryption_event(
     decryption_id: U256,
     handle: FixedBytes<32>,
 ) -> UserDecryptionRequest_4 {
-    let wire = SolanaUserDecryptRequestWire {
+    solana_user_decryption_event_for(decryption_id, &solana_user_decryption_wire(handle))
+}
+
+/// A well-formed Solana request naming `handle`, with a placeholder signature.
+pub fn solana_user_decryption_wire(handle: FixedBytes<32>) -> SolanaUserDecryptRequestWire {
+    SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
             user_pubkey: vec![1; 32],
             transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
@@ -88,8 +93,7 @@ pub fn solana_user_decryption_event(
             allowed_key: vec![1; 32],
             encrypted_store: vec![3; 32],
         }],
-    };
-    solana_user_decryption_event_for(decryption_id, &wire)
+    }
 }
 
 /// The Gateway event carrying `request`, with the cleartext copies the Gateway emits beside it.

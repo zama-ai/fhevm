@@ -55,7 +55,7 @@ impl AuthorizationFailure {
         match self {
             Self::Signature(_) | Self::ProgramIdMismatch { .. } => false,
             Self::Window(source) => source.is_recoverable(),
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::Snapshot(_) => true,
             Self::Pause(source) => source.is_recoverable(),
             Self::Watermark(source) => source.is_recoverable(),
             Self::EncryptedStore { source, .. } => source.is_recoverable(),
@@ -76,7 +76,7 @@ impl WindowFailure {
 impl WatermarkFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::UnreadAccount(_) => false,
             Self::Invalidated { .. }
             | Self::NotAnInvalidationRecord { .. }
             | Self::RecordNamesAnotherUser { .. }
@@ -85,19 +85,12 @@ impl WatermarkFailure {
     }
 }
 
-impl SnapshotError {
-    /// A missing key is a key-planning bug; every other failure is the node's.
-    pub fn is_recoverable(&self) -> bool {
-        !matches!(self, Self::KeyNotInSnapshot { .. })
-    }
-}
-
 impl PauseFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::Paused | Self::Absent { .. } => true,
             Self::ForeignOwner { .. } | Self::NotAHostConfig { .. } => false,
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::UnreadAccount(_) => false,
         }
     }
 }
@@ -112,7 +105,7 @@ impl EncryptedStoreFailure {
             | Self::Malformed { .. }
             | Self::AddressMismatch { .. }
             | Self::SentinelAuthority { .. } => false,
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::UnreadAccount(_) => false,
         }
     }
 }
@@ -153,7 +146,7 @@ impl DelegationFailure {
             Self::NoLiveGrant { exact, wildcard } => {
                 exact.is_recoverable() || wildcard.is_recoverable()
             }
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::UnreadAccount(_) => false,
         }
     }
 }

@@ -1,18 +1,13 @@
 //! Solana public decryption authorization: a handle is public when a public-decrypt leaf for it
 //! is proven against its encrypted store, named by the version-4 `extraData`.
 
-use crate::core::{
-    event_processor::SolanaHost,
-    solana::{
-        HandleBytes,
-        encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store},
-        handle_binding::{
-            HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
-        },
-        proof::{LeafKind, LeafQuery, ProofReadError},
-        snapshot::{HostStateReader, SnapshotError, SnapshotKeys},
-    },
+use super::encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store};
+use super::handle_binding::{
+    HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
 };
+use super::proof::{LeafKind, LeafQuery, ProofReadError};
+use super::snapshot::{HostStateReader, SnapshotError, SnapshotKeys};
+use super::{HandleBytes, SolanaHost};
 use connector_utils::types::solana_extra_data::parse_solana_public_decrypt_extra_data;
 
 pub async fn check_public_decrypt(
@@ -60,7 +55,7 @@ impl PublicDecryptFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::MalformedExtraData => false,
-            Self::Snapshot(source) => source.is_recoverable(),
+            Self::Snapshot(_) => true,
             Self::EncryptedStore(source) => source.is_recoverable(),
             Self::ProofRead(source) => source.is_recoverable(),
             Self::HandleBinding(source) => source.is_recoverable(),

@@ -2,7 +2,7 @@
 //! a paused host would keep releasing plaintext. It is decided on the first read: pause is about
 //! the deployment, not about a handle, and the second read then fits the account budget.
 
-use super::snapshot::{HostSnapshot, SnapshotError};
+use super::snapshot::{HostSnapshot, UnreadAccount};
 use super::{SolanaPubkeyBytes, host_config_address};
 use zama_solana_acl::decode_host_config;
 
@@ -46,5 +46,5 @@ pub enum PauseFailure {
     #[error("account {account_key:?} is not a canonical host config")]
     NotAHostConfig { account_key: SolanaPubkeyBytes },
     #[error(transparent)]
-    Snapshot(#[from] SnapshotError),
+    UnreadAccount(#[from] UnreadAccount),
 }

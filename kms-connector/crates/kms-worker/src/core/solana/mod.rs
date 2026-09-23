@@ -7,10 +7,13 @@ pub mod handle_binding;
 pub mod pause;
 pub mod pipeline;
 pub mod proof;
+pub mod public_decrypt;
 pub mod scope;
 pub mod snapshot;
 pub mod watermark;
 
+use proof::CoprocessorProofClient;
+use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{
     DELEGATION_SEED, HOST_CONFIG_SEED, PERMIT_INVALIDATION_SEED, WILDCARD_AUTHORITY,
@@ -18,6 +21,14 @@ use zama_solana_acl::{
 
 pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
+
+/// The readers both Solana decryption paths authorize through, for one host chain.
+#[derive(Clone, Debug)]
+pub struct SolanaHost {
+    pub program_id: SolanaPubkeyBytes,
+    pub reader: SolanaRpcClient,
+    pub proofs: CoprocessorProofClient,
+}
 
 pub fn host_config_address(program_id: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
     find_address(program_id, &[HOST_CONFIG_SEED])

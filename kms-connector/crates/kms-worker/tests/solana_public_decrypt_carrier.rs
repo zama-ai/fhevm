@@ -17,12 +17,11 @@
 
 mod solana_support;
 
-use kms_worker::core::event_processor::{
-    ProcessingError, ProcessingErrorKind, RequestCheckError, SolanaHost,
-    solana_public_decrypt::check_public_decrypt,
-};
+use kms_worker::core::event_processor::{ProcessingError, ProcessingErrorKind, RequestCheckError};
 use kms_worker::core::solana::{
+    SolanaHost,
     proof::{CoprocessorProofClient, LeafProofOutcome, LeafQuery},
+    public_decrypt::check_public_decrypt,
     snapshot::SolanaRpcClient,
 };
 use mocktail::{StatusCode, server::MockServer};

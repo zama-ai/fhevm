@@ -2,13 +2,12 @@ use crate::core::{
     config::Config,
     event_processor::{
         CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
-        ciphertext::VerifiedCiphertexts, solana_public_decrypt::check_public_decrypt,
+        ciphertext::VerifiedCiphertexts,
     },
     solana::{
-        SolanaPubkeyBytes,
+        SolanaHost,
         pipeline::{AuthorizationContext, authorize_request},
-        proof::CoprocessorProofClient,
-        snapshot::SolanaRpcClient,
+        public_decrypt::check_public_decrypt,
     },
 };
 use alloy::{
@@ -47,14 +46,6 @@ pub enum HostChainAclBackend<HP: Provider> {
     Evm(HostRpcClient<HP>),
     // Boxed: two readers are far larger than the EVM variant's contract handle.
     Solana(Box<SolanaHost>),
-}
-
-/// The readers both Solana decryption paths authorize through, for one host chain.
-#[derive(Clone, Debug)]
-pub struct SolanaHost {
-    pub program_id: SolanaPubkeyBytes,
-    pub reader: SolanaRpcClient,
-    pub proofs: CoprocessorProofClient,
 }
 
 #[derive(Clone)]
@@ -751,6 +742,7 @@ mod tests {
     use super::*;
     use crate::core::config::solana_host_chain_id;
     use crate::core::event_processor::ProcessingErrorKind;
+    use crate::core::solana::{proof::CoprocessorProofClient, snapshot::SolanaRpcClient};
     use alloy::{
         providers::{ProviderBuilder, RootProvider, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
@@ -1686,7 +1678,6 @@ mod tests {
         let result = processor
             .check_solana_user_decryption_request(&request)
             .await
-            .map(|_| ())
             .map_err(RequestCheckError::record);
 
         assert_irrecoverable_contains(result, "request requires Solana");
@@ -1728,7 +1719,6 @@ mod tests {
         let solana = processor
             .check_solana_user_decryption_request(&solana_request)
             .await
-            .map(|_| ())
             .map_err(RequestCheckError::record);
 
         for result in [public, legacy, evm_unified, solana] {

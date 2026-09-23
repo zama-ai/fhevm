@@ -35,7 +35,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
+    snapshot::{SnapshotAccount, SnapshotKeys},
 };
 use solana_support::*;
 use zama_solana_acl::WILDCARD_AUTHORITY;
@@ -1045,10 +1045,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     )
     .expect_err("a missing key cannot authorize");
 
-    assert!(matches!(
-        failure,
-        DelegationFailure::Snapshot(SnapshotError::KeyNotInSnapshot { .. })
-    ));
+    assert!(matches!(failure, DelegationFailure::UnreadAccount(_)));
 }
 
 /// In a batch where delegated entries have different outcomes, the failure names the index of the

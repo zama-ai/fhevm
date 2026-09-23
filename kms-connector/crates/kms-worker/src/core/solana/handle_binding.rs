@@ -39,8 +39,8 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
         .zip(contexts())
         .enumerate()
         .filter_map(|(position, (result, context))| match result {
-            // A missing leaf is the record agreeing with the observation, so asking the same
-            // record again in this attempt cannot change it.
+            // A missing leaf is every peer's record agreeing with the observation, so asking the
+            // same records again in this attempt cannot change it.
             Err(HandleBindingFailure::NoLeaf { .. }) if unavailable.is_none() => None,
             Err(error) if error.is_recoverable() || unavailable.is_some() => {
                 Some((position, context))
@@ -75,19 +75,32 @@ fn verify_candidates(
     candidates: &[LeafProofOutcome],
     verify: impl Fn(&LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<(), HandleBindingFailure> {
-    let mut failure = None;
+    let mut failure: Option<HandleBindingFailure> = None;
     for candidate in candidates {
         match verify(candidate) {
             Ok(()) => return Ok(()),
             Err(error) => {
-                // One peer's absence cannot make another peer's temporary failure terminal.
-                if failure.is_none() || error.is_recoverable() {
+                if failure
+                    .as_ref()
+                    .is_none_or(|kept| precedence(&error) > precedence(kept))
+                {
                     failure = Some(error);
                 }
             }
         }
     }
     Err(failure.unwrap_or(HandleBindingFailure::AccountUnknownToProofRecord))
+}
+
+/// Which peer's failure a query reports. One peer cannot make another's temporary failure
+/// permanent, and a missing leaf yields to any other temporary failure: peers that disagree are
+/// worth a second read, and a missing leaf alone is not.
+fn precedence(failure: &HandleBindingFailure) -> u8 {
+    match failure {
+        _ if !failure.is_recoverable() => 0,
+        HandleBindingFailure::NoLeaf { .. } => 1,
+        _ => 2,
+    }
 }
 
 /// Establishes that `allowed_key` may decrypt `handle` under this encrypted store. Taking the
@@ -157,13 +170,6 @@ fn check_leaf(
         return Err(HandleBindingFailure::LeafIndexOutOfRange {
             leaf_index,
             leaf_count: live_leaf_count,
-        });
-    }
-
-    if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
-        return Err(HandleBindingFailure::ProofDoesNotVerify {
-            record_leaf_count,
-            live_leaf_count,
         });
     }
 

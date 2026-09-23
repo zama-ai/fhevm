@@ -157,7 +157,7 @@ pub enum RequestFormError {
 #[cfg(all(test, feature = "tests"))]
 mod tests {
     use super::*;
-    use crate::tests::rand::solana_user_decryption_event;
+    use crate::tests::rand::{solana_user_decryption_event, solana_user_decryption_wire};
     use zama_solana_request::{decode_solana_request, encode_solana_request};
 
     #[test]
@@ -187,5 +187,20 @@ mod tests {
         let mut event = solana_user_decryption_event(U256::from(1), B256::ZERO);
         event.ctHandles.push(event.ctHandles[0]);
         assert!(SolanaUserDecryptionRequestV1::try_from(event).is_err());
+    }
+
+    /// An empty list authorizes nothing, and a list past the cap cannot be read in one
+    /// `getMultipleAccounts` snapshot.
+    #[test]
+    fn rejects_a_handle_count_outside_one_snapshot() {
+        let mut wire = solana_user_decryption_wire(B256::ZERO);
+        let entry = wire.handles[0].clone();
+        for count in [0, MAX_REQUEST_HANDLES + 1] {
+            wire.handles = vec![entry.clone(); count];
+            assert_eq!(
+                SolanaUserDecryptionRequestV1::new(U256::ONE, &wire),
+                Err(RequestFormError::HandleCount(count))
+            );
+        }
     }
 }

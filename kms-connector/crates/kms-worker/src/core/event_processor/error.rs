@@ -1,6 +1,7 @@
-use crate::core::{
-    event_processor::solana_public_decrypt::PublicDecryptFailure,
-    solana::{failure::AuthorizationFailure, watermark::WatermarkFailure},
+use crate::core::solana::{
+    delegation::DelegationFailure, encrypted_store::EncryptedStoreFailure,
+    failure::AuthorizationFailure, handle_binding::HandleBindingFailure, pause::PauseFailure,
+    public_decrypt::PublicDecryptFailure, watermark::WatermarkFailure,
 };
 use crate::monitoring::metrics::REQUEST_CHECK_ERRORS;
 use anyhow::anyhow;
@@ -220,7 +221,8 @@ impl From<Erc1271Error> for RequestCheckError {
 impl From<AuthorizationFailure> for RequestCheckError {
     /// The codes EVM uses for the same outcomes: a bad, expired or revoked permit is a rejected
     /// signature, a host that cannot be read now is transient, and host state that grants no
-    /// access is an ACL denial.
+    /// access is an ACL denial. A Connector bug or a broken proof record is not the user's
+    /// permission state, so it is unprocessable.
     fn from(failure: AuthorizationFailure) -> Self {
         let (kind, code) = match &failure {
             AuthorizationFailure::Signature(_)
@@ -230,14 +232,28 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 RequestCheckKind::Signature,
                 ErrorCode::UserSignatureRejected,
             ),
-            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_)
-                if failure.is_recoverable() =>
-            {
+            AuthorizationFailure::Snapshot(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
-                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
+            AuthorizationFailure::ProofRead(_) if failure.is_recoverable() => {
+                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
+            AuthorizationFailure::ProofRead(_)
+            | AuthorizationFailure::Pause(PauseFailure::UnreadAccount(_))
+            | AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(_))
+            | AuthorizationFailure::EncryptedStore {
+                source: EncryptedStoreFailure::UnreadAccount(_),
+                ..
+            }
+            | AuthorizationFailure::Delegation {
+                source: DelegationFailure::UnreadAccount(_),
+                ..
+            }
+            | AuthorizationFailure::HandleBinding {
+                source:
+                    HandleBindingFailure::HistoryIncomplete | HandleBindingFailure::MmrStateInconsistent,
+                ..
+            } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
             AuthorizationFailure::Pause(_)
             | AuthorizationFailure::Watermark(_)
             | AuthorizationFailure::EncryptedStore { .. }
@@ -257,14 +273,18 @@ impl From<PublicDecryptFailure> for RequestCheckError {
             PublicDecryptFailure::MalformedExtraData => {
                 (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
-            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_)
-                if failure.is_recoverable() =>
-            {
+            PublicDecryptFailure::Snapshot(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
-                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
+            PublicDecryptFailure::ProofRead(_) if failure.is_recoverable() => {
+                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
+            PublicDecryptFailure::ProofRead(_)
+            | PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(_))
+            | PublicDecryptFailure::HandleBinding(
+                HandleBindingFailure::HistoryIncomplete
+                | HandleBindingFailure::MmrStateInconsistent,
+            ) => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
             PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
                 (RequestCheckKind::Acl, ErrorCode::AclDenied)
             }
@@ -283,5 +303,47 @@ fn solana_check_error(
         RequestCheckError::recoverable(kind, code, failure)
     } else {
         RequestCheckError::irrecoverable(kind, code, failure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::solana::snapshot::{SnapshotError, UnreadAccount};
+    use rstest::rstest;
+
+    /// A Connector bug or a broken proof record is not the user's permission state: `acl_denied`
+    /// would tell an HTTP caller to retry a request that fails the same way every time.
+    #[rstest]
+    #[case::unread_account(
+        AuthorizationFailure::Pause(PauseFailure::UnreadAccount(UnreadAccount { key: [0; 32] })),
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::incomplete_history(
+        AuthorizationFailure::HandleBinding { index: 0, source: HandleBindingFailure::HistoryIncomplete },
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unreadable_host(
+        AuthorizationFailure::Snapshot(SnapshotError::Unavailable { reason: "down".into() }),
+        ErrorCode::UpstreamTransient,
+        ProcessingErrorKind::Recoverable
+    )]
+    #[case::missing_leaf(
+        AuthorizationFailure::HandleBinding {
+            index: 0,
+            source: HandleBindingFailure::NoLeaf { record_leaf_count: 1, live_leaf_count: 1 },
+        },
+        ErrorCode::AclDenied,
+        ProcessingErrorKind::Recoverable
+    )]
+    fn solana_failures_take_the_evm_code_for_their_outcome(
+        #[case] failure: AuthorizationFailure,
+        #[case] code: ErrorCode,
+        #[case] kind: ProcessingErrorKind,
+    ) {
+        let error = RequestCheckError::from(failure).record();
+        assert_eq!((error.code, error.kind), (code, kind));
     }
 }

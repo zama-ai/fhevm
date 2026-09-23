@@ -104,10 +104,10 @@ impl HostSnapshot {
     pub fn account(
         &self,
         key: &SolanaPubkeyBytes,
-    ) -> Result<Option<&SnapshotAccount>, SnapshotError> {
+    ) -> Result<Option<&SnapshotAccount>, UnreadAccount> {
         match self.accounts.get(key) {
             Some(account) => Ok(account.as_ref()),
-            None => Err(SnapshotError::KeyNotInSnapshot { key: *key }),
+            None => Err(UnreadAccount { key: *key }),
         }
     }
 
@@ -225,6 +225,12 @@ impl HostStateReader for SolanaRpcClient {
             .map_err(|error| SnapshotError::Unavailable {
                 reason: error.to_string(),
             })?;
+        if response.value.len() != keys.len() {
+            return Err(SnapshotError::ResponseLengthMismatch {
+                requested: keys.len(),
+                returned: response.value.len(),
+            });
+        }
         // The UI-account method reports undecodable data as an error instead of as a missing
         // account.
         let accounts = response
@@ -262,14 +268,13 @@ impl HostStateReader for SolanaRpcClient {
     }
 }
 
+/// A read of the host that failed. Every variant is the node's, so a later attempt may succeed.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum SnapshotError {
     #[error("host state read failed: {reason}")]
     Unavailable { reason: String },
     #[error("host state read returned {returned} accounts for {requested} keys")]
     ResponseLengthMismatch { requested: usize, returned: usize },
-    #[error("account {key:?} was never read")]
-    KeyNotInSnapshot { key: SolanaPubkeyBytes },
     #[error(
         "the deciding read observed slot {deciding_slot}, older than the discovery read's {discovery_slot}"
     )]
@@ -277,4 +282,11 @@ pub enum SnapshotError {
         discovery_slot: u64,
         deciding_slot: u64,
     },
+}
+
+/// A check asked for an account its read did not plan: a Connector bug, never a missing account.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
+#[error("account {key:?} was never read")]
+pub struct UnreadAccount {
+    pub key: SolanaPubkeyBytes,
 }

@@ -20,9 +20,8 @@ use connector_utils::types::solana_request::{
     PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
     SolanaUserDecryptionRequestV1,
 };
-use kms_worker::core::event_processor::SolanaHost;
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
+    SolanaHost, SolanaPubkeyBytes,
     pipeline::AuthorizationContext,
     proof::{
         CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,

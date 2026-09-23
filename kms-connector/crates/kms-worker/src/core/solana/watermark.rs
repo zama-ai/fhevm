@@ -1,7 +1,7 @@
 //! The permit validity window and the per-user invalidation watermark. Together they pin a usable
 //! permit's start into `[last revocation, now]`.
 
-use super::snapshot::{HostSnapshot, SnapshotError};
+use super::snapshot::{HostSnapshot, UnreadAccount};
 use super::{SolanaPubkeyBytes, permit_invalidation_address};
 use zama_solana_acl::decode_permit_invalidation;
 
@@ -94,7 +94,7 @@ pub enum WatermarkFailure {
         owner: SolanaPubkeyBytes,
     },
     #[error(transparent)]
-    Snapshot(#[from] SnapshotError),
+    UnreadAccount(#[from] UnreadAccount),
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]

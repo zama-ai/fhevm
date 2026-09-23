@@ -647,13 +647,26 @@ async fn malformed_rpc_accounts_are_errors_never_missing_accounts() {
             Err(SnapshotError::Unavailable { .. })
         ));
     }
-    assert!(matches!(
-        rpc_read(&keys, serde_json::json!([])).await,
+}
+
+/// A node that answers with fewer or more accounts than it was asked for has lost the pairing of
+/// accounts to keys.
+#[rstest::rstest]
+#[case::short(serde_json::json!([]), 0)]
+#[case::oversized(serde_json::json!([null, null]), 2)]
+#[tokio::test]
+async fn an_rpc_answer_of_the_wrong_length_is_an_error(
+    #[case] value: serde_json::Value,
+    #[case] returned: usize,
+) {
+    let keys = SnapshotKeys::new([[5; 32]]);
+    assert_eq!(
+        rpc_read(&keys, value).await,
         Err(SnapshotError::ResponseLengthMismatch {
             requested: 1,
-            returned: 0
+            returned,
         })
-    ));
+    );
 }
 
 #[tokio::test]
@@ -689,10 +702,7 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
         .account(&never_planned)
         .expect_err("an unplanned key is not a legitimate question");
 
-    assert!(matches!(
-        error,
-        SnapshotError::KeyNotInSnapshot { key } if key == never_planned
-    ));
+    assert_eq!(error.key, never_planned);
 }
 
 #[tokio::test]

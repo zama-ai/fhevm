@@ -27,12 +27,16 @@ use kms_worker::core::solana::{
     SolanaPubkeyBytes,
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
-    handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
+    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs_with_one_retry},
     pipeline::authorize_request,
-    proof::{LeafKind, LeafProofOutcome, LeafQuery},
+    proof::{
+        HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
+    },
     snapshot::SnapshotKeys,
 };
+use rstest::rstest;
 use solana_support::*;
+use std::{collections::VecDeque, sync::Mutex};
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
@@ -228,41 +232,6 @@ fn a_public_decrypt_leaf_does_not_bind_a_key() {
     assert_does_not_verify(verdict_on_substituted_leaf(|account, handle, _| {
         public_decrypt_leaf_commitment(account, 0, handle)
     }));
-}
-
-/// The mirror: an allow leaf does not make a handle public.
-#[test]
-fn an_allow_leaf_does_not_prove_public_ness() {
-    let key = Wallet::new(1).pubkey();
-    let live = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_store = EncryptedStoreFixture::allowing(live, key);
-
-    let failure = check_public_binding(
-        &resolved(&encrypted_store),
-        live,
-        &answer(&encrypted_store, live, key),
-    )
-    .expect_err("an allow leaf is not a public leaf");
-
-    assert!(matches!(
-        failure,
-        HandleBindingFailure::ProofDoesNotVerify { .. }
-    ));
-}
-
-/// And a public leaf the record serves does prove public-ness.
-#[test]
-fn a_public_decrypt_leaf_the_record_serves_proves_public_ness() {
-    let live = handle(0x22, FHE_TYPE_UINT64);
-    let mut encrypted_store = EncryptedStoreFixture::new(live);
-    encrypted_store.mark_public();
-
-    check_public_binding(
-        &resolved(&encrypted_store),
-        live,
-        &encrypted_store.outcome(&encrypted_store.public_query(live)),
-    )
-    .expect("a public leaf proven against the peaks makes the handle public");
 }
 
 /// A sibling path with one hash altered does not reach the peak. The record supplies the path
@@ -729,36 +698,41 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
     assert_eq!(proofs.call_count(), 1);
 }
 
-#[tokio::test]
-async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
-    use kms_worker::core::solana::{
-        handle_binding::verify_proofs_with_one_retry,
-        proof::{HostProofReader, ProofReadError, ProofResponses},
-    };
-    use std::{collections::VecDeque, sync::Mutex};
+/// Scripted answers from every peer at once: one reply per read, each holding every peer's
+/// candidates per query.
+struct ScriptedPeers {
+    replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
+    calls: Mutex<Vec<Vec<LeafQuery>>>,
+}
 
-    struct Reader {
-        replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
-        calls: Mutex<Vec<Vec<LeafQuery>>>,
-    }
-    impl HostProofReader for Reader {
-        async fn read_proofs(
-            &self,
-            queries: &[LeafQuery],
-        ) -> Result<ProofResponses, ProofReadError> {
-            self.calls.lock().unwrap().push(queries.to_vec());
-            self.replies
-                .lock()
-                .unwrap()
-                .pop_front()
-                .expect("no extra reads")
-                .map(|candidates| ProofResponses {
-                    candidates,
-                    unavailable: None,
-                })
+impl ScriptedPeers {
+    fn new(
+        replies: impl IntoIterator<Item = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>,
+    ) -> Self {
+        Self {
+            replies: Mutex::new(replies.into_iter().collect()),
+            calls: Mutex::new(Vec::new()),
         }
     }
+}
 
+impl HostProofReader for ScriptedPeers {
+    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
+        self.calls.lock().unwrap().push(queries.to_vec());
+        self.replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("no extra reads")
+            .map(|candidates| ProofResponses {
+                candidates,
+                unavailable: None,
+            })
+    }
+}
+
+#[tokio::test]
+async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x63, FHE_TYPE_UINT64);
     let mut fixture = EncryptedStoreFixture::allowing(sealed, key);
@@ -787,13 +761,10 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
             vec![invalid.clone(), valid.clone()],
             vec![valid.clone(), invalid.clone()],
         ] {
-            let reader = Reader {
-                replies: Mutex::new(VecDeque::from([
-                    Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
-                    refresh.clone(),
-                ])),
-                calls: Mutex::new(Vec::new()),
-            };
+            let reader = ScriptedPeers::new([
+                Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
+                refresh.clone(),
+            ]);
             let results = verify_proofs_with_one_retry(&reader, &batch, |handle, outcome| {
                 check_handle_binding(&account, *handle, key, outcome)
             })
@@ -809,13 +780,48 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
     }
 }
 
+/// Peers that disagree are read again whichever answers first: one holds no leaf, the other a
+/// proof that does not verify.
+#[rstest]
+#[case::missing_leaf_first(false)]
+#[case::missing_leaf_last(true)]
+#[tokio::test]
+async fn peers_that_disagree_on_a_missing_leaf_are_read_again(#[case] missing_leaf_last: bool) {
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x65, FHE_TYPE_UINT64);
+    let fixture = EncryptedStoreFixture::allowing(sealed, key);
+    let account = resolved(&fixture);
+    let query = LeafQuery {
+        handle: handle(0x66, FHE_TYPE_UINT64),
+        ..fixture.allowed_query(sealed, key)
+    };
+    let mut candidates = vec![
+        fixture.outcome(&query),
+        LeafProofOutcome::Found {
+            leaf_index: 0,
+            leaf_count: 1,
+            siblings: vec![],
+        },
+    ];
+    if missing_leaf_last {
+        candidates.reverse();
+    }
+    let reader = ScriptedPeers::new([Ok(vec![candidates.clone()]), Ok(vec![candidates])]);
+
+    verify_proofs_with_one_retry(&reader, &[(query, ())], |(), outcome| {
+        check_handle_binding(&account, query.handle, key, outcome)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(reader.calls.lock().unwrap().len(), 2);
+}
+
 /// While a peer is down, a missing leaf at the others is reported as the outage: the peer that did
 /// not answer may hold the leaf.
 #[tokio::test]
 async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
-    use kms_worker::core::solana::{
-        handle_binding::verify_proofs_with_one_retry, proof::CoprocessorProofClient,
-    };
+    use kms_worker::core::solana::proof::CoprocessorProofClient;
     use mocktail::{StatusCode, server::MockServer};
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x71, FHE_TYPE_UINT64);
@@ -858,4 +864,26 @@ async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
     .await
     .unwrap();
     assert_eq!(results, vec![Ok(())]);
+}
+
+/// A duplicate handle is legal, as on the EVM path, where the Gateway does not deduplicate: both
+/// occurrences of an authorized handle are authorized.
+#[tokio::test]
+async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
+    let wallet = Wallet::new(1);
+    let repeated = handle(0x21, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(repeated, wallet.pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, repeated)
+        .direct(&encrypted_store, repeated)
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
+    let reader = ScriptedReader::constant(world);
+
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a duplicate of an authorized handle is authorized");
 }
