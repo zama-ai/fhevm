@@ -53,8 +53,6 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
-  blueGreenProposalId?: string;
-  blueGreenPredecessorVersion?: string;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -140,13 +138,7 @@ const refreshTestSuiteContainer = async () => {
 const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options: RolloutTestOptions) => {
   await refreshTestSuiteContainer();
   await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
-    details: {
-      profile,
-      ...(options.blueGreenProposalId ? { blueGreenProposalId: options.blueGreenProposalId } : {}),
-      ...(options.blueGreenPredecessorVersion
-        ? { blueGreenPredecessorVersion: options.blueGreenPredecessorVersion }
-        : {}),
-    },
+    details: { profile },
   });
   await runTest(profile, {
     network: options.network ?? "staging",
@@ -154,8 +146,6 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
     noHardhatCompile: options.noHardhatCompile ?? true,
     parallel: options.parallel,
     grep: options.grep,
-    blueGreenProposalId: options.blueGreenProposalId,
-    blueGreenPredecessorVersion: options.blueGreenPredecessorVersion,
   });
 };
 
