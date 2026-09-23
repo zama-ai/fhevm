@@ -67,26 +67,31 @@ const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decr
 // Intentional ciphertext drift must never run on shared/live networks.
 const CIPHERTEXT_DRIFT_FORBIDDEN_NETWORKS = new Set(["sepolia", "mainnet", "zwsDev"]);
 
+type Suite = { profiles: readonly string[]; skip?: "standard" | "connector" };
+const TEST_SUITES: Record<string, Suite> = {
+  standard: { profiles: STANDARD_TEST_PROFILES, skip: "standard" },
+  "standard-shard-stateful": { profiles: STANDARD_SHARD_STATEFUL_TEST_PROFILES, skip: "standard" },
+  "standard-shard-decryption": { profiles: STANDARD_SHARD_DECRYPTION_TEST_PROFILES, skip: "standard" },
+  "standard-shard-compute": { profiles: STANDARD_SHARD_COMPUTE_TEST_PROFILES, skip: "standard" },
+  light: { profiles: LIGHT_TEST_PROFILES },
+  "rollout-standard": { profiles: ROLLOUT_STANDARD_TEST_PROFILES, skip: "connector" },
+  heavy: { profiles: HEAVY_TEST_PROFILES },
+};
+
 /** Formats a progress label with elapsed wall-clock time. */
 const timedLabel = (label: string, started: number) =>
   `${label} (${Math.round((Date.now() - started) / 1000)}s)`;
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  ...Object.keys(TEST_SUITES),
   "blue-green",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
-  "heavy",
   "kms-context-switch",
   "kms-generation",
   "kms-generation-abort",
-  "light",
-  "rollout-standard",
-  "standard",
-  "standard-shard-compute",
-  "standard-shard-decryption",
-  "standard-shard-stateful",
 ].sort();
 // The below-quorum probe is expected to hang waiting for KMS responses, so it is killed after
 // this bound. Only a timeout — or a run that demonstrably executed the tests and failed — is
@@ -2031,7 +2036,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return runGrep();
   };
 
-  type Suite = { profiles: readonly string[]; skip?: "standard" | "connector" };
   const runSuite = async (label: string, suite: Suite) => {
     if (options.grep) {
       throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--grep\`; run a named profile instead`);
@@ -2077,18 +2081,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     });
   };
 
-  // CI shards of the standard suite — see layout.ts for the split rationale.
-  const suites: Record<string, Suite> = {
-    standard: { profiles: STANDARD_TEST_PROFILES, skip: "standard" },
-    "standard-shard-stateful": { profiles: STANDARD_SHARD_STATEFUL_TEST_PROFILES, skip: "standard" },
-    "standard-shard-decryption": { profiles: STANDARD_SHARD_DECRYPTION_TEST_PROFILES, skip: "standard" },
-    "standard-shard-compute": { profiles: STANDARD_SHARD_COMPUTE_TEST_PROFILES, skip: "standard" },
-    light: { profiles: LIGHT_TEST_PROFILES },
-    "rollout-standard": { profiles: ROLLOUT_STANDARD_TEST_PROFILES, skip: "connector" },
-    heavy: { profiles: HEAVY_TEST_PROFILES },
-  };
-
-  const suite = testName && suites[testName];
+  const suite = testName && TEST_SUITES[testName];
   if (suite) {
     await runSuite(testName, suite);
     return;
