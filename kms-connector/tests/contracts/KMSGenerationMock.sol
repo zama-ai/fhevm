@@ -14,18 +14,20 @@ contract KMSGenerationMock {
 
     enum KeyType {
         Server,
-        Public
+        Public,
+        Reserved,
+        CompressedKeySet
     }
 
-    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, bytes extraData);
+    event PrepKeygenRequest(uint256 prepKeygenId, ParamsType paramsType, uint256 existingKeyId, bytes extraData);
 
     event PrepKeygenResponse(uint256 prepKeygenId, bytes signature, address kmsTxSender);
 
-    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, bytes extraData);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId, uint256 existingKeyId, bytes extraData);
 
     event KeygenResponse(uint256 keyId, KeyDigest[] keyDigests, bytes signature, address kmsTxSender);
 
-    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
+    event ActivateKey(uint256 keyId, uint256 existingKeyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType, bytes extraData);
 
@@ -40,22 +42,31 @@ contract KMSGenerationMock {
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
+    mapping(uint256 prepKeygenId => uint256 keyId) keyIdByPrepKeygenId;
+    mapping(uint256 keyId => uint256 existingKeyId) existingKeyIdByKeyId;
 
-    function keygen(ParamsType paramsType) external {
+    function keygen(ParamsType paramsType, uint256 existingKeyId) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
+        keyCounter++;
+        uint256 keyId = keyCounter;
+        keyIdByPrepKeygenId[prepKeygenId] = keyId;
+        existingKeyIdByKeyId[keyId] = existingKeyId;
 
-        emit PrepKeygenRequest(prepKeygenId, paramsType, "");
+        emit PrepKeygenRequest(prepKeygenId, paramsType, existingKeyId, "");
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
         address kmsTxSender;
-        keyCounter++;
-        uint256 keyId = keyCounter;
+        uint256 keyId = keyIdByPrepKeygenId[prepKeygenId];
+        if (keyId == 0) {
+            keyCounter++;
+            keyId = keyCounter;
+        }
 
         emit PrepKeygenResponse(prepKeygenId, signature, kmsTxSender);
 
-        emit KeygenRequest(prepKeygenId, keyId, "");
+        emit KeygenRequest(prepKeygenId, keyId, existingKeyIdByKeyId[keyId], "");
     }
 
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
@@ -63,8 +74,7 @@ contract KMSGenerationMock {
         string[] memory kmsNodeStorageUrls = new string[](1);
 
         emit KeygenResponse(keyId, keyDigests, signature, kmsTxSender);
-
-        emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
+        emit ActivateKey(keyId, existingKeyIdByKeyId[keyId], kmsNodeStorageUrls, keyDigests);
     }
 
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external {

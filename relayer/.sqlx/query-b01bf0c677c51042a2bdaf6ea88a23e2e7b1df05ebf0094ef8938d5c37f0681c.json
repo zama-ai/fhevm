@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                r.ext_job_id,\n                r.req_status as \"req_status!: ReqStatus\", -- Force Non-Null Enum\n                r.res,\n                r.err_reason,\n                r.updated_at,\n                (\n                    SELECT COUNT(*)\n                    FROM (\n                        SELECT 1\n                        FROM public_decrypt_req q\n                        WHERE q.req_status = r.req_status\n                          AND q.req_status IN ('queued'::req_status, 'processing'::req_status, 'tx_in_flight'::req_status)\n                          AND q.id < r.id\n                        LIMIT $2\n                    ) ahead\n                ) as \"queue_position!\",\n                (\n                    SELECT COUNT(*)\n                    FROM (\n                        SELECT 1\n                        FROM public_decrypt_req q\n                        WHERE q.req_status = 'processing'::req_status\n                        LIMIT $2\n                    ) depth\n                ) as \"tx_queue_size!\"\n            FROM public_decrypt_req r\n            WHERE r.ext_job_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "res",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "err_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "queue_position!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "tx_queue_size!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "b01bf0c677c51042a2bdaf6ea88a23e2e7b1df05ebf0094ef8938d5c37f0681c"
+}

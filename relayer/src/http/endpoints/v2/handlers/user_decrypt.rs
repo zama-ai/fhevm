@@ -6,20 +6,26 @@ use super::super::types::user_decrypt::{
     UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptStatusResponseJson,
 };
 use crate::core::errors::{
-    HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX, READINESS_CHECK_TIMEOUT_MSG,
-    TIMEOUT_REASON_MISSING_MSG,
+    GATEWAY_NOT_REACHABLE_PREFIX, HOST_ACL_FAILED_PREFIX, NOT_ALLOWED_ON_HOST_ACL_PREFIX,
+    NO_ATTESTATION_CONSENSUS_PREFIX, READINESS_CHECK_TIMEOUT_MSG, TIMEOUT_REASON_MISSING_MSG,
 };
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::HostChainIdChecker;
-use crate::http::retry_after::{DecryptQueueInfo, RequestStateInfo, RetryAfterState};
+use crate::http::retry_after::{
+    DecryptQueueInfo, ReadinessQueueInfo, RequestStateInfo, RetryAfterState, TxQueueInfo,
+};
+use crate::http::user_decrypt_wait::{is_ready, UserDecryptWaitState};
 use crate::http::utils::BounceChecker;
 use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
-use crate::metrics::{observe_raw_eta_seconds, HttpApiVersion, RetryAfterRequestType};
+use crate::metrics::{
+    increment_request_cache, observe_raw_eta_seconds, observe_spare_shares, HttpApiVersion,
+    RequestCacheResult, RetryAfterRequestType,
+};
 use crate::orchestrator::{ContentHasher, Orchestrator};
 use crate::readiness::throttler::UserDecryptReadinessTask;
 use crate::store::sql::models::{
@@ -39,8 +45,9 @@ use axum::{
     http::{header, StatusCode},
     Json,
 };
+use chrono::Utc;
 use std::sync::Arc;
-use tracing::{error, info, instrument, span, Level};
+use tracing::{error, info, instrument, span, warn, Level};
 use uuid::Uuid;
 
 pub type UserDecryptResponse = AppResponse<UserDecryptPostResponseJson>;
@@ -52,6 +59,7 @@ pub struct UserDecryptHandler {
     user_decrypt_shares_threshold: u32,
     user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
     retry_after_state: Arc<RetryAfterState>,
+    user_decrypt_wait_state: Arc<UserDecryptWaitState>,
     host_chain_id_checker: Arc<HostChainIdChecker>,
 }
 
@@ -64,6 +72,7 @@ impl UserDecryptHandler {
         user_decrypt_shares_threshold: u32,
         user_decrypt_queue_checker: BounceChecker<UserDecryptReadinessTask>,
         retry_after_state: Arc<RetryAfterState>,
+        user_decrypt_wait_state: Arc<UserDecryptWaitState>,
         host_chain_id_checker: Arc<HostChainIdChecker>,
     ) -> Self {
         Self {
@@ -73,6 +82,7 @@ impl UserDecryptHandler {
             user_decrypt_shares_threshold,
             user_decrypt_queue_checker,
             retry_after_state,
+            user_decrypt_wait_state,
             host_chain_id_checker,
         }
     }
@@ -260,12 +270,16 @@ impl UserDecryptHandler {
         let user_decrypt_request_data =
             UserDecryptReqData::UserDecrypt(user_decrypt_request.clone());
 
+        // One gate read for both decisions - see `dispatch_epoch`.
+        let dispatch_epoch = self.user_decrypt_repo.dispatch_epoch();
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 int_job_id.as_ref(),
                 user_decrypt_request_data,
+                dispatch_epoch,
             )
             .await
         {
@@ -282,14 +296,18 @@ impl UserDecryptHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            UserDecryptInsertResult::Inserted { .. }
+        ) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: user_decrypt_request,
             };
@@ -299,19 +317,34 @@ impl UserDecryptHandler {
                 RelayerEventData::UserDecrypt(request_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!("Failed to dispatch event to orchestrator: {:?}", e);
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!("Failed to dispatch event to orchestrator: {:?}", e);
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched event to orchestrator"
+                );
+            } else {
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
             }
-            info!(
-                step = %UserDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched event to orchestrator"
-            );
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -324,17 +357,21 @@ impl UserDecryptHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self
-            .user_decrypt_queue_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self
-            .user_decrypt_queue_checker
-            .tx_throttler()
-            .get_queue_info()
-            .await;
+        // Depth from the same INSERT, so both pods agree. max_concurrency/current_tps are
+        // startup config, identical on every pod. Position None: joins at the back.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_result.readiness_queue_size as usize,
+            max_concurrency: self
+                .user_decrypt_queue_checker
+                .readiness_throttler()
+                .max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.user_decrypt_queue_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -491,12 +528,16 @@ impl UserDecryptHandler {
         let delegated_user_decrypt_request_data =
             UserDecryptReqData::DelegatedUserDecrypt(delegated_user_decrypt_request.clone());
 
+        // One gate read for both decisions - see `dispatch_epoch`.
+        let dispatch_epoch = self.user_decrypt_repo.dispatch_epoch();
+
         let insert_result = match self
             .user_decrypt_repo
             .insert_data_on_conflict_and_get_ext_job_id(
                 proposed_ext_job_id,
                 &int_job_id[..],
                 delegated_user_decrypt_request_data,
+                dispatch_epoch,
             )
             .await
         {
@@ -513,14 +554,18 @@ impl UserDecryptHandler {
         };
 
         // Extract ext_job_id from any variant
-        let assigned_ext_job_id = match &insert_result {
+        let assigned_ext_job_id = match &insert_result.result {
             UserDecryptInsertResult::Inserted { ext_job_id } => *ext_job_id,
             UserDecryptInsertResult::DuplicateCompleted { ext_job_id, .. } => *ext_job_id,
             UserDecryptInsertResult::DuplicateProcessing { ext_job_id } => *ext_job_id,
         };
 
         // Only dispatch event for new requests (deduplication)
-        if matches!(insert_result, UserDecryptInsertResult::Inserted { .. }) {
+        if matches!(
+            insert_result.result,
+            UserDecryptInsertResult::Inserted { .. }
+        ) {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Miss);
             let request_data = UserDecryptEventData::ReqRcvdFromUser {
                 decrypt_request: delegated_user_decrypt_request,
             };
@@ -530,22 +575,37 @@ impl UserDecryptHandler {
                 RelayerEventData::UserDecrypt(request_data),
             );
 
-            if let Err(e) = self.orchestrator.dispatch_event(event).await {
-                error!(
-                    "Failed to dispatch DelegatedUserDecrypt event to orchestrator: {:?}",
-                    e
+            // Only the confirmed dispatcher drives what it accepted. On any other pod
+            // the row stays durable and unowned, so the holder's sweep claims it on its
+            // next tick; dispatching here would make this pod a second dispatcher for a
+            // request the holder is about to drive.
+            if dispatch_epoch.is_some() {
+                if let Err(e) = self.orchestrator.dispatch_event(event).await {
+                    error!(
+                        "Failed to dispatch DelegatedUserDecrypt event to orchestrator: {:?}",
+                        e
+                    );
+                    return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
+                        .into_response();
+                }
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Dispatched DelegatedUserDecrypt event to orchestrator"
                 );
-                return RelayerV2ResponseFailed::internal_server_error(&request_id.to_string())
-                    .into_response();
+            } else {
+                info!(
+                    step = %UserDecryptStep::Queued,
+                    req_id = %request_id,
+                    ext_job_id = %assigned_ext_job_id,
+                    int_job_id = ?int_job_id,
+                    "Accepted while not the dispatcher, left for the sweep to drive"
+                );
             }
-            info!(
-                step = %UserDecryptStep::Queued,
-                req_id = %request_id,
-                ext_job_id = %assigned_ext_job_id,
-                int_job_id = ?int_job_id,
-                "Dispatched DelegatedUserDecrypt event to orchestrator"
-            );
         } else {
+            increment_request_cache(RetryAfterRequestType::UserDecrypt, RequestCacheResult::Hit);
             info!(
                 step = %UserDecryptStep::DedupHit,
                 req_id = %request_id,
@@ -558,17 +618,21 @@ impl UserDecryptHandler {
         // Generate a new request_id for this HTTP request (not stored)
         let request_id_for_response = uuid::Uuid::new_v4();
 
-        // Compute dynamic retry-after based on dual queue state
-        let readiness_queue_info = self
-            .user_decrypt_queue_checker
-            .readiness_throttler()
-            .get_queue_info()
-            .await;
-        let tx_queue_info = self
-            .user_decrypt_queue_checker
-            .tx_throttler()
-            .get_queue_info()
-            .await;
+        // Depth from the same INSERT, so both pods agree. max_concurrency/current_tps are
+        // startup config, identical on every pod. Position None: joins at the back.
+        let readiness_queue_info = ReadinessQueueInfo {
+            size: insert_result.readiness_queue_size as usize,
+            max_concurrency: self
+                .user_decrypt_queue_checker
+                .readiness_throttler()
+                .max_concurrency(),
+            position: None,
+        };
+        let tx_queue_info = TxQueueInfo {
+            size: insert_result.tx_queue_size as usize,
+            drain_rate_tps: self.user_decrypt_queue_checker.tx_throttler().current_tps(),
+            position: None,
+        };
         let decrypt_queue_info = DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
         let retry_after = self
             .retry_after_state
@@ -632,10 +696,9 @@ impl UserDecryptHandler {
         );
 
         // Check SQL for current status using job_id (which is the external_reference_id in DB)
-        let fallback_threshold = self.user_decrypt_shares_threshold; // u32
         match self
             .user_decrypt_repo
-            .find_req_and_shares_by_ext_job_id(job_id, fallback_threshold)
+            .find_req_and_shares_by_ext_job_id(job_id)
             .await
         {
             Ok(Some(response_model)) => {
@@ -648,50 +711,114 @@ impl UserDecryptHandler {
                             .and_then(|v| u32::try_from(v).ok())
                             .unwrap_or(self.user_decrypt_shares_threshold);
                         if response_model.shares.len() >= required_threshold as usize {
-                            // Convert from database model to API response
-                            match UserDecryptResponseJson::try_from(response_model) {
-                                Ok(api_response) => {
-                                    let status_code = StatusCode::OK;
+                            // Reconstructable: hold at in-progress until the extra shares
+                            // arrive or the window since threshold elapses.
+                            let collected = response_model.shares.len();
+                            let additional = self.user_decrypt_wait_state.additional_shares().await;
+                            let timeout_secs = self
+                                .user_decrypt_wait_state
+                                .additional_shares_timeout_secs()
+                                .await;
+                            // updated_at is stamped when the request reached threshold.
+                            let elapsed_secs =
+                                (Utc::now() - response_model.updated_at).num_seconds();
 
-                                    info!(
-                                        request_id = %request_id,
-                                        http_status = status_code.as_u16(),
-                                        ext_job_id = %job_id,
-                                        "HTTP response"
-                                    );
+                            if !is_ready(
+                                collected,
+                                required_threshold as usize,
+                                additional,
+                                elapsed_secs,
+                                timeout_secs,
+                            ) {
+                                // The window bounds this, not the queue depth the other
+                                // in-progress arms measure.
+                                let retry_after = (i64::from(timeout_secs) - elapsed_secs).max(1);
+                                info!(
+                                    request_id = %request_id,
+                                    http_status = StatusCode::ACCEPTED.as_u16(),
+                                    ext_job_id = %job_id,
+                                    collected,
+                                    required_threshold,
+                                    "Awaiting additional user-decryption shares"
+                                );
+                                (
+                                    StatusCode::ACCEPTED,
+                                    [(header::RETRY_AFTER, retry_after.to_string())],
+                                    Json(UserDecryptStatusResponseJson {
+                                        status: ApiResponseStatus::Queued,
+                                        request_id: request_id.to_string(),
+                                        result: None,
+                                        error: None,
+                                    }),
+                                )
+                                    .into_response()
+                            } else {
+                                // Convert from database model to API response
+                                match UserDecryptResponseJson::try_from(response_model) {
+                                    Ok(api_response) => {
+                                        let status_code = StatusCode::OK;
 
-                                    (
-                                        status_code,
-                                        Json(UserDecryptStatusResponseJson {
-                                            status: ApiResponseStatus::Succeeded,
-                                            request_id: request_id.to_string(), // Per-request UUID
-                                            result: Some(api_response),
-                                            error: None,
-                                        }),
-                                    )
-                                        .into_response()
-                                }
-                                Err(e) => {
-                                    error!(
-                                        request_id = %request_id,
-                                        ext_job_id = %job_id,
-                                        error = %e,
-                                        "Response conversion failed"
-                                    );
-                                    (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(UserDecryptStatusResponseJson {
-                                            status: ApiResponseStatus::Failed,
-                                            request_id: request_id.to_string(),
-                                            result: None,
-                                            error: Some(
-                                                V2ErrorResponseBody::internal_server_error(
-                                                    "Internal server error",
+                                        // Tolerance is `served - threshold`. Recorded on the
+                                        // terminal 200 only: the GET is polled, so the 202
+                                        // holds would measure polling instead.
+                                        let spare_shares =
+                                            collected.saturating_sub(required_threshold as usize);
+                                        observe_spare_shares(
+                                            RetryAfterRequestType::UserDecrypt,
+                                            spare_shares,
+                                        );
+                                        if spare_shares == 0 && additional > 0 {
+                                            warn!(
+                                                request_id = %request_id,
+                                                ext_job_id = %job_id,
+                                                collected,
+                                                required_threshold,
+                                                elapsed_secs,
+                                                "Returned no spare shares despite waiting; the client cannot tolerate a corrupted share"
+                                            );
+                                        }
+
+                                        info!(
+                                            request_id = %request_id,
+                                            http_status = status_code.as_u16(),
+                                            ext_job_id = %job_id,
+                                            returned_shares = collected,
+                                            "HTTP response"
+                                        );
+
+                                        (
+                                            status_code,
+                                            Json(UserDecryptStatusResponseJson {
+                                                status: ApiResponseStatus::Succeeded,
+                                                request_id: request_id.to_string(),
+                                                result: Some(api_response),
+                                                error: None,
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            request_id = %request_id,
+                                            ext_job_id = %job_id,
+                                            error = %e,
+                                            "Response conversion failed"
+                                        );
+                                        (
+                                            StatusCode::INTERNAL_SERVER_ERROR,
+                                            Json(UserDecryptStatusResponseJson {
+                                                status: ApiResponseStatus::Failed,
+                                                request_id: request_id.to_string(),
+                                                result: None,
+                                                error: Some(
+                                                    V2ErrorResponseBody::internal_server_error(
+                                                        "Internal server error",
+                                                    ),
                                                 ),
-                                            ),
-                                        }),
-                                    )
-                                        .into_response()
+                                            }),
+                                        )
+                                            .into_response()
+                                    }
                                 }
                             }
                         } else {
@@ -725,7 +852,10 @@ impl UserDecryptHandler {
                                 TIMEOUT_REASON_MISSING_MSG.to_string()
                             }
                         };
-                        let error_value = if error_msg == READINESS_CHECK_TIMEOUT_MSG {
+                        // A prefix rather than whole-string equality, matching the host ACL and
+                        // consensus arms below, so a stored reason may append per-request detail
+                        // without silently relabelling itself `response_timed_out`.
+                        let error_value = if error_msg.starts_with(READINESS_CHECK_TIMEOUT_MSG) {
                             V2ErrorResponseBody::readiness_check_timed_out(&error_msg)
                         } else {
                             V2ErrorResponseBody::response_timed_out(&error_msg)
@@ -766,6 +896,16 @@ impl UserDecryptHandler {
                                     StatusCode::INTERNAL_SERVER_ERROR,
                                     V2ErrorResponseBody::host_acl_failed(&error_msg),
                                 )
+                            } else if error_msg.starts_with(NO_ATTESTATION_CONSENSUS_PREFIX) {
+                                (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    V2ErrorResponseBody::no_attestation_consensus(&error_msg),
+                                )
+                            } else if error_msg.starts_with(GATEWAY_NOT_REACHABLE_PREFIX) {
+                                (
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    V2ErrorResponseBody::gateway_not_reachable(&error_msg),
+                                )
                             } else {
                                 classify_revert_error(&error_msg)
                             };
@@ -788,30 +928,51 @@ impl UserDecryptHandler {
                         // Request is still in progress, return 202 with dynamic Retry-After header
                         info!("Request still in progress, returning queued status");
 
-                        // Compute dynamic retry-after based on current state
-                        let state_info = RequestStateInfo::new(response_model.req_status, 0, 0);
+                        // `updated_at` is stamped on every real row change, so it dates
+                        // time-in-status. The copro/KMS backoff is keyed on this; a hardcoded
+                        // zero pinned every poll to the first interval.
+                        let elapsed_in_state_secs = (Utc::now() - response_model.updated_at)
+                            .num_seconds()
+                            .clamp(0, u32::MAX as i64)
+                            as u32;
+                        let state_info =
+                            RequestStateInfo::new(response_model.req_status, elapsed_in_state_secs);
 
-                        // For Queued status, also get queue info for more accurate ETA
-                        let decrypt_queue_info = if response_model.req_status == ReqStatus::Queued {
-                            let readiness_queue_info = self
+                        // Position is from the same SELECT as status, not a per-pod throttler
+                        // (empty on the passive HA pod). `get_decrypt_stage` picks the stage from
+                        // whichever side carries `Some` position, so only the side named by
+                        // `req_status` gets it. A queued request has not reached the TX queue, so
+                        // that side takes the measured depth.
+                        let queue_position = response_model.queue_position as usize;
+                        let (readiness_position, tx_position) =
+                            if response_model.req_status == ReqStatus::Queued {
+                                (Some(queue_position), None)
+                            } else {
+                                (None, Some(queue_position))
+                            };
+                        let readiness_queue_info = ReadinessQueueInfo {
+                            size: queue_position,
+                            max_concurrency: self
                                 .user_decrypt_queue_checker
                                 .readiness_throttler()
-                                .get_queue_info()
-                                .await;
-                            let tx_queue_info = self
+                                .max_concurrency(),
+                            position: readiness_position,
+                        };
+                        let tx_queue_info = TxQueueInfo {
+                            size: response_model.tx_queue_size as usize,
+                            drain_rate_tps: self
                                 .user_decrypt_queue_checker
                                 .tx_throttler()
-                                .get_queue_info()
-                                .await;
-                            Some(DecryptQueueInfo::new(readiness_queue_info, tx_queue_info))
-                        } else {
-                            None
+                                .current_tps(),
+                            position: tx_position,
                         };
+                        let decrypt_queue_info =
+                            DecryptQueueInfo::new(readiness_queue_info, tx_queue_info);
 
                         let retry_after = self
                             .retry_after_state
                             .compute_for_decrypt_get(
-                                decrypt_queue_info.as_ref(),
+                                &decrypt_queue_info,
                                 &state_info,
                                 true, // is_user_decrypt
                             )
@@ -904,6 +1065,11 @@ pub async fn user_decrypt_post_v2(
 }
 
 /// Check user decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v2/user-decrypt/{job_id}",
@@ -958,6 +1124,11 @@ pub async fn delegated_user_decrypt_post_v2(
 }
 
 /// Check delegated user decryption status.
+///
+/// Once the threshold is reached the relayer may keep returning 202 briefly
+/// while it waits for a few extra shares (optimistic wait window). The
+/// succeeded result therefore contains at least `threshold` shares and may
+/// contain more, ordered by share index.
 #[utoipa::path(
     get,
     path = "/v2/delegated-user-decrypt/{job_id}",

@@ -14,6 +14,7 @@ use crate::http::endpoints::{
 };
 use crate::http::openapi_middleware;
 use crate::http::retry_after::RetryAfterState;
+use crate::http::user_decrypt_wait::UserDecryptWaitState;
 use crate::http::utils::BounceChecker;
 use crate::orchestrator::Orchestrator;
 use crate::store::sql::repositories::Repositories;
@@ -25,6 +26,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
@@ -42,6 +44,7 @@ async fn wait_for_ready(addr: SocketAddr) -> anyhow::Result<()> {
     Err(anyhow::anyhow!("HTTP server failed to start"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_http_server(
     settings: &Settings,
     orchestrator: Arc<Orchestrator>,
@@ -52,6 +55,7 @@ pub async fn run_http_server(
     keyurl_rx: tokio::sync::watch::Receiver<
         crate::http::endpoints::v2::types::keyurl::KeyUrlResponseJson,
     >,
+    shutdown: CancellationToken,
 ) -> SocketAddr {
     let http = &settings.http;
     let user_decrypt_shares_threshold = settings.gateway.contracts.user_decrypt_shares_threshold;
@@ -66,6 +70,9 @@ pub async fn run_http_server(
 
     // Create RetryAfterState directly from config
     let retry_after_state = Arc::new(RetryAfterState::new(&http.retry_after));
+
+    // Optimistic user-decrypt wait window (seeded from gateway.contracts)
+    let user_decrypt_wait_state = Arc::new(UserDecryptWaitState::new(&settings.gateway.contracts));
 
     // Create AdminConfigRegistry for TPS throttling (separate from retry-after)
     let admin_registry = Arc::new(AdminConfigRegistry::new(
@@ -107,6 +114,7 @@ pub async fn run_http_server(
             http.api_retry_after_seconds,
         ),
         retry_after_state.clone(),
+        user_decrypt_wait_state.clone(),
         host_chain_id_checker.clone(),
     ));
 
@@ -181,24 +189,25 @@ pub async fn run_http_server(
         .merge(openapi_middleware());
 
     // Admin endpoints configuration
-    // When enabled, pass both registry (for TPS) and retry-after state
-    // When disabled, None is passed so handler returns 403
-    let (admin_registry_option, retry_after_option): (
-        Option<Arc<AdminConfigRegistry>>,
-        Option<Arc<RetryAfterState>>,
-    ) = if http.enable_admin_endpoint {
+    // When enabled, each backing store is passed as Some: registry (for TPS),
+    // retry-after state and the user-decrypt wait state
+    // When disabled, all are None so the handlers return 403
+    let admin_enabled = http.enable_admin_endpoint;
+    if admin_enabled {
         info!("Admin endpoints enabled at /admin/config");
-        (Some(admin_registry), Some(retry_after_state))
     } else {
         info!("Admin endpoints disabled");
-        (None, None)
-    };
+    }
+    let admin_registry_option = admin_enabled.then_some(admin_registry);
+    let retry_after_option = admin_enabled.then_some(retry_after_state);
+    let user_decrypt_wait_option = admin_enabled.then_some(user_decrypt_wait_state);
 
     app = app
         .route("/admin/config", post(admin::update_config))
         .route("/admin/config", get(admin::get_config))
         .layer(Extension(admin_registry_option))
-        .layer(Extension(retry_after_option));
+        .layer(Extension(retry_after_option))
+        .layer(Extension(user_decrypt_wait_option));
 
     // Setup TCP listener and start server
     let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();
@@ -212,7 +221,11 @@ pub async fn run_http_server(
         .spawn_task_and_wait_ready(
             "http_server_axum",
             async move {
-                axum::serve(listener, app).await.unwrap();
+                // Finishes accepted requests, then stops accepting connections.
+                axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.cancelled_owned())
+                    .await
+                    .unwrap();
             },
             async move {
                 // Wait for HTTP server to be ready with actual health check

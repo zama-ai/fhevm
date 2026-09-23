@@ -1,11 +1,11 @@
-//! Stack-version detection that decides whether a service runs in GCS (green)
+//! Consensus-version detection that decides whether a service runs in GCS (green)
 //! mode, replacing the deprecated `--gcs-mode` CLI flag.
 //!
-//! Each binary is compiled with a [`crate::STACK_VERSION`]. On startup a
-//! service compares it against the live `versioning.stack_version` singleton
-//! row: a binary strictly newer than the live stack is the incoming green
-//! deployment and runs in GCS mode; an equal-or-older binary is the live
-//! (blue) stack and runs normally.
+//! Each binary is compiled with a [`crate::CONSENSUS_PROTOCOL_VERSION`]. On
+//! startup a service compares it against the live `versioning.consensus_version`
+//! singleton row: a binary newer than the live version is the incoming green
+//! deployment and runs in GCS mode; an equal binary is the live (blue) stack and
+//! runs normally; an older one belongs to a retired stack and stops working.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -16,10 +16,10 @@ use sqlx::{Connection, PgConnection, Pool, Postgres, Transaction};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::STACK_VERSION;
+use crate::{CONSENSUS_PROTOCOL_VERSION, STACK_VERSION};
 
 /// pg_notify channel emitted by the upgrade-controller during `execute_cutover`,
-/// inside the same transaction that bumps `versioning.stack_version` (so the
+/// inside the same transaction that bumps `versioning.consensus_version` (so the
 /// notification is atomic with the version change — it is only delivered if the
 /// cutover commits).
 ///
@@ -56,10 +56,21 @@ pub fn binary_matches(live: &str) -> bool {
     parse_version(STACK_VERSION) == parse_version(live)
 }
 
-/// True iff this binary's [`STACK_VERSION`] is strictly older than `live` — i.e.
-/// it belongs to a retired stack that should no longer touch the database.
-pub fn binary_is_older_than(live: &str) -> bool {
-    parse_version(STACK_VERSION) < parse_version(live)
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly newer than `live`.
+fn consensus_is_newer_than(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) > live
+}
+
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] equals `live`.
+fn consensus_matches(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) == live
+}
+
+/// True if this binary's [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than
+/// `live` — i.e. it belongs to a retired stack that should no longer touch the
+/// database.
+fn consensus_is_older_than(live: i64) -> bool {
+    i64::from(CONSENSUS_PROTOCOL_VERSION) < live
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
@@ -94,14 +105,14 @@ impl StackMode {
     }
 }
 
-/// Re-read `versioning.stack_version` and apply the cutover transition rules to
+/// Re-read `versioning.consensus_version` and apply the cutover transition rules to
 /// `mode`:
 ///   - binary == live AND currently in GCS mode → leave GCS mode (become live);
 ///   - binary != live AND not in GCS mode → pause into no-op mode;
 ///   - otherwise no change.
 pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> anyhow::Result<()> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT stack_version FROM versioning WHERE singleton = TRUE")
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT consensus_version FROM versioning WHERE singleton = TRUE")
             .fetch_optional(pool)
             .await?;
     let Some((live,)) = row else {
@@ -109,26 +120,26 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
         return Ok(());
     };
 
-    let matches = binary_matches(&live);
+    let matches = consensus_matches(live);
     let gcs_mode = mode.gcs_mode();
     if matches && gcs_mode {
         mode.gcs_mode.store(false, Ordering::SeqCst);
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version matches live; leaving GCS mode (now live stack)"
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version matches live; leaving GCS mode (now live stack)"
         );
     } else if !matches && !gcs_mode {
         mode.paused.store(true, Ordering::SeqCst);
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
-            "stack version no longer matches live; pausing into no-op mode"
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
+            "consensus version no longer matches live; pausing into no-op mode"
         );
     } else {
         info!(
-            binary_stack_version = STACK_VERSION,
-            live_stack_version = %live,
+            binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            live_consensus_version = live,
             matches,
             gcs_mode,
             "stack-version-upgraded received; no mode change"
@@ -137,40 +148,77 @@ pub async fn reconcile_stack_mode(pool: &Pool<Postgres>, mode: &StackMode) -> an
     Ok(())
 }
 
-/// Listen for [`EVENT_STACK_VERSION_UPGRADED`] and call [`reconcile_stack_mode`]
-/// on every notification. Runs until `cancel` fires; logs and retries on
-/// listener errors. Spawn this once per service after startup.
+/// Fallback poll interval: a missed NOTIFY costs one tick.
+const STACK_MODE_POLL_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Terminal outcome of [`run_stack_version_listener`]: the pool it was handed
+/// has been closed.
+///
+/// The listener binds to one `Pool` clone for its lifetime and sqlx re-acquires
+/// through that pool on every reconnect, so a closed pool can never serve this
+/// task again. Callers that replace their pool rather than repair it — the
+/// host-listener's `Database::reconnect` closes the pool it displaces — must
+/// re-spawn the listener against the current pool; callers with a single
+/// long-lived pool should treat it as fatal.
+#[derive(Debug, thiserror::Error)]
+#[error("stack-version listener pool was closed")]
+pub struct ListenerPoolClosed;
+
+/// Listen for version upgrades, reconciling after every subscription and notification
+/// and on a fallback poll for missed notifications.
+///
+/// Transient connection and query failures are retried until cancellation. A closed
+/// pool returns [`ListenerPoolClosed`]; callers that replace pools must rebind.
 pub async fn run_stack_version_listener(
     pool: Pool<Postgres>,
     mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let mut listener = PgListener::connect_with(&pool).await?;
-    listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
-    info!(
-        channel = EVENT_STACK_VERSION_UPGRADED,
-        "stack-version-upgraded listener started"
-    );
-    loop {
-        tokio::select! {
-            _ = cancel.cancelled() => return Ok(()),
-            recv = listener.recv() => match recv {
-                Ok(_) => {
-                    if let Err(e) = reconcile_stack_mode(&pool, &mode).await {
-                        warn!(error = %e, "failed to reconcile stack mode after version upgrade");
+    let listen = async {
+        loop {
+            let result: anyhow::Result<()> = async {
+                let mut listener = PgListener::connect_with(&pool).await?;
+                listener.listen(EVENT_STACK_VERSION_UPGRADED).await?;
+                // Subscribe before reading: NOTIFY is not durable, and a cutover
+                // may have committed while this connection was unavailable.
+                reconcile_stack_mode(&pool, &mode).await?;
+                info!(
+                    channel = EVENT_STACK_VERSION_UPGRADED,
+                    "stack-version listener subscribed"
+                );
+                let mut poll = tokio::time::interval(STACK_MODE_POLL_INTERVAL);
+                loop {
+                    // recv() hides reconnects and can wait forever for a notification
+                    // that was lost during the outage. Re-subscribe and reconcile on
+                    // None, and retry reconciliation errors instead of losing the event.
+                    tokio::select! {
+                        _ = poll.tick() => reconcile_stack_mode(&pool, &mode).await?,
+                        recv = listener.try_recv() => match recv? {
+                            Some(_) => reconcile_stack_mode(&pool, &mode).await?,
+                            None => return Ok(()),
+                        }
                     }
                 }
-                Err(e) => {
-                    warn!(error = %e, "stack-version listener recv error; sleeping before retry");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
             }
+            .await;
+            if let Err(error) = result {
+                warn!(%error, "stack-version listener failed; retrying subscription");
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    };
+    // Cancellation and pool closure must also interrupt startup, reconciliation,
+    // and retry backoff, not just a blocked notification receive.
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Ok(()),
+        _ = pool.close_event() => Err(ListenerPoolClosed.into()),
+        result = listen => result,
     }
 }
 
 /// Decide whether this binary should run in GCS (green) mode by comparing its
-/// compiled-in [`STACK_VERSION`] against the live `versioning.stack_version`
+/// compiled-in [`CONSENSUS_PROTOCOL_VERSION`] against the live `versioning.consensus_version`
 /// row.
 ///
 /// Opens a short-lived connection with the default `public` search_path, so it
@@ -190,56 +238,149 @@ pub async fn resolve_gcs_mode(database_url: &str) -> anyhow::Result<bool> {
     )
     .await?;
     let mut conn = PgConnection::connect_with(&options).await?;
-    let live = live_stack_version(&mut conn).await?;
+    // Startup guard so a service never picks its mode from a database that is
+    // still being set up.
+    let setup_in_progress: bool =
+        sqlx::query_scalar("SELECT to_regclass('public._fhevm_versioning_bootstrap') IS NOT NULL")
+            .fetch_one(&mut conn)
+            .await?;
+    let live = live_consensus_version(&mut conn).await?;
     let _ = conn.close().await;
+    anyhow::ensure!(
+        !setup_in_progress,
+        "database setup is still in progress; retry startup once it completes"
+    );
 
     let live = match live {
         Some(v) => v,
         None => {
             warn!(
-                binary_stack_version = STACK_VERSION,
+                binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
                 "versioning table is empty or not yet created; defaulting to non-GCS (blue) mode"
             );
             return Ok(false);
         }
     };
 
-    let gcs_mode = binary_is_newer_than(&live);
+    let gcs_mode = consensus_is_newer_than(live);
     info!(
-        binary_stack_version = STACK_VERSION,
-        live_stack_version = %live,
+        binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+        live_consensus_version = live,
         gcs_mode,
         "resolved gcs_mode from versioning table"
     );
     Ok(gcs_mode)
 }
 
-/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
-/// binary belongs to a retired stack — its [`STACK_VERSION`] is strictly older
-/// than the live `versioning.stack_version`.
-#[derive(Debug, thiserror::Error)]
-#[error("stack version {binary} is older than live stack {live}; access denied (retired stack)")]
-pub struct StaleStackError {
-    pub binary: &'static str,
-    pub live: String,
+/// Fail unless the GCS schema exists.
+///
+/// Green services pin `search_path` to that schema, and Postgres ignores it when
+/// missing, so writes would go to `public`. The upgrade-controller creates it at
+/// startup; a green service that starts first must wait. Call this before
+/// opening a pool.
+pub async fn assert_gcs_schema_exists(database_url: &str) -> anyhow::Result<()> {
+    let options = crate::database::connect_options_for_database_url(
+        &crate::utils::DatabaseURL::from(database_url),
+    )
+    .await?;
+    let mut conn = PgConnection::connect_with(&options).await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1)")
+            .bind(crate::database::GCS_SCHEMA)
+            .fetch_one(&mut conn)
+            .await?;
+    let _ = conn.close().await;
+    anyhow::ensure!(
+        exists,
+        "schema {} does not exist yet; waiting for the upgrade-controller to create it",
+        crate::database::GCS_SCHEMA
+    );
+    Ok(())
 }
 
-/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) — i.e. the
-/// `versioning` table does not exist yet (migrations not applied).
+/// How long a green service waits for the upgrade-controller to create the schema.
+///
+/// Long enough that a slow or misconfigured controller can be fixed while the
+/// services keep waiting, short enough that a deploy that will never work still
+/// gives up instead of sitting there.
+pub const GCS_SCHEMA_WAIT: Duration = Duration::from_secs(3600);
+
+/// Wait for the GCS schema, then return.
+///
+/// Every green service starts alongside the upgrade-controller that creates the
+/// schema, so losing that race is normal and must not end the process. Give up
+/// only after `timeout`, which means the controller never got there.
+pub async fn wait_for_gcs_schema(database_url: &str, timeout: Duration) -> anyhow::Result<()> {
+    const POLL: Duration = Duration::from_secs(2);
+    const LOG_EVERY: Duration = Duration::from_secs(30);
+    let mut waited = Duration::ZERO;
+    let mut next_log = Duration::ZERO;
+    loop {
+        match assert_gcs_schema_exists(database_url).await {
+            Ok(()) => {
+                if !waited.is_zero() {
+                    info!(
+                        schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        "GCS schema is present; continuing startup"
+                    );
+                }
+                return Ok(());
+            }
+            Err(err) if waited >= timeout => {
+                return Err(err.context(format!(
+                    "schema {} still missing after {}s",
+                    crate::database::GCS_SCHEMA,
+                    timeout.as_secs()
+                )))
+            }
+            Err(err) => {
+                if waited >= next_log {
+                    warn!(
+                        schema = crate::database::GCS_SCHEMA,
+                        waited_secs = waited.as_secs(),
+                        timeout_secs = timeout.as_secs(),
+                        error = %err,
+                        "waiting for the upgrade-controller to create the GCS schema"
+                    );
+                    next_log = waited + LOG_EVERY;
+                }
+                tokio::time::sleep(POLL).await;
+                waited += POLL;
+            }
+        }
+    }
+}
+
+/// Error returned by [`begin_guarded_pool`] / [`begin_guarded_conn`] when this
+/// binary belongs to a retired stack — its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older
+/// than the live `versioning.consensus_version`.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "consensus version {binary} is older than live stack {live}; access denied (retired stack)"
+)]
+pub struct StaleStackError {
+    pub binary: u32,
+    pub live: i64,
+}
+
+/// True if `err` is Postgres `undefined_table` (SQLSTATE 42P01) - i.e. the `versioning`
+/// table does not exist yet (migrations not applied). A missing `consensus_version` column
+/// is the previous release's database before this release's migration; that stays an error.
 fn is_undefined_table(err: &sqlx::Error) -> bool {
     matches!(err, sqlx::Error::Database(db) if db.code().as_deref() == Some("42P01"))
 }
 
-/// Fetch the live stack version singleton, or `None` if the `versioning` row is
+/// Fetch the live consensus version singleton, or `None` if the `versioning` row is
 /// absent (fresh/unseeded DB). Shared by the retirement checks below.
 ///
 /// A missing `versioning` *table* (SQLSTATE 42P01) is treated the same as a
 /// missing row — `None`, not an error — so a service that starts before the
 /// db-migration Job has created the table does not fail (see [`resolve_gcs_mode`]
 /// and [`assert_not_retired`], which read this as "unseeded → blue / not-retired").
-async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> = match sqlx::query_as(
-        "SELECT stack_version FROM versioning WHERE singleton = TRUE",
+async fn live_consensus_version(conn: &mut PgConnection) -> Result<Option<i64>, sqlx::Error> {
+    let row: Option<(i64,)> = match sqlx::query_as(
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE",
     )
     .fetch_optional(conn)
     .await
@@ -247,8 +388,8 @@ async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, s
         Ok(row) => row,
         Err(err) if is_undefined_table(&err) => {
             warn!(
-                    binary_stack_version = STACK_VERSION,
-                    "versioning table does not exist yet (migrations not applied?); treating as unseeded"
+                    binary_consensus_version = CONSENSUS_PROTOCOL_VERSION,
+                    "versioning row is not readable yet (migrations not applied?); treating as unseeded"
                 );
             None
         }
@@ -257,9 +398,9 @@ async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, s
     Ok(row.map(|(v,)| v))
 }
 
-/// Re-read the live stack version on `conn` and report whether this binary
-/// belongs to a retired stack (its [`STACK_VERSION`] is strictly older than the
-/// live `versioning.stack_version`). A missing `versioning` row is treated as
+/// Re-read the live consensus version on `conn` and report whether this binary
+/// belongs to a retired stack (its [`CONSENSUS_PROTOCOL_VERSION`] is strictly older than the
+/// live `versioning.consensus_version`). A missing `versioning` row is treated as
 /// not-retired, mirroring [`resolve_gcs_mode`]'s permissive default so a
 /// fresh/unseeded DB is not locked out.
 ///
@@ -268,19 +409,19 @@ async fn live_stack_version(conn: &mut PgConnection) -> Result<Option<String>, s
 /// [`reconcile_stack_mode`]. Read it *after* taking the shared cutover lock (see
 /// [`cutover_gate`]) to close the begin-time TOCTOU window.
 pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
-    Ok(live_stack_version(conn)
+    Ok(live_consensus_version(conn)
         .await?
-        .is_some_and(|live| binary_is_older_than(&live)))
+        .is_some_and(consensus_is_older_than))
 }
 
-/// Re-read the live stack version on `conn` and fail if this binary is strictly
+/// Re-read the live consensus version on `conn` and fail if this binary is strictly
 /// older (a retired stack). A missing `versioning` row is permissive, mirroring
 /// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
 async fn assert_not_retired(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    if let Some(live) = live_stack_version(conn).await? {
-        if binary_is_older_than(&live) {
+    if let Some(live) = live_consensus_version(conn).await? {
+        if consensus_is_older_than(live) {
             return Err(sqlx::Error::Configuration(Box::new(StaleStackError {
-                binary: STACK_VERSION,
+                binary: CONSENSUS_PROTOCOL_VERSION,
                 live,
             })));
         }
@@ -449,7 +590,57 @@ pub async fn begin_write_guarded_conn(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_version;
+    use super::{
+        consensus_is_newer_than, consensus_is_older_than, consensus_matches, parse_version,
+    };
+    use super::{run_stack_version_listener, ListenerPoolClosed, StackMode};
+    use crate::STACK_VERSION;
+    use tokio_util::sync::CancellationToken;
+
+    /// A closed pool is terminal for the listener, and it has to say so with a
+    /// distinguishable error: the host-listener replaces its pool on every
+    /// ingestion retry, and the difference between "rebind to the new pool" and
+    /// "the database is broken" is the difference between recovering and
+    /// warning once a second forever (the D-2 regression).
+    #[tokio::test]
+    async fn closed_pool_is_terminal_for_the_stack_version_listener() {
+        // Lazy: no connection is attempted until the listener acquires one, so
+        // this needs no database.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .expect("lazy pool");
+        pool.close().await;
+
+        let err = run_stack_version_listener(pool, StackMode::new(false), CancellationToken::new())
+            .await
+            .expect_err("a closed pool cannot serve the listener");
+
+        assert!(
+            err.is::<ListenerPoolClosed>(),
+            "expected ListenerPoolClosed, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_initial_pool_acquisition() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_secs(60))
+            .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(run_stack_version_listener(
+            pool,
+            StackMode::new(false),
+            cancel.clone(),
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancel.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(1), task)
+            .await
+            .expect("cancellation must interrupt startup")
+            .unwrap()
+            .unwrap();
+    }
 
     #[test]
     fn parses_loose_versions() {
@@ -467,5 +658,42 @@ mod tests {
         assert_eq!(parse_version("v0.14.0"), parse_version("v0.14"));
         assert!(parse_version("v0.14.0") <= parse_version("v0.14.0"));
         assert!(parse_version("v0.13") <= parse_version("v0.14.0"));
+    }
+
+    /// A copy of the released 0.14 comparator. Those services are already deployed and
+    /// decide whether they have been replaced by comparing their own release with what
+    /// cutover stores, so this copy must not be changed.
+    fn released_0_14_parse_version(s: &str) -> (u64, u64, u64) {
+        let s = s.trim();
+        let s = s.strip_prefix(['v', 'V']).unwrap_or(s);
+        let core = s.split(['-', '+']).next().unwrap_or(s);
+        let mut parts = core.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+        (
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+            parts.next().unwrap_or(0),
+        )
+    }
+
+    #[test]
+    fn what_we_store_replaces_a_0_14_service() {
+        // 0.14 stops working once the stored release is above its own.
+        let deployed = released_0_14_parse_version("0.14.0");
+        assert!(
+            released_0_14_parse_version(STACK_VERSION) > deployed,
+            "{STACK_VERSION} must replace 0.14.0"
+        );
+        // A version it cannot read counts as 0.0.0, which would leave it running.
+        assert_eq!(released_0_14_parse_version("not-a-version"), (0, 0, 0));
+        assert!(released_0_14_parse_version("not-a-version") < deployed);
+    }
+
+    #[test]
+    fn consensus_relationships() {
+        let live = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
+        assert!(consensus_matches(live));
+        assert!(!consensus_is_newer_than(live) && !consensus_is_older_than(live));
+        assert!(consensus_is_newer_than(live - 1));
+        assert!(consensus_is_older_than(live + 1));
     }
 }

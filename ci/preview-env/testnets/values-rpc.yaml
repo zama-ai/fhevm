@@ -1,0 +1,25 @@
+# sync-secrets values: Sepolia + Amoy RPC URLs (same AWS keys and K8s Secret
+# shape as zama-zws/gitops coprocessor / polygon-blockchain on zws-dev).
+# Helm release name is the ExternalSecret name (preview-rpc).
+externalSecret:
+  enabled: true
+  targetSecretName: rpc
+  data:
+    - keyReference: "zws-dev/external-eth-rpcs"
+      propertyReference: fhevm-ethereum-sepolia-rpc-url
+      secretKeyName: ethereum_sepolia_rpc_url
+    - keyReference: "zws-dev/external-eth-rpcs"
+      propertyReference: fhevm-ethereum-sepolia-rpc-ws-url
+      secretKeyName: ethereum_sepolia_rpc_ws_url
+    - keyReference: "zws-dev/external-polygon-rpcs"
+      propertyReference: polygon-amoy-rpc-coprocessor-http-url
+      secretKeyName: polygon_amoy_rpc_url
+    - keyReference: "zws-dev/external-polygon-rpcs"
+      propertyReference: polygon-amoy-rpc-coprocessor-ws-url
+      secretKeyName: polygon_amoy_rpc_ws_url
+  template:
+    data:
+      ethereum-rpc-url: '{{ .ethereum_sepolia_rpc_url }}'
+      ethereum-rpc-ws-url: '{{ .ethereum_sepolia_rpc_ws_url }}'
+      polygon-rpc-url: '{{ .polygon_amoy_rpc_url }}'
+      polygon-rpc-ws-url: '{{ .polygon_amoy_rpc_ws_url }}'

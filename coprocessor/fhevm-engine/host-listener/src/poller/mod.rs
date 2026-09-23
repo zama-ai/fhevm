@@ -18,14 +18,16 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::StackMode;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{
+    spawn_stack_version_listener, Database,
+};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
@@ -152,6 +154,7 @@ pub struct PollerConfig {
     pub dependence_cross_block: bool,
     pub dependent_ops_max_per_chain: u32,
     pub gcs_mode: bool,
+    pub disable_synthetic_ops: bool,
     pub canonical_protocol_config_chain_id: Option<u64>,
 }
 
@@ -176,6 +179,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         acl_address,
         tfhe_address,
         kms_generation_address,
+        protocol_config_address,
         confidential_bridge_address,
         config.retry_interval,
         config.max_http_retries,
@@ -201,14 +205,16 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         crate::protocol_config::resolve_protocol_config_listener(
             config.canonical_protocol_config_chain_id,
             chain_id.as_u64(),
+            config.protocol_config_address,
         )?;
     blockchain_timeout_tick.update();
 
-    let mut db = Database::new_with_gcs_mode(
+    let stack_mode = StackMode::new(config.gcs_mode);
+    let mut db = Database::new_with_stack_mode(
         &config.database_url,
         chain_id,
         config.dependence_cache_size,
-        config.gcs_mode,
+        stack_mode.clone(),
     )
     .await?;
     let aws_s3_client = AwsS3Client {};
@@ -261,19 +267,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
-    let stack_mode = StackMode::new(config.gcs_mode);
-    {
-        let pool = db.pool().await;
-        let stack_mode = stack_mode.clone();
-        let cancel = cancel_token.clone();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(pool, stack_mode, cancel).await
-            {
-                error!(error = %err, "stack-version listener exited with error");
-            }
-        });
-    }
+    spawn_stack_version_listener(
+        db.clone(),
+        stack_mode.clone(),
+        cancel_token.clone(),
+    );
 
     let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
     db.tick.update();
@@ -322,10 +320,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             continue;
         }
         let latest = match client.latest_block_number().await {
-            Ok(block) => {
-                consecutive_rpc_failures = 0;
-                block
-            }
+            Ok(block) => block,
             Err(err) => {
                 handle_rpc_failure(
                     &mut consecutive_rpc_failures,
@@ -337,9 +332,20 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 continue;
             }
         };
-        blockchain_timeout_tick.update();
-
+        consecutive_rpc_failures = 0;
         let safe_tip = latest.saturating_sub(config.finality_lag);
+        let rpc_finalized_block = if kms_generation_address.is_some() {
+            match client.finalized_block_number().await {
+                Ok(block) => i64::try_from(block).ok(),
+                Err(err) => {
+                    warn!(%err, "Cannot resolve finalized block, postponing compressed key migration");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        blockchain_timeout_tick.update();
         let client_ref = &client;
         update_finalized_blocks_aux(
             &mut db,
@@ -422,6 +428,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 dependence_cross_block: config.dependence_cross_block,
                 dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
                 is_protocol_config_listener,
+                disable_synthetic_ops: config.disable_synthetic_ops,
             };
             match ingest_with_retry(
                 chain_id,
@@ -460,6 +467,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     if let Err(err) = process_kms_generation_activations(
                         db_pool,
                         aws_s3_client,
+                        rpc_finalized_block,
                     )
                     .await
                     {

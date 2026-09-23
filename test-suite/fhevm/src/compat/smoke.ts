@@ -10,6 +10,7 @@ import {
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
   GROUP_BUILD_SERVICES,
+  KMS_CONNECTOR_HTTP_SERVICES,
   MINIO_PORT,
   STATE_DIR,
   TEMPLATE_ENV_DIR,
@@ -17,7 +18,12 @@ import {
   dockerArgs,
   envPath,
 } from "../layout";
-import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "./compat";
+import {
+  supportsConnectorHttp,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
 import { renderEnvMaps, type WalletMaterial } from "../generate/env";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -174,7 +180,10 @@ const main = async () => {
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
           (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)),
       ),
-      "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter((name) => !name.endsWith("db-migration")),
+      "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
+        (name) =>
+          !name.endsWith("db-migration") && (!KMS_CONNECTOR_HTTP_SERVICES.includes(name) || supportsConnectorHttp(state)),
+      ),
     } as const;
     for (const component of COMPAT_COMPONENTS) {
       try {

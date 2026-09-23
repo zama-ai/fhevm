@@ -12,6 +12,7 @@ use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use host_listener::cmd::block_history::BlockSummary;
 use host_listener::contracts::BridgeContract;
 use host_listener::contracts::BridgeContract::BridgeContractEvents;
+use host_listener::contracts::TfheContract;
 use host_listener::database::ingest::{
     ingest_block_logs, synthesize_finalized_fallback_grants, BlockLogs,
     IngestOptions,
@@ -121,6 +122,48 @@ async fn bridge_handle_with_matching_chain_id_is_inserted() {
 
 #[tokio::test]
 #[serial(db)]
+async fn bridge_handle_enqueues_sns_for_source_handle() {
+    let (mut db, _inst) = fresh_db(SRC_CHAIN_ID).await;
+    let src_handle = handle_for_chain(SRC_CHAIN_ID, 0x33);
+
+    // Bridged on its own: nothing computes the handle in this block.
+    ingest_logs(
+        &mut db,
+        vec![log_from(
+            BRIDGE,
+            BridgeContract::BridgeHandle {
+                senderDapp: Address::from([0xDA; 20]),
+                srcHandle: src_handle,
+                dstChainId: DST_CHAIN_ID,
+                guid: FixedBytes::from([0x44; 32]),
+            }
+            .encode_log_data(),
+            FixedBytes::from([0x55; 32]),
+            0,
+        )],
+    )
+    .await;
+
+    let pool = db.pool().await;
+    let recorded: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM bridge_handle_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(recorded, 1, "the bridge event is still recorded");
+
+    // `ConfidentialBridge.send` accepts a transient-only allowance (which emits no
+    // ACL event), so bridging itself must enqueue SnS; without ct128 the
+    // association worker strands the destination handle.
+    assert_eq!(
+        pbs_count(&db, src_handle).await,
+        1,
+        "BridgeHandle must enqueue SnS for the source handle"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn bridge_handle_with_foreign_chain_id_is_ignored() {
     let (db, _inst) = fresh_db(SRC_CHAIN_ID).await;
     // srcHandle embeds a different chain than this (source) listener -> dropped.
@@ -148,20 +191,43 @@ async fn bridge_handle_with_foreign_chain_id_is_ignored() {
 #[tokio::test]
 #[serial(db)]
 async fn bridge_handle_with_out_of_range_dst_chain_id_is_ignored() {
-    let (db, _inst) = fresh_db(SRC_CHAIN_ID).await;
-    let src_handle = handle_for_chain(SRC_CHAIN_ID, 0x11);
-    let guid = FixedBytes::from([0x22; 32]);
+    let (mut db, _inst) = fresh_db(SRC_CHAIN_ID).await;
+    let src_handle = fallback_dst_handle(SRC_CHAIN_ID, 5);
+    let tx = FixedBytes::from([0x77; 32]);
 
     // dstChainId that overflows i64 cannot be a real chain id: it must be
     // ignored, not cause an insert error that stalls the block forever.
-    let inserted = ingest(
-        &db,
-        bridge_handle_event(src_handle, 1u64 << 63, guid),
-        FixedBytes::ZERO,
-        None,
+    // Ingested whole, so the scan drops it exactly as the handler does.
+    ingest_logs(
+        &mut db,
+        vec![
+            log_from(
+                TFHE,
+                TfheContract::TrivialEncrypt {
+                    caller: Address::ZERO,
+                    pt: U256::from(7u64),
+                    toType: 5,
+                    result: src_handle,
+                }
+                .encode_log_data(),
+                tx,
+                0,
+            ),
+            log_from(
+                BRIDGE,
+                BridgeContract::BridgeHandle {
+                    senderDapp: Address::from([0xDA; 20]),
+                    srcHandle: src_handle,
+                    dstChainId: 1u64 << 63,
+                    guid: FixedBytes::from([0x22; 32]),
+                }
+                .encode_log_data(),
+                tx,
+                1,
+            ),
+        ],
     )
     .await;
-    assert!(!inserted, "out-of-range dstChainId should be ignored");
 
     let pool = db.pool().await;
     let count: i64 =
@@ -170,6 +236,17 @@ async fn bridge_handle_with_out_of_range_dst_chain_id_is_ignored() {
             .await
             .unwrap();
     assert_eq!(count, 0);
+
+    // An event the handler ignores must not schedule work either.
+    let allowed: bool = sqlx::query_scalar(
+        "SELECT is_allowed FROM computations WHERE output_handle = $1",
+    )
+    .bind(src_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("computation row exists");
+    assert!(!allowed, "no scheduling for an ignored bridge event");
+    assert_eq!(pbs_count(&db, src_handle).await, 0, "and no SnS queued");
 }
 
 #[tokio::test]
@@ -359,6 +436,7 @@ async fn handle_bridged_without_acl_address_is_ignored() {
 }
 
 const BRIDGE: [u8; 20] = [0xBD; 20];
+const TFHE: [u8; 20] = [0xFE; 20];
 
 fn fallback_dst_handle(chain_id: u64, fhe_type: u8) -> FixedBytes<32> {
     let mut bytes = [0xAB; 32];
@@ -432,6 +510,7 @@ async fn ingest_fallback_block_at(
         dependence_cross_block: true,
         dependent_ops_max_per_chain: 0,
         is_protocol_config_listener: false,
+        disable_synthetic_ops: false,
     };
     let chain_id = db.chain_id;
     ingest_block_logs(
@@ -1251,6 +1330,65 @@ async fn fallback_synthesis_deferred_until_finality() {
     }
 }
 
+/// A fallback grant observed WITHOUT a transaction id — the column is
+/// nullable and None is a normal value on this path — must still
+/// synthesize at finality with the all-zero operand mask. It must never
+/// wedge the finalization loop on a value that cannot depend on the
+/// missing input (the mask derivation is per-event with an empty minted
+/// set, not the block-level pass that fail-closes on a missing hash).
+#[tokio::test]
+#[serial(db)]
+async fn fallback_without_transaction_id_synthesizes_with_zero_mask() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let block_hash = FixedBytes::from([0xCD; 32]);
+
+    // Deferred observation, then NULL the transaction id to model an
+    // observation recorded without one.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        block_hash,
+        false,
+    )
+    .await;
+    let pool = db.pool().await;
+    sqlx::query(
+        "UPDATE fallback_granted_events SET transaction_id = NULL WHERE dst_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &block_hash,
+    )
+    .await
+    .expect("synthesis must tolerate a NULL transaction id");
+    tx.commit().await.expect("commit");
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(pbs_count(&db, dst_handle).await, 1);
+    let mask: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT operand_boundary_mask FROM computations WHERE output_handle = $1",
+    )
+    .bind(dst_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mask, Some(vec![0_u8; 32]));
+}
+
 /// A fallback grant observed only on a fork that orphans is never
 /// materialized: the retraction removes the observation before the block
 /// could ever finalize, and deferred synthesis finds nothing.
@@ -1301,4 +1439,115 @@ async fn fallback_on_orphaned_fork_is_never_synthesized() {
     tx.commit().await.expect("commit");
     assert_eq!(computation_count(&db, dst_handle).await, 0);
     assert_eq!(pbs_count(&db, dst_handle).await, 0);
+}
+
+/// Wraps `logs` in a single block and runs the real ingest path over them.
+async fn ingest_logs(db: &mut Database, logs: Vec<alloy::rpc::types::Log>) {
+    let block_logs = BlockLogs {
+        logs,
+        summary: BlockSummary {
+            number: BLOCK_NUMBER,
+            hash: FixedBytes::from(BLOCK_HASH),
+            parent_hash: FixedBytes::ZERO,
+            timestamp: BLOCK_TIMESTAMP,
+        },
+        catchup: false,
+        finalized: false,
+    };
+    let options = IngestOptions {
+        dependence_by_connexity: false,
+        dependence_cross_block: true,
+        dependent_ops_max_per_chain: 0,
+        is_protocol_config_listener: false,
+        disable_synthetic_ops: false,
+    };
+    let chain_id = db.chain_id;
+    ingest_block_logs(
+        chain_id,
+        db,
+        &block_logs,
+        &Some(Address::from(ACL)),
+        &Some(Address::from(TFHE)),
+        &None,
+        &None,
+        &Some(Address::from(BRIDGE)),
+        options,
+    )
+    .await
+    .expect("ingest_block_logs");
+}
+
+/// One log emitted by `address`, in transaction `tx` at position `log_index`.
+fn log_from(
+    address: [u8; 20],
+    data: alloy::primitives::LogData,
+    tx: FixedBytes<32>,
+    log_index: u64,
+) -> alloy::rpc::types::Log {
+    alloy::rpc::types::Log {
+        inner: Log {
+            address: Address::from(address),
+            data,
+        },
+        transaction_hash: Some(tx),
+        log_index: Some(log_index),
+        ..Default::default()
+    }
+}
+
+/// `ConfidentialBridge.send` needs only a transient allowance, which emits no ACL
+/// event, so `BridgeHandle` must itself mark the source computation allowed -
+/// otherwise the worker never schedules it and the ciphertext the destination
+/// association copies is never computed.
+#[tokio::test]
+#[serial(db)]
+async fn bridge_handle_forces_source_computation_allowed() {
+    let (mut db, _inst) = fresh_db(SRC_CHAIN_ID).await;
+    let src_handle = fallback_dst_handle(SRC_CHAIN_ID, 5);
+    let tx = FixedBytes::from([0x77; 32]);
+
+    // One transaction: the executor produces the handle, then the bridge sends it.
+    ingest_logs(
+        &mut db,
+        vec![
+            log_from(
+                TFHE,
+                TfheContract::TrivialEncrypt {
+                    caller: Address::ZERO,
+                    pt: U256::from(7u64),
+                    toType: 5,
+                    result: src_handle,
+                }
+                .encode_log_data(),
+                tx,
+                0,
+            ),
+            log_from(
+                BRIDGE,
+                BridgeContract::BridgeHandle {
+                    senderDapp: Address::from([0xDA; 20]),
+                    srcHandle: src_handle,
+                    dstChainId: DST_CHAIN_ID,
+                    guid: FixedBytes::from([0x88; 32]),
+                }
+                .encode_log_data(),
+                tx,
+                1,
+            ),
+        ],
+    )
+    .await;
+
+    let pool = db.pool().await;
+    let allowed: bool = sqlx::query_scalar(
+        "SELECT is_allowed FROM computations WHERE output_handle = $1",
+    )
+    .bind(src_handle.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("computation row exists");
+    assert!(allowed, "the source computation must be scheduled");
+
+    // And SnS is enqueued, so its ct128/digest follow.
+    assert_eq!(pbs_count(&db, src_handle).await, 1);
 }

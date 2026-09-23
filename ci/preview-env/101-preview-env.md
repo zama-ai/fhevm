@@ -30,6 +30,8 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
+| `preview-env-gpu` | With `preview-env-e2e-tests`, schedule FHE workers on the `coprocessor-gpu` nodepool and generate Default FHE parameters. Alone it does nothing. Combines with `preview-env-e2e` (HEAD workers) or `preview-env-blue-green` (Green/GCS GPU; Blue/BCS stays CPU). |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. With `deploy_polygon` the upgrade spans both host chains. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -65,57 +67,135 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   default; see [Observe your environment](#observe-your-environment)).
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
-- `nb_coprocessor` — number of independent coprocessor stacks (default `1`).
-  `> 1` multiplies cluster capacity — see the resource caveat in `README.md`.
+- `nb_coprocessor` — number of independent coprocessor **identities** (default
+  `1`). `2` is two-party consensus (one fleet each), **not** blue-green.
+  `3`/`5` stay N-party only. See `README.md`.
+- `enable_blue_green` — RFC-021 BCS+GCS on each identity (default `false`).
+  Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
+  is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
+  the upgrade spans both host chains.
+- `enable_gpu` — GPU workers + Default FHE params (default `false`). CLI
+  `--gpu`. The `preview-env-gpu` + `preview-env-e2e-tests` labels are the
+  other gate. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
-  See the multichain section in `README.md`.
+  See the multichain section in `README.md`. Incompatible with
+  `chain_mode=blockchain-dev`; implied by `chain_mode=testnets` (real Amoy).
+- `chain_mode` — `anvil` (default), `blockchain-dev`, or `testnets`; see the
+  chain-modes section in `README.md`.
+  - `blockchain-dev`: skip per-namespace Anvil and connect to the shared
+    `blockchain-dev` Geth (host chain id `1337`) + Nitro (gateway `412346`).
+    Unique mnemonic per run, wallets funded from the in-cluster faucets. The
+    `preview-env-blue-green` PR label forces this on (plain `preview-env-e2e`
+    labels stay on Anvil). Not with `deploy_polygon`.
+  - `testnets`: public **Sepolia** (`11155111`) + **Polygon Amoy** (`80002`) as the
+    two host chains, the `blockchain-dev` Nitro as gateway. RPC URLs (Secret `rpc`) and
+    faucet keys (Secrets `eth-faucet`, `polygon-faucet`) come from AWS Secrets Manager via
+    the gitops `sync-secrets` chart — no GitHub secrets. Keys are `zws-dev/ethereum-faucet`
+    and `zws-dev/polygon-faucet` (`private-key`), the same AWS secrets gitops uses for the
+    zws-dev faucets. Slow (12 s blocks) and it spends real testnet gas.
+  Both external modes still deploy **this preview's own contracts**, which remain
+  on the shared chains after teardown.
 
-**Versions** — three kinds:
-- **fhevm's own images** (`coprocessor_version`, `test_suite_version`, …)
-  default to **empty**, meaning "resolve from the base commit" exactly as a PR
-  run does. Set one only to force a specific tag for this run.
-- **In-repo charts** (`coprocessor_chart_version`, `contracts_chart_version`, …)
-  default to **empty**, meaning "install `charts/<name>` straight from the
-  picked branch". Set one to deploy that **published** OCI chart release
-  instead.
-- **External deps** (`common_chart_version`, `redis_chart_version`,
-  `kms_core_version`/`kms_repo_ref`, …) also default to **empty**, meaning
-  "use the pinned version in the workflow env" — they're owned by other
-  repos, so there's no commit of this repo to derive them from.
-  (`relayer_sdk_version` keeps a real default; emptying it skips the
-  relayer-sdk suite.)
+**Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
+today). Allowed keys are listed in
+[`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs). Unknown keys
+fail the run.
 
-- **Namespace:** `fhevm-ci-<actor>-<run-id digest>`
+| Kind | Override keys | Default on PR / empty dispatch |
+| --- | --- | --- |
+| **fhevm images** | `coprocessor_version`, `kms_connector_version`, `test_suite_version`, … | Resolve from the change-detection base commit (built components use the PR/dispatch SHA). |
+| **In-repo charts** | `coprocessor_chart_version`, `contracts_chart_version`, … | Install `charts/<name>` from the workflow checkout. |
+| **External pins** | `common_chart_version`, `kms_core_version`, `kms_repo_ref`, `redis_chart_version`, … | Always the pins in `parse-overrides.cjs` (`ALWAYS_DEFAULTS`). **Not** resolved from the fhevm base commit. |
+| **Relayer SDK** | `relayer_sdk_version` | PR: empty → `@fhevm/sdk` only. Dispatch: `0.4.4` when omitted; set `""` in `overrides` to skip the relayer-sdk suite. |
+
+**Dedicated KMS (`zama-ai/kms`)** — never built by this workflow. Party count
+is **`nb_kms_core`** (`4` or `13`), not an override. Version is two override
+keys (keep them aligned to the same kms release):
+
+| Key | Becomes | Role |
+| --- | --- | --- |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
+| `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
+
+Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
+`kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1` / `75b85afd`).
+
+**kms-connector is not kms-core.** `kms_connector_version` /
+`kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
+coprocessor). Changing KMS version does not change kms-connector unless you
+override those too.
+
+**PR labels cannot override KMS.** `overrides` is empty on `pull_request`, so
+every labeled preview uses the `ALWAYS_DEFAULTS` pair above. To test a kms
+build: `workflow_dispatch` or the CLI with `--set`, or bump the defaults in
+`parse-overrides.cjs` for everyone.
+
+Dispatch examples:
+
+```bash
+# Test a kms enclave + matching deploy scripts
+ci/preview-env/preview-env launch --ref <branch> --tests \
+  --set kms_core_version=<tag> \
+  --set kms_repo_ref=<kms-commit-sha>
+
+# 13-party threshold KMS
+ci/preview-env/preview-env launch --ref <branch> --kms-parties 13 --tests
+```
+
+Or `overrides` in the Actions form:
+
+```json
+{
+  "kms_core_version": "v0.14.1",
+  "kms_repo_ref": "v0.14.1"
+}
+```
+
+The enclave tag must exist on GHCR with `zama.kms.eif_pcr{0,1,2}` labels.
+An old `kms_repo_ref` may lack features the workflow expects (e.g.
+`--tracing-endpoint` when `observability=true`).
+
+- **Namespace:** `fhevm-ci-<actor>-<run-id-base36>` (dispatch) or
+  `fhevm-ci-<pr-author>-<pr-number>` (PR). Actor is truncated if needed so
+  the whole name stays under 28 chars.
 - **Results:** run summary (deployment plan + e2e report if `automated_tests`).
 - **Teardown:** **manual** — a dispatch env is not tied to a PR, so nothing
   destroys it automatically. Run **preview-env-destroy** with the namespace (see
   [Destroy an environment](#destroy-an-environment)), or re-run to reuse it.
 
-### Launch from the CLI (`gh api`)
+### Launch from the CLI
 
-Same manual run, scripted. `gh api` expands the `inputs[key]=value` brackets into
-the `inputs` object the dispatch endpoint expects; `ref` is the branch the run
-executes from. Every input has a default, so pass only `ref` plus what you want
-to override:
+[`preview-env`](./preview-env) wraps `gh workflow run`. It does **not**
+helm-install; Actions stays the write path. `--ref` must already be on origin.
 
 ```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  /repos/zama-ai/fhevm/actions/workflows/preview-env-deploy.yml/dispatches \
-  -f "ref=<your-branch>" \
-  -f "inputs[build_images]=true" \
-  -f "inputs[automated_tests]=true" \
-  -f "inputs[nb_coprocessor]=1" \
-  -f "inputs[nb_kms_core]=4" \
-  -f "inputs[deploy_polygon]=false"
+ci/preview-env/preview-env launch --ref <your-branch> --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
+ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
+ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
+ci/preview-env/preview-env launch --ref <your-branch> --tests \
+  --set kms_core_version=v0.14.1 --set kms_repo_ref=v0.14.1
 ```
 
-The endpoint returns `204 No Content` (fire-and-forget); find the run with:
+`--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
+`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params). Combine
+with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
+`--parties 2` without `--blue-green` is two-party consensus only.
+
+`launch` polls for the new Actions run and prints its id. Stream progress with
+`--watch`, or inspect later:
 
 ```bash
-gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
+ci/preview-env/preview-env launch --ref <your-branch> --tests --watch
+ci/preview-env/preview-env status --ref <your-branch>     # latest deploy on branch
+ci/preview-env/preview-env status <run-id>                # or a …/actions/runs/<id> URL
+ci/preview-env/preview-env watch <run-id>
+ci/preview-env/preview-env namespace --run-id <run-id>
 ```
 
 ---
@@ -126,6 +206,24 @@ gh run list --workflow=preview-env-deploy.yml --branch=<your-branch> --limit 5
 tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 ```
+
+### Call the relayer (no port-forward)
+
+Every preview publishes the relayer HTTP API (`:3000` only — not metrics, not the
+admin endpoint) on the zws-dev tailnet via a Tailscale Ingress named
+`relayer-<namespace>`. The MagicDNS URL is written to the deploy run summary and
+the PR `:rocket:` comment as `RELAYER_TS_URL`.
+
+With Tailscale up:
+
+```bash
+curl -sS https://relayer-<namespace>.diplodocus-boa.ts.net/v2/keyurl
+# or point @fhevm/sdk / a toy dapp at that base URL
+```
+
+Deleting the namespace (PR close / `preview-env destroy`) removes the Ingress and
+the operator drops the MagicDNS name. Access is Tailscale-ACL only (tag
+`tag:k8s-zws-dev`), not the public internet.
 
 ## Observe your environment
 
@@ -148,8 +246,19 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
   the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
   and posts a per-test pass/fail table to the PR comment / run summary.
+  Combined with `preview-env-blue-green`, that DAG runs **twice**: once during
+  `DryRunStarted` (BCS live; CI asserts each party's `"gcs-<release>".computations`
+  is non-empty) and once after cutover (`versioning=v0.15`, GCS live).
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
+
+To poke a party's connector proxy by hand (self-signed cert, so `-k`; the API
+key is the fixed test literal from `ci/preview-env/kms-connector/values-kms-connector-e2e.yaml`):
+
+```bash
+kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443:8443
+curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
+```
 
 ## Destroy an environment
 
@@ -170,15 +279,10 @@ set the `namespace` input to the **exact** namespace from your deploy run's
 summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
 refuses anything else, so it can't nuke an unrelated namespace).
 
-Or script it with `gh api` (runs the destroy workflow from `main`; the
-`fhevm-ci-` namespace guard still applies):
+Or:
 
 ```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  /repos/zama-ai/fhevm/actions/workflows/preview-env-destroy.yml/dispatches \
-  -f "ref=main" \
-  -f "inputs[namespace]=fhevm-ci-<actor>-<run-id digest>"
+ci/preview-env/preview-env destroy fhevm-ci-<exact-name>
 ```
 
 **Fallback.** If a run can't reach the cluster, do it yourself:
@@ -199,15 +303,16 @@ kubectl delete namespace <namespace>
   commit's images only, use a `workflow_dispatch` run with `build_images=false`.
 - **Chart changes deploy directly.** In-repo charts (`charts/*`) install straight
   from your branch's checkout — no publish, no version bump needed.
-- **There are no version pins for fhevm's own artifacts.** Charts come from your
-  checkout, and every push to `main`/`release/*` tags every image with that
-  commit's short SHA, so unbuilt components resolve from your base commit. Check
-  the run summary's **Images** table: each row shows the tag *and* where it came
-  from (`built`, `base-sha`, `dispatch-override`).
+- **There are no auto-pins for fhevm's own images** (coprocessor, kms-connector,
+  contracts, …). Charts come from your checkout; images resolve from your base
+  commit unless built this run. Check the run summary **Images** table for
+  `built`, `base-sha`, or `dispatch-override`. **Exception:** dedicated **kms-core** is always an
+  external pin (`kms_core_version` + `kms_repo_ref` in `parse-overrides.cjs`) —
+  PR labels cannot change it without editing that file or using dispatch.
 - **Unresolvable ⇒ the run fails.** If GHCR has pruned the base commit's tags and
   nothing turns up within 50 commits, `resolve-tags` fails instead of quietly
   deploying something older. Rebase onto a newer base commit, or pass an explicit
-  `*_version` input via dispatch.
+  `*_version` key in the `overrides` JSON.
 - **Stacked PRs resolve images from `main`.** Only `main`/`release/*` commits
   publish images, so a PR based on another feature branch resolves them from its
   merge-base with `main` and **excludes the parent PR's code changes** (with a
@@ -220,3 +325,14 @@ kubectl delete namespace <namespace>
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
 - **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
   the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
+- **`chain_mode=blockchain-dev` on dispatch, or via `preview-env-blue-green`.** Plain
+  `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
+  unique per run. Destroying the namespace does **not** remove contracts from
+  the shared Geth/Nitro — they stay on `blockchain-dev` (see explorers
+  `host-explorer-blockchain-dev` / `gateway-explorer-blockchain-dev`).
+  Automated tests use Hardhat network `zwsDev` (live path: HCU cheat tests skip).
+- **`chain_mode=testnets` costs real gas and leaves contracts on Sepolia + Amoy.**
+  Check the treasury balance before dispatching (the fund step fails fast if it
+  cannot cover the top-ups). Expect a much longer deploy: 12 s Sepolia blocks
+  stretch every hardhat step and the keygen ceremony. Etherscan / Polygonscan show
+  the deployed addresses (`host-sc-addresses` / `polygon-sc-addresses` ConfigMaps).

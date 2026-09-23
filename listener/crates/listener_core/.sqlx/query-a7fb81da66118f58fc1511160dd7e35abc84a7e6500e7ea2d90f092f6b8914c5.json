@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, chain_id, consumer_id, \"from\", \"to\", \"log_address\", filter_type as \"filter_type: FilterType\", created_at\n            FROM filters\n            WHERE chain_id = $1 AND filter_type = 'FINAL'::filter_type\n            ORDER BY consumer_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "consumer_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "from",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "to",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "log_address",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "filter_type: FilterType",
+        "type_info": {
+          "Custom": {
+            "name": "filter_type",
+            "kind": {
+              "Enum": [
+                "LIVE",
+                "FINAL"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a7fb81da66118f58fc1511160dd7e35abc84a7e6500e7ea2d90f092f6b8914c5"
+}

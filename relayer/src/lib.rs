@@ -11,6 +11,7 @@ pub mod readiness;
 pub mod startup;
 pub mod startup_recovery;
 pub mod store;
+pub mod sweep;
 pub mod tracing;
 
 // Re-export commonly used types

@@ -26,7 +26,7 @@ use connector_utils::{
 use kms_grpc::kms::v1::DestroyMpcContextResponse;
 use kms_worker::core::{
     Config,
-    event_processor::{ContextManager, DbContextManager, ProcessingError, RequestCheckError},
+    event_processor::{ContextManager, DbContextManager, ProcessingErrorKind, RequestCheckError},
 };
 use mocktail::{MockSet, server::MockServer};
 use rstest::rstest;
@@ -443,7 +443,7 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
         .map_err(RequestCheckError::record)
         .unwrap_err();
     assert!(
-        matches!(err, ProcessingError::Recoverable(_)),
+        err.kind == ProcessingErrorKind::Recoverable,
         "unexpected error: {err}"
     );
 
@@ -489,7 +489,7 @@ async fn test_validate_context_destroyed_rejects_any_epoch() -> anyhow::Result<(
             .map_err(RequestCheckError::record)
             .unwrap_err();
         assert!(
-            matches!(err, ProcessingError::Irrecoverable(_)),
+            err.kind == ProcessingErrorKind::Irrecoverable,
             "unexpected error for epoch {epoch_id:?}: {err}"
         );
     }
@@ -535,7 +535,7 @@ async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow
         .map_err(RequestCheckError::record)
         .unwrap_err();
     assert!(
-        matches!(err, ProcessingError::Irrecoverable(_)),
+        err.kind == ProcessingErrorKind::Irrecoverable,
         "unexpected error: {err}"
     );
 
@@ -585,7 +585,7 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
         .map_err(RequestCheckError::record)
         .unwrap_err();
     assert!(
-        matches!(err, ProcessingError::Recoverable(_)),
+        err.kind == ProcessingErrorKind::Recoverable,
         "unexpected error: {err}"
     );
 

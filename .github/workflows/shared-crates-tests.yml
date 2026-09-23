@@ -37,7 +37,10 @@ jobs:
         # Define paths that trigger specific component workflows
         filters: |
           ciphertext-attestation:
+            # The `client` feature depends on the gateway bindings by path, so a change there
+            # must re-run this crate's tests too.
             - shared/ciphertext-attestation/**
+            - gateway-contracts/rust_bindings/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
           gateway-contracts-bindings:
@@ -77,7 +80,7 @@ jobs:
 
       - name: Run Tests
         run: |
-          RUST_BACKTRACE=full cargo test
+          RUST_BACKTRACE=full cargo test --all-features
 
   test-ciphertext-attestation:
     name: test-ciphertext-attestation

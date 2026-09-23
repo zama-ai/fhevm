@@ -11,7 +11,8 @@ use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
     CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
-    RangeCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
+    FinalCatchupHandler, FinalCleanerHandler, FinalityHandler, RangeCatchupHandler,
+    RangeFinalCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
 use listener_core::store::repositories::Repositories;
@@ -90,6 +91,17 @@ async fn main() {
         listener_core::metrics::describe_metrics();
         listener_core::metrics::init_gauges(settings.blockchain.chain_id);
         listener_core::metrics::init_counters(settings.blockchain.chain_id);
+        // Whether the finality flow runs on this chain — lets dashboards and
+        // alerts distinguish "finality off" from "finality stalled".
+        metrics::gauge!(
+            "listener_finality_active",
+            "chain_id" => settings.blockchain.chain_id.to_string()
+        )
+        .set(if settings.blockchain.finality_active {
+            1.0
+        } else {
+            0.0
+        });
     }
 
     // Initialize database connection
@@ -137,6 +149,8 @@ async fn main() {
     let provider = match SemEvmRpcProvider::new(
         settings.blockchain.rpc_url.clone(),
         settings.blockchain.strategy.max_parallel_requests,
+        settings.blockchain.finality_tag,
+        settings.blockchain.finality_depth,
     ) {
         Ok(provider) => provider,
         Err(e) => {
@@ -211,6 +225,7 @@ async fn main() {
 
     let seed_publisher = publisher.clone();
     let cleaner_publisher = publisher.clone();
+    let final_cleaner_publisher = publisher.clone();
     let handler_publisher = publisher;
 
     let repositories_for_filters = repositories.clone();
@@ -235,6 +250,12 @@ async fn main() {
         )
         .await;
 
+    // Anchor the finality tip (panics on failure, same crash-loop pattern).
+    // Skipped entirely when the finality flow is disabled.
+    if settings.blockchain.finality_active {
+        evm_listener.validate_and_init_final_block().await;
+    }
+
     let evm_listener = Arc::new(evm_listener);
 
     // let network = &settings.blockchain.network;
@@ -258,6 +279,27 @@ async fn main() {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to build fetch consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let finality_consumer = match broker
+        .consumer(&Topic::new(routing::FETCH_FINAL_BLOCK).with_namespace(chain_id))
+        .group(routing::FETCH_FINAL_BLOCK)
+        .prefetch(1)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.broker.claim_min_idle)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build finality consumer: {}", e);
             process::exit(1);
         }
     };
@@ -343,6 +385,24 @@ async fn main() {
         }
     };
 
+    let final_cleaner_consumer = match broker
+        .consumer(&Topic::new(routing::CLEAN_FINAL_BLOCKS).with_namespace(chain_id))
+        .group(routing::CLEAN_FINAL_BLOCKS)
+        .prefetch(1)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.cleaner.cron_secs + 25)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(3, Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build final cleaner consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     let catchup_consumer = match broker
         .consumer(&Topic::new(routing::CATCHUP).with_namespace(chain_id))
         .group(routing::CATCHUP)
@@ -385,6 +445,48 @@ async fn main() {
         }
     };
 
+    let final_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::FINAL_CATCHUP).with_namespace(chain_id))
+        .group(routing::FINAL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build final-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let range_final_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::RANGE_FINAL_CATCHUP).with_namespace(chain_id))
+        .group(routing::RANGE_FINAL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.range_prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build range-final-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     // ── Define handlers ─────────────────────────────────────────────────
     let flow_lock = FlowLock::new(Arc::clone(&arc_pg_client), configured_chain_id);
     let fetch_handler = FetchHandler::new(
@@ -406,13 +508,39 @@ async fn main() {
 
     let cleaner = Arc::new(Cleaner::new(
         repositories_for_cleaner.blocks,
-        cleaner_publisher,
-        &settings.blockchain.cleaner,
+        repositories_for_cleaner.final_blocks,
+        &settings.blockchain,
     ));
-    let cleaner_handler = CleanerHandler::new(Arc::clone(&cleaner));
+    let cleaner_flow_lock = FlowLock::new_cleaner(Arc::clone(&arc_pg_client), configured_chain_id);
+    let cleaner_handler =
+        CleanerHandler::new(Arc::clone(&cleaner), cleaner_flow_lock, cleaner_publisher);
+
+    // Final cleaner: same worker, own queue + own salted lock, so the two
+    // cleaning loops never contend with each other or with the cursor flows.
+    let final_cleaner_flow_lock =
+        FlowLock::new_final_cleaner(Arc::clone(&arc_pg_client), configured_chain_id);
+    let final_cleaner_handler = FinalCleanerHandler::new(
+        Arc::clone(&cleaner),
+        final_cleaner_flow_lock,
+        final_cleaner_publisher,
+    );
+
+    // Finality flow: own salted lock, so a stalled finality loop never blocks
+    // (or is blocked by) the live cursor/reorg flows.
+    let finality_flow_lock =
+        FlowLock::new_finality(Arc::clone(&arc_pg_client), configured_chain_id);
+    let finality_handler = FinalityHandler::new(
+        Arc::clone(&evm_listener),
+        finality_flow_lock,
+        handler_publisher.clone(),
+    );
 
     let catchup_handler = CatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_catchup_handler = RangeCatchupHandler::new(Arc::clone(&evm_listener));
+
+    let final_catchup_handler =
+        FinalCatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
+    let range_final_catchup_handler = RangeFinalCatchupHandler::new(Arc::clone(&evm_listener));
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
     // Without this, AMQP silently drops the seed message because no queue
@@ -493,6 +621,18 @@ async fn main() {
         process::exit(1);
     }
 
+    // ── Ensure final-catchup topology (no seed — final catchup messages come from external producers) ──
+    if let Err(e) = final_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up final-catchup consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure range-final-catchup topology (no seed — sub-ranges come from the final catchup orchestrator) ──
+    if let Err(e) = range_final_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up range-final-catchup consumer topology");
+        process::exit(1);
+    }
+
     let cleaner_topic = Topic::new(routing::CLEAN_BLOCKS).with_namespace(chain_id);
     let cleaner_is_empty = match broker.is_empty(&cleaner_topic, routing::CLEAN_BLOCKS).await {
         Ok(empty) => empty,
@@ -509,6 +649,75 @@ async fn main() {
             .await
         {
             error!(error = %e, "Failed to publish cleaner seed");
+            process::exit(1);
+        }
+    }
+
+    // ── Ensure final-cleaner topology and seed ───────────────────────────
+    // Gated on cleaner.active AND finality_active: with the finality flow
+    // disabled, final_blocks gains no rows and the per-chain cron queries
+    // must not run at all.
+    if let Err(e) = final_cleaner_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up final cleaner consumer topology");
+        process::exit(1);
+    }
+
+    let final_cleaner_topic = Topic::new(routing::CLEAN_FINAL_BLOCKS).with_namespace(chain_id);
+    let final_cleaner_is_empty = match broker
+        .is_empty(&final_cleaner_topic, routing::CLEAN_FINAL_BLOCKS)
+        .await
+    {
+        Ok(empty) => empty,
+        Err(e) => {
+            error!(error = %e, "Failed to check final cleaner queue depth");
+            process::exit(1);
+        }
+    };
+
+    if final_cleaner_is_empty
+        && settings.blockchain.cleaner.active
+        && settings.blockchain.finality_active
+    {
+        info!("Final cleaner queue empty — publishing seed to bootstrap final cleaner loop");
+        if let Err(e) = seed_publisher
+            .publish(routing::CLEAN_FINAL_BLOCKS, &serde_json::Value::Null)
+            .await
+        {
+            error!(error = %e, "Failed to publish final cleaner seed");
+            process::exit(1);
+        }
+    }
+
+    // ── Ensure finality topology and seed ────────────────────────────────
+    // The finality loop is fully independent from the fetch/reorg loop (own
+    // lock, own queue), so its seed gate only checks its own queue emptiness —
+    // a busy cursor must never suppress the finality bootstrap.
+    if let Err(e) = finality_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up finality consumer topology");
+        process::exit(1);
+    }
+
+    let finality_topic = Topic::new(routing::FETCH_FINAL_BLOCK).with_namespace(chain_id);
+    let should_seed_finality = settings.blockchain.finality_active
+        && settings.blockchain.strategy.automatic_startup
+        && match broker
+            .is_empty(&finality_topic, routing::FETCH_FINAL_BLOCK)
+            .await
+        {
+            Ok(empty) => empty,
+            Err(e) => {
+                error!(error = %e, "Failed to check finality queue depth");
+                process::exit(1);
+            }
+        };
+
+    if should_seed_finality {
+        info!("Finality queue empty — publishing seed to bootstrap finality loop");
+        if let Err(e) = seed_publisher
+            .publish(routing::FETCH_FINAL_BLOCK, &serde_json::Value::Null)
+            .await
+        {
+            error!(error = %e, "Failed to publish finality seed");
             process::exit(1);
         }
     }
@@ -539,6 +748,30 @@ async fn main() {
                 cleaner_topic.clone(),
                 routing::CLEAN_BLOCKS,
             ),
+            broker::metrics::QueueDepthPollTarget::new(
+                final_cleaner_topic.clone(),
+                routing::CLEAN_FINAL_BLOCKS,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                finality_topic.clone(),
+                routing::FETCH_FINAL_BLOCK,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::CATCHUP).with_namespace(chain_id),
+                routing::CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::RANGE_CATCHUP).with_namespace(chain_id),
+                routing::RANGE_CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::FINAL_CATCHUP).with_namespace(chain_id),
+                routing::FINAL_CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::RANGE_FINAL_CATCHUP).with_namespace(chain_id),
+                routing::RANGE_FINAL_CATCHUP,
+            ),
         ],
         Duration::from_secs(15),
         queue_depth_cancel,
@@ -566,12 +799,16 @@ async fn main() {
 
     let (consumer_name, result) = tokio::select! {
         r = fetch_consumer.run(fetch_handler) => ("Fetch", r),
+        r = finality_consumer.run(finality_handler) => ("Finality", r),
         r = reorg_consumer.run(reorg_handler) => ("Reorg", r),
         r = watch_consumer.run(watch_handler) => ("Watch", r),
         r = unwatch_consumer.run(unwatch_handler) => ("Unwatch", r),
         r = cleaner_consumer.run(cleaner_handler) => ("Cleaner", r),
+        r = final_cleaner_consumer.run(final_cleaner_handler) => ("FinalCleaner", r),
         r = catchup_consumer.run(catchup_handler) => ("Catchup", r),
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
+        r = final_catchup_consumer.run(final_catchup_handler) => ("FinalCatchup", r),
+        r = range_final_catchup_consumer.run(range_final_catchup_handler) => ("RangeFinalCatchup", r),
     };
 
     error!("{consumer_name} consumer exited: {result:?}");

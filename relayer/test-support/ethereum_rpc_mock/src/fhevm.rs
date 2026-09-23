@@ -5,7 +5,7 @@ use crate::{
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
 use alloy::primitives::{Log, LogData};
-use alloy::sol_types::{SolCall, SolEvent};
+use alloy::sol_types::{SolCall, SolEvent, SolValue};
 use rand::{Rng, RngExt};
 use std::{
     str::FromStr,
@@ -19,7 +19,10 @@ use tracing::{debug, info};
 
 // Re-export FHEVM bindings for convenience
 pub use fhevm_gateway_bindings::decryption::Decryption;
+pub use fhevm_gateway_bindings::gateway_config::GatewayConfig;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
+
+use crate::ct_attestation::CtAttestationMock;
 
 /// Selects which user-decryption gateway overload the mock should match
 /// when registering a success pattern. `Direct` / `Delegated` are the
@@ -48,15 +51,32 @@ impl UserDecryptKind {
 
 // Constants
 const RESPONSE_DELAY_MS: u64 = 500;
-const BLOCK_DELAY_1_MS: u64 = 500; // Block N+1: 3 events
-const BLOCK_DELAY_2_MS: u64 = 1000; // Block N+2: 3 events
-const BLOCK_DELAY_3_MS: u64 = 1500; // Block N+3: 3 events
-const BLOCK_DELAY_4_MS: u64 = 2000; // Block N+4: 1 consensus event
+const BLOCK_DELAY_1_MS: u64 = 500; // Block N+1: 3 shares
+const BLOCK_DELAY_2_MS: u64 = 1000; // Block N+2: 3 shares
+const BLOCK_DELAY_3_MS: u64 = 1500; // Block N+3: 3 shares + the consensus event
+/// `Decryption.sol` emits the share and the consensus event from one call, so they share a
+/// block. A later delay would model a gap the contract cannot produce.
+const CONSENSUS_DELAY_MS: u64 = BLOCK_DELAY_3_MS;
+const FIRST_STRAGGLER_DELAY_MS: u64 = 2000;
+const EXTRA_SHARE_BLOCK_DELAY_MS: u64 = 500;
+const SHARES_PER_BLOCK: usize = 3;
+/// Also the `user_decrypt_shares_threshold` the integration tests configure, so the ninth
+/// share is the one that reaches the threshold.
+pub const DEFAULT_USER_DECRYPT_SHARES: usize = 9;
 const MOCK_CHAIN_ID: u64 = 1337;
 const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
 
 // Mock data generation helpers
+
+/// Wrap ABI-encoded return data as a successful `eth_call` response.
+fn success_bytes(data: Vec<u8>) -> Response {
+    Response::Success {
+        hash: None,
+        data: crate::mock_server::ResponseData::Bytes(Bytes::from(data)),
+        scheduled_transactions: Vec::new(),
+    }
+}
 
 /// Generate a random hash for transaction IDs
 fn random_hash() -> B256 {
@@ -103,6 +123,61 @@ fn matches_and_asserts_user_decrypt_txn(
         }
         matches
     }
+}
+
+/// Like `matches_contract_and_selector_for_call`, but also decodes the readiness calldata and
+/// panics unless it carries `expected_handles` and `expected_extra_data`.
+fn matches_and_asserts_readiness_call(
+    contract: Address,
+    selector: [u8; 4],
+    expected_handles: Vec<B256>,
+    expected_extra_data: Bytes,
+) -> impl Fn(&crate::mock_server::CallParams) -> bool + Send + Sync + 'static {
+    move |params: &crate::mock_server::CallParams| -> bool {
+        let matches =
+            params.to == contract && params.input.len() >= 4 && params.input[0..4] == selector;
+        if matches {
+            assert_readiness_calldata(
+                selector,
+                &expected_handles,
+                &expected_extra_data,
+                &params.input,
+            );
+        }
+        matches
+    }
+}
+
+fn assert_readiness_calldata(
+    selector: [u8; 4],
+    expected_handles: &[B256],
+    expected_extra_data: &Bytes,
+    data: &[u8],
+) {
+    let payload = &data[4..];
+    let (handles, extra_data) = if selector == Decryption::isPublicDecryptionReadyCall::SELECTOR {
+        let decoded = Decryption::isPublicDecryptionReadyCall::abi_decode_raw(payload)
+            .expect("calldata: failed to decode isPublicDecryptionReadyCall");
+        (decoded.ctHandles, decoded._1)
+    } else {
+        let decoded = Decryption::isUserDecryptionReady_1Call::abi_decode_raw(payload)
+            .expect("calldata: failed to decode isUserDecryptionReady_1Call");
+        let handles = decoded
+            .ctHandleContractPairs
+            .iter()
+            .map(|pair| pair.ctHandle)
+            .collect();
+        (handles, decoded._1)
+    };
+
+    assert_eq!(
+        handles, expected_handles,
+        "readiness calldata.ctHandles mismatch"
+    );
+    assert_eq!(
+        &extra_data, expected_extra_data,
+        "readiness calldata.extraData mismatch"
+    );
 }
 
 fn assert_user_decrypt_calldata(
@@ -167,6 +242,7 @@ pub struct FhevmMockWrapper {
     next_zk_proof_id: Arc<AtomicU64>,
     pub decryption_contract: Address,
     pub input_proof_contract: Address,
+    pub gateway_config_contract: Address,
 }
 
 impl FhevmMockWrapper {
@@ -175,6 +251,7 @@ impl FhevmMockWrapper {
         json_rpc_server: MockServer,
         decryption_contract: Address,
         input_proof_contract: Address,
+        gateway_config_contract: Address,
     ) -> Self {
         info!(
             decryption_contract = %decryption_contract,
@@ -200,6 +277,11 @@ impl FhevmMockWrapper {
             InputVerification::DEPLOYED_BYTECODE.clone(),
         );
 
+        json_rpc_server.set_code(
+            gateway_config_contract,
+            GatewayConfig::DEPLOYED_BYTECODE.clone(),
+        );
+
         Self {
             json_rpc_server,
             next_zk_proof_id: Arc::new(
@@ -207,11 +289,21 @@ impl FhevmMockWrapper {
             ),
             decryption_contract,
             input_proof_contract,
+            gateway_config_contract,
         }
     }
 
     pub fn next_decryption_id(&self) -> U256 {
         U256::from(rand::random::<u64>())
+    }
+
+    /// Number of decryption-request transactions the mock has accepted - one per
+    /// `eth_sendRawTransaction` any relayer pointed at this mock sent to the decryption
+    /// contract, matched or unmatched.
+    pub fn decryption_transaction_count(&self) -> usize {
+        self.json_rpc_server
+            .blockchain_state()
+            .transaction_count_to(self.decryption_contract)
     }
 
     pub fn next_zk_proof_id(&self) -> u64 {
@@ -230,8 +322,51 @@ impl FhevmMockWrapper {
         self.register_readiness_patterns(true);
     }
 
+    /// Configure readiness checks to return true, but only for a call carrying exactly `handles`
+    /// and `extra_data`.
+    ///
+    /// [`Self::set_readiness_success`] matches contract and selector alone, so a relayer that
+    /// forwarded the wrong handles, or dropped the `extra_data` that only the on-chain source
+    /// consumes, would still be answered true. A mismatch here panics out of the mock task and
+    /// fails the test, naming the offending field.
+    pub fn set_readiness_success_for_handles(&self, handles: Vec<B256>, extra_data: Bytes) {
+        debug!(
+            handles = handles.len(),
+            "Configuring readiness checks to return true for exact calldata"
+        );
+
+        // Built inline rather than shared with `register_readiness_patterns_with_limit`, whose
+        // body is kept byte-identical to the pre-off-chain-check original.
+        let ready = Response::Success {
+            hash: None,
+            data: crate::mock_server::ResponseData::Bytes(
+                Bytes::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+            ),
+            scheduled_transactions: Vec::new(),
+        };
+
+        for selector in [
+            Decryption::isPublicDecryptionReadyCall::SELECTOR,
+            Decryption::isUserDecryptionReady_1Call::SELECTOR,
+        ] {
+            self.json_rpc_server.on_call(
+                matches_and_asserts_readiness_call(
+                    self.decryption_contract,
+                    selector,
+                    handles.clone(),
+                    extra_data.clone(),
+                ),
+                ready.clone(),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+
     /// Configure readiness checks to return a JSON-RPC error (simulating node unavailable / contract error).
-    /// This causes `ReadinessCheckError::ContractError` after max retries, dispatching `ReadinessCheckFailed`.
+    /// This causes `ReadinessCheckError::GwContractError` after max retries, dispatching `ReadinessCheckFailed`.
     pub fn set_readiness_contract_error(&self) {
         debug!("Configuring readiness checks to return RPC error");
 
@@ -254,6 +389,89 @@ impl FhevmMockWrapper {
                 Decryption::isUserDecryptionReady_1Call::SELECTOR,
             ),
             error_response,
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Serve the `GatewayConfig` registry views the off-chain readiness check reads: the
+    /// tx-sender list, the per-Coprocessor signer↔bucket binding and the majority threshold.
+    ///
+    /// The bucket URLs come from the [`CtAttestationMock`]'s live listeners, so the relayer
+    /// resolves real origins off-chain and probes them over HTTP.
+    pub fn set_coprocessor_registry(&self, attestation_mock: &CtAttestationMock) {
+        let coprocessors = attestation_mock.coprocessors().to_vec();
+        let threshold = attestation_mock.majority_threshold();
+        debug!(
+            coprocessors = coprocessors.len(),
+            threshold, "Registering GatewayConfig Coprocessor registry"
+        );
+
+        let tx_senders: Vec<Address> = coprocessors.iter().map(|c| c.tx_sender).collect();
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            tx_senders.abi_encode(),
+        );
+
+        self.on_gateway_config_view(
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            U256::from(threshold).abi_encode(),
+        );
+
+        // `getCoprocessor` is per-tx-sender, so the response has to depend on the calldata.
+        let gateway_config_contract = self.gateway_config_contract;
+        self.json_rpc_server.on_call_dynamic(
+            matches_contract_and_selector_for_call(
+                gateway_config_contract,
+                GatewayConfig::getCoprocessorCall::SELECTOR,
+            ),
+            move |params: &mock_server::CallParams| -> Response {
+                let decoded = GatewayConfig::getCoprocessorCall::abi_decode_raw(&params.input[4..])
+                    .expect("calldata: failed to decode getCoprocessorCall");
+                let Some(coprocessor) = coprocessors
+                    .iter()
+                    .find(|c| c.tx_sender == decoded.coprocessorTxSenderAddress)
+                else {
+                    return Response::Error(format!(
+                        "getCoprocessor: {} is not a registered tx sender",
+                        decoded.coprocessorTxSenderAddress
+                    ));
+                };
+                success_bytes(
+                    GatewayConfig::Coprocessor {
+                        txSenderAddress: coprocessor.tx_sender,
+                        signerAddress: coprocessor.signer,
+                        s3BucketUrl: coprocessor.s3_bucket_url.clone(),
+                    }
+                    .abi_encode(),
+                )
+            },
+            UsageLimit::Unlimited,
+        );
+    }
+
+    /// Configure the `GatewayConfig` registry views to return a JSON-RPC error, simulating a
+    /// gateway read node that is unavailable while the registry snapshot is refreshed.
+    pub fn set_coprocessor_registry_error(&self) {
+        debug!("Configuring GatewayConfig registry views to return RPC error");
+
+        for selector in [
+            GatewayConfig::getCoprocessorTxSendersCall::SELECTOR,
+            GatewayConfig::getCoprocessorMajorityThresholdCall::SELECTOR,
+            GatewayConfig::getCoprocessorCall::SELECTOR,
+        ] {
+            self.json_rpc_server.on_call(
+                matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+                Response::Error("RPC error: node unavailable".to_string()),
+                UsageLimit::Unlimited,
+            );
+        }
+    }
+
+    /// Register a static ABI-encoded return for one `GatewayConfig` view function.
+    fn on_gateway_config_view(&self, selector: [u8; 4], return_data: Vec<u8>) {
+        self.json_rpc_server.on_call(
+            matches_contract_and_selector_for_call(self.gateway_config_contract, selector),
+            success_bytes(return_data),
             UsageLimit::Unlimited,
         );
     }
@@ -377,7 +595,8 @@ impl FhevmMockWrapper {
     // Public API methods — User Decryption (direct + delegated)
 
     /// Register user decryption that succeeds with the multi-response pattern.
-    /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus.
+    /// Emits nine share events across a 3-3-3 block pattern, with the consensus event riding
+    /// in the third block alongside the share that reaches the threshold.
     pub fn on_user_decrypt_success(
         &self,
         kind: UserDecryptKind,
@@ -391,12 +610,36 @@ impl FhevmMockWrapper {
             user,
             vec![target],
             UsageLimit::Unlimited,
+            DEFAULT_USER_DECRYPT_SHARES,
+        );
+    }
+
+    /// Same as `on_user_decrypt_success` but with a caller-chosen number of shares.
+    ///
+    /// Shares beyond [`DEFAULT_USER_DECRYPT_SHARES`] arrive one block apart, as a straggler
+    /// party answering after consensus.
+    pub fn on_user_decrypt_success_with_share_count(
+        &self,
+        kind: UserDecryptKind,
+        handles: Vec<B256>,
+        user: Address,
+        target: mock_server::SubscriptionTarget,
+        share_count: usize,
+    ) {
+        self.register_user_decrypt_success(
+            kind,
+            handles,
+            user,
+            vec![target],
+            UsageLimit::Unlimited,
+            share_count,
         );
     }
 
     /// Same as `on_user_decrypt_success` but allows custom per-event targets (cycled if shorter).
     ///
-    /// User decryption emits **10 events** (3+3+3+1 block pattern). If fewer targets are provided,
+    /// User decryption emits **10 events** (nine shares in a 3-3-3 block pattern, plus the
+    /// consensus event in the third block). If fewer targets are provided,
     /// they cycle. Example: `[Only([0]), Only([1])]` becomes `[0,1,0,1,0,1,0,1,0,1]` across the 10 events.
     /// Uses Once usage limit for redundancy tests that register multiple patterns.
     pub fn on_user_decrypt_success_with_targets(
@@ -406,7 +649,14 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
     ) {
-        self.register_user_decrypt_success(kind, handles, user, targets, UsageLimit::Once);
+        self.register_user_decrypt_success(
+            kind,
+            handles,
+            user,
+            targets,
+            UsageLimit::Once,
+            DEFAULT_USER_DECRYPT_SHARES,
+        );
     }
 
     /// Register user decryption that reverts with specified reason.
@@ -429,9 +679,10 @@ impl FhevmMockWrapper {
         user: Address,
         targets: Vec<mock_server::SubscriptionTarget>,
         usage_limit: UsageLimit,
+        share_count: usize,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is armed by the test setup for whichever source is configured — the on-chain
+        // `set_readiness_*` patterns or the `CtAttestationMock` buckets — never from here.
 
         let id = self.next_decryption_id();
         debug!(
@@ -439,9 +690,9 @@ impl FhevmMockWrapper {
             "Registering user decryption success with multi-block pattern"
         );
 
-        // Generate mock data for 9 shares and signatures
-        let user_shares = generate_mock_user_shares(9);
-        let signatures = generate_mock_signatures(9);
+        // Generate mock data for the requested number of shares and signatures
+        let user_shares = generate_mock_user_shares(share_count);
+        let signatures = generate_mock_signatures(share_count);
         let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
 
         // Build the request log (immediate response). Pick the event
@@ -462,116 +713,46 @@ impl FhevmMockWrapper {
             ),
         };
 
-        // Build events using hard-coded 3-3-3-1 block pattern (targets resolved later)
-        let events: Vec<(Duration, Log)> = vec![
-            // Block N+1: 3 individual events (indexShare 0, 1, 2)
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
+        // Targets are resolved later.
+        let mut events: Vec<(Duration, Log)> = Vec::with_capacity(share_count + 1);
+        let block_delays = [BLOCK_DELAY_1_MS, BLOCK_DELAY_2_MS, BLOCK_DELAY_3_MS];
+        for index in 0..share_count.min(DEFAULT_USER_DECRYPT_SHARES) {
+            events.push((
+                Duration::from_millis(block_delays[index / SHARES_PER_BLOCK]),
                 build_individual_user_decrypt_response(
                     self.decryption_contract,
                     id,
-                    0,
-                    user_shares[0].clone(),
-                    signatures[0].clone(),
+                    index as u64,
+                    user_shares[index].clone(),
+                    signatures[index].clone(),
                     extra_data.clone(),
                 ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
+            ));
+        }
+
+        // Same delay as the last quorum share: the contract emits both from one call.
+        events.push((
+            Duration::from_millis(CONSENSUS_DELAY_MS),
+            build_user_decrypt_threshold_reached(self.decryption_contract, id),
+        ));
+
+        // Stragglers, one per block after consensus.
+        for index in DEFAULT_USER_DECRYPT_SHARES..share_count {
+            let block = (index - DEFAULT_USER_DECRYPT_SHARES) as u64;
+            events.push((
+                Duration::from_millis(
+                    FIRST_STRAGGLER_DELAY_MS + block * EXTRA_SHARE_BLOCK_DELAY_MS,
+                ),
                 build_individual_user_decrypt_response(
                     self.decryption_contract,
                     id,
-                    1,
-                    user_shares[1].clone(),
-                    signatures[1].clone(),
+                    index as u64,
+                    user_shares[index].clone(),
+                    signatures[index].clone(),
                     extra_data.clone(),
                 ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_1_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    2,
-                    user_shares[2].clone(),
-                    signatures[2].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+2: 3 individual events (indexShare 3, 4, 5)
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    3,
-                    user_shares[3].clone(),
-                    signatures[3].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    4,
-                    user_shares[4].clone(),
-                    signatures[4].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_2_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    5,
-                    user_shares[5].clone(),
-                    signatures[5].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+3: 3 individual events (indexShare 6, 7, 8)
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    6,
-                    user_shares[6].clone(),
-                    signatures[6].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    7,
-                    user_shares[7].clone(),
-                    signatures[7].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            (
-                Duration::from_millis(BLOCK_DELAY_3_MS),
-                build_individual_user_decrypt_response(
-                    self.decryption_contract,
-                    id,
-                    8,
-                    user_shares[8].clone(),
-                    signatures[8].clone(),
-                    extra_data.clone(),
-                ),
-            ),
-            // Block N+4: 1 consensus event
-            (
-                Duration::from_millis(BLOCK_DELAY_4_MS),
-                build_user_decrypt_threshold_reached(self.decryption_contract, id),
-            ),
-        ];
+            ));
+        }
 
         // Resolve per-event targets (cycle supplied list, default to All)
         let event_targets = self.resolve_targets(events.len(), targets);
@@ -592,9 +773,6 @@ impl FhevmMockWrapper {
             data: crate::mock_server::ResponseData::Logs(vec![request_log]),
             scheduled_transactions: vec![scheduled_tx],
         };
-
-        // Set up default readiness patterns (ready state)
-        self.register_readiness_patterns(true);
 
         // Register pattern that returns immediate response with scheduled transaction.
         // Predicate also asserts that the calldata's handles and address-of-interest
@@ -632,8 +810,7 @@ impl FhevmMockWrapper {
         values: Vec<u64>,
         target: mock_server::SubscriptionTarget,
     ) {
-        // Set up readiness check patterns to return true (ready)
-        self.set_readiness_success();
+        // Readiness is armed by the test setup for whichever source is configured, not here.
 
         // Register the transaction pattern with Once limit for redundancy tests
         // (each pattern registration in a loop should be consumed once)
@@ -773,9 +950,6 @@ impl FhevmMockWrapper {
     /// Register public decryption request event only (for timeout testing)
     /// Emits the request event but NO response event, causing the relayer to timeout
     pub fn on_public_decrypt_request_only(&self, handles: Vec<B256>) {
-        // Set up readiness check to return true (ready)
-        self.set_readiness_success();
-
         let id = self.next_decryption_id();
         let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
         self.register_request_only(
@@ -803,7 +977,6 @@ impl FhevmMockWrapper {
         handles: Vec<B256>,
         user: Address,
     ) {
-        self.set_readiness_success();
         let id = self.next_decryption_id();
         let request_log =
             build_legacy_user_decrypt_request(self.decryption_contract, id, user, handles);
@@ -1271,8 +1444,10 @@ mod tests {
         let server = MockServer::new(MockConfig::new());
         let decryption_addr = Address::repeat_byte(1);
         let input_addr = Address::repeat_byte(2);
+        let gateway_config_addr = Address::repeat_byte(3);
 
-        let wrapper = FhevmMockWrapper::new(server, decryption_addr, input_addr);
+        let wrapper =
+            FhevmMockWrapper::new(server, decryption_addr, input_addr, gateway_config_addr);
 
         assert_eq!(
             wrapper.decryption_contract, decryption_addr,

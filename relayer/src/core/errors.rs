@@ -14,6 +14,18 @@ use thiserror::Error;
 pub const READINESS_CHECK_TIMEOUT_MSG: &str =
     "Ciphertext not ready for decryption on the gateway chain";
 
+/// Terminal counterpart to [`READINESS_CHECK_TIMEOUT_MSG`]: the Coprocessors were reachable and
+/// did not agree, so waiting cannot make the request ready. A prefix rather than a whole message,
+/// following the host ACL errors, so the per-handle detail survives into the stored reason.
+pub const NO_ATTESTATION_CONSENSUS_PREFIX: &str =
+    "Coprocessors did not reach consensus on the ciphertext material:";
+
+/// The registry could not support consensus, so nothing was probed. Retryable — the fault is on
+/// the gateway chain and clears without a redeploy — unlike [`NO_ATTESTATION_CONSENSUS_PREFIX`],
+/// where the Coprocessors answered and disagreed.
+pub const GATEWAY_NOT_REACHABLE_PREFIX: &str =
+    "Coprocessor registry on the gateway chain is not usable:";
+
 /// Prefix for host ACL not-allowed errors, used for error classification.
 pub const NOT_ALLOWED_ON_HOST_ACL_PREFIX: &str = "Not allowed on host ACL:";
 /// Prefix for host ACL infra errors (RPC / unsupported chain), used for error classification.
@@ -63,6 +75,21 @@ pub enum EventProcessingError {
     #[error("{}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
     ReadinessCheckTimedOut,
 
+    /// Sibling to [`Self::ReadinessCheckTimedOut`] for the off-chain Coprocessor attestation
+    /// check (`source: coprocessor_attestations`): retries were exhausted while attestation
+    /// consensus was still short of threshold. `round` is the redacted (`Display`) rendering of
+    /// the last round, appended so the evidence survives into the stored reason and the response
+    /// body. `READINESS_CHECK_TIMEOUT_MSG` stays a prefix — matched with `starts_with` by the
+    /// status handlers — so the label and HTTP status are unaffected.
+    #[error("{}: {round}", crate::core::errors::READINESS_CHECK_TIMEOUT_MSG)]
+    AttestationsNotReady { round: String },
+
+    #[error("{prefix} {reason}", prefix = crate::core::errors::NO_ATTESTATION_CONSENSUS_PREFIX)]
+    NoAttestationConsensus { reason: String },
+
+    #[error("{prefix} {reason}", prefix = crate::core::errors::GATEWAY_NOT_REACHABLE_PREFIX)]
+    GatewayNotReachable { reason: String },
+
     #[error("Relayer internal queue is full")]
     QueueFull,
 
@@ -106,6 +133,19 @@ impl From<ReadinessCheckError> for EventProcessingError {
             ReadinessCheckError::GwTimeout => EventProcessingError::ReadinessCheckTimedOut,
             ReadinessCheckError::GwContractError(err) => {
                 EventProcessingError::ContractCallFailed(redact_alloy_error(&err))
+            }
+            ReadinessCheckError::NoAttestationConsensus { round } => {
+                EventProcessingError::NoAttestationConsensus {
+                    reason: round.to_string(),
+                }
+            }
+            ReadinessCheckError::RegistryError { reason } => {
+                EventProcessingError::GatewayNotReachable { reason }
+            }
+            ReadinessCheckError::AttestationsNotReady { last_round, .. } => {
+                EventProcessingError::AttestationsNotReady {
+                    round: last_round.to_string(),
+                }
             }
             ReadinessCheckError::NotAllowedOnHostAcl(err) => {
                 EventProcessingError::NotAllowedOnHostAcl(err.to_string())

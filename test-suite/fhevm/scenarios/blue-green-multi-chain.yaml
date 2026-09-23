@@ -21,9 +21,15 @@ hostChains:
 bcs:
   source:
     mode: registry
-    tag: v0.14.0-7
+    tag: v0.14.2-0
 
 gcs:
   source:
     mode: local
-  stackVersion: "0.15.0"
+
+# The pinned Blue (tfhe-rs 1.6) cannot read key material from a 0.15+ KMS core, so the contracts,
+# KMS core and connector and listener-core boot on the last 0.14 release and generate the keys
+# there. The bootstrap step then upgrades them to the resolved bundle in place and starts Green:
+# the same order as a production 0.14 to 0.15 rollout.
+bootstrap:
+  tag: v0.14.2-0

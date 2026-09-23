@@ -1,0 +1,133 @@
+# =============================================================================
+# GPU RUNTIME IMAGE — packaging only, no compilation
+# =============================================================================
+# This Dockerfile deliberately does not build anything. It packages a worker
+# binary that was already compiled on a GPU host, and the reason is a hard
+# constraint rather than a preference.
+#
+# `tfhe-cuda-backend`'s CMakeLists picks its target architectures like this:
+#
+#   if(MULTI_ARCH)          -> 75 80 86 89          # no 90: no H100
+#   elseif(CUDA_SUCCESS)    -> native               # whatever device is present
+#   else()                  -> 70                   # Volta, with a warning
+#
+# `docker build` exposes no GPU to the build (buildx has no `--gpus`), so a
+# containerized cargo build takes the third branch and produces an sm_70 image
+# -- silently, apart from a CMake warning buried in build output. That image
+# would be wrong for every device this project runs on. The multi-arch cargo
+# feature does not rescue it either: its list stops at 89, and production is
+# H100 (sm_90).
+#
+# So the compile happens on the GPU runner, where CMake detects the device and
+# builds `native`, and this image only wraps the result. That makes each image
+# *specific to the compute capability it was built on*, which is why the
+# workflow reads the capability off the device with `nvidia-smi` and puts it in
+# the tag and in a label rather than assuming it.
+#
+# RUNTIME BASE. The production target is the same Chainguard base the CPU images
+# use, so a GPU worker is no more privileged and no fatter a supply-chain
+# surface than its CPU sibling. That base is distroless: no apt, no apk, no
+# shell. So the one CUDA library a worker links is copied in from the staging
+# directory, which the workflow fills from the toolkit that compiled the binary
+# -- the library and the compiler are then the same version by construction,
+# and no image from any other registry enters the pipeline. A worker links
+# libcudart.so.12, libstdc++.so.6 and libgcc_s.so.1 beyond glibc (verified with
+# ldd); the base already provides the last two. For scale: CUDA's own
+# `-runtime` images bundle cuBLAS, cuFFT and cuSPARSE for ~3 GB a worker never
+# executes.
+#
+# Override RUNTIME_BASE with an open image to test the packaging without
+# Chainguard credentials; the workflow does exactly that behind an input.
+#
+# Usage (see .github/workflows/coprocessor-gpu-docker-build.yml):
+#   docker build -f coprocessor/fhevm-engine/Dockerfile.gpu \
+#     --build-arg BINARY=sns_worker \
+#     --build-arg COMPUTE_CAPABILITY=90 \
+#     --build-arg BINARY_DIR=. \
+#     -t ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:<tag> <staging-dir>
+#
+#   docker run --rm <image> /usr/local/bin/sns_worker --version
+# =============================================================================
+
+# Matches the CUDA the binary was compiled against. CUDA minor versions are
+# forward compatible within a major release, but pinning the same minor keeps
+# the image honest about what it was built with.
+ARG CUDA_VERSION=12.2.2
+
+# The production runtime base: the same pin the CPU images use.
+ARG RUNTIME_BASE=cgr.dev/zama.ai/glibc-dynamic:15.2.0
+
+FROM ${RUNTIME_BASE} AS prod
+
+ARG BINARY
+ARG BINARY_DIR=.
+# Recorded, not guessed: the workflow reads it from the build host's device.
+ARG COMPUTE_CAPABILITY=unknown
+ARG CUDA_VERSION
+
+LABEL org.opencontainers.image.description="GPU-enabled fhEVM coprocessor worker (${BINARY})" \
+      ai.zama.fhevm.gpu="true" \
+      ai.zama.fhevm.cuda-version="${CUDA_VERSION}" \
+      ai.zama.fhevm.compute-capability="${COMPUTE_CAPABILITY}"
+
+# The one library the base does not have, taken from the staging directory the
+# workflow builds: it copies `libcudart.so.12*` straight out of the toolkit that
+# just compiled the binary. That is deliberate -- sourcing it from a separate
+# CUDA image would mean the shipped runtime and the compiling toolkit could
+# drift apart, and it would put one NVIDIA-registry image into a pipeline whose
+# whole point is to target cgr.dev. Copied rather than installed because a
+# distroless base has no package manager, and no shell either, so a `RUN` here
+# would fail outright.
+#
+# libstdc++ and libgcc_s are deliberately NOT copied: the base ships its own
+# (verified in the built image), and adding an older one alongside risks
+# shadowing it. If a future base drops them, the workflow's exec check fails
+# loudly rather than this Dockerfile carrying redundant libraries forever.
+COPY ${BINARY_DIR}/libcudart.so.12* /usr/local/cuda/lib64/
+
+# The binary links libcudart by SONAME, and the copied path is not on the
+# default search path of a distroless base.
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64
+
+COPY ${BINARY_DIR}/${BINARY} /usr/local/bin/${BINARY}
+
+# A default command, by way of a fixed-name symlink the workflow stages beside
+# the binary (`ln -s sns_worker worker`). Exec-form CMD cannot interpolate
+# ${BINARY} -- the substitution list does not include build arguments -- and the
+# alternatives are both bad: a shell-form command needs a shell this distroless
+# base does not have, and a second COPY under a fixed name would ship 57 MB
+# twice. A relative symlink resolves inside /usr/local/bin and costs 10 bytes.
+#
+# It is CMD rather than ENTRYPOINT, matching the CPU worker images, so that a
+# caller passing the full command still wins: the stack says
+# `command: [sns_worker, --database-url=...]` and that replaces this outright.
+# What it buys is that the image is runnable on its own -- `docker create` and
+# `docker run` on a CMD-less image fail with "no command specified", which is
+# how staging a binary out of one of these images went wrong the first time.
+COPY ${BINARY_DIR}/worker /usr/local/bin/worker
+CMD ["/usr/local/bin/worker"]
+
+# `fhevm`'s numeric identity, matching the CPU worker images.
+#
+# Those copy /etc/passwd and /etc/group out of the golden builder image, where
+# `fhevm` is uid 10000 / gid 10001, and then say `USER fhevm:fhevm`. This image
+# has no builder stage to copy from -- the workflow stages a prebuilt binary --
+# so it states the same identity numerically, which is what the kernel enforces
+# in either case and what `runAsNonRoot` checks.
+#
+# It matters that this is not the base's own `nonroot` (65532): these images are
+# meant to be dropped into a stack beside CPU siblings, and a GPU worker writing
+# a shared mount as 65532 would leave files its CPU counterpart -- running as
+# 10000 -- could not touch. Same worker, same queue, same volume, different
+# owner is a trap that only shows up once someone swaps a backend in place.
+#
+# The binary itself is left root-owned and world-executable rather than chowned
+# to 10000: nothing needs to write it, and a process that cannot rewrite its own
+# executable is the better default.
+USER 10000:10001
+
+# EAGER module loading matches what the GPU test and benchmark jobs set. With
+# LAZY (the CUDA 12 default) the first kernel launch pays the module load, which
+# shows up as a cold-start outlier in latency measurements rather than as
+# steady-state cost.
+ENV CUDA_MODULE_LOADING=EAGER

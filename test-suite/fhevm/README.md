@@ -250,6 +250,8 @@ CONNECTOR_DB_MIGRATION_VERSION
 CONNECTOR_GW_LISTENER_VERSION
 CONNECTOR_KMS_WORKER_VERSION
 CONNECTOR_TX_SENDER_VERSION
+CONNECTOR_ENDPOINT_VERSION   # optional: omitted when the resolved images predate the connector HTTP endpoint
+CONNECTOR_PROXY_VERSION      # optional: omitted when the resolved images predate the connector proxy
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
@@ -346,11 +348,14 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test erc1271-user-decryption
 ./fhevm-cli test unified-user-decryption
 ./fhevm-cli test decryption-signature-invalidation
+./fhevm-cli test connector-http-public-decrypt
+./fhevm-cli test connector-http
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
 ./fhevm-cli test operators
-./fhevm-cli test --grep "oversized shift/rotate" --verbose
+./fhevm-cli test --grep "oversized shift and rotate" --verbose
+./fhevm-cli test operators --grep "edge cases" --verbose
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
 
@@ -398,6 +403,60 @@ For `test-suite`, this is the explicit path that makes local e2e test edits take
 ./fhevm-cli up --target latest-main --scenario two-of-two --build
 ```
 
+### Public runtime bases for a local E2E run
+
+The production Dockerfile defaults to the certified `cgr.dev/zama.ai` runtime
+images. If that private registry is unavailable on a development host, an
+explicit local-only switch rebuilds the coprocessor targets on public
+`debian:trixie-slim` (and the migration target on `postgres:17-trixie`). The
+Trixie base is required because the bundled migration `sqlx` requires
+`GLIBC_2.39`; the E2E-only Dockerfile stages also install `ca-certificates` so
+Rust HTTPS clients can load system roots:
+
+```sh
+./fhevm-cli up --lock-file ../../.fhevm/state/locks/sha-72af12a.json \
+  --scenario scenarios/three-of-three.yaml \
+  --override coprocessor --override test-suite --e2e-public-runtime
+```
+
+This option affects only locally built coprocessor and KMS connector runtime
+images (not the connector DB migration) and is persisted in the generated E2E
+state, so a later `./fhevm-cli up --resume` uses the same bases. It is not a
+production or certification build mode.
+
+Add `--override kms-connector` when the E2E stack also needs the connector from
+the current checkout. Its three runtime services then use the same public
+Debian fallback; the connector DB migration keeps its normal Dockerfile and
+base image.
+
+### Adopt the public KMS connector runtime on an existing E2E stack
+
+If a running local E2E stack was already booted with local `coprocessor` and
+`test-suite` overrides, and only the connector needs to move from its published
+image to this checkout, use the following explicit recovery command from
+`test-suite/fhevm`:
+
+```sh
+./fhevm-cli upgrade kms-connector --adopt-local-override --e2e-public-runtime
+```
+
+This is intentionally narrower than `up --resume`: it fails unless the
+persisted stack has completed the KMS connector step and has active local
+coprocessor and test-suite overrides. It persists a runtime-only
+`kms-connector` override, regenerates compose with the public Debian E2E base,
+builds and force-recreates only `gw-listener`, `kms-worker`, and `tx-sender`
+(for every threshold party when applicable), and waits for connector readiness.
+It never starts the connector DB migration and uses Compose `--no-deps`, so it
+does not reset or recreate Postgres, MinIO, KMS core, generated keys, contract
+discovery, or cached proofs. It is local E2E recovery only, not a production or
+certification operation. The persisted `--e2e-public-runtime` policy also
+applies to a later explicit local coprocessor rebuild, but this command does
+not build or recreate any coprocessor service. If Docker or the host fails
+mid-replacement, the persisted state records a pending adoption; retry the same
+command (or run `./fhevm-cli up --resume` with no `--from-step`) and the CLI
+will repeat only this runtime-only replacement rather than invoking the normal
+KMS connector migration step.
+
 ### Override specific runtime services
 
 Runtime override groups also support per-service filtering:
@@ -420,7 +479,7 @@ Available runtime suffixes:
 | Group           | Suffixes                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
-| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`                                                                                    |
+| `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`, `proxy`                |
 | `test-suite`    | `e2e-debug`                                                                                                                                 |
 
 ### Multiple overrides
@@ -504,6 +563,13 @@ instances:
 
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
+Blue-green scenarios pin a previous-release Blue whose tfhe-rs cannot read key material from a newer KMS core. `bootstrap.tag` boots the contracts, the KMS core and connector and listener-core at that release (Green stays deferred), waits for the operators to ingest the generated keys, then upgrades them to the resolved bundle in place in production order: the changed contracts through their `task:upgrade*` tasks, the KMS core over the existing keys, the connector, listener-core, and finally the Green fleet. Local overrides for the bootstrapped components apply from the upgrade on; the relayer and test-suite start on the bundle. Centralized KMS only:
+
+```yaml
+bootstrap:
+  tag: v0.14.2-0
+```
+
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
 ## Troubleshooting
@@ -525,3 +591,25 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+
+## Consensus coverage
+
+The manual `test-suite-consensus` workflow runs the canonical byte/digest,
+materialization, alias, replacement-block, competing-branch and scheduling gates.
+`test-suite/fhevm/consensus/inventory.yaml` defines the cases in this layer.
+`smoke` selects CPU byte agreement, `standard` adds the harness, production
+regressions and fork cases, and `full` also requires single-GPU scheduling.
+See [the consensus suite documentation](../e2e/test/consensus/README.md).
+The [campaign runbook](consensus/RUNBOOK.md) explains each case's evidence and
+limits, CI backend coverage, recovery, and readiness changes affecting ordinary
+`fhevm-cli up` users.
+
+The GPU consensus launcher uses host systemd workers; the ordinary GPU E2E CI
+workflow uses GPU containers. Always restore a host-worker session with
+`scripts/gpu-consensus-workers.sh stop`. Ownership, readiness and writer-quiescence
+checks remain enabled for the launcher and database-revert command.
+
+Service fault campaigns, interrupted-work recovery, degraded availability,
+GPU lifecycle fault cases, and fork repair/replay are delivered separately.
+They are not counted as covered by this layer's `full` selection.

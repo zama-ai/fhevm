@@ -43,6 +43,7 @@ pub enum V2ErrorLabel {
     InsufficientAllowance,
     GatewayNotReachable,
     ReadinessCheckTimedOut,
+    NoAttestationConsensus,
     ResponseTimedOut,
 }
 
@@ -53,7 +54,7 @@ pub enum V2ErrorLabel {
 /// Labels defined but not yet wired to any handler endpoint.
 ///
 /// These are exempt from the "every label must appear in the catalog" test.
-pub const UNWIRED_LABELS: &[&str] = &["gateway_not_reachable"];
+pub const UNWIRED_LABELS: &[&str] = &[];
 
 /// Derives the canonical label list from [`ERROR_LABEL_DEFS`].
 /// Walk a `validator::ValidationErrors` tree and emit one
@@ -306,7 +307,7 @@ impl V2ErrorResponseBody {
         })
     }
 
-    #[allow(dead_code)]
+    /// Retryable counterpart to [`Self::no_attestation_consensus`]: nothing was ever probed.
     pub fn gateway_not_reachable(message: &str) -> Self {
         Self::Simple(V2ApiError {
             label: "gateway_not_reachable".to_string(),
@@ -317,6 +318,15 @@ impl V2ErrorResponseBody {
     pub fn readiness_check_timed_out(message: &str) -> Self {
         Self::Simple(V2ApiError {
             label: "readiness_check_timed_out".to_string(),
+            message: message.to_string(),
+        })
+    }
+
+    /// Terminal: the Coprocessors served attestations that disagree, so the request cannot become
+    /// ready by retrying — unlike [`Self::readiness_check_timed_out`].
+    pub fn no_attestation_consensus(message: &str) -> Self {
+        Self::Simple(V2ApiError {
+            label: "no_attestation_consensus".to_string(),
             message: message.to_string(),
         })
     }
@@ -850,6 +860,7 @@ mod tests {
             V2ErrorResponseBody::insufficient_allowance("m"),
             V2ErrorResponseBody::gateway_not_reachable("m"),
             V2ErrorResponseBody::readiness_check_timed_out("m"),
+            V2ErrorResponseBody::no_attestation_consensus("m"),
             V2ErrorResponseBody::response_timed_out("m"),
         ];
 

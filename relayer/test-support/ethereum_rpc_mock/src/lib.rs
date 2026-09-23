@@ -36,6 +36,7 @@ mod mock_server;
 mod pattern_matcher;
 
 // Public API modules
+pub mod ct_attestation;
 pub mod fhevm;
 
 // Test utilities module
@@ -56,6 +57,8 @@ pub use mock_server::MockConfig;
 pub use mock_server::Response;
 
 /// Usage limiting for patterns
+pub use ct_attestation::{CtAttestationMock, MockCoprocessor};
+
 pub use pattern_matcher::UsageLimit;
 
 /// Scheduled transaction support for delayed responses

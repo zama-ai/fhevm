@@ -131,6 +131,8 @@ golden-container-images/
 sdk/*
 !sdk/js-sdk/
 !sdk/js-sdk/**
+!sdk/cli-js-sdk/
+!sdk/cli-js-sdk/**
 
 # -----------------------------------------------------------------------------
 # CI directory (not used by any Dockerfile)

@@ -43,6 +43,12 @@ pub enum ConfigParam {
     /// Safety margin multiplier for ETA (0.0-1.0)
     /// Applied as: ETA * (1 + safety_margin)
     RetryAfterSafetyMargin,
+
+    // Optimistic user-decryption wait window
+    /// Extra shares to wait for beyond the threshold (0 = return at threshold)
+    UserDecryptAdditionalShares,
+    /// Max time to wait for the extra shares after threshold, in seconds (0 = no wait)
+    UserDecryptAdditionalSharesTimeoutSecs,
 }
 
 impl ConfigParam {
@@ -71,6 +77,11 @@ impl ConfigParam {
 
             // Safety margin: 0.0 to 1.0
             RetryAfterSafetyMargin => ParamConstraints::F32 { min: 0.0, max: 1.0 },
+
+            // Optimistic user-decryption wait window.
+            // Both allow 0 (feature off / runtime kill-switch).
+            UserDecryptAdditionalShares => ParamConstraints::U32 { min: 0, max: 100 },
+            UserDecryptAdditionalSharesTimeoutSecs => ParamConstraints::U32 { min: 0, max: 3600 },
         }
     }
 
@@ -93,6 +104,12 @@ impl ConfigParam {
             RetryAfterMinSeconds => "Minimum retry-after interval",
             RetryAfterMaxSeconds => "Maximum retry-after interval",
             RetryAfterSafetyMargin => "Safety margin multiplier for ETA (0.0-1.0)",
+            UserDecryptAdditionalShares => {
+                "Extra user-decryption shares to wait for beyond the threshold (0 = off)"
+            }
+            UserDecryptAdditionalSharesTimeoutSecs => {
+                "Max wait for extra user-decryption shares after threshold, seconds (0 = off)"
+            }
         }
     }
 
@@ -110,6 +127,8 @@ impl ConfigParam {
             ConfigParam::RetryAfterMinSeconds,
             ConfigParam::RetryAfterMaxSeconds,
             ConfigParam::RetryAfterSafetyMargin,
+            ConfigParam::UserDecryptAdditionalShares,
+            ConfigParam::UserDecryptAdditionalSharesTimeoutSecs,
         ]
     }
 
@@ -135,6 +154,15 @@ impl ConfigParam {
                 | ConfigParam::RetryAfterMinSeconds
                 | ConfigParam::RetryAfterMaxSeconds
                 | ConfigParam::RetryAfterSafetyMargin
+        )
+    }
+
+    /// Check if this parameter belongs to the optimistic user-decryption wait window.
+    pub fn is_user_decrypt_wait_param(&self) -> bool {
+        matches!(
+            self,
+            ConfigParam::UserDecryptAdditionalShares
+                | ConfigParam::UserDecryptAdditionalSharesTimeoutSecs
         )
     }
 }
@@ -324,9 +352,31 @@ mod tests {
     #[test]
     fn test_config_param_all() {
         let all = ConfigParam::all();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 13);
         assert!(all.contains(&ConfigParam::InputProofThrottlerTps));
         assert!(all.contains(&ConfigParam::RetryAfterSafetyMargin));
+        assert!(all.contains(&ConfigParam::UserDecryptAdditionalShares));
+        assert!(all.contains(&ConfigParam::UserDecryptAdditionalSharesTimeoutSecs));
+    }
+
+    #[test]
+    fn test_config_param_is_user_decrypt_wait_param() {
+        assert!(ConfigParam::UserDecryptAdditionalShares.is_user_decrypt_wait_param());
+        assert!(ConfigParam::UserDecryptAdditionalSharesTimeoutSecs.is_user_decrypt_wait_param());
+        // Not classified as TPS or retry-after (keeps admin routing legible).
+        assert!(!ConfigParam::UserDecryptAdditionalShares.is_tps_param());
+        assert!(!ConfigParam::UserDecryptAdditionalShares.is_retry_after_param());
+        assert!(!ConfigParam::RetryAfterMinSeconds.is_user_decrypt_wait_param());
+        assert!(!ConfigParam::InputProofThrottlerTps.is_user_decrypt_wait_param());
+    }
+
+    #[test]
+    fn test_user_decrypt_wait_param_serialization() {
+        let param = ConfigParam::UserDecryptAdditionalSharesTimeoutSecs;
+        let json = serde_json::to_string(&param).unwrap();
+        assert_eq!(json, r#""user_decrypt_additional_shares_timeout_secs""#);
+        let deserialized: ConfigParam = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, param);
     }
 
     #[test]

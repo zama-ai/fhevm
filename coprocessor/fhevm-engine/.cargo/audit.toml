@@ -2,11 +2,9 @@
 # permanently specified in this file.
 
 [advisories]
-# The ignored vulnerability RUSTSEC-2024-0388 is due to sqlx-mysql which is not used
-# RUSTSEC-2026-0258: only reachable via h2 0.3 pulled by aws-sdk-s3
-# "test-util" (legacy hyper-0.14 test connector); not in production paths.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111", "RUSTSEC-2026-0258"]
-# RUSTSEC-2025-0111 impacts only testcontainers
+# RUSTSEC-2023-0071 (rsa): no fix released. Reached only via sqlx-mysql, which we
+# never compile (postgres-only).
+ignore = ["RUSTSEC-2023-0071"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

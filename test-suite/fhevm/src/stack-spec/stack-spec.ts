@@ -13,7 +13,7 @@ import type {
   VersionBundle,
 } from "../types";
 import { PreflightError } from "../errors";
-import { versionBeforeReleaseFamily } from "../compat/compat";
+import { replaceRegistrySourceTag, versionBeforeReleaseFamily } from "../compat/compat";
 import { SHA_REF, shortSha } from "../resolve/target";
 import {
   assertScenarioOverrideCompatibility,
@@ -40,7 +40,9 @@ export type StackSpec = {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsConnectorDeploymentByNodeId?: State["kmsConnectorDeploymentByNodeId"];
   overrides: State["overrides"];
+  e2ePublicRuntime: boolean;
   topology: Topology;
   hostChains: HostChainScenario[];
   coprocessor?: ResolvedCoprocessorScenario;
@@ -70,7 +72,10 @@ export const resolveScenarioForOptions = async (
       const resolved = options.bcsTag
         ? {
             ...loaded,
-            bcs: { ...loaded.bcs, source: { mode: "registry" as const, tag: normalizeBcsTag(options.bcsTag) } },
+            bcs: {
+              ...loaded.bcs,
+              source: replaceRegistrySourceTag(loaded.bcs.source, normalizeBcsTag(options.bcsTag)),
+            },
           }
         : loaded;
       const source = resolved.bcs.source;
@@ -110,7 +115,9 @@ const stackSpecFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsConnectorDeploymentByNodeId?: State["kmsConnectorDeploymentByNodeId"];
   overrides: State["overrides"];
+  e2ePublicRuntime?: boolean;
   scenario: ResolvedScenario;
   requiresGitHub: boolean;
 }): StackSpec => {
@@ -123,6 +130,7 @@ const stackSpecFromResolved = (input: {
       origin: bg.origin === "file" ? "file" : "default",
       name: bg.name,
       description: bg.description,
+      // Blue-green keeps its existing versioned scheduling semantics.  The
       hostChains: bg.hostChains,
       sourcePath: bg.sourcePath,
       topology: bg.topology,
@@ -139,7 +147,9 @@ const stackSpecFromResolved = (input: {
       target: input.target,
       versions: input.versions,
       kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+      kmsConnectorDeploymentByNodeId: input.kmsConnectorDeploymentByNodeId,
       overrides: input.overrides,
+      e2ePublicRuntime: input.e2ePublicRuntime ?? false,
       topology: bg.topology,
       hostChains: bg.hostChains,
       coprocessor: bcsAsCoprocessor,
@@ -152,7 +162,9 @@ const stackSpecFromResolved = (input: {
     target: input.target,
     versions: input.versions,
     kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+    kmsConnectorDeploymentByNodeId: input.kmsConnectorDeploymentByNodeId,
     overrides: input.overrides,
+    e2ePublicRuntime: input.e2ePublicRuntime ?? false,
     topology: topologyFromScenario(input.scenario),
     hostChains: input.scenario.hostChains,
     coprocessor: input.scenario,
@@ -162,13 +174,15 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "overrides" | "scenario">,
+  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "kmsConnectorDeploymentByNodeId" | "overrides" | "e2ePublicRuntime" | "scenario">,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
     target: state.target,
     versions: state.versions,
     kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
+    kmsConnectorDeploymentByNodeId: state.kmsConnectorDeploymentByNodeId,
     overrides: state.overrides,
+    e2ePublicRuntime: state.e2ePublicRuntime,
     scenario: state.scenario,
   });

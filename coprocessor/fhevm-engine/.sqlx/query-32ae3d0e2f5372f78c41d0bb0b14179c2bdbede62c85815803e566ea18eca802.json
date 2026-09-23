@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE public.upgrade_state\n         SET state = 'LIVE', status = 'completed', updated_at = NOW()\n         WHERE stack_role = 'GCS'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "32ae3d0e2f5372f78c41d0bb0b14179c2bdbede62c85815803e566ea18eca802"
+}

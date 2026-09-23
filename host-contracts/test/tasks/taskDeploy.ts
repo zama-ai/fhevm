@@ -117,7 +117,7 @@ describe('task:deployAllHostContracts', function () {
       readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
     );
 
-    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.2.0');
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.3.0');
     expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
   });
 });
@@ -149,12 +149,12 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.2.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.3.0"; expected "KMSGeneration v…".`,
     );
   });
 
   it('rejects when keygen is pending', async function () {
-    await kmsGeneration.keygen(0);
+    await kmsGeneration.keygen(0, 0);
 
     await expect(run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress })).to.be.rejectedWith(
       `Keygen pending on ${kmsGenerationAddress}: keyCounter=${KEY_COUNTER_BASE + 1n} has not completed (isRequestDone=false). Complete or abort before proposing a new key management request.`,
@@ -170,7 +170,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
   });
 
   it('passes again after aborting the pending key request', async function () {
-    await kmsGeneration.keygen(0);
+    await kmsGeneration.keygen(0, 0);
     await kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1n);
 
     await run('task:assertNoPendingKeyManagementRequest', { address: kmsGenerationAddress });

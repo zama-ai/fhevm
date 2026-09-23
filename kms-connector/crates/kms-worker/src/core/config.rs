@@ -10,7 +10,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size,
+        default_database_pool_size, deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -30,10 +30,18 @@ pub struct Config {
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
     /// The timeout for polling the database for fast events (decryption for ex).
-    #[serde(with = "humantime_serde", default = "default_db_fast_event_polling")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_db_fast_event_polling"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_fast_event_polling: Duration,
     /// The timeout for polling the database for long events (prep keygen for ex).
-    #[serde(with = "humantime_serde", default = "default_db_long_event_polling")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_db_long_event_polling"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_long_event_polling: Duration,
     /// The limit number of events to fetch from the database.
     #[serde(default = "default_events_batch_size")]
@@ -79,13 +87,25 @@ pub struct Config {
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
     pub s3_ciphertext_retrieval_attempts: u8,
     /// Timeout to connect to a S3 bucket.
-    #[serde(with = "humantime_serde", default = "default_s3_connect_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_s3_connect_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_connect_timeout: Duration,
     /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
-    #[serde(with = "humantime_serde", default = "default_s3_head_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_s3_head_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_head_timeout: Duration,
     /// Timeout of a single ciphertext `GET`.
-    #[serde(with = "humantime_serde", default = "default_s3_get_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_s3_get_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
     /// requests.
@@ -98,7 +118,11 @@ pub struct Config {
     #[serde(default = "default_s3_max_ciphertext_size")]
     pub s3_max_ciphertext_size: NonZeroUsize,
     /// Refresh interval of the Coprocessor registry, read from the `GatewayConfig` contract.
-    #[serde(with = "humantime_serde", default = "default_copro_registry_refresh")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_copro_registry_refresh"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub copro_registry_refresh: Duration,
     /// Refresh interval of the in-memory KMS context cache, read from the local DB.
     #[serde(
@@ -111,7 +135,11 @@ pub struct Config {
     #[serde(default = "default_host_rpc_max_concurrent_calls")]
     pub host_rpc_max_concurrent_calls: NonZeroUsize,
     /// Timeout of a single host chain RPC call.
-    #[serde(with = "humantime_serde", default = "default_host_rpc_call_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_host_rpc_call_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
@@ -129,7 +157,11 @@ pub struct Config {
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
-    #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -250,7 +282,7 @@ fn default_s3_max_ciphertext_size() -> NonZeroUsize {
 }
 
 fn default_erc1271_gas_limit() -> u64 {
-    100_000
+    250_000
 }
 
 impl DeserializeConfig for Config {}

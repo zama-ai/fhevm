@@ -1,64 +1,229 @@
 # Release Notes
 
-## v1.2.1 (2026-07-29)
+## v0.15.0 (unreleased, on `main`)
 
 ### For SDK users
 
 #### Added
 
-- **Protocol `0.14.0` support: KMS WASM bumped to `0.14.0-1`.** The default bundled TKMS module
-  moves from `0.13.20-0` to `0.14.0-1` (TFHE stays at `1.6.2`), and the auto-resolution table now
-  maps `protocol >= 0.14.0` to `kms 0.14.0-1` instead of falling through to the `0.13.x` canonical
-  version. Older KMS builds (`0.13.10`, `0.13.20-0`) remain accepted as explicit
-  `moduleVersions.kms` overrides under a `0.14.0` protocol context. See
-  [Version compatibility](compatibility.md) for the full `(protocol, PubKey/CRS, TFHE, KMS)`
-  matrix.
+- **Protocol `0.15.0` support.** `SDK_PROTOCOL_API_MINOR_VERSION` moves from `14` to `15`.
+  **Breaking:** this SDK release only supports FHEVM protocol `0.15.0` through `0.17.0` — older
+  protocol lines are no longer supported. Upgrade your host chain to protocol `>= 0.15.0` before
+  upgrading to this SDK version.
 
-## v1.2.0-alpha.1 (2026-07-08)
+#### Changed
 
-### For SDK users
-
-#### Added
-
-- **Cleartext client support for `forge-fhevm` v1 (legacy) deployments.** The cleartext client
-  (`createFhevmCleartextClient`/`createFhevmCleartextBaseClient` and friends) now works against
-  local `forge-fhevm` v1 stacks in addition to the current cleartext host-contract set. It
-  detects a v1 deployment by its well-known single KMS signer address and, when detected,
-  reconstructs public-decrypt, user-decrypt, and input-proof/coprocessor-signature results
-  off-chain (reading raw plaintexts from `CleartextFHEVMExecutor.plaintexts` and recomputing the
-  EIP-712 digests locally) instead of relying on the `Cleartext*KMSVerifier`/`CleartextInputVerifier`
-  views that a plain `forge-fhevm` deployment doesn't expose. See the new
-  `test/scripts/HOWTO_RUN_FORGE_FHEVM_V1.md` for how to set up a local `forge-fhevm` v1 stack for
-  testing.
+- **Smaller npm package.** The `tkms` WASM version directories are now excluded from the
+  published tarball the same way the `tfhe` ones already were (`files` in `src/package.json`),
+  on top of the base64 WASM-payload deduplication shipped in `v0.14.1-0`.
+- **Breaking: multi-version WASM support removed.** The SDK now bundles and supports exactly one
+  `tfhe` and one `tkms` WASM build — bumped to `tfhe` `v1.8.1` (from `v1.6.2`) and `kms_lib`
+  `v0.15.0-0` (from `v0.14.0-1`) — instead of resolving among several. The `moduleVersions` option
+  is removed from `FhevmOptions`, `FhevmEncryptOptions`, `FhevmDecryptOptions`, and
+  `ResolvedFhevmOptions`; `ModuleVersionCompatibilityCheck` and the per-mode
+  `FhevmEncryptModuleVersions`/`FhevmDecryptModuleVersions`/`FhevmModuleVersions` types are gone.
+  If you were pinning an explicit `tfhe`/`kms` version via `moduleVersions`, remove that option —
+  the SDK now always uses its single bundled build. `TfheVersion`/`TkmsVersion` remain exported
+  (they now each admit only one value).
+- The ERC-1271 `isValidSignature` STATICCALL gas cap (`ERC1271_GAS_LIMIT`) is raised from `100_000`
+  to `250_000`, matching the relayer/KMS default — a nested Safe (a Safe owning a Safe) alone costs
+  ~91k gas, so the old cap could reject valid nested-multisig signatures.
 
 #### Fixed
 
-- **`euint32`/`euint256` clear values weren't validated against their correct upper bound.**
-  `asClearValueType()` looked up the max-value table with the FHE type name (`'euint32'`,
-  `'euint256'`) instead of the corresponding clear value-type name (`'uint32'`, `'uint256'`), so
-  the lookup missed and no upper-bound check was applied for those two types. This affected the
-  clear value returned by `decryptValue()`/`decryptValues()`.
+- **Hardened `hexToBytes`.** It now rejects non-hexadecimal characters instead of silently
+  coercing them to `0` via `NaN`, and strips a `0x`/`0X` prefix case-insensitively instead of only
+  the lowercase form.
+- Fixed an `abortableSleep` listener leak: the abort listener stayed attached to the `AbortSignal`
+  after a sleep resolved normally (only removed on actual abort), leaking listeners on long-lived
+  or reused `AbortController` instances.
+- The relayer's `no_attestation_consensus` (500) error label is now recognized and surfaced as a
+  proper `RelayerResponseApiError` instead of a generic `RelayerResponseInvalidBodyError`.
+- `setFhevmRuntimeConfig` (ethers and viem) now also compares `auth` across repeated calls and
+  throws on a mismatch, as already documented — a second call with different `auth` previously
+  silently kept the first one instead of throwing.
+- Fixed the `@fhevm/sdk/chains` subpath's `package.json` pointing its `types`/`module`/`main`
+  fields at a nonexistent `_types/chains/…` (etc.) path instead of `_types/core/chains/…`,
+  breaking type resolution for that import under some `moduleResolution` settings. Added a
+  `typesVersions` map covering all subpaths (`base`, `chains`, `types`, `actions/base`,
+  `actions/chain`, `actions/decrypt`, `actions/encrypt`, `actions/host`) for compatibility with
+  the classic (`node`) TypeScript module-resolution mode.
 
 ### Internal
 
-- Refactored KMS `extraData` encode/decode/validation (`fromKmsExtraData`, `toKmsExtraData`,
-  `assertIsKmsExtraData`) from free functions in `kmsExtraData.ts` into a validated
-  `KmsExtraDataImpl` class in `kmsExtraData-p.ts`, with matching updates across
-  `KmsSignersContext-p.ts`, `readKmsSignersContext-p.ts`, `KmsSigncryptedShares-p.ts`,
-  `SignedDecryptionPermitV1-p.ts`/`V2-p.ts`, `PublicDecryptionProof-p.ts`, and the
-  `createKmsUserDecryptEip712*`/`createKmsDelegatedUserDecryptEip712V1` helpers, plus new unit
-  tests (`kmsExtraData-p.test.ts`).
-- Pinned a specific `fhevm` repo version for running localstack tests below protocol v0.14, and
-  added a large batch of unit/fheTest coverage: `errors/utils.test.ts`, `object.test.ts`,
-  `trustedValue.test.ts`, `ClearValue.test.ts`, `FhevmHandle.test.ts`, ethers/viem
-  `clientDecrypt` cleartext tests, and fheTest coverage for `decryptValuesFromPairs` /
-  `canDecryptValue(s)` / `canDecryptValuesFromPairs`.
-- Fixed the cleartext ethers/viem runtimes (`getCleartextEthersRuntime`/`getCleartextViemRuntime`)
-  re-creating the ethereum/relayer modules on every call even when a cached runtime already
-  existed.
-- README: fixed documentation link and package-name references (points at
-  `github.com/zama-ai/fhevm` instead of the old `relayer-sdk` repo, `@fhevm/sdk` instead of
-  `@zama-fhe/relayer-sdk`).
+- WASM build (`build-cjs-wasm.mjs`, `wasm-build-common.mjs`): the generated base64 WASM payload
+  files (`*_bg.wasm.base64.js`) are now transpiled as a separate esbuild pass with sourcemaps
+  disabled, since a sourcemap for a data-only payload just doubles its size.
+- Fixed `test/browser-smoke/playwright.config.ts` resolving `vite.config.ts` relative to the
+  wrong root under Vite, breaking `test:browser-smoke`; it now resolves an absolute path via
+  `import.meta.url`.
+- `contracts/scripts/fhetest-deploy.sh` now tolerates chains where `ProtocolConfig` isn't deployed,
+  printing a placeholder instead of failing.
+- `test/fheTest/setupCommon.ts`: Foundry `cast` invocations now enforce a 30s timeout so a
+  stalled local Anvil RPC call fails fast instead of hanging the test run.
+- Large removal of the multi-version WASM machinery: `HyperWasmSolver` is replaced by a
+  single-version `WasmVersions-p.ts`/`ProtocolVersionResolver-p.ts` targeting one fixed protocol
+  version, the now-dead `tfheModuleVersion-p.ts`/`tkmsModuleVersion-p.ts`/
+  `getKmsContextSignersAndThreshold-p.ts` are removed, the `test/multi-wasm/` Playwright suite and
+  its planning notes are deleted, the dev/prod WASM build-profile distinction (`BUILD_PROFILE`) is
+  dropped, and `wasm:install` now prunes any installed `src/wasm/<lib>/v*` directory no longer
+  listed in the manifest (opt out with `--no-prune`). Legacy localstack test-chain support tied to
+  older protocol lines is also removed.
+- `install-tfhe.sh`/`install-from-manifest.mjs` now install the `tfhe-rs` client WASM build from
+  the `tfhe-client` npm package for `tfhe` `>= 1.7.0` (which split it out of `tfhe`), keeping the
+  old `tfhe` package for earlier versions.
+- Added a standalone memory-leak stress harness (`test/memleaks/`, `npm run test:memleaks`) that
+  runs long encrypt/decrypt/serialize stress loops against a real localstack stack and samples
+  process/WASM memory across six scenarios (client reuse/churn, full roundtrip, value churn,
+  permit churn, provider churn) to classify each metric as plateauing or growing. Not wired into
+  CI yet — thresholds are placeholders pending tuning.
+
+---
+
+## v0.14.1-0 (2026-08-24)
+
+### For SDK users
+
+#### Added
+
+- **Protocol `0.14.0` support.** `SDK_PROTOCOL_API_MINOR_VERSION` moves from `13` to `14`, and the
+  bundled KMS WASM is bumped to `0.14.0-1` (TFHE stays at `1.6.2`), now the default TKMS module
+  for protocol `>= 0.14.0`. Explicit `moduleVersions.kms` overrides of `0.13.10`/`0.13.20-0` are
+  still accepted under a `0.14.0` protocol context. See [Version compatibility](compatibility.md).
+- **Unified (v2) decryption permits are now usable, not just compiled in.**
+  `createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters)` and
+  `signUnifiedDecryptionPermit(fhevm, parameters)` (self- and delegated decryption, like
+  `signDecryptionPermit`) are exported and functional. A new capability probe,
+  `canUseUnifiedDecryptionPermit(fhevm, { options })`, reports whether the connected relayer
+  supports the `v3/user-decrypt` route before you rely on it — the SDK probes the route once per
+  client (an empty request 400s if present, 404s if absent), caches the result, and dedupes
+  concurrent probes. Calling a v2-permit action against a relayer that doesn't support the route
+  now fails with a clear error pointing at `canUseUnifiedDecryptionPermit` instead of guessing.
+- **ERC-1271 smart-contract-wallet signatures for user decryption.** A decryption permit's
+  `signature` can now be a Safe-style multisig blob or an empty `0x` pre-approved-hash signature,
+  not just a 65-byte EOA ECDSA signature. Before a permit is sent to the KMS, a new precautionary
+  check (`verifyErc1271UserDecrypt`) auto-detects EOA vs. contract wallet: a 65-byte signature is
+  verified locally via `ecrecover`; anything else is checked via a STATICCALL to
+  `IERC1271(userAddress).isValidSignature(digest, signature)`, accepted only if it returns the
+  ERC-1271 magic value `0x1626ba7e`. The KMS remains authoritative and re-verifies independently,
+  but a definitive local rejection now throws fast with a typed error
+  (`Erc1271EoaMismatchNoCodeError`, `Erc1271EmptySigOnEoaError`, `Erc1271WrongMagicError`,
+  `Erc1271RejectedError`) instead of round-tripping to the KMS first. This replaces the old
+  EOA-only `verifyKmsUserDecryptEip712V2` check.
+- **Polygon mainnet chain config** (`polygon`, chain id `137`) added to `@fhevm/sdk/chains`, with
+  `acl`/`inputVerifier`/`kmsVerifier`/`protocolConfig` and gateway addresses wired up; `mainnet`'s
+  previously-unset `protocolConfig` address is now filled in too.
+
+#### Fixed
+
+- **`publicDecrypt`/`userDecrypt` could throw on a protocol v0.14+ chain.**
+  `resolveFhevmClientFrozenContext()` now actually resolves and caches the `ProtocolConfig`
+  contract version — it was previously left unpopulated whenever a chain exposed a
+  `protocolConfig` address, breaking decryption on any such chain.
+- Permit routing in `decryptValuesFromPairs` now dispatches on the signed permit's own `version`
+  field (V1 → `v2/user-decrypt`, V2 → `v3/user-decrypt`) instead of a compile-time SDK
+  protocol-version cap, so the V1/V2 split is a runtime property of the permit again.
+- A KMS/coprocessor signer-context cache-TTL typo is fixed: `CACHE_TTL_15MIN` was actually
+  `15 * 1000` ms (15 seconds), not 15 minutes, so signer/threshold reads were being re-fetched far
+  more often than intended.
+- The published `@fhevm/sdk` npm tarball no longer bundles the ~2 MB development-only
+  `wasm/tfhe/v1.6.0-dev/` build.
+
+#### Changed
+
+- A configured `Logger` is now threaded through relayer request retry/throttle/timeout handling,
+  FHE encryption-key fetch/cache eviction, and WASM/protocol-context initialization failures — if
+  you pass a `logger` in your runtime config, you'll see these paths surfaced through it.
+
+### Internal
+
+- Large sync of the `devex/js-sdk` engine branch onto `release/0.14.x` (unified permits, ERC-1271
+  verification, the relayer-feature-probing mechanism, and the bundled `v0.14.0-1` KMS WASM
+  landed as part of this sync).
+- `HyperWasmSolver`'s compatibility rules moved from an open-ended `SemverRange` (`ge`/`lt`) to a
+  `SemverInterval` (`lowerBound`/`upperBound`), so the `0.13.x`/`0.14.x` protocol windows are each
+  expressed precisely instead of relying on rule ordering.
+- CI/SDLC hardening: a `license-checker` allow-list wired into `npm run dod`, a new Trivy SCA scan
+  workflow, npm added to Dependabot, and a documented external-contribution policy in the README.
+- Dev tooling pinned to exact versions instead of `^` ranges (`eslint`, `typescript`,
+  `typescript-eslint`, `vitest`/`@vitest/coverage-v8`, `wasm-feature-detect`, and others).
+- Renamed `test/browser` to `test/browser-smoke` and `dod.sh` to `run-tests.sh`.
+- Removed the legacy `relayer-sdk-test` directory; the e2e suite now exercises `@fhevm/sdk`
+  exclusively and no longer depends on `@zama-fhe/relayer-sdk`.
+- Added e2e ERC-1271/multisig coverage (a Safe-faithful multisig mock) and new unit suites for
+  unified permits, `extraData` v2, `HyperWasmSolver`'s interval-based rules, and the bundled
+  `v0.14.0-1` KMS WASM module.
+
+---
+
+## v0.13.3 (2026-08-21)
+
+### For SDK users
+
+#### Added
+
+- **`polygon` (Polygon mainnet, chain id `137`) and `polygonAmoy` chain definitions**, exported
+  from `@fhevm/sdk/chains` alongside `mainnet`/`sepolia`; `mainnet`'s previously-unset
+  `protocolConfig` address is filled in.
+- **`Auth`, `AuthType`, `AuthBearerToken`, `AuthApiKeyHeader`, `AuthApiKeyCookie` are now exported
+  from `@fhevm/sdk/types`.** These types already backed `RelayerCommonOptions.auth` but weren't
+  directly importable until now.
+- **`createUnsignedLegacyDecryptionPermitEip712` and `signLegacyDecryptionPermit`**, new
+  tree-shakeable actions (plus a `client.signLegacyDecryptionPermit(...)` client method) that pin
+  the V1 permit shape explicitly. Use these instead of the now-deprecated `signDecryptionPermit`
+  if you want a permit shape that stays stable across future SDK protocol-API upgrades.
+- **Cleartext client support for `forge-fhevm` v1 (legacy) deployments.** The cleartext client
+  now works against local `forge-fhevm` v1 stacks too: it detects a v1 deployment by its
+  well-known single KMS-signer address and reconstructs public-decrypt, user-decrypt, and
+  input-proof/coprocessor-signature results off-chain (reading raw plaintexts from
+  `CleartextFHEVMExecutor.plaintexts` and recomputing the EIP-712 digests locally), instead of
+  relying on the `Cleartext*` view contracts a plain `forge-fhevm` deployment doesn't expose. See
+  `test/scripts/HOWTO_RUN_FORGE_FHEVM_V1.md`.
+
+#### Changed
+
+- **Breaking: `signDecryptionPermit` is deprecated and no longer exported as a standalone
+  action.** `import { signDecryptionPermit } from '@fhevm/sdk/actions/base'` no longer works —
+  only `createUnsignedLegacyDecryptionPermitEip712`/`signLegacyDecryptionPermit` are exported from
+  that barrel now. `client.signDecryptionPermit(...)` still works as a client method (same V1
+  behavior) but is marked `@deprecated` in favor of `client.signLegacyDecryptionPermit(...)`.
+- **Breaking: `serializeTransportKeyPair()` and `serializeSignedDecryptionPermit()` are now
+  `async`.** Both previously returned synchronously; they now return a `Promise` and must be
+  awaited, since both internally resolve the client's frozen version context before serializing.
+- **Breaking: `TransportKeyPair.tkmsVersion` changed from a required `TkmsVersion` to
+  `string | undefined`.** A parsed/deserialized transport key pair no longer necessarily carries a
+  version pinned at creation time — it's resolved dynamically against the current protocol
+  context when the key pair is used for decryption. `generateTransportKeyPair()` is unaffected.
+- Async relayer requests now forward `auth` (e.g. a Zama API key) on GET requests too, not just
+  POST — the status-polling GET call in the async request engine previously omitted it.
+
+#### Fixed
+
+- Fixed a WASM memory leak on TKMS transport-key verification failure: when a deserialized TKMS
+  private key failed its matching public-key check, its WASM memory was never freed before the
+  error propagated.
+
+### Internal
+
+- Removed the `relayer-sdk-test` test app (a mitigation cherry-picked in response to the TanStack
+  npm supply-chain compromise); this only affected an internal test app, not the published
+  package.
+- New `FhevmClientFrozenContext` abstraction (`core/frozenContext/`), replacing three
+  separately-tracked protocol/tfhe/tkms version fields on the internal client implementation.
+  Resolved once per client, deduped across concurrent init calls, and threaded through internal
+  helpers as a single immutable version basis.
+- New `sdkProtocolApiVersion.ts` (`SDK_PROTOCOL_API_MAJOR/MINOR/PATCH_VERSION`) — a static
+  compile-time constant for which protocol API surface a given SDK build speaks, distinct from
+  the dynamic on-chain `protocolVersion`. Used to gate the not-yet-public unified (v2) permit path
+  and as a compile-time-foldable branch so bundlers can tree-shake it out of a v0.13.x build.
+- Reworked KMS `extraData` handling into `kmsExtraData-p.ts`, and folded
+  `getSignersForKmsContext-p.ts` into a reworked `KmsSignersContext-p.ts`/
+  `readKmsSignersContext-p.ts`, with new unit coverage.
+- Large documentation overhaul across `docs/`: rewritten `README.md`, `GLOSSARY.md`, `SUMMARY.md`,
+  `api-reference.md`, `architecture.md`, `chains.md`, `clients.md`, `decryption.md`,
+  `encryption.md`, `getting-started.md`, `migration.md`, `runtime-configuration.md`, `security.md`,
+  `types.md`; new `actions.md` and `error-handling.md` (replacing `errors.md`), new
+  `runtime-compatibility.md`.
 
 ---
 

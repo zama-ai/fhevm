@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second'\n         WHERE dependence_chain_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eafa18372646cb38704ff6ea9b317d6704bc6fbf6a155973437522fc39e29756"
+}

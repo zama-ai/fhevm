@@ -20,7 +20,16 @@ export TENANT_API_KEY
 # ------------------------------------------------------------------------------
 
 HEALTH_CHECK_PORT=10002
+# Version overrides for a fleet that joins a running stack: consensus decides the
+# role, and the release has to move too or the cutover is refused. Each is off
+# unless its variable is set.
 FEATURES=()
+if [[ -n "${BUILD_STACK_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/stack-version-override)
+fi
+if [[ -n "${BUILD_CONSENSUS_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/consensus-version-override)
+fi
 
 # ------------------------------------------------------------------------------
 # CLI parsing

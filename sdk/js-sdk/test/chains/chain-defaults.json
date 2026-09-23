@@ -29,24 +29,6 @@
     "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
     "fheTestVersion": "v2"
   },
-  "localstack_v11": {
-    "rpcUrl": "http://localhost:8545",
-    "mnemonic": "test test test test test test test future home engine virtual motion",
-    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
-    "fheTestVersion": "v2"
-  },
-  "localstack_v12": {
-    "rpcUrl": "http://localhost:8545",
-    "mnemonic": "test test test test test test test future home engine virtual motion",
-    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
-    "fheTestVersion": "v2"
-  },
-  "localstack_v13": {
-    "rpcUrl": "http://localhost:8545",
-    "mnemonic": "test test test test test test test future home engine virtual motion",
-    "fheTestAddress": "0x61a8e950161daCCA06b0b623Efa2b7237BaBD4a0",
-    "fheTestVersion": "v2"
-  },
   "localstack_v14": {
     "rpcUrl": "http://localhost:8545",
     "mnemonic": "test test test test test test test future home engine virtual motion",
@@ -81,6 +63,11 @@
   "polygon_testnet": {
     "rpcUrl": "https://rpc-amoy.polygon.technology",
     "fheTestAddress": "0xa66bCEd74D1Df0736d0eb8E52371b1b1AAA1F0F0",
+    "fheTestVersion": "v2"
+  },
+  "polygon_mainnet": {
+    "rpcUrl": "https://polygon-rpc.com",
+    "fheTestAddress": "0xFb10eda9e9b4f3f7dd928B6F32fBB94E2a20451d",
     "fheTestVersion": "v2"
   },
   "ingen_trex_cleartext": {

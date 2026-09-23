@@ -8,6 +8,8 @@ use tokio_util::sync::CancellationToken;
 use std::sync::{Once, OnceLock};
 use tokio::task::JoinSet;
 
+#[cfg(feature = "bench")]
+pub mod benchmark_exact_tuples;
 pub mod bridge;
 pub mod daemon_cli;
 pub mod dependence_chain;
@@ -23,7 +25,26 @@ pub fn start_runtime(
     args: daemon_cli::Args,
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
 ) {
-    tokio::runtime::Builder::new_multi_thread()
+    start_runtime_inner(args, close_recv, tfhe_worker::NO_READINESS);
+}
+
+/// Starts the worker and signals readiness once the worker is installed.
+/// Benchmark harness only.
+#[cfg(feature = "bench")]
+pub fn start_runtime_with_readiness(
+    args: daemon_cli::Args,
+    close_recv: Option<tokio::sync::watch::Receiver<bool>>,
+    readiness: Option<tfhe_worker::ReadinessSignal>,
+) {
+    start_runtime_inner(args, close_recv, readiness);
+}
+
+fn start_runtime_inner(
+    args: daemon_cli::Args,
+    close_recv: Option<tokio::sync::watch::Receiver<bool>>,
+    readiness: tfhe_worker::Readiness,
+) {
+    let fatal = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
         .max_blocking_threads(args.coprocessor_fhe_threads)
@@ -33,7 +54,7 @@ pub fn start_runtime(
         .block_on(async {
             if let Some(mut close_recv) = close_recv {
                 tokio::select! {
-                    main = async_main(args) => {
+                    main = async_main_inner(args, readiness) => {
                         if let Err(e) = main {
                             error!(target: "main_wchannel", { error = e }, "Runtime error");
                         }
@@ -42,10 +63,25 @@ pub fn start_runtime(
                         info!(target: "main_wchannel", "Service stopped voluntarily");
                     }
                 }
-            } else if let Err(e) = async_main(args).await {
+                // Callers that pass `close_recv` run the worker in-process (the
+                // unit tests and the benchmark harness) and own the process
+                // themselves, so a failure here must not take them down.
+                false
+            } else if let Err(e) = async_main_inner(args, readiness).await {
                 error!(target: "main", { error = e }, "Runtime error");
+                // Export the fatal event while its async runtime is still alive.
+                telemetry::flush();
+                true
+            } else {
+                false
             }
-        })
+        });
+
+    // Supervisors using restart-on-failure need a nonzero status. The runtime
+    // has been dropped here; embedded callers retain ownership of their process.
+    if fatal {
+        std::process::exit(1);
+    }
 }
 
 // Used for testing as we would call `async_main()` multiple times.
@@ -54,6 +90,15 @@ static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::
 
 pub async fn async_main(
     args: daemon_cli::Args,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async_main_inner(args, tfhe_worker::NO_READINESS).await
+}
+
+// `readiness` is the cfg-erased unit type without `bench`.
+#[cfg_attr(not(feature = "bench"), allow(unused_variables))]
+async fn async_main_inner(
+    args: daemon_cli::Args,
+    readiness: tfhe_worker::Readiness,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         let otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
@@ -64,12 +109,22 @@ pub async fn async_main(
         let _ = OTEL_GUARD.set(otel_guard);
     });
 
+    #[cfg(feature = "gpu")]
+    if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
+        error!(error = %err, "GPU runtime architecture does not match image target");
+        telemetry::flush();
+        std::process::exit(1);
+    }
+
     let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
     let database_url = resolve_database_url_from_option(args.database_url.clone())?;
 
-    let health_check = health_check::HealthCheck::new(database_url.clone());
+    let health_check = health_check::HealthCheck::new(
+        database_url.clone(),
+        std::time::Duration::from_secs(args.max_batch_ttl_secs),
+    );
 
     let mut set = JoinSet::new();
     let metrics_addr = args.metrics_addr.clone();
@@ -112,6 +167,13 @@ pub async fn async_main(
         let gpu_enabled = fhevm_engine_common::utils::log_backend();
         info!(target: "async_main", gpu_enabled,  "Initializing background worker");
 
+        #[cfg(feature = "bench")]
+        set.spawn(tfhe_worker::run_tfhe_worker_with_readiness(
+            args.clone(),
+            health_check.clone(),
+            readiness,
+        ));
+        #[cfg(not(feature = "bench"))]
         set.spawn(tfhe_worker::run_tfhe_worker(
             args.clone(),
             health_check.clone(),

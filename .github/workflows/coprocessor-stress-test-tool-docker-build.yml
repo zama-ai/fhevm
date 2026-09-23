@@ -34,6 +34,7 @@ jobs:
               - coprocessor/fhevm-engine/stress-test-generator/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
+              - host-contracts/rust_bindings/**
 
   build:
     needs: check-changes

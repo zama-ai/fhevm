@@ -5,12 +5,18 @@ import {
   LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
+  LEGACY_KMS_CORE_IMAGE_REPOSITORY,
+  MODERN_KMS_CORE_IMAGE_REPOSITORY,
+  assertBlueGreenKmsCompatibility,
+  assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
+  kmsCoreImageRepository,
   canonicalProtocolConfigSeedingUsesEnv,
   compatArgPolicyForPinnedTag,
   compatPolicyForState,
   coprocessorUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
+  replaceRegistrySourceTag,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
@@ -19,6 +25,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -28,6 +35,75 @@ import { testDefaultScenario } from "./test-fixtures";
 import type { LocalOverride } from "./types";
 
 describe("compat", () => {
+  test("registry SHA replacements retain and semantic tags reset command compatibility", () => {
+    const hotfix = replaceRegistrySourceTag({ mode: "registry", tag: "v0.14.0-7" }, "04fb072");
+    expect(hotfix).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.14.0-7" });
+    expect(replaceRegistrySourceTag(hotfix, "15abcde", "v0.15.0")).toEqual({
+      mode: "registry",
+      tag: "15abcde",
+      compatTag: "v0.15.0",
+    });
+    expect(replaceRegistrySourceTag(hotfix, "v0.15.0")).toEqual({ mode: "registry", tag: "v0.15.0" });
+  });
+
+  test("multi-node consensus topologies need one coprocessor revision, not a local build", () => {
+    const scenario = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [0, 1, 2].map((index) => ({ index, source: { mode: "inherit" as const }, env: {}, args: {} })),
+    });
+    const versions = {
+      target: "latest-main" as const,
+      lockName: "latest-main.json",
+      env: { COPROCESSOR_TFHE_WORKER_VERSION: "v0.15.0" } as Record<string, string>,
+      sources: [],
+    };
+    // The published bundle on every node is one revision: the orchestrated CI
+    // path runs exactly this, with no override at all.
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario })).not.toThrow();
+    // A full local build on every node is one revision too.
+    expect(() =>
+      assertSupportedBundleScenario({ versions, overrides: [{ group: "coprocessor" }], scenario }),
+    ).not.toThrow();
+    // A service-scoped override mixes local and published services.
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario,
+      }),
+    ).toThrow("service-scoped coprocessor override (coprocessor-host-listener)");
+    // Instances on different sources are different revisions.
+    const mixed = testDefaultScenario({
+      topology: { count: 3, threshold: 3 },
+      instances: [
+        { index: 0, source: { mode: "local" }, env: {}, args: {} },
+        { index: 1, source: { mode: "registry", tag: "v0.14.0" }, env: {}, args: {} },
+        { index: 2, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: mixed })).toThrow(
+      /instance sources differ: .*local \(instance 0\).*registry:v0\.14\.0 \(instance 1\).*bundle \(instance 2\)/,
+    );
+    // An explicit registry tag equal to the bundle's is the same revision.
+    const pinnedToBundle = testDefaultScenario({
+      topology: { count: 2, threshold: 2 },
+      instances: [
+        { index: 0, source: { mode: "registry", tag: "v0.15.0" }, env: {}, args: {} },
+        { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
+      ],
+    });
+    expect(() => assertSupportedBundleScenario({ versions, overrides: [], scenario: pinnedToBundle })).not.toThrow();
+    // A single node is never a consensus comparison; partial overrides stay legal there.
+    const single = testDefaultScenario({ topology: { count: 1, threshold: 1 } });
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions,
+        overrides: [{ group: "coprocessor", services: ["coprocessor-host-listener"] }],
+        scenario: single,
+      }),
+    ).not.toThrow();
+  });
+
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
     const issues = validateBundleCompatibility({
       versions: {
@@ -188,9 +264,11 @@ describe("compat", () => {
     expect(policy.coprocessorDropFlags["sns-worker"]).not.toContain("--signer-type");
   });
 
-  test("leaves a registry-pinned fleet unshimmed once it reaches the current contract", () => {
+  test("uses current sender transport without legacy flags for a current registry fleet", () => {
     const policy = compatArgPolicyForPinnedTag("v0.15.0");
-    expect(policy.coprocessorArgs).toEqual({});
+    expect(policy.coprocessorArgs).toEqual({
+      "transaction-sender": [["--gateway-url", { env: "GATEWAY_URL" }]],
+    });
     expect(policy.coprocessorDropFlags).toEqual({});
   });
 
@@ -387,6 +465,38 @@ describe("compat", () => {
     // Unparsed main sha tags are published by CI and count as modern.
     expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
+  test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // Pinned profiles and shas that predate the endpoint/proxy images omit the (optional) keys.
+    expect(supportsConnectorHttp(stateFor({}))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0", CONNECTOR_PROXY_VERSION: "v0.14.0" }))).toBe(true);
+    // Separate images with separate tags: the path needs both, a bundle with only one gates it out.
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({ CONNECTOR_ENDPOINT_VERSION: "v0.14.0", CONNECTOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    // A whole-group kms-connector override builds both from the working tree.
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector" }]))).toBe(true);
+    // A single-service override only supplies that service; the other must still be pinned.
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-proxy"] }]))).toBe(false);
+    expect(
+      supportsConnectorHttp(
+        stateFor({ CONNECTOR_PROXY_VERSION: "02f6cc0" }, [{ group: "kms-connector", services: ["kms-connector-endpoint"] }]),
+      ),
+    ).toBe(true);
+    expect(
+      supportsConnectorHttp(
+        stateFor({ CONNECTOR_ENDPOINT_VERSION: "02f6cc0" }, [{ group: "kms-connector", services: ["kms-connector-proxy"] }]),
+      ),
+    ).toBe(true);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }]))).toBe(false);
+    expect(supportsConnectorHttp(stateFor({}, [{ group: "coprocessor" }]))).toBe(false);
   });
 
   test("enables host-listener consumer for v0.13 prereleases and newer bundles", () => {
@@ -772,7 +882,7 @@ describe("compat", () => {
     expect(supportsCanonicalProtocolConfigSeeding(stateFor("v0.13.0"))).toBe(false);
 
     // Ships the task, but it takes its input as command-line flags.
-    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8"]) {
+    for (const version of ["v0.13.1", "v0.13.3", "v0.14.0-0", "v0.14.0-8", "v0.14.0-9"]) {
       expect(supportsCanonicalProtocolConfigSeeding(stateFor(version))).toBe(true);
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(false);
     }
@@ -786,12 +896,88 @@ describe("compat", () => {
     }
 
     // Builds at or above the build floor read the CANONICAL_* env variables.
-    for (const version of ["v0.14.0-9", "v0.14.0-10"]) {
+    for (const version of ["v0.14.0-10", "v0.14.0-11"]) {
       expect(canonicalProtocolConfigSeedingUsesEnv(stateFor(version))).toBe(true);
     }
 
     // Sha refs and local host-contracts overrides track the workspace, which is env mode.
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("65cf86e"))).toBe(true);
     expect(canonicalProtocolConfigSeedingUsesEnv(stateFor("v0.14.0-8", [{ group: "host-contracts" }]))).toBe(true);
+  });
+});
+
+test.each(["v0.11.0", "v0.12.0", "v0.13.4", "v0.14.0-7", "v0.14.1", "v0.14.1-1"])("keeps WS for pinned sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_WS_URL" }]);
+});
+test.each(["v0.13.5", "v0.13.6", "v0.14.2-0", "v0.14.2", "v0.15.0", "main", "c2f416b"])("uses HTTP for current sender %s", (tag) => {
+  expect(compatArgPolicyForPinnedTag(tag).coprocessorArgs["transaction-sender"])
+    .toContainEqual(["--gateway-url", { env: "GATEWAY_URL" }]);
+});
+
+describe("kms core image repository", () => {
+  test("pre-0.15 cores come from the plain core-service repository", () => {
+    expect(kmsCoreImageRepository("v0.14.0-1")).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+    expect(kmsCoreImageRepository("v0.14.2-0")).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+  });
+
+  test("0.15+ and unparsed tags use the insecure build", () => {
+    expect(kmsCoreImageRepository("v0.15.0-0")).toBe(MODERN_KMS_CORE_IMAGE_REPOSITORY);
+    expect(kmsCoreImageRepository("target-core")).toBe(MODERN_KMS_CORE_IMAGE_REPOSITORY);
+  });
+
+  test("compat policy exposes the repository to compose", () => {
+    const policy = compatPolicyForState({
+      versions: {
+        target: "latest-main",
+        lockName: "latest-main.json",
+        env: { CORE_VERSION: "v0.14.0-1" } as Record<string, string>,
+        sources: [],
+      },
+      overrides: [],
+      scenario: testDefaultScenario(),
+    });
+    expect(policy.composeEnv.CORE_IMAGE_REPOSITORY).toBe(LEGACY_KMS_CORE_IMAGE_REPOSITORY);
+  });
+});
+
+describe("assertBlueGreenKmsCompatibility", () => {
+  const blueGreen = (tag: string) =>
+    ({
+      kind: "blue-green",
+      bcs: { source: { mode: "registry", tag } },
+    }) as never;
+
+  test("rejects a pre-0.15 Blue booting against a 0.15 KMS core", () => {
+    expect(() => assertBlueGreenKmsCompatibility(blueGreen("v0.14.0-7"), { env: { CORE_VERSION: "v0.15.0-0" } })).toThrow(
+      "set bootstrap.tag",
+    );
+  });
+
+  test("accepts a pre-0.15 Blue once the KMS boots at a 0.14 core", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(blueGreen("v0.14.0-7"), { env: { CORE_VERSION: "v0.14.0-1" } }),
+    ).not.toThrow();
+  });
+
+  test("judges a SHA-pinned Blue by its compat tag", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(
+        { kind: "blue-green", bcs: { source: { mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" } } } as never,
+        { env: { CORE_VERSION: "v0.15.0-0" } },
+      ),
+    ).toThrow("set bootstrap.tag");
+  });
+
+  test("ignores a 0.15 Blue and a locally built Blue", () => {
+    expect(() =>
+      assertBlueGreenKmsCompatibility(blueGreen("v0.15.0-0"), { env: { CORE_VERSION: "v0.15.0-0" } }),
+    ).not.toThrow();
+    expect(() =>
+      assertBlueGreenKmsCompatibility(
+        { kind: "blue-green", bcs: { source: { mode: "local" } } } as never,
+        { env: { CORE_VERSION: "v0.15.0-0" } },
+      ),
+    ).not.toThrow();
   });
 });

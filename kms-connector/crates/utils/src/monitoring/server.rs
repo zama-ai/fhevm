@@ -1,7 +1,8 @@
 use crate::monitoring::{health::Healthcheck, otlp::metrics_responder};
 use actix_web::{HttpResponse, web::Data};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -18,11 +19,15 @@ pub fn start_monitoring_server<S>(
     endpoint: SocketAddr,
     state: S,
     cancel_token: CancellationToken,
-) -> JoinHandle<()>
+) -> anyhow::Result<JoinHandle<()>>
 where
     S: Healthcheck + Clone + Send + Sync + 'static,
 {
-    tokio::spawn(async move {
+    let listener = TcpListener::bind(endpoint)
+        .with_context(|| format!("Failed to bind monitoring server to {endpoint}"))?;
+    info!("Monitoring server listening at: {endpoint}");
+
+    let monitoring_server_task = tokio::spawn(async move {
         let monitoring_server = match actix_web::HttpServer::new(move || {
             actix_web::App::new()
                 .app_data(Data::new(state.clone()))
@@ -31,20 +36,25 @@ where
                 .route("/liveness", actix_web::web::to(liveness_responder))
                 .route("/version", actix_web::web::to(version_responder::<S>))
         })
-        .bind(&endpoint)
+        .workers(MONITORING_SERVER_WORKER)
+        .listen(listener)
         {
             Ok(server) => server,
-            Err(e) => return error!("Failed to bind monitoring server to {endpoint}: {e}"),
+            Err(e) => {
+                error!("Failed to start monitoring server on {endpoint}, shutting down: {e}");
+                return cancel_token.cancel();
+            }
         };
-        info!("Monitoring server listening at: {endpoint}");
 
         select! {
-            res = monitoring_server.workers(MONITORING_SERVER_WORKER).run() => if let Err(e) = res {
-                error!("Monitoring server stopped on error: {e}");
+            res = monitoring_server.run() => if let Err(e) = res {
+                error!("Monitoring server stopped on error, shutting down: {e}");
+                cancel_token.cancel();
             },
             _ = cancel_token.cancelled() => info!("Monitoring server successfully stopped")
         }
-    })
+    });
+    Ok(monitoring_server_task)
 }
 
 /// Performs the healthcheck verification using the service's `State`.

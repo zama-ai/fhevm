@@ -8,6 +8,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
+  supportsConnectorHttp,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
@@ -20,7 +21,17 @@ import {
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
-import { kmsConnectorDbName, kmsConnectorEnvName, kmsCoreName, kmsMpcPort, kmsPublicPrefix, kmsServicePort, reconstructionThreshold } from "../kms-party";
+import {
+  kmsConnectorDbName,
+  kmsConnectorEnvName,
+  kmsConnectorPrefix,
+  kmsCoreName,
+  kmsMpcPort,
+  kmsPartyIds,
+  kmsPublicPrefix,
+  kmsServicePort,
+  reconstructionThreshold,
+} from "../kms-party";
 import type { State } from "../types";
 import { predictedCrsId, predictedKeyId } from "../utils/fs";
 
@@ -215,10 +226,16 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
+    KMS_CONNECTOR_SUPPORTED_CHAIN_IDS: chains.map((chain) => String(chain.chainId)).join(","),
   });
   updateContracts(envs["relayer"], {
     APP_GATEWAY__CONTRACTS__DECRYPTION_ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     APP_GATEWAY__CONTRACTS__INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
+    // GatewayConfig backs the relayer's off-chain Coprocessor attestation readiness check
+    // (RFC-023): Coprocessor signers, S3 bucket URLs and the majority threshold come from it.
+    // Lives under gw_ciphertext_check, not contracts: only that check consumes it.
+    APP_GATEWAY__READINESS_CHECKER__GW_CIPHERTEXT_CHECK__GATEWAY_CONFIG_ADDRESS:
+      state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
   });
   updateContracts(envs["test-suite"], {
     GATEWAY_CONFIG_ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
@@ -242,12 +259,17 @@ export type KmsParty = { party: number; endpoint: string; privateKey: string; db
 
 /**
  * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
- * mock_enclave skips PCR attestation, so zero PCRs suffice. softwareVersion must be valid semver
+ * The cores run without auto TLS, so they never enforce the PCR allowlist and zero PCRs suffice.
+ * softwareVersion must be valid semver
  * (the KMS core parses it) — fall back to a placeholder when CORE_VERSION is a git-SHA tag.
  */
-const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: StackSpec) => {
+const applyProtocolConfigKmsGlobals = (
+  hostSc: Record<string, string>,
+  plan: StackSpec,
+  coreVersion = plan.versions.env.CORE_VERSION ?? "",
+) => {
   const zeroPcr = `0x${"00".repeat(48)}`;
-  const coreVersion = (plan.versions.env.CORE_VERSION ?? "").replace(/^v/, "");
+  coreVersion = coreVersion.replace(/^v/, "");
   hostSc.KMS_SOFTWARE_VERSION = /^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/.test(coreVersion) ? coreVersion : "0.1.0";
   hostSc.KMS_PCR_VALUES = JSON.stringify([{ pcr0: zeroPcr, pcr1: zeroPcr, pcr2: zeroPcr }]);
 };
@@ -261,13 +283,14 @@ const applyProtocolConfigKmsGlobals = (hostSc: Record<string, string>, plan: Sta
 const applyKmsCentralizedHostEnv = (
   envs: Record<string, Record<string, string>>,
   plan: StackSpec,
-  state: Pick<State, "discovery">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
 ) => {
   if (plan.kms.mode === "threshold") {
     return;
   }
   const hostSc = envs["host-sc"];
-  applyProtocolConfigKmsGlobals(hostSc, plan);
+  // A bootstrapped core is upgraded after keygen; name the core that will serve, not the one generating.
+  applyProtocolConfigKmsGlobals(hostSc, plan, state.bootstrapPending?.target.env.CORE_VERSION);
   hostSc.KMS_NODE_PARTY_ID_0 = "1";
   hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
   hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
@@ -417,10 +440,19 @@ const buildKmsConnectorInstanceEnvs = (
     next.KMS_CONNECTOR_PRIVATE_KEY = privateKey;
     next.KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
     next.DATABASE_URL = `postgresql://db:5432/${dbName}`;
+    next.KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, party);
     instanceEnvs[kmsConnectorEnvName(party)] = next;
   }
   return instanceEnvs;
 };
+
+/** Port the kms-connector HTTP endpoint listens on, read from the (template) bind address. */
+const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
+  (envs["kms-connector"].KMS_CONNECTOR_HTTP_ENDPOINT ?? "").split(":").pop() || "8080";
+
+/** `host:port` of party i's HTTP endpoint: what that party's TLS proxy forwards to. */
+const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
+  `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
@@ -484,9 +516,23 @@ const validateEnvMaps = (
   }
 };
 
+const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  // The base kms-connector.env is party 1's env (the unsuffixed `kms-connector-*` containers);
+  // parties 2..n get their own address in buildKmsConnectorInstanceEnvs.
+  envs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, 1);
+  const supported = supportsConnectorHttp(plan);
+  const proxyPort = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
+  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supported
+    ? kmsPartyIds(plan.kms.committeeSize)
+        .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
+        .join(",")
+    : "";
+  envs["test-suite"].KMS_THRESHOLD = plan.kms.mode === "threshold" ? String(plan.kms.threshold) : "0";
+};
+
 /** Renders component and per-instance env maps from state, topology, and discovery. */
 export const renderEnvMaps = async (
-  state: Pick<State, "discovery">,
+  state: Pick<State, "discovery" | "bootstrapPending">,
   plan: StackSpec,
   templateEnvs: Record<string, Record<string, string>>,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
@@ -516,8 +562,7 @@ export const renderEnvMaps = async (
   envs["coprocessor"].RPC_HTTP_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].RPC_WS_URL = `ws://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["coprocessor"].CANONICAL_PROTOCOL_CONFIG_CHAIN_ID = defaultChain.chainId;
-  // TODO: drop once RFC-023 lands — the post-cutover backfill rewrites
-  // digests away from the immutable on-chain consensus, so drift auto-revert loops forever.
+  // Auto-revert stays off under blue-green: the cutover merge legitimately replaces blue's in-window digests with green's, which the detector cannot tell from real drift.
   if (plan.blueGreen) {
     envs["coprocessor"].DRIFT_AUTO_REVERT_ENABLED = "false";
   }
@@ -525,6 +570,7 @@ export const renderEnvMaps = async (
   envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID = defaultChain.chainId;
   envs["test-suite"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["test-suite"].CHAIN_ID_HOST = defaultChain.chainId;
+  applyConnectorHttpEnv(envs, plan);
 
   // Multi-chain seeding for the coprocessor dbMigration container.
   // HOST_CHAINS_COUNT + indexed HOST_CHAIN_<i>_{ID,NAME,ACL} drive

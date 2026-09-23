@@ -1,12 +1,11 @@
 use crate::tests::event_helpers::{
-    allow_handle, as_scalar_uint, decrypt_handles, insert_event, next_handle, setup_event_harness,
-    to_ty, wait_until_computed, zero_address,
+    allow_handle, as_scalar_uint, decrypt_handles, insert_event, next_handle,
+    next_handle_with_type, setup_event_harness, to_ty, wait_until_computed, zero_address,
 };
 use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
-use serial_test::serial;
 use std::str::FromStr;
 
 const RANDOM_SUPPORTED_TYPES_CPU: &[i32] = &[
@@ -65,7 +64,6 @@ fn random_test_supported_types() -> &'static [i32] {
 }
 
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();
@@ -79,7 +77,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
             .await?
             .expect("new_transaction() returns Some on a live stack");
 
-        let output1 = next_handle();
+        let output1 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -95,7 +93,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &output1).await?;
 
-        let output2 = next_handle();
+        let output2 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -111,7 +109,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &output2).await?;
 
-        let output3 = next_handle();
+        let output3 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -179,7 +177,6 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 /// (e.g. upper_bound=1 produces 0 random bits, which behaves differently
 /// on GPU).
 #[tokio::test]
-#[serial(db)]
 async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();
@@ -216,7 +213,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
             .expect("new_transaction() returns Some on a live stack");
 
         // First sample
-        let output1 = next_handle();
+        let output1 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,
@@ -234,7 +231,7 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         allow_handle(&harness.listener_db, &mut tx, &output1).await?;
 
         // Second sample with a different seed
-        let output2 = next_handle();
+        let output2 = next_handle_with_type(rand_type);
         insert_event(
             &harness.listener_db,
             &mut tx,

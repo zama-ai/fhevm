@@ -111,7 +111,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
 
   describe('parseCoprocessorUpgradeInputs', function () {
     it('parses valid params, resolving the environment RPC URLs from env vars', function () {
-      process.env.RPC_URL_GATEWAY_TESTNET = 'https://gw.testnet.invalid';
+      process.env.GATEWAY_TESTNET_RPC_URL = 'https://gw.testnet.invalid';
       const inputs = parseCoprocessorUpgradeInputs({
         environment: 'testnet',
         startTime: '2026-07-01T12:00:00Z',
@@ -124,7 +124,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       expect(inputs.durationSeconds).to.equal(1800);
       expect(inputs.bufferSeconds).to.equal(3600);
       expect(inputs.proposalId).to.equal(5n);
-      expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002]);
+      expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002, 560048, 97]);
       expect(inputs.gateway.rpcUrl).to.equal('https://gw.testnet.invalid');
     });
 
@@ -142,7 +142,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
     });
 
     it('rejects a non-positive proposal id', function () {
-      process.env.RPC_URL_GATEWAY_TESTNET = 'https://gw.testnet.invalid';
+      process.env.GATEWAY_TESTNET_RPC_URL = 'https://gw.testnet.invalid';
       expect(() =>
         parseCoprocessorUpgradeInputs({
           environment: 'testnet',
@@ -158,8 +158,8 @@ describe('prepareCoprocessorUpgrade task utils', function () {
 
   describe('resolveEnvironment', function () {
     it('requires the gateway RPC env var when no default exists (devnet)', function () {
-      delete process.env.RPC_URL_GATEWAY_DEVNET;
-      expect(() => resolveEnvironment('devnet')).to.throw(/RPC_URL_GATEWAY_DEVNET/);
+      delete process.env.GATEWAY_DEVNET_RPC_URL;
+      expect(() => resolveEnvironment('devnet')).to.throw(/GATEWAY_DEVNET_RPC_URL/);
     });
   });
 });

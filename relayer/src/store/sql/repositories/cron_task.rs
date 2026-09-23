@@ -1,6 +1,7 @@
 use crate::{
     config::settings::CronConfig,
     logging::WorkerStep,
+    orchestrator::DispatchGate,
     store::sql::{
         client::PgClient,
         repositories::{expiry_repo::ExpiryRepository, timeout_repo::TimeoutRepository},
@@ -9,9 +10,15 @@ use crate::{
 use futures::FutureExt;
 use std::time::Duration;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-async fn run_timeout_worker_logic(pool: PgClient, cron_config: CronConfig) {
+async fn run_timeout_worker_logic(
+    pool: PgClient,
+    cron_config: CronConfig,
+    gate: DispatchGate,
+    shutdown: CancellationToken,
+) {
     let repo = TimeoutRepository::new(pool, cron_config.clone());
     let mut interval = tokio::time::interval(cron_config.timeout_cron_interval);
 
@@ -24,7 +31,17 @@ async fn run_timeout_worker_logic(pool: PgClient, cron_config: CronConfig) {
     );
 
     loop {
-        interval.tick().await;
+        // Only the confirmed dispatcher times rows out. Two pods writing
+        // terminal statuses to the same rows is the collision the dispatcher lock exists to
+        // prevent, and a row this pod does not drive is not its to give up on.
+        tokio::select! {
+            _ = gate.wait_open() => {}
+            _ = shutdown.cancelled() => return,
+        }
+        tokio::select! {
+            _ = interval.tick() => {}
+            _ = shutdown.cancelled() => return,
+        }
         debug!("Timeout worker tick - checking for stale requests");
 
         match repo.time_out_stale_requests().await {
@@ -50,10 +67,16 @@ async fn run_timeout_worker_logic(pool: PgClient, cron_config: CronConfig) {
     }
 }
 
-pub async fn create_timeout_worker_future(pool: PgClient, cron_config: CronConfig) {
+pub async fn create_timeout_worker_future(
+    pool: PgClient,
+    cron_config: CronConfig,
+    gate: DispatchGate,
+    shutdown: CancellationToken,
+) {
     loop {
         let pool_clone = pool.clone();
         let cron_config_clone = cron_config.clone();
+        let gate_clone = gate.clone();
 
         info!(
             step = %WorkerStep::WorkerStarted,
@@ -62,10 +85,20 @@ pub async fn create_timeout_worker_future(pool: PgClient, cron_config: CronConfi
         );
 
         let result = std::panic::AssertUnwindSafe(async {
-            run_timeout_worker_logic(pool_clone, cron_config_clone).await;
+            run_timeout_worker_logic(pool_clone, cron_config_clone, gate_clone, shutdown.clone())
+                .await;
         })
         .catch_unwind()
         .await;
+
+        if shutdown.is_cancelled() {
+            info!(
+                step = %WorkerStep::WorkerStopped,
+                worker = "timeout",
+                "Worker stopped (shutdown)"
+            );
+            return;
+        }
 
         match result {
             Ok(_) => {
@@ -89,7 +122,12 @@ pub async fn create_timeout_worker_future(pool: PgClient, cron_config: CronConfi
     }
 }
 
-async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
+async fn run_expiry_worker_logic(
+    pool: PgClient,
+    cron_config: CronConfig,
+    gate: DispatchGate,
+    shutdown: CancellationToken,
+) {
     let repo = ExpiryRepository::new(pool, cron_config.clone());
 
     let mut interval = tokio::time::interval(cron_config.expiry_cron_interval);
@@ -103,10 +141,23 @@ async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
     );
 
     // Skip the first immediate tick to avoid competing with timeout worker at startup
-    interval.tick().await;
+    tokio::select! {
+        _ = interval.tick() => {}
+        _ = shutdown.cancelled() => return,
+    }
 
     loop {
-        interval.tick().await;
+        // Gated behind the dispatch gate: deleting rows is not destructive to another
+        // pod's in-flight work the way a status write is, but running one purge per replica is
+        // wasted duplicate scanning of the same tables.
+        tokio::select! {
+            _ = gate.wait_open() => {}
+            _ = shutdown.cancelled() => return,
+        }
+        tokio::select! {
+            _ = interval.tick() => {}
+            _ = shutdown.cancelled() => return,
+        }
         debug!("Expiry worker tick - checking for stale data");
 
         match repo.purge_stale_data().await {
@@ -132,9 +183,15 @@ async fn run_expiry_worker_logic(pool: PgClient, cron_config: CronConfig) {
     }
 }
 
-pub async fn create_expiry_worker_future(pool: PgClient, cron_config: CronConfig) {
+pub async fn create_expiry_worker_future(
+    pool: PgClient,
+    cron_config: CronConfig,
+    gate: DispatchGate,
+    shutdown: CancellationToken,
+) {
     loop {
         let pool_clone = pool.clone();
+        let gate_clone = gate.clone();
 
         info!(
             step = %WorkerStep::WorkerStarted,
@@ -143,10 +200,25 @@ pub async fn create_expiry_worker_future(pool: PgClient, cron_config: CronConfig
         );
 
         let result = std::panic::AssertUnwindSafe(async {
-            run_expiry_worker_logic(pool_clone, cron_config.clone()).await;
+            run_expiry_worker_logic(
+                pool_clone,
+                cron_config.clone(),
+                gate_clone,
+                shutdown.clone(),
+            )
+            .await;
         })
         .catch_unwind()
         .await;
+
+        if shutdown.is_cancelled() {
+            info!(
+                step = %WorkerStep::WorkerStopped,
+                worker = "expiry",
+                "Worker stopped (shutdown)"
+            );
+            return;
+        }
 
         match result {
             Ok(_) => {

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO dependence_chain\n            (dependence_chain_id, status, last_updated_at, block_timestamp, block_height,\n             schedule_priority, dependency_count)\n        VALUES ($1, 'updated', NOW() - INTERVAL '10 minutes', NOW(), 1, 0, 2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cf0ca80fb0b12b64f5cf1cb80aa1e2b51a1fedb57285558a35e5f7b30f6d1878"
+}

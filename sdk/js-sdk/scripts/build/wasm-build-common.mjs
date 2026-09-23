@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFile
 import { createRequire } from 'node:module';
 import { dirname, join, relative, sep } from 'node:path';
 
-import { BUILD_PROFILES, KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManifest.js';
+import { KMS_MANIFEST, TFHE_MANIFEST } from '../../versionsManifest.js';
 import {
   generateKmsApiSource,
   generateKmsLoaderSource,
@@ -27,8 +27,7 @@ export const generatedWasmArtifacts = Object.freeze({
   tfheLoader: Object.freeze({
     rel: 'tfhe/loadTfheLib.js',
     kind: 'loader',
-    source: ({ profile, tfheDefaultVersion, tfheVersions }) =>
-      generateTfheLoaderSource(tfheVersions, profile, tfheDefaultVersion),
+    source: ({ tfheDefaultVersion, tfheVersions }) => generateTfheLoaderSource(tfheVersions, tfheDefaultVersion),
   }),
   tfheApi: Object.freeze({
     rel: 'tfhe/TfheApi.d.ts',
@@ -38,8 +37,7 @@ export const generatedWasmArtifacts = Object.freeze({
   kmsLoader: Object.freeze({
     rel: 'tkms/loadKmsLib.js',
     kind: 'loader',
-    source: ({ kmsDefaultVersion, kmsVersions, profile }) =>
-      generateKmsLoaderSource(kmsVersions, profile, kmsDefaultVersion),
+    source: ({ kmsDefaultVersion, kmsVersions }) => generateKmsLoaderSource(kmsVersions, kmsDefaultVersion),
   }),
   kmsApi: Object.freeze({
     rel: 'tkms/KmsLibApi.d.ts',
@@ -59,15 +57,9 @@ export const generatedWasmApiDeclarationRels = new Set(
 );
 
 export function createWasmBuildContext(target, scriptName) {
-  const profile = process.env.BUILD_PROFILE ?? 'dev';
-  if (!BUILD_PROFILES.includes(profile)) {
-    console.error(`[${scriptName}] unknown BUILD_PROFILE='${profile}'. Expected one of: ${BUILD_PROFILES.join(', ')}`);
-    process.exit(1);
-  }
-
-  const tfheVersions = TFHE_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
-  const kmsVersions = KMS_MANIFEST.filter((entry) => entry.tags.includes(profile)).map((entry) => entry.version);
-  const defaultVersions = resolveDefaultWasmVersions(profile);
+  const tfheVersions = TFHE_MANIFEST.map((entry) => entry.version);
+  const kmsVersions = KMS_MANIFEST.map((entry) => entry.version);
+  const defaultVersions = resolveDefaultWasmVersions();
   const dest = target === 'types' ? 'src/_types/wasm' : `src/_${target}/wasm`;
   const tsconfig = target === 'cjs' ? 'src/wasm/tsconfig.cjs.json' : 'src/wasm/tsconfig.esm.json';
   const tsconfigSourceRels = readTsconfigSourceRels(tsconfig, WASM_SRC);
@@ -78,7 +70,6 @@ export function createWasmBuildContext(target, scriptName) {
   const versions = {
     kmsDefaultVersion: defaultVersions.tkms,
     kmsVersions,
-    profile,
     tfheDefaultVersion: defaultVersions.tfhe,
     tfheVersions,
   };
@@ -90,7 +81,6 @@ export function createWasmBuildContext(target, scriptName) {
     dest,
     kmsDefaultVersion: defaultVersions.tkms,
     kmsVersions,
-    profile,
     scriptName,
     sourceRel: (p) => relative(WASM_SRC, p).split(sep).join('/'),
     target,
@@ -195,7 +185,6 @@ export function writeGeneratedWasmArtifacts(dest, versions, artifactPredicate = 
 }
 
 export function logWasmBuildSummary(context) {
-  console.log(`[${context.scriptName}] profile=${context.profile}`);
   console.log(`[${context.scriptName}]   TFHE versions: ${context.tfheVersions.join(', ') || '(none)'}`);
   console.log(`[${context.scriptName}]   KMS versions:  ${context.kmsVersions.join(', ') || '(none)'}`);
 }

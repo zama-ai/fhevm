@@ -343,8 +343,15 @@ db-shell: _check-postgres ## Open psql shell into local database
 sqlx-migrate: _check-sqlx-cli _check-postgres ## Run migrations via sqlx-cli
 	@cd relayer-migrate && cargo sqlx migrate run --database-url "$(DATABASE_URL)"
 
+# --all-features is required, not cosmetic: the integration test targets only compile with
+# the `integration-tests` feature, and without it prepare fails on those targets.
 sqlx-prepare: _check-sqlx-cli _check-postgres ## Prepare sqlx offline data for CI (run after schema changes)
-	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets
+	@cargo sqlx prepare --database-url "$(DATABASE_URL)" -- --all-targets --all-features
+
+# CI compiles with SQLX_OFFLINE, which trusts .sqlx rather than checking it. Data left
+# behind by a schema change therefore compiles fine and misdescribes the database.
+sqlx-check: _check-sqlx-cli _check-postgres ## Fail if .sqlx no longer matches the migrations
+	@cargo sqlx prepare --check --database-url "$(DATABASE_URL)" -- --all-targets --all-features
 
 # ---------------------------------------------------------------------------
 ##@ Development
@@ -394,8 +401,9 @@ health: ## Check relayer health endpoints (requires running relayer)
 # and the line naming it. Add a tests/*.rs, add it to a group below:
 # test-groups-check fails the build until you do, and CI runs that check.
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
-          admin-endpoint health keyurl keyurl-poller recovery \
-          schema-isolation threshold-resolver listener-redundancy common
+          admin-endpoint health keyurl keyurl-poller restart \
+          schema-isolation threshold-resolver listener-redundancy \
+          dispatcher-lock sweep epoch-fencing dispatch-gate two-instance common
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
 BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
@@ -405,10 +413,16 @@ BINS_admin-endpoint         := admin_endpoint_test
 BINS_health                 := health_test
 BINS_keyurl                 := keyurl_test
 BINS_keyurl-poller          := keyurl_poller_test
-BINS_recovery               := recovery_test
+# Surviving a stop is one behaviour, so its tests run as one group.
+BINS_restart                := shutdown_test handled_events_test recovery_test
 BINS_schema-isolation       := schema_isolation_test
 BINS_threshold-resolver     := threshold_resolver_test
 BINS_listener-redundancy    := listener_redundancy_test
+BINS_dispatcher-lock        := dispatcher_lock_test
+BINS_sweep                  := sweep_test
+BINS_epoch-fencing          := epoch_fencing_test
+BINS_dispatch-gate          := dispatch_gate_test
+BINS_two-instance           := two_instance_test
 BINS_common                 := common_test
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))

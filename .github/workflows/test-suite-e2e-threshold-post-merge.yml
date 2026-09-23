@@ -45,6 +45,8 @@ jobs:
       scenario: four-party-threshold-kms
       test-profile: kms-generation
 
+  # Full KMS-context lifecycle (same-committee switch, rotation, destruction, abort/recovery, node
+  # swap) on the 5-core cluster with a 4-node committee + 1 spare.
   threshold-kms-context-switch:
     uses: ./.github/workflows/test-suite-e2e-tests.yml
     permissions: *e2e_permissions
@@ -52,15 +54,5 @@ jobs:
     with:
       orchestrated: false
       build: false
-      scenario: four-party-threshold-kms
-      test-profile: kms-context-switch
-
-  threshold-kms-node-swap:
-    uses: ./.github/workflows/test-suite-e2e-tests.yml
-    permissions: *e2e_permissions
-    secrets: *e2e_secrets
-    with:
-      orchestrated: false
-      build: false
-      scenario: swap-threshold-kms
+      scenario: five-party-swap-threshold-kms
       test-profile: kms-context-switch

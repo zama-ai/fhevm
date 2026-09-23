@@ -123,7 +123,7 @@ impl DbEventPicker {
                 ) AS req
                 WHERE public_decryption_requests.decryption_id = req.decryption_id
                 RETURNING req.decryption_id, ct_handles, extra_data,
-                tx_hash, already_sent, error_counter, created_at, otlp_context
+                source, tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -149,7 +149,7 @@ impl DbEventPicker {
                 RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
-                tx_hash, already_sent, error_counter, created_at, otlp_context
+                source, tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -172,8 +172,8 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, params_type, extra_data, tx_hash, already_sent,
-                created_at, otlp_context
+                RETURNING req.prep_keygen_id, params_type, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)
@@ -195,8 +195,8 @@ impl DbEventPicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS req
                 WHERE keygen_requests.key_id = req.key_id
-                RETURNING prep_keygen_id, req.key_id, extra_data, tx_hash, already_sent,
-                created_at, otlp_context
+                RETURNING prep_keygen_id, req.key_id, existing_key_id, extra_data, tx_hash,
+                already_sent, created_at, otlp_context
             ",
         )
         .fetch_all(&self.db_pool)

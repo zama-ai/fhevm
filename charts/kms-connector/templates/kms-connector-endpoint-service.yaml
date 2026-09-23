@@ -1,0 +1,21 @@
+{{- if .Values.kmsConnectorEndpoint.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-connector-endpoint
+    app.kubernetes.io/name: {{ include "kmsConnectorEndpointName" . }}
+  name: {{ include "kmsConnectorEndpointName" . }}
+spec:
+  ports:
+    - name: http
+      port: {{ .Values.kmsConnectorEndpoint.ports.http }}
+      targetPort: http
+    - name: monitoring
+      port: {{ .Values.kmsConnectorEndpoint.ports.monitoring }}
+      targetPort: monitoring
+  selector:
+    app: kms-connector-endpoint
+    app.kubernetes.io/name: {{ include "kmsConnectorEndpointName" . }}
+  type: ClusterIP
+{{- end }}

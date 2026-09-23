@@ -6,6 +6,8 @@ use anyhow::Context;
 use clap::Parser;
 use fhevm_relayer::config::settings::Settings;
 use fhevm_relayer::tracing::init_tracing;
+use tokio::signal::ctrl_c;
+use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
@@ -34,14 +36,19 @@ async fn main() -> anyhow::Result<()> {
     // We need to keep the guard to force-flush on SIGINT
     let chrome_tracing_guard = init_tracing(&settings.log)?;
 
-    // Create cancellation token and handle Ctrl+C
+    // Create cancellation token and handle shutdown signals (SIGINT, SIGTERM).
+    // Kubernetes sends SIGTERM on pod termination and PID 1 must handle it, or
+    // the process dies instantly instead of draining in-flight work.
     let cancellation_token = CancellationToken::new();
     let cancel_on_signal = cancellation_token.clone();
     tokio::spawn(async move {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("Failed to listen for Ctrl+C");
-        info!("Received Ctrl+C signal, initiating shutdown...");
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let signal_name = tokio::select! {
+            _ = ctrl_c() => "SIGINT",
+            _ = sigterm.recv() => "SIGTERM",
+        };
+        info!(signal = signal_name, "Shutdown signal received");
         cancel_on_signal.cancel();
     });
 

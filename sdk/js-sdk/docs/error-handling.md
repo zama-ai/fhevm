@@ -63,6 +63,26 @@ Thrown by encrypt, decrypt, and configuration operations.
 | `DuplicateSignerError`    | A duplicate signer address was found.                              |
 | `TfheError`               | A failure inside the TFHE WASM layer.                              |
 
+### ERC-1271 permit-signature errors
+
+Thrown when signing a decryption permit for a smart-contract-wallet
+`signerAddress` (a Safe, for example). Before a permit is sent to the KMS, the
+SDK checks its signature locally: a 65-byte signature is verified via
+`ecrecover`; anything else is checked against
+`IERC1271(userAddress).isValidSignature(digest, signature)`. All four extend
+the abstract `Erc1271VerificationError` and are only thrown on a *definitive*
+rejection — an inconclusive check (no read provider, an RPC failure) logs a
+warning and forwards the signature to the KMS instead of throwing.
+
+| `name`                          | Thrown when…                                                        |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `Erc1271EoaMismatchNoCodeError`  | `ecrecover` didn't match `userAddress`, and it has no contract code. |
+| `Erc1271EmptySigOnEoaError`      | An empty (`0x`) signature was supplied, but `userAddress` has no contract code. |
+| `Erc1271WrongMagicError`         | `isValidSignature` returned a value other than the ERC-1271 magic value `0x1626ba7e`. Exposes `magicValue`. |
+| `Erc1271RejectedError`           | `isValidSignature` reverted or returned malformed data. Exposes `detail`. |
+
+All four expose `userAddress`.
+
 ## Relayer errors
 
 Thrown when talking to the Relayer. Response errors carry an HTTP `status`; fetch

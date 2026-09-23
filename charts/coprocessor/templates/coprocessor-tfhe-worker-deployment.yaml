@@ -12,6 +12,7 @@ spec:
   selector:
     matchLabels:
       app: coprocessor-tfhe-worker
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
   {{- if .Values.tfheWorker.updateStrategy }}
   strategy:
     {{- toYaml .Values.tfheWorker.updateStrategy | nindent 4 }}
@@ -21,6 +22,7 @@ spec:
       labels:
         app: coprocessor-tfhe-worker
         app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
         {{- with .Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
         {{- end }}
@@ -78,6 +80,10 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- if .Values.commonConfig.forceLegacyServerKey }}
+            - name: FORCE_LEGACY_SERVER_KEY
+              value: "true"
+            {{- end }}
             {{- with .Values.commonConfig.databaseUser }}
             - name: DATABASE_USER
               {{- if .value }}
@@ -145,13 +151,7 @@ spec:
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
-          resources:
-            requests:
-              cpu: {{ .Values.tfheWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.tfheWorker.resources.requests.memory | default "256Mi" }}
-            limits:
-              cpu: {{ .Values.tfheWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.tfheWorker.resources.limits.memory | default "512Mi" }}
+          {{- include "coprocessor.containerResources" .Values.tfheWorker.resources | nindent 10 }}
           {{- if and .Values.tfheWorker.probes .Values.tfheWorker.probes.liveness.enabled }}
           livenessProbe:
             {{- toYaml (omit .Values.tfheWorker.probes.liveness "enabled") | nindent 12 }}

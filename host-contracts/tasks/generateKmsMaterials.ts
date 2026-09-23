@@ -5,12 +5,17 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 task('task:triggerKeygen')
   .addParam('paramsType', 'The type of the parameters to use for the key generation.')
   .addOptionalParam(
+    'existingKeyId',
+    'Zero for a fresh key, or the active key whose compressed material should be produced.',
+    '0',
+  )
+  .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used.',
     false,
     types.boolean,
   )
-  .setAction(async function ({ paramsType, useInternalProxyAddress }, hre) {
+  .setAction(async function ({ paramsType, existingKeyId, useInternalProxyAddress }, hre) {
     await hre.run('compile:specific', { contract: 'contracts' });
     console.log('Trigger key generation in KMSGeneration contract.');
 
@@ -27,7 +32,7 @@ task('task:triggerKeygen')
     const kmsGeneration = await hre.ethers.getContractAt('KMSGeneration', proxyAddress, deployer);
 
     // Request the key generation.
-    const keygenTx = await kmsGeneration.keygen(paramsType);
+    const keygenTx = await kmsGeneration.keygen(paramsType, existingKeyId);
     await keygenTx.wait();
 
     console.log('Keygen triggering done!');

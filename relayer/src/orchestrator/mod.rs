@@ -14,3 +14,8 @@ pub mod health_checker;
 pub use health_checker::{HealthCheck, HealthChecker};
 
 mod task_manager;
+
+mod dispatcher_lock;
+pub use dispatcher_lock::{
+    DispatchGate, DispatcherLock, LockState, DISPATCHER_LOCK_CLASSID, UNCLAIMED_EPOCH,
+};

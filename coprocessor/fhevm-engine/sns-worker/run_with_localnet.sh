@@ -26,7 +26,16 @@ export OTEL_SERVICE_NAME="${SERVICE_NAME}"
 # Feature selection
 # ------------------------------------------------------------------------------
 
+# Version overrides for a fleet that joins a running stack: consensus decides the
+# role, and the release has to move too or the cutover is refused. Each is off
+# unless its variable is set.
 FEATURES=()
+if [[ -n "${BUILD_STACK_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/stack-version-override)
+fi
+if [[ -n "${BUILD_CONSENSUS_VERSION:-}" ]]; then
+  FEATURES+=(fhevm-engine-common/consensus-version-override)
+fi
 
 # Backward-compatible default behavior
 ##if [[ "${1:-}" != "default" ]]; then
@@ -83,6 +92,9 @@ echo "FEATURES: ${FEATURES[*]:-<none>}"
 # Execution
 # ------------------------------------------------------------------------------
 
+# One bucket per coprocessor holds both ct64 and ct128, under their `ct64/` and
+# `ct128/` key prefixes. The fleet runs as coprocessor 0, whose e2e bucket is
+# coproc-0 (see test-suite/fhevm/src/generate/env.ts:buildInstanceEnvs).
 cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
     --pg-listen-channels "event_pbs_computations" "event_ciphertext_computed" \
     --pg-notify-channel "event_ciphertext128_computed" \
@@ -91,8 +103,7 @@ cargo run --jobs 32 --release "${CARGO_FEATURES[@]}" -- \
     --pg-pool-connections=10 \
     --cleanup-interval=7200s \
     --pg-auto-explain-with-min-duration=10ms \
-    --bucket-name-ct64="ct64" \
-    --bucket-name-ct128="ct128" \
+    --bucket-name="${BUCKET_NAME:-coproc-0}" \
     --schedule-policy="sequential" \
     --signer-type=private-key \
     --private-key="${TX_SENDER_PRIVATE_KEY}" \

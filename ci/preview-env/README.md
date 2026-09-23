@@ -21,6 +21,11 @@ dedicated real 4-party threshold+enclave KMS reused directly from `zama-ai/kms`'
 [`../../.github/workflows/preview-env-deploy.yml`](../../.github/workflows/preview-env-deploy.yml).
 Torn down automatically when the PR closes
 ([`preview-env-destroy.yml`](../../.github/workflows/preview-env-destroy.yml)).
+The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
+MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
+`tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
+without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
+ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -35,6 +40,10 @@ ci/preview-env/
 ├── coprocessor-infra/
 │   ├── values-coprocessor-infra-e2e.yaml    # crossplane/coprocessor-infra overlay: S3 only
 │   └── values-postgres-coprocessor-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to coprocessor
+├── testnets/
+│   ├── values-rpc.yaml                 # sync-secrets: Sepolia/Amoy RPC URLs → Secret rpc
+│   ├── values-eth-faucet.yaml        # sync-secrets: zws-dev/ethereum-faucet → Secret eth-faucet
+│   └── values-polygon-faucet.yaml    # sync-secrets: zws-dev/polygon-faucet → Secret polygon-faucet
 ├── host-chain/
 │   ├── values-anvil-host-e2e.yaml       # anvil-node overlay, host chain
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
@@ -48,6 +57,8 @@ ci/preview-env/
 │   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
+│   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
+│   ├── values-coprocessor-gcs-e2e.yaml    # RFC-021 GCS overlay (compiled release + upgrade-controller / consensus-detector)
 │   ├── values-coprocessor-polygon-e2e.yaml # additive multichain overlay: adds the Polygon chains[] consumer (deploy_polygon)
 │   ├── values-coprocessor-poller-e2e.yaml # coprocessor overlay, poller-only release: S3 key/CRS download -> keys/crs tables (coprocessor-poller-<i>)
 │   ├── values-coprocessor-poller-polygon-e2e.yaml # additive multichain overlay: adds the Polygon poller (deploy_polygon)
@@ -68,9 +79,17 @@ ci/preview-env/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
-└── test-suite/
-    ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
-    └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── test-suite/
+│   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
+│   └── values-test-suite-workflow-polygon-e2e.yaml # Argo Workflow overlay, Polygon e2e run (deploy_polygon + automated_tests)
+├── preview-env                          # gh CLI: launch / watch / destroy (does not helm-install)
+└── scripts/                             # deploy-time helpers called from preview-env-deploy.yml
+    ├── lib.sh                           # shared bash helpers (thresholds, require_nonempty)
+    ├── resolve/                         # chain_mode, chart URLs, GHCR tags, dispatch overrides
+    ├── wallets/                         # mnemonic, HD derive, fund, sweep, KMS signer discovery
+    ├── deploy/                          # helm install wrappers + apply-chain-env / wire-contracts
+    ├── e2e/                             # Argo e2e workflows, wait, report, GCS dry-run assert
+    └── bg/                              # manual RFC-021 QA (not invoked by the deploy workflow)
 ```
 
 Every file here is a **values overlay for a chart**. `anvil-node`/`contracts`/`coprocessor`/
@@ -91,6 +110,30 @@ bitnamilegacy` archive, breaking fresh installs of that chart (see values-postgr
 e2e.yaml's header for the full story). This also sidesteps Crossplane/RDS entirely for these
 three throwaway databases. `kms-core` (KMS itself) is never deployed from this repo at all — the
 CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deploy.yml`).
+
+### Dedicated KMS version pins
+
+Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
+`kms_repo_ref`, pulls `core-service-enclave:<kms_core_version>` for PCR
+attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
+
+| Input | Override key | Meaning |
+| --- | --- | --- |
+| Party count | `nb_kms_core` (`4` \| `13`) | Topology only — not in `overrides`. |
+| Enclave image | `kms_core_version` | GHCR tag → `KMS_CORE_TAG`. |
+| Deploy scripts + chart | `kms_repo_ref` | Git SHA/ref on `zama-ai/kms`. |
+
+Defaults live in [`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs)
+(`kms_core_version`, `kms_repo_ref`). **PR labels always use those defaults.**
+Override only via dispatch `overrides` / CLI `--set`, or by bumping
+`ALWAYS_DEFAULTS` for everyone. Keep the two keys aligned to the same kms
+release.
+
+**kms-connector** (`kms_connector_version`, `kms_connector_chart_version`) is
+fhevm-owned and follows the normal image/chart resolve rules — separate from
+kms-core.
+
+Usage: [`101-preview-env.md`](./101-preview-env.md#option-b--manual-run-workflow_dispatch).
 
 Note this path's own images (contracts/kms-connector/relayer/test-suite) are addressed via
 `hub.zama.org/ghcr/zama-ai/fhevm/...` (the Harbor pull-through-cache mirror of `ghcr.io`), not
@@ -118,7 +161,8 @@ export const activeNetworkName = () => network.name;
 export const isLiveNetwork = () => LIVE_NETWORKS.has(activeNetworkName());
 ```
 
-This preview runs the host chain as **`staging`** (chainId `12345`), which is **not**
+This preview's **default** (PR labels + dispatch with `chain_mode=anvil`)
+runs the host chain as **`staging`** (chainId `12345` Anvil), which is **not**
 in that set, so `isLiveNetwork()` is `false` and the suite takes its **local /
 deterministic** path. That matters because the check is on the *name only*, not on
 what the underlying node can actually do — our host chain is anvil (fully
@@ -178,6 +222,116 @@ like everything else:
 Access is `kubectl port-forward` from the dev laptop (Tailscale up, namespace
 admin via `coprocessor-dev-access`/`kms-dev-access`) — see
 [`101-preview-env.md`](./101-preview-env.md#observe-your-environment).
+
+## Chain modes (`chain_mode`: `anvil` | `blockchain-dev` | `testnets`)
+
+`preview-env-deploy.yml` picks the chains via the `chain_mode` dispatch input
+(`ci/preview-env/scripts/resolve/resolve-chain.sh` resolves it; PR labels stay on Anvil except
+`preview-env-blue-green`, which forces `blockchain-dev`). Everything below the chain
+layer is identical across modes: the same charts, the same overlays, patched at deploy
+time by `scripts/deploy/apply-chain-env.sh` for the two external modes.
+
+| Mode | Host chain(s) | Gateway | Wallets | Funding |
+|------|---------------|---------|---------|---------|
+| `anvil` (default) | per-namespace Anvil `12345` (+ Anvil Amoy `80002` with `deploy_polygon`) | per-namespace Anvil `54321` | Foundry junk mnemonic, 120 prefunded accounts | none needed |
+| `blockchain-dev` | shared zws-dev Geth `--dev` `1337` (`http://ethereum-rpc-node.blockchain-dev:8545`, WS same port, 5 s blocks) | shared Nitro `412346` (HTTP `:8547`, WS `:8548`) | fresh mnemonic per run | in-cluster PoW faucets (host + gateway) |
+| `testnets` | public **Sepolia `11155111`** + **Polygon Amoy `80002`**, RPC URLs from AWS via sync-secrets (`deploy_polygon` implied) | shared Nitro `412346` | fresh mnemonic per run | Sepolia from `zws-dev/ethereum-faucet`, Amoy from `zws-dev/polygon-faucet`; gateway from the Nitro faucet |
+
+Both external modes still deploy **this preview's own** host + gateway contracts, derive the
+same HD index map (`#0` gateway deployer, `#3` relayer, `#9` host/ACL owner, `#10+` KMS /
+coprocessor tx-senders) from the generated mnemonic (stored as secret
+`preview-wallets-mnemonic` in the namespace), and leave the contracts on the shared chains
+after teardown.
+
+### `blockchain-dev`
+
+Because Geth has no `evm_*` cheats and `--slots-in-an-epoch`, automated tests use Hardhat
+network **`zwsDev`** (live path: HCU deterministic blocks skip). The coprocessor poller
+seeds at the **current host head**, not block 0 — the Geth dev chain already has millions
+of blocks. Incompatible with `deploy_polygon` (no Amoy node in `blockchain-dev`).
+
+### `testnets` (Sepolia + Amoy)
+
+The two host chains are the real public testnets, so this is the only preview shape with
+**two host chains on real block times** (12 s / ~2 s). What it needs and what it changes:
+
+- **Secrets come from AWS Secrets Manager via the gitops `sync-secrets` chart**
+  (`testnets/values-rpc.yaml`, `values-eth-faucet.yaml`, `values-polygon-faucet.yaml`,
+  installed by `deploy-rpc-secret.sh` against `ClusterSecretStore/secret-store`):
+  - Secret **`rpc`**: `ethereum-rpc-url`, `ethereum-rpc-ws-url`, `polygon-rpc-url`,
+    `polygon-rpc-ws-url` from the existing `zws-dev/external-eth-rpcs` /
+    `zws-dev/external-polygon-rpcs` entries (same keys gitops gives the coprocessor).
+  - Secret **`eth-faucet`**: `private-key` from **`zws-dev/ethereum-faucet`** (Sepolia).
+  - Secret **`polygon-faucet`**: `private-key` from **`zws-dev/polygon-faucet`** (Amoy).
+    Same AWS secrets gitops uses for the zws-dev faucets. No GitHub secrets.
+- **In-cluster consumers read Secret `rpc` directly** (`secretKeyRef`): contracts Jobs (`RPC_URL`,
+  `CANONICAL_RPC_URL`), listeners (`APP_BLOCKCHAIN__RPC_URL`), coprocessor `chains[]`
+  (`httpUrlValueFrom`/`wsUrlValueFrom`), kms-connector (`$(RPC_ETH_URL)` / `$(RPC_POLYGON_URL)`
+  through `commonConfig.env`), relayer, test-suite and the e2e Workflows. Only the runner-side
+  funder reads the faucet Secrets, masked, from `deploy-rpc-secret.sh`.
+- **Funding.** `fund-wallets-treasury.cjs` tops up `#0-#4` to 0.2 ETH on Sepolia and
+  deployer `#9` to 1.0 ETH; on Amoy the signers get 2.0 POL and the deployer 6.0
+  (`FLOOR_WEI` / `DEPLOYER_FLOOR_WEI`). Amoy gas is the reason for both: one e2e fixture
+  deploy costs up to 0.3 POL, and the host-contracts deploy there spends ~2.5 POL at
+  69 gwei because the canonical-snapshot flow builds the empty-proxy set twice.
+  It fails fast if either faucet cannot cover the shortfall.
+  A floor has to cover the worst gas the run might meet, so most runs over-fund - about
+  16 POL and 2.2 ETH go out per run against a few POL actually burned. That is affordable
+  only because **teardown sweeps the wallets back**: `preview-env-destroy.yml` runs
+  `sweep-wallets.sh` *before* deleting the namespace, reading the mnemonic from the
+  `preview-wallets-mnemonic` Secret and returning every role, KMS and coprocessor
+  balance (minus one transfer's gas) to the faucet address. It is `continue-on-error`:
+  reclaiming test funds must never leave a namespace and its Crossplane-managed AWS
+  resources standing. Deleting a namespace **by hand skips the sweep** and takes the only
+  copy of the mnemonic with it, so those funds are then unrecoverable - always tear down
+  through the workflow (`preview-env destroy`).
+  The **KMS tx-senders also get 0.05 ETH each on Sepolia**: since RFC013 KMSGeneration
+  sits on the canonical host chain, so they sign the keygen/crsgen responses there and
+  the ceremony stalls at "insufficient funds" without it. Their decryption responses,
+  the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
+- **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
+  *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
+  connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
+  launches (`preview-env-gpu` + tests, or dispatch `enable_gpu` / `--gpu`) switch
+  to production-size **Default** parameters (`params-type=0`) because Test
+  parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
+  A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
+  for keygen and 1 h for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm
+  room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
+  This GPU path deliberately consumes most of the deploy job's six-hour budget.
+  The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
+  at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
+  waits on its rollout before the e2e Workflows start, otherwise every test fails on
+  ECONNREFUSED to `relayer:3000` and reads as a product regression. That wait needs the
+  `readinessProbe` on `/v2/keyurl` in `relayer/values-relayer-e2e.yaml`: with no probe a
+  pod counts as Ready the moment the container starts, so the rollout returns while the
+  relayer is still crash-looping. `/v2/keyurl` is probed rather than `/healthz` because it
+  serves an in-memory value with a hardcoded 200, so it cannot 503 the pod out of the
+  Service in the middle of a suite. It also needs the `progressDeadlineSeconds` patch:
+  `kubectl rollout status` fails the moment the Deployment reports
+  `ProgressDeadlineExceeded` and ignores its own `--timeout`, so the chart's 600s default
+  broke the gate at 10 min against a measured 21 min wait.
+- **Second host chain reuses the `deploy_polygon` path**: the same Polygon overlays, with
+  RPC/chain ids patched to Amoy and the Anvil Polygon node skipped. Amoy mirrors the ETH
+  ProtocolConfig (canonical source) exactly as the Anvil Polygon does.
+- **Finality**: listeners run `finality_depth` 2 (Sepolia) / 3 (Amoy) and pollers
+  `--finality-lag` 2 / 3 (`HOST_FINALITY_*` / `POLYGON_FINALITY_*`), instead of the 0 / 1
+  that single-node Anvil and Geth `--dev` allow.
+- **Poller seed** is `--seed-start-block=-10` ("10 behind head", resolved by the poller at
+  startup) rather than a head captured early in the run — 12 s blocks make any captured
+  head drift far during the KMS deploy.
+- **Timeouts**: contracts `helm --wait` 30 m (was 10 m) and keygen 60 m (was 45 m).
+- **Tests** run on Hardhat networks `sepolia` (ETH) and `polygonAmoy` (both in
+  `LIVE_NETWORKS`, so the reduced live path).
+- **Cost and hygiene**: every run spends real testnet gas (~10 upgradeable contracts + the
+  keygen ceremony per chain, then e2e FHE txs) and leaves its contracts on Sepolia and Amoy
+  for good. Dispatch-only, no PR label.
+- **Blue-green**: `enable_blue_green` works here too; the GCS fleet gets its own Polygon consumer and the
+  proposal carries one window per host chain (see "Blue-green (RFC-021)" below).
+
+To run `host-contracts` `task:prepareCoprocessorUpgrade` against this env, use
+`--environment devnet` (same Sepolia + Amoy chain set) with `RPC_URL_GATEWAY_DEVNET` pointed at a
+`kubectl port-forward` of the Nitro node.
 
 ## Multi-coprocessor (`nb_coprocessor`) and shared Redis
 
@@ -243,7 +397,60 @@ self-contained `hostListener`. Per party `i`:
 
 > Resource caveat: each coprocessor party's `tfhe`/`sns` workers request substantial
 > CPU/memory on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the
-> cluster capacity needed. Default stays `1`.
+> cluster capacity needed. Default stays `1`. Blue-green doubles the worker fleets
+> again (BCS + GCS per party).
+
+## N-party consensus vs RFC-021 blue-green
+
+These are different models. `nb_coprocessor > 1` is N-party unless you opt into blue-green.
+
+| Model | Meaning | How to enable |
+| --- | --- | --- |
+| **N-party consensus** | N on-chain identities (wallet, S3, Postgres). Gateway `NUM_COPROCESSORS=N`. | `nb_coprocessor` in `{1,2,3,5}` |
+| **Blue-green (RFC-021)** | **Two fleets of the same identity**: BCS (live `v0.14.1`) + GCS (HEAD at its compiled release), shared DB/S3/wallet. Cutover is `ProtocolConfig.proposeCoprocessorUpgrade` then off-chain unanimity of all N operators. | PR label `preview-env-blue-green` (deploys, forces N=2) or dispatch `enable_blue_green=true` |
+
+Blue-green does **not** register 2N gateway slots. Per party the preview keeps one listener, one Redis, one poller; BCS and GCS `hostListenerConsumer`s share that broker. GCS also runs `upgrade-controller` and `consensus-detector`. With `deploy_polygon` (so on `chain_mode=testnets`) each fleet also gets its own Polygon consumer (`coprocessor-polygon-<i>` / `-gcs`), the proposal carries one window per host chain (Polygon offsets scaled by block time so both windows share the same wall-clock span) and the dry-run / cutover asserts read one `upgrade_state` row per chain. Incompatible with `nb_coprocessor=1`.
+
+With `automated_tests` (or the `preview-env-e2e-tests` label) the cutover is
+driven by in-window e2e traffic: propose **after** the relayer is ready (the workflow runs
+host-contracts' `task:proposeCoprocessorUpgrade` from a host-contracts pod, so block times are
+measured per chain and the windows come out wall-clock aligned), hold
+`consensus-detector` at 0 so unanimity cannot fire mid-suite, run the e2e DAG
+while GCS is in `DryRunStarted` (CI asserts `"gcs-<version>".computations > 0`
+on every party), scale the detector back up, wait for
+`versioning=v0.15`, then run the same DAG again on green. A deploy without
+auto-tests still proposes and waits for `DryRunStarted` only.
+
+## kms-connector HTTP decryption path (endpoint + proxy)
+
+Each `kms-connector-<i>` release also deploys the two new services: the **endpoint**
+and the **proxy** in front of it.
+The two out-of-chart inputs the proxy needs are produced at deploy time by
+`scripts/deploy-kms-connector.sh` instead of being checked in:
+
+- **TLS**: one self-signed P-256 certificate per namespace (`openssl` on the runner,
+  30-day lifetime), SANs = every party's proxy Service name, stored as the
+  `kubernetes.io/tls` Secret `kms-connector-proxy-tls` that all N releases mount
+  (`kmsConnectorProxy.tls.secretName`). Create-if-missing, so a re-run does not
+  rotate the cert under proxies that only read it at startup. The compose path's
+  checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
+  reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
+- **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
+  `.env.test-suite`); its digest is inline in `values-kms-connector-e2e.yaml`
+  (`kmsConnectorProxy.apiKeyDigest.value`), no Secret.
+- **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
+  (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
+  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' cert). The idle Job and the
+  `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
+  `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
+  their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
+  extra CAs from a file, and the generic `common` chart gives a one-shot Job no
+  ConfigMap volume). Their DAG's last task, `connector-http`, runs the
+  `Connector HTTP *` suites (`test-suite/e2e/test/connectorHttp/`) against every
+  party; an empty `KMS_CONNECTOR_ENDPOINT_URLS` makes them skip rather than fail.
+  The `@zama-fhe/relayer-sdk` workflow is left untouched on purpose: those suites
+  use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
+  SDK, so re-running them there would only duplicate the same code path.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
@@ -295,9 +502,20 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   rather than scaling only the workers behind shared listeners. Revisit against how
   devnet/testnet actually scale this (shared vs per-party listeners) if that topology is
   preferred.
-- Add support for changing the dedicated KMS's instance type (currently whatever
-  `zama-ai/kms`'s own `ci/scripts/deploy.sh` defaults to).
-- Add support for changing the coprocessor's tfhe-worker instance type (e.g. GPU vs CPU nodepool
-  selection).
+- ~~Add support for changing the dedicated KMS's instance type~~ — version/repo
+  override via `kms_core_version` + `kms_repo_ref` in `overrides` (see
+  "Dedicated KMS version pins" above). Enclave **instance type** is still
+  whatever kms `deploy.sh` picks for `aws-ci`.
+- ~~Add support for changing the coprocessor's FHE worker instance type~~ —
+  `preview-env-gpu` + `preview-env-e2e-tests`, or dispatch `enable_gpu` /
+  `preview-env --gpu`, applies `values-coprocessor-gpu-e2e.yaml` to `tfhe` /
+  `sns` / `zkproof`, selects the pinned `b358436-cuda12.8-sm70` GPU images, and
+  generates Default FHE params. With `preview-env-blue-green` / `--blue-green`
+  as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
+  `coprocessor` pool. CPU launches keep Test params.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
+- ~~Deploy against real public testnets~~ — done, see "Chain modes" above
+  (`chain_mode=testnets`: Sepolia + Amoy with RPC URLs + funder key from AWS Secrets Manager, Nitro gateway).
+- ~~Wire RFC-021 blue-green onto `chain_mode=testnets`~~ — done: GCS Polygon consumer, per-chain
+  proposal windows and per-chain asserts (the multi-chain shape fhevm-internal#1884 asks for).

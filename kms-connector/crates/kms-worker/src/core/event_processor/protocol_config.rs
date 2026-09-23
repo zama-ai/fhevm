@@ -1,5 +1,6 @@
 use crate::core::{config::Config, event_processor::ProcessingError};
 use alloy::{
+    eips::BlockId,
     primitives::{FixedBytes, Keccak256, U256},
     providers::Provider,
     rpc::types::Filter,
@@ -13,9 +14,11 @@ use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch, ProtocolConfigInstance},
 };
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CrsInfo, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext, MpcNode,
-    NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo,
+    NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest,
+    SigningSchemeType,
 };
 
 /// Builder for the KMS Core gRPC requests triggered by `ProtocolConfig` events.
@@ -66,7 +69,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         let previous_context_event = self
             .fetch_previous_context_creation_event(event)
             .await
-            .map_err(ProcessingError::Recoverable)?;
+            .map_err(ProcessingError::transient)?;
         let old = build_new_kms_context_grpc_from_event(&previous_context_event)?;
         Ok(KmsGrpcRequest::NewMpcContext { new, old })
     }
@@ -89,6 +92,8 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             previous_epoch: Some(previous_epoch),
             domain: Some(self.domain.clone()),
             extra_data: extra_data_v2_payload(event.kmsContextId, event.epochId),
+            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
     }
 
@@ -103,6 +108,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         let previous_context_anchor = self
             .protocol_config_contract
             .getKmsContextAnchor(new_context_event.previousContextId)
+            .block(BlockId::finalized())
             .call()
             .await?;
         let previous_context_block: u64 =
@@ -162,7 +168,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             .call()
             .await
             .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!("getCompletedKeyIds call failed: {e}"))
+                ProcessingError::transient(anyhow!("getCompletedKeyIds call failed: {e}"))
             })?;
         let crs_ids = self
             .kms_generation_contract
@@ -171,7 +177,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             .call()
             .await
             .map_err(|e| {
-                ProcessingError::Recoverable(anyhow!("getCompletedCrsIds call failed: {e}"))
+                ProcessingError::transient(anyhow!("getCompletedCrsIds call failed: {e}"))
             })?;
 
         let mut keys_info = Vec::with_capacity(key_ids.len());
@@ -182,14 +188,12 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                 .block(material_block_number.into())
                 .call()
                 .await
-                .map_err(|e| {
-                    ProcessingError::Recoverable(anyhow!("getKeyInfo call failed: {e}"))
-                })?;
+                .map_err(|e| ProcessingError::transient(anyhow!("getKeyInfo call failed: {e}")))?;
             let mut key_digests = Vec::with_capacity(key_info.keyDigests.len());
             for d in key_info.keyDigests.iter() {
                 key_digests.push(KeyDigest {
                     key_type: key_type_to_string(d.keyType)
-                        .map_err(ProcessingError::Irrecoverable)?,
+                        .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?,
                     digest: d.digest.to_vec(),
                 });
             }
@@ -197,7 +201,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                 key_id: Some(u256_to_request_id(key_id)),
                 preproc_id: Some(u256_to_request_id(key_info.prepKeygenId)),
                 key_parameters: params_type_to_fhe_parameter(key_info.paramsType)
-                    .map_err(ProcessingError::Irrecoverable)?,
+                    .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?,
                 key_digests,
             });
         }
@@ -211,7 +215,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
                 .call()
                 .await
                 .map_err(|e| {
-                    ProcessingError::Recoverable(anyhow!("getCrsMaterials call failed: {e}"))
+                    ProcessingError::transient(anyhow!("getCrsMaterials call failed: {e}"))
                 })?;
             crs_info.push(CrsInfo {
                 crs_id: Some(u256_to_request_id(crs_id)),
@@ -246,6 +250,12 @@ fn build_new_kms_context_grpc_from_event(
             // Public keys allowed to sign transactions on behalf of this KMS node, i.e. the
             // connector transaction sender's address of this node
             extra_signer_addresses: vec![n.txSenderAddress.to_vec()],
+            // Scheme-specific digests of the KMS node's signing keys. The Gateway only exposes
+            // an ECDSA signer address for now, so this is the only entry.
+            scheme_digests: vec![SchemeDigest {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                digest: n.signerAddress.to_vec(),
+            }],
         })
         .collect();
 
@@ -263,8 +273,12 @@ fn build_new_kms_context_grpc_from_event(
     // kmsGen, mpc). The Core's `MpcContext` only exposes a single `threshold` field — the
     // MPC corruption threshold — so we forward `mpc` and rely on the contract to enforce
     // the others.
-    let threshold = i32::try_from(event.thresholds.mpc)
-        .map_err(|e| ProcessingError::Irrecoverable(anyhow!("Invalid threshold value: {e}")))?;
+    let threshold = i32::try_from(event.thresholds.mpc).map_err(|e| {
+        ProcessingError::irrecoverable(
+            ErrorCode::Unprocessable,
+            anyhow!("Invalid threshold value: {e}"),
+        )
+    })?;
 
     Ok(NewMpcContextRequest {
         new_context: Some(MpcContext {

@@ -16,6 +16,7 @@ use ciphertext_attestation::{
     consensus::{self, Consensus, ConsensusMaterial},
 };
 use futures::future::try_join_all;
+use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::TypedCiphertext;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -98,6 +99,7 @@ where
             .map_err(|e| {
                 RequestCheckError::recoverable(
                     RequestCheckKind::CoproConsensus,
+                    ErrorCode::CoproConsensusFailed,
                     anyhow!("consensus unreachable for handle {handle}: {e}"),
                 )
                 .record()
@@ -213,17 +215,23 @@ fn aggregate_resolved_handles(
     resolved_handles: Vec<ResolvedHandle>,
 ) -> Result<VerifiedCiphertexts, ProcessingError> {
     let Some(key_id) = resolved_handles.first().map(|r| r.key_id) else {
-        return Err(ProcessingError::Recoverable(anyhow!("no handles resolved")));
+        return Err(ProcessingError::recoverable(
+            ErrorCode::CoproConsensusFailed,
+            anyhow!("no handles resolved"),
+        ));
     };
 
     let mut ciphertexts = Vec::with_capacity(resolved_handles.len());
     for resolved_handle in resolved_handles.into_iter() {
         if resolved_handle.key_id != key_id {
-            return Err(ProcessingError::Irrecoverable(anyhow!(
-                "handles of the request resolve to different key ids: {:#066x} and {:#066x}",
-                key_id,
-                resolved_handle.key_id
-            )));
+            return Err(ProcessingError::irrecoverable(
+                ErrorCode::Unprocessable,
+                anyhow!(
+                    "handles of the request resolve to different key ids: {:#066x} and {:#066x}",
+                    key_id,
+                    resolved_handle.key_id
+                ),
+            ));
         }
 
         ciphertexts.push(resolved_handle.ciphertext);
@@ -274,6 +282,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingErrorKind;
     use alloy::providers::{ProviderBuilder, mock::Asserter};
     use std::{
         collections::{HashMap, HashSet},
@@ -315,14 +324,14 @@ mod tests {
             resolved(U256::from(2u64), 2),
         ]);
 
-        assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Irrecoverable));
     }
 
     /// An empty resolution set (no handles) is rejected as recoverable.
     #[test]
     fn aggregate_rejects_empty() {
         let result = aggregate_resolved_handles(vec![]);
-        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 
     // Checks that the CiphertextManager waits for a permit before sending a `HEAD` request.
@@ -369,6 +378,6 @@ mod tests {
         )
         .await
         .expect("resolution should have resumed");
-        assert!(matches!(result, Err(ProcessingError::Recoverable(_))));
+        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 }

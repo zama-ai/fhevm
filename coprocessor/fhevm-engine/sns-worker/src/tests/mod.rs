@@ -3,7 +3,7 @@ use crate::{
     keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3MigrationMode, S3RetryPolicy, SchedulePolicy,
-    DEFAULT_S3_MIGRATION_MAX_RETRIES,
+    DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES, DEFAULT_S3_MIGRATION_MAX_RETRIES,
 };
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{B256, U256};
@@ -46,8 +46,14 @@ use tracing::{info, Level};
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 static TRACING_INIT: OnceLock<()> = OnceLock::new();
 
+// Every test in this module is `cfg(not(gpu))` -- it exercises the S3
+// migration path, which has no device component -- so the module itself is
+// CPU-only. Gating it here rather than each helper keeps the two in step: a
+// GPU build otherwise reports every helper as dead code.
+#[cfg(not(feature = "gpu"))]
 mod s3_migration;
 mod s3_migration_dry_run;
+mod squash_determinism;
 
 pub fn init_tracing() {
     TRACING_INIT.get_or_init(|| {
@@ -760,10 +766,7 @@ fn write_test_file(filename: &str) {
     // readers (sns-worker, tfhe-worker GPU) traverse, so the
     // CompactPublicKey we encrypt under matches what the DB pks_key
     // column will carry.
-    let (compact_public_key, server_key) = keyset
-        .decompress()
-        .expect("decompress xof keyset")
-        .into_raw_parts();
+    let (compact_public_key, server_key) = keyset.decompress().into_raw_parts();
 
     // CompactCiphertextList expansion and CompressedCiphertextList
     // build both consult the thread-local server key.
@@ -1085,6 +1088,7 @@ async fn assert_ciphertext_uploaded(
     Ok(())
 }
 
+#[cfg(not(feature = "gpu"))]
 async fn wait_for_ciphertext_digest_upload_state(
     pool: &sqlx::PgPool,
     handle: &Vec<u8>,
@@ -1217,5 +1221,6 @@ fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
         s3_migration: S3MigrationMode::No,
         s3_migration_sleep_duration: Duration::from_mins(5),
         s3_migration_max_retries: DEFAULT_S3_MIGRATION_MAX_RETRIES,
+        s3_migration_max_concurrent_handles: DEFAULT_S3_MIGRATION_MAX_CONCURRENT_HANDLES,
     }
 }

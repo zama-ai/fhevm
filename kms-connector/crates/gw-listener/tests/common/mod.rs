@@ -163,7 +163,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .kms_generation_contract()
-                .keygen(ParamsTypeDb::Test as u8)
+                .keygen(ParamsTypeDb::Test as u8, U256::ZERO)
                 .send()
                 .await?;
             (tx, event.into())

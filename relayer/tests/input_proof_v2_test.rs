@@ -128,6 +128,69 @@ async fn test_nonce_too_low_then_succeeds() {
     setup.shutdown().await;
 }
 
+/// The error a nonce a peer still holds reports. It must cost a step, not the row.
+#[tokio::test]
+async fn test_replacement_underpriced_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.input_proof_contract,
+        constants::INPUT_PROOF_SELECTOR,
+        vec![Response::error(
+            "replacement transaction underpriced".to_string(),
+        )],
+    );
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
+/// What a fresh holder meets at gate-open. One occupied nonce cannot tell a working step apart
+/// from a lucky retry.
+#[tokio::test]
+async fn test_a_run_of_occupied_nonces_then_succeeds() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (payload, user_address, ciphertext_data) = helpers::create_input_proof_payload(&setup);
+
+    setup.fhevm_mock.queue_tx_responses_for_selector(
+        setup.fhevm_mock.input_proof_contract,
+        constants::INPUT_PROOF_SELECTOR,
+        vec![
+            Response::error("replacement transaction underpriced".to_string()),
+            Response::error("replacement transaction underpriced".to_string()),
+            Response::error("replacement transaction underpriced".to_string()),
+        ],
+    );
+    setup.fhevm_mock.on_input_proof_success(
+        user_address,
+        ciphertext_data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+
+    let job_id = helpers::submit_request(&setup, &payload).await;
+    let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(body.status, ApiResponseStatus::Succeeded);
+    assert!(body.result.is_some());
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn test_gateway_rejection_returns_200_with_accepted_false() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
@@ -787,5 +850,49 @@ async fn test_error_malformed_json(#[case] malformed_json: &str) {
     )
     .await;
 
+    setup.shutdown().await;
+}
+
+/// Campaign control: client retries before server expiry are deduplicated;
+/// the same input after expiry must dispatch a fresh job and complete.
+#[tokio::test]
+async fn test_campaign_retry_across_server_expiry_completes_same_input() {
+    let temp = TempDir::new().unwrap();
+    let config = create_timeout_test_config(&temp, 2, 1).unwrap();
+    let setup = TestSetup::new_with_config_path(Some(config)).await.unwrap();
+    let (payload, user, data) = helpers::create_input_proof_payload(&setup);
+    setup
+        .fhevm_mock
+        .on_input_proof_request_only(user, data.clone());
+    let original = helpers::submit_request(&setup, &payload).await;
+    let duplicate = helpers::submit_request(&setup, &payload).await;
+    assert_eq!(
+        original, duplicate,
+        "retry before server expiry bypassed deduplication"
+    );
+    let (status, expired) = helpers::poll_until_terminal(&setup, &original).await;
+    assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(expired.status, ApiResponseStatus::Failed);
+    setup.fhevm_mock.on_input_proof_success(
+        user,
+        data,
+        1,
+        ethereum_rpc_mock::SubscriptionTarget::All,
+    );
+    let replacement = helpers::submit_request(&setup, &payload).await;
+    assert_ne!(
+        original, replacement,
+        "server expiry did not allow fresh work"
+    );
+    let (status, result) = helpers::poll_until_terminal(&setup, &replacement).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(result.status, ApiResponseStatus::Succeeded);
+    assert!(result.result.is_some());
+    let (_, original_result) = helpers::poll_until_terminal(&setup, &original).await;
+    assert_eq!(
+        original_result.status,
+        ApiResponseStatus::Failed,
+        "replacement changed the old job's result"
+    );
     setup.shutdown().await;
 }

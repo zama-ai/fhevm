@@ -74,9 +74,9 @@ Environment (read from the workspace-root `.env` or the environment):
   `delegated-user-decrypt` pools when no mnemonic is set (with a mnemonic the
   delegate is derived at a reserved HD index).
 - Host-chain RPC override: `SEPOLIA_RPC_URL` for `testnet` and `devnet`,
-  `POLYGON_AMOY_RPC_URL` for `testnet-amoy` and `devnet-amoy`, and
-  `MAINNET_RPC_URL` for
-  `mainnet`. Public network defaults are used when the matching variable and
+  `POLYGON_AMOY_RPC_URL` for `testnet-amoy` and `devnet-amoy`,
+  `MAINNET_RPC_URL` for `mainnet`, and `POLYGON_RPC_URL` for `polygon`.
+  Public network defaults are used when the matching variable and
   `--rpc-url` are both absent.
 - `ZAMA_FHEVM_API_KEY` — optional SDK and raw-relayer API-key authentication.
 - `ZAMA_FHEVM_API_KEY_B` — optional distinct API key for the candidate relayer

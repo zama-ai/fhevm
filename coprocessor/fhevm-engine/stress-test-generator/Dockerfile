@@ -1,26 +1,6 @@
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
 
-# Stage 0: Build contracts
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
-
-USER root
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-COPY host-contracts ./host-contracts
-
-# Install dependencies
-RUN npm ci --include=dev
-
-# Compiled host-contracts for listeners
-WORKDIR /app/host-contracts
-RUN cp .env.example .env \
-    && npm rebuild @nomicfoundation/slang --unsafe-perm \
-    && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies \
-    && npx hardhat compile
-
 # Stage 1: Build Stress-Tool
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
@@ -34,9 +14,8 @@ COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
-COPY host-contracts/contracts/ ./host-contracts/contracts/
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
-COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-contracts/artifacts/contracts
 
 WORKDIR /app/coprocessor/fhevm-engine
 

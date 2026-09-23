@@ -55,13 +55,6 @@ export type SlotId = typeof LEGACY_SLOT | typeof CURRENT_SLOT;
 /** Foundry profile name — currently identical to the slot id. */
 export type FoundryProfile = SlotId;
 
-// Gateway-only alias slot: serves the CURRENT key (newer TFHE) but proxies the
-// LEGACY anvil (older ACL → older module). It exists as a distinct id/URL so the
-// SDK's relayer-URL-keyed key cache does not collide with the real current slot —
-// letting old-module + new-key fail for the right reason (deserialization), not a
-// cache clash. No anvil backs it; it reuses the legacy anvil.
-export const OLD_MODULE_NEW_KEY_SLOT = 'oldmod-newkey';
-
 // Per-slot constants. Each slot MUST use a distinct chainId (Foundry broadcast
 // cache is keyed by chain id; concurrent same-id deploys collide as "nonce too
 // low") AND a distinct deployer (so addresses differ — see FIRST_ANVIL_MNEMONIC).

@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { statSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import YAML from "yaml";
 
-import { generateComposeOverrides, loadMergedComposeDoc, serviceNameList } from "./generate/compose";
-import { TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import {
+  blueGreenServiceNames,
+  dockerSocketRuntime,
+  generateComposeOverrides,
+  loadMergedComposeDoc,
+  serviceNameList,
+} from "./generate/compose";
+import { COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
+  loadCoprocessorScenario,
   parseBlueGreenScenario,
   parseCoprocessorScenario,
   resolveBlueGreenScenario,
@@ -89,6 +98,25 @@ const gatewayContractsOverrideState: State = {
   scenario: testDefaultScenario(),
 };
 
+const testSuiteOverrideState: State = {
+  ...state,
+  overrides: [{ group: "test-suite" }],
+  scenario: testDefaultScenario(),
+};
+
+// Single-instance, no local builds: the test-suite override then contains only whatever
+// the generator adds on its own, which is the host Docker socket wiring.
+const socketWiringState: State = {
+  ...state,
+  overrides: [],
+  scenario: testDefaultScenario(),
+};
+
+const kmsConnectorOverrideState: State = {
+  ...state,
+  overrides: [{ group: "kms-connector" }],
+};
+
 const envAndArgsScenarioState: State = {
   ...state,
   scenario: resolveScenarioFile(
@@ -112,6 +140,56 @@ instances:
         - --initial-block-time=2
 `),
   ),
+};
+
+/** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
+/** The template's mount of the kms-connector proxies' test certificate into the e2e runner. */
+const PROXY_TLS_CERT_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`;
+
+const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
+  const previous = process.env.DOCKER_HOST;
+  if (value === undefined) {
+    delete process.env.DOCKER_HOST;
+  } else {
+    process.env.DOCKER_HOST = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.DOCKER_HOST;
+    } else {
+      process.env.DOCKER_HOST = previous;
+    }
+  }
+};
+
+/** Runs a test body against a real, listening unix socket in a temporary directory. */
+const withUnixSocket = async <T>(run: (socketPath: string) => Promise<T>) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "fhevm-docker-sock-"));
+  const socketPath = path.join(dir, "docker.sock");
+  const server = Bun.listen({ unix: socketPath, socket: { data() {} } });
+  try {
+    return await run(socketPath);
+  } finally {
+    server.stop(true);
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/** Collects every service in every generated compose override, keyed by file and name. */
+const generatedServices = async () => {
+  const entries = await readdir(COMPOSE_OUT_DIR);
+  const services: Array<[string, Record<string, unknown>]> = [];
+  for (const entry of entries.filter((name) => name.endsWith(".yml"))) {
+    const doc = YAML.parse(await readFile(path.join(COMPOSE_OUT_DIR, entry), "utf8")) as {
+      services?: Record<string, Record<string, unknown>>;
+    };
+    for (const [name, service] of Object.entries(doc.services ?? {})) {
+      services.push([`${entry}:${name}`, service]);
+    }
+  }
+  return services;
 };
 
 describe("render-compose", () => {
@@ -187,6 +265,81 @@ describe("render-compose", () => {
     });
   });
 
+  test("gives every coprocessor runtime service a bounded on-failure restart policy", async () => {
+    await withTempStateDir(async () => {
+      const doc = await loadMergedComposeDoc("coprocessor");
+      const runtime = [
+        "coprocessor-host-listener",
+        "coprocessor-host-listener-poller",
+        "coprocessor-host-listener-consumer",
+        "coprocessor-gw-listener",
+        "coprocessor-tfhe-worker",
+        "coprocessor-zkproof-worker",
+        "coprocessor-sns-worker",
+        "coprocessor-transaction-sender",
+        "coprocessor-consensus-detector",
+        "coprocessor-upgrade-controller",
+      ];
+      // These implement exit-for-restart: fatal error, non-zero exit, and they
+      // expect to be brought back. Without a policy the stack degraded
+      // permanently on any fatal path (L-5).
+      for (const service of runtime) {
+        expect(doc.services[service]?.restart, `${service} must recover from a fatal exit`).toBe("on-failure:10");
+      }
+      // `on-failure`, never `unless-stopped`: a clean exit 0 is a service that
+      // meant to finish, and restarting it would loop. Bounded, so a genuinely
+      // broken deploy stops instead of hiding in a crash loop.
+      for (const service of runtime) {
+        expect(String(doc.services[service]?.restart)).toStartWith("on-failure");
+      }
+      // One-shots must stay one-shot: readiness waits for db-migration to
+      // reach `complete`, and a failing migration should surface at once
+      // rather than retry.
+      expect(doc.services["coprocessor-db-migration"]?.restart).toBeUndefined();
+    });
+  });
+
+  test("exposes tfhe-worker metrics on the base service and on every clone", async () => {
+    await withTempStateDir(async () => {
+      // The run-validity gates read
+      // `coprocessor_worker_deferred_transactions_current` from each operator's
+      // worker and refuse to guess when they cannot. That only works if the
+      // flag survives clone generation, which rewrites the command.
+      const base = await loadMergedComposeDoc("coprocessor");
+      const baseCommand = (base.services["coprocessor-tfhe-worker"]?.command ?? []) as string[];
+      expect(baseCommand.some((arg) => String(arg).startsWith("--metrics-addr="))).toBe(true);
+
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      const clone = (doc.services["coprocessor1-tfhe-worker"]?.command ?? []) as string[];
+      expect(
+        clone.some((arg) => String(arg).startsWith("--metrics-addr=")),
+        "operator 1's worker must expose metrics or its validity gate cannot be evaluated",
+      ).toBe(true);
+    });
+  });
+
+  test("carries the restart policy onto per-operator clones", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { restart?: string }>;
+      };
+      // Operator 1 is the one the failure matrix injects faults into, so it is
+      // the operator whose recovery matters most.
+      expect(doc.services["coprocessor1-host-listener"]?.restart).toBe("on-failure:10");
+      expect(doc.services["coprocessor1-host-listener-poller"]?.restart).toBe("on-failure:10");
+    });
+  });
+
   test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,
@@ -228,6 +381,46 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
+  test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
+    const withoutEndpoint: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: Object.fromEntries(
+          Object.entries(state.versions.env).filter(
+            ([key]) => key !== "CONNECTOR_ENDPOINT_VERSION" && key !== "CONNECTOR_PROXY_VERSION",
+          ),
+        ),
+      },
+    };
+    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual([
+      "kms-connector-db-migration",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+    ]);
+
+    const withEndpoint: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: { ...state.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
+    };
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-endpoint");
+    expect(serviceNameList(withEndpoint, "kms-connector")).toContain("kms-connector-proxy");
+
+    const threshold: State = {
+      ...withEndpoint,
+      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+    };
+    const services = serviceNameList(threshold, "kms-connector");
+    expect(services).toContain("kms-connector-endpoint");
+    expect(services).toContain("kms-connector-3-endpoint");
+    expect(services).toContain("kms-connector-3-proxy");
+    expect(services).toContain("kms-connector-3-tx-sender");
+  });
+
   test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -241,6 +434,66 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
+      const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
+      expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
+    });
+  });
+
+  test("routes every locally-built coprocessor target through the explicit public E2E runtime bases", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...inheritedScenarioState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const [name, service] of Object.entries(doc.services)) {
+        expect(service.build?.args?.COPROCESSOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(service.build?.args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE, name).toBe(
+          "e2e-public-db-migration-runtime",
+        );
+      }
+    });
+  });
+
+  test("routes only local KMS connector runtime services through the public E2E runtime base", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const publicRuntimeState: State = { ...kmsConnectorOverrideState, e2ePublicRuntime: true };
+      await generateComposeOverrides(publicRuntimeState, stackSpecForState(publicRuntimeState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE).toBeUndefined();
+      expect(doc.services["kms-connector-db-migration"]?.build?.args?.BUILD_ID).toBeUndefined();
+    });
+  });
+
+  test("keeps the certified KMS connector runtime base when the public E2E flag is absent", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(kmsConnectorOverrideState, stackSpecForState(kmsConnectorOverrideState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { args?: Record<string, string> } }>;
+      };
+
+      for (const name of ["kms-connector-gw-listener", "kms-connector-kms-worker", "kms-connector-tx-sender"]) {
+        expect(doc.services[name]?.build?.args?.KMS_CONNECTOR_RUNTIME_BASE_IMAGE, name).toBeUndefined();
+        expect(doc.services[name]?.build?.args?.BUILD_ID, name).toMatch(/^(?:[0-9a-f]{7,}|unknown)$/);
+      }
     });
   });
 
@@ -296,6 +549,25 @@ describe("render-compose", () => {
       );
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+    });
+  });
+
+  test("renders a test-suite local build override without daemon access on a socketless host", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { image?: string; build?: unknown; volumes?: unknown; group_add?: unknown }>;
+        };
+        const testSuite = doc.services["test-suite-e2e-debug"];
+        expect(testSuite?.image).toContain(":fhevm-local");
+        expect(testSuite?.build).toBeTruthy();
+        // Only the template's proxy test-certificate mount: no docker socket.
+        expect(testSuite?.volumes).toEqual([PROXY_TLS_CERT_MOUNT]);
+        expect(testSuite?.group_add).toBeUndefined();
+      });
     });
   });
 
@@ -375,6 +647,139 @@ describe("render-compose", () => {
     });
   });
 
+  // Guards the shipped scenario file itself, not a copy of it inline: the
+  // point of the heterogeneous-scheduling topology is that the three operators
+  // come up scheduling DIFFERENTLY, and a silent regression to a uniform fleet
+  // would leave the byte-consensus gate passing while asserting nothing.
+  test("heterogeneous-scheduling scenario renders three distinct tfhe-worker configurations", async () => {
+    const heterogeneous = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-heterogeneous-scheduling.yaml"),
+      await loadCoprocessorScenario("three-of-three-heterogeneous-scheduling"),
+    );
+    const heterogeneousState: State = { ...state, scenario: heterogeneous };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(heterogeneousState, stackSpecForState(heterogeneousState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      const workers = ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker", "coprocessor2-tfhe-worker"];
+      const windows = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--work-items-batch-size=")) ?? "missing",
+      );
+      const chains = workers.map(
+        (name) =>
+          doc.services[name]?.command?.find((argument) => argument.startsWith("--dependence-chains-per-batch=")) ??
+          "missing",
+      );
+
+      expect(windows).toEqual([
+        "--work-items-batch-size=100",
+        "--work-items-batch-size=1",
+        "--work-items-batch-size=200",
+      ]);
+      expect(chains).toEqual([
+        "--dependence-chains-per-batch=20",
+        "--dependence-chains-per-batch=1",
+        "--dependence-chains-per-batch=64",
+      ]);
+
+      // The compose template already carries `--work-items-batch-size=10`, so
+      // an override that appended instead of replacing would leave the worker
+      // with the flag twice. Assert each appears exactly once.
+      for (const name of workers) {
+        const command = doc.services[name]?.command ?? [];
+        expect(command.filter((argument) => argument.startsWith("--work-items-batch-size=")).length).toBe(1);
+      }
+
+      // The two DCID booleans have no command-line route that can turn them
+      // off, so they must arrive as environment entries on the right operators
+      // and nowhere else.
+      expect(doc.services["coprocessor1-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor2-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBe("false");
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION).toBeUndefined();
+      expect(doc.services["coprocessor-tfhe-worker"]?.environment?.FHEVM_DCID_BATCH_EXECUTION).toBeUndefined();
+
+      // No operator may invert its own pair. The adaptive window gives each
+      // acquired chain ceil(window / acquired-chains) transactions and turns
+      // itself off once more chains are acquired than the window admits, so an
+      // operator whose window is below its chain count schedules
+      // non-adaptively -- while this scenario presents it as a scheduling
+      // variant of the adaptive baseline. Asserted as a property rather than
+      // left to the literals above, because the literals are exactly what went
+      // wrong: operator 0 shipped as 10/20 for a while, under a comment calling
+      // it the adaptive default.
+      windows.forEach((window, index) => {
+        const windowValue = Number.parseInt(window.split("=")[1] ?? "", 10);
+        const chainValue = Number.parseInt(chains[index].split("=")[1] ?? "", 10);
+        expect(Number.isInteger(windowValue) && Number.isInteger(chainValue)).toBe(true);
+        expect(
+          windowValue >= chainValue,
+          `operator ${index} has window ${windowValue} below its ${chainValue} chains, which disables ` +
+            "the adaptive window under load",
+        ).toBe(true);
+      });
+
+      // The whole point: no two operators schedule alike.
+      const classes = workers.map((name) => JSON.stringify(doc.services[name]?.command));
+      expect(new Set(classes).size).toBe(workers.length);
+    });
+  });
+
+  // The dual-Anvil scenario was re-derived from the wave2 original, which was
+  // written against binaries that no longer exist in this shape. Two flags it
+  // used were removed with the RFC 011 settlement machinery, and passing an
+  // unknown flag makes the listener exit at startup -- every operator would
+  // crash-loop and the fork suite would fail for a reason unrelated to forks.
+  test("fork scenario routes one instance to the fork and passes no retired listener flags", async () => {
+    const forkScenario = resolveScenarioFile(
+      path.join("/tmp", "three-of-three-fork.yaml"),
+      await loadCoprocessorScenario("three-of-three-fork"),
+    );
+    const forkState: State = { ...state, scenario: forkScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(forkState, stackSpecForState(forkState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; environment?: Record<string, string> }>;
+      };
+
+      // Exactly one instance follows the fork.
+      const routed = Object.entries(doc.services).filter(([, service]) =>
+        Object.values(service.environment ?? {}).some((value) => String(value).includes("fork-anvil")),
+      );
+      expect(routed.length).toBeGreaterThan(0);
+      for (const [name] of routed) expect(name.startsWith("coprocessor2-")).toBe(true);
+      expect(doc.services["coprocessor2-host-listener"]?.environment?.RPC_HTTP_URL).toBe("http://fork-anvil:8546");
+      expect(doc.services["coprocessor-host-listener"]?.environment?.RPC_HTTP_URL).toBeUndefined();
+
+      // Retired flags must not come back. `--settlement-finality-lag` no
+      // longer exists on either binary, and the poller never accepted
+      // `--reorg-maximum-duration-in-blocks`.
+      for (const [name, service] of Object.entries(doc.services)) {
+        const command = (service.command ?? []).map(String);
+        expect(
+          command.some((argument) => argument.startsWith("--settlement-finality-lag")),
+          `${name} passes a flag no current binary accepts`,
+        ).toBe(false);
+        if (name.endsWith("host-listener-poller")) {
+          expect(
+            command.some((argument) => argument.startsWith("--reorg-maximum-duration-in-blocks")),
+            `${name} passes a flag the poller does not accept`,
+          ).toBe(false);
+        }
+      }
+    });
+  });
+
   test("blue-green scenario emits coprocessor-gcs-* services from local HEAD build", async () => {
     const blueGreenScenario = resolveBlueGreenScenario(
       path.join("/tmp", "blue-green-test.yaml"),
@@ -383,7 +788,6 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: blueGreenScenario };
@@ -406,12 +810,76 @@ gcs:
       expect(doc.services["coprocessor-gcs-upgrade-controller"]?.container_name).toBe(
         "coprocessor-gcs-upgrade-controller",
       );
-      // GCS builds from local HEAD compiled at the newer version (build arg enables the override feature).
+      // GCS builds from local HEAD.
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
-      expect(doc.services["coprocessor-gcs-host-listener"]?.build?.args?.BUILD_STACK_VERSION).toBe("0.15.0");
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
     });
+  });
+
+  test("blue-green can run Green from a published image tag", async () => {
+    const blueGreenScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-registry-gcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+bcs:
+  source: { mode: registry, tag: v0.14.0-10 }
+gcs:
+  source: { mode: registry, tag: target-sha }
+`),
+    );
+    const bgState: State = { ...state, scenario: blueGreenScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor-chain-b.0"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const primary = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+      const secondary = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown }>;
+      };
+
+      expect(primary.services["coprocessor-db-migration"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-db-migration"]?.build).toBeUndefined();
+      expect(primary.services["coprocessor-gcs-host-listener"]?.image).toEndWith(":target-sha");
+      expect(primary.services["coprocessor-gcs-host-listener"]?.build).toBeUndefined();
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.image).toEndWith(":target-sha");
+      expect(secondary.services["coprocessor-gcs-host-listener-chain-b"]?.build).toBeUndefined();
+    });
+  });
+
+  test("deferred Green is omitted from startup until explicitly requested", () => {
+    const deferredScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-deferred-test.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+  deferredStart: true
+`),
+    );
+    const deferredState: State = { ...state, scenario: deferredScenario };
+
+    const initialServices = blueGreenServiceNames(deferredState, { includeMigration: true });
+    expect(initialServices.some((service) => service.includes("-gcs-"))).toBe(false);
+
+    const explicitGreenServices = blueGreenServiceNames(deferredState, {
+      includeMigration: false,
+      includeDeferredGreen: true,
+    });
+    expect(explicitGreenServices).toContain("coprocessor-gcs-host-listener");
+    expect(explicitGreenServices).toContain("coprocessor-gcs-upgrade-controller");
   });
 
   test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
@@ -425,7 +893,6 @@ topology:
   threshold: 2
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: multiOpBlueGreen };
@@ -472,7 +939,6 @@ bcs:
     tag: v0.13.0
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: realUpgradeScenario };
@@ -488,6 +954,7 @@ gcs:
             image?: string;
             build?: { args?: Record<string, string> } | undefined;
             environment?: Record<string, string>;
+            depends_on?: Record<string, unknown>;
           }
         >;
       };
@@ -503,6 +970,17 @@ gcs:
       // db-migration is force-local so GCS gets the v0.14 schema.
       expect(doc.services["coprocessor-db-migration"]?.build).toBeDefined();
       expect(doc.services["coprocessor-db-migration"]?.image).not.toContain(":v0.13.0");
+      // The BCS release creates the database first; the HEAD migration runs after it.
+      expect(doc.services["coprocessor-bcs-db-migration"]?.image).toContain(":v0.13.0");
+      expect(doc.services["coprocessor-bcs-db-migration"]?.build).toBeUndefined();
+      expect(doc.services["coprocessor-db-migration"]?.depends_on).toMatchObject({
+        "coprocessor-bcs-db-migration": { condition: "service_completed_successfully" },
+      });
+      // Only the pinned BCS migration may create the database; the HEAD one must find it.
+      const env = (name: string) =>
+        (doc.services[name] as { environment?: Record<string, string> } | undefined)?.environment;
+      expect(env("coprocessor-bcs-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "true" });
+      expect(env("coprocessor-db-migration")).toMatchObject({ ALLOW_DB_BOOTSTRAP: "false" });
       expect(doc.services["coprocessor-gcs-tfhe-worker"]?.build).toBeDefined();
       expect(
         doc.services["coprocessor-host-listener"]?.environment
@@ -534,7 +1012,6 @@ bcs:
     tag: v0.14.0-7
 gcs:
   source: { mode: local }
-  stackVersion: "0.15.0"
 `),
     );
     const bgState: State = { ...state, scenario: pinnedBcsScenario };
@@ -556,5 +1033,505 @@ gcs:
       expect(gcsCommand).toContain("--bucket-name=coproc-0");
       expect(gcsCommand.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
     });
+  });
+
+  test("blue-green keeps the release command shape for a SHA-tagged BCS hotfix", async () => {
+    const hotfixScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-hotfix-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+`),
+    );
+    hotfixScenario.bcs.source = { mode: "registry", tag: "04fb072", compatTag: "v0.14.0-10" };
+    const bgState: State = { ...state, scenario: hotfixScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const bcs = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(bcs.image).toEndWith(":04fb072");
+      expect(bcs.command).toContain("--bucket-name-ct128=coproc-0");
+      expect(bcs.command).toContain("--bucket-name-ct64=coproc-0");
+      expect(bcs.command).not.toContain("--bucket-name=coproc-0");
+    });
+  });
+
+  test("blue-green uses v0.15 commands when a v0.14 BCS is upgraded to a v0.15 SHA", async () => {
+    const upgradedScenario = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-upgraded-bcs.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.0-10
+gcs:
+  source: { mode: local }
+`),
+    );
+    upgradedScenario.bcs.source = { mode: "registry", tag: "15abcde", compatTag: "v0.15.0" };
+    const bgState: State = { ...state, scenario: upgradedScenario };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "BUCKET_NAME=coproc-0\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[]; image?: string }>;
+      };
+      const blue = doc.services["coprocessor-sns-worker"] ?? {};
+      expect(blue.image).toEndWith(":15abcde");
+      expect(blue.command).toContain("--bucket-name=coproc-0");
+      expect(blue.command?.filter((arg) => arg.startsWith("--bucket-name-"))).toEqual([]);
+    });
+  });
+
+  test("a GPU-tagged worker image gets the driver and devices; a CPU-tagged one does not", async () => {
+    // The published GPU images are tagged <revision>-cuda<version>-sm<arch>.
+    // Pinning one worker to a GPU tag and leaving another on the CPU tag proves
+    // both halves in one render: the GPU service must be given the nvidia
+    // runtime's env and a device reservation, and the CPU service must be left
+    // alone -- a CPU run that demands a GPU cannot start on a host without one.
+    //
+    // Why this is needed at all: measured on a host whose docker default runtime
+    // is already `nvidia`, a container with NVIDIA_VISIBLE_DEVICES unset sees
+    // zero /dev/nvidia* devices. A GPU image would run, serve, and compute
+    // nothing on the GPU -- the silent failure this wiring exists to prevent.
+    const gpuState: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: {
+          ...state.versions.env,
+          COPROCESSOR_TFHE_WORKER_VERSION: "921b69113-cuda12.8-sm90",
+          COPROCESSOR_SNS_WORKER_VERSION: "921b69113",
+        },
+      },
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(gpuState, stackSpecForState(gpuState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          {
+            image?: string;
+            environment?: Record<string, string>;
+            deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+          }
+        >;
+      };
+
+      const gpu = doc.services["coprocessor-tfhe-worker"];
+      // The override deliberately keeps the ${...} placeholder; the GPU wiring is
+      // keyed on the resolved version, which is what compose will substitute.
+      expect(gpu?.image).toContain("${COPROCESSOR_TFHE_WORKER_VERSION}");
+      expect(gpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+      expect(gpu?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+      expect(gpu?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+
+      const cpu = doc.services["coprocessor-sns-worker"];
+      expect(cpu?.image).toContain("${COPROCESSOR_SNS_WORKER_VERSION}");
+      expect(cpu?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+      expect(cpu?.deploy).toBeUndefined();
+    });
+  });
+
+  type RenderedWorker = {
+    image?: string;
+    build?: unknown;
+    environment?: Record<string, string>;
+    deploy?: { resources?: { reservations?: { devices?: unknown[] } } };
+  };
+  const renderWorkers = async (rendered: State) => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "\n");
+    await writeFile(envPath("coprocessor.1"), "\n");
+    await generateComposeOverrides(rendered, stackSpecForState(rendered));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+      services: Record<string, RenderedWorker>;
+    };
+    return doc.services;
+  };
+  const expectGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBe("all");
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+    expect(service?.deploy?.resources?.reservations?.devices).toHaveLength(1);
+  };
+  const expectNoGpuWiring = (service: RenderedWorker | undefined) => {
+    expect(service?.environment?.NVIDIA_VISIBLE_DEVICES).toBeUndefined();
+    expect(service?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+    expect(service?.deploy).toBeUndefined();
+  };
+  const withWorkerTag = (base: State, tag: string): State => ({
+    ...base,
+    versions: {
+      ...base.versions,
+      env: { ...base.versions.env, COPROCESSOR_TFHE_WORKER_VERSION: tag, COPROCESSOR_SNS_WORKER_VERSION: "921b69113" },
+    },
+  });
+  const pinnedWorkerScenario = (tag: string) =>
+    resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: registry
+      tag: ${tag}
+      compatTag: v0.15.0
+`),
+    );
+
+  test("a registry pin decides the GPU wiring, not the bundle's tag", async () => {
+    // The pin replaces the bundle image after the instance adjustments ran, so
+    // wiring keyed on the bundle would follow the wrong image. Both directions
+    // matter: a CPU pin over a GPU bundle carrying the nvidia env and a device
+    // reservation cannot start on a host without a GPU; a GPU pin over a CPU
+    // bundle without them silently computes on the CPU.
+    await withTempStateDir(async () => {
+      const cpuPinOverGpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113") },
+        "921b69113-cuda12.8-sm90",
+      );
+      let services = await renderWorkers(cpuPinOverGpuBundle);
+      expectGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113$/);
+      expectNoGpuWiring(services["coprocessor1-tfhe-worker"]);
+
+      const gpuPinOverCpuBundle = withWorkerTag(
+        { ...state, scenario: pinnedWorkerScenario("921b69113-cuda12.8-sm90") },
+        "921b69113",
+      );
+      services = await renderWorkers(gpuPinOverCpuBundle);
+      expectNoGpuWiring(services["coprocessor-tfhe-worker"]);
+      expect(services["coprocessor1-tfhe-worker"]?.image).toMatch(/:921b69113-cuda12\.8-sm90$/);
+      expectGpuWiring(services["coprocessor1-tfhe-worker"]);
+    });
+  });
+
+  test("a worker pinned to specific cards requests exactly those devices", async () => {
+    // Docker resolves `count: all` against every GPU on the host and overwrites
+    // NVIDIA_VISIBLE_DEVICES with the result, so a pin of `0` next to `count:
+    // all` still hands the container every card, and two workers pinned to
+    // different cards compete for one card's memory. The request has to follow
+    // the pin: `device_ids` alone, no `count`.
+    const pinnedScenario = resolveScenarioFile(
+      path.join("/tmp", "two-of-two-pinned-cards.yaml"),
+      parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    env:
+      NVIDIA_VISIBLE_DEVICES: "0"
+  - index: 1
+    env:
+      NVIDIA_VISIBLE_DEVICES: "GPU-3f2a1b, 1"
+`),
+    );
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag({ ...state, scenario: pinnedScenario }, "921b69113-cuda12.8-sm90"));
+      const expectDevices = (name: string, pin: string, ids: string[]) => {
+        const worker = services[name];
+        expect(worker?.environment?.NVIDIA_VISIBLE_DEVICES).toBe(pin);
+        expect(worker?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBe("compute,utility");
+        expect(worker?.deploy?.resources?.reservations?.devices).toEqual([
+          { driver: "nvidia", device_ids: ids, capabilities: ["gpu"] },
+        ]);
+      };
+      expectDevices("coprocessor-tfhe-worker", "0", ["0"]);
+      expectDevices("coprocessor1-tfhe-worker", "GPU-3f2a1b, 1", ["GPU-3f2a1b", "1"]);
+      // Instance env reaches every service on the node, so the CPU sibling
+      // carries the pin as plain env; what it must not get is a device request.
+      for (const name of ["coprocessor-sns-worker", "coprocessor1-sns-worker"]) {
+        expect(services[name]?.environment?.NVIDIA_DRIVER_CAPABILITIES).toBeUndefined();
+        expect(services[name]?.deploy).toBeUndefined();
+      }
+    });
+  });
+
+  test("a locally built worker gets no GPU wiring even under a GPU bundle", async () => {
+    // A local build replaces the bundle image with the `fhevm-local-*` tag and
+    // compiles Dockerfile.workspace, which is a CPU image: demanding a GPU for
+    // it would keep a CPU run from starting on a host without one.
+    await withTempStateDir(async () => {
+      const services = await renderWorkers(withWorkerTag(inheritedScenarioState, "921b69113-cuda12.8-sm90"));
+      for (const name of ["coprocessor-tfhe-worker", "coprocessor1-tfhe-worker"]) {
+        expect(services[name]?.image).toMatch(/:fhevm-local-i[01]$/);
+        expect(services[name]?.build).toBeDefined();
+        expectNoGpuWiring(services[name]);
+      }
+    });
+  });
+});
+
+describe("test-suite docker socket runtime", () => {
+  test("dockerSocketRuntime resolves a unix DOCKER_HOST socket with its group id", async () => {
+    await withUnixSocket(async (socketPath) => {
+      const runtime = dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` });
+      expect(runtime?.path).toBe(socketPath);
+      expect(runtime?.gid).toBe(statSync(socketPath).gid);
+    });
+  });
+
+  test("dockerSocketRuntime returns undefined for a missing socket", () => {
+    expect(dockerSocketRuntime({ DOCKER_HOST: "unix:///nonexistent/docker.sock" })).toBeUndefined();
+  });
+
+  test("dockerSocketRuntime treats a remote DOCKER_HOST as socketless", async () => {
+    await withUnixSocket(async (socketPath) => {
+      // A tcp:// daemon is never local, even while a unix socket exists elsewhere.
+      expect(dockerSocketRuntime({ DOCKER_HOST: "tcp://127.0.0.1:2375" })).toBeUndefined();
+      expect(dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` })).toBeDefined();
+    });
+  });
+
+  test("dockerSocketRuntime falls back to the default socket path without DOCKER_HOST", () => {
+    // The fallback path is a host fact, so only the path it probes is asserted here.
+    const runtime = dockerSocketRuntime({});
+    expect(runtime === undefined || runtime.path === "/var/run/docker.sock").toBe(true);
+  });
+
+  test("grants the e2e runner the host docker socket when one exists", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+          const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
+          expect(others.length).toBeGreaterThan(0);
+          for (const [key, service] of others) {
+            expect(YAML.stringify({ [key]: service })).not.toContain("/var/run/docker.sock");
+            expect(service.group_add).toBeUndefined();
+          }
+        });
+      });
+    });
+  });
+
+  test("keeps the local build override alongside the socket wiring", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { image?: string; build?: unknown; volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.image).toContain(":fhevm-local");
+          expect(runner?.build).toBeTruthy();
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+        });
+      });
+    });
+  });
+
+  test("renders an empty test-suite override on a host without a docker socket", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { volumes?: unknown; group_add?: unknown }>;
+        };
+        expect(doc.services).toEqual({});
+        expect(doc.services["test-suite-e2e-debug"]?.volumes).toBeUndefined();
+        expect(doc.services["test-suite-e2e-debug"]?.group_add).toBeUndefined();
+      });
+    });
+  });
+
+  test("leaves the runner socketless when DOCKER_HOST points at a remote daemon", async () => {
+    await withDockerHost("tcp://127.0.0.1:2375", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, unknown>;
+        };
+        expect(doc.services).toEqual({});
+      });
+    });
+  });
+
+  test("the tracked test-suite compose file carries no docker socket wiring", async () => {
+    const raw = await readFile(path.join(TEMPLATE_COMPOSE_DIR, "test-suite-docker-compose.yml"), "utf8");
+    expect(raw).not.toContain("docker.sock");
+    expect(raw).not.toContain("group_add");
+    expect(raw).not.toContain("DOCKER_GID");
+  });
+});
+
+describe("test-suite docker socket runtime", () => {
+  test("dockerSocketRuntime resolves a unix DOCKER_HOST socket with its group id", async () => {
+    await withUnixSocket(async (socketPath) => {
+      const runtime = dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` });
+      expect(runtime?.path).toBe(socketPath);
+      expect(runtime?.gid).toBe(statSync(socketPath).gid);
+    });
+  });
+
+  test("dockerSocketRuntime returns undefined for a missing socket", () => {
+    expect(dockerSocketRuntime({ DOCKER_HOST: "unix:///nonexistent/docker.sock" })).toBeUndefined();
+  });
+
+  test("dockerSocketRuntime treats a remote DOCKER_HOST as socketless", async () => {
+    await withUnixSocket(async (socketPath) => {
+      // A tcp:// daemon is never local, even while a unix socket exists elsewhere.
+      expect(dockerSocketRuntime({ DOCKER_HOST: "tcp://127.0.0.1:2375" })).toBeUndefined();
+      expect(dockerSocketRuntime({ DOCKER_HOST: `unix://${socketPath}` })).toBeDefined();
+    });
+  });
+
+  test("dockerSocketRuntime falls back to the default socket path without DOCKER_HOST", () => {
+    // The fallback path is a host fact, so only the path it probes is asserted here.
+    const runtime = dockerSocketRuntime({});
+    expect(runtime === undefined || runtime.path === "/var/run/docker.sock").toBe(true);
+  });
+
+  test("grants the e2e runner the host docker socket when one exists", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          // Without a local build the override only adds the socket; compose merges the template's
+          // proxy test-certificate mount in at runtime.
+          expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+          const others = (await generatedServices()).filter(([key]) => key !== "test-suite.yml:test-suite-e2e-debug");
+          expect(others.length).toBeGreaterThan(0);
+          for (const [key, service] of others) {
+            expect(YAML.stringify({ [key]: service })).not.toContain("/var/run/docker.sock");
+            expect(service.group_add).toBeUndefined();
+          }
+        });
+      });
+    });
+  });
+
+  test("keeps the local build override alongside the socket wiring", async () => {
+    await withUnixSocket(async (socketPath) => {
+      await withDockerHost(`unix://${socketPath}`, async () => {
+        await withTempStateDir(async () => {
+          await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+          await writeFile(envPath("coprocessor"), "\n");
+          await generateComposeOverrides(testSuiteOverrideState, stackSpecForState(testSuiteOverrideState));
+          const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+            services: Record<string, { image?: string; build?: unknown; volumes?: string[]; group_add?: string[] }>;
+          };
+          const runner = doc.services["test-suite-e2e-debug"];
+          expect(runner?.image).toContain(":fhevm-local");
+          expect(runner?.build).toBeTruthy();
+          // The template's proxy test-certificate mount is not repeated: docker compose
+        // merges volumes by target across the tracked template and this override.
+        expect(runner?.volumes).toEqual([`${socketPath}:/var/run/docker.sock`]);
+          expect(runner?.group_add).toEqual([String(statSync(socketPath).gid)]);
+        });
+      });
+    });
+  });
+
+  test("renders an empty test-suite override on a host without a docker socket", async () => {
+    await withDockerHost("unix:///nonexistent/docker.sock", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, { volumes?: unknown; group_add?: unknown }>;
+        };
+        expect(doc.services).toEqual({});
+        expect(doc.services["test-suite-e2e-debug"]?.volumes).toBeUndefined();
+        expect(doc.services["test-suite-e2e-debug"]?.group_add).toBeUndefined();
+      });
+    });
+  });
+
+  test("leaves the runner socketless when DOCKER_HOST points at a remote daemon", async () => {
+    await withDockerHost("tcp://127.0.0.1:2375", async () => {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await generateComposeOverrides(socketWiringState, stackSpecForState(socketWiringState));
+        const doc = YAML.parse(await readFile(composePath("test-suite"), "utf8")) as {
+          services: Record<string, unknown>;
+        };
+        expect(doc.services).toEqual({});
+      });
+    });
+  });
+
+  test("the tracked test-suite compose file carries no docker socket wiring", async () => {
+    const raw = await readFile(path.join(TEMPLATE_COMPOSE_DIR, "test-suite-docker-compose.yml"), "utf8");
+    expect(raw).not.toContain("docker.sock");
+    expect(raw).not.toContain("group_add");
+    expect(raw).not.toContain("DOCKER_GID");
+  });
+});
+
+test.each([
+  ["v0.13.0-2", false, "ws://gateway:8546"],
+  ["v0.13.5", false, "http://gateway:8545"],
+  ["v0.14.1", false, "ws://gateway:8546"],
+  ["v0.14.2", false, "http://gateway:8545"],
+  ["v0.13.0-2", true, "http://gateway:8545"],
+  ["c2f416b", false, "http://gateway:8545"],
+  ["c2f416b", true, "http://gateway:8545"],
+] as const)("sender endpoint for %s (local=%s)", async (tag, local, expected) => {
+  await withTempStateDir(async () => {
+    await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+    await writeFile(envPath("coprocessor"), "GATEWAY_URL=http://gateway:8545\nGATEWAY_WS_URL=ws://gateway:8546\n");
+    const input: State = {
+      ...state,
+      versions: presetBundle("latest-main", tag, "test.json"),
+      overrides: local ? [{ group: "coprocessor" }] : [],
+      scenario: testDefaultScenario(),
+    };
+    await generateComposeOverrides(input, stackSpecForState(input));
+    const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8"));
+    expect(doc.services["coprocessor-transaction-sender"].command).toContain(`--gateway-url=${expected}`);
   });
 });

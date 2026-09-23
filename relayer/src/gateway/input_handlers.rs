@@ -12,7 +12,10 @@ use crate::{
         arbitrum::{
             bindings::InputVerification,
             transaction::{
-                helper::{TransactionHelper, TransactionType, TxResult},
+                helper::{
+                    ReceiptRecordOutcome, TransactionHelper, TransactionType, TxClaimOutcome,
+                    TxResult,
+                },
                 tx_throttler::{DynTxHook, GatewayTxTask, TxThrottlingSender},
                 TxLifecycleHooks,
             },
@@ -21,6 +24,7 @@ use crate::{
         utils::{classify_revert_selector, extract_revert_selector},
     },
     logging::InputProofStep,
+    metrics,
     orchestrator::{
         traits::{Event, EventHandler},
         Orchestrator,
@@ -33,7 +37,7 @@ use crate::{
 use std::str::FromStr;
 use std::time::Duration;
 
-use alloy::primitives::{Address, FixedBytes, TxHash};
+use alloy::primitives::{Address, TxHash};
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -73,7 +77,8 @@ impl InputProofGatewayHandler {
                 InputProofEventId::RespRcvdFromGw.into(),
                 // NOTE: We don't use Failed Event Id here, to allow notifying users
                 InputProofEventId::InternalFailure.into(),
-                GatewayChainEventId::EventLogRcvd.into(),
+                GatewayChainEventId::VerifyProofResponse.into(),
+                GatewayChainEventId::RejectProofResponse.into(),
             ],
             handler.clone() as Arc<dyn EventHandler<RelayerEvent>>,
         );
@@ -102,35 +107,27 @@ impl EventHandler<RelayerEvent> for InputProofGatewayHandler {
                 }
             },
 
-            RelayerEventData::GatewayChain(GatewayChainEventData::EventLogRcvd {
+            RelayerEventData::GatewayChain(GatewayChainEventData::VerifyProofResponse {
                 ref log,
                 tx_hash,
             }) => {
-                if let Some(topic0) = log.topic0() {
-                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
-
-                    match topic0_fixed {
-                        InputVerification::VerifyProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof accept response"
-                            );
-                            self.complete_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        InputVerification::RejectProofResponse::SIGNATURE_HASH => {
-                            debug!(
-                                step = %InputProofStep::GwEventReceived,
-                                "Observed gateway input-proof reject response"
-                            );
-                            self.reject_proof_verification(event.clone(), log, *tx_hash)
-                                .await
-                        }
-                        _ => return,
-                    }
-                } else {
-                    return;
-                }
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof accept response"
+                );
+                self.complete_proof_verification(event.clone(), log, *tx_hash)
+                    .await
+            }
+            RelayerEventData::GatewayChain(GatewayChainEventData::RejectProofResponse {
+                ref log,
+                tx_hash,
+            }) => {
+                debug!(
+                    step = %InputProofStep::GwEventReceived,
+                    "Observed gateway input-proof reject response"
+                );
+                self.reject_proof_verification(event.clone(), log, *tx_hash)
+                    .await
             }
             _ => return,
         };
@@ -199,20 +196,26 @@ impl InputProofGatewayHandler {
             hook: DynTxHook(Arc::new(self.clone())),
         };
 
+        let job_id = task.job_id;
         info!(
             step = %InputProofStep::TxQueued,
-            int_job_id = %task.job_id,
+            int_job_id = %job_id,
             "Enqueuing input proof request to tx throttler"
         );
 
-        // PUSH TO QUEUE
-        // Catch error from here and pass the request to failure.
-        // This case MUST never happen on this flow.
-        // The request should never be injected in the system, and bounced after the cache check if the queue is full.
+        // A full queue here ends the request in `failure` on its first attempt. The intake
+        // bouncer is what keeps that unreachable, so reaching it means the bouncer's capacity
+        // no longer matches the throttler's.
         match self.tx_throttler.push(task).await {
             Ok(()) => {}
             Err(e) => match e {
                 EventProcessingError::QueueFull => {
+                    error!(
+                        alert = true,
+                        int_job_id = %job_id,
+                        queue = "input_proof_tx",
+                        "Transaction queue full past the intake bouncer"
+                    );
                     return Err(EventProcessingError::ProtocolOverload(
                         "Relayer is full, retry later.".to_string(),
                     ));
@@ -416,7 +419,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("verify_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?request_event.zkProofId,
                                     max_retries = retry_config.max_retries,
@@ -606,7 +610,8 @@ impl InputProofGatewayHandler {
                         }
                         InputProofCompletionOutcome::NotFound => {
                             if attempt == retry_config.max_retries {
-                                debug!(
+                                metrics::increment_unmatched_gateway_event("reject_proof_response");
+                                info!(
                                     step = %InputProofStep::GwEventRetrying,
                                     gw_reference_id = ?reject_proof_response.zkProofId,
                                     max_retries = retry_config.max_retries,
@@ -655,17 +660,22 @@ impl InputProofGatewayHandler {
                     "Request processing failed - notifying user"
                 );
 
-                if let Err(db_err) = self
+                match self
                     .input_proof_repo
                     .update_status_to_failure(event.job_id.as_ref(), &error.to_string())
                     .await
                 {
-                    error!(
+                    Ok(0) => info!(
+                        job_id = %event.job_id,
+                        "failure write refused (stale epoch or status already advanced)"
+                    ),
+                    Ok(_) => {}
+                    Err(db_err) => error!(
                         alert = true,
                         job_id = %event.job_id,
                         db_error = %db_err,
                         "Failed to update failure status in database"
-                    );
+                    ),
                 }
             }
         }
@@ -689,22 +699,35 @@ impl InputProofGatewayHandler {
 
 #[async_trait]
 impl TxLifecycleHooks for InputProofGatewayHandler {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError> {
-        self.input_proof_repo
+    async fn on_tx_in_flight(
+        &self,
+        job_id: &JobId,
+    ) -> Result<TxClaimOutcome, EventProcessingError> {
+        let rows_affected = self
+            .input_proof_repo
             .update_status_to_tx_in_flight(job_id.as_ref())
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_status_to_tx_in_flight".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "Tx-in-flight claim did not apply for input proof request, skipping send"
+            );
+            return Ok(TxClaimOutcome::ClaimLost);
+        }
+
+        Ok(TxClaimOutcome::Claimed)
     }
 
     async fn on_receipt_received(
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError> {
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
         let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
             InputVerification::VerifyProofRequest,
         >(
@@ -723,18 +746,34 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
             "Transaction confirmed, receipt received"
         );
 
-        self.input_proof_repo
+        let rows_affected = self
+            .input_proof_repo
             .update_input_proof_status_to_receipt_received(
                 job_id.as_ref(),
                 &tx_hash,
                 gw_reference_id,
             )
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_input_proof_status_to_receipt_received".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            // The `receipt_received` write lost either the `tx_in_flight` guard or the epoch
+            // fence, and `gw_reference_id` is deliberately NOT stored - see the same branch in
+            // `public_decrypt_handler` for why.
+            warn!(
+                int_job_id = %job_id,
+                gw_reference_id = %gw_reference_id,
+                "receipt_received write refused (row no longer tx_in_flight under this epoch - \
+                 a successor's claim got there first); \
+                 gw_reference_id not stored, a re-drive is expected to record its own receipt"
+            );
+            return Ok(ReceiptRecordOutcome::Refused);
+        }
+
+        Ok(ReceiptRecordOutcome::Recorded)
     }
 
     async fn on_failure(
@@ -748,13 +787,22 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
             crate::metrics::transaction::track_revert_with_request_type(reason, "input_proof");
         }
 
-        self.input_proof_repo
+        let rows_affected = self
+            .input_proof_repo
             .update_status_to_failure(job_id.as_ref(), err_reason)
             .await
-            .map(|_| ())
             .map_err(|e| EventProcessingError::SqlOperationFailed {
                 operation: "input_proof.update_status_to_failure".to_string(),
                 reason: e.to_string(),
-            })
+            })?;
+
+        if rows_affected == 0 {
+            info!(
+                int_job_id = %job_id,
+                "failure write refused (stale epoch or status already advanced)"
+            );
+        }
+
+        Ok(())
     }
 }

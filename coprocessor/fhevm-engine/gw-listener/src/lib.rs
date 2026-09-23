@@ -7,6 +7,7 @@ pub(crate) mod drift_detector;
 pub mod gw_listener;
 pub mod http_server;
 pub(crate) mod metrics;
+pub mod synthetic_input;
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {

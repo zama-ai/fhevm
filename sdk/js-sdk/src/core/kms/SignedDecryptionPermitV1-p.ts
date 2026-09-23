@@ -8,7 +8,7 @@ import type { KmsExtraData } from '../types/kms-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { verifyKmsUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsUserDecryptEip712V1.js';
 import { verifyKmsDelegatedUserDecryptEip712V1 } from '../utils-p/decrypt/verifyKmsDelegatedUserDecryptEip712V1.js';
-import { assertRecordNonNullableProperty } from '../base/record.js';
+import { assertRecordNonNullableProperty, isRecordNonNullableProperty } from '../base/record.js';
 import { assertRecordBytes65HexProperty } from '../base/bytes.js';
 import { addressToChecksummedAddress, assertIsAddress, assertRecordAddressProperty } from '../base/address.js';
 import { assertIsKmsUserDecryptEip712V1, createKmsUserDecryptEip712V1 } from './createKmsUserDecryptEip712V1.js';
@@ -216,6 +216,19 @@ export async function parseSignedDecryptionPermitV1(
   assertRecordNonNullableProperty(permit, 'eip712', permitName, options);
   assertRecordBytes65HexProperty(permit, 'signature', permitName, options);
   assertRecordAddressProperty(permit, 'signerAddress', permitName, options);
+
+  // V1 delegation lives inside the signed eip712 message (primaryType
+  // 'DelegatedUserDecryptRequestVerification'), unlike V2 where it's post-sign
+  // metadata alongside the message. A top-level delegatorAddress here almost
+  // certainly means the permit was built for V2 and mistakenly parsed as V1 —
+  // reject it instead of silently ignoring it.
+  if (isRecordNonNullableProperty(permit, 'delegatorAddress')) {
+    throw new Error(
+      `Unexpected 'delegatorAddress' field on a V1 permit. Delegation for V1 permits is encoded in ` +
+        `the signed eip712 message (primaryType 'DelegatedUserDecryptRequestVerification'), not as a ` +
+        `top-level field. Did you mean to parse this as a V2 (unified) permit?`,
+    );
+  }
 
   const eip712 = permit.eip712;
   assertRecordStringProperty(eip712, 'primaryType', `${permitName}.eip712`, options);

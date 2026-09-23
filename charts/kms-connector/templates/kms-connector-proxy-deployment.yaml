@@ -1,0 +1,116 @@
+{{- if .Values.kmsConnectorProxy.enabled -}}
+{{- if not .Values.kmsConnectorEndpoint.enabled }}{{ fail "kmsConnectorProxy requires kmsConnectorEndpoint.enabled" }}{{ end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+  name: {{ include "kmsConnectorProxyName" . }}
+spec:
+  replicas: {{ .Values.kmsConnectorProxy.replicas }}
+  selector:
+    matchLabels:
+      app: kms-connector-proxy
+  {{- if .Values.kmsConnectorProxy.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.kmsConnectorProxy.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: kms-connector-proxy
+        app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with .Values.kmsConnectorProxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorProxy.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorProxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorProxy.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorProxy.serviceAccountName }}
+      {{- end }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ .Values.kmsConnectorProxy.tls.secretName | quote }}
+      containers:
+        - name: kms-connector-proxy
+          image: {{ .Values.kmsConnectorProxy.image.name }}:{{ .Values.kmsConnectorProxy.image.tag }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/kms-connector/proxy
+              readOnly: true
+          env:
+            # Listen addresses derived from `ports`. Declared first so entries in
+            # `commonConfig.env` / `kmsConnectorProxy.env` take precedence.
+            - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorProxy.ports.monitoring | quote }}
+            - name: KMS_CONNECTOR_PROXY_BIND_ADDRESS
+              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorProxy.ports.https | quote }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorProxy.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - name: KMS_CONNECTOR_TLS_CONFIG__CERT_PATH
+              value: /etc/kms-connector/proxy/tls.crt
+            - name: KMS_CONNECTOR_TLS_CONFIG__KEY_PATH
+              value: /etc/kms-connector/proxy/tls.key
+            - name: KMS_CONNECTOR_ENDPOINT_ADDRESSES
+              value: {{ printf "%s:%v" (include "kmsConnectorEndpointName" .) .Values.kmsConnectorEndpoint.ports.http | quote }}
+            {{- if .Values.kmsConnectorProxy.apiKeyDigest.value }}
+            - name: KMS_CONNECTOR_API_KEY_DIGEST
+              value: {{ .Values.kmsConnectorProxy.apiKeyDigest.value | quote }}
+            {{- else }}
+            - name: KMS_CONNECTOR_API_KEY_DIGEST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kmsConnectorProxy.apiKeyDigest.secret.name | quote }}
+                  key: {{ .Values.kmsConnectorProxy.apiKeyDigest.secret.key | quote }}
+            {{- end }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorProxy.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint }}
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
+          ports:
+            {{- range $portName, $portValue := .Values.kmsConnectorProxy.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          {{- with .Values.kmsConnectorProxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorProxy.probes .Values.kmsConnectorProxy.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit .Values.kmsConnectorProxy.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorProxy.probes .Values.kmsConnectorProxy.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit .Values.kmsConnectorProxy.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}

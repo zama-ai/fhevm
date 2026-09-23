@@ -64,6 +64,18 @@ pub async fn liveness_handler() -> impl IntoResponse {
     security(())
 )]
 pub async fn health_handler(orchestrator: Arc<Orchestrator>) -> impl IntoResponse {
+    // Unhealthy regardless of dependency status, so the load balancer stops routing here.
+    if orchestrator.is_shutting_down() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(HealthResponse {
+                status: "shutting_down".to_string(),
+                dependencies: None,
+            }),
+        )
+            .into_response();
+    }
+
     let (is_healthy, dependencies) = orchestrator.check_all_health().await;
 
     let status = if is_healthy {

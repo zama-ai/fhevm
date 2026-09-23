@@ -77,11 +77,11 @@ both are needed.
 ## Signing is per-call, not per-client
 
 Neither factory takes a `signer` or `walletClient`. A client is read-only. When
-an operation needs a signature — only [`signDecryptionPermit`](decryption.md)
-does — you pass the signer to that method:
+an operation needs a signature — only signing a
+[decryption permit](decryption.md) does — you pass the signer to that method:
 
 ```ts
-await client.signDecryptionPermit({
+await client.signLegacyDecryptionPermit({
   /* … */
   signerAddress: await signer.getAddress(),
   signer, // ethers Signer, or a viem Account / WalletClient
@@ -108,9 +108,8 @@ const client = createFhevmClient({
 | ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
 | `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
 | `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
-| `moduleVersions`  | `FhevmModuleVersions`   | varies by client  | Pin specific TFHE/TKMS WASM versions instead of the defaults.     |
 
-Module version pinning and the encryption-key cache are covered in
+The encryption-key cache is covered in
 [Runtime configuration](runtime-configuration.md).
 
 ## Loading and lifecycle

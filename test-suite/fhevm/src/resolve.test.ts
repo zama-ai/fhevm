@@ -17,6 +17,7 @@ import {
   SHA_RUNTIME_COMPAT_MIN_SHA,
   applyVersionEnvOverrides,
   findPublishedAncestorIndex,
+  mustVerifyPublishedImages,
   presetBundle,
   resolveMissingRepoTagFallbacks,
   selectSupportedMainSha,
@@ -92,10 +93,15 @@ describe("resolve", () => {
     expect(pinned.env.COPROCESSOR_CONSENSUS_DETECTOR_VERSION).toBe("abcdef0");
     expect(pinned.env.COPROCESSOR_UPGRADE_CONTROLLER_VERSION).toBe("abcdef0");
 
+    expect(pinned.env.CONNECTOR_ENDPOINT_VERSION).toBe("abcdef0");
+    expect(pinned.env.CONNECTOR_PROXY_VERSION).toBe("abcdef0");
+
     // Empty published-key set (what `--target sha` passes): optional images are omitted.
     const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
     expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
     expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
+    expect("CONNECTOR_ENDPOINT_VERSION" in shaBundle.env).toBe(false);
+    expect("CONNECTOR_PROXY_VERSION" in shaBundle.env).toBe(false);
     expect(shaBundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
 
     // latest-main with only consensus-detector published at the resolved sha: pin it, drop the
@@ -166,6 +172,18 @@ describe("resolve", () => {
     ]);
   });
 
+  test("strict mode rejects an empty package-tag set instead of an unverified pin", () => {
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag: "d77a041",
+        missingKeys: ["CONNECTOR_GW_LISTENER_VERSION"],
+        commitShas: ["d77a0417aa5d928063181454756ebb73cdbadc24"],
+        packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set<string>() },
+        strict: true,
+      }),
+    ).toThrow("ancestor fallback for d77a041 cannot be verified");
+  });
+
   test("fails resolution when a published package has no tag anywhere on the ancestry", () => {
     expect(() =>
       resolveMissingRepoTagFallbacks({
@@ -175,6 +193,48 @@ describe("resolve", () => {
         packageTagsMap: { CONNECTOR_GW_LISTENER_VERSION: new Set(["0000000"]) },
       }),
     ).toThrow("nor for any of the 1 commits behind it");
+  });
+
+  test("successful head overlays still resolve or fail a missing baseline before stack start", () => {
+    const requestedTag = "base111";
+    const headTag = "head222";
+    const commitShas = [
+      "base111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "ancest0bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    ];
+    const { overrides, sources } = resolveMissingRepoTagFallbacks({
+      requestedTag,
+      missingKeys: ["GATEWAY_VERSION"],
+      commitShas,
+      packageTagsMap: {
+        GATEWAY_VERSION: new Set(["ancest0"]),
+        COPROCESSOR_TFHE_WORKER_VERSION: new Set([headTag, requestedTag]),
+      },
+    });
+    const lock = presetBundle("sha", requestedTag, "sha-base111.json", sources, new Set(), overrides);
+    const effective = applyVersionEnvOverrides(lock, {
+      COPROCESSOR_TFHE_WORKER_VERSION: headTag,
+    });
+    expect(effective.env.COPROCESSOR_TFHE_WORKER_VERSION).toBe(headTag);
+    expect(effective.env.GATEWAY_VERSION).toBe("ancest0");
+    expect(effective.sources).toContain("GATEWAY_VERSION=ancest0 (fallback: base111 unpublished)");
+
+    expect(() =>
+      resolveMissingRepoTagFallbacks({
+        requestedTag,
+        missingKeys: ["GATEWAY_VERSION"],
+        commitShas: [commitShas[0]],
+        packageTagsMap: {
+          GATEWAY_VERSION: new Set(["zzzzzzz"]),
+          COPROCESSOR_TFHE_WORKER_VERSION: new Set([headTag]),
+        },
+      }),
+    ).toThrow("no published image for base111");
+  });
+
+  test("CI baseline resolution refuses to skip the published-image check", () => {
+    expect(mustVerifyPublishedImages({})).toBe(false);
+    expect(mustVerifyPublishedImages({ REQUIRE_PUBLISHED_IMAGE_CHECK: "true" })).toBe(true);
   });
 
   test("applies per-component fallback overrides to a sha preset bundle", () => {

@@ -23,13 +23,15 @@ use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::StackMode;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use crate::database::tfhe_event_propagate::Database;
+use crate::database::tfhe_event_propagate::{
+    spawn_stack_version_listener, Database,
+};
 use crate::health_check::HealthCheck;
 use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
@@ -188,6 +190,13 @@ pub struct Args {
     )]
     pub timeout_request_websocket: u64,
 
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Stop injecting the synthetic work a GCS listener uses to anchor consensus"
+    )]
+    pub disable_synthetic_ops: bool,
+
     /// Print the compiled-in coprocessor stack version and exit.
     #[arg(long)]
     pub stack_version: bool,
@@ -217,6 +226,8 @@ pub struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
+    tracks_kms_generation: bool,
+    rpc_finalized_block: Option<i64>,
     timeout_request_websocket: u64,
 }
 
@@ -295,6 +306,8 @@ impl InfiniteLogIter {
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
+            tracks_kms_generation: !args.kms_generation_address.is_empty(),
+            rpc_finalized_block: None,
             timeout_request_websocket: args.timeout_request_websocket,
         }
     }
@@ -511,6 +524,18 @@ impl InfiniteLogIter {
                 info!("Unknown top block, assuming full finalized catchup");
                 from_block + self.catchup_paging
             };
+        if self.tracks_kms_generation {
+            match self.get_block_by_id(BlockId::finalized()).await {
+                Ok(block) => {
+                    self.rpc_finalized_block =
+                        i64::try_from(block.header.number).ok();
+                }
+                Err(error) => {
+                    self.rpc_finalized_block = None;
+                    warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
+                }
+            }
+        }
         if from_block >= finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
@@ -1002,6 +1027,7 @@ async fn db_insert_block(
                 dependence_cross_block: args.dependence_cross_block,
                 dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
                 is_protocol_config_listener,
+                disable_synthetic_ops: args.disable_synthetic_ops,
             },
         )
         .await;
@@ -1115,14 +1141,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         crate::protocol_config::resolve_protocol_config_listener(
             args.protocol_config.chain_id,
             chain_id.as_u64(),
+            protocol_config_address,
         )?;
-    if is_protocol_config_listener && protocol_config_address.is_none() {
-        warn!(
-            chain_id = %chain_id,
-            "ProtocolConfig listener has no --protocol-config-address; \
-             ProtocolConfig.CoprocessorUpgradeProposed events will not be decoded"
-        );
-    }
     if args.database_url.as_str().is_empty() {
         error!("Database URL is required");
         panic!("Database URL is required");
@@ -1140,11 +1160,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
     };
 
-    let mut db = Database::new_with_gcs_mode(
+    let stack_mode = StackMode::new(gcs_mode);
+    let mut db = Database::new_with_stack_mode(
         &args.database_url,
         chain_id,
         args.dependence_cache_size,
-        gcs_mode,
+        stack_mode.clone(),
     )
     .await?;
 
@@ -1161,19 +1182,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the ingest loop below into a no-op (no DB writes).
-    let stack_mode = StackMode::new(gcs_mode);
-    {
-        let pool = db.pool().await;
-        let stack_mode = stack_mode.clone();
-        let cancel = cancel_token.clone();
-        tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(pool, stack_mode, cancel).await
-            {
-                error!(error = %err, "stack-version listener exited with error");
-            }
-        });
-    }
+    spawn_stack_version_listener(
+        db.clone(),
+        stack_mode.clone(),
+        cancel_token.clone(),
+    );
 
     // Start health check before drift-revert init so the service stays
     // healthy while waiting for a revert to complete.
@@ -1262,6 +1275,18 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     .max(log_iter.last_valid_block.unwrap_or(0)),
             );
             if !block_logs.catchup {
+                if kms_generation_address.is_some() {
+                    match log_iter.get_block_by_id(BlockId::finalized()).await {
+                        Ok(finalized) => {
+                            log_iter.rpc_finalized_block =
+                                i64::try_from(finalized.header.number).ok();
+                        }
+                        Err(error) => {
+                            log_iter.rpc_finalized_block = None;
+                            warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
+                        }
+                    }
+                }
                 update_finalized_blocks(
                     &mut db,
                     &mut log_iter,
@@ -1274,6 +1299,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 background_tasks.spawn(process_kms_generation_activations(
                     db.pool.read().await.clone(),
                     aws_s3_client,
+                    log_iter.rpc_finalized_block,
                 ));
             }
         }
@@ -1335,6 +1361,8 @@ mod tests {
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
             catchup_finalization_in_blocks: 20,
+            tracks_kms_generation: false,
+            rpc_finalized_block: None,
             timeout_request_websocket: 15,
         }
     }

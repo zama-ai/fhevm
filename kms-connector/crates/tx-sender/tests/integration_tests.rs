@@ -12,7 +12,7 @@ use connector_utils::{
         },
         setup::{CHAIN_ID, DEPLOYER_PRIVATE_KEY, TestInstance, TestInstanceBuilder},
     },
-    types::db::OperationStatus,
+    types::db::{OperationStatus, RequestSource},
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use fhevm_host_bindings::{kms_generation::KMSGeneration, protocol_config::ProtocolConfig};
@@ -51,7 +51,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 
     info!("Mocking PublicDecryptionResponse in Postgres...");
     let inserted_response =
-        insert_rand_public_decrypt_response(test_instance.db(), None, None).await?;
+        insert_rand_public_decrypt_response(test_instance.db(), None, None, RequestSource::OnChain)
+            .await?;
     info!("PublicDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -103,7 +104,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
 
     info!("Mocking UserDecryptionResponse in Postgres...");
     let inserted_response =
-        insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
+        insert_rand_user_decrypt_response(test_instance.db(), None, None, RequestSource::OnChain)
+            .await?;
     info!("UserDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
@@ -415,7 +417,13 @@ async fn stress_test() -> anyhow::Result<()> {
     info!("Mocking {nb_response} UserDecryptionResponse in Postgres...");
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
-        let response = insert_rand_user_decrypt_response(test_instance.db(), None, None).await?;
+        let response = insert_rand_user_decrypt_response(
+            test_instance.db(),
+            None,
+            None,
+            RequestSource::OnChain,
+        )
+        .await?;
         responses_id.push(response.decryption_id);
     }
     info!("{nb_response} UserDecryptionResponse successfully stored!");

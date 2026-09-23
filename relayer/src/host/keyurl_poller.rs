@@ -20,9 +20,10 @@ use fhevm_host_bindings::i_protocol_config::IProtocolConfig::IProtocolConfigInst
 use fhevm_host_bindings::ikms_generation::IKMSGeneration;
 use fhevm_host_bindings::ikms_generation::IKMSGeneration::IKMSGenerationInstance;
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-use crate::config::settings::{KeyUrlConfig, ProtocolConfigSettings};
+use crate::config::settings::ProtocolConfigSettings;
 use crate::host::error_redact::{redact_alloy_error, redact_error};
 use crate::host::provider::{build_host_provider, Provider};
 use crate::http::endpoints::v2::types::keyurl::{KeyData, KeyUrlResponseJson};
@@ -133,15 +134,16 @@ pub struct KeyUrlPoller {
 }
 
 impl KeyUrlPoller {
-    /// Build the poller. Reads the KMSGeneration contract addressed by `keyurl` and the
+    /// Build the poller. Reads the KMSGeneration contract at `kms_generation_address` and the
     /// ProtocolConfig contract from `protocol_config`, both over the same host-chain provider.
     pub fn new(
         protocol_config: &ProtocolConfigSettings,
-        keyurl: &KeyUrlConfig,
+        kms_generation_address: &str,
+        poll_interval_ms: u64,
     ) -> anyhow::Result<Self> {
         let provider = build_host_provider(&protocol_config.ethereum_http_rpc_url)?;
 
-        let kms_generation_address = Address::from_str(&keyurl.kms_generation_address)
+        let kms_generation_address = Address::from_str(kms_generation_address)
             .map_err(|e| anyhow::anyhow!("Invalid kms_generation_address: {e}"))?;
         let protocol_config_address = Address::from_str(&protocol_config.address)
             .map_err(|e| anyhow::anyhow!("Invalid protocol_config address: {e}"))?;
@@ -149,7 +151,7 @@ impl KeyUrlPoller {
         Ok(Self {
             kms_generation: IKMSGeneration::new(kms_generation_address, provider.clone()),
             protocol_config: IProtocolConfig::new(protocol_config_address, provider),
-            poll_interval: Duration::from_millis(keyurl.poll_interval_ms),
+            poll_interval: Duration::from_millis(poll_interval_ms),
             retry: protocol_config.retry.clone(),
             last_seen: None,
         })
@@ -325,19 +327,25 @@ impl KeyUrlPoller {
 
     /// Long-running loop: poll the active ids on the configured interval and, on any change,
     /// refetch the materials and push the new value into `tx`. RPC failures are logged and
-    /// retried on the next tick (the last served value is kept). Stops when the orchestrator
-    /// aborts the task on shutdown.
-    pub async fn run(mut self, tx: watch::Sender<KeyUrlResponseJson>) {
+    /// retried on the next tick (the last served value is kept).
+    pub async fn run(mut self, tx: watch::Sender<KeyUrlResponseJson>, shutdown: CancellationToken) {
         let mut ticker = tokio::time::interval(self.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
-            ticker.tick().await;
-            if let Err(e) = self.poll_once(&tx).await {
-                error!(
-                    error = %e,
-                    "/v2/keyurl poll failed; keeping last served value, will retry next tick"
-                );
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if let Err(e) = self.poll_once(&tx).await {
+                        error!(
+                            error = %e,
+                            "/v2/keyurl poll failed; keeping last served value, will retry next tick"
+                        );
+                    }
+                }
+                _ = shutdown.cancelled() => {
+                    info!("KeyUrl poller stopping (shutdown)");
+                    return;
+                }
             }
         }
     }

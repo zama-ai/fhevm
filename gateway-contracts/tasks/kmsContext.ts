@@ -1,7 +1,7 @@
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import { getRequiredEnvVar, loadGatewayAddresses } from './utils';
+import { getRequiredCountEnvVar, getRequiredEnvVar, loadGatewayAddresses } from './utils';
 
 // This file defines tasks to perform the Gateway side of a KMS context switch: build the cross-chain
 // `GatewayConfig.updateKmsContext` governance proposal triple for the protocol-apps
@@ -15,7 +15,7 @@ const GATEWAY_CONFIG_ADDRESS_ENV_VAR = 'GATEWAY_CONFIG_ADDRESS';
 // (txSenderAddress, signerAddress, ipAddress, storageUrl). The Gateway KmsNode carries no MPC
 // metadata, so only these four fields are read.
 function buildKmsNodeTuplesFromEnv(): [string, string, string, string][] {
-  const numNodes = parseInt(getRequiredEnvVar('NUM_KMS_NODES'));
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
   const nodes: [string, string, string, string][] = [];
   for (let idx = 0; idx < numNodes; idx++) {
     nodes.push([

@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH ins AS (\n                INSERT INTO user_decrypt_req (\n                    ext_job_id,\n                    int_job_id,\n                    req,\n                    req_type,\n                    owner_epoch\n                )\n                VALUES ($1, $2, $3, $4::user_decrypt_req_type, $5)\n                ON CONFLICT (int_job_id)\n                WHERE req_status NOT IN ('failure'::req_status, 'timed_out'::req_status)\n                DO UPDATE SET updated_at = user_decrypt_req.updated_at\n                RETURNING ext_job_id, (xmax = 0) AS is_inserted, req_status, gw_reference_id\n            )\n            SELECT\n                ins.ext_job_id AS \"ext_job_id!\",\n                ins.is_inserted AS \"is_inserted!\",\n                ins.req_status AS \"req_status!: ReqStatus\",\n                ins.gw_reference_id,\n                (\n                    SELECT COUNT(*)\n                    FROM (\n                        SELECT 1\n                        FROM user_decrypt_req q\n                        WHERE q.req_status = 'queued'::req_status\n                        LIMIT $6\n                    ) depth\n                ) AS \"readiness_queue_size!\",\n                (\n                    SELECT COUNT(*)\n                    FROM (\n                        SELECT 1\n                        FROM user_decrypt_req q\n                        WHERE q.req_status = 'processing'::req_status\n                        LIMIT $6\n                    ) depth\n                ) AS \"tx_queue_size!\"\n            FROM ins\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ext_job_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_inserted!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "req_status!: ReqStatus",
+        "type_info": {
+          "Custom": {
+            "name": "req_status",
+            "kind": {
+              "Enum": [
+                "queued",
+                "processing",
+                "tx_in_flight",
+                "receipt_received",
+                "completed",
+                "timed_out",
+                "failure"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "gw_reference_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "readiness_queue_size!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "tx_queue_size!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb",
+        {
+          "Custom": {
+            "name": "user_decrypt_req_type",
+            "kind": {
+              "Enum": [
+                "user_decrypt",
+                "delegated_user_decrypt",
+                "unified"
+              ]
+            }
+          }
+        },
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "932b26472ce604e8e914ad9641e48241f6bfd33dcba776dc5f973380b171e383"
+}

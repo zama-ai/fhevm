@@ -15,6 +15,7 @@ RUN apk add --no-cache \
     bash \
     git \
     make \
+    cmake \
     perl \
     binutils \
     ca-certificates \
@@ -39,6 +40,21 @@ SHELL ["/bin/ash", "-o", "pipefail", "-c"]
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain=$RUST_IMAGE_VERSION && \
     chmod -R a+w /usr/local/cargo && \
     chmod -R a+w /usr/local/rustup
+
+# Install sccache, pinned, on PATH for all users
+ARG SCCACHE_VERSION=v0.15.0
+
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+        x86_64)  triple=x86_64-unknown-linux-musl ;; \
+        aarch64) triple=aarch64-unknown-linux-musl ;; \
+        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
+        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
+    chmod +x /usr/local/bin/sccache; \
+    sccache --version
 
 # Set environment variables for building
 ENV RUSTFLAGS="-C target-feature=-crt-static" \

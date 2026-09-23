@@ -1,7 +1,6 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
 import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
-import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -9,9 +8,6 @@ import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
 import { localcleartext } from '../chains/localcleartext.js';
 import { localstack } from '../chains/localstack.js';
-import { localstack_v11 } from '../chains/localstack_v11.js';
-import { localstack_v12 } from '../chains/localstack_v12.js';
-import { localstack_v13 } from '../chains/localstack_v13.js';
 import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
 import { polygon_devnet } from '../chains/polygon_devnet.js';
@@ -34,9 +30,6 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_v12',
   'localcleartext_v13',
   'localstack',
-  'localstack_v11',
-  'localstack_v12',
-  'localstack_v13',
   'localstack_v14',
   'polygon_devnet',
   'ingen_trex_cleartext',
@@ -57,7 +50,6 @@ export type FheTestBaseEnv = {
   readonly fheTestVersion: FheTestVersion;
   readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -90,17 +82,14 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 11, 12, 13, 14) a test
- * chain runs on, derived from its name. Used to gate migration tests that only
- * make sense on chains at or above a given protocol version.
+ * Protocol era (the minor version of the protocol: 12, 13, 14) a test chain
+ * runs on, derived from its name. Used to gate migration tests that only make
+ * sense on chains at or above a given protocol version.
  *
  * `localstack` (latest) tracks the newest protocol (v0.14 era today).
  */
-export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
-  if (chainName === 'localstack_v11') {
-    return 11;
-  }
-  if (chainName === 'localstack_v12' || chainName === 'localcleartext_v12') {
+export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 {
+  if (chainName === 'localcleartext_v12') {
     return 12;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
@@ -113,57 +102,21 @@ export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
 // Protocol version per chain
 // ---------------------------------------------------------------------------
 
-const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersion>> = {
-  sepolia: '0.13.0',
-  testnet: '0.13.0',
-  mainnet: '0.11.0',
-  localcleartext: '0.13.0',
-  localcleartext_legacy: '0.12.0',
-  localcleartext_v12: '0.12.0',
-  localcleartext_v13: '0.13.0',
-  localstack: '0.14.0',
-  localstack_v11: '0.11.0',
-  localstack_v12: '0.12.0',
-  localstack_v13: '0.13.0',
-  localstack_v14: '0.14.0',
-  devnet: '0.14.0',
-  polygon_devnet: '0.13.0',
-  ingen_trex_cleartext: '0.12.0',
-  hoodi_cleartext: '0.11.0',
-};
-
-export function getExpectedProtocolVersion(chainName: FheTestChainName): ProtocolVersion {
-  return PROTOCOL_VERSION_BY_CHAIN[chainName];
+// The SDK targets a single protocol line per release and reports it for every
+// chain, so the expected protocol version no longer depends on the chain.
+export function getExpectedProtocolVersion(_chainName: FheTestChainName): ProtocolVersion {
+  return '0.15.0';
 }
 
 // ---------------------------------------------------------------------------
 // TFHE wasm version per chain
 // ---------------------------------------------------------------------------
 
-export type TfheVersion = '1.5.3' | '1.6.2';
-
-const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | undefined>> = {
-  sepolia: '1.5.3',
-  testnet: '1.5.3', // alias for sepolia
-  mainnet: '1.5.3',
-  localcleartext: undefined,
-  localcleartext_legacy: undefined,
-  localcleartext_v12: undefined,
-  localcleartext_v13: undefined,
-  localstack_v11: '1.5.3',
-  localstack_v12: '1.5.3',
-  devnet: '1.6.2',
-  polygon_devnet: '1.6.2',
-  ingen_trex_cleartext: undefined,
-  hoodi_cleartext: undefined,
-  localstack: '1.6.2',
-  localstack_v13: '1.6.2',
-  localstack_v14: '1.6.2',
-};
+export type TfheVersion = '1.6.2';
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
 export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undefined {
-  return TFHE_VERSION_BY_CHAIN[chainName];
+  return isCleartext(chainName) ? undefined : '1.6.2';
 }
 
 const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestChainName, string>>> = {
@@ -173,9 +126,6 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
-  localstack_v11: '1.5.1',
-  localstack_v12: '1.5.4',
-  localstack_v13: '1.6.1',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -315,7 +265,7 @@ let _chainDefaults: Partial<Record<FheTestChainName, ChainDefaults>> | undefined
 
 function loadChainDefaults(): Partial<Record<FheTestChainName, ChainDefaults>> {
   if (_chainDefaults === undefined) {
-    const p = resolve(__dirname, '../chains/chain-defaults.json');
+    const p = resolve(import.meta.dirname, '../chains/chain-defaults.json');
     _chainDefaults = JSON.parse(readFileSync(p, 'utf-8')) as Partial<Record<FheTestChainName, ChainDefaults>>;
   }
   return _chainDefaults;
@@ -534,7 +484,7 @@ export function prepareChains(): FheTestBaseEnv[] {
 }
 
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
-  const testDir = resolve(__dirname, '..');
+  const testDir = resolve(import.meta.dirname, '..');
   const isLocalstack = chainName.startsWith('localstack');
   const envFilename = isLocalCleartextChain(chainName)
     ? '.env.localcleartext'
@@ -573,9 +523,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   const chainMap: Record<FheTestChainName, FhevmChain> = {
     localstack,
-    localstack_v11,
-    localstack_v12,
-    localstack_v13,
     localstack_v14,
     localcleartext_legacy,
     localcleartext,
@@ -599,7 +546,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
 
   runPreliminaryFheTestSetup(chainName, mnemonic, rpcUrl, fheTestAddress);
 
-  const tfheVersion = getTfheVersion(chainName);
   _baseEnv = {
     chainName,
     fhevmChain,
@@ -610,7 +556,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     fheTestVersion,
     protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
-    moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
   };
 
   return _baseEnv;

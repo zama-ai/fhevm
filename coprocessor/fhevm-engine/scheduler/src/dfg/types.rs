@@ -7,13 +7,14 @@ pub struct CompressedCiphertext {
     pub ct_bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
 pub struct TaskResult {
     pub compressed_ct: CompressedCiphertext,
     pub is_allowed: bool,
     pub transaction_id: Handle,
 }
 pub struct DFGTxResult {
-    pub handle: Handle,
+    pub handles: Vec<Handle>,
     pub transaction_id: Handle,
     pub compressed_ct: Result<CompressedCiphertext>,
 }
@@ -22,7 +23,7 @@ impl std::fmt::Debug for DFGTxResult {
         let _ = writeln!(
             f,
             "Result: [{:?}] - tid [{:?}]",
-            self.handle, self.transaction_id
+            self.handles, self.transaction_id
         );
         if self.compressed_ct.is_err() {
             let _ = write!(f, "\t ERROR");
@@ -41,7 +42,7 @@ impl std::fmt::Debug for DFGTxInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(_) => write!(f, "DecCT"),
-            Self::Compressed(_) => write!(f, "ComCT"),
+            Self::Compressed(..) => write!(f, "ComCT"),
         }
     }
 }
@@ -49,15 +50,26 @@ impl std::fmt::Debug for DFGTxInput {
 #[derive(Clone)]
 pub enum DFGTaskInput {
     Value(SupportedFheCiphertexts),
-    Compressed(CompressedCiphertext),
-    Dependence(Handle),
+    /// A boundary operand in its canonical compressed form, tagged with the
+    /// handle it belongs to so the executor can memoize `Decompress(cmp(h))`
+    /// per partition instead of repeating it for every consuming op.
+    Compressed(Handle, CompressedCiphertext),
+    /// An operand minted by an earlier successful operation in this EVM
+    /// transaction. It must resolve to a producer in the same transaction
+    /// and is forwarded in its raw working representation.
+    LocalDependence(Handle),
+    /// An operand which was not minted by this EVM transaction. It must use
+    /// the canonical persisted representation even if stale database rows
+    /// happen to advertise a producer with the same transaction id.
+    BoundaryDependence(Handle),
 }
 impl std::fmt::Debug for DFGTaskInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(_) => write!(f, "DecCT"),
-            Self::Compressed(_) => write!(f, "ComCT"),
-            Self::Dependence(_) => write!(f, "DepHL"),
+            Self::Compressed(..) => write!(f, "ComCT"),
+            Self::LocalDependence(_) => write!(f, "LocalDepHL"),
+            Self::BoundaryDependence(_) => write!(f, "BoundaryDepHL"),
         }
     }
 }
@@ -67,10 +79,12 @@ pub enum SchedulerError {
     CyclicDependence,
     DataflowGraphError,
     MissingInputs,
+    MissingLocalProducer,
     DecompressionError,
     ReRandomisationError,
     SchedulerError,
     ExecutionPanic(String),
+    MultiOutputFailure(String),
 }
 
 impl std::error::Error for SchedulerError {}
@@ -87,6 +101,9 @@ impl std::fmt::Display for SchedulerError {
             Self::MissingInputs => {
                 write!(f, "Missing inputs")
             }
+            Self::MissingLocalProducer => {
+                write!(f, "Missing transaction-local producer")
+            }
             Self::DecompressionError => {
                 write!(f, "Decompression error")
             }
@@ -99,6 +116,7 @@ impl std::fmt::Display for SchedulerError {
             Self::ExecutionPanic(s) => {
                 write!(f, "Panic during execution of operation: {}", s)
             }
+            Self::MultiOutputFailure(s) => write!(f, "{}", s),
         }
     }
 }

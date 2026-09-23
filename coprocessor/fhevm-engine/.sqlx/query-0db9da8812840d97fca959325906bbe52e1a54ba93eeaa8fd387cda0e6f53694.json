@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH candidate AS (\n                SELECT dependence_chain_id, 'stale_gate_repair' AS match_reason\n                FROM dependence_chain c\n                WHERE\n                    status = 'updated'      -- Marked as updated by host-listener\n                    AND\n                    worker_id IS NULL       -- Ensure no other workers own it\n                    AND\n                    dependency_count > 0    -- Gated: invisible to normal acquisition\n                    AND\n                    last_updated_at < NOW() - make_interval(secs => $3)\n                    AND NOT EXISTS (        -- Ground truth: the gate is stale, every\n                        SELECT 1            -- producer is processed or gone\n                        FROM dependence_chain p\n                        WHERE c.dependence_chain_id = ANY(p.dependents)\n                          AND p.status <> 'processed'\n                    )\n                ORDER BY last_updated_at ASC, schedule_priority ASC\n                FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it\n                LIMIT 1\n            )\n            UPDATE dependence_chain AS dc\n            SET\n                worker_id = $1,\n                status = 'processing',\n                lock_acquired_at = NOW(),\n                lock_expires_at = NOW() + make_interval(secs => $2),\n                dependency_count = 0    -- what ground truth established above\n            FROM candidate\n            WHERE dc.dependence_chain_id = candidate.dependence_chain_id\n            RETURNING\n                dc.dependence_chain_id,\n                dc.worker_id,\n                dc.lock_acquired_at AS \"lock_acquired_at: DateTime<Utc>\",\n                dc.lock_expires_at AS \"lock_expires_at: DateTime<Utc>\",\n                dc.last_updated_at AS \"last_updated_at: DateTime<Utc>\",\n                dc.block_height,\n                dc.block_timestamp AS \"block_timestamp: DateTime<Utc>\",\n                dc.schedule_priority,\n                candidate.match_reason AS \"match_reason!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "worker_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "lock_acquired_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "lock_expires_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_updated_at: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_height",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_timestamp: DateTime<Utc>",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "schedule_priority",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 8,
+        "name": "match_reason!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "0db9da8812840d97fca959325906bbe52e1a54ba93eeaa8fd387cda0e6f53694"
+}

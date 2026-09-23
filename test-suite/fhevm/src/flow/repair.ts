@@ -1,10 +1,17 @@
-import { supportsConsensusDetector, supportsHostListenerConsumer, supportsUpgradeController } from "../compat/compat";
-import { assertCoprocessorConsensus, hasLocalCoprocessorInstance } from "../scenario/resolve";
+import {
+  supportsConnectorHttp,
+  supportsConsensusDetector,
+  supportsHostListenerConsumer,
+  supportsUpgradeController,
+} from "../compat/compat";
+import { GCS_ONLY_SUFFIXES } from "../generate/compose";
+import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  KMS_CONNECTOR_HTTP_SERVICES,
   KMS_CORE_CONTAINER,
   TEST_SUITE_CONTAINER,
   coprocessorHostKey,
@@ -25,12 +32,16 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_TFHE_WORKER_VERSION",
     "COPROCESSOR_ZKPROOF_WORKER_VERSION",
     "COPROCESSOR_SNS_WORKER_VERSION",
+    "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
+    "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
     "CONNECTOR_GW_LISTENER_VERSION",
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
+    "CONNECTOR_ENDPOINT_VERSION",
+    "CONNECTOR_PROXY_VERSION",
   ],
   "kms-core": ["CORE_VERSION"],
   "kms": [
@@ -39,6 +50,8 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_GW_LISTENER_VERSION",
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
+    "CONNECTOR_ENDPOINT_VERSION",
+    "CONNECTOR_PROXY_VERSION",
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -57,6 +70,12 @@ const supportsConsensusDetectorForState = (state: { versions?: State["versions"]
   !state.versions || supportsConsensusDetector({ versions: state.versions });
 const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsUpgradeController({ versions: state.versions });
+const supportsConnectorHttpForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
+  !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
+const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
+  GROUP_BUILD_SERVICES["kms-connector"].filter(
+    (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),
+  );
 const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (service) =>
@@ -97,11 +116,7 @@ export const resumeSteadyStateServices = (state: State) => {
         }).flat(),
       ),
     ],
-    "kms-connector": [
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-    ],
+    "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
@@ -164,13 +179,11 @@ export const resolveUpgradePlan = (
   }
   const group = groupValue as UpgradeGroup;
   const lockFileMode = options.lockFile === true;
-  // The upgrade/repair lifecycle still models the KMS tier as a single core + single connector. A
-  // threshold-mode cluster (N cores + N connectors, the dedicated `core-threshold` component) is not
-  // covered, so fail loudly rather than silently upgrade only party 1. Threshold stacks are
-  // recreated with a fresh `up` (the e2e workflow always boots from scratch).
-  if ((group === "kms" || group === "kms-core") && state.scenario.kms.mode === "threshold") {
+  // A threshold KMS Core and its matching Connector are one rollout unit. Generic group upgrades
+  // cannot preserve that boundary, so threshold deployments must use the paired operator primitive.
+  if ((group === "kms" || group === "kms-core" || group === "kms-connector") && state.scenario.kms.mode === "threshold") {
     throw new Error(
-      `upgrade ${group} is not supported for a threshold-mode KMS cluster (it would only touch party 1); recreate the stack with a fresh \`up\``,
+      `upgrade ${group} is not supported for a threshold-mode KMS cluster; use the operator-paired rollout primitive`,
     );
   }
   if (group === "kms") {
@@ -178,7 +191,7 @@ export const resolveUpgradePlan = (
       throw new Error("upgrade kms requires --lock-file");
     }
     const core = splitServices("core", ["kms-core"]);
-    const connector = splitServices("kms-connector", GROUP_BUILD_SERVICES["kms-connector"]);
+    const connector = splitServices("kms-connector", kmsConnectorServices(state));
     return upgradePlan(group, [core, connector], ["base", "kms-connector"]);
   }
   if (group === "kms-core") {
@@ -204,25 +217,33 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
+  const groupServices = group === "kms-connector" ? kmsConnectorServices(state) : GROUP_BUILD_SERVICES[group];
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)
-      : GROUP_BUILD_SERVICES[group]
+      : groupServices
     : [];
   const overrideServices = selectedServices.length ? [...new Set(selectedServices)] : fullGroupServices;
-  const releaseServices = lockFileMode ? GROUP_BUILD_SERVICES[group] : overrideServices;
-  const scenario = assertCoprocessorConsensus(state.scenario, "repair.upgradePlan");
-  const instances: ResolvedCoprocessorScenarioInstance[] = scenario.instances.length
-    ? scenario.instances
-    : Array.from({ length: topologyForState(state).count }, (_, index) => ({
+  const releaseServices = lockFileMode ? groupServices : overrideServices;
+  const scenario = state.scenario;
+  const coprocessorInstances: ResolvedCoprocessorScenarioInstance[] = scenario.kind === "blue-green"
+    ? Array.from({ length: scenario.topology.count }, (_, index) => ({
         index,
-        source: { mode: "inherit" },
-        env: {},
-        args: {},
-      }));
+        source: scenario.bcs.source,
+        env: scenario.bcs.env,
+        args: scenario.bcs.args,
+      }))
+    : scenario.instances.length
+      ? scenario.instances
+      : Array.from({ length: topologyForState(state).count }, (_, index) => ({
+          index,
+          source: { mode: "inherit" },
+          env: {},
+          args: {},
+        }));
   const plannedServices =
     group === "coprocessor"
-      ? instances.flatMap((instance) => {
+      ? coprocessorInstances.flatMap((instance) => {
           if (!lockFileMode && instance.source.mode === "registry") {
             return [];
           }
@@ -230,13 +251,16 @@ export const resolveUpgradePlan = (
             instance.source.mode === "local"
               ? instance.localServices ?? coprocessorServices(state)
               : releaseServices;
-          return selected.map((service) =>
+          const available = scenario.kind === "blue-green"
+            ? selected.filter((service) => !GCS_ONLY_SUFFIXES.has(service.replace(/^coprocessor-/, "")))
+            : selected;
+          return available.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),
           );
         })
       : selectedServices.length
         ? [...new Set(selectedServices)]
-        : GROUP_BUILD_SERVICES[group];
+        : groupServices;
   return upgradePlan(group, [splitServices(component, plannedServices)], [group === "coprocessor" ? "coprocessor" : group]);
 };
 

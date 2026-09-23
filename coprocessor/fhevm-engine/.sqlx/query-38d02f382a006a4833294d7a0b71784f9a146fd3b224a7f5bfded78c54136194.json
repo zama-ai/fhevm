@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public.input_handles ih\n          WHERE ih.block_number >= $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38d02f382a006a4833294d7a0b71784f9a146fd3b224a7f5bfded78c54136194"
+}

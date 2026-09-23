@@ -65,6 +65,7 @@ export const inspectImageId = async (ref: string) => {
 const saveBuiltImages = async (
   state: State,
   refs: Array<{ ref: string; group: BuiltImage["group"]; instanceIndex?: number }>,
+  persist = true,
 ) => {
   const current = new Map((state.builtImages ?? []).map((item) => [item.ref, item] as const));
   for (const entry of refs) {
@@ -80,7 +81,7 @@ const saveBuiltImages = async (
     });
   }
   state.builtImages = [...current.values()].sort((a, b) => a.ref.localeCompare(b.ref));
-  await saveState(state);
+  if (persist) await saveState(state);
 };
 
 /** Checks whether a set of image refs still matches the last recorded local build ids. */
@@ -93,10 +94,14 @@ const refsAlreadyBuilt = async (state: State, refs: string[]) =>
   )).every(Boolean);
 
 /** Starts one compose component, optionally limiting it to selected services. */
-export const isDockerRegistryTransient = (message: string) =>
-  /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
+export const isDockerRegistryTransient = (message: string) => {
+  if (!/(ghcr\.io|quay\.io|cgr\.dev|registry|token|\/v2\/)/i.test(message)) {
+    return false;
+  }
+  return /(Client\.Timeout exceeded|context deadline exceeded|TLS handshake timeout|request canceled|i\/o timeout|unexpected EOF)/i.test(
     message,
-  ) && /(ghcr\.io|quay\.io|cgr\.dev|registry|manifest|token|\/v2\/)/i.test(message);
+  );
+};
 
 export const composeUp = async (
   component: string,
@@ -119,7 +124,7 @@ export const composeUp = async (
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (attempt < 3 && isDockerRegistryTransient(message)) {
-        console.log(`[warn] docker compose ${component} hit a registry timeout; retrying (${attempt}/2)`);
+        console.log(`[warn] docker compose ${component} hit a transient registry error; retrying (${attempt}/2)`);
         await Bun.sleep(5_000);
         continue;
       }
@@ -143,6 +148,22 @@ export const composeDown = async (component: string) => {
   } catch (error) {
     console.log(`[warn] compose down failed for ${component}: ${error instanceof Error ? error.message : String(error)}`);
     return false;
+  }
+};
+
+/**
+ * Stops selected services without removing their volumes. Used when an E2E
+ * runtime configuration changes but its database/key material must survive the
+ * replay.
+ */
+export const composeStop = async (component: string, services: string[]) => {
+  if (!services.length) {
+    return;
+  }
+  try {
+    await runStreaming([...dockerArgs(component), "stop", ...services], { env: await composeEnv(component) });
+  } catch (error) {
+    throw new ContainerStartError(component, error instanceof Error ? error.message : String(error));
   }
 };
 
@@ -184,7 +205,11 @@ const composeBuild = async (component: string, services: string[], env?: Record<
 };
 
 /** Builds any locally overridden images required before a compose-up step. */
-export const maybeBuild = async (component: string, state: State, options: { force?: boolean } = {}) => {
+export const maybeBuild = async (
+  component: string,
+  state: State,
+  options: { force?: boolean; persistState?: boolean } = {},
+) => {
   try {
     if (component === "coprocessor") {
       const doc = await loadMergedComposeDoc(component);
@@ -214,6 +239,28 @@ export const maybeBuild = async (component: string, state: State, options: { for
             services.find((service) => doc.services[service]?.image === ref) ?? "",
           ),
         })),
+        options.persistState !== false,
+      );
+      return;
+    }
+
+    if (component === "kms-connector" && state.kmsConnectorDeploymentByNodeId) {
+      const doc = await loadMergedComposeDoc(component);
+      const services = Object.entries(doc.services)
+        .filter(([, service]) => !!service.build)
+        .map(([name]) => name);
+      if (!services.length) return;
+      const refs = imageRefsFromDoc(doc, services);
+      if (!options.force && (await refsAlreadyBuilt(state, refs))) return;
+      console.log("[build] kms-connector");
+      for (const ref of refs) {
+        await run(["docker", "image", "rm", "-f", ref], { allowFailure: true });
+      }
+      await timed(`[build] ${services.join(",")}`, () => composeBuild(component, services));
+      await saveBuiltImages(
+        state,
+        refs.map((ref) => ({ ref, group: "kms-connector" as const })),
+        options.persistState !== false,
       );
       return;
     }
@@ -253,6 +300,7 @@ export const maybeBuild = async (component: string, state: State, options: { for
       await saveBuiltImages(
         state,
         imageRefsFromDoc(doc, services).map((ref) => ({ ref, group: override.group })),
+        options.persistState !== false,
       );
     }
   } catch (error) {

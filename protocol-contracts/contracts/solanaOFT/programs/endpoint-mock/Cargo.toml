@@ -1,0 +1,21 @@
+[package]
+name = "endpoint-mock"
+version = "0.1.0"
+description = "Endpoint Mock"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "endpoint"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1", features = ["event-cpi"] }
+cpi-helper = { git = "https://github.com/LayerZero-Labs/LayerZero-v2.git", rev = "34321ac15e47e0dafd25d66659e2f3d1b9b6db8f" }

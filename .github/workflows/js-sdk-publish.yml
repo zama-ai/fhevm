@@ -111,13 +111,10 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 6. Build
-      #    Run the same full validation/build path used by PR CI, but with the
-      #    production WASM profile for package outputs. This also runs
-      #    codegen:loaders:check:dev so stale generated loaders/API declarations
-      #    fail CI instead of being silently regenerated during publish.
+      #    Run the same full validation/build path used by PR CI.
       # -----------------------------------------------------------------------
       - name: Build package (CJS + ESM + types)
-        run: npm run build:prod
+        run: npm run build
 
       # -----------------------------------------------------------------------
       # 7. Pack inspection

@@ -52,32 +52,10 @@ describe('KMS mirror tasks', function () {
         expect(args.kmsNodeParams[i].signerAddress).to.equal(node.signerAddress);
         expect(args.kmsNodeParams[i].mpcIdentity).to.equal(node.mpcIdentity);
       });
+      expect(args.thresholds.publicDecryption).to.equal(BigInt(committee.thresholds.publicDecryption));
+      expect(args.thresholds.userDecryption).to.equal(BigInt(committee.thresholds.userDecryption));
+      expect(args.thresholds.kmsGen).to.equal(BigInt(committee.thresholds.kmsGen));
       expect(args.thresholds.mpc).to.equal(BigInt(committee.thresholds.mpc));
-    });
-
-    it('mirrors live thresholds rather than the thresholds in the NewKmsContext event', async function () {
-      const committee = await buildControllableKmsCommittee();
-      const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
-      const contextId = await rotateToNewKmsContext(canonicalAddress, deployer, committee);
-
-      // updateMpcThresholdForContext mutates live state without touching the NewKmsContext anchor, so
-      // a naive event-only read would mirror the stale value defined at context-creation time.
-      const asOwner = (await ethers.getContractAt(
-        'ProtocolConfig',
-        canonicalAddress,
-        deployer,
-      )) as unknown as ProtocolConfig;
-      await (await asOwner.updateMpcThresholdForContext(contextId, 2)).wait();
-
-      const iface = await getProtocolConfigInterface(hre);
-      const args = await readCanonicalContextSwitch(
-        hre,
-        { canonicalProvider: ethers.provider, canonicalProtocolConfigAddress: canonicalAddress },
-        iface,
-      );
-
-      expect(args.thresholds.mpc).to.equal(2n);
-      expect(args.thresholds.mpc).to.not.equal(BigInt(committee.thresholds.mpc));
     });
 
     it('rejects an address with no context anchor as non-canonical', async function () {

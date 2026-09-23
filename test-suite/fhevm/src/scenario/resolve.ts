@@ -17,6 +17,7 @@ import {
   resolveServiceOverrides,
 } from "../layout";
 import type {
+  BlueGreenBootstrap,
   BlueGreenScenario,
   CoprocessorInstanceSource,
   CoprocessorScenario,
@@ -148,7 +149,6 @@ const SCENARIO_FILE = /\.ya?ml$/i;
 
 const BLUE_GREEN_SCENARIO_KIND = "blue-green";
 const BLUE_GREEN_SCENARIO_VERSION = 1;
-const SEMVER_STACK_VERSION = /^\d+\.\d+\.\d+$/;
 const COPROCESSOR_ARG_TARGETS = new Set([
   "*",
   ...GROUP_SERVICE_SUFFIXES.coprocessor.filter((value) => !value.includes("migration")),
@@ -678,11 +678,8 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     throw new Error(`${sourceLabel}: gcs block is required`);
   }
   const gcsObj = gcs as Record<string, unknown>;
-  const stackVersion = String(gcsObj.stackVersion ?? "");
-  if (!SEMVER_STACK_VERSION.test(stackVersion)) {
-    throw new Error(
-      `${sourceLabel}: gcs.stackVersion must be a semver-like string (e.g. "0.15.0"), got "${stackVersion}"`,
-    );
+  if (gcsObj.deferredStart !== undefined && typeof gcsObj.deferredStart !== "boolean") {
+    throw new Error(`${sourceLabel}: gcs.deferredStart must be a boolean`);
   }
 
   const bcs = parsed.bcs;
@@ -690,6 +687,8 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     throw new Error(`${sourceLabel}: bcs must be an object`);
   }
   const bcsObj = (bcs ?? undefined) as Record<string, unknown> | undefined;
+
+  const bootstrap = parseBootstrap(parsed.bootstrap, `${sourceLabel}.bootstrap`);
 
   return {
     version: BLUE_GREEN_SCENARIO_VERSION,
@@ -710,7 +709,7 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       : undefined,
     gcs: {
       source: parseSource(gcsObj.source, `${sourceLabel}.gcs.source`),
-      stackVersion,
+      deferredStart: gcsObj.deferredStart === true,
       env: { ...((gcsObj.env as Record<string, string> | undefined) ?? {}) },
       args: normalizeArgs(
         gcsObj.args as Record<string, unknown> | undefined,
@@ -718,7 +717,23 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       ),
     },
     kms: parsed.kms as KmsScenarioBlock | undefined,
+    ...(bootstrap ? { bootstrap } : {}),
   };
+};
+
+/** Parses the optional blue-green `bootstrap` block: the release the stack boots at. */
+const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenBootstrap | undefined => {
+  if (block === undefined) {
+    return undefined;
+  }
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel} must be a map with tag`);
+  }
+  const { tag } = block as Record<string, unknown>;
+  if (typeof tag !== "string" || !tag.trim()) {
+    throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
+  }
+  return { tag: tag.trim() };
 };
 
 /** Applies defaults and resolves derived fields. */
@@ -731,14 +746,20 @@ export const resolveBlueGreenScenario = (
     env: { ...(input.bcs?.env ?? {}) },
     args: input.bcs?.args ?? {},
   };
+  const kms = resolveKmsTopology(input.kms, "scenario.kms");
+  const bootstrap = input.bootstrap;
+  if (bootstrap && kms.mode !== "centralized") {
+    throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
+  }
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
-    stackVersion: input.gcs.stackVersion,
+    // Green starts once the bootstrapped stack has been upgraded, never against the old release.
+    deferredStart: (input.gcs.deferredStart ?? false) || bootstrap !== undefined,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };
-  if (gcs.source.mode !== "local") {
-    throw new Error("gcs.source.mode must be local — the GCS fleet is always built from the working tree");
+  if (gcs.source.mode === "inherit") {
+    throw new Error("gcs.source.mode must be local or registry");
   }
   return {
     version: BLUE_GREEN_SCENARIO_VERSION,
@@ -751,7 +772,8 @@ export const resolveBlueGreenScenario = (
     topology: input.topology ?? { count: 1, threshold: 1 },
     bcs,
     gcs,
-    kms: resolveKmsTopology(input.kms, "scenario.kms"),
+    kms,
+    ...(bootstrap ? { bootstrap } : {}),
   };
 };
 

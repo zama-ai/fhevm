@@ -22,7 +22,6 @@ ARG CARGO_PROFILE=release
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
-ARG SCCACHE_VERSION=v0.15.0
 ENV SCCACHE_IDLE_TIMEOUT=0
 ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
@@ -31,20 +30,6 @@ ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
 
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
-
 WORKDIR /app
 
 COPY listener ./listener
@@ -52,6 +37,7 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/contracts/ ./gateway-contracts/contracts/
 COPY gateway-contracts/rust_bindings/ ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID

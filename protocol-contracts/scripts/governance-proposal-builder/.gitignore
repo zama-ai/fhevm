@@ -1,0 +1,5 @@
+.env
+node_modules/
+remote-proposal-filled.json
+remote-proposal-temp.json
+aragonProposal.json

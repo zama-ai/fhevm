@@ -1,6 +1,20 @@
 use std::time::Duration;
 
-pub const DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT: u32 = 120;
+/// 300, not a slimmer margin, because of the quorum-completing
+/// `addCiphertextMaterial`: the threshold-th add finalizes consensus in the
+/// same transaction and costs well over an estimate taken against the
+/// pre-quorum state, so 120% starves it (ReentrancySentryOOG) whenever this
+/// sender loses the race to be an early adder — and every handle has a
+/// threshold-th adder in byte-consensus topologies. Retries self-heal (a
+/// re-estimate against the threshold-1 state prices the finalization
+/// branch), but each hit costs a paid revert plus retry latency on exactly
+/// the add decryption waits on. Overprovision only raises the gas LIMIT —
+/// unused gas is refunded — so the wide margin is effectively free for
+/// every op type. The failure mode retires with Gateway ciphertext
+/// commitments; the margin can be revisited then, though any future
+/// quorum-completing transaction shape re-creates the same
+/// estimate-vs-execution gap.
+pub const DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT: u32 = 300;
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
@@ -33,8 +47,8 @@ pub struct ConfigSettings {
     pub graceful_shutdown_timeout: Duration,
 
     /// Used during blue/green (GCS) upgrade migrations. True when this binary
-    /// is the incoming green stack (its `STACK_VERSION` is newer than the live
-    /// `versioning.stack_version`; auto-detected via `resolve_gcs_mode`).
+    /// is the incoming green stack (its `CONSENSUS_PROTOCOL_VERSION` is newer than the live
+    /// `versioning.consensus_version`; auto-detected via `resolve_gcs_mode`).
     ///
     /// When true, the txn-sender starts fully parked and does nothing until the
     /// cutover finalizes — `execute_cutover` fires `event_stack_version_upgraded`

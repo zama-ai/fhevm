@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT ON (p.last_updated_at, p.dependence_chain_id)\n                p.dependence_chain_id AS \"id!\"\n            FROM dependence_chain p\n            JOIN dependence_chain c\n              ON c.dependence_chain_id = ANY(p.dependents)\n            WHERE c.dependency_count > 0\n              AND p.status <> 'processed'\n            ORDER BY p.last_updated_at DESC, p.dependence_chain_id\n            LIMIT $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4750479c5ccdea97d7a26992088829373547082c5770f156d3c32476b7508160"
+}

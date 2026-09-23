@@ -32,7 +32,7 @@ pub fn init_host_chains_acl_contracts_mock(
         .connect_mocked_client(asserter.clone());
 
     let acl_contracts_mock = HashMap::from([(
-        extract_chain_id_from_handle(ct_handle).unwrap(),
+        extract_chain_id_from_handle(&ct_handle).unwrap(),
         ACL::new(Address::default(), host_mock_provider),
     )]);
     info!("Host chain mock started!");

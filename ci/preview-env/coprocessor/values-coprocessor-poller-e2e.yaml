@@ -45,6 +45,8 @@ commonConfig:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
   protocolConfigContractAddress:
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  # Anvil host chain id. apply-chain-env.sh overwrites this for blockchain-dev.
+  canonicalProtocolConfigChainId: "12345"
 
 # Migration + real-time listener already handled by the coprocessor-<i> release.
 dbMigration:
@@ -72,11 +74,12 @@ hostListenerPollerShared:
     - --dependence-cross-block
     - --finality-lag=1
     - --seed-start-block=0
-  # Light DB/RPC poller - no FHE compute, so the generic zws-pool node pool (same
-  # as the listener / Redis / Postgres releases), not the heavy coprocessor pool.
+  # No FHE compute, so the generic zws-pool — but Default-parameter key/CRS
+  # downloads need more than 2Gi (measured OOM on GPU preview). 8Gi matches
+  # the coprocessor Postgres limit that holds the same blobs.
   resources:
     requests: {cpu: "500m", memory: 1Gi}
-    limits: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "1", memory: 8Gi}
   nodeSelector:
     karpenter.sh/nodepool: zws-pool
   tolerations:

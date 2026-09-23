@@ -1,7 +1,7 @@
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
 use alloy::node_bindings::AnvilInstance;
-use alloy::primitives::{keccak256, Address, FixedBytes, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use alloy::providers::ext::AnvilApi;
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
@@ -14,7 +14,6 @@ use alloy::rpc::types::anvil::{ReorgOptions, TransactionData};
 use alloy::rpc::types::BlockNumberOrTag;
 use alloy::rpc::types::{Filter, TransactionRequest};
 use alloy::signers::local::PrivateKeySigner;
-use alloy::sol;
 use fhevm_engine_common::chain_id::ChainId;
 use futures_util::future::try_join_all;
 use serial_test::serial;
@@ -35,50 +34,22 @@ use host_listener::cmd::InfiniteLogIter;
 use host_listener::database::ingest::{
     ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
 };
-use host_listener::database::tfhe_event_propagate::{Database, ToType};
+use host_listener::database::tfhe_event_propagate::{Chain, Database, ToType};
 
-// contracts are compiled in build.rs/build_contract() using solc
-// json are generated in build.rs/build_contract() using solc
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    FHEVMExecutorTest,
-    "artifacts/FHEVMExecutorTest.sol/FHEVMExecutorTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ACLTest,
-    "artifacts/ACLTest.sol/ACLTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    KMSGenerationTest,
-    "artifacts/KMSGenerationTest.sol/KMSGenerationTest.json"
-);
-
-sol!(
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    ProtocolConfigTest,
-    "artifacts/ProtocolConfigTest.sol/ProtocolConfigTest.json"
-);
-
-use crate::ACLTest::ACLTestInstance;
-use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
-use crate::KMSGenerationTest::KMSGenerationTestInstance;
-use crate::ProtocolConfigTest::ProtocolConfigTestInstance;
+mod common;
+use common::{
+    allowed_request, delegate_for_user_decryption_request, fhe_add_request,
+    mock_fhe_add_result, mock_trivial_encrypt_result, trivial_encrypt_request,
+    RawLog, RawLogInstance,
+};
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
-    tfhe_contract: FHEVMExecutorTestInstance<P, N>,
-    acl_contract: ACLTestInstance<P, N>,
+    tfhe_contract: RawLogInstance<P, N>,
+    acl_contract: RawLogInstance<P, N>,
     reorg: bool,
     nb_events_per_wallet: i64,
 ) where
@@ -104,21 +75,28 @@ async fn emit_events<P, N>(
                     .connect_ws(WsConnect::new(url.to_string()))
                     .await
                     .unwrap();
+                let caller = provider
+                    .signer_addresses()
+                    .next()
+                    .expect("anvil signer available");
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
-                let tfhe_txn_req = tfhe_contract
-                    .trivialEncrypt(pt, to_type)
-                    .into_transaction_request();
+                let tfhe_txn_req = trivial_encrypt_request(
+                    &tfhe_contract,
+                    caller,
+                    pt,
+                    to_type,
+                );
                 let pending_txn = provider
                     .send_transaction(tfhe_txn_req.clone())
                     .await
                     .unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
-                let add: Vec<_> = provider.signer_addresses().collect();
-                let acl_txn_req = acl_contract
-                    .allow(pt.into(), add[0])
-                    .into_transaction_request();
+                // Mock quirk: allow() used plaintext-as-handle, not the
+                // trivialEncrypt result handle.
+                let acl_txn_req =
+                    allowed_request(&acl_contract, caller, caller, pt.into());
                 if reorg_point && i_wallet == 0 {
                     // ensure no event is lost also on losing chain to facilitate the test assert
                     tokio::time::sleep(tokio::time::Duration::from_secs(5))
@@ -191,10 +169,10 @@ struct Setup {
     args: Args,
     anvil: AnvilInstance,
     wallets: Vec<EthereumWallet>,
-    acl_contract: ACLTestInstance<SetupProvider>,
-    tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
-    kms_generation_contract: KMSGenerationTestInstance<SetupProvider>,
-    protocol_config_contract: ProtocolConfigTestInstance<SetupProvider>,
+    acl_contract: RawLogInstance<SetupProvider>,
+    tfhe_contract: RawLogInstance<SetupProvider>,
+    kms_generation_contract: RawLogInstance<SetupProvider>,
+    protocol_config_contract: RawLogInstance<SetupProvider>,
     db_pool: sqlx::Pool<sqlx::Postgres>,
     _test_instance: test_harness::instance::DBInstance, // maintain db alive
     health_check_url: String,
@@ -235,12 +213,10 @@ async fn setup_with_block_time(
         .connect_ws(WsConnect::new(url.clone()))
         .await?;
 
-    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
-    let acl_contract = ACLTest::deploy(provider.clone()).await?;
-    let kms_generation_contract =
-        KMSGenerationTest::deploy(provider.clone()).await?;
-    let protocol_config_contract =
-        ProtocolConfigTest::deploy(provider.clone()).await?;
+    let tfhe_contract = RawLog::deploy(provider.clone()).await?;
+    let acl_contract = RawLog::deploy(provider.clone()).await?;
+    let kms_generation_contract = RawLog::deploy(provider.clone()).await?;
+    let protocol_config_contract = RawLog::deploy(provider.clone()).await?;
     let args = Args {
         url,
         initial_block_time: 1,
@@ -270,6 +246,7 @@ async fn setup_with_block_time(
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
         stack_version: false,
+        disable_synthetic_ops: false,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -359,34 +336,6 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
     Ok(())
 }
 
-fn trivial_encrypt_handle(val: U256, to_type: u8) -> FixedBytes<32> {
-    let mut payload = Vec::with_capacity(
-        "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
-    );
-    payload.extend_from_slice("trivialEncrypt".as_bytes());
-    payload.extend_from_slice(&val.to_be_bytes::<32>());
-    payload.push(to_type);
-    keccak256(payload)
-}
-
-fn fhe_add_handle(
-    lhs: FixedBytes<32>,
-    rhs: FixedBytes<32>,
-    scalar_byte: u8,
-) -> FixedBytes<32> {
-    let mut payload = Vec::with_capacity(
-        "fheAdd".len()
-            + std::mem::size_of::<[u8; 32]>()
-            + std::mem::size_of::<[u8; 32]>()
-            + 1,
-    );
-    payload.extend_from_slice("fheAdd".as_bytes());
-    payload.extend_from_slice(lhs.as_slice());
-    payload.extend_from_slice(rhs.as_slice());
-    payload.push(scalar_byte);
-    keccak256(payload)
-}
-
 async fn ingest_blocks_for_receipts(
     db: &mut Database,
     setup: &Setup,
@@ -467,6 +416,7 @@ async fn ingest_dependent_burst_seeded(
             dependence_cross_block: true,
             dependent_ops_max_per_chain,
             is_protocol_config_listener: true,
+            disable_synthetic_ops: false,
         },
     )
     .await?;
@@ -493,32 +443,45 @@ async fn emit_dependent_burst_seeded(
 
     let mut pending = Vec::new();
     let mut current = input_handle
-        .unwrap_or_else(|| trivial_encrypt_handle(U256::from(seed), 4_u8));
+        .unwrap_or_else(|| mock_trivial_encrypt_result(U256::from(seed), 4_u8));
 
     if input_handle.is_none() {
-        let trivial_tx = setup
-            .tfhe_contract
-            .trivialEncrypt(U256::from(seed), 4_u8)
-            .into_transaction_request();
+        let trivial_tx = trivial_encrypt_request(
+            &setup.tfhe_contract,
+            signer_address,
+            U256::from(seed),
+            4_u8,
+        );
         pending.push(provider.send_transaction(trivial_tx).await?);
-        let allow_trivial_tx = setup
-            .acl_contract
-            .allow(current, signer_address)
-            .into_transaction_request();
+        let allow_trivial_tx = allowed_request(
+            &setup.acl_contract,
+            signer_address,
+            signer_address,
+            current,
+        );
         pending.push(provider.send_transaction(allow_trivial_tx).await?);
     }
 
     for _ in 0..depth {
-        let next = fhe_add_handle(current, current, 0_u8);
-        let add_tx = setup
-            .tfhe_contract
-            .fheAdd(current, current, FixedBytes::<1>::from([0_u8]))
-            .into_transaction_request();
+        let next = mock_fhe_add_result(
+            current,
+            current,
+            FixedBytes::<1>::from([0_u8]),
+        );
+        let add_tx = fhe_add_request(
+            &setup.tfhe_contract,
+            signer_address,
+            current,
+            current,
+            FixedBytes::<1>::from([0_u8]),
+        );
         pending.push(provider.send_transaction(add_tx).await?);
-        let allow_tx = setup
-            .acl_contract
-            .allow(next, signer_address)
-            .into_transaction_request();
+        let allow_tx = allowed_request(
+            &setup.acl_contract,
+            signer_address,
+            signer_address,
+            next,
+        );
         pending.push(provider.send_transaction(allow_tx).await?);
         current = next;
     }
@@ -790,6 +753,7 @@ async fn test_slow_lane_cross_block_sustained_below_cap_stays_fast_locally(
                 dependence_cross_block: true,
                 dependent_ops_max_per_chain: cap,
                 is_protocol_config_listener: true,
+                disable_synthetic_ops: false,
             },
         )
         .await?;
@@ -1408,6 +1372,7 @@ async fn test_only_catchup_loop_requires_negative_start_at_block(
         dependent_ops_max_per_chain: 0,
         timeout_request_websocket: 30,
         stack_version: false,
+        disable_synthetic_ops: false,
     };
 
     let result = main(args).await;
@@ -1994,7 +1959,7 @@ const NB_DELEGATION_PER_WALLET: usize = 15;
 async fn emit_delegations<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
-    acl_contract: ACLTestInstance<P, N>,
+    acl_contract: RawLogInstance<P, N>,
 ) where
     P: Clone + alloy::providers::Provider<N> + 'static,
     N: Clone
@@ -2018,15 +1983,19 @@ async fn emit_delegations<P, N>(
                     .connect_ws(WsConnect::new(url.to_string()))
                     .await
                     .unwrap();
-                let acl_txn_req = acl_contract
-                    .delegateForUserDecryption(
-                        delegate,
-                        contract_address,
-                        delegation_counter,
-                        0,
-                        expiration_date,
-                    )
-                    .into_transaction_request();
+                let delegator = provider
+                    .signer_addresses()
+                    .next()
+                    .expect("anvil signer available");
+                let acl_txn_req = delegate_for_user_decryption_request(
+                    &acl_contract,
+                    delegator,
+                    delegate,
+                    contract_address,
+                    delegation_counter,
+                    0,
+                    expiration_date,
+                );
                 let pending_txn = provider
                     .send_transaction(acl_txn_req.clone())
                     .await
@@ -2171,5 +2140,250 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
     assert_eq!(acl, expected, "allowed_handles after revert");
 
     listener.abort();
+    Ok(())
+}
+
+/// Restart regression: the producer seal must survive a process restart.
+///
+/// `sealed_chains` is process-local and catchup replays `--catchup-margin`
+/// blocks on every restart. That replay rebuilds the fork-detection state but
+/// NOT the seal, because ingest skips `update_dependence_chain` when every
+/// computation insert is a duplicate. Without reconstruction the parent would
+/// resume absorbing continuations while its gated child — whose
+/// `dependency_count` is durable — waits behind all of them.
+///
+/// The seal is derived from that same durable state, so a fresh `Database`
+/// over the same rows must come up with the parent sealed again.
+#[tokio::test]
+#[serial(db)]
+async fn test_sealed_chain_survives_restart(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent = FixedBytes::<32>::from([0xD1; 32]);
+    let gated_child = FixedBytes::<32>::from([0xD2; 32]);
+    let discharged_child = FixedBytes::<32>::from([0xD3; 32]);
+    let quiet_parent = FixedBytes::<32>::from([0xD4; 32]);
+
+    // parent -> gated_child, still gated: seals the parent.
+    // quiet_parent -> discharged_child, gate already discharged: seals nothing.
+    for (chain, status, count, dependents) in [
+        (parent, "updated", 0_i32, vec![gated_child]),
+        (quiet_parent, "updated", 0_i32, vec![discharged_child]),
+        (gated_child, "updated", 1_i32, vec![]),
+        (discharged_child, "updated", 0_i32, vec![]),
+    ] {
+        let dependents: Vec<Vec<u8>> =
+            dependents.iter().map(|d| d.as_slice().to_vec()).collect();
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), $3, $4, $5, 1, 1)",
+        )
+        .bind(chain.as_slice())
+        .bind(status)
+        .bind(count)
+        .bind(&dependents)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    // A fresh Database is the restart: new process state over the same rows.
+    let restarted = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let sealed = restarted.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent).is_some(),
+        "a parent with a still-gated dependent must come back sealed, or \
+         catchup will let it grow while that dependent waits"
+    );
+    assert!(
+        sealed.peek(&quiet_parent).is_none(),
+        "a parent whose dependent has discharged owes nothing and must not \
+         be sealed: that would fragment a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&gated_child).is_none(),
+        "being gated does not seal a chain; only gating another one does"
+    );
+    Ok(())
+}
+
+/// F1 regression: a new chain joining cross-block parents must be gated on
+/// exactly the parents that can still deliver a release decrement, AND that
+/// still owe it something. A parent gates only when it is both incomplete and
+/// has not yet materialized the specific boundary handle this child consumes:
+///
+///   * incomplete, handle not materialized -> gates, adopts the child, and is
+///     SEALED so it stops absorbing continuations the child would wait behind;
+///   * incomplete, handle already in `ciphertexts` -> owes nothing, because the
+///     worker reads the bytes from there; gating on it would make the child
+///     wait for unrelated work on a chain it no longer needs;
+///   * `processed` -> no future release will decrement it;
+///   * unknown (cache-drifted) -> no row to gate on.
+#[tokio::test]
+#[serial(db)]
+async fn test_cross_block_join_gates_on_incomplete_parents(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let parent_incomplete = FixedBytes::<32>::from([0xA1; 32]);
+    let parent_processed = FixedBytes::<32>::from([0xA2; 32]);
+    let parent_unknown = FixedBytes::<32>::from([0xA3; 32]);
+    let parent_materialized = FixedBytes::<32>::from([0xA4; 32]);
+    let child = FixedBytes::<32>::from([0xC1; 32]);
+    // One boundary handle per parent: the gate is armed per handle, not per
+    // chain, so the test has to name what the child actually waits for.
+    let handle_incomplete = FixedBytes::<32>::from([0xB1; 32]);
+    let handle_processed = FixedBytes::<32>::from([0xB2; 32]);
+    let handle_unknown = FixedBytes::<32>::from([0xB3; 32]);
+    let handle_materialized = FixedBytes::<32>::from([0xB4; 32]);
+    for (hash, status) in [
+        (parent_incomplete, "updated"),
+        (parent_processed, "processed"),
+        // Incomplete exactly like `parent_incomplete`; the ONLY difference is
+        // that its handle already exists below.
+        (parent_materialized, "updated"),
+    ] {
+        sqlx::query(
+            "INSERT INTO dependence_chain(
+                dependence_chain_id, status, last_updated_at,
+                dependency_count, dependents, block_hash, block_height,
+                schedule_priority
+             ) VALUES ($1, $2, NOW(), 0, '{}', $3, 1, 1)",
+        )
+        .bind(hash.as_slice())
+        .bind(status)
+        .bind([0x0B_u8; 32].as_slice())
+        .execute(&pool)
+        .await?;
+    }
+
+    // The materialized parent's boundary handle is already readable from
+    // `ciphertexts`, which is where the worker sources boundary operands.
+    sqlx::query(
+        "INSERT INTO ciphertexts(
+            tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type
+         ) VALUES (1, $1, $2, 1, 1)",
+    )
+    .bind(handle_materialized.as_slice())
+    .bind([0xEE_u8; 8].as_slice())
+    .execute(&pool)
+    .await?;
+
+    let chains = vec![Chain {
+        hash: child,
+        dependencies: vec![],
+        split_dependencies: vec![
+            parent_incomplete,
+            parent_processed,
+            parent_unknown,
+            parent_materialized,
+        ],
+        outer_boundary_handles: vec![
+            (parent_incomplete, handle_incomplete),
+            (parent_processed, handle_processed),
+            (parent_unknown, handle_unknown),
+            (parent_materialized, handle_materialized),
+        ],
+        dependents: vec![],
+        allowed_handle: vec![],
+        size: 5,
+        before_size: 0,
+        new_chain: true,
+    }];
+    let mut tx = db.new_transaction().await?.expect("live stack transaction");
+    let block_summary = BlockSummary {
+        number: 2,
+        hash: FixedBytes::<32>::from([0x0C; 32]),
+        parent_hash: FixedBytes::<32>::from([0x0B; 32]),
+        timestamp: 1_700_000_000,
+    };
+    let now = time::OffsetDateTime::now_utc();
+    let block_timestamp = time::PrimitiveDateTime::new(now.date(), now.time());
+    db.update_dependence_chain(
+        &mut tx,
+        chains,
+        block_timestamp,
+        &block_summary,
+        &std::collections::HashSet::new(),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let (count, status): (i32, String) = sqlx::query_as(
+        "SELECT dependency_count, status FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(child.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 1, "only the incomplete parent gates the join chain");
+    assert_eq!(status, "updated");
+
+    let incomplete_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_incomplete.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(incomplete_dependents, vec![child.as_slice().to_vec()]);
+
+    let processed_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_processed.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        processed_dependents.is_empty(),
+        "a processed parent must not adopt the child: no future release \
+         will decrement it"
+    );
+
+    let materialized_dependents: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT unnest(dependents) FROM dependence_chain
+         WHERE dependence_chain_id = $1",
+    )
+    .bind(parent_materialized.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert!(
+        materialized_dependents.is_empty(),
+        "an incomplete parent whose boundary handle is already materialized \
+         owes the child nothing: the worker reads the bytes from ciphertexts, \
+         so gating on it would park the child behind unrelated work"
+    );
+
+    // Only the parent that actually gates is sealed: it has work the child
+    // needs, so it must stop absorbing continuations the child would wait on.
+    let sealed = db.sealed_chains.read().await;
+    assert!(
+        sealed.peek(&parent_incomplete).is_some(),
+        "the gating parent is sealed against further linear extension"
+    );
+    assert!(
+        sealed.peek(&parent_materialized).is_none(),
+        "a parent that does not gate is not sealed: sealing it would fragment \
+         a chain for no benefit"
+    );
+    assert!(
+        sealed.peek(&parent_processed).is_none(),
+        "a processed parent is not sealed"
+    );
     Ok(())
 }

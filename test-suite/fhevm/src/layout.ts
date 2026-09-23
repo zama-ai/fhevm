@@ -98,6 +98,15 @@ export const PROJECT = "fhevm";
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
+/**
+ * Host port of the managed fork Anvil used by the dual-Anvil fork scenarios.
+ * Deliberately NOT DEFAULT_EXTRA_HOST_RPC_PORT: that one is the second host
+ * chain's RPC in multi-chain scenarios, and sharing it would let a fork
+ * scenario and a multi-chain scenario bind the same port — the fork tests
+ * would then talk to whichever Anvil won the race, which is exactly the sort
+ * of silent mistargeting that makes a consensus result meaningless.
+ */
+export const DEFAULT_FORK_RPC_PORT = 8548;
 export const MINIO_PORT = 9000;
 export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
@@ -199,6 +208,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "kms-connector-gw-listener",
     "kms-connector-kms-worker",
     "kms-connector-tx-sender",
+    "kms-connector-endpoint",
+    "kms-connector-proxy",
   ],
   "listener-core": ["listener-publisher-for-anvil"],
   "relayer": [
@@ -246,6 +257,10 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
   ]),
 ) as Record<OverrideGroup, string[]>;
 
+/** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
+export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
+
+/** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {
   "coprocessor-host-listener": ["coprocessor-host-listener-poller"],
   "coprocessor-host-listener-poller": ["coprocessor-host-listener"],
@@ -288,10 +303,14 @@ export const TEST_GREP: Record<string, string> = {
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
   "decryption-signature-invalidation": "Decryption signature invalidation",
-  "public-decryption":
-    "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",
+  "public-decryption": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-ebool": "test HTTPPublicDecrypt ebool",
   "public-decrypt-http-mixed": "test HTTPPublicDecrypt mixed",
+  "connector-http-public-decrypt": "Connector HTTP public decrypt",
+  "connector-http-user-decrypt": "Connector HTTP user decrypt",
+  "connector-http-negative": "Connector HTTP negative",
+  // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
+  "connector-http": "Connector HTTP",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -323,6 +342,7 @@ export const ROLLOUT_STANDARD_TEST_PROFILES = [
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
 ] as const;
 
 export const STANDARD_TEST_PROFILES = [
@@ -339,6 +359,7 @@ export const STANDARD_TEST_PROFILES = [
   "erc20",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -376,6 +397,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "decryption-signature-invalidation",
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
+  "connector-http",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [

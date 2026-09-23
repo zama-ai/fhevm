@@ -1,25 +1,29 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
+
 import { PreflightError, formatCliError } from "../errors";
+import { runContractTask } from "../flow/contracts";
 import { dockerInspect } from "../flow/readiness";
+import { assertManagedWriterOwnership, withQuiescedWriters } from "../flow/writer-ownership";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
-import { hostReachableRpcUrl, readEnvFile, withHexPrefix } from "../utils/fs";
-import { run, runWithHeartbeat } from "../utils/process";
+import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
+import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
+  PROJECT,
+  composePath,
   DEFAULT_CHAIN_ID,
   DEFAULT_POSTGRES_DB,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
-  defaultHostChainKey,
   envPath,
   HEAVY_TEST_PROFILES,
   LIGHT_TEST_PROFILES,
@@ -33,6 +37,8 @@ import {
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
+  defaultHostChainKey,
+  hostChainSuffix,
 } from "../layout";
 import type { State, TestOptions } from "../types";
 
@@ -46,6 +52,9 @@ const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
   "host-listener-poller",
+  "host-listener-consumer",
+  "consensus-detector",
+  "upgrade-controller",
   "gw-listener",
   "tfhe-worker",
   "sns-worker",
@@ -115,6 +124,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "public-decryption": "Run async public decryption coverage.",
   "public-decrypt-http-ebool": "Run HTTP public decrypt coverage for ebool payloads.",
   "public-decrypt-http-mixed": "Run mixed HTTP public decrypt coverage.",
+  "connector-http-public-decrypt":
+    "Run public decryption straight against every kms-connector HTTP endpoint (RFC 033)",
+  "connector-http-user-decrypt":
+    "Run user decryption straight against every kms-connector HTTP endpoint (RFC 033)",
+  "connector-http-negative":
+    "Run kms-connector HTTP endpoint rejections.",
+  "connector-http":
+    "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -135,7 +152,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-switch":
-    "Drive the NewKmsContext + NewKmsEpoch lifecycle on the host ProtocolConfig and prove the KMS reshares, activates, and still decrypts under each, with the input-proof app smoke at baseline, while the switch is pending, and after each transition. On a cluster with a spare core (e.g. --scenario swap-threshold-kms) the NewKmsContext step is a genuine node swap — stop a committee node's tx-sender before the switch so it cannot confirm on-chain, promote the spare, and force it into the 2t+1 quorum (threshold-mode KMS).",
+    "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -262,6 +279,30 @@ const injectCiphertextDrift = async (options: {
   }
 };
 
+/** The release the green binaries were built as, read from a running GCS service. */
+const gcsBinaryRelease = async (): Promise<string> => {
+  const ps = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
+  if (ps.code !== 0) {
+    throw new PreflightError(ps.stderr.trim() || "docker ps failed");
+  }
+  const container = ps.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^coprocessor(\d+)?-gcs-upgrade-controller$/.test(line));
+  if (!container) {
+    throw new Error("no GCS upgrade-controller container is running");
+  }
+  const result = await run(
+    ["docker", "exec", container, "/usr/local/bin/upgrade-controller", "--stack-version"],
+    { allowFailure: true },
+  );
+  const release = result.stdout.trim();
+  if (result.code !== 0 || release === "") {
+    throw new Error(`could not read the release from ${container}: ${result.stderr.trim()}`);
+  }
+  return release;
+};
+
 /** Lists running coprocessor gateway-listener containers. */
 const coprocessorGwListeners = async () => {
   const result = await run(["docker", "ps", "--format", "{{.Names}}"], { allowFailure: true });
@@ -272,6 +313,89 @@ const coprocessorGwListeners = async () => {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => /^coprocessor(\d+)?-gw-listener$/.test(line));
+};
+
+/** Turns off the synthetic work a GCS listener injects to anchor consensus. */
+const SYNTHETIC_OPS_OFF = "--disable-synthetic-ops";
+
+/** Every GCS host-listener container, on every operator and host chain. Multi-chain
+ *  scenarios suffix the extra chains, so this matches on prefix. */
+const gcsHostListeners = async () => {
+  const result = await run(["docker", "ps", "-a", "--format", "{{.Names}}"], { allowFailure: true });
+  if (result.code !== 0) {
+    throw new PreflightError(result.stderr.trim() || "docker ps failed");
+  }
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^coprocessor(\d+)?-gcs-host-listener(-|$)/.test(line))
+    .sort();
+};
+
+/** Recreates every GCS host-listener with synthetic-op injection on or off.
+ *
+ *  A container's command is fixed when it is created, so restarting cannot change it.
+ *  Each host chain has its own compose file, so the listeners are grouped by the file
+ *  set their own labels name and every group is brought up from that set. */
+const setSyntheticOps = async (enabled: boolean) => {
+  const containers = await gcsHostListeners();
+  if (containers.length === 0) {
+    throw new PreflightError("found no GCS host-listener containers");
+  }
+  const format = [
+    '{{index .Config.Labels "com.docker.compose.project.config_files"}}',
+    '{{index .Config.Labels "com.docker.compose.service"}}',
+    "{{json .Config.Cmd}}",
+  ].join("\t");
+  const meta = await run(["docker", "inspect", ...containers, "--format", format], { allowFailure: true });
+  if (meta.code !== 0) {
+    throw new PreflightError(`docker inspect failed: ${meta.stderr.trim()}`);
+  }
+
+  const groups = new Map<string, Record<string, { command: string[] }>>();
+  for (const line of meta.stdout.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+    const [files, service, commandJson] = line.split("\t");
+    if (!files || !service || !commandJson || commandJson === "null") {
+      throw new PreflightError(`compose labels are missing on "${service || containers.join(", ")}"`);
+    }
+    const command = (JSON.parse(commandJson) as string[]).filter((entry) => entry !== SYNTHETIC_OPS_OFF);
+    if (!enabled) {
+      command.push(SYNTHETIC_OPS_OFF);
+    }
+    const group = groups.get(files) ?? {};
+    group[service] = { command };
+    groups.set(files, group);
+  }
+
+  const env = await composeEnv("coprocessor");
+  const recreated: string[] = [];
+  for (const [index, [files, services]] of [...groups].entries()) {
+    // Compose parses YAML, and JSON is valid YAML — no serializer needed.
+    const override = composePath(`synthetic-ops-${index}`);
+    await Bun.write(override, JSON.stringify({ services }));
+    const up = await run(
+      [
+        "docker",
+        "compose",
+        "-p",
+        PROJECT,
+        ...files.split(",").flatMap((file) => ["-f", file]),
+        "-f",
+        override,
+        "up",
+        "-d",
+        "--force-recreate",
+        "--no-deps",
+        ...Object.keys(services),
+      ],
+      { env, allowFailure: true },
+    );
+    if (up.code !== 0) {
+      throw new PreflightError(`recreating the GCS host-listeners failed: ${up.stderr.trim()}`);
+    }
+    recreated.push(...Object.keys(services));
+  }
+  return recreated.sort();
 };
 
 /** Finds the expected drift warning for a specific injected handle. */
@@ -547,10 +671,14 @@ const runNamedE2e = async (
 };
 
 /** Builds the coprocessor runtime container names for every configured instance. */
-const coprocessorRuntimeContainers = (instanceCount: number) =>
+export const coprocessorRuntimeContainers = (instanceCount: number, chains: State["scenario"]["hostChains"], blueGreen = false) =>
   Array.from({ length: instanceCount }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`);
+    const extraListeners = chains.slice(1).flatMap((chain) =>
+      ["host-listener", "host-listener-poller"].map((role) =>
+        `${prefix}${role}${hostChainSuffix(chain.key, defaultHostChainKey(chains))}`));
+    const canonical = [...DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`), ...extraListeners];
+    return blueGreen ? [...canonical, ...canonical.map((name) => name.replace(prefix, `${prefix}gcs-`))] : canonical;
   }).flat();
 
 /** Builds the sns-worker container names for every configured coprocessor instance. */
@@ -606,13 +734,6 @@ export const waitForKeyBootstrap = async (
   }
 };
 
-/** Stops or starts each named container and ignores already-stopped/missing cases. */
-const setContainersRunning = async (containers: string[], action: "start" | "stop") => {
-  for (const container of containers) {
-    await run(["docker", action, container], { allowFailure: true });
-  }
-};
-
 /** Reads a one-line postgres query result as trimmed text. */
 const scalarQuery = async (
   dbName: string,
@@ -632,6 +753,19 @@ const postgresRuntime = () => ({
   postgresHost: process.env.POSTGRES_HOST,
 });
 
+/** Destructive SQL must address a database whose writers this stack can fence. */
+export const assertDbRevertTarget = (
+  state: Pick<State, "scenario">,
+  postgres: Pick<ReturnType<typeof postgresRuntime>, "postgresContainer" | "postgresDb" | "postgresHost">,
+) => {
+  const databases = new Set(Array.from({length: topologyForState(state).count}, (_, index) => coprocessorDatabaseName(index)));
+  const hosts = new Set(["db", POSTGRES_HOST, COPROCESSOR_DB_CONTAINER, `${COPROCESSOR_DB_CONTAINER}:5432`]);
+  if (postgres.postgresContainer !== COPROCESSOR_DB_CONTAINER || !databases.has(postgres.postgresDb) ||
+    (postgres.postgresHost !== undefined && !hosts.has(postgres.postgresHost))) {
+    throw new PreflightError("db-state-revert only supports databases in the active managed coprocessor fleet; external POSTGRES_CONTAINER, POSTGRES_HOST or POSTGRES_DB overrides cannot establish writer quiescence");
+  }
+};
+
 /** Chooses the revert anchor just before the seed-generated block range. */
 export const dbRevertTargetBlock = (seedStartBlock: number) => {
   const revertTo = seedStartBlock - 1;
@@ -639,6 +773,42 @@ export const dbRevertTargetBlock = (seedStartBlock: number) => {
     throw new PreflightError(`db-state-revert requires a positive seed boundary; got first seed block ${seedStartBlock}`);
   }
   return revertTo;
+};
+
+/** Read the seed's actual Hardhat network, not noncanonical transaction telemetry. */
+export const dbRevertAnchorProgram = (timeoutMs = 60_000) => `
+const timer = setTimeout(() => process.exit(124), ${timeoutMs});
+(async () => {
+  const { network } = require("hardhat");
+  const chainId = await network.provider.send("eth_chainId");
+  const block = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
+  console.log("DB_REVERT_ANCHOR=" + JSON.stringify({ chainId, blockNumber: block.number }));
+})().catch(() => { console.error("db-state-revert canonical RPC probe failed"); process.exitCode = 1; })
+  .finally(() => { clearTimeout(timer); process.exit(process.exitCode ?? 0); });
+`;
+
+export const dbRevertCanonicalAnchor = async (
+  network: string,
+  chainId: string,
+  execute: typeof run = run,
+) => {
+  const timeoutMs = parsePositiveInteger(process.env.DB_REVERT_ANCHOR_TIMEOUT_SECONDS ?? "60", "DB_REVERT_ANCHOR_TIMEOUT_SECONDS") * 1000;
+  const result = await execute(buildTestContainerArgs(
+    ["node", "-r", "ts-node/register/transpile-only", "-e", dbRevertAnchorProgram(timeoutMs)],
+    ["-e", `HARDHAT_NETWORK=${network}`],
+  ), { timeoutMs: timeoutMs + 15_000 });
+  const line = result.stdout.split(/\r?\n/).find((value) => value.startsWith("DB_REVERT_ANCHOR="));
+  if (!line) throw new PreflightError("db-state-revert canonical RPC probe returned no anchor");
+  const anchor = JSON.parse(line.slice("DB_REVERT_ANCHOR=".length)) as { chainId: string; blockNumber: string };
+  if (!/^0x[0-9a-f]+$/i.test(anchor.chainId) || BigInt(anchor.chainId) !== BigInt(chainId)) {
+    throw new PreflightError(`db-state-revert seed network ${network} does not match CHAIN_ID ${chainId}`);
+  }
+  if (!/^0x[0-9a-f]+$/i.test(anchor.blockNumber)) {
+    throw new PreflightError("db-state-revert canonical RPC probe returned an invalid block");
+  }
+  const block = Number(BigInt(anchor.blockNumber));
+  if (!Number.isSafeInteger(block)) throw new PreflightError("db-state-revert canonical block exceeds safe integer range");
+  return dbRevertTargetBlock(block + 1);
 };
 
 type DbRevertSnapshot = {
@@ -761,19 +931,6 @@ const localDbMigrationImageRef = (state: Pick<State, "overrides" | "builtImages"
 // ============================================================================
 // Blue-Green upgrade E2E
 // ============================================================================
-
-/** Reads deployer PK from host-sc env and ProtocolConfig address from test-suite env. */
-const readBlueGreenOnChainCreds = async (): Promise<{ deployerPk: string; protocolConfig: string }> => {
-  const [hostSc, testSuite] = await Promise.all([
-    readEnvFile(envPath("host-sc")),
-    readEnvFile(envPath("test-suite")),
-  ]);
-  const deployerPk = hostSc.DEPLOYER_PRIVATE_KEY;
-  const protocolConfig = testSuite.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
-  if (!deployerPk) throw new Error("DEPLOYER_PRIVATE_KEY missing from host-sc env");
-  if (!protocolConfig) throw new Error("PROTOCOL_CONFIG_CONTRACT_ADDRESS missing from test-suite env");
-  return { deployerPk: withHexPrefix(deployerPk), protocolConfig };
-};
 
 const psqlQuery = async (database: string, query: string): Promise<string> =>
   scalarQuery(database, query, postgresRuntime());
@@ -903,14 +1060,23 @@ const runBlueGreenProfile = async (
     );
   }
 
-  const gcsStackVersion = state.scenario.gcs.stackVersion;
-  const gcsVersionLive = `v${gcsStackVersion}`;
+  // The proposal names the release the GCS image was built as.
+  const gcsStackVersion = await gcsBinaryRelease();
+  const gcsVersionLive = gcsStackVersion;
   const opCount = state.scenario.topology.count;
 
   const operatorDatabases: string[] = [];
   for (let index = 0; index < opCount; index += 1) {
     operatorDatabases.push(coprocessorDatabaseName(index));
   }
+
+  const activeConsensusVersion = Number(
+    await psqlQuery(operatorDatabases[0], "SELECT consensus_version FROM versioning WHERE singleton = TRUE;"),
+  );
+  if (!Number.isSafeInteger(activeConsensusVersion) || activeConsensusVersion < 0) {
+    throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
+  }
+  const gcsConsensusVersion = activeConsensusVersion + 1;
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
@@ -937,16 +1103,9 @@ const runBlueGreenProfile = async (
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
-  const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-  const hostRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.hosts[defaultHostKey]!.http);
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
-  const { deployerPk, protocolConfig } = await readBlueGreenOnChainCreds();
 
-  // One ChainUpgradeWindow per host chain, each off that chain's own current
-  // block. Single-chain yields a one-element array, as before.
   const hostChains = state.scenario.hostChains;
-  const hostChainRpc = (key: string) =>
-    hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
   const testSuiteEnv = await readEnvFile(envPath("test-suite"));
   const erc20Grep = TEST_GREP.erc20;
   if (!erc20Grep) {
@@ -986,39 +1145,40 @@ const runBlueGreenProfile = async (
     chainExtraExecArgs(0),
   );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
-  const buildWindowArray = async (startOffset: number, endOffset: number): Promise<string> => {
-    const tuples: string[] = [];
-    for (const chain of hostChains) {
-      const block = Number(
-        (await run(["cast", "block-number", "--rpc-url", hostChainRpc(chain.key)])).stdout.trim(),
-      );
-      tuples.push(`(${chain.chainId},${block + startOffset},${block + endOffset})`);
-    }
-    return `[${tuples.join(",")}]`;
-  };
+  // Host chains for the proposal task (read via LOCAL_HOST_CHAINS), so single- and
+  // multi-chain scenarios both work. Same per-chain internal RPCs the traffic uses.
+  const localHostChains = JSON.stringify(
+    hostChains.map((_chain, index) => ({
+      chainId: Number(chainEnvValue(index, "CHAIN_ID_HOST", "CHAIN_ID")),
+      rpcUrl: chainEnvValue(index, "RPC_URL", "RPC_URL"),
+      fallbackBlockTimeSeconds: 1,
+    })),
+  );
 
   // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
-  // track with one input. Cutover needs at least one non-trivial host anchor, so the
-  // controller withholds the hosts and commitment_timeout rolls back every row — the
-  // rollback this asserts. A regression that notified quiet hosts would cut over.
-  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host → no cutover)`);
-  const failGwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const failGwStartBlock = failGwBlock + 10;
-  const failWindows = await buildWindowArray(15, 45);
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "1", gcsVersionLive,
-    failWindows,
-    String(failGwStartBlock),
-  ]);
-  console.log(
-    `OK:   activation emitted (windows=${failWindows} gw_start=${failGwStartBlock})`,
+  // track with one input. Recreate the GCS listeners with injection off first, so
+  // nothing manufactures work of its own and the window times out into the rollback
+  // this asserts. [4/11] turns it back on for the upgrade that succeeds.
+  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host \u2192 no cutover)`);
+  const disabled = await setSyntheticOps(false);
+  console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s) with synthetic ops disabled`);
+  const failStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 60s --buffer 10s ' +
+      '--proposal-id 1 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
+        PROPOSE_START_TIME: failStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
   );
+  console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
   for (const db of operatorDatabases) {
@@ -1037,8 +1197,19 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
-  // Verify one Gateway input inside the window. Host chains get no non-trivial FHE
-  // op, so cutover must be withheld and the window must time out (asserted in [4/11]).
+  // Wait for the Gateway tip to reach gw_start_block so the input lands in the window
+  // and anchors the GW track.
+  const failGwStartBlock = Number(
+    await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"),
+  );
+  await waitUntil({
+    label: `gateway tip reaches window start ${failGwStartBlock}`,
+    timeoutSecs: 120,
+    check: async () =>
+      Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
+  });
+  // Verify one Gateway input inside the window. The silenced operator never reports,
+  // so unanimity cannot form and the window must time out (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
   console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
 
@@ -1093,6 +1264,8 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  const reenabled = await setSyntheticOps(true);
+  console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
@@ -1126,23 +1299,25 @@ const runBlueGreenProfile = async (
     console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
   }
 
-  console.log(`\n[6/11] propose upgrade on-chain (ProtocolConfig.proposeCoprocessorUpgrade)`);
-  const gwBlock = Number((await run(
-    ["cast", "block-number", "--rpc-url", gatewayRpcUrl],
-  )).stdout.trim());
-  const gwStartBlock = gwBlock + 10;
-  // A wide window per chain so real dry-run traffic on every chain lands inside it.
-  const okWindows = await buildWindowArray(30, 230);
-  await run([
-    "cast", "send", protocolConfig,
-    "--rpc-url", hostRpcUrl,
-    "--private-key", deployerPk,
-    "proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)",
-    "2", gcsVersionLive,
-    okWindows,
-    String(gwStartBlock),
-  ]);
-  console.log(`OK:   activation emitted (windows=${okWindows} gw_start=${gwStartBlock})`);
+  console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
+  // Exercise the EOA task on the success path (a longer window with real traffic).
+  const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
+  await runContractTask(
+    "host-sc",
+    "host-sc-deploy",
+    'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+      '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
+      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+    {
+      env: {
+        LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+        LOCAL_HOST_CHAINS: localHostChains,
+        PROPOSE_START_TIME: proposeStartTime,
+        PROPOSE_SW_VERSION: gcsVersionLive,
+      },
+    },
+  );
+  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
   for (const db of operatorDatabases) {
@@ -1213,6 +1388,18 @@ const runBlueGreenProfile = async (
       ]);
     }
 
+    // Cutover takes the consensus version from the binary, so it must have moved too.
+    for (const db of operatorDatabases) {
+      const consensus = await psqlQuery(
+        db,
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE;",
+      );
+      if (Number(consensus) !== gcsConsensusVersion) {
+        throw new Error(`${db}.versioning consensus ${consensus}, expected ${gcsConsensusVersion}`);
+      }
+    }
+    console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
+
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
     for (const db of operatorDatabases) {
@@ -1260,29 +1447,22 @@ const runBlueGreenProfile = async (
     );
   }
 
-  // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
-  // backfill to converge before verifying (the convergence signal will replace txn_is_sent).
-  // for (const db of operatorDatabases) {
-  //   await waitUntil({
-  //     label: `${db}  digest re-commit drained`,
-  //     timeoutSecs: 300,
-  //     check: async () =>
-  //       (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
-  //   });
-  // }
+  // Traffic is stopped, so the merged digest backlog must drain before the verify decrypts.
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  digest re-commit drained`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
+    });
+  }
 
   console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
   const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
   if (verifyResult.code !== 0) {
-    // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — dry-run-era handles are
-    // undecryptable until then (S3 backfill vs immutable on-chain digests).
-    // throw new Error(
-    //   "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
-    //     "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
-    // );
-    console.warn(
-      "  KNOWN ISSUE (soft-fail): cross-cutover verify failed — dry-run-era handles are " +
-        "undecryptable until RFC-023 lands.",
+    throw new Error(
+      "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
+        "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
     );
   }
 
@@ -1332,13 +1512,14 @@ const runDbStateRevert = async (
   const postgres = {
     ...postgresRuntime(),
   };
+  assertDbRevertTarget(state, postgres);
   const testsToRun = process.env.TESTS_TO_RUN ?? TEST_GREP[DB_REVERT_RECOVERY_PROFILE];
   if (!testsToRun) {
     throw new PreflightError(`Missing grep pattern for ${DB_REVERT_RECOVERY_PROFILE}`);
   }
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
-  const containers = coprocessorRuntimeContainers(topologyForState(state).count);
+  const containers = coprocessorRuntimeContainers(topologyForState(state).count, state.scenario.hostChains, state.scenario.kind === "blue-green");
   const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
   const revertImage =
     localDbMigrationImageRef(state) ??
@@ -1349,33 +1530,30 @@ const runDbStateRevert = async (
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
-    const maxBlockBeforeSeed = Number(
-      await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
-    );
     const baseline = await dbRevertSnapshot(chainId, postgres);
     console.log(`[revert] baseline ${formatDbRevertSnapshot(baseline)}`);
+    const revertTo = await dbRevertCanonicalAnchor(options.network, chainId);
+    console.log(`[revert] canonical seed anchor chain=${chainId} block=${revertTo}`);
     await runNamedE2e(options, testsToRun, "test coprocessor-db-state-revert seed");
 
-    let before;
-    let stopped = false;
-    try {
-      await setContainersRunning(containers, "stop");
-      stopped = true;
-
+    let before!: DbRevertSnapshot;
+    await withQuiescedWriters(state, containers, async () => {
       before = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
       if (before.computationsDone === 0) {
         throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
       }
 
-      const seedStartBlock = Number(
+      const seededComputations = Number(
         await scalarQuery(
           postgres.postgresDb,
-          `SELECT COALESCE(MIN(block_number), 0) FROM transactions WHERE chain_id = ${chainId} AND block_number > ${maxBlockBeforeSeed}`,
+          `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${chainId} AND block_number > ${revertTo} AND is_completed = true`,
           postgres,
         ),
       );
-      const revertTo = dbRevertTargetBlock(seedStartBlock);
+      if (seededComputations === 0) {
+        throw new PreflightError("db-state-revert seed produced no completed computations after the canonical anchor; refusing an unproven revert");
+      }
 
       const network = (
         await run([
@@ -1390,6 +1568,9 @@ const runDbStateRevert = async (
         throw new PreflightError(`db-state-revert could not resolve the docker network for ${postgres.postgresContainer}`);
       }
 
+      // Re-discover immediately before destructive SQL, after snapshot/network
+      // queries: a writer appearing during that interval invalidates the fence.
+      await assertManagedWriterOwnership(state, containers, true);
       await runWithHeartbeat(
         [
           "docker",
@@ -1398,7 +1579,7 @@ const runDbStateRevert = async (
           "--network",
           network,
           "-e",
-          `DATABASE_URL=postgres://${postgres.postgresUser}:${postgres.postgresPassword}@${postgres.postgresHost ?? POSTGRES_HOST.replace(/^db:/, `${postgres.postgresContainer}:`)}/${postgres.postgresDb}`,
+          `DATABASE_URL=postgres://${encodeURIComponent(postgres.postgresUser)}:${encodeURIComponent(postgres.postgresPassword)}@${postgres.postgresHost ?? POSTGRES_HOST.replace(/^db:/, `${postgres.postgresContainer}:`)}/${postgres.postgresDb}`,
           "-e",
           `CHAIN_ID=${chainId}`,
           "-e",
@@ -1412,11 +1593,7 @@ const runDbStateRevert = async (
       const after = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] after ${formatDbRevertSnapshot(after)}`);
       assertRevertDeletedData(baseline, before, after);
-    } finally {
-      if (stopped) {
-        await setContainersRunning(containers, "start");
-      }
-    }
+    });
 
     await waitForDbRevertRecovery(before, chainId, {
       ...postgres,
@@ -1492,6 +1669,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
   const multiChainIsolationSkipReason = () =>
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
+
+  const connectorEndpointSkipReason = () =>
+    supportsConnectorHttp(state)
+      ? undefined
+      : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)
@@ -1807,6 +1989,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(precondition);
       }
     }
+    if (name.startsWith("connector-http")) {
+      const precondition = connectorEndpointSkipReason();
+      if (precondition) {
+        throw new PreflightError(`${name}: ${precondition}`);
+      }
+    }
 
     const filter = TEST_GREP[name];
     if (!filter) {
@@ -1875,6 +2063,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
             continue;
           }
         }
+        if (profile.startsWith("connector-http")) {
+          const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
         await runProfile(profile);
       }
     });
@@ -1925,6 +2120,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged("rollout-standard", started, async () => {
       for (const profile of ROLLOUT_STANDARD_TEST_PROFILES) {
+        if (profile.startsWith("connector-http")) {
+          const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
         await runProfile(profile);
       }
     });

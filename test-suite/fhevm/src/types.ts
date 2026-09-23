@@ -36,7 +36,7 @@ export type OverrideGroup = (typeof OVERRIDE_GROUPS)[number];
 export type CoprocessorInstanceSource =
   | { mode: "inherit" }
   | { mode: "local" }
-  | { mode: "registry"; tag: string };
+  | { mode: "registry"; tag: string; compatTag?: string };
 
 export type CoprocessorScenarioInstance = {
   index: number;
@@ -138,11 +138,23 @@ export type BlueGreenScenario = {
   };
   gcs: {
     source?: CoprocessorInstanceSource;
-    stackVersion: string;
+    /** Generate Green services now, but do not start them until the rollout explicitly releases them. */
+    deferredStart?: boolean;
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   };
   kms?: KmsScenarioBlock;
+  bootstrap?: BlueGreenBootstrap;
+};
+
+/**
+ * Release the stack boots at before the Blue-Green upgrade. Contracts, KMS core and connector
+ * and listener-core run this release while the keys are generated, so the pinned Blue can read
+ * them; the bootstrap step then upgrades those components to the resolved bundle in place and
+ * starts Green, the same order as a production 0.14 to 0.15 rollout.
+ */
+export type BlueGreenBootstrap = {
+  tag: string;
 };
 
 export type ResolvedBlueGreenScenarioFleet = {
@@ -164,8 +176,9 @@ export type ResolvedBlueGreenScenario = {
     threshold: number;
   };
   bcs: ResolvedBlueGreenScenarioFleet;
-  gcs: ResolvedBlueGreenScenarioFleet & { stackVersion: string };
+  gcs: ResolvedBlueGreenScenarioFleet & { deferredStart: boolean };
   kms: ResolvedKmsTopology;
+  bootstrap?: BlueGreenBootstrap;
 };
 
 // Union of every scenario shape the runtime accepts. Narrow on `kind`.
@@ -227,6 +240,11 @@ export type BuiltImage = {
   instanceIndex?: number;
 };
 
+export type KmsConnectorPartyDeployment = {
+  locallyBuilt: boolean;
+  versions: Record<string, string>;
+};
+
 export type State = {
   target: VersionTarget;
   lockPath: string;
@@ -234,7 +252,24 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
+  kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];
+  /** Local E2E-only escape hatch: build coprocessor images on public Debian bases. */
+  e2ePublicRuntime?: boolean;
+  /**
+   * Crash-safe marker for the explicit in-place public KMS connector runtime
+   * adoption. While set, `up --resume` replays only the connector runtime
+   * replacement (never the normal KMS connector step/migration) and clears the
+   * marker only after readiness plus the post-boot health gate succeed.
+   */
+  e2eKmsConnectorRuntimeAdoptionPending?: boolean;
+  /**
+   * Set while the stack runs at the scenario's `bootstrap.tag`; cleared once the bootstrap step
+   * has upgraded it and started Green. Carries the resolved bundle, the local overrides suspended
+   * for the boot, and the upgrade units already applied so `up --resume` does not repeat them.
+   */
+  bootstrapPending?: { target: VersionBundle; overrides: LocalOverride[]; completed?: string[] };
   scenario: ResolvedScenario;
   scenarioSourcePath?: string;
   discovery?: Discovery;
@@ -250,6 +285,8 @@ export type UpOptions = {
   overrides: LocalOverride[];
   // True when overrides were expanded from --build (all groups) rather than explicit --override flags.
   build?: boolean;
+  /** Use public Debian runtime bases for locally-built coprocessor and KMS connector E2E images only. */
+  e2ePublicRuntime?: boolean;
   scenarioPath?: string;
   // Blue-green only: override `bcs.source` to `{mode: registry, tag: bcsTag}`.
   bcsTag?: string;

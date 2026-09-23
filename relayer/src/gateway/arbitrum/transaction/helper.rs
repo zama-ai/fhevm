@@ -1,5 +1,7 @@
 use crate::config::settings::GatewayConfig;
-use crate::gateway::arbitrum::transaction::engine::{CustomFillers, TransactionEngine};
+use crate::gateway::arbitrum::transaction::engine::{
+    CustomFillers, GatewayTxnError, TransactionEngine,
+};
 use crate::orchestrator::HealthCheck;
 use crate::{core::errors::EventProcessingError, core::job_id::JobId, metrics};
 use alloy::network::AnyTransactionReceipt;
@@ -51,15 +53,42 @@ impl fmt::Display for TransactionType {
     }
 }
 
+/// Outcome of the compare-and-set that claims the tx-in-flight transition: at most one caller
+/// among concurrent sends for one job proceeds. The race it arbitrates: the sweep's claim
+/// resets a `tx_in_flight` row to `processing` and re-dispatches it, with no way to tell
+/// whether the previous owner's send is still executing. Within one pod the CAS separates the
+/// two; across pods the row's `owner_epoch` fence does. Neither stops the old pod's send
+/// itself - that duplicate is absorbed downstream (see `on_tx_in_flight`'s callers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxClaimOutcome {
+    /// This caller won the claim: it owns the row and must send the transaction.
+    Claimed,
+    /// Another actor already claimed the row; this caller must not send.
+    ClaimLost,
+}
+
+/// Outcome of recording a receipt this pod's own send obtained. The send succeeded either
+/// way - the chain has a real transaction - so this never decides a retry; it says whether
+/// the DB write recording the receipt landed, which the epoch fence refuses once a successor
+/// has claimed the row. Callers must not treat `Refused` as `Recorded`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptRecordOutcome {
+    /// The receipt was recorded.
+    Recorded,
+    /// Refused by the epoch fence; not recorded.
+    Refused,
+}
+
 #[async_trait::async_trait]
 pub trait TxLifecycleHooks: Send + Sync {
-    async fn on_tx_in_flight(&self, job_id: &JobId) -> Result<(), EventProcessingError>;
+    async fn on_tx_in_flight(&self, job_id: &JobId)
+        -> Result<TxClaimOutcome, EventProcessingError>;
 
     async fn on_receipt_received(
         &self,
         job_id: &JobId,
         receipt: &TxResult,
-    ) -> Result<(), EventProcessingError>;
+    ) -> Result<ReceiptRecordOutcome, EventProcessingError>;
 
     async fn on_failure(
         &self,
@@ -100,6 +129,19 @@ impl TransactionHelper {
 
         metrics::transaction::transaction_broadcast(tx_metric_type);
         let transaction_start_time = Instant::now();
+
+        // Claim before any RPC work, not just before the send: `on_failure` accepts a row in
+        // `processing` or `tx_in_flight`, so a loser whose gas estimation failed after a late
+        // claim could mark the winner's row `failure` while its transaction is live on chain.
+        match hook.on_tx_in_flight(&job_id).await? {
+            TxClaimOutcome::Claimed => {}
+            TxClaimOutcome::ClaimLost => {
+                // The hook impl already logged it.
+                metrics::transaction::transaction_claim_lost(tx_metric_type);
+                return Ok(());
+            }
+        }
+
         let request = match self
             .tx_engine
             .prepare_transaction(&job_id, target, calldata_bytes, None)
@@ -116,15 +158,17 @@ impl TransactionHelper {
             }
         };
 
-        // updating tx with tx_in_flight status.
-        hook.on_tx_in_flight(&job_id).await?;
-
         let receipt = match self
             .tx_engine
             .send_raw_transaction_sync_with_retries(&job_id, request)
             .await
         {
             Ok(rec) => rec,
+            // Marking this row would fail a request that is still going to be driven: its
+            // state stays put for the successor's sweep to claim under a higher epoch.
+            Err(GatewayTxnError::GateClosed) => {
+                return Err(EventProcessingError::from(GatewayTxnError::GateClosed));
+            }
             Err(error) => {
                 metrics::transaction::transaction_failure(
                     tx_metric_type,
@@ -135,19 +179,37 @@ impl TransactionHelper {
             }
         };
 
-        hook.on_receipt_received(&job_id, &receipt).await?;
-        metrics::transaction::transaction_confirmed(
-            tx_metric_type,
-            transaction_start_time.elapsed().as_millis() as f64,
-        );
-
-        info!(
-            operation = %transaction_type,
-            tx_hash = ?receipt.transaction_hash,
-            block_number = ?receipt.block_number,
-            gas_used = ?receipt.gas_used,
-            "Transaction confirmed"
-        );
+        // A refused receipt is still a successful send - the chain has a real transaction, the
+        // hook's own log already explains the refusal - so this only decides what gets counted
+        // and logged as "confirmed", never whether to retry or error. See `ReceiptRecordOutcome`.
+        match hook.on_receipt_received(&job_id, &receipt).await? {
+            ReceiptRecordOutcome::Recorded => {
+                metrics::transaction::transaction_confirmed(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    gas_used = ?receipt.gas_used,
+                    "Transaction confirmed"
+                );
+            }
+            ReceiptRecordOutcome::Refused => {
+                metrics::transaction::transaction_receipt_refused(
+                    tx_metric_type,
+                    transaction_start_time.elapsed().as_millis() as f64,
+                );
+                info!(
+                    operation = %transaction_type,
+                    tx_hash = ?receipt.transaction_hash,
+                    block_number = ?receipt.block_number,
+                    "Transaction sent and landed on chain, but the receipt was not recorded \
+                     (refused by the epoch fence)"
+                );
+            }
+        }
 
         Ok(())
     }

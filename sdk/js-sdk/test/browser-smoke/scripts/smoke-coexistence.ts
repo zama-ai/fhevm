@@ -2,8 +2,8 @@ import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
 import type { FhevmChain } from '../../../src/core/types/fhevmChain.js';
 import {
   DUMMY_RELAYER_BASE_URL,
-  TFHE_VERSIONS,
-  TKMS_VERSIONS,
+  TFHE_VERSION,
+  TKMS_VERSION,
   assertTfheModuleReady,
   assertTkmsModuleReady,
   assertWellFormedProof,
@@ -15,8 +15,8 @@ import {
   log,
   makeDummyChain,
   runSmokePage,
-  setupMultiWasmRuntime,
-} from './multiWasmHarness.js';
+  setupSmokeRuntime,
+} from './smokeHarness.js';
 
 /**
  * A chain is defined by a unique relayer URL, the TFHE module version it requires,
@@ -46,34 +46,29 @@ function defineChainDefinition(tfheVersion: TfheVersion, keyTfheVersion: string,
 }
 
 const CHAIN_DEFINITIONS: readonly ChainDefinition[] = [
-  defineChainDefinition('1.5.3', '1.4.0-alpha.3', true),
-  defineChainDefinition('1.6.2', '1.4.0-alpha.3', true),
-  defineChainDefinition('1.5.3', '1.5.4', true),
-  defineChainDefinition('1.6.2', '1.5.4', true),
-  defineChainDefinition('1.5.3', '1.6.1', false),
-  defineChainDefinition('1.6.2', '1.6.1', true),
+  defineChainDefinition(TFHE_VERSION, '1.4.0-alpha.3', true),
+  defineChainDefinition(TFHE_VERSION, '1.5.4', true),
+  defineChainDefinition(TFHE_VERSION, '1.6.1', true),
 ];
 
 void runSmokePage(async () => {
-  const runtime = setupMultiWasmRuntime();
+  const runtime = setupSmokeRuntime();
 
-  log('Initializing TFHE and TKMS versions concurrently...');
+  log('Initializing TFHE and TKMS modules concurrently...');
   await initAllModules(runtime);
   log('[PASS] All modules initialized');
 
-  for (const tfheVersion of TFHE_VERSIONS) {
-    await assertTfheModuleReady(runtime, tfheVersion);
-  }
+  await assertTfheModuleReady(runtime, TFHE_VERSION);
 
   // Battle-test concurrency: run every chain's prime-then-encrypt in parallel,
-  // exercising concurrent cache population (each chain has a unique slot),
-  // interleaved deserialize, and shared per-version TFHE worker pools at once.
+  // exercising concurrent cache population (each chain has a unique slot) and
+  // interleaved deserialize against the shared TFHE worker pool at once.
   log(`Running ${CHAIN_DEFINITIONS.length} per-chain mini encryptions concurrently...`);
   const results = await Promise.all(
     CHAIN_DEFINITIONS.map(async (definition) => {
       await loadAndCacheKey(runtime, definition.chain, definition.keyTfheVersion);
       const outcome = await attempt(async () => {
-        const zkProof = await buildUint64Proof(runtime, definition.chain, definition.tfheVersion);
+        const zkProof = await buildUint64Proof(runtime, definition.chain);
         assertWellFormedProof(zkProof, 1);
       });
       return { definition, outcome };
@@ -94,7 +89,5 @@ void runSmokePage(async () => {
   }
   log('[PASS] Concurrent per-chain mini encryptions verified');
 
-  for (const tkmsVersion of TKMS_VERSIONS) {
-    await assertTkmsModuleReady(runtime, tkmsVersion);
-  }
+  await assertTkmsModuleReady(runtime, TKMS_VERSION);
 });

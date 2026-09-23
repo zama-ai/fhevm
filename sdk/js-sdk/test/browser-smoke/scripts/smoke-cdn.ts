@@ -2,6 +2,9 @@ import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/in
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
 import { createLogger } from './common.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../src/core/runtime/WasmVersions-p.js';
+
+const { tfhe: tfheVersion, kms: tkmsVersion } = CANONICAL_WASM_VERSIONS;
 
 const logEl = document.getElementById('log')!;
 const t0 = performance.now();
@@ -23,14 +26,16 @@ function done(status: 'pass' | 'fail') {
 // TFHE + TKMS .wasm binaries are fetched cross-origin from jsdelivr. The
 // TFHE worker (.mjs) stays local: browsers refuse to instantiate a
 // cross-origin module worker, and the file is SDK-specific anyway.
+//
+// tfhe-rs 1.7.0 split the client-only wasm build into its own npm package
+// (`tfhe-client`); the tkms package name is unaffected.
 const WASM_URLS: Record<string, URL> = {
-  'tfhe_bg.v1.5.3.wasm': new URL('https://cdn.jsdelivr.net/npm/tfhe@1.5.3/tfhe_bg.wasm'),
-  'tfhe-worker.v1.5.3.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe-worker.mjs', location.origin),
-  'tfhe_bg.v1.6.2.wasm': new URL('https://cdn.jsdelivr.net/npm/tfhe@1.6.2/tfhe_bg.wasm'),
-  'tfhe-worker.v1.6.2.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe-worker.mjs', location.origin),
-  'kms_lib_bg.v0.13.10.wasm': new URL('https://cdn.jsdelivr.net/npm/tkms@0.13.10/kms_lib_bg.wasm'),
-  'kms_lib_bg.v0.13.20-0.wasm': new URL('https://cdn.jsdelivr.net/npm/tkms@0.13.20-0/kms_lib_bg.wasm'),
-  'kms_lib_bg.v0.14.0-1.wasm': new URL('https://cdn.jsdelivr.net/npm/tkms@0.14.0-1/kms_lib_bg.wasm'),
+  [`tfhe_bg.v${tfheVersion}.wasm`]: new URL(`https://cdn.jsdelivr.net/npm/tfhe-client@${tfheVersion}/tfhe_bg.wasm`),
+  [`tfhe-worker.v${tfheVersion}.mjs`]: new URL(
+    `/__raw_wasm/src/wasm/tfhe/v${tfheVersion}/tfhe-worker.mjs`,
+    location.origin,
+  ),
+  [`kms_lib_bg.v${tkmsVersion}.wasm`]: new URL(`https://cdn.jsdelivr.net/npm/tkms@${tkmsVersion}/kms_lib_bg.wasm`),
 };
 
 async function run() {

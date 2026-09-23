@@ -1,16 +1,29 @@
+import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 import { assertContractTaskStackRunning } from "./flow/contracts";
 import { validateDiscovery } from "./flow/discovery";
+import { ensureRuntimeArtifacts } from "./flow/artifacts";
 import {
+  applyBootstrap,
+  assertNoUnrestoredGpuSession,
   displayedBundle,
   multiChainCoprocessorUpgradeTargets,
   preflightPorts,
   resumeRepairStep,
+  scenarioUsesForkAnvil,
   runtimeArtifactPaths,
   shouldShowResumeHint,
 } from "./flow/up-flow";
-import { envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import {
+  KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_SPARE_CONFIG_NAME,
+  kmsThresholdGenKeysConfigName,
+} from "./generate/kms-core";
+import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import { loadBlueGreenScenario } from "./scenario/resolve";
 import {
   type Discovery,
   OVERRIDE_GROUPS,
@@ -175,6 +188,47 @@ describe("resumeRepairStep", () => {
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(completeState(), running)).toBe("relayer");
+  });
+
+  test("expects the kms-connector endpoint and proxy only when the bundle pins their images", () => {
+    const running = [
+      "fhevm-minio",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    // completeState() carries no CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION: neither is expected.
+    expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+    const base = completeState();
+    const withHttp = {
+      ...base,
+      versions: {
+        ...base.versions,
+        env: { ...base.versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" },
+      },
+    };
+    expect(resumeRepairStep(withHttp, running)).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint"])).toBe("kms-connector");
+    expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
   test("returns nothing when every steady-state service is present", () => {
@@ -414,6 +468,64 @@ describe("runtime helpers", () => {
     expect(runtimeArtifactPaths(completeState())).toContain(kmsCoreConfigPath);
   });
 
+  test("runtime artifacts include every threshold keygen config", () => {
+    const state = completeState();
+    state.scenario.kms = { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    const paths = runtimeArtifactPaths(state);
+    expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME));
+    for (let partyId = 1; partyId <= 4; partyId += 1) {
+      expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)));
+    }
+  });
+
+  test("runtime artifacts include the spare config when the cluster has a spare party", () => {
+    const state = completeState();
+    state.scenario.kms = { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    expect(runtimeArtifactPaths(state)).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME));
+  });
+
+  test("a stale local KMS runtime BUILD_ID regenerates artifacts before a pending adoption resumes", async () => {
+    const calls: string[] = [];
+    const state = completeState();
+    state.overrides = [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }];
+    await ensureRuntimeArtifacts(state, "pending KMS connector adoption", {
+      async ensureLockSnapshot() {
+        calls.push("lock");
+      },
+      async exists() {
+        return true;
+      },
+      async kmsConnectorBuildRevisionCurrent() {
+        return false;
+      },
+      async generateRuntime() {
+        calls.push("generate");
+      },
+    });
+    expect(calls).toEqual(["lock", "generate"]);
+  });
+
+  test("a current local KMS runtime BUILD_ID leaves existing artifacts untouched", async () => {
+    const calls: string[] = [];
+    const state = completeState();
+    state.overrides = [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }];
+    await ensureRuntimeArtifacts(state, "pending KMS connector adoption", {
+      async ensureLockSnapshot() {
+        calls.push("lock");
+      },
+      async exists() {
+        return true;
+      },
+      async kmsConnectorBuildRevisionCurrent() {
+        return true;
+      },
+      async generateRuntime() {
+        calls.push("generate");
+      },
+    });
+    expect(calls).toEqual(["lock"]);
+  });
+
   test("runtime artifacts use the first explicit chain key for default host addresses", () => {
     const state = completeState();
     state.scenario.hostChains = [
@@ -484,5 +596,127 @@ describe("runtime helpers", () => {
     expect(bundle.env.RELAYER_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.TEST_SUITE_VERSION).toBe("LOCAL BUILD");
     expect(bundle.env.CORE_VERSION).toBe("c57f52f");
+  });
+});
+
+describe("applyBootstrap", () => {
+  const bundle = {
+    target: "latest-main" as const,
+    lockName: "latest-main.json",
+    env: {
+      CORE_VERSION: "v0.15.0-0",
+      GATEWAY_VERSION: "abc1234",
+      HOST_VERSION: "abc1234",
+      LISTENER_CORE_VERSION: "abc1234",
+      CONNECTOR_DB_MIGRATION_VERSION: "abc1234",
+      CONNECTOR_GW_LISTENER_VERSION: "abc1234",
+      CONNECTOR_KMS_WORKER_VERSION: "abc1234",
+      CONNECTOR_TX_SENDER_VERSION: "abc1234",
+      CONNECTOR_PROXY_VERSION: "abc1234",
+      RELAYER_VERSION: "abc1234",
+      COPROCESSOR_TFHE_WORKER_VERSION: "abc1234",
+    },
+    sources: ["preset=latest-main"],
+  };
+  const overrides = [
+    { group: "coprocessor" as const },
+    { group: "kms-connector" as const },
+    { group: "gateway-contracts" as const },
+    { group: "host-contracts" as const },
+    { group: "listener-core" as const },
+    { group: "relayer" as const },
+    { group: "test-suite" as const },
+  ];
+
+  test("leaves a scenario without bootstrap untouched", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const plain = { ...scenario, bootstrap: undefined };
+    expect(applyBootstrap(bundle, plain, overrides)).toEqual({ versions: bundle, overrides });
+  });
+
+  test("boots the pre-key components at the release and suspends their local overrides", async () => {
+    const scenario = await loadBlueGreenScenario("blue-green");
+    const boot = applyBootstrap(bundle, scenario, overrides);
+    expect(boot.versions.env).toEqual({
+      CORE_VERSION: "v0.14.2-0",
+      GATEWAY_VERSION: "v0.14.2-0",
+      HOST_VERSION: "v0.14.2-0",
+      LISTENER_CORE_VERSION: "v0.14.2-0",
+      CONNECTOR_DB_MIGRATION_VERSION: "v0.14.2-0",
+      CONNECTOR_GW_LISTENER_VERSION: "v0.14.2-0",
+      CONNECTOR_KMS_WORKER_VERSION: "v0.14.2-0",
+      CONNECTOR_TX_SENDER_VERSION: "v0.14.2-0",
+      RELAYER_VERSION: "abc1234",
+      COPROCESSOR_TFHE_WORKER_VERSION: "abc1234",
+    });
+    expect(boot.versions.sources).toContain("bootstrap=v0.14.2-0");
+    expect(boot.overrides.map((override) => override.group)).toEqual(["coprocessor", "relayer", "test-suite"]);
+    expect(boot.bootstrapPending).toEqual({ target: bundle, overrides });
+  });
+});
+
+describe("fork-anvil scenarios", () => {
+  const withInstanceEnv = (env: Record<string, string>): ResolvedCoprocessorScenario => {
+    const base = completeState().scenario;
+    return {
+      ...base,
+      instances: [
+        { index: 0, source: { mode: "registry", tag: "x" }, env: {}, args: {} },
+        { index: 1, source: { mode: "registry", tag: "x" }, env, args: {} },
+      ],
+    };
+  };
+
+  test("detects an instance routed to the fork by hostname", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil:8546" }))).toBe(true);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_WS_URL: "ws://fork-anvil:8546" }))).toBe(true);
+  });
+
+  test("leaves ordinary scenarios alone", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({}))).toBe(false);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://host-node:8545" }))).toBe(false);
+  });
+
+  // A hostname that merely contains the string must not trigger the managed
+  // fork: starting a second Anvil for a scenario that did not ask for one
+  // would bind a port and seed a chain nobody reads.
+  test("matches the host exactly, not by substring", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil-2:8546" }))).toBe(false);
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "http://not-fork-anvil:8546" }))).toBe(false);
+  });
+
+  test("treats an unparsable RPC URL as no fork rather than throwing", () => {
+    expect(scenarioUsesForkAnvil(withInstanceEnv({ RPC_HTTP_URL: "not a url" }))).toBe(false);
+  });
+
+  test("reserves a fork port distinct from the second host chain", async () => {
+    const { DEFAULT_EXTRA_HOST_RPC_PORT, DEFAULT_FORK_RPC_PORT, PORTS } = await import("./layout");
+    expect(DEFAULT_FORK_RPC_PORT).not.toBe(DEFAULT_EXTRA_HOST_RPC_PORT);
+    expect(PORTS).not.toContain(DEFAULT_FORK_RPC_PORT);
+    expect(preflightPorts({ scenario: withInstanceEnv({ RPC_HTTP_URL: "http://fork-anvil:8546" }) })).toContain(DEFAULT_FORK_RPC_PORT);
+    expect(preflightPorts({ scenario: withInstanceEnv({ RPC_HTTP_URL: "http://host-anvil:8545" }) })).not.toContain(DEFAULT_FORK_RPC_PORT);
+  });
+});
+
+describe("assertNoUnrestoredGpuSession", () => {
+  test("passes when no GPU session record exists", () => {
+    expect(() =>
+      assertNoUnrestoredGpuSession("/nonexistent/gpu-consensus-workers/docker-workers-to-restore"),
+    ).not.toThrow();
+  });
+
+  test("refuses to bring the stack up while host workers still hold the roles", () => {
+    // `gpu-consensus-workers.sh start` leaves this record behind for `stop` to
+    // consume. While it exists, host-run workers own the tfhe/zkproof/sns
+    // roles, and starting the containers too would put two builds on every
+    // queue -- the failure this guard exists to prevent.
+    const record = `${tmpdir()}/gpu-restore-${process.pid}-${Math.random().toString(36).slice(2)}`;
+    writeFileSync(record, "coprocessor-sns-worker\n");
+    try {
+      expect(() => assertNoUnrestoredGpuSession(record)).toThrow(/GPU consensus worker session/);
+      expect(() => assertNoUnrestoredGpuSession(record)).toThrow(/gpu-consensus-workers\.sh stop/);
+    } finally {
+      rmSync(record, { force: true });
+    }
   });
 });

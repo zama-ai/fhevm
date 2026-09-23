@@ -23,7 +23,11 @@ use tracing::info;
 #[derive(Debug)]
 /// Event Ids corresponding the events of GatewayChainEvent type.
 pub enum GatewayChainEventId {
-    EventLogRcvd = 50,
+    UserDecryptionResponse = 50,
+    UserDecryptionResponseThresholdReached = 51,
+    PublicDecryptionResponse = 52,
+    VerifyProofResponse = 53,
+    RejectProofResponse = 54,
 }
 
 impl From<GatewayChainEventId> for u8 {
@@ -91,7 +95,7 @@ impl From<InputProofEventId> for u8 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 /// Relayer event represents a single step in one of the different flows of the
 /// relayer (such as public decryption, input proof verification and so on).
 pub struct RelayerEvent {
@@ -200,7 +204,7 @@ pub enum ApiCategory {
 
 /// Relayer event data represents the different categories of event data, each
 /// representing a specific flow.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum RelayerEventData {
     GatewayChain(GatewayChainEventData),
     PublicDecrypt(PublicDecryptEventData),
@@ -221,20 +225,56 @@ impl AsRef<str> for RelayerEventData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum GatewayChainEventData {
-    /// Event representing a raw blockchain event log received from gateway chain.
-    EventLogRcvd { log: Log, tx_hash: TxHash },
+    /// Individual KMS share for a user decryption request.
+    UserDecryptionResponse { log: Log, tx_hash: TxHash },
+    /// Consensus reached across KMS shares for a user decryption request.
+    UserDecryptionResponseThresholdReached { log: Log, tx_hash: TxHash },
+    /// Gateway response to a public decryption request.
+    PublicDecryptionResponse { log: Log, tx_hash: TxHash },
+    /// Gateway accepted an input proof verification.
+    VerifyProofResponse { log: Log, tx_hash: TxHash },
+    /// Gateway rejected an input proof verification.
+    RejectProofResponse { log: Log, tx_hash: TxHash },
 }
 
 impl GatewayChainEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
-            GatewayChainEventData::EventLogRcvd { .. } => "GatewayChain::EventLogRcvd",
+            GatewayChainEventData::UserDecryptionResponse { .. } => {
+                "GatewayChain::UserDecryptionResponse"
+            }
+            GatewayChainEventData::UserDecryptionResponseThresholdReached { .. } => {
+                "GatewayChain::UserDecryptionResponseThresholdReached"
+            }
+            GatewayChainEventData::PublicDecryptionResponse { .. } => {
+                "GatewayChain::PublicDecryptionResponse"
+            }
+            GatewayChainEventData::VerifyProofResponse { .. } => {
+                "GatewayChain::VerifyProofResponse"
+            }
+            GatewayChainEventData::RejectProofResponse { .. } => {
+                "GatewayChain::RejectProofResponse"
+            }
         }
     }
 
     pub fn event_id(&self) -> u8 {
         match self {
-            GatewayChainEventData::EventLogRcvd { .. } => GatewayChainEventId::EventLogRcvd.into(),
+            GatewayChainEventData::UserDecryptionResponse { .. } => {
+                GatewayChainEventId::UserDecryptionResponse.into()
+            }
+            GatewayChainEventData::UserDecryptionResponseThresholdReached { .. } => {
+                GatewayChainEventId::UserDecryptionResponseThresholdReached.into()
+            }
+            GatewayChainEventData::PublicDecryptionResponse { .. } => {
+                GatewayChainEventId::PublicDecryptionResponse.into()
+            }
+            GatewayChainEventData::VerifyProofResponse { .. } => {
+                GatewayChainEventId::VerifyProofResponse.into()
+            }
+            GatewayChainEventData::RejectProofResponse { .. } => {
+                GatewayChainEventId::RejectProofResponse.into()
+            }
         }
     }
 }
@@ -333,7 +373,7 @@ impl PublicDecryptEventData {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum UserDecryptEventData {
     /// Event representing a user decryption request for ciphertexts on fhevm.
     ReqRcvdFromUser { decrypt_request: UserDecryptRequest },
@@ -444,8 +484,11 @@ pub struct PublicDecryptRequest {
 /// legacy EIP-712 formats (direct + delegated) are deprecated; at that
 /// point only `Eip712UnifiedV1` remains and this enum collapses into a
 /// struct.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+/// The stored JSON shape is selected by `user_decrypt_req.req_type` and
+/// defined in `store::sql::models::user_decrypt_req_model`. No
+/// `Serialize`/`Deserialize` here: a derive is a second way to write the
+/// same rows.
+#[derive(Debug, Clone, Hash)]
 pub enum UserDecryptRequest {
     /// Legacy EIP-712 direct user-decryption: maps to
     /// `userDecryptionRequest(CtHandleContractPair[], RequestValidity,

@@ -39,6 +39,12 @@ on:
       tx_sender_build_result:
         description: "Result of the build-tx-sender job"
         value: ${{ jobs.build-tx-sender.result }}
+      endpoint_build_result:
+        description: "Result of the build-endpoint job"
+        value: ${{ jobs.build-endpoint.result }}
+      proxy_build_result:
+        description: "Result of the build-proxy job"
+        value: ${{ jobs.build-proxy.result }}
   release:
     types:
       - published
@@ -60,6 +66,14 @@ on:
         description: "Enable/disable build for KMS Connector's Transaction Sender"
         type: boolean
         default: true
+      build_endpoint:
+        description: "Enable/disable build for KMS Connector's HTTP Endpoint"
+        type: boolean
+        default: true
+      build_proxy:
+        description: "Enable/disable build for KMS Connector's Proxy"
+        type: boolean
+        default: true
   push:
     branches: ['main', 'release/*']
 
@@ -76,6 +90,8 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
+    permissions:
+      contents: 'read' # Required so the reusable workflow can git ls-remote
 
   check-changes-db-migration:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -127,6 +143,7 @@ jobs:
       filters: |
         kms-worker:
           - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/api/**
           - kms-connector/crates/kms-worker/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
@@ -151,6 +168,44 @@ jobs:
           - kms-connector/Cargo.*
           - gateway-contracts/rust_bindings/**
 
+  check-changes-endpoint:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/kms-connector/endpoint
+      filters: |
+        endpoint:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/endpoint/**
+          - kms-connector/crates/api/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+          - gateway-contracts/rust_bindings/**
+          - host-contracts/rust_bindings/**
+
+  check-changes-proxy:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/kms-connector/proxy
+      filters: |
+        proxy:
+          - .github/workflows/kms-connector-docker-build.yml
+          - kms-connector/crates/proxy/**
+          - kms-connector/crates/api/**
+          - kms-connector/crates/utils/**
+          - kms-connector/Cargo.*
+
   ########################################################################
   #                        BUILD DECISIONS                               #
   # Centralizes all build/re-tag logic in one place for maintainability  #
@@ -167,11 +222,15 @@ jobs:
       - check-changes-gw-listener
       - check-changes-kms-worker
       - check-changes-tx-sender
+      - check-changes-endpoint
+      - check-changes-proxy
     outputs:
       db_migration: ${{ steps.decide.outputs.db_migration }}
       gw_listener: ${{ steps.decide.outputs.gw_listener }}
       kms_worker: ${{ steps.decide.outputs.kms_worker }}
       tx_sender: ${{ steps.decide.outputs.tx_sender }}
+      endpoint: ${{ steps.decide.outputs.endpoint }}
+      proxy: ${{ steps.decide.outputs.proxy }}
     steps:
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -205,6 +264,8 @@ jobs:
               gw_listener: { changes: needs['check-changes-gw-listener'].outputs?.changes, build_input: inputs.build_gw_listener },
               kms_worker: { changes: needs['check-changes-kms-worker'].outputs?.changes, build_input: inputs.build_kms_worker },
               tx_sender: { changes: needs['check-changes-tx-sender'].outputs?.changes, build_input: inputs.build_tx_sender },
+              endpoint: { changes: needs['check-changes-endpoint'].outputs?.changes, build_input: inputs.build_endpoint },
+              proxy: { changes: needs['check-changes-proxy'].outputs?.changes, build_input: inputs.build_proxy },
             };
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
@@ -242,7 +303,7 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-db-migration"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-db-migration-image:
@@ -276,7 +337,7 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-gw-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-gw-listener-image:
@@ -306,7 +367,7 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-kms-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-kms-worker-image:
@@ -336,7 +397,7 @@ jobs:
       app-cache-dir: "fhevm-kms-connector-tx-sender"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: kms-connector/rust-toolchain.toml
 
   re-tag-tx-sender-image:
@@ -347,4 +408,64 @@ jobs:
     with:
       image-name: "fhevm/kms-connector/tx-sender"
       previous-tag-or-commit: ${{ needs.check-changes-tx-sender.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                             HTTP ENDPOINT                            #
+  ########################################################################
+  build-endpoint:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.endpoint == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/kms-connector/endpoint"
+      docker-file: "./kms-connector/crates/endpoint/Dockerfile"
+      app-cache-dir: "fhevm-kms-connector-endpoint"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
+
+  re-tag-endpoint-image:
+    needs: [build-decisions, check-changes-endpoint]
+    if: always() && needs.build-decisions.outputs.endpoint == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/kms-connector/endpoint"
+      previous-tag-or-commit: ${{ needs.check-changes-endpoint.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                                 PROXY                                 #
+  ########################################################################
+  build-proxy:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.proxy == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/kms-connector/proxy"
+      docker-file: "./kms-connector/crates/proxy/Dockerfile"
+      app-cache-dir: "fhevm-kms-connector-proxy"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      rust-toolchain-file-path: kms-connector/rust-toolchain.toml
+
+  re-tag-proxy-image:
+    needs: [build-decisions, check-changes-proxy]
+    if: always() && needs.build-decisions.outputs.proxy == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/kms-connector/proxy"
+      previous-tag-or-commit: ${{ needs.check-changes-proxy.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}

@@ -72,6 +72,15 @@ env:
   # is not empty" complaint on volume backends that seed a lost+found dir.
   - {name: PGDATA, value: "/var/lib/postgresql/data/pgdata"}
 
+# RFC-021 BCS+GCS roughly doubles coprocessor clients on this instance
+# (two fleets of listeners/workers plus upgrade-controller / consensus-detector).
+# Alpine Postgres defaults to 100; beyond that kubectl exec psql and the
+# DryRunStarted wait fail with "sorry, too many clients already". First arg
+# must start with '-' so the official image's entrypoint prepends `postgres`.
+args:
+  - -c
+  - max_connections=300
+
 service:
   enabled: true
   ports:
@@ -98,17 +107,16 @@ livenessProbe:
 # Sized for the coprocessor DB specifically: it stores the FHE key material
 # (ServerKey/PublicKey/SNS) as Postgres large objects, streamed in 128MB
 # chunks by the host-listener poller, plus the ciphertext/handle rows the
-# workers read. The old 1Gi limit OOM-killed the pod mid key-write (silent
-# restart, empty-looking DB on recovery). Memory is the binding constraint
-# here, so the limit is raised well above the working set; CPU is bumped so
-# the liveness probe is not throttled into a false failure during those writes.
+# workers read. Default-parameter keys are production-size, so 4Gi still
+# OOM-kills the pod mid key-write (silent restart, WAL recovery then trips
+# liveness). 8Gi is the working limit measured on the GPU preview env.
 resources:
   requests:
     cpu: "500m"
     memory: "1Gi"
   limits:
     cpu: "2"
-    memory: "4Gi"
+    memory: "8Gi"
 
 # Pins onto the zws-pool Karpenter node pool - same convention as
 # ../../charts/anvil-node/values.yaml's commented-out example.

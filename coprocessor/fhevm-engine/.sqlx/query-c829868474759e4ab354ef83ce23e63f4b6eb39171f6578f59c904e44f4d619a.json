@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM verify_proofs\n             WHERE retry_count >= $1\n               AND verified = TRUE\n               AND zk_proof_id < $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c829868474759e4ab354ef83ce23e63f4b6eb39171f6578f59c904e44f4d619a"
+}

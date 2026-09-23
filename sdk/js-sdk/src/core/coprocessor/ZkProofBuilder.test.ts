@@ -42,7 +42,7 @@ function makeMockContext(overrides?: { aclAddress?: string; chainId?: number }) 
       },
     },
     runtime: {
-      config: { moduleVersions: { tfhe: '1.6.1' } },
+      config: {},
     },
   } as any;
 }
@@ -214,7 +214,6 @@ function makeMockParser(encryptionBits: number[]) {
     parserFn: {
       parseTFHEProvenCompactCiphertextList: vi.fn().mockResolvedValue({ encryptionBits }),
     },
-    tfheVersion: '1.6.1',
   } as any;
 }
 

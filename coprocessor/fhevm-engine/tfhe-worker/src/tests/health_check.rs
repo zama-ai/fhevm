@@ -1,10 +1,12 @@
-use crate::tests::utils::setup_test_app;
+use crate::tests::utils::setup_test_app_dedicated_db;
 use test_harness::health_check;
 use tokio::process::Command;
 
 #[tokio::test]
 async fn test_health_check() -> Result<(), Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
+    // Needs its own container: this test pauses Postgres, which on a shared server
+    // would break every test running at the same time.
+    let app = setup_test_app_dedicated_db().await?;
     eprintln!("App started");
     let url = app.health_check_url();
     assert!(health_check::wait_alive(&url, 10, 1).await);

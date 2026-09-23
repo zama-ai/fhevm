@@ -2,8 +2,24 @@
 // Lists all publicly exported names from each @fhevm/sdk entry point defined in src/package.json
 
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
+
+const args = process.argv.slice(2);
+
+if (args.includes('--help') || args.includes('-h')) {
+  console.log(`Usage: ${basename(fileURLToPath(import.meta.url))} [options]
+
+Lists all publicly exported names from each @fhevm/sdk entry point
+defined in src/package.json.
+
+Options:
+  --functions-only   Only list exported functions (omit types, interfaces, etc.)
+  -h, --help         Show this help message`);
+  process.exit(0);
+}
+
+const functionsOnly = args.includes('--functions-only');
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +48,11 @@ function extractExports(content) {
   return [...new Set(names)].sort();
 }
 
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+let anyExports = false;
 let anyOutput = false;
 
 for (const [entryPoint, conditions] of Object.entries(pkg.exports)) {
@@ -52,15 +73,28 @@ for (const [entryPoint, conditions] of Object.entries(pkg.exports)) {
 
   const names = extractExports(content);
   if (names.length === 0) continue;
+  anyExports = true;
+
+  const entries = names.map((name) => {
+    const isType = /^[A-Z]/.test(name) || content.includes(`export type { ${name}`) || content.includes(`export type {${name}`);
+    const tag = isType && !content.match(new RegExp(`export\\s+(?:async\\s+)?(?:function|const|let|var)\\s+${escapeRegExp(name)}`)) ? 'type' : 'fn  ';
+    return { name, tag };
+  }).filter((entry) => !functionsOnly || entry.tag === 'fn  ');
+
+  if (entries.length === 0) continue;
 
   anyOutput = true;
   const label = entryPoint === '.' ? '@fhevm/sdk' : `@fhevm/sdk/${entryPoint.replace(/^\.\//, '')}`;
   console.log(`\n${label}`);
-  for (const name of names) {
-    const isType = /^[A-Z]/.test(name) || content.includes(`export type { ${name}`) || content.includes(`export type {${name}`);
-    const tag = isType && !content.match(new RegExp(`export\\s+(?:async\\s+)?(?:function|const|let|var)\\s+${name}`)) ? 'type' : 'fn  ';
-    console.log(`  ${tag}  ${name}`);
+  for (const { name, tag } of entries) {
+    console.log(functionsOnly ? `  ${name}` : `  ${tag}  ${name}`);
   }
 }
 
-if (!anyOutput) console.log('(no exports found — run "npm run build:types" first or check source paths)');
+if (!anyOutput) {
+  console.log(
+    functionsOnly && anyExports
+      ? '(no exported functions found — exports exist but are all types/interfaces/etc.)'
+      : '(no exports found — run "npm run build:types" first or check source paths)',
+  );
+}

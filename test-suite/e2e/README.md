@@ -12,6 +12,33 @@ npx hardhat node
 npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
 
+## Switching the `@fhevm/sdk` source
+
+`test-suite/e2e` doesn't declare `@fhevm/sdk` in `package.json` — it's
+installed in place by `scripts/install-sdk.sh`, either from a local build or
+from the npm registry, without touching `package.json`/`package-lock.json`.
+
+By default (and in the Docker build), it's built and packed from your local
+`sdk/js-sdk` source:
+
+```shell
+cd test-suite/e2e
+npm run sdk:local
+```
+
+Re-run it after every change to `sdk/js-sdk` source — the install is a
+one-off pack, not a live link.
+
+To install a specific published version from the registry instead, pass it
+explicitly — there's no default to fall back to:
+
+```shell
+npm run sdk:registry -- 0.13.2
+```
+
+Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
+its header comment for details.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
@@ -39,6 +66,56 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 `unified-user-decryption`, and `decryption-signature-invalidation` (all part of
 `standard`) — see `test-suite/fhevm/README.md` — or directly with
 `npx hardhat test --grep "<describe title>" --network staging`.
+
+## KMS Connector HTTP endpoint suites
+
+E2E coverage for the kms-connector HTTP decryption endpoint (RFC 033,
+`POST /v1/public-decrypt`, `POST /v1/user-decrypt`), driven from the e2e
+container the way the relayer reaches a KMS party: over TLS through every
+party's `kms-connector[-i]-proxy` (API-key check + forwarding to the party's
+`kms-connector[-i]-endpoint`):
+
+- `test/connectorHttp/connectorHttpPublicDecrypt.ts` — per-party KMS
+  signatures recovered and checked against `KMSVerifier`, 2t+1 quorum,
+  cache/idempotency, agreement with the relayer path
+- `test/connectorHttp/connectorHttpUserDecrypt.ts` — unified EIP-712
+  permit, every decryptable type, permissive mode, idempotency (structural
+  checks on the shares; reconstruction is a follow-up)
+- `test/connectorHttp/connectorHttpNegative.ts` — rejections decided
+  by the kms-worker against the real ACL (`403 acl_denied`,
+  `403 user_signature_rejected`, `422 unprocessable`) and the re-arm of a
+  retryable error once the ACL changes. Rejections the endpoint decides alone
+  (`400 malformed`, `503`, `504`) are covered by the crate's own tests
+
+The client lives in `test/sdk/connector/` and is deliberately thin: it posts the
+RFC 033 body with the `Authorization: Bearer $KMS_CONNECTOR_API_KEY` header the
+proxy checks, never throws on non-2xx, re-submits transient worker outcomes, and
+leaves quorum verification to `verify.ts` (the endpoint only returns its own
+party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
+(bundles without the endpoint and proxy images). The proxies serve the
+self-signed test certificate checked in under
+`test-suite/fhevm/static/config/kms-connector-proxy`, which the e2e container
+trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
+oversized bodies, upstream errors) are covered by the crate's integration tests.
+
+Run via the fhevm-cli profile `connector-http` (part of `standard`; runs all
+three suites), the narrower `connector-http-public-decrypt`,
+`connector-http-user-decrypt` and `connector-http-negative` profiles, or directly with
+`npx hardhat test --grep "Connector HTTP" --network staging`.
+
+## Operator edge-case suite
+
+Limit-case coverage for the arithmetic, shift, rotate and cast operators:
+overshift, div/rem boundaries and the `DivisionByZero()` revert, over/underflow
+wrapping, and narrowing-cast truncation.
+
+Expected values live in `test/fhevmOperations/shiftSemantics.ts`. Shift
+semantics change in tfhe-rs >= 1.7.0, so flip `OVERSHIFT_RETURNS_ZERO` there in
+the same change as the engine version bump.
+
+```shell
+./fhevm-cli test operators --grep "edge cases" --verbose
+```
 
 ## Smoke runner (inputFlow)
 

@@ -16,7 +16,6 @@ import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {ProtocolConfigV010TestDouble} from "./ProtocolConfigV010TestDouble.sol";
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     KMSGeneration internal kmsGeneration;
@@ -242,7 +241,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -281,7 +280,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -332,7 +331,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
 
         vm.prank(owner);
-        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
         keyId = kmsGeneration.getKeyCounter();
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
 
@@ -487,7 +486,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         // Version and current context.
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.2.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
@@ -2247,161 +2246,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // Threshold setters
-    // -----------------------------------------------------------------------
-
-    function test_updateThresholdsForCurrentContext() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.PublicDecryptionThresholdUpdated(contextId, 2);
-        vm.prank(owner);
-        protocolConfig.updatePublicDecryptionThresholdForContext(contextId, 2);
-        assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
-
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.UserDecryptionThresholdUpdated(contextId, 3);
-        vm.prank(owner);
-        protocolConfig.updateUserDecryptionThresholdForContext(contextId, 3);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 3);
-
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsGenThresholdUpdated(contextId, 4);
-        vm.prank(owner);
-        protocolConfig.updateKmsGenThresholdForContext(contextId, 4);
-        assertEq(protocolConfig.getKmsGenThreshold(), 4);
-
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.MpcThresholdUpdated(contextId, 1);
-        vm.prank(owner);
-        protocolConfig.updateMpcThresholdForContext(contextId, 1);
-        assertEq(protocolConfig.getMpcThreshold(), 1);
-    }
-
-    function test_updateThresholdForHistoricalContext() public {
-        _setupDefault();
-        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
-        _seedActiveEpochWithMaterialForFourNodeContext();
-
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        _activatePendingContextWithTwoKmsNodes(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 3);
-
-        vm.prank(owner);
-        protocolConfig.updatePublicDecryptionThresholdForContext(firstContextId, 2);
-        vm.prank(owner);
-        protocolConfig.updateUserDecryptionThresholdForContext(firstContextId, 3);
-        vm.prank(owner);
-        protocolConfig.updateKmsGenThresholdForContext(firstContextId, 4);
-        vm.prank(owner);
-        protocolConfig.updateMpcThresholdForContext(firstContextId, 2);
-
-        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 2);
-        assertEq(protocolConfig.getUserDecryptionThresholdForContext(firstContextId), 3);
-        assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 4);
-        assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 2);
-        assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 1);
-        assertEq(protocolConfig.getKmsGenThreshold(), 1);
-        assertEq(protocolConfig.getMpcThreshold(), 1);
-    }
-
-    function test_revertUpdateThresholdForInvalidContext() public {
-        _setupDefault();
-        uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE + 999;
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.updatePublicDecryptionThresholdForContext(invalidContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.updateUserDecryptionThresholdForContext(invalidContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.updateKmsGenThresholdForContext(invalidContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.updateMpcThresholdForContext(invalidContextId, 1);
-    }
-
-    function test_revertUpdateThresholdForDestroyedContext() public {
-        _setupDefault();
-        uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
-        _seedActiveEpochWithMaterialForFourNodeContext();
-
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
-        _activatePendingContextWithOneKmsNode(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 3);
-
-        vm.prank(owner);
-        protocolConfig.destroyKmsContext(firstContextId);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
-        protocolConfig.updatePublicDecryptionThresholdForContext(firstContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
-        protocolConfig.updateUserDecryptionThresholdForContext(firstContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
-        protocolConfig.updateKmsGenThresholdForContext(firstContextId, 1);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
-        protocolConfig.updateMpcThresholdForContext(firstContextId, 1);
-    }
-
-    function test_revertUpdateThresholdToZero() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "publicDecryption"));
-        protocolConfig.updatePublicDecryptionThresholdForContext(contextId, 0);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "userDecryption"));
-        protocolConfig.updateUserDecryptionThresholdForContext(contextId, 0);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "kmsGen"));
-        protocolConfig.updateKmsGenThresholdForContext(contextId, 0);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "mpc"));
-        protocolConfig.updateMpcThresholdForContext(contextId, 0);
-    }
-
-    function test_revertUpdateThresholdAboveNodeCount() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-
-        vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "publicDecryption", 5, 4)
-        );
-        protocolConfig.updatePublicDecryptionThresholdForContext(contextId, 5);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "userDecryption", 5, 4));
-        protocolConfig.updateUserDecryptionThresholdForContext(contextId, 5);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "kmsGen", 5, 4));
-        protocolConfig.updateKmsGenThresholdForContext(contextId, 5);
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "mpc", 5, 4));
-        protocolConfig.updateMpcThresholdForContext(contextId, 5);
-    }
-
-    // -----------------------------------------------------------------------
     // Re-initialization protection
     // -----------------------------------------------------------------------
 
@@ -2447,27 +2291,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(KMS_CONTEXT_COUNTER_BASE + 1);
     }
 
-    function test_revertUpdateThresholdNotOwner() public {
-        _setupDefault();
-        uint256 contextId = protocolConfig.getCurrentKmsContextId();
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.updatePublicDecryptionThresholdForContext(contextId, 1);
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.updateUserDecryptionThresholdForContext(contextId, 1);
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.updateKmsGenThresholdForContext(contextId, 1);
-
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfig.updateMpcThresholdForContext(contextId, 1);
-    }
-
     function test_revertUpgradeNotOwner() public {
         _setupDefault();
 
@@ -2484,89 +2307,33 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(newImpl, "");
 
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
     }
 
     // -----------------------------------------------------------------------
-    // reinitializeV2 upgrade continuity
+    // reinitializeV3 upgrade path
     // -----------------------------------------------------------------------
 
-    /// @dev Upgrades an empty proxy INTO the pre-epoch v0.1.0 storage double, then INTO the real
-    ///      ProtocolConfig via reinitializeV2, asserting the migration brings the pre-existing context
-    ///      into the epoch-lifecycle shape (active context + first epoch + backfilled anchor) and emits
-    ///      the genesis NewKmsContext with the KMS_CONTEXT_COUNTER_BASE sentinel previousContextId.
-    function test_reinitializeV2MigratesPreEpochContext() public {
+    /// @dev Calls reinitializeV3() on a proxy pinned at the initialized version the v0.2.0
+    ///      implementation left behind (3), as the upgrade tooling does. The pre-store check proves
+    ///      the hardcoded slot is where OZ Initializable writes.
+    function test_reinitializeV3SucceedsOnUpgradePath() public {
         _setupEmptyProxy();
-
-        KmsNodeParams[] memory nodes = _makeKmsNodeParams(3);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 2,
-            kmsGen: 3,
-            mpc: 2
-        });
-        PcrValues[] memory pcrValues = new PcrValues[](1);
-        pcrValues[0] = PcrValues({
-            pcr0: abi.encodePacked(uint256(1)),
-            pcr1: abi.encodePacked(uint256(2)),
-            pcr2: abi.encodePacked(uint256(3))
-        });
-        string memory softwareVersion = "kms-v1";
-        uint256 existingContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-
-        // Stage 1: seed the proxy with the pre-epoch v0.1.0 storage layout. Its initializer seeds the
-        // counter to BASE then increments to the first context (existingContextId).
-        address v010Impl = address(new ProtocolConfigV010TestDouble());
+        address impl = address(new ProtocolConfig());
         vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
-            v010Impl,
-            abi.encodeCall(ProtocolConfigV010TestDouble.initializeFromEmptyProxy, (nodes, thresholds))
-        );
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, "");
 
-        // Stage 2: upgrade into the real ProtocolConfig via reinitializeV2. The genesis NewKmsContext
-        // must carry the KMS_CONTEXT_COUNTER_BASE sentinel as previousContextId so connectors do NOT
-        // treat the migration as a context switch. Deploy the impl BEFORE pranking so the prank lands
-        // on upgradeToAndCall, not the CREATE.
-        address realImpl = address(new ProtocolConfig());
-        vm.expectEmit(true, true, false, true, protocolConfigAdd);
-        emit IProtocolConfig.NewKmsContext(
-            existingContextId,
-            KMS_CONTEXT_COUNTER_BASE,
-            nodes,
-            thresholds,
-            softwareVersion,
-            pcrValues
-        );
-        vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
-            realImpl,
-            abi.encodeCall(ProtocolConfig.reinitializeV2, (nodes, softwareVersion, pcrValues))
-        );
-        protocolConfig = ProtocolConfig(protocolConfigAdd);
+        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+        assertEq(uint256(vm.load(protocolConfigAdd, initializableStorage)), 1);
+        vm.store(protocolConfigAdd, initializableStorage, bytes32(uint256(3)));
 
-        // Existing context is now Active and resolves as the live context.
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, existingContextId);
-        assertEq(protocolConfig.getCurrentKmsContextId(), existingContextId);
-        assertTrue(protocolConfig.isValidKmsContext(existingContextId));
+        ProtocolConfig(protocolConfigAdd).reinitializeV3();
+        assertEq(uint256(vm.load(protocolConfigAdd, initializableStorage)), 4);
 
-        // The first epoch is opened and active.
-        assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-        assertTrue(protocolConfig.isValidEpochForContext(existingContextId, EPOCH_COUNTER_BASE + 1));
-
-        // The anchor the pre-epoch version never recorded is backfilled.
-        (uint256 emissionBlockNumber, bytes32 contextInfoHash) = protocolConfig.getKmsContextAnchor(existingContextId);
-        assertEq(emissionBlockNumber, block.number);
-        assertEq(contextInfoHash, keccak256(abi.encode(nodes, thresholds, softwareVersion, pcrValues)));
-
-        // Node/threshold storage written under the v0.1.0 layout is readable through the new getters,
-        // proving the namespaced storage slot lines up across the upgrade.
-        assertEq(protocolConfig.getKmsGenThreshold(), 3);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 2);
-        assertEq(protocolConfig.getKmsSignersForContext(existingContextId).length, 3);
-        assertTrue(protocolConfig.isKmsSignerForContext(existingContextId, vm.addr(kmsPk0)));
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        ProtocolConfig(protocolConfigAdd).reinitializeV3();
     }
 
     // -----------------------------------------------------------------------

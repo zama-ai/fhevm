@@ -35,6 +35,26 @@ Understanding the flow is essential for interpreting the metrics.
   - `req_type`: `user_decrypt`, `public_decrypt`, `input_proof`
   - `status`: `queued`, `processing`, `receipt_received`, `completed`, `timed_out`, `failure`
 
+##### How the value is maintained, and how far to trust it
+
+Seeded from `COUNT(*)` per status at startup, then moved by inc/dec on the write paths. Those only fire on the pod that ran the transition, so under HA a pod that is not the dispatcher drifts further from the truth the longer it runs — its copy stays near whatever startup read while the other pod does the work. Use `max by (req_type, status)` across pods, never `sum`.
+
+Two labels are exceptions, and they are the two that matter for backlog: `queued` and `processing` are re-anchored on a counted value on every POST, from the depth that request's `INSERT` already measures for its `Retry-After` ETA. They are therefore correct on both pods as of the last POST — but they are sampled, not polled, so **they stop advancing when traffic stops**. A flat line during a traffic gap is stale, not healthy; pair any depth alert with a request-rate condition. The count is also bounded by `QUEUE_SCAN_CAP` (20 000), so a catastrophic backlog plateaus at that value rather than reporting its true size.
+
+The remaining statuses have no such correction. `timed_out` additionally under-reports for the `pg_cron` reason above.
+
+##### Queue mapping
+
+`queued` is the readiness queue and `processing` the TX queue, so these two labels are the DB-sourced counterpart to `relayer_queue_size_count` (which reports this pod's in-memory throttler and reads 0 on a standby). The backlog worth alerting on is the TX queue, drained at a fixed TPS:
+
+```promql
+max by (req_type) (relayer_request_count{status="processing"})
+```
+
+At the shipped 20 TPS and `max_seconds: 300`, a depth past ~5 000 means every `Retry-After` is already pinned to the 300 s ceiling and clients can no longer be told anything useful about when to return. Normal operating depth is order 1 000, so warn well below that.
+
+Input proofs never appear under `queued`: they are inserted straight as `processing`.
+
 ### B. Histogram: Transition Latency
 
 #### Metric Name: `relayer_request_status_duration_seconds`
@@ -62,7 +82,7 @@ TODO: refine
 - **Goal**: Should be as low as possible. Spikes indicate backlog.
 - **Query**:
   ```promql
-  sum by (req_type) (relayer_request_count{status="queued"})
+  max by (req_type) (relayer_request_count{status="queued"})
   ```
 
 #### Panel 2: Active Processing (Internally queued before broadcast and in-flight transactions)
@@ -73,8 +93,9 @@ TODO: refine
 - **Goal**: Should reflect current transaction pending or in-flight mode. Flat line high = Problem with the broadcaster and the processing.
 - **Query**:
   ```promql
-  sum by (req_type) (relayer_request_count{status="processing"})
+  max by (req_type) (relayer_request_count{status="processing"})
   ```
+- **Note**: `max`, not `sum`. Every pod re-anchors this label on the same counted value, so summing multiplies it by the pod count. `receipt_received` below is still summed because it has no such correction and remains a per-pod inc/dec tally.
 
 #### Panel 3: Waiting for - KMS, Coproc, Gateway: consensus reached, public decrypt ok, input proof done (Receipt Received)
 

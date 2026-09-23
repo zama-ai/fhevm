@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                DELETE FROM input_proof_req\n                WHERE updated_at < NOW() - make_interval(secs => $1)\n                  AND req_status IN ('completed'::req_status, 'timed_out'::req_status, 'failure'::req_status)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e08d7170482e27d88abc43a4ba0438759b1f27c06d2676901ff1e62ca055ece"
+}

@@ -10,7 +10,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_pg_interval,
+        default_database_pool_size, deserialize_non_zero_duration, deserialize_pg_interval,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -31,7 +31,11 @@ pub struct Config {
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
     /// The timeout for polling the database for responses.
-    #[serde(with = "humantime_serde", default = "default_database_polling_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_database_polling_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub database_polling_timeout: Duration,
 
     /// The Gateway RPC endpoint.
@@ -51,9 +55,10 @@ pub struct Config {
     pub ethereum_tx_required_confirmations: u64,
     /// The timeout to get Ethereum transaction receipts with the required number of confirmations.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_non_zero_duration",
         default = "default_ethereum_tx_get_receipt_timeout"
     )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub ethereum_tx_get_receipt_timeout: Duration,
     /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
@@ -74,7 +79,11 @@ pub struct Config {
     #[serde(default = "default_tx_retries")]
     pub tx_retries: u8,
     /// The interval between transaction retries.
-    #[serde(with = "humantime_serde", default = "default_tx_retry_interval")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_tx_retry_interval"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub tx_retry_interval: Duration,
     /// Enable tracing of reverted transactions.
     #[serde(default = "default_trace_reverted_tx")]
@@ -98,9 +107,10 @@ pub struct Config {
 
     /// The interval between operation recovery runs.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_non_zero_duration",
         default = "default_operation_recovery_run_interval"
     )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub operation_recovery_run_interval: Duration,
     /// The expiration time for decryptions, after which `pending`/`under_process` decryptions are
     /// marked as `failed`.
@@ -123,10 +133,18 @@ pub struct Config {
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: SocketAddr,
     /// The interval between gauge updates.
-    #[serde(with = "humantime_serde", default = "default_gauge_update_interval")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_gauge_update_interval"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub gauge_update_interval: Duration,
     /// The timeout to perform each external service connection healthcheck.
-    #[serde(with = "humantime_serde", default = "default_healthcheck_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -198,7 +216,7 @@ fn default_operation_recovery_run_interval() -> Duration {
 }
 
 fn default_decryption_expiry() -> PgInterval {
-    PgInterval::try_from(Duration::from_hours(24)).unwrap()
+    PgInterval::try_from(Duration::from_hours(1)).unwrap()
 }
 
 fn default_operation_under_process_timeout() -> PgInterval {

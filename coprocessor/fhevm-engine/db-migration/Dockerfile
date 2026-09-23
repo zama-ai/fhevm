@@ -6,7 +6,6 @@ FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
-ARG SCCACHE_VERSION=v0.15.0
 ENV SCCACHE_IDLE_TIMEOUT=0
 ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
@@ -14,20 +13,6 @@ ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
 ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
-
-# TODO(sccache): temporary inline install for testing; remove once sccache
-# ships in the rust-glibc golden image and rely on that instead.
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64)  triple=x86_64-unknown-linux-musl ;; \
-        aarch64) triple=aarch64-unknown-linux-musl ;; \
-        *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-${triple}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin "sccache-${SCCACHE_VERSION}-${triple}/sccache"; \
-    chmod +x /usr/local/bin/sccache; \
-    sccache --version
 
 WORKDIR /app
 
@@ -89,6 +74,7 @@ COPY listener ./listener
 COPY coprocessor/fhevm-engine/ ./coprocessor/fhevm-engine
 COPY coprocessor/proto/ ./coprocessor/proto/
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
+COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY coprocessor/fhevm-engine/db-migration/initialize_db.sh ./initialize_db.sh
 COPY coprocessor/fhevm-engine/db-migration/migrations ./migrations
@@ -104,16 +90,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo build --release -p fhevm-engine-common --bin resolve_database_url && \
+    cargo build --release -p fhevm-engine-common --bin resolve_database_url --bin bootstrap_versioning && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
-    cp target/release/resolve_database_url /out/
+    cp target/release/resolve_database_url /out/ && \
+    cp target/release/bootstrap_versioning /out/
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/postgres:17 AS prod
 
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /out/resolve_database_url /usr/local/bin/resolve_database_url
+COPY  --from=builder --chown=fhevm:fhevm /out/bootstrap_versioning /usr/local/bin/bootstrap_versioning
 COPY  --from=builder --chown=fhevm:fhevm /app/initialize_db.sh /initialize_db.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/db-migration/prepare_database_url.sh /prepare_database_url.sh
 COPY  --from=builder --chown=fhevm:fhevm /app/migrations /migrations

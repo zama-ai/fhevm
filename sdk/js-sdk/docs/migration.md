@@ -16,7 +16,7 @@ This guide maps the old API to the new one.
 | `SepoliaConfig` / `MainnetConfig` flat config objects    | `sepolia` / `mainnet` chain definitions; `defineFhevmChain()` for custom     |
 | Builder: `createEncryptedInput().add32(42).encrypt()`    | Declarative: `encryptValues({ values: [{ type, value }], … })`              |
 | `generateKeypair()` → raw `{ publicKey, privateKey }`    | `generateTransportKeyPair()` → opaque `TransportKeyPair`                    |
-| `createEIP712()` + manual sign + `createSignedPermit()`  | `signDecryptionPermit({ signer, transportKeyPair, … })` — one step          |
+| `createEIP712()` + manual sign + `createSignedPermit()`  | `signLegacyDecryptionPermit({ signer, transportKeyPair, … })` — one step    |
 | `instance.userDecrypt(…)`                                | `client.decryptValue(…)` / `decryptValues(…)`                              |
 | `instance.publicDecrypt(…)`                              | `client.decryptPublicValues(…)`                                            |
 
@@ -28,8 +28,8 @@ Three shifts are worth internalizing:
 - **Encryption is declarative.** No builder, no `.add32()`. You pass an array of
   `{ type, value }` objects and the Fully Homomorphic Encryption (FHE) public key is fetched and cached for you.
 - **Keys and permits are opaque and combined.** The transport key pair hides its
-  private key, and `signDecryptionPermit` bundles EIP-712 construction, signing,
-  and packaging into a single call.
+  private key, and `signLegacyDecryptionPermit`/`signUnifiedDecryptionPermit`
+  bundle EIP-712 construction, signing, and packaging into a single call.
 
 ## Setup
 
@@ -126,7 +126,7 @@ const result = await instance.userDecrypt(/* handles, keypair, signature, … */
 ```ts
 const transportKeyPair = await client.generateTransportKeyPair();
 
-const signedPermit = await client.signDecryptionPermit({
+const signedPermit = await client.signLegacyDecryptionPermit({
   transportKeyPair,
   contractAddresses: [contractAddr],
   startTimestamp: Math.floor(Date.now() / 1000),

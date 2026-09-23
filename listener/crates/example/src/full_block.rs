@@ -1,20 +1,20 @@
-//! Full-block showcase of the `consumer` library.
+//! Full-block showcase of the `consumer` library — live AND final wildcard.
 //!
-//! Subscribes to **every** block on the chain by registering a *full-block*
-//! (wildcard) filter — no `from` / `to` / `log_address`. The listener then
-//! publishes the complete `BlockPayload` (all transactions, all logs) to this
-//! consumer, and we print each block so you can verify the feature works.
+//! Subscribes to **every** block on the chain twice, by registering both
+//! full-block (wildcard) filters — no `from` / `to` / `log_address`:
+//!  - the LIVE wildcard (`register_full_block`) delivers each block at the
+//!    head of the chain on `full-block.new-event` (flow `LIVE`, plus
+//!    `REORGED` replays on reorganizations);
+//!  - the FINAL wildcard (`register_final_full_block`) delivers each block
+//!    once it is final on `full-block.final-event` (flow `FINAL`, never
+//!    reorged). Requires the listener's `finality_active: true` (default).
+//!
+//! Each printed block dump is banner-tagged `LIVE` / `FINAL` and includes the
+//! payload's own `flow` field, so the two pipelines are easy to tell apart —
+//! you should see every block twice: once at the head, once ~finality later.
 //!
 //! This is a downstream-only binary: no RPC, no DB. The `listener_core`
 //! service must be running and pointed at the same broker and `CHAIN_ID`.
-//!
-//! What it does, in order:
-//!  1. Connects to the broker (Redis Streams or RabbitMQ via `BROKER_URL`).
-//!  2. Declares the consumer queue (`full-block.new-event`) so no events are
-//!     lost between filter registration and `consume`.
-//!  3. Publishes a full-block WATCH filter (wildcard, no addresses).
-//!  4. Spawns a live consumer and prints every block it receives.
-//!  5. On Ctrl-C: cancels the flow and unregisters the filter.
 //!
 //! ```bash
 //! BROKER_URL=redis://localhost:6379 CHAIN_ID=1 cargo run -p example --bin full_block
@@ -27,9 +27,9 @@ use broker::{AckDecision, Broker};
 use consumer::{BlockPayload, ListenerConsumer};
 use tracing::{info, warn};
 
-/// Logical name for this downstream — appears in the routing key
-/// `full-block.new-event` and the WATCH command. Kept distinct from the
-/// `token` example so the two can run side by side without colliding.
+/// Logical name for this downstream — prefix of the delivery queues
+/// `full-block.new-event` / `full-block.final-event`. Kept distinct from the
+/// `token` example so the two binaries can run side by side without colliding.
 const CONSUMER_ID: &str = "full-block";
 
 #[tokio::main]
@@ -44,38 +44,50 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
 
-    info!(%broker_url, chain_id, consumer_id = CONSUMER_ID, "starting full-block showcase");
+    info!(%broker_url, chain_id, consumer_id = CONSUMER_ID,
+        "starting full-block showcase (live + final wildcard)");
 
     let broker = Broker::from_url(&broker_url)
         .await
         .context("connecting to broker")?;
     let consumer = ListenerConsumer::new(&broker, chain_id, CONSUMER_ID);
 
-    // ── 2. Declare the queue *before* publishing or consuming ──────────────
-    //      Without this, a WATCH published while the queue is missing would
+    // ── 2. Declare both queues *before* publishing or consuming ────────────
+    //      Without this, a WATCH published while a queue is missing would
     //      generate events the broker drops on the floor.
     consumer.ensure_consumer().await?;
+    consumer.ensure_final_consumer().await?;
 
-    // ── 3. Register the full-block (wildcard) filter ───────────────────────
-    //      No address fields → the listener broadcasts the entire block.
+    // ── 3. Register both full-block (wildcard) filters ─────────────────────
+    //      No address fields → the listener broadcasts the entire block,
+    //      once per flow: at the head (LIVE) and once finalized (FINAL).
     consumer.register_full_block().await?;
-    info!("registered full-block WATCH filter (wildcard: no from/to/log_address)");
+    consumer.register_final_full_block().await?;
+    info!("registered LIVE and FINAL full-block WATCH filters (wildcards)");
 
-    // ── 4. Live consumer — print every block as it arrives ─────────────────
+    // ── 4. One consumer per flow — print every block as it arrives ─────────
     let live_handle = tokio::spawn(consumer.consume(|payload, _cancel| async move {
-        print_block(&payload);
+        print_block("LIVE", &payload);
+        Ok(AckDecision::Ack)
+    }));
+    let final_handle = tokio::spawn(consumer.consume_final(|payload, _cancel| async move {
+        print_block("FINAL", &payload);
         Ok(AckDecision::Ack)
     }));
 
-    // ── 5. Wait for Ctrl-C, then shut the flow down cleanly ────────────────
+    // ── 5. Wait for Ctrl-C, then shut both flows down cleanly ──────────────
     tokio::select! {
         _ = tokio::signal::ctrl_c() => info!("ctrl-c — shutting down"),
-        r = live_handle             => warn!(?r, "live consumer exited unexpectedly"),
+        r = live_handle             => warn!(?r, "LIVE consumer exited unexpectedly"),
+        r = final_handle            => warn!(?r, "FINAL consumer exited unexpectedly"),
     }
 
     consumer.cancel();
     if let Err(e) = consumer.unregister_full_block().await {
         warn!(error = %e, "unregister_full_block failed (filter may linger in DB)");
+    }
+    if let Err(e) = consumer.unregister_final_full_block().await {
+        warn!(error = %e, "unregister_final_full_block failed (filter may linger in DB)");
     }
     info!("bye");
     Ok(())
@@ -91,14 +103,17 @@ fn init_tracing() {
         .init();
 }
 
-/// Print a full block: header fields, then every transaction with its logs.
+/// Print a full block: flow banner, header fields, then every transaction
+/// with its logs.
 ///
 /// Uses `println!` so the dump is easy to read when verifying the feature,
-/// kept separate from the structured `tracing` lifecycle logs above.
-fn print_block(payload: &BlockPayload) {
+/// kept separate from the structured `tracing` lifecycle logs above. `tag`
+/// is the subscription that delivered the block (`LIVE` or `FINAL`); the
+/// payload's own `flow` field is printed too (`LIVE`/`REORGED` vs `FINAL`).
+fn print_block(tag: &str, payload: &BlockPayload) {
     println!("════════════════════════════════════════════════════════════════");
     println!(
-        "BLOCK #{} [{:?}]  (chain {})",
+        "[{tag}] BLOCK #{} [{:?}]  (chain {})",
         payload.block_number, payload.flow, payload.chain_id
     );
     println!("  hash        : {}", payload.block_hash);

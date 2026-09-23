@@ -15,7 +15,7 @@ use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
-use fhevm_engine_common::gcs_activation::GCS_NOT_ACTIVATED;
+use fhevm_engine_common::gcs_activation::{GCS_GATE_RECHECK, GCS_NOT_ACTIVATED};
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::pg_pool::ServiceError;
@@ -79,6 +79,7 @@ pub struct SwitchNSquashService {
     /// Shared blue-green stack mode. While `gcs_mode` is set the worker is the
     /// green stack in its dry-run window and suppresses S3 uploads + GC.
     mode: Arc<StackMode>,
+    force_legacy_server_key: bool,
 
     /// GCS dry-run pause flag, re-checked every iteration so a rollback re-pauses
     /// the loop. `GCS_NOT_ACTIVATED` parks; a real `start_block` runs.
@@ -149,6 +150,8 @@ impl SwitchNSquashService {
         mode: Arc<StackMode>,
         start_block_state: Arc<AtomicI64>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
+        let force_legacy_server_key =
+            fhevm_engine_common::db_keys::force_legacy_server_key_from_env()?;
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
             conf,
@@ -158,6 +161,7 @@ impl SwitchNSquashService {
             tx,
             events_tx,
             mode,
+            force_legacy_server_key,
             start_block_state,
         })
     }
@@ -174,6 +178,7 @@ impl SwitchNSquashService {
             let keys_cache = keys_cache.clone();
             let events_tx = self.events_tx.clone();
             let mode = self.mode.clone();
+            let force_legacy_server_key = self.force_legacy_server_key;
             let start_block_state = self.start_block_state.clone();
 
             async move {
@@ -186,6 +191,7 @@ impl SwitchNSquashService {
                     keys_cache,
                     events_tx,
                     mode,
+                    force_legacy_server_key,
                     start_block_state,
                 )
                 .await
@@ -201,8 +207,9 @@ impl SwitchNSquashService {
 async fn get_keyset(
     pool: PgPool,
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
+    force_legacy: bool,
 ) -> Result<Option<(DbKeyId, KeySet)>, ExecutionError> {
-    fetch_latest_keyset(&keys_cache, &pool).await
+    fetch_latest_keyset(&keys_cache, &pool, force_legacy).await
 }
 
 /// Executes the worker logic for the SnS task.
@@ -216,12 +223,16 @@ pub(crate) async fn run_loop(
     keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     events_tx: InternalEvents,
     mode: Arc<StackMode>,
+    force_legacy_server_key: bool,
     start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
     let mut listener = PgListener::connect_with(&pool).await?;
-    info!("Connected to PostgresDB");
+    info!(
+        force_legacy_server_key,
+        "Connected to PostgresDB with server-key safeguard"
+    );
 
     listener
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
@@ -238,15 +249,16 @@ pub(crate) async fn run_loop(
 
         // GCS gating: park while the dry-run flag is unset (pre-activation or after rollback). No-op for BCS.
         if mode.gcs_mode() && start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
-            debug!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
+            info!("GCS not activated (or rolled back); sns-worker paused, re-checking shortly");
             tokio::select! {
                 _ = token.cancelled() => return Ok(()),
-                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                _ = tokio::time::sleep(GCS_GATE_RECHECK) => {}
             }
             continue;
         }
 
-        let latest_keys = get_keyset(pool.clone(), keys_cache.clone()).await?;
+        let latest_keys =
+            get_keyset(pool.clone(), keys_cache.clone(), force_legacy_server_key).await?;
         if let Some((key_id_gw, keyset)) = latest_keys {
             let key_changed = keys
                 .as_ref()
@@ -743,11 +755,7 @@ fn compute_task(
             #[cfg(feature = "test_decrypt_128")]
             decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
 
-            let format = if enable_compression {
-                Ciphertext128Format::CompressedOnCpu
-            } else {
-                Ciphertext128Format::UncompressedOnCpu
-            };
+            let format = squashed_ct128_format(enable_compression);
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
 
@@ -895,6 +903,39 @@ async fn notify_ciphertext128_ready(
         .execute(db_txn.as_mut())
         .await?;
     Ok(())
+}
+
+/// The RFC-023 format for a ciphertext this build just squashed.
+///
+/// RFC-023 binds four values: 10 uncompressed on CPU, 11 compressed on CPU, 20
+/// uncompressed on GPU, 21 compressed on GPU. Only compression was consulted
+/// here and the CPU pair was returned unconditionally, so a `--features gpu`
+/// worker computing on a CUDA device recorded "compressed on CPU". The field is
+/// attestation evidence, and a CPU and a GPU squash of the same input are
+/// different-but-valid ciphertexts, so the value has to say which produced it:
+/// anything reading it back to decide whether two operators squashed the same
+/// way was being told they had when they had not.
+///
+/// The backend is a compile-time property of this binary -- `ServerKey` is
+/// `tfhe::CudaServerKey` under the `gpu` feature and `tfhe::ServerKey` without
+/// it -- so the discriminator is `cfg`, not configuration.
+const fn squashed_ct128_format(compressed: bool) -> Ciphertext128Format {
+    #[cfg(feature = "gpu")]
+    {
+        if compressed {
+            Ciphertext128Format::CompressedOnGpu
+        } else {
+            Ciphertext128Format::UncompressedOnGpu
+        }
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        if compressed {
+            Ciphertext128Format::CompressedOnCpu
+        } else {
+            Ciphertext128Format::UncompressedOnCpu
+        }
+    }
 }
 
 /// Decompresses a ciphertext based on its type.

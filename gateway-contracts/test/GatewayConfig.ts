@@ -1779,7 +1779,9 @@ describe('GatewayConfig', function () {
       it('Should add a new host chain', async function () {
         const txResponse = gatewayConfig.connect(owner).addHostChain(newHostChain);
 
-        await expect(txResponse).to.emit(gatewayConfig, 'AddHostChain').withArgs(toValues(newHostChain));
+        await expect(txResponse)
+          .to.emit(gatewayConfig, 'AddHostChain')
+          .withArgs(newHostChain.chainId, toValues(newHostChain));
       });
 
       it('Should revert because the sender is not the owner', async function () {
@@ -1949,7 +1951,7 @@ describe('GatewayConfig', function () {
         };
         await expect(gatewayConfig.connect(owner).addHostChain(reAdded))
           .to.emit(gatewayConfig, 'AddHostChain')
-          .withArgs(toValues(reAdded));
+          .withArgs(reAdded.chainId, toValues(reAdded));
         expect(await gatewayConfig.isHostChainRegistered(registeredChainId)).to.be.true;
         expect(await gatewayConfig.isHostChainDisabled(registeredChainId)).to.be.false;
       });

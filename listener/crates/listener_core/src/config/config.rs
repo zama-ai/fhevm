@@ -34,8 +34,9 @@ const MIN_BATCH_RANGE: usize = 1;
 
 /// 1 advisory-lock session + 1 concurrent query at least.
 const MIN_POOL_MIN_CONNECTIONS: u32 = 2;
-/// 1 advisory-lock + 4 concurrent handler queries (fetch/reorg, watch, unwatch, cleaner).
-const MIN_POOL_MAX_CONNECTIONS: u32 = 5;
+/// 4 advisory-lock sessions (fetch/reorg, cleaner, final-cleaner, finality)
+/// + 4 concurrent handler queries (fetch/reorg, watch, unwatch, cleaner).
+const MIN_POOL_MAX_CONNECTIONS: u32 = 8;
 const MAX_BATCH_RANGE: usize = 100;
 
 #[derive(Error, Debug)]
@@ -173,7 +174,7 @@ pub struct StrategyConfig {
 
     /// Active only if compute_block is active, other wise, computation is fully skipped.
     /// When true, block verification will skip computation.
-    /// (e.g. Polygon type 0x7F for transaction root) with an ERROR log instead of failing.
+    /// (e.g. Polygon type 0x7F for transaction root) with a WARN log instead of failing.
     /// When false, unsupported types cause a hard verification failure.
     /// Defaults to true.
     #[serde(default = "default_compute_block_allow_skipping")]
@@ -287,6 +288,12 @@ impl Default for StrategyConfig {
         }
     }
 }
+
+/// Minimum retention window accepted for [`CleanerConfig::blocks_to_keep`].
+///
+/// A static floor, deliberately decoupled from `finality_depth`: the finality
+/// boundary can move at runtime, so retention must not depend on it.
+pub const MIN_BLOCKS_TO_KEEP: u64 = 999;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CleanerConfig {
@@ -406,6 +413,15 @@ pub struct BlockchainConfig {
     #[serde(default = "default_finality_depth")]
     pub finality_depth: u64,
 
+    /// Use the `finalized` block tag (eth_getBlockByNumber("finalized")) to
+    /// determine the final block. When false, final = head - finality_depth.
+    #[serde(default = "default_finality_tag")]
+    pub finality_tag: bool,
+
+    /// Enable the finality flow (fetch-final-block loop). Defaults to true.
+    #[serde(default = "default_finality_active")]
+    pub finality_active: bool,
+
     #[serde(default)]
     pub cleaner: CleanerConfig,
 
@@ -420,9 +436,27 @@ fn default_finality_depth() -> u64 {
     64
 }
 
+fn default_finality_tag() -> bool {
+    false
+}
+
+fn default_finality_active() -> bool {
+    true
+}
+
 fn default_blockchain_type() -> String {
     "evm".to_string()
 }
+
+/// Upper bound accepted for [`BlockchainConfig::chain_id`].
+///
+/// Stricter than the `i64` database range enforced at startup, and deliberately
+/// so: `chain_id` doubles as a PostgreSQL advisory lock key, and the cleaner,
+/// finality and final-cleaner flows derive their keys by XOR-ing the chain_id
+/// with salts that all carry bit 62 (see `store::flow_lock`). Keeping every
+/// chain_id inside the low 60 bits guarantees a salted key can never collide
+/// with another chain's raw fetch/reorg key on a shared database.
+pub const MAX_CHAIN_ID: u64 = 1 << 60;
 
 impl BlockchainConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
@@ -436,16 +470,16 @@ impl BlockchainConfig {
                 "chain_id must be strictly positive".to_string(),
             ));
         }
-        if self.cleaner.blocks_to_keep < 2 {
+        if self.chain_id > MAX_CHAIN_ID {
             return Err(ConfigError::Validation(format!(
-                "cleaner.blocks_to_keep ({}) must be >= 2 for reorg checking",
-                self.cleaner.blocks_to_keep
+                "chain_id ({}) must be <= {} (2^60)",
+                self.chain_id, MAX_CHAIN_ID
             )));
         }
-        if self.cleaner.blocks_to_keep <= self.finality_depth {
+        if self.cleaner.blocks_to_keep < MIN_BLOCKS_TO_KEEP {
             return Err(ConfigError::Validation(format!(
-                "cleaner.blocks_to_keep ({}) must be greater than finality_depth ({})",
-                self.cleaner.blocks_to_keep, self.finality_depth
+                "cleaner.blocks_to_keep ({}) must be >= {}",
+                self.cleaner.blocks_to_keep, MIN_BLOCKS_TO_KEEP
             )));
         }
         self.strategy.validate()?;
@@ -469,7 +503,9 @@ pub struct PoolConfig {
 }
 
 fn default_max_connections() -> u32 {
-    10
+    // 4 advisory-lock holders (fetch/reorg, cleaner, final-cleaner, finality)
+    // + concurrent handler queries, with headroom.
+    12
 }
 fn default_min_connections() -> u32 {
     2
@@ -525,6 +561,14 @@ impl PoolConfig {
 pub struct DatabaseConfig {
     #[derivative(Debug(format_with = "redact"))]
     pub db_url: String, // REQUIRED, REDACTED — used by both password and IAM modes
+    /// Optional password, supplied out-of-band (e.g. `APP_DATABASE__DB_PASSWORD`).
+    /// When set, it overrides any password embedded in `db_url` and is passed to the
+    /// driver verbatim. Prefer this whenever the password contains characters that are
+    /// significant in a URL: `/`, `?` and `#` make `db_url` unparsable, and any literal
+    /// `%XX` sequence is silently percent-decoded into a different password.
+    #[serde(default)]
+    #[derivative(Debug(format_with = "redact"))]
+    pub db_password: Option<String>,
     /// IAM auth configuration. When absent or enabled=false, password from db_url is used.
     /// When enabled=true, host/port/user/dbname are parsed from db_url and the password
     /// is replaced with a short-lived IAM token.
@@ -923,6 +967,57 @@ mod tests {
         assert_eq!(BlockStartConfig::Number(42).to_string(), "42");
     }
 
+    fn blockchain_config_with_chain_id(chain_id: u64) -> BlockchainConfig {
+        BlockchainConfig {
+            r#type: "evm".to_string(),
+            chain_id,
+            rpc_url: "https://rpc.example.com".to_string(),
+            network: "test".to_string(),
+            finality_depth: default_finality_depth(),
+            finality_tag: false,
+            finality_active: true,
+            cleaner: CleanerConfig::default(),
+            strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
+        }
+    }
+
+    #[test]
+    fn test_chain_id_upper_bound_validation() {
+        // 2^60 itself is accepted — only strictly greater values are rejected.
+        assert!(
+            blockchain_config_with_chain_id(MAX_CHAIN_ID)
+                .validate()
+                .is_ok()
+        );
+
+        let err = blockchain_config_with_chain_id(MAX_CHAIN_ID + 1)
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("must be <= {MAX_CHAIN_ID}")),
+            "unexpected error: {err}"
+        );
+
+        assert!(
+            blockchain_config_with_chain_id(u64::MAX)
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_chain_id_within_bound_always_fits_the_i64_lock_key_range() {
+        // chain_id doubles as a PG advisory lock key (i64), so the accepted
+        // range must never reach into the negative half.
+        for chain_id in [1, 137, 43114, 11_155_111, MAX_CHAIN_ID] {
+            let config = blockchain_config_with_chain_id(chain_id);
+            assert!(config.validate().is_ok(), "rejected chain_id {chain_id}");
+            assert!(i64::try_from(chain_id).is_ok());
+        }
+    }
+
     #[test]
     fn test_blocks_to_keep_minimum_validation() {
         let config = BlockchainConfig {
@@ -930,9 +1025,11 @@ mod tests {
             chain_id: 1,
             rpc_url: "https://rpc.example.com".to_string(),
             network: "test".to_string(),
-            finality_depth: 0,
+            finality_depth: default_finality_depth(),
+            finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig {
-                blocks_to_keep: 1,
+                blocks_to_keep: MIN_BLOCKS_TO_KEEP - 1,
                 ..Default::default()
             },
             strategy: StrategyConfig::default(),
@@ -940,7 +1037,34 @@ mod tests {
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be >= 2"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("must be >= {MIN_BLOCKS_TO_KEEP}"))
+        );
+    }
+
+    #[test]
+    fn test_blocks_to_keep_independent_of_finality_depth() {
+        // Retention no longer depends on finality_depth: a finality depth far
+        // above blocks_to_keep must not fail validation.
+        let config = BlockchainConfig {
+            r#type: "evm".to_string(),
+            chain_id: 1,
+            rpc_url: "https://rpc.example.com".to_string(),
+            network: "test".to_string(),
+            finality_depth: 5000,
+            finality_tag: false,
+            finality_active: true,
+            cleaner: CleanerConfig {
+                blocks_to_keep: MIN_BLOCKS_TO_KEEP,
+                ..Default::default()
+            },
+            strategy: StrategyConfig::default(),
+            catchup: CatchupConfig::default(),
+        };
+        assert!(config.validate().is_ok());
     }
 
     #[test]
@@ -994,6 +1118,8 @@ mod tests {
             r#type: default_blockchain_type(),
             rpc_url: "https://ethereum-rpc.publicnode.com".to_string(), // REQUIRED, REDACTED
             finality_depth: default_finality_depth(),
+            finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
@@ -1012,6 +1138,7 @@ mod tests {
     fn test_database_url_validation() {
         let config = DatabaseConfig {
             db_url: "mysql://invalid".to_string(),
+            db_password: None,
             iam_auth: None,
             migration_max_attempts: 5,
             pool: PoolConfig::default(),
@@ -1116,6 +1243,8 @@ mod tests {
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
             finality_depth: 15,
+            finality_tag: false,
+            finality_active: true,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1126,12 +1255,14 @@ mod tests {
     fn test_secrets_redacted_in_debug() {
         let db_config = DatabaseConfig {
             db_url: "postgres://user:secret_password@localhost/db".to_string(),
+            db_password: Some("another_secret".to_string()),
             iam_auth: None,
             migration_max_attempts: 5,
             pool: PoolConfig::default(),
         };
         let debug_output = format!("{:?}", db_config);
         assert!(!debug_output.contains("secret_password"));
+        assert!(!debug_output.contains("another_secret"));
         assert!(debug_output.contains("[REDACTED]"));
 
         let broker_config = BrokerConfig {
@@ -1155,6 +1286,8 @@ mod tests {
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig::default(),
             finality_depth: 15,
+            finality_tag: false,
+            finality_active: true,
         };
         let debug_output = format!("{:?}", blockchain_config);
         assert!(!debug_output.contains("secret-api-key"));
@@ -1164,6 +1297,33 @@ mod tests {
     #[test]
     fn test_pool_default_passes_validation() {
         assert!(PoolConfig::default().validate().is_ok());
+    }
+
+    #[test]
+    fn test_pool_max_connections_below_lock_floor() {
+        // 4 advisory-lock holders (fetch/reorg, cleaner, final-cleaner,
+        // finality) + concurrent handler queries require at least 8 connections.
+        let config = PoolConfig {
+            max_connections: 7,
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_connections"));
+    }
+
+    #[test]
+    fn test_finality_active_defaults_to_true() {
+        // A config omitting finality_active must default to enabled
+        // (serde named default, format-agnostic).
+        let config: BlockchainConfig = serde_json::from_value(serde_json::json!({
+            "chain_id": 1,
+            "rpc_url": "https://rpc.example.com",
+            "network": "test",
+        }))
+        .unwrap();
+        assert!(config.finality_active);
+        assert!(!config.finality_tag);
     }
 
     #[test]
@@ -1284,6 +1444,8 @@ mod tests {
             rpc_url: "https://rpc.example.com".to_string(),
             network: "ethereum-mainnet".to_string(),
             finality_depth: 64,
+            finality_tag: false,
+            finality_active: true,
             cleaner: CleanerConfig::default(),
             strategy: StrategyConfig::default(),
             catchup: CatchupConfig {

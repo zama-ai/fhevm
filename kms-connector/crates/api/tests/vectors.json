@@ -1,0 +1,98 @@
+{
+  "publicDecryption": [
+    {
+      "name": "two handles, one-byte extraData",
+      "request": {
+        "ctHandles": [
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "extraData": "0x00"
+      },
+      "decryptionId": "0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8"
+    },
+    {
+      "name": "empty request",
+      "request": {
+        "ctHandles": [],
+        "extraData": "0x"
+      },
+      "decryptionId": "0x51ca4cc9265cad62c01ef7511e8835b8445fac4777cc65669d2c029bb9622154"
+    }
+  ],
+  "userDecryption": [
+    {
+      "name": "single handle, RFC-033-style request",
+      "request": {
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "handles": [
+            {
+              "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "contractAddress": "0x3333333333333333333333333333333333333333",
+              "ownerAddress": "0x4444444444444444444444444444444444444444"
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x00"
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "decryptionId": "0x87d71ab4145107e91e1ac6f1e1766739e2b231cd5d04323f40f1803417a95243"
+    },
+    {
+      "name": "empty request",
+      "request": {
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "handles": [],
+          "userAddress": "0x0000000000000000000000000000000000000000",
+          "publicKey": "0x",
+          "allowedContracts": [],
+          "requestValidity": {
+            "startTimestamp": 0,
+            "durationSeconds": 0
+          },
+          "extraData": "0x"
+        },
+        "signature": "0x"
+      },
+      "decryptionId": "0x4c4ccb99046c790998684ba1afc840ab7c1e4240c6f65523669e68559f97b857"
+    },
+    {
+      "name": "single handle, other attestation type",
+      "request": {
+        "attestationType": "random_attestation_type",
+        "payload": {
+          "handles": [
+            {
+              "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "contractAddress": "0x3333333333333333333333333333333333333333",
+              "ownerAddress": "0x4444444444444444444444444444444444444444"
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x00"
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "decryptionId": "0x5d9fa43e1576121f83353800be7ee2c620b32de374336cab4fd92147d714e0c6"
+    }
+  ]
+}

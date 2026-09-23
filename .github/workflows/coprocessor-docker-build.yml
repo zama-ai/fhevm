@@ -111,7 +111,27 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
+    permissions:
+      contents: 'read' # Required so the reusable workflow can git ls-remote
 
+
+  # FILTERS AND SHARED CRATES
+  #
+  # A service's filter must list every crate it links, not just its own
+  # directory. When a filter misses one, the build is reported "skipped", the
+  # orchestration reads that as "no diff", and the stack silently runs a stale
+  # image for that service beside freshly built siblings.
+  #
+  # This is not hypothetical: a change to `fhevm-engine-common` -- linked by
+  # every worker -- once left gw-listener, tx-sender and zkproof-worker with no
+  # image at that commit, and an e2e run fell back to main's. It was only
+  # harmless because that change happened to be GPU-gated, so the stale images
+  # behaved identically on CPU.
+  #
+  # `src/coprocessor-build-filters.test.ts` in the fhevm CLI enforces this: it
+  # walks each service's Cargo manifests transitively and fails, naming the
+  # dependency, if a filter does not cover it. Add the path here when a new
+  # dependency appears; the test will tell you which one.
   check-changes-db-migration:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
     if: github.event_name == 'push' || inputs.is_workflow_call
@@ -130,6 +150,8 @@ jobs:
         db-migration:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/db-migration/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
+          - host-contracts/rust_bindings/**
 
   check-changes-gw-listener:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -145,7 +167,10 @@ jobs:
         gw-listener:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/gw-listener/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-host-listener:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -161,9 +186,12 @@ jobs:
         host-listener:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/host-listener/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
-          - host-contracts/contracts/*Events.sol
-          - host-contracts/contracts/shared/**
+          - host-contracts/rust_bindings/**
+          - listener/crates/consumer/**
+          - listener/crates/shared/broker/**
+          - listener/crates/shared/primitives/**
 
   check-changes-sns-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -179,7 +207,10 @@ jobs:
         sns-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/sns-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -195,7 +226,12 @@ jobs:
         tfhe-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/tfhe-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
+          - coprocessor/fhevm-engine/host-listener/**
+          - coprocessor/fhevm-engine/scheduler/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+
 
   check-changes-tx-sender:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -211,7 +247,10 @@ jobs:
         tx-sender:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/transaction-sender/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-zkproof-worker:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -227,7 +266,9 @@ jobs:
         zkproof-worker:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/zkproof-worker/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
 
   check-changes-consensus-detector:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -243,7 +284,10 @@ jobs:
         consensus-detector:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/consensus-detector/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - gateway-contracts/rust_bindings/**
 
   check-changes-upgrade-controller:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -259,7 +303,9 @@ jobs:
         upgrade-controller:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/upgrade-controller/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #
@@ -312,7 +358,7 @@ jobs:
             const isLatestCommit = needs['is-latest-commit'].outputs?.is_latest === 'true';
             const isWorkflowCall = inputs.is_workflow_call ?? false;
 
-            const decideAction = (changes, manualInput) => {
+            const decideAction = (name, changes, manualInput) => {
               if (event === 'release') return 'build';
               if (event === 'push') return isLatestCommit ? (changes ? 'build' : 'retag') : 'skip';
               if (isWorkflowCall) return changes ? 'build' : 'skip';
@@ -334,10 +380,11 @@ jobs:
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
             for (const [name, { changes, build_input }] of Object.entries(services)) {
-              const action = decideAction(changes === 'true', build_input ?? false);
+              const action = decideAction(name, changes === 'true', build_input ?? false);
               core.setOutput(name, action);
               core.info(`${name}: ${action} (changes: ${changes}, build_input: ${build_input})`);
             }
+
 
   ########################################################################
   #                             DB MIGRATION                             #
@@ -345,7 +392,7 @@ jobs:
   build-db-migration:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -367,7 +414,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-db-migration"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-db-migration-image:
@@ -390,7 +437,7 @@ jobs:
   build-gw-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -401,7 +448,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-gw-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-gw-listener-image:
@@ -420,7 +467,7 @@ jobs:
   build-host-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.host_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -431,7 +478,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-host-listener"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-host-listener-image:
@@ -450,7 +497,7 @@ jobs:
   build-sns-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.sns_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -461,7 +508,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-sns-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-sns-worker-image:
@@ -480,7 +527,7 @@ jobs:
   build-tfhe-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tfhe_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -491,7 +538,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tfhe-worker-image:
@@ -510,7 +557,7 @@ jobs:
   build-tx-sender:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -521,7 +568,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-tx-sender"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-tx-sender-image:
@@ -540,7 +587,7 @@ jobs:
   build-zkproof-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.zkproof_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -551,7 +598,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-zkproof-worker"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-zkproof-worker-image:
@@ -570,7 +617,7 @@ jobs:
   build-consensus-detector:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.consensus_detector == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -581,7 +628,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-consensus-detector"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-consensus-detector-image:
@@ -600,7 +647,7 @@ jobs:
   build-upgrade-controller:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.upgrade_controller == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
@@ -611,7 +658,7 @@ jobs:
       app-cache-dir: "fhevm-coprocessor-upgrade-controller"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
       rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
 
   re-tag-upgrade-controller-image:
