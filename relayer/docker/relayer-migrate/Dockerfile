@@ -1,5 +1,4 @@
-# Keep Docker's bundled frontend: the external frontend pulls the amd64-only
-# Rust base from the registry instead of using clean-e2e's native arm64 alias.
+# syntax=docker/dockerfile:1
 # RUST_IMAGE_VERSION is intentionally left without a default so the Rust toolchain
 # version has a single source of truth: relayer/rust-toolchain.toml.
 ARG RUST_IMAGE_VERSION
