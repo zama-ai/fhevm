@@ -952,6 +952,54 @@ async fn concurrent_workers_cover_five_copro_drift_populations_from_every_origin
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
+async fn detailed_consensus_persists_coverage_without_requiring_peer_prefix() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers, 2).await;
+    let predecessor = sign_payload(
+        &signers[0],
+        payload_at(signers[0].address(), 0x31, 42, B256::repeat_byte(0xa9)),
+    )
+    .await;
+    archive_local_only(&pool, &predecessor).await;
+    let current_hash = B256::repeat_byte(0xaa);
+    let local = sign_payload(
+        &signers[0],
+        payload_with_history(signers[0].address(), 0x41, 43, current_hash, &predecessor),
+    )
+    .await;
+    schedule_local(&pool, &local, 0).await;
+    let source = Arc::new(FakePeerSource::default());
+    // These publishers started later: they authenticate block 43, but not 42.
+    for signer in &signers[1..] {
+        let current =
+            sign_payload(signer, payload_at(signer.address(), 0x41, 43, current_hash)).await;
+        source.set_manifest(signer.address(), &current);
+    }
+    let outcomes = concurrent_wave(&pool, &source).await;
+    assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
+    assert_eq!(completed_runs(&outcomes), 1, "{outcomes:?}");
+    let row = sqlx::query(
+        "SELECT outcome, local_quorum_status, quorum_from_block, quorum_through_block,
+                unverified_prefix_from_block, unverified_prefix_through_block
+           FROM block_manifest_verification_attempt",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.get::<String, _>("outcome"), "consensus");
+    assert_eq!(
+        row.get::<String, _>("local_quorum_status"),
+        "matches_quorum"
+    );
+    assert_eq!(row.get::<i64, _>("quorum_from_block"), 43);
+    assert_eq!(row.get::<i64, _>("quorum_through_block"), 43);
+    assert_eq!(row.get::<i64, _>("unverified_prefix_from_block"), 42);
+    assert_eq!(row.get::<i64, _>("unverified_prefix_through_block"), 42);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn detailed_consensus_does_not_hide_localized_historical_drift() {
     let (_instance, pool) = setup_download_db().await;
     let signers = test_signers();
