@@ -288,4 +288,8 @@ pub enum ZamaHostError {
     InvalidReturnSelection,
     #[msg("transient store must be opened for this transaction and closed last")]
     TransientStoreNotOpened,
+    /// A wallet delegator called `delegate_for_user_decryption` through CPI. Its signature
+    /// reaches every program of the transaction it signed, so it must delegate at the top level.
+    #[msg("a wallet delegator must delegate in a top-level instruction")]
+    WalletDelegationThroughCpi,
 }

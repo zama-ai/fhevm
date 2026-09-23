@@ -2304,6 +2304,11 @@
       "code": 6080,
       "name": "TransientStoreNotOpened",
       "msg": "transient store must be opened for this transaction and closed last"
+    },
+    {
+      "code": 6081,
+      "name": "WalletDelegationThroughCpi",
+      "msg": "a wallet delegator must delegate in a top-level instruction"
     }
   ],
   "types": [

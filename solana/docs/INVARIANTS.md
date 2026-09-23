@@ -63,6 +63,11 @@ old handle's leaves stay sealed.
 
 **7. [HOLDS]** Every encrypted store lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
 
+**68. [ASSUMPTION]** An application never passes one of its store-authority PDAs as a signer to a program it does not
+trust. zama-host checks only that a Store's authority signs, and that signature reaches every program the application
+calls with it: such a program can write the application's Stores and make their handles public. zama-host cannot
+enforce this, so the audits of each application check it (fhevm-internal#2068, fhevm-internal#2070).
+
 **8. [HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
 stays provable after any number of later updates.
 
@@ -234,7 +239,12 @@ delegation record for the encrypted store's authority and the delegator's wildca
 row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
-Delegation emits no event; readers read the record (DD-044).
+Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
+`delegate_for_user_decryption` as a top-level instruction (`WalletDelegationThroughCpi`). A wallet's signature reaches
+every CPI of the transaction it signed, so without that rule any program the user calls could delegate the user's
+decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it. Pinned by
+`a_wallet_grant_forwarded_through_another_program_is_rejected` and `a_vault_pda_grants_a_delegation_via_cpi`
+(fhevm-internal#2084).
 
 ## E. Reconstruction & off-chain services
 

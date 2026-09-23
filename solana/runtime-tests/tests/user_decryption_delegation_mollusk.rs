@@ -30,12 +30,13 @@ use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
 };
 use zama_host::{self as host, UserDecryptionDelegation};
 use zama_solana_test_kit::{
-    anchor_framework_error_check, empty_system_account, funded_system_account as funded_wallet,
-    host_config_account as host_config_account_from, serialized_account as serialized,
-    system_program_account, HostConfigParams,
+    anchor_framework_error_check, cost_snapshot, empty_system_account,
+    funded_system_account as funded_wallet, host_config_account as host_config_account_from,
+    serialized_account as serialized, system_program_account, HostConfigParams,
 };
 
 // ---------------------------------------------------------------------------
@@ -118,7 +119,8 @@ fn revoke_ix(delegator: Pubkey, delegation_record: Pubkey) -> Instruction {
 
 /// The tuple every test grants over, with a payer who is not the delegator: paying rent and
 /// granting are different roles, and keeping them different keys in every test means a handler
-/// that conflated them would fail here.
+/// that conflated them would fail here. The delegator is a wallet key, on the curve, because
+/// the host treats wallet and PDA delegators differently.
 struct Actors {
     payer: Pubkey,
     delegator: Pubkey,
@@ -129,7 +131,10 @@ struct Actors {
 }
 
 fn actors() -> Actors {
-    let delegator = Pubkey::new_unique();
+    actors_of(Keypair::new().pubkey())
+}
+
+fn actors_of(delegator: Pubkey) -> Actors {
     let delegate = Pubkey::new_unique();
     let authority = Pubkey::new_unique();
     let (record_key, record_bump) =
@@ -1227,6 +1232,45 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
     assert_eq!(record.delegation_counter, 2);
 }
 
+/// A program the user calls cannot delegate in the user's name. The wallet's signature reaches
+/// the CPI, which is exactly the forwarding `check_cpi_return` does with every signer flag
+/// intact, so only the host's top-level rule stops it.
+#[test]
+fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
+    let actors = actors();
+    assert!(
+        actors.delegator.is_on_curve(),
+        "the delegator is a wallet key"
+    );
+    let grant = grant_ix(
+        actors.payer,
+        actors.delegator,
+        actors.record_key,
+        actors.delegate,
+        actors.authority,
+        EXPIRATION,
+    );
+    let mut forwarded = zama_solana_test_kit::anchor_ix(
+        vault::id(),
+        vault::accounts::CheckCpiReturn { callee: host::id() },
+        vault::instruction::CheckCpiReturn {
+            instruction_data: grant.data,
+            expected: Vec::new(),
+        },
+    );
+    forwarded.accounts.extend(grant.accounts);
+    let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+    accounts.push((host::id(), host_program_account()));
+
+    mollusk_with_vault().process_and_validate_instruction(
+        &forwarded,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::WalletDelegationThroughCpi,
+        )],
+    );
+}
+
 /// An executor cannot act through somebody else's vault: the wrapper holds the vault account
 /// to the seeds of *its own* executor, so the substitution dies before any CPI.
 #[test]
@@ -1349,4 +1393,48 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 
     let revoke_permits = host::instruction::RevokePermits {}.data();
     assert_eq!(fixture_hex(&revoke_permits), "3319597d7d5ac882");
+}
+
+// ---------------------------------------------------------------------------
+// Cost snapshot
+// ---------------------------------------------------------------------------
+
+/// A first grant by a wallet delegator: the curve check, the record PDA derivation and its
+/// creation. Fixed keys, because the PDA bump search is part of the measured cost.
+#[test]
+fn cost_snapshot_delegate_for_user_decryption() {
+    let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
+    assert!(delegator.is_on_curve(), "the delegator is a wallet key");
+    let delegate = Pubkey::new_from_array([0x43; 32]);
+    let authority = Pubkey::new_from_array([0x44; 32]);
+    let (record_key, record_bump) =
+        host::user_decryption_delegation_address(delegator, delegate, authority);
+    let actors = Actors {
+        payer: Pubkey::new_from_array([0x42; 32]),
+        delegator,
+        delegate,
+        authority,
+        record_key,
+        record_bump,
+    };
+    let ix = grant_ix(
+        actors.payer,
+        actors.delegator,
+        actors.record_key,
+        actors.delegate,
+        actors.authority,
+        EXPIRATION,
+    );
+
+    let result = mollusk().process_and_validate_instruction(
+        &ix,
+        &grant_accounts(&actors, empty_system_account(), false),
+        &[Check::success()],
+    );
+    cost_snapshot::assert_cost_snapshot(
+        "delegation_mollusk",
+        "delegate_for_user_decryption/first_grant",
+        &ix,
+        &result,
+    );
 }

@@ -1,6 +1,7 @@
 //! Creates and refreshes user-decryption delegations.
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT};
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
@@ -34,6 +35,13 @@ pub fn delegate_for_user_decryption(
     assert_not_paused(&ctx.accounts.host_config)?;
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
+    // A wallet's signature reaches every CPI of the transaction it signed, so any program the
+    // user calls could delegate the user's decryption rights. A PDA signs only through its own
+    // program's `invoke_signed`, so a PDA delegator may still delegate through CPI.
+    require!(
+        !delegator.is_on_curve() || get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT,
+        ZamaHostError::WalletDelegationThroughCpi
+    );
     require!(
         delegate != Pubkey::default() && authority != Pubkey::default(),
         ZamaHostError::InvalidDelegation

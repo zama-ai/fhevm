@@ -176,6 +176,8 @@ export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17be; // 607
 export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17bf; // 6079
 /** TransientStoreNotOpened: transient store must be opened for this transaction and closed last */
 export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17c0; // 6080
+/** WalletDelegationThroughCpi: a wallet delegator must delegate in a top-level instruction */
+export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c1; // 6081
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH
@@ -257,6 +259,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED
   | typeof ZAMA_HOST_ERROR__UNEXPECTED_REMAINING_ACCOUNTS
   | typeof ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE
+  | typeof ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI
   | typeof ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER
   | typeof ZAMA_HOST_ERROR__ZERO_KMS_SIGNER;
 
@@ -342,6 +345,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED]: `transient store must be opened for this transaction and closed last`,
     [ZAMA_HOST_ERROR__UNEXPECTED_REMAINING_ACCOUNTS]: `instruction has unexpected remaining accounts`,
     [ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE]: `FHE type is unsupported`,
+    [ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI]: `a wallet delegator must delegate in a top-level instruction`,
     [ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER]: `coprocessor signer set contains the zero address`,
     [ZAMA_HOST_ERROR__ZERO_KMS_SIGNER]: `KMS signer set contains the zero address`,
   };
