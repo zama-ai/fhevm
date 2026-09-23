@@ -40,6 +40,7 @@ services:
   kms-connector-endpoint:
     container_name: kms-connector-endpoint
     image: ghcr.io/zama-ai/fhevm/kms-connector/endpoint:${CONNECTOR_ENDPOINT_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
