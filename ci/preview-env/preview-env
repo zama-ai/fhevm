@@ -6,6 +6,7 @@ set -euo pipefail
 REPO_DEFAULT="zama-ai/fhevm"
 DEPLOY_WORKFLOW="preview-env-deploy.yml"
 DESTROY_WORKFLOW="preview-env-destroy.yml"
+EXTEND_WORKFLOW="preview-env-extend.yml"
 TAILSCALE_HOSTNAME="tailscale-operator-zws-dev.diplodocus-boa.ts.net"
 
 ALLOWED_OVERRIDES=(
@@ -35,12 +36,15 @@ preview-env — dispatch and inspect fhEVM preview environments on zws-dev.
   preview-env launch --ref <branch> [options]
   preview-env watch [--ref <branch>] [<run-id>]
   preview-env status [--ref <branch>] [<run-id>]
+  preview-env extend <fhevm-ci-*> <hours>
   preview-env destroy <fhevm-ci-*>
   preview-env namespace [--run-id <id>]
   preview-env connect [--run-id <id>]
 
 launch options:
   --ref <branch>            required (must be pushed to origin)
+  --lifetime <hours>        dispatch clock, integer 4-96 (default 8). Ignored
+                            for PR-label deploys, which have no clock.
   --parties 1|2|3|5         identities (default 1). 2 is two-party, not blue-green
   --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
                             automated RFC-021 round, without it Blue only (manual QA mode)
@@ -61,6 +65,11 @@ launch options:
   --repo owner/repo         default zama-ai/fhevm
   --watch                   after launch, wait for the run id and stream progress
 
+extend:
+  preview-env extend <fhevm-ci-*> <hours>
+                            hours is an integer 1-48, added from now. Dispatch
+                            namespaces only. Repeat to keep a long run alive.
+
 watch / status:
   Pass a numeric run id, a GitHub Actions run URL, or omit it with --ref <branch>
   to pick the latest preview-env-deploy run on that branch.
@@ -70,6 +79,14 @@ EOF
 }
 
 die() { echo "preview-env: $*" >&2; exit 1; }
+
+# require_hours <label> <value> <min> <max>
+require_hours() {
+  local label="$1" value="$2" min="$3" max="$4"
+  if [[ ! "${value}" =~ ^[0-9]+$ ]] || (( 10#$value < min || 10#$value > max )); then
+    die "${label} must be an integer from ${min} to ${max} (got '${value}')"
+  fi
+}
 
 is_allowed_override() {
   local key="$1"
@@ -169,7 +186,7 @@ cmd_launch() {
   local ref="" parties="1" blue_green="false" gpu="false" chain_mode="anvil"
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
-  local do_watch="false"
+  local do_watch="false" lifetime="8"
   local -a sets=()
 
   while [[ $# -gt 0 ]]; do
@@ -186,6 +203,7 @@ cmd_launch() {
       --no-build) build_images="false"; shift ;;
       --test-suite-only) test_suite_only="true"; shift ;;
       --kms-parties) kms_parties="${2:-}"; shift 2 ;;
+      --lifetime) lifetime="${2:-}"; shift 2 ;;
       --set) sets+=("${2:-}"); shift 2 ;;
       --repo) REPO="${2:-}"; shift 2 ;;
       --watch) do_watch="true"; shift ;;
@@ -203,6 +221,7 @@ cmd_launch() {
     4|13) ;;
     *) die "--kms-parties must be 4 or 13" ;;
   esac
+  require_hours "--lifetime" "${lifetime}" 4 96
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
@@ -236,7 +255,7 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} chain_mode=${chain_mode} tests=${tests} polygon=${polygon}"
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
   gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
@@ -250,6 +269,7 @@ print(json.dumps(out, separators=(",", ":")))
     -f "nb_kms_core=${kms_parties}" \
     -f "deploy_polygon=${polygon}" \
     -f "chain_mode=${chain_mode}" \
+    -f "lifetime=${lifetime}" \
     -f "overrides=${overrides}"
 
   echo "waiting for Actions run to appear on ${ref}..."
@@ -322,6 +342,26 @@ cmd_destroy() {
   echo "destroy dispatched for ${ns}"
 }
 
+cmd_extend() {
+  local ns="${1:-}" hours="${2:-}"
+  [[ -n "${ns}" && -n "${hours}" ]] || die "extend requires <namespace> <hours> (1-48)"
+  shift 2 || true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) REPO="${2:-}"; shift 2 ;;
+      --ref) EXTEND_REF="${2:-}"; shift 2 ;;
+      *) die "unknown extend flag: $1" ;;
+    esac
+  done
+  [[ "${ns}" == fhevm-ci-* ]] || die "refusing to extend '${ns}' (must start with fhevm-ci-)"
+  require_hours "hours" "${hours}" 1 48
+  need_gh
+  gh workflow run "${EXTEND_WORKFLOW}" -R "${REPO}" --ref "${EXTEND_REF:-main}" \
+    -f "namespace=${ns}" \
+    -f "hours=${hours}"
+  echo "extend dispatched for ${ns} (+${hours}h from now)"
+}
+
 namespace_for_run() {
   local run_id
   run_id=$(resolve_run_id "${1}" "")
@@ -378,6 +418,7 @@ case "${cmd}" in
   launch) cmd_launch "$@" ;;
   watch) cmd_watch "$@" ;;
   status) cmd_status "$@" ;;
+  extend) cmd_extend "$@" ;;
   destroy) cmd_destroy "$@" ;;
   namespace) cmd_namespace "$@" ;;
   connect) cmd_connect "$@" ;;
