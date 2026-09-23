@@ -85,7 +85,7 @@ upgrade)
     for i in $(seq 1 "${nb_kms}"); do
       echo "kms-connector-${i}: upgrading to ${TARGET_TAG}"
       # --reuse-values keeps every address, endpoint and wallet the deploy resolved; only the
-      # four image tags move. The chart runs its own db-migration, so a connector schema change
+      # six image tags move. The chart runs its own db-migration, so a connector schema change
       # between the releases is applied here.
       helm upgrade "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" -n "${NAMESPACE}" --reuse-values \
         --set-string "kmsConnectorDbMigration.image.name=${reg}/kms-connector/db-migration" \
@@ -95,10 +95,14 @@ upgrade)
         --set-string "kmsConnectorKmsWorker.image.name=${reg}/kms-connector/kms-worker" \
         --set-string "kmsConnectorKmsWorker.image.tag=${TARGET_TAG}" \
         --set-string "kmsConnectorTxSender.image.name=${reg}/kms-connector/tx-sender" \
-        --set-string "kmsConnectorTxSender.image.tag=${TARGET_TAG}" >/dev/null
+        --set-string "kmsConnectorTxSender.image.tag=${TARGET_TAG}" \
+        --set-string "kmsConnectorEndpoint.image.name=${reg}/kms-connector/endpoint" \
+        --set-string "kmsConnectorEndpoint.image.tag=${TARGET_TAG}" \
+        --set-string "kmsConnectorProxy.image.name=${reg}/kms-connector/proxy" \
+        --set-string "kmsConnectorProxy.image.tag=${TARGET_TAG}" >/dev/null
     done
     for i in $(seq 1 "${nb_kms}"); do
-      for c in gw-listener kms-worker tx-sender; do
+      for c in gw-listener kms-worker tx-sender endpoint proxy; do
         kubectl rollout status -n "${NAMESPACE}" "deploy/kms-connector-${i}-kms-connector-${c}" \
           --timeout=300s >/dev/null || fail "kms-connector-${i}-${c} did not become ready"
       done
