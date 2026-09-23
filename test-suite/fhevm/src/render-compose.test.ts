@@ -497,6 +497,37 @@ describe("render-compose", () => {
     });
   });
 
+  test("builds overridden services for the host platform and keeps the pins of published ones", async () => {
+    // On an amd64 host, CI included, the pin and the host platform agree.
+    const arch = Object.getOwnPropertyDescriptor(process, "arch")!;
+    Object.defineProperty(process, "arch", { value: "arm64", configurable: true });
+    try {
+      await withTempStateDir(async () => {
+        await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+        await writeFile(envPath("coprocessor"), "\n");
+        await writeFile(envPath("coprocessor.1"), "\n");
+        const platformOf = async (component: string, service: string) =>
+          ((await loadMergedComposeDoc(component)).services[service] as { platform?: string } | undefined)?.platform;
+
+        await generateComposeOverrides(state, stackSpecForState(state));
+        expect(await platformOf("kms-connector", "kms-connector-endpoint")).toBe("linux/amd64");
+        expect(await platformOf("coprocessor", "coprocessor-consensus-detector")).toBe("linux/amd64");
+
+        const overridden: State = {
+          ...state,
+          overrides: [{ group: "coprocessor" }, { group: "kms-connector" }],
+          scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+        };
+        await generateComposeOverrides(overridden, stackSpecForState(overridden));
+        expect(await platformOf("kms-connector", "kms-connector-endpoint")).toBe("linux/arm64");
+        expect(await platformOf("kms-connector", "kms-connector-3-endpoint")).toBe("linux/arm64");
+        expect(await platformOf("coprocessor", "coprocessor-consensus-detector")).toBe("linux/arm64");
+      });
+    } finally {
+      Object.defineProperty(process, "arch", arch);
+    }
+  });
+
   test("keeps local host-contract builds on extra host chains", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("host-sc")), { recursive: true });
