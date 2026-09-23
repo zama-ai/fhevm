@@ -40,9 +40,9 @@ pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 /// Lazy block-meter creation can transfer, allocate and assign.
 pub const CPIS_PER_SQUAT_CREATE: usize = 3;
 
-/// One app instruction, one host CPI, and the emitted host event CPIs.
-pub fn instruction_trace_floor(random_event: bool, public_event: bool) -> usize {
-    2 + usize::from(random_event) + usize::from(public_event)
+/// One app instruction, one host CPI, and the random-seeds event CPI when the host emits it.
+pub fn instruction_trace_floor(random_event: bool) -> usize {
+    2 + usize::from(random_event)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,8 +51,6 @@ pub struct FheExecutionCost {
     /// Conservative bound on Store rent top-ups; multiple outputs may share one Store.
     pub store_outputs: usize,
     pub emits_random_seeds_event: bool,
-    /// Whether the host will emit the public-outputs event CPI (any `make_public` output).
-    pub emits_public_outputs_event: bool,
     /// Exact serialized `fhe_execute` instruction data, discriminator included — what the CPI
     /// carries and what [`CPI_INSTRUCTION_DATA_LIMIT`] bounds.
     pub packet_bytes: usize,
@@ -78,10 +76,7 @@ pub struct FheExecutionCost {
 
 impl FheExecutionCost {
     pub fn instruction_trace_floor(&self) -> usize {
-        instruction_trace_floor(
-            self.emits_random_seeds_event,
-            self.emits_public_outputs_event,
-        )
+        instruction_trace_floor(self.emits_random_seeds_event)
     }
 
     /// Includes a possible rent transfer per Store output and lazy meter creation.
@@ -95,12 +90,11 @@ impl FheExecutionCost {
 mod tests {
     use super::*;
 
-    fn cost(store_outputs: usize, random: bool, public: bool) -> FheExecutionCost {
+    fn cost(store_outputs: usize, random: bool) -> FheExecutionCost {
         FheExecutionCost {
             steps: 1,
             store_outputs,
             emits_random_seeds_event: random,
-            emits_public_outputs_event: public,
             packet_bytes: 0,
             build_heap_bytes: 0,
             invoke_heap_bytes: 0,
@@ -111,20 +105,18 @@ mod tests {
     }
 
     #[test]
-    fn trace_floor_counts_only_the_wrapper_and_emitted_event_kinds() {
-        assert_eq!(instruction_trace_floor(false, false), 2);
-        assert_eq!(instruction_trace_floor(true, false), 3);
-        assert_eq!(instruction_trace_floor(false, true), 3);
-        assert_eq!(instruction_trace_floor(true, true), 4);
+    fn trace_floor_counts_only_the_wrapper_and_the_random_seeds_event() {
+        assert_eq!(instruction_trace_floor(false), 2);
+        assert_eq!(instruction_trace_floor(true), 3);
     }
 
     #[test]
     fn worst_case_charges_each_store_output_and_one_lazy_meter_creation() {
-        let cost = cost(3, true, true);
-        assert_eq!(cost.instruction_trace_floor(), 4);
+        let cost = cost(3, true);
+        assert_eq!(cost.instruction_trace_floor(), 3);
         assert_eq!(
             cost.instruction_trace_worst_case(),
-            4 + 3 + CPIS_PER_SQUAT_CREATE
+            3 + 3 + CPIS_PER_SQUAT_CREATE
         );
     }
 }

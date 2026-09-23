@@ -8,7 +8,7 @@
 //!
 //! Covered here: `fhe_execute` persistent outputs (create with the PDA proof, update against the
 //! stored handle, allows and leaves), the reads an execution admits, application folding, the
-//! deny and pause gates, off-chain reconstruction and proofs, the public-outputs event, the HCU
+//! deny and pause gates, off-chain reconstruction and proofs, public outputs, the HCU
 //! block cap, the rand nonce, `verify_public_decrypt`, and the cost snapshots.
 
 use anchor_lang::{
@@ -1831,7 +1831,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
 }
 
 // ---------------------------------------------------------------------------
-// fhe_execute: narrow produced-public lifecycle execution
+// fhe_execute: public outputs and the event CPI
 // ---------------------------------------------------------------------------
 
 /// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
@@ -1894,86 +1894,42 @@ fn sole_emitted_event<T: Discriminator + AnchorDeserialize>(
     events.remove(0)
 }
 
-fn created_public_events(
+/// The Store's peaks after `execution`: for each public output in step order, one allow leaf for
+/// `payer` and then its public-decrypt leaf. The MMR is the only record that a handle became
+/// public, and it is what a public decryption is proven against.
+fn expected_public_output_peaks(
     result: &mollusk_svm::result::InstructionResult,
-) -> Vec<host::PublicOutputsProducedEvent> {
-    emitted_events(result)
-}
-
-fn assert_created_public_batch(
-    result: &mollusk_svm::result::InstructionResult,
-    expected_outputs: &[(u16, Pubkey)],
-) {
-    let event = sole_emitted_event::<host::PublicOutputsProducedEvent>(result);
-    assert_eq!(event.version, host::EVENT_VERSION);
-    assert_eq!(event.outputs.len(), expected_outputs.len());
-    for (record, (step_index, encrypted_store)) in event.outputs.iter().zip(expected_outputs.iter())
-    {
-        assert_eq!(record.step_index, *step_index);
-        assert_eq!(record.encrypted_store, *encrypted_store);
-        assert!(read_encrypted_store_from_result(result, *encrypted_store)
-            .slots
-            .iter()
-            .any(|slot| slot.handle == record.output_handle));
+    outputs: &[(u16, Pubkey)],
+    payer: Pubkey,
+) -> (Vec<[u8; 32]>, u64) {
+    let mut peaks = Vec::new();
+    let mut count = 0u64;
+    for (step_index, address) in outputs {
+        let handle = read_encrypted_store_from_result(result, *address)
+            .get(&label(&format!("created-public-{step_index}")))
+            .expect("the public output's slot");
+        append_allow_leaves(*address, handle, &[payer], &mut peaks, &mut count);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(address.to_bytes(), count, handle);
+        zama_solana_acl::mmr_append(&mut peaks, &mut count, leaf).unwrap();
     }
+    (peaks, count)
 }
 
 #[test]
-fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() {
-    let execution = created_public_batch(1, &[]);
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert!(created_public_events(&result).is_empty());
-}
-
-#[test]
-fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
-    let execution = created_public_batch(1, &[0]);
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert_created_public_batch(&result, &execution.outputs);
-}
-
-#[test]
-fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
+fn mollusk_fhe_execute_seals_each_public_outputs_leaves_in_step_order() {
     let execution = created_public_batch(3, &[0, 2]);
+    let payer = execution.instruction.accounts[0].pubkey;
     let result = check_host_instruction(
         &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
     );
-    assert_created_public_batch(&result, &execution.outputs);
-}
-
-#[test]
-fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
-    // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
-    // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
-    // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
-    // Each step writes a distinct slot, allows the payer, and makes the result public. The
-    // current 32 KiB host heap admits 30 of these; the State capacity is 32, but this heavier
-    // lifecycle shape reaches the heap wall first (tracked by fhe_execute_boundary.rs).
-    let created_public_steps = 30;
-    let execution = created_public_batch(
-        created_public_steps,
-        &(0..created_public_steps).collect::<Vec<_>>(),
-    );
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert_created_public_batch(&result, &execution.outputs);
+    let store = read_encrypted_store_from_result(&result, execution.outputs[0].1);
+    let (peaks, leaf_count) = expected_public_output_peaks(&result, &execution.outputs, payer);
+    assert_eq!(store.leaf_count, leaf_count);
+    assert_eq!(store.peaks, peaks);
 }
 
 #[test]
@@ -1994,7 +1950,6 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
     let result =
         check_host_instruction(&mollusk(), &execution.instruction, &execution.accounts, &[]);
     assert!(result.program_result.is_err());
-    assert!(created_public_events(&result).is_empty());
     let output = result.get_account(&execution.outputs[0].1).unwrap();
     let before = &execution
         .accounts

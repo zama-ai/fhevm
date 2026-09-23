@@ -5,8 +5,7 @@
 //!
 //! Nothing here is emitted on-chain — these are plain value types, not Anchor
 //! events. The only evented compute data is what an indexer cannot recompute
-//! from instruction data alone (`FheExecuteRandomSeedsEvent`,
-//! `PublicOutputsProducedEvent` in `events.rs`).
+//! from instruction data alone (`FheExecuteRandomSeedsEvent` in `events.rs`).
 
 use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 

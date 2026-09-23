@@ -6,10 +6,7 @@
 //!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent`, which carries the one
 //!   datum an indexer cannot recompute from instruction data (seeds derived from block entropy).
-//!   `PublicOutputsProducedEvent` is emitted the same way but has had no consumer in this repository
-//!   since RFC 035 retired the standalone proof store; retiring it is fhevm-internal#1665's call
-//!   (DD-037). Nothing here uses
-//!   `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
+//!   Nothing here uses `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
 //!   rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
 //! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
@@ -20,26 +17,6 @@
 //!   is gone; INVARIANTS #27 records the separate fact that nothing off-chain consumes delegation yet.
 
 use anchor_lang::prelude::*;
-
-/// One public persistent output produced by an `fhe_execute` execution.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ProducedPublicOutput {
-    /// Zero-based step index within the execution.
-    pub step_index: u16,
-    /// Host-owned persistent `EncryptedStore` account bound by the step.
-    pub encrypted_store: Pubkey,
-    /// Block-entropy-derived output handle written to the account.
-    pub output_handle: [u8; 32],
-}
-
-/// Emitted once for the public outputs produced by an `fhe_execute` execution.
-#[event]
-pub struct PublicOutputsProducedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Produced public outputs in execution step order.
-    pub outputs: Vec<ProducedPublicOutput>,
-}
 
 /// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]

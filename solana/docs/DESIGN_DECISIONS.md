@@ -64,7 +64,7 @@ are written as one narrative instead.
 | DD-035                                                                                                                                    | replaced by DD-048                       | Standalone Untrusted Solana MMR Proof Service, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                        |
 | DD-036                                                                                                                                    | replaced by DD-045                       | Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)      |
 | DD-037                                                                                                                                    | replaced by DD-038                       | `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)   |
-| [DD-038](#dd-038-one-host-owned-born-public-lifecycle-batch-replaces-per-operation-events)                                                | adopted                                  | One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                                                        |
+| DD-038                                                                                                                                    | replaced by removed; fhevm-internal#2079 | One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)             |
 | DD-039                                                                                                                                    | replaced by DD-047                       | HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)          |
 | [DD-040](#dd-040-app-public-decrypt-is-a-stateless-pull-oracle-verifier-not-a-request-lifecycle)                                          | adopted                                  | App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle                                                 |
 | [DD-041](#dd-041-coprocessor-input-trust-is-a-registered-n-of-m-signer-set-in-hostconfig)                                                 | adopted                                  | Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`                                                       |
@@ -81,6 +81,7 @@ are written as one narrative instead.
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
 | [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
+| [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The Ledger Is The Work Log, Not A PDA Queue                                                                                    |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -667,7 +668,8 @@ Open for debate:
 The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
 `programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-replaced by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
+gone, and so is the created-public lifecycle batch that replaced it (DD-038, removed by
+fhevm-internal#2079). (An earlier revision cited
 DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
 event transport.)
 
@@ -954,9 +956,9 @@ from confirmed Yellowstone transaction instructions plus streamed Clock/SlotHash
 inner CPI instructions, since confidential-token and other app programs invoke the host via CPI.
 Store outputs carry the expected previous handle and leaf count, so every transaction is
 independently interpretable off-chain and the listener reconstructs leaves from instruction data
-alone, in replay order, without reading account state first. Ordinary compute facts are
-reconstructed from the execution and Yellowstone sysvars; only produced-public output handles use
-the narrow lifecycle batch in DD-038.
+alone, in replay order, without reading account state first. Compute facts, including which
+outputs are made public, are reconstructed from the execution and Yellowstone sysvars; only the
+random seeds travel in an event (DD-044).
 
 Rationale:
 
@@ -1001,27 +1003,6 @@ Consequences:
 
 Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
 before a decrypt request; plaintext is released only after KMS authorization succeeds.
-
-## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
-
-Status: adopted
-
-Ordinary `fhe_execute` computation facts remain reconstructed from instruction data plus Yellowstone
-sysvars. The host no longer produces the general per-operation event stream or its eight-event
-transport guard. Instead, a batch with one or more `make_public` persistent outputs emits exactly one
-versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
-zero-based step index, the host-owned Store, and the host-derived output handle;
-a batch with no produced public output emits no lifecycle event.
-
-This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
-instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
-one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
-the host's fixed 32 KB `solana-program-entrypoint` bump heap fits 20 persistent creates per batch,
-measured and pinned by the `fhe_execute_boundary/all_created_public` snapshot entry.) The event is unconditional, as every event this program
-emits now is (DD-044). Consumers must still validate the host program, its canonical
-event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
-`make_public` outputs; the event grants no authority by itself.
 
 ## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
 
@@ -1486,7 +1467,7 @@ caught by the runtime at all. What catches those is two tests, and they are the 
 returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
 program, account count, signer and writable flags, and data length, and `host_mollusk.rs`'s
 `sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
-canonical authority, and every payload field. Those two cover `PublicOutputsProducedEvent` and
+canonical authority, and every payload field. Those two cover `FheExecuteRandomSeedsEvent` and
 `NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
 of an upstream wire format.
 
@@ -2042,6 +2023,29 @@ we audit and ship.
 Reopening condition: Anchor v2 published on crates.io with an audit. Measure a port against the
 runtime cost snapshots first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
 fields become a `Slab`. A port after the external audit needs its own audit.
+
+## DD-055: The Ledger Is The Work Log, Not A PDA Queue
+
+Status: adopted
+
+Recorded in fhevm-internal#2079.
+
+The host listener rebuilds all coprocessor work from sealed Yellowstone blocks at `confirmed`. The
+alternative is a work queue on-chain: each `fhe_execute` writes its payload into a temporary PDA, the
+coprocessor marks it computed, and the user closes it for a rent refund. Work would then stay
+on-chain until handled, so a listener that missed it could find it again. It is rejected:
+
+| Cost | Why it does not fit |
+|---|---|
+| Completion needs coprocessor transactions on Solana | They would need threshold signatures and fees. FHEVM has no such path: an EVM host never learns that a computation finished, and completion lives on the Gateway. Refunds would depend on coprocessor liveness. |
+| Order is lost | The coprocessor needs the order of dependent operations, which a block gives. A global sequence counter is one account every FHE transaction writes, so all apps would execute one at a time. A counter per Store does not order handles that move between programs. |
+| A stream is still needed | Low latency needs an account subscription, and `getProgramAccounts` scans are heavy and throttled. The listener would have two ways to discover work. |
+| Rent and a second transaction per execution | A 1 KB payload locks about (128 + 1,024) × 6,960 lamports, roughly 0.008 SOL, until someone closes it. |
+
+The ledger is already the durable log. The risk is a listener that falls behind until the
+provider's replay window closes, and the answer is to see it early: the listener exports its lag and
+error counts (fhevm-internal#2079), and a self-describing execution makes archive replay possible
+(fhevm-internal#2081).
 
 ## Open product decisions
 

@@ -485,7 +485,7 @@ fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 }
 
 /// [`allow_heavy_creates_case`] with every output also made public — the corner where the widest
-/// allow set meets the public-outputs event. The one-allow public sweep sits exactly on the
+/// allow set meets `make_public`. The one-allow public sweep sits exactly on the
 /// trace-heap boundary with zero margin, so this axis pair is measured rather than interpolated
 /// from the two single-axis sweeps.
 fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {

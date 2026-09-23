@@ -13,10 +13,7 @@ use super::input_verification::verify_input_attestation;
 use super::store_history::grow_account_if_needed;
 use crate::{
     errors::ZamaHostError,
-    events::{
-        FheExecuteRandomSeed, FheExecuteRandomSeedsEvent, ProducedPublicOutput,
-        PublicOutputsProducedEvent,
-    },
+    events::{FheExecuteRandomSeed, FheExecuteRandomSeedsEvent},
     state::*,
 };
 
@@ -29,7 +26,7 @@ mod store_output;
 mod walk;
 
 use account_table::ExecutionAccountTable;
-use event_transport::{emit_execution_random_seeds, emit_public_outputs_produced};
+use event_transport::emit_execution_random_seeds;
 use preflight::preflight_execution;
 use walk::{walk_steps, ExecutionHandleContext, RandContext};
 
@@ -147,7 +144,7 @@ pub fn fhe_execute<'info>(
     // leaves partial writes behind only until the runtime reverts the transaction, which discards
     // every account write — so no validate-only pre-pass is needed for atomicity. The event CPI
     // stays last so no event describes state that did not commit.
-    let created_public_outputs = execute_steps(
+    execute_steps(
         &mut account_table,
         &mut transient_store,
         call_start,
@@ -164,7 +161,6 @@ pub fn fhe_execute<'info>(
         &ctx.accounts.system_program.to_account_info(),
     )?;
     emit_execution_random_seeds(&ctx, random_seeds)?;
-    emit_public_outputs_produced(&ctx, created_public_outputs)?;
     // Event CPIs may replace return data; restore the selected handles afterwards.
     return_execution_handles(
         &*transient_store_account.load()?,
@@ -269,7 +265,7 @@ fn execute_steps<'a, 'info>(
     app: AppScope,
     handle_context: &ExecutionHandleContext,
     host_config: &HostConfig,
-) -> Result<Vec<ProducedPublicOutput>> {
+) -> Result<()> {
     let producer_store = table.account(args.execution_store_index.into())?.key();
     let mut execution = ExecutionState {
         table,
@@ -282,14 +278,13 @@ fn execute_steps<'a, 'info>(
         host_config,
     };
     walk_steps(&mut execution, args, handle_context)?;
-    let mut public_outputs = Vec::new();
     for effect in &args.effects {
         let handle = execution
             .transient_store
             .result(call_start + usize::from(effect.result.step_index))
             .ok_or(ZamaHostError::InvalidReturnSelection)?
             .handle;
-        let state = store_output::accept_store_output(
+        store_output::accept_store_output(
             execution.table,
             &args.dictionary,
             execution.transient_store,
@@ -301,21 +296,13 @@ fn execute_steps<'a, 'info>(
             &effect.grants,
             handle,
         )?;
-        if effect.make_public {
-            public_outputs.push(ProducedPublicOutput {
-                step_index: u16::from(effect.result.step_index),
-                encrypted_store: state,
-                output_handle: handle,
-            });
-        }
     }
-    Ok(public_outputs)
+    Ok(())
 }
 
 /// The single walk's state: resolves operands through the shared account table
 /// (which preflight already validated for coverage and authority signatures),
-/// validates and creates or updates persistent outputs, and buffers
-/// produced-public lifecycle records. The operand resolvers driving these
+/// and validates and creates or updates persistent outputs. The operand resolvers driving these
 /// methods live with the step match in [`walk`].
 struct ExecutionState<'t, 'a, 'info> {
     table: &'t mut ExecutionAccountTable<'a, 'info>,

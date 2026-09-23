@@ -125,7 +125,6 @@ PINNED_SCHEMAS = [
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheExecuteArgs", True),
     ("zama_host", "type", "ExecutionResultRef", True),
-    ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
     # `EncryptedValue` and `DenyScopeRecord` are absent here on purpose: Anchor emits only the

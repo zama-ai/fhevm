@@ -16,7 +16,7 @@
 //! after the first. An extra account, or a changed payload encoding, would reach no check at all. The
 //! tests are what pin it — `event_transport.rs`'s assertion on the built `Instruction`, and
 //! `host_mollusk.rs`'s `sole_emitted_event`, which reads an event back out of the inner instructions.
-//! Between them they cover `PublicOutputsProducedEvent` and `NewKmsContextEvent`. Keep it that way: if
+//! Between them they cover `FheExecuteRandomSeedsEvent` and `NewKmsContextEvent`. Keep it that way: if
 //! those stop being covered, this becomes an unchecked copy of an upstream wire format.
 
 use anchor_lang::prelude::*;
