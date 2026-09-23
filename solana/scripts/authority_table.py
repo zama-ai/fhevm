@@ -52,7 +52,7 @@ CAPABILITIES = {
     },
     "User rights": {
         "owns": "delegation, permit revocation",
-        "changed_by": "the user's wallet",
+        "changed_by": "the user: a wallet, or a PDA its program signs for",
         "consumers": "KMS connector",
     },
 }
@@ -124,7 +124,11 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
     },
     "delegate_for_user_decryption": {
         "capability": "User rights",
-        "signers": {"payer": PAYER, "delegator": "the user granting the delegation"},
+        "signers": {
+            "payer": PAYER,
+            "delegator": "the user granting the delegation; a wallet must call at the top "
+            "level, a PDA may call through CPI",
+        },
     },
     "revoke_delegation_for_user_decryption": {
         "capability": "User rights",

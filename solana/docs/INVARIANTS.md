@@ -63,11 +63,6 @@ old handle's leaves stay sealed.
 
 **7. [HOLDS]** Every encrypted store lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
 
-**68. [ASSUMPTION]** An application never passes one of its store-authority PDAs as a signer to a program it does not
-trust. zama-host checks only that a Store's authority signs, and that signature reaches every program the application
-calls with it: such a program can write the application's Stores and make their handles public. zama-host cannot
-enforce this, so the audits of each application check it (fhevm-internal#2068, fhevm-internal#2070).
-
 **8. [HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
 stays provable after any number of later updates.
 
@@ -112,6 +107,11 @@ RFC 035.) Related token/Host lifecycle guardrails are:
   `assert_host_config_allows_token_response` (redeem, disclose). Opening a burn / cancelling a pending burn still
   requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
   gov surface yet (zama-ai/fhevm-internal#1634).
+
+**68. [ASSUMPTION]** A program never passes a PDA it signs with, a Store authority or a delegator, as a signer to a
+program it does not trust. zama-host accepts whatever that PDA signs. A program given the PDA as a signer, and any
+program it calls in turn, can write the PDA's Stores, make their handles public and delegate its decryption rights.
+zama-host cannot enforce this, so the audits of each application check it (fhevm-internal#2068, fhevm-internal#2070).
 
 **62. [HOLDS]** Compute permission is a signature, never a proof. Reading a slot requires its Store authority's
 signature and the exact current handle. Each execution names a canonical producing Store; its authority must sign.
@@ -242,9 +242,9 @@ A dead row cannot veto a live one. The connector then requires the delegator's a
 Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
 `delegate_for_user_decryption` as a top-level instruction (`WalletDelegationThroughCpi`). A wallet's signature reaches
 every CPI of the transaction it signed, so without that rule any program the user calls could delegate the user's
-decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it. Pinned by
-`a_wallet_grant_forwarded_through_another_program_is_rejected` and `a_vault_pda_grants_a_delegation_via_cpi`
-(fhevm-internal#2084).
+decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it, and #68 covers
+where that program may pass it. Pinned by `a_wallet_grant_forwarded_through_another_program_is_rejected`
+and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084).
 
 ## E. Reconstruction & off-chain services
 
