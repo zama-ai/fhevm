@@ -1,0 +1,127 @@
+name: preview-env-cleanup
+
+##############################################################################
+# Hourly clock for dispatch preview namespaces. PR-label namespaces are not
+# annotated and are never selected. Within 2h of expires-at, post once to
+# #ci-alerts. Once expires-at has passed, dispatch preview-env-destroy so the
+# testnet wallet sweep still runs before the namespace is deleted. If the
+# namespace is still present 2h after that dispatch, post once more.
+##############################################################################
+
+on:
+  schedule:
+    # Off the hour so it does not pile onto other top-of-hour crons.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # zizmor: ignore[excessive-permissions] gh workflow run needs actions:write to dispatch preview-env-destroy
+  contents: read
+
+jobs:
+  cleanup:
+    name: cleanup
+    # One sweep at a time. A manual dispatch overlapping the hourly run would
+    # otherwise post twice and queue a second destroy.
+    concurrency:
+      group: preview-env-cleanup
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Setup tailscale
+        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:fhevm-ci
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Configure kubeconfig for the Tailscale cluster
+        run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
+
+      - name: Warn and destroy expired dispatch previews
+        env:
+          SLACK_CI_ALERTS_WEBHOOK: ${{ secrets.SLACK_CI_ALERTS_WEBHOOK }}
+        run: |
+          set -euo pipefail
+          now=$(date -u +%s)
+          # Unit separator, not tab: bash collapses consecutive tabs, so an
+          # empty warned-at would shift actor and destroy-dispatched-at left.
+          sep=$'\x1f'
+          rows=$(kubectl get ns -o json | jq -r --arg sep "${sep}" '
+            .items[]
+            | select(.metadata.name | startswith("fhevm-ci-"))
+            | select(.metadata.annotations["preview.zama.ai/source"] == "dispatch")
+            | [
+                .metadata.name,
+                (.metadata.annotations["preview.zama.ai/expires-at"] // ""),
+                (.metadata.annotations["preview.zama.ai/warned-at"] // ""),
+                (.metadata.annotations["preview.zama.ai/actor"] // "unknown"),
+                (.metadata.annotations["preview.zama.ai/destroy-dispatched-at"] // ""),
+                (.metadata.annotations["preview.zama.ai/destroy-stuck-warned-at"] // "")
+              ]
+            | join($sep)
+          ')
+
+          post_once() {
+            local ns="$1" mark="$2" key="$3" text="$4" payload
+            echo "${text}" >> "${GITHUB_STEP_SUMMARY}"
+            if [[ -n "${SLACK_CI_ALERTS_WEBHOOK}" ]]; then
+              payload=$(jq -n --arg text "${text}" '{text:$text}')
+              if ! curl -fsS -X POST -H 'Content-type: application/json' --data "${payload}" \
+                  "${SLACK_CI_ALERTS_WEBHOOK}"; then
+                echo "::warning::Slack post failed for ${ns}; will retry next hour"
+                return 0
+              fi
+            else
+              echo "::warning::SLACK_CI_ALERTS_WEBHOOK is unset; logged the ${ns} warning in the summary only"
+            fi
+            kubectl annotate namespace "${ns}" "${key}=${mark}" --overwrite
+          }
+
+          if [[ -z "${rows}" ]]; then
+            echo "No dispatch preview namespaces."
+            exit 0
+          fi
+
+          while IFS=$'\x1f' read -r ns expires warned actor dispatched stuck_warned; do
+            [[ -n "${ns}" ]] || continue
+            # GNU date -d "" succeeds and returns today at 00:00Z, which is already past.
+            if [[ -z "${expires}" ]] || ! exp_epoch=$(date -u -d "${expires}" +%s 2>/dev/null); then
+              echo "::warning::${ns} has an unparseable expires-at ('${expires}'); skipping"
+              continue
+            fi
+            remaining=$((exp_epoch - now))
+
+            if (( remaining > 0 && remaining <= 7200 )) && [[ "${warned}" != "${expires}" ]]; then
+              post_once "${ns}" "${expires}" "preview.zama.ai/warned-at" \
+                "preview ${ns} (actor ${actor}) expires at ${expires}. Keep it with \`preview-env extend ${ns} <hours>\` (1-48)."
+            fi
+
+            if (( remaining <= 0 )); then
+              if [[ "${dispatched}" == "${expires}" ]]; then
+                if (( remaining <= -7200 )) && [[ "${stuck_warned}" != "${dispatched}" ]]; then
+                  post_once "${ns}" "${dispatched}" "preview.zama.ai/destroy-stuck-warned-at" \
+                    "preview ${ns} (actor ${actor}) destroy was dispatched at ${dispatched} and the namespace is still present. The teardown may be stuck."
+                fi
+                echo "${ns} destroy already dispatched for ${expires}"
+                continue
+              fi
+              echo "Dispatching destroy for ${ns} (expired ${expires})"
+              # No checkout: gh needs -R, and it must not consume the loop's stdin.
+              if gh workflow run preview-env-destroy.yml --ref "${GITHUB_REF_NAME}" \
+                  -R "${GITHUB_REPOSITORY}" \
+                  -f "namespace=${ns}" < /dev/null; then
+                kubectl annotate namespace "${ns}" \
+                  "preview.zama.ai/destroy-dispatched-at=${expires}" --overwrite
+              else
+                echo "::warning::failed to dispatch destroy for ${ns}; will retry next hour"
+              fi
+            fi
+          done <<< "${rows}"
