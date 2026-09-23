@@ -15,8 +15,8 @@ CREATE TABLE IF NOT EXISTS block_manifest_state
     manifest_required BOOLEAN GENERATED ALWAYS AS (
         MOD(block_number, publication_cadence) = 0
     ) STORED,
-    -- Scheduler bookkeeping only. While the parent is live, discover its
-    -- direct non-orphaned children; close this scan once it is finalized or orphaned.
+    -- Scheduler bookkeeping only. Discover direct non-orphaned children until
+    -- the parent is orphaned, or finalized with a discovered finalized successor.
     child_block_discovery_closed BOOLEAN NOT NULL DEFAULT FALSE,
 
     manifest_revision BIGINT NOT NULL DEFAULT 0 CHECK (manifest_revision >= 0),
