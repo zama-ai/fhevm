@@ -136,6 +136,19 @@ additionalResources:
                       - name: test-command
                         value: "negative-acl"
 
+                # kms-connector HTTP decryption path
+                - name: connector-http
+                  dependencies: ["negative-acl"]
+                  template: run-test
+                  continueOn:
+                    failed: true
+                  arguments:
+                    parameters:
+                      - name: test-name
+                        value: "connector-http"
+                      - name: test-command
+                        value: "Connector HTTP"
+
                 - name: generate-summary
                   dependencies: [
                     "user-input-uint64",
@@ -145,7 +158,8 @@ additionalResources:
                     "delegated-user-decrypt",
                     "random-subset",
                     "hcu-block-cap",
-                    "negative-acl"
+                    "negative-acl",
+                    "connector-http"
                   ]
                   template: summary-report
                   continueOn:
@@ -168,6 +182,8 @@ additionalResources:
                       value: "{{`{{tasks.hcu-block-cap.outputs.parameters.test-result}}`}}"
                     - name: test-result-8
                       value: "{{`{{tasks.negative-acl.outputs.parameters.test-result}}`}}"
+                    - name: test-result-9
+                      value: "{{`{{tasks.connector-http.outputs.parameters.test-result}}`}}"
 
           - name: run-test
             inputs:
@@ -188,6 +204,10 @@ additionalResources:
               image: PLACEHOLDER_E2E_IMAGE
               command: ["/bin/bash", "-c"]
               source: |
+                  # The kms-connector proxies' self-signed certificate (env
+                  # KMS_CONNECTOR_PROXY_CA below): Node only trusts extra CAs from
+                  # a file, so write it where NODE_EXTRA_CA_CERTS points first.
+                  printf '%s\n' "${KMS_CONNECTOR_PROXY_CA}" > "${NODE_EXTRA_CA_CERTS}"
 
                   # Patch E2ECoprocessorConfigLocal.sol with the real POLYGON
                   # deployment addresses (same mechanism as the ETH workflow, but
@@ -308,6 +328,26 @@ additionalResources:
                   value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 - name: RELAYER_URL
                   value: "http://relayer:3000/v2"
+                # kms-connector HTTP decryption path.
+                - name: KMS_CONNECTOR_ENDPOINT_URLS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: kms-connector-http
+                      key: endpoint-urls
+                - name: KMS_CONNECTOR_API_KEY
+                  value: "fhevm-e2e-kms-connector-api-key"
+                - name: KMS_THRESHOLD
+                  valueFrom:
+                    configMapKeyRef:
+                      name: kms-connector-http
+                      key: kms-threshold
+                - name: KMS_CONNECTOR_PROXY_CA
+                  valueFrom:
+                    configMapKeyRef:
+                      name: kms-connector-http
+                      key: ca.crt
+                - name: NODE_EXTRA_CA_CERTS
+                  value: "/tmp/kms-connector-proxy-ca.crt"
               resources:
                 requests:
                   memory: "1Gi"
@@ -327,6 +367,7 @@ additionalResources:
               - name: test-result-6
               - name: test-result-7
               - name: test-result-8
+              - name: test-result-9
             script:
               image: alpine:3.16
               command: ["/bin/sh", "-c"]
@@ -341,6 +382,7 @@ additionalResources:
                 echo '{{`{{inputs.parameters.test-result-6}}`}}' > /mnt/results/random-subset.json
                 echo '{{`{{inputs.parameters.test-result-7}}`}}' > /mnt/results/hcu-block-cap.json
                 echo '{{`{{inputs.parameters.test-result-8}}`}}' > /mnt/results/negative-acl.json
+                echo '{{`{{inputs.parameters.test-result-9}}`}}' > /mnt/results/connector-http.json
 
                 echo "=========================================="
                 echo "FHEVM TEST SUITE SUMMARY REPORT (POLYGON)"
