@@ -460,7 +460,12 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         if (nodes.length != 0) {
             assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[0].signerAddress));
             assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[0].txSenderAddress));
+            assertEq(
+                protocolConfig.getKmsNodeForContext(contextId, nodes[0].txSenderAddress).signerAddress,
+                nodes[0].signerAddress
+            );
         }
+        assertEq(protocolConfig.getKmsNodeForContext(contextId, address(0xDEAD)).txSenderAddress, address(0));
         assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
         assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
         assertEq(protocolConfig.getKmsGenThresholdForContext(contextId), thresholds.kmsGen);
@@ -2071,9 +2076,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
         _assertStoredContextViews(invalidContextId, new KmsNodeParams[](0), IProtocolConfig.KmsThresholds(0, 0, 0, 0));
-        // A never-created context does not exist, so the node lookup reverts too.
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.getKmsNodeForContext(invalidContextId, address(0xDEAD));
     }
 
     function test_viewFunctionsReadableForDestroyedContext() public {
