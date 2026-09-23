@@ -65,10 +65,21 @@ jobs:
             echo "::error::Namespace ${NAMESPACE} does not exist."
             exit 1
           fi
-          ns_source=$(kubectl get namespace "${NAMESPACE}" \
-            -o jsonpath='{.metadata.annotations.preview\.zama\.ai/source}')
+          ns_json=$(kubectl get namespace "${NAMESPACE}" -o json)
+          ns_source=$(jq -r '.metadata.annotations["preview.zama.ai/source"] // ""' <<<"${ns_json}")
           if [[ "${ns_source}" != "dispatch" ]]; then
             echo "::error::${NAMESPACE} is not a dispatch preview (source='${ns_source}'). PR envs are not extended."
+            exit 1
+          fi
+          phase=$(jq -r '.status.phase // ""' <<<"${ns_json}")
+          current_expires=$(jq -r '.metadata.annotations["preview.zama.ai/expires-at"] // ""' <<<"${ns_json}")
+          destroy_at=$(jq -r '.metadata.annotations["preview.zama.ai/destroy-dispatched-at"] // ""' <<<"${ns_json}")
+          if [[ "${phase}" == "Terminating" ]]; then
+            echo "::error::${NAMESPACE} is Terminating. Redeploy instead of extending."
+            exit 1
+          fi
+          if [[ -n "${destroy_at}" && "${destroy_at}" == "${current_expires}" ]]; then
+            echo "::error::${NAMESPACE} is already queued for destroy (${destroy_at}). Redeploy instead of extending."
             exit 1
           fi
           expires=$(date -u -d "+${HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)

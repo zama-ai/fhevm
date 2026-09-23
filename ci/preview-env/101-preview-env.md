@@ -274,8 +274,11 @@ namespace (`lifetime` hours from create, default 8, min 4, max 96). An hourly jo
 once to `#ci-alerts` when that deadline is within 2 hours, then dispatches
 **preview-env-destroy** after `expires-at`. Each dispatch is a new namespace
 (`fhevm-ci-<actor>-<run id>`), so launching again leaves the previous one on
-its own clock. `extend` is what keeps that namespace. Namespaces created before
-this clock existed are not annotated and are never reaped.
+its own clock. `extend` is what keeps that namespace. It refuses a namespace
+that is `Terminating`, or whose destroy was already dispatched for the current
+deadline: redeploy instead. If the namespace is still present about 2h after
+that dispatch, cleanup posts once more to `#ci-alerts`. Namespaces created
+before this clock existed are not annotated and are never reaped.
 
 Keep a run alive (repeat as needed; each call sets the deadline to now plus
 the hours, at most 48):
