@@ -726,13 +726,12 @@ impl World {
     }
 
     /// Projects the world onto the requested keys, exactly as an account read would.
-    pub fn read(&self, keys: &SnapshotKeys) -> Result<HostSnapshot, SnapshotError> {
+    pub fn read(&self, keys: &SnapshotKeys) -> HostSnapshot {
         let accounts = keys
             .as_slice()
             .iter()
-            .map(|key| self.accounts.get(key).cloned())
-            .collect();
-        HostSnapshot::new(self.slot, keys, accounts)
+            .map(|key| (*key, self.accounts.get(key).cloned()));
+        HostSnapshot::new(self.slot, accounts)
     }
 }
 
@@ -794,7 +793,7 @@ impl HostStateReader for ScriptedReader {
                 self.worlds.len()
             )
         });
-        world.read(keys)
+        Ok(world.read(keys))
     }
 }
 

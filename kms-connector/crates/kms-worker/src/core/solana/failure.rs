@@ -60,7 +60,7 @@ impl AuthorizationFailure {
             Self::Watermark(source) => source.is_recoverable(),
             Self::EncryptedStore { source, .. } => source.is_recoverable(),
             Self::Scope { .. } => false,
-            Self::ProofRead(source) => source.is_recoverable(),
+            Self::ProofRead(_) => true,
             Self::HandleBinding { source, .. } => source.is_recoverable(),
             Self::Delegation { source, .. } => source.is_recoverable(),
         }
@@ -110,15 +110,6 @@ impl EncryptedStoreFailure {
     }
 }
 
-impl ProofReadError {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => true,
-            Self::TooManyQueries { .. } => false,
-        }
-    }
-}
-
 impl HandleBindingFailure {
     /// A proof record behind the chain may catch up, and so may the node this connector reads: a
     /// missing leaf is recoverable, as an EVM ACL denial is.
@@ -129,7 +120,7 @@ impl HandleBindingFailure {
             | Self::AccountUnknownToProofRecord
             | Self::LeafIndexOutOfRange { .. }
             | Self::ProofDoesNotVerify { .. } => true,
-            Self::HistoryIncomplete | Self::MmrStateInconsistent => false,
+            Self::HistoryIncomplete => false,
         }
     }
 }

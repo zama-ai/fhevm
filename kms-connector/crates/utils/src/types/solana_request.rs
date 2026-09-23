@@ -203,4 +203,19 @@ mod tests {
             );
         }
     }
+    /// The permit names the one chain the request may decrypt on, as `contractsChainId` does for
+    /// an EIP-712 request.
+    #[test]
+    fn rejects_a_handle_of_another_chain_than_the_permit() {
+        let mut wire = solana_user_decryption_wire(B256::ZERO);
+        let handle_chain = wire.permit.chain_id;
+        wire.permit.chain_id += 1;
+        assert_eq!(
+            SolanaUserDecryptionRequestV1::new(U256::ONE, &wire),
+            Err(RequestFormError::ChainId {
+                permit: handle_chain + 1,
+                handle: handle_chain,
+            })
+        );
+    }
 }

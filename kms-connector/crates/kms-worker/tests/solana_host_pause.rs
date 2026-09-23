@@ -104,7 +104,9 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
 
 /// Everything that is not this deployment's own singleton is a refusal, never a `false`. Absence
 /// is the sharpest case: the address is derivable by anyone, so both "nothing here" and "somebody
-/// funded it" must refuse rather than read as "not paused".
+/// funded it" must refuse rather than read as "not paused". An absent singleton may not have
+/// reached the node yet, so it is retried; another account at the address never becomes the
+/// switch.
 #[tokio::test]
 async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_running() {
     let (wallet, encrypted_store, handle, running) = direct_scenario();
@@ -124,16 +126,19 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
             "no account at the singleton address",
             running.clone().without_account(&key),
             PauseFailure::Absent { account_key: key },
+            true,
         ),
         (
             "a bare transfer to the address, before the program ever wrote there",
             running.clone().with_account(key, prefunded_account()),
             PauseFailure::Absent { account_key: key },
+            true,
         ),
         (
             "an account of another layout",
             running.clone().with_account(key, truncated),
             PauseFailure::NotAHostConfig { account_key: key },
+            false,
         ),
         (
             "another program's account",
@@ -142,10 +147,11 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
                 account_key: key,
                 owner: [0x77; 32],
             },
+            false,
         ),
     ];
 
-    for (what, world, expected) in cases {
+    for (what, world, expected, recoverable) in cases {
         let outcome = authorize_request(
             &ScriptedReader::constant(world),
             &ScriptedProofReader::unreachable(),
@@ -157,5 +163,6 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
             panic!("{what}: an unreadable switch is a closed switch");
         };
         assert_eq!(failure, AuthorizationFailure::Pause(expected), "{what}");
+        assert_eq!(failure.is_recoverable(), recoverable, "{what}");
     }
 }

@@ -39,9 +39,7 @@ fn resolve_from(
     world: &World,
     account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let snapshot = world
-        .read(&SnapshotKeys::new([account_key]))
-        .expect("the world reads");
+    let snapshot = world.read(&SnapshotKeys::new([account_key]));
     resolve_encrypted_store(&snapshot, PROGRAM_ID, account_key)
 }
 
@@ -284,6 +282,30 @@ fn an_encrypted_store_holding_only_its_discriminator_is_rejected() {
     .expect_err("a discriminator alone is not an encrypted store");
 
     assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+}
+
+/// An account whose peak count does not match its leaf count is the host program's own
+/// inconsistency. No proof can match it, so none is asked for and no retry can fix it.
+#[test]
+fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
+    let mut encrypted_store =
+        EncryptedStoreFixture::allowing(handle(0x19, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    encrypted_store.encrypted_store.peaks.push([0; 32]);
+
+    let failure = resolve_from(
+        &World::running_at_slot(1).with_encrypted_store(&encrypted_store),
+        encrypted_store.account_key,
+    )
+    .expect_err("two peaks for one leaf is not a valid state");
+
+    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
+            index: 0,
+            source: failure
+        }
+        .is_recoverable()
+    );
 }
 
 // ---------------------------------------------------------------------------

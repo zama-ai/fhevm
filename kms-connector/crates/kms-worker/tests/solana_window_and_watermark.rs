@@ -21,7 +21,7 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     failure::AuthorizationFailure,
-    pipeline::authorize_request,
+    pipeline::{AuthorizationContext, authorize_request},
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
@@ -32,9 +32,7 @@ use solana_support::*;
 /// Reads the watermark of `user` out of a world.
 fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
     let (key, _) = invalidation_address(user);
-    let snapshot = world
-        .read(&SnapshotKeys::new([key]))
-        .expect("the world reads");
+    let snapshot = world.read(&SnapshotKeys::new([key]));
     read_watermark(&snapshot, PROGRAM_ID, user)
 }
 
@@ -411,4 +409,42 @@ async fn a_permit_that_expired_before_processing_is_refused() {
         0,
         "a permit outside its window costs no account read"
     );
+}
+
+/// A permit names the host program it is valid on, as an EIP-712 permit names its verifying
+/// contract. A permit signed for another program is refused without reading this one's state.
+#[tokio::test]
+async fn a_permit_for_another_host_program_is_refused_before_any_read() {
+    let wallet = Wallet::new(1);
+    let live = handle(0x23, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, live)
+        .typed();
+    let world = World::running_at_slot(100).with_encrypted_store(&encrypted_store);
+    let proofs = ScriptedProofReader::constant(world.record());
+    let reader = ScriptedReader::constant(world);
+    let other_program = [8; 32];
+
+    let failure = authorize_request(
+        &reader,
+        &proofs,
+        AuthorizationContext {
+            program_id: other_program,
+            ..CONTEXT
+        },
+        &request,
+    )
+    .await
+    .expect_err("a permit for another program authorizes nothing here");
+
+    assert_eq!(
+        failure,
+        AuthorizationFailure::ProgramIdMismatch {
+            signed: PROGRAM_ID,
+            own: other_program,
+        }
+    );
+    assert!(!failure.is_recoverable());
+    assert_eq!(reader.call_count(), 0);
 }

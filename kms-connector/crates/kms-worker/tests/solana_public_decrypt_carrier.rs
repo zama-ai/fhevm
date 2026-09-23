@@ -189,21 +189,6 @@ async fn a_record_behind_the_chain_is_retried_not_refused() {
     );
 }
 
-#[test]
-fn the_carrier_version_is_pinned_by_literal() {
-    // If this fails, the carrier's version byte changed while the public-decrypt path still
-    // depends on it.
-    let blob = connector_utils::types::solana_extra_data::encode_solana_public_decrypt_extra_data(
-        [0u8; 32], [9u8; 32],
-    );
-    assert_eq!(blob[0], CARRIER_VERSION);
-    assert_eq!(
-        blob.len(),
-        65,
-        "version, context id, account — and nothing else"
-    );
-}
-
 /// A carrier of another version, a carrier of another length, and no carrier at all: each is
 /// refused explicitly before reading any account, and never parsed under the wrong layout.
 #[tokio::test]

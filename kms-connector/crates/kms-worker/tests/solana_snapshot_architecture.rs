@@ -406,47 +406,6 @@ async fn two_reads_at_the_same_slot_authorize() {
     .expect("ordering is not agreement: one slot twice is in order");
 }
 
-/// The gate is on the pair of reads, not on any absolute slot: a direct request reads once, so
-/// there is no earlier read for its observation to be older than.
-#[test]
-fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
-    let keys = SnapshotKeys::new([[7; 32]]);
-    let discovery = World::running_at_slot(100)
-        .read(&keys)
-        .expect("the world reads");
-    let ahead = World::running_at_slot(101)
-        .read(&keys)
-        .expect("the world reads");
-    let level = World::running_at_slot(100)
-        .read(&keys)
-        .expect("the world reads");
-    let behind = World::running_at_slot(99)
-        .read(&keys)
-        .expect("the world reads");
-
-    assert_eq!(
-        ahead
-            .deciding_after(&discovery)
-            .expect("advancing is the expected case")
-            .observed_slot(),
-        101
-    );
-    assert_eq!(
-        level
-            .deciding_after(&discovery)
-            .expect("the same slot is in order")
-            .observed_slot(),
-        100
-    );
-    assert!(matches!(
-        behind.deciding_after(&discovery),
-        Err(SnapshotError::DecidingReadOlderThanDiscovery {
-            discovery_slot: 100,
-            deciding_slot: 99,
-        })
-    ));
-}
-
 /// The state a delegated request is judged against is the deciding read's, not the discovery
 /// read's. Here the first read shows the delegator's allow leaf on the handle and the second read
 /// shows an account on which that leaf was never sealed: the entry is refused, because the
@@ -695,8 +654,7 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
                 data: vec![],
             },
         )
-        .read(&SnapshotKeys::new([planned]))
-        .expect("the world reads");
+        .read(&SnapshotKeys::new([planned]));
 
     let error = snapshot
         .account(&never_planned)

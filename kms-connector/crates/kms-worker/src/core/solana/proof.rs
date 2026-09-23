@@ -12,7 +12,8 @@ use url::Url;
 /// `LEAF_PROOFS_PATH`; the shared vectors pin the request and response shapes.
 pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
 
-/// The coprocessor's cap on queries per read.
+/// The coprocessor's cap on queries per read. A validated request stays below it: it has at most
+/// `MAX_REQUEST_HANDLES` entries.
 const MAX_LEAVES_PER_READ: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
@@ -89,7 +90,8 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
     }
 }
 
-/// Why a batch could not be read at all. Every variant says nothing about any leaf.
+/// Why a batch could not be read at all. Every variant says nothing about any leaf, and a later
+/// read may succeed.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
     /// No coprocessor answered.
@@ -97,9 +99,6 @@ pub enum ProofReadError {
     Unavailable { reason: String },
     #[error("leaf proof read returned {returned} outcomes for {requested} queries")]
     ResponseLengthMismatch { requested: usize, returned: usize },
-    /// Unreachable from a validated request, which has at most `MAX_REQUEST_HANDLES` entries.
-    #[error("leaf proof batch of {count} queries exceeds the {MAX_LEAVES_PER_READ}-query cap")]
-    TooManyQueries { count: usize },
 }
 
 // ------------------------------------------------------------------------------------------
@@ -214,11 +213,6 @@ impl CoprocessorProofClient {
 
 impl HostProofReader for CoprocessorProofClient {
     async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
-        if queries.len() > MAX_LEAVES_PER_READ {
-            return Err(ProofReadError::TooManyQueries {
-                count: queries.len(),
-            });
-        }
         let body = serde_json::to_vec(&leaf_proof_request_body(queries))
             .expect("a leaf proof request has no map keys or fallible fields");
         let answers = join_all(
@@ -248,11 +242,7 @@ impl HostProofReader for CoprocessorProofClient {
                 unavailable: (!failures.is_empty()).then(|| unavailable(failures.join("; "))),
             })
         } else {
-            Err(unavailable(if failures.is_empty() {
-                "no leaf proof endpoint is configured".to_string()
-            } else {
-                failures.join("; ")
-            }))
+            Err(unavailable(failures.join("; ")))
         }
     }
 }
@@ -341,15 +331,14 @@ mod tests {
                 "secret".into(),
                 reqwest::Client::new(),
             );
-            let error = client
+            client
                 .read_proofs(&[LeafQuery {
                     encrypted_store: [1; 32],
                     handle: [2; 32],
                     kind: LeafKind::Public,
                 }])
                 .await
-                .unwrap_err();
-            assert!(error.is_recoverable());
+                .expect_err("a malformed response is a failed read");
         }
     }
 }

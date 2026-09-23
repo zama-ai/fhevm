@@ -232,14 +232,10 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 RequestCheckKind::Signature,
                 ErrorCode::UserSignatureRejected,
             ),
-            AuthorizationFailure::Snapshot(_) => {
+            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            AuthorizationFailure::ProofRead(_) if failure.is_recoverable() => {
-                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
-            }
-            AuthorizationFailure::ProofRead(_)
-            | AuthorizationFailure::Pause(PauseFailure::UnreadAccount(_))
+            AuthorizationFailure::Pause(PauseFailure::UnreadAccount(_))
             | AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(_))
             | AuthorizationFailure::EncryptedStore {
                 source: EncryptedStoreFailure::UnreadAccount(_),
@@ -250,8 +246,7 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 ..
             }
             | AuthorizationFailure::HandleBinding {
-                source:
-                    HandleBindingFailure::HistoryIncomplete | HandleBindingFailure::MmrStateInconsistent,
+                source: HandleBindingFailure::HistoryIncomplete,
                 ..
             } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
             AuthorizationFailure::Pause(_)
@@ -273,18 +268,13 @@ impl From<PublicDecryptFailure> for RequestCheckError {
             PublicDecryptFailure::MalformedExtraData => {
                 (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
-            PublicDecryptFailure::Snapshot(_) => {
+            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            PublicDecryptFailure::ProofRead(_) if failure.is_recoverable() => {
-                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
+            PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(_))
+            | PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete) => {
+                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
-            PublicDecryptFailure::ProofRead(_)
-            | PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(_))
-            | PublicDecryptFailure::HandleBinding(
-                HandleBindingFailure::HistoryIncomplete
-                | HandleBindingFailure::MmrStateInconsistent,
-            ) => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
             PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
                 (RequestCheckKind::Acl, ErrorCode::AclDenied)
             }
@@ -309,14 +299,50 @@ fn solana_check_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::solana::proof::ProofReadError;
     use crate::core::solana::snapshot::{SnapshotError, UnreadAccount};
     use rstest::rstest;
 
-    /// A Connector bug or a broken proof record is not the user's permission state: `acl_denied`
-    /// would tell an HTTP caller to retry a request that fails the same way every time.
+    const UNREAD: UnreadAccount = UnreadAccount { key: [0; 32] };
+
+    fn coprocessors_down() -> ProofReadError {
+        ProofReadError::Unavailable {
+            reason: "down".into(),
+        }
+    }
+
+    /// Each Solana outcome takes the code EVM uses for it. A Connector bug or a broken proof
+    /// record is not the user's permission state: `acl_denied` would tell an HTTP caller to retry
+    /// a request that fails the same way every time.
     #[rstest]
-    #[case::unread_account(
-        AuthorizationFailure::Pause(PauseFailure::UnreadAccount(UnreadAccount { key: [0; 32] })),
+    #[case::program_id_mismatch(
+        AuthorizationFailure::ProgramIdMismatch { signed: [1; 32], own: [2; 32] },
+        ErrorCode::UserSignatureRejected,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unread_host_config(
+        AuthorizationFailure::Pause(PauseFailure::UnreadAccount(UNREAD)),
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unread_watermark(
+        AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(UNREAD)),
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unread_encrypted_store(
+        AuthorizationFailure::EncryptedStore {
+            index: 0,
+            source: EncryptedStoreFailure::UnreadAccount(UNREAD),
+        },
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unread_delegation(
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::UnreadAccount(UNREAD),
+        },
         ErrorCode::Unprocessable,
         ProcessingErrorKind::Irrecoverable
     )]
@@ -330,6 +356,11 @@ mod tests {
         ErrorCode::UpstreamTransient,
         ProcessingErrorKind::Recoverable
     )]
+    #[case::unreachable_coprocessors(
+        AuthorizationFailure::ProofRead(coprocessors_down()),
+        ErrorCode::UpstreamTransient,
+        ProcessingErrorKind::Recoverable
+    )]
     #[case::missing_leaf(
         AuthorizationFailure::HandleBinding {
             index: 0,
@@ -340,6 +371,39 @@ mod tests {
     )]
     fn solana_failures_take_the_evm_code_for_their_outcome(
         #[case] failure: AuthorizationFailure,
+        #[case] code: ErrorCode,
+        #[case] kind: ProcessingErrorKind,
+    ) {
+        let error = RequestCheckError::from(failure).record();
+        assert_eq!((error.code, error.kind), (code, kind));
+    }
+
+    #[rstest]
+    #[case::incomplete_history(
+        PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete),
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unread_encrypted_store(
+        PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(UNREAD)),
+        ErrorCode::Unprocessable,
+        ProcessingErrorKind::Irrecoverable
+    )]
+    #[case::unreachable_coprocessors(
+        PublicDecryptFailure::ProofRead(coprocessors_down()),
+        ErrorCode::UpstreamTransient,
+        ProcessingErrorKind::Recoverable
+    )]
+    #[case::missing_leaf(
+        PublicDecryptFailure::HandleBinding(HandleBindingFailure::NoLeaf {
+            record_leaf_count: 1,
+            live_leaf_count: 1,
+        }),
+        ErrorCode::AclDenied,
+        ProcessingErrorKind::Recoverable
+    )]
+    fn solana_public_decrypt_failures_take_the_evm_code_for_their_outcome(
+        #[case] failure: PublicDecryptFailure,
         #[case] code: ErrorCode,
         #[case] kind: ProcessingErrorKind,
     ) {

@@ -183,21 +183,10 @@ fn check_leaf(
             .copied()
             .collect(),
     };
-    verify(state, &proof).map_err(|error| match error {
-        AclError::HistoricalProofInvalid | AclError::PublicDecryptProofInvalid => {
-            HandleBindingFailure::ProofDoesNotVerify {
-                record_leaf_count,
-                live_leaf_count,
-            }
-        }
-        AclError::MmrInconsistent | AclError::MmrPeakCapacityExceeded => {
-            HandleBindingFailure::MmrStateInconsistent
-        }
-        // Decoding outcomes cannot arise from proof verification. Enumerated rather than caught,
-        // so a new outcome breaks the build.
-        AclError::BadDiscriminator | AclError::BadAccountData => {
-            HandleBindingFailure::MmrStateInconsistent
-        }
+    // The only way verification fails is an invalid proof.
+    verify(state, &proof).map_err(|_| HandleBindingFailure::ProofDoesNotVerify {
+        record_leaf_count,
+        live_leaf_count,
     })
 }
 
@@ -230,6 +219,4 @@ pub enum HandleBindingFailure {
     },
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
     LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
-    #[error("encrypted store MMR history is internally inconsistent")]
-    MmrStateInconsistent,
 }

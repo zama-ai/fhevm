@@ -832,6 +832,37 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     );
 }
 
+/// A host-owned account at the delegation address that does not decode as a delegation record
+/// grants nothing.
+#[tokio::test]
+async fn a_host_account_that_is_not_a_delegation_record_is_rejected() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x35, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let (key, _) = delegation.address();
+    let mut undecodable = delegation.account();
+    undecodable.data.truncate(8);
+    let request = RequestBuilder::new(&signer)
+        .delegated(&encrypted_store, live, delegator.pubkey())
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_store, signer.pubkey()).with_account(key, undecodable),
+        &request,
+    )
+    .await;
+
+    let failure = outcome.expect_err("a record that does not decode delegates nothing");
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, .. } }
+        if matches!(**exact, DelegationFailure::NotADelegationRecord { .. })),
+        "{failure}"
+    );
+}
+
 /// The same request across a revocation: the first authorization succeeds and the next fails.
 /// Each attempt observes the delegation again, including polls of already-sent requests.
 #[tokio::test]
@@ -886,8 +917,7 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
         DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT).address();
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("a live authority-specific row authorizes");
@@ -907,8 +937,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let (exact_key, _) = exact.address();
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("a live wildcard row authorizes an authority with no row of its own");
@@ -930,8 +959,7 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("two live rows authorize");
@@ -1033,8 +1061,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     // was never planned.
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&revoked)
-        .read(&SnapshotKeys::new([exact_key]))
-        .expect("the planned key is readable");
+        .read(&SnapshotKeys::new([exact_key]));
 
     let failure = check_delegation(
         &snapshot,

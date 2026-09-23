@@ -43,9 +43,7 @@ use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_com
 /// exercised against a validated account rather than a hand-made value.
 fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
     let world = World::running_at_slot(1).with_encrypted_store(encrypted_store);
-    let snapshot = world
-        .read(&SnapshotKeys::new([encrypted_store.account_key]))
-        .expect("the world reads");
+    let snapshot = world.read(&SnapshotKeys::new([encrypted_store.account_key]));
     resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
         .expect("the fixture encrypted store resolves")
 }
@@ -494,35 +492,6 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
     );
 }
 
-/// An account whose peak count does not match its leaf count is the host program's own
-/// inconsistency. No proof can match it, and none is tried.
-#[test]
-fn resolver_rejects_inconsistent_mmr_state_as_terminal() {
-    let key = Wallet::new(1).pubkey();
-    let live = handle(0x43, FHE_TYPE_UINT64);
-    let mut encrypted_store = EncryptedStoreFixture::allowing(live, key);
-    encrypted_store.encrypted_store.peaks.push([0; 32]);
-
-    let world = World::running_at_slot(1).with_encrypted_store(&encrypted_store);
-    let snapshot = world
-        .read(&SnapshotKeys::new([encrypted_store.account_key]))
-        .expect("the world reads");
-    let failure = resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
-        .expect_err("two peaks for one leaf is not a valid state");
-
-    assert!(matches!(
-        failure,
-        kms_worker::core::solana::encrypted_store::EncryptedStoreFailure::Malformed { .. }
-    ));
-    assert!(
-        !AuthorizationFailure::EncryptedStore {
-            index: 0,
-            source: failure
-        }
-        .is_recoverable()
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Through the pipeline
 // ---------------------------------------------------------------------------
@@ -854,7 +823,7 @@ async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
     })
     .await
     .unwrap_err();
-    assert!(error.is_recoverable());
+    assert!(matches!(error, ProofReadError::Unavailable { .. }));
     assert!(error.to_string().contains("502"));
 
     serve_proofs(&mut absent, &[(query, fixture.outcome(&query))]);

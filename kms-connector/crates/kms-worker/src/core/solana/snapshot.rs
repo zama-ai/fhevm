@@ -78,21 +78,15 @@ pub struct HostSnapshot {
 }
 
 impl HostSnapshot {
+    /// `accounts` pairs every read key with what the node returned for it, `None` for no account.
     pub fn new(
         observed_slot: u64,
-        keys: &SnapshotKeys,
-        accounts: Vec<Option<SnapshotAccount>>,
-    ) -> Result<Self, SnapshotError> {
-        if accounts.len() != keys.len() {
-            return Err(SnapshotError::ResponseLengthMismatch {
-                requested: keys.len(),
-                returned: accounts.len(),
-            });
-        }
-        Ok(Self {
+        accounts: impl IntoIterator<Item = (SolanaPubkeyBytes, Option<SnapshotAccount>)>,
+    ) -> Self {
+        Self {
             observed_slot,
-            accounts: keys.as_slice().iter().copied().zip(accounts).collect(),
-        })
+            accounts: accounts.into_iter().collect(),
+        }
     }
 
     pub fn observed_slot(&self) -> u64 {
@@ -206,9 +200,7 @@ impl HostStateReader for SolanaRpcClient {
             .permits
             .acquire()
             .await
-            .map_err(|error| SnapshotError::Unavailable {
-                reason: error.to_string(),
-            })?;
+            .expect("the permit semaphore is never closed");
         let call = self.client.get_multiple_ui_accounts_with_config(
             &pubkeys,
             RpcAccountInfoConfig {
@@ -262,9 +254,10 @@ impl HostStateReader for SolanaRpcClient {
                         })
                     })
                     .transpose()
+                    .map(|account| (*key, account))
             })
             .collect::<Result<Vec<_>, SnapshotError>>()?;
-        HostSnapshot::new(response.context.slot, keys, accounts)
+        Ok(HostSnapshot::new(response.context.slot, accounts))
     }
 }
 

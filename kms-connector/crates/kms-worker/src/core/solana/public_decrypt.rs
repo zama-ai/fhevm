@@ -57,7 +57,7 @@ impl PublicDecryptFailure {
             Self::MalformedExtraData => false,
             Self::Snapshot(_) => true,
             Self::EncryptedStore(source) => source.is_recoverable(),
-            Self::ProofRead(source) => source.is_recoverable(),
+            Self::ProofRead(_) => true,
             Self::HandleBinding(source) => source.is_recoverable(),
         }
     }
