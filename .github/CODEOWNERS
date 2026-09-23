@@ -31,6 +31,11 @@
 .github/squid/sandbox-*.conf @zama-ai/security-team
 .github/workflows/claude-*.yml @zama-ai/security-team
 
+# Solana host security surface: who may write what, and what the system guarantees
+/solana/docs/AUTHORITY.md @zama-ai/security-team
+/solana/scripts/authority_table.py @zama-ai/security-team
+/solana/docs/INVARIANTS.md @zama-ai/security-team
+
 # Production Dockerfiles should be reviewed by members of fhevm-devops
 **/Dockerfile @zama-ai/fhevm-devops
 

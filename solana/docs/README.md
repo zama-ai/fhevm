@@ -11,6 +11,7 @@ which.
 | [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md)       | The numbered decisions the code follows today, with an index by status. Read DD-049 and DD-050 first. |
 | [`DESIGN_HISTORY.md`](DESIGN_HISTORY.md)           | Decisions a later one replaced, in their original wording.                                            |
 | [`INVARIANTS.md`](INVARIANTS.md)                   | What the system guarantees and deliberately does not, then sizes, limits and operations.              |
+| [`AUTHORITY.md`](AUTHORITY.md)                     | Who signs for each zama-host instruction and what it writes, by capability. Generated, checked in CI. |
 | [`FUTURE_DESIGN.md`](FUTURE_DESIGN.md)             | Requirements the port defers to production and the open product decisions.                            |
 | [`MMR_ACL_MVP.md`](MMR_ACL_MVP.md)                 | A reviewer's map of the Store and MMR implementation.                                                 |
 | [`CONFIDENTIAL_VAULTS.md`](CONFIDENTIAL_VAULTS.md) | What the batcher and vault demo build and why, in plain language.                                     |

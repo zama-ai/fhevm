@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# check-zama-host-idl.sh — rebuild SBF artifacts and verify host IDL/ABI goldens.
+# check-zama-host-idl.sh — rebuild SBF artifacts and verify host IDL/ABI goldens and the
+# authority table.
 #
 # Usage (from solana/):
 #   bash scripts/check-zama-host-idl.sh
@@ -29,6 +30,7 @@ if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log";
 fi
 
 python3 scripts/check_solana_abi.py --root "$ROOT"
+python3 scripts/authority_table.py --root "$ROOT"
 
 # Runtime Mollusk tests load ignored SBF artifacts from target/deploy, and the build above already
 # produced them on the default feature set, so Mollusk runs against the same artifact that ships.

@@ -7,7 +7,7 @@
 # When: after an intentional IDL or ABI change to any of the workspace programs. This
 # is the only way a committed IDL should ever change — they are build output, and
 # every one of them is compared with a fresh build by check-zama-host-idl.sh in CI.
-# Writes: checked-in IDL/ABI goldens (via check_solana_abi.py --write).
+# Writes: checked-in IDL/ABI goldens (via check_solana_abi.py --write) and docs/AUTHORITY.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,4 +26,5 @@ NO_DNA=1 anchor build --ignore-keys
 # live with their consumers. The list they come from is check_solana_abi.py's, the
 # same one its check reads, so a copy that nothing compares cannot exist.
 python3 scripts/check_solana_abi.py --root "$ROOT" --write
+python3 scripts/authority_table.py --root "$ROOT" --write
 echo "Synced Solana IDLs and ABI golden manifest"
