@@ -39,6 +39,9 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
         .zip(contexts())
         .enumerate()
         .filter_map(|(position, (result, context))| match result {
+            // A missing leaf is the record agreeing with the observation, so asking the same
+            // record again in this attempt cannot change it.
+            Err(HandleBindingFailure::NoLeaf { .. }) if unavailable.is_none() => None,
             Err(error) if error.is_recoverable() || unavailable.is_some() => {
                 Some((position, context))
             }

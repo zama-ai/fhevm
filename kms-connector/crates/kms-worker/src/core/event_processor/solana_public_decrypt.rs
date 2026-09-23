@@ -32,13 +32,13 @@ pub async fn check_public_decrypt(
         handle,
         kind: LeafKind::Public,
     };
-    verify_proofs_with_one_retry(&host.proofs, &[(query, ())], |_, outcome| {
+    let [binding] = verify_proofs_with_one_retry(&host.proofs, &[(query, ())], |_, outcome| {
         check_public_binding(&store, handle, outcome)
     })
     .await?
-    .into_iter()
-    .try_for_each(|binding| binding)?;
-    Ok(())
+    .try_into()
+    .expect("one query yields one result");
+    Ok(binding?)
 }
 
 /// Why a public decryption was not authorized.

@@ -150,7 +150,7 @@ where
             match self.host_chain_backend(ct_chain_id)? {
                 HostChainAclBackend::Solana(host) => {
                     // Public access is proven by a PublicDecryptLeaf MMR proof and verified
-                    // against the live confirmed encrypted value account.
+                    // against the encrypted store observed at confirmed commitment.
                     Ok(check_public_decrypt(host, handle.0, extra_data).await?)
                 }
                 HostChainAclBackend::Evm(host_client) => {
@@ -751,14 +751,12 @@ mod tests {
     use super::*;
     use crate::core::config::solana_host_chain_id;
     use crate::core::event_processor::ProcessingErrorKind;
-    use crate::core::solana::{proof::CoprocessorProofClient, snapshot::SolanaRpcClient};
     use alloy::{
         providers::{ProviderBuilder, RootProvider, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
         sol_types::SolValue,
     };
-
     use connector_utils::tests::rand::{
         rand_address, rand_digest, rand_handle, rand_public_key, rand_u256,
     };
@@ -767,9 +765,7 @@ mod tests {
         IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
     };
     use fhevm_host_bindings::acl::ACL;
-
     use rstest::rstest;
-
     use user_decryption_signature::{
         ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };

@@ -28,8 +28,8 @@ use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 
 mod solana_support;
 
-use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     encrypted_store::EncryptedStoreFailure,
     failure::AuthorizationFailure,

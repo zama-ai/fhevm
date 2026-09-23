@@ -236,7 +236,7 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
             AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
-                (RequestCheckKind::Network, ErrorCode::Unprocessable)
+                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
             AuthorizationFailure::Pause(_)
             | AuthorizationFailure::Watermark(_)
@@ -263,7 +263,7 @@ impl From<PublicDecryptFailure> for RequestCheckError {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
             PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
-                (RequestCheckKind::Network, ErrorCode::Unprocessable)
+                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
             PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
                 (RequestCheckKind::Acl, ErrorCode::AclDenied)

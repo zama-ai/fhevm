@@ -20,8 +20,8 @@
 
 mod solana_support;
 
-use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
@@ -342,8 +342,8 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
 
 /// The chain going *backwards* between the two reads is a failure, and a transient one. Behind a
 /// load balancer this is a second node that has fallen behind, not a later state: judging the
-/// request on it would report the delegation the discovery read just saw as absent, which is
-/// terminal. A retry that lands on a node which has caught up authorizes the same request.
+/// request on it would report the delegation the discovery read just saw as absent. A retry that
+/// lands on a node which has caught up authorizes the same request.
 #[tokio::test]
 async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() {
     let signer = Wallet::new(1);
@@ -492,6 +492,35 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     );
 }
 
+/// A record that has sealed the observed history and holds no leaf agrees with the observation, so
+/// it is read once. Whether a later grant lands is left to the attempt budget.
+#[tokio::test]
+async fn a_leaf_the_record_does_not_hold_is_read_once() {
+    let (wallet, _, handle) = direct_scenario();
+    let encrypted_store = EncryptedStoreFixture::allowing(handle, Wallet::new(9).pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, handle)
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
+
+    let failure = authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
+        .await
+        .expect_err("nobody allowed the signer");
+
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::HandleBinding {
+            index: 0,
+            source: HandleBindingFailure::NoLeaf { .. }
+        }
+    ));
+    assert!(failure.is_recoverable());
+    assert_eq!(proofs.call_count(), 1);
+}
+
 /// Missing leaves from a lagging record are fetched once more. If still missing, the request
 /// is rejected retryably and the ordinary attempt budget decides.
 #[tokio::test]
@@ -562,9 +591,7 @@ async fn rpc_read(
     keys: &SnapshotKeys,
     value: serde_json::Value,
 ) -> Result<HostSnapshot, SnapshotError> {
-    let expected = serde_json::json!({"jsonrpc":"2.0","id":0,"method":"getMultipleAccounts",
-        "params":[keys.as_slice().iter().map(|key| Pubkey::new_from_array(*key).to_string()).collect::<Vec<_>>(),
-        {"encoding":"base64","commitment":"confirmed","dataSlice":null,"minContextSlot":null}]});
+    let expected = multiple_accounts_request(keys.as_slice());
     let response = serde_json::json!({"jsonrpc":"2.0","id":0,"result":{"context":{"slot":4242},"value":value}});
     let mut server = mocktail::server::MockServer::new_http("solana-accounts");
     server.mock(move |when, then| {

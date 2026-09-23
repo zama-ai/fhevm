@@ -22,8 +22,8 @@
 
 mod solana_support;
 
-use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,

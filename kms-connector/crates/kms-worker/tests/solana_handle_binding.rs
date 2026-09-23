@@ -23,8 +23,8 @@
 
 mod solana_support;
 
-use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
@@ -334,10 +334,9 @@ fn no_leaf_in_a_record_with_the_observed_history_is_retried() {
 }
 
 /// A record ahead of the chain — more history sealed than this observation shows — and still no
-/// leaf is the same terminal answer: whatever the chain adds next, the record has already seen
-/// past it.
+/// leaf is a missing leaf, not a record to wait for.
 #[test]
-fn no_leaf_in_a_record_ahead_of_the_chain_is_terminal() {
+fn no_leaf_in_a_record_ahead_of_the_chain_is_a_missing_leaf() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x31, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, Wallet::new(9).pubkey());
@@ -810,8 +809,10 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
     }
 }
 
+/// While a peer is down, a missing leaf at the others is reported as the outage: the peer that did
+/// not answer may hold the leaf.
 #[tokio::test]
-async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
+async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
     use kms_worker::core::solana::{
         handle_binding::verify_proofs_with_one_retry, proof::CoprocessorProofClient,
     };
@@ -823,10 +824,10 @@ async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
     let query = fixture.allowed_query(sealed, key);
     let batch = [(query, ())];
     let mut absent = MockServer::new_http("no-leaf");
-    absent.mock(|when, then| {
-        when.post();
-        then.json(serde_json::json!({"proofs":[{"status":"notFound","leafCount":1}]}));
-    });
+    serve_proofs(
+        &mut absent,
+        &[(query, LeafProofOutcome::NotFound { leaf_count: 1 })],
+    );
     absent.start().await.unwrap();
     let mut unavailable = MockServer::new_http("unavailable-peer");
     unavailable.mock(|when, then| {
@@ -850,8 +851,7 @@ async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
     assert!(error.is_recoverable());
     assert!(error.to_string().contains("502"));
 
-    absent.mocks().clear();
-    absent.mock(|when, then| { when.post(); then.json(serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":[]}]})); });
+    serve_proofs(&mut absent, &[(query, fixture.outcome(&query))]);
     let results = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
         check_handle_binding(&account, sealed, key, proof)
     })

@@ -21,8 +21,8 @@ use connector_utils::types::solana_request::{
     SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::event_processor::SolanaHost;
-use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     pipeline::AuthorizationContext,
     proof::{
         CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
@@ -960,18 +960,8 @@ impl HttpHost {
 
     /// Replaces the node's state: one `getMultipleAccounts` read of these keys, in this order.
     pub fn serve_accounts(&mut self, accounts: &[(SolanaPubkeyBytes, Option<SnapshotAccount>)]) {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 0,
-            "method": "getMultipleAccounts",
-            "params": [
-                accounts
-                    .iter()
-                    .map(|(key, _)| Pubkey::new_from_array(*key).to_string())
-                    .collect::<Vec<_>>(),
-                {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": null},
-            ],
-        });
+        let keys: Vec<_> = accounts.iter().map(|(key, _)| *key).collect();
+        let request = multiple_accounts_request(&keys);
         let value: Vec<_> = accounts
             .iter()
             .map(|(_, account)| {
@@ -1008,6 +998,21 @@ impl HttpHost {
     }
 }
 
+/// The `getMultipleAccounts` body the connector sends for `keys`, at confirmed commitment.
+pub fn multiple_accounts_request(keys: &[SolanaPubkeyBytes]) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "getMultipleAccounts",
+        "params": [
+            keys.iter()
+                .map(|key| Pubkey::new_from_array(*key).to_string())
+                .collect::<Vec<_>>(),
+            {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": null},
+        ],
+    })
+}
+
 /// Scripts `coprocessor` to answer one leaf-proof batch.
 pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, LeafProofOutcome)]) {
     let queries: Vec<_> = answers.iter().map(|(query, _)| *query).collect();
@@ -1041,7 +1046,7 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
 }
 
 /// A leaf-proof answer as the coprocessor route serializes it.
-pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
     match outcome {
         LeafProofOutcome::Found {
             leaf_index,
