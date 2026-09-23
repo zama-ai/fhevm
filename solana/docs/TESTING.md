@@ -227,6 +227,11 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   `sync-zama-host-idl.sh` (incremental), and byte-identical to the baselines after the snapshot
   script's clean rebuild. So regenerate with the script before believing a delta of this size, and
   do not attribute it to the edit in front of you.
+- **Cost snapshots are minted on x86_64 Linux.** CI measures there. Platform tools v1.57 build
+  slightly different code on macOS: a clean build of the same commit measured 10 to 91 CU more on
+  most profiles (v1.52 matched). On macOS, the script still shows
+  the delta between two commits. Commit the `solana-cost-snapshots` artifact that a failing
+  `solana-tests` run uploads.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
