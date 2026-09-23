@@ -2031,7 +2031,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     return runGrep();
   };
 
-  const runStandardProfiles = async (label: string, profiles: readonly string[]) => {
+  const runSuite = async (label: string, profiles: readonly string[]) => {
     if (options.grep) {
       throw new PreflightError(`\`fhevm-cli test ${label}\` does not accept \`--grep\`; run a named profile instead`);
     }
@@ -2041,29 +2041,30 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     console.log(`[test] ${label} (${options.network})`);
     const started = Date.now();
     await runLogged(label, started, async () => {
+      const standardSuite = label === "standard" || label.startsWith("standard-shard-");
       for (const profile of profiles) {
-        if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
+        if (standardSuite && (profile === "multi-chain-isolation" || profile === "confidential-bridge")) {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
           }
         }
-        if (profile === "coprocessor-db-state-revert") {
+        if (standardSuite && profile === "coprocessor-db-state-revert") {
           const skipReason = dbStateRevertSkipReason();
           if (skipReason) {
             console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
             continue;
           }
         }
-        if (profile === "ciphertext-drift-auto-recovery") {
+        if (standardSuite && profile === "ciphertext-drift-auto-recovery") {
           const skipReason = ciphertextDriftAutoRecoverySkipReason();
           if (skipReason) {
             console.log(`[test] skipping ciphertext-drift-auto-recovery: ${skipReason}`);
             continue;
           }
         }
-        if (profile.startsWith("connector-http")) {
+        if ((standardSuite || label === "rollout-standard") && profile.startsWith("connector-http")) {
           const skipReason = connectorEndpointSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
@@ -2076,77 +2077,19 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   // CI shards of the standard suite — see layout.ts for the split rationale.
-  const STANDARD_SHARDS: Record<string, readonly string[]> = {
+  const suites: Record<string, readonly string[]> = {
+    standard: STANDARD_TEST_PROFILES,
     "standard-shard-stateful": STANDARD_SHARD_STATEFUL_TEST_PROFILES,
     "standard-shard-decryption": STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
     "standard-shard-compute": STANDARD_SHARD_COMPUTE_TEST_PROFILES,
+    light: LIGHT_TEST_PROFILES,
+    "rollout-standard": ROLLOUT_STANDARD_TEST_PROFILES,
+    heavy: HEAVY_TEST_PROFILES,
   };
 
-  if (testName === "standard") {
-    await runStandardProfiles("standard", STANDARD_TEST_PROFILES);
-    return;
-  }
-
-  if (testName && STANDARD_SHARDS[testName]) {
-    await runStandardProfiles(testName, STANDARD_SHARDS[testName]);
-    return;
-  }
-
-  if (testName === "light") {
-    if (options.grep) {
-      throw new PreflightError("`fhevm-cli test light` does not accept `--grep`; run a named profile instead");
-    }
-    if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test light` does not accept `--parallel`; suite members choose their own mode");
-    }
-    console.log(`[test] light (${options.network})`);
-    const started = Date.now();
-    await runLogged("light", started, async () => {
-      for (const profile of LIGHT_TEST_PROFILES) {
-        await runProfile(profile);
-      }
-    });
-    return;
-  }
-
-  if (testName === "rollout-standard") {
-    if (options.grep) {
-      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--grep`; run a named profile instead");
-    }
-    if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test rollout-standard` does not accept `--parallel`; suite members choose their own mode");
-    }
-    console.log(`[test] rollout-standard (${options.network})`);
-    const started = Date.now();
-    await runLogged("rollout-standard", started, async () => {
-      for (const profile of ROLLOUT_STANDARD_TEST_PROFILES) {
-        if (profile.startsWith("connector-http")) {
-          const skipReason = connectorEndpointSkipReason();
-          if (skipReason) {
-            console.log(`[test] skipping ${profile}: ${skipReason}`);
-            continue;
-          }
-        }
-        await runProfile(profile);
-      }
-    });
-    return;
-  }
-
-  if (testName === "heavy") {
-    if (options.grep) {
-      throw new PreflightError("`fhevm-cli test heavy` does not accept `--grep`; run a named profile instead");
-    }
-    if (options.parallel === true) {
-      throw new PreflightError("`fhevm-cli test heavy` does not accept `--parallel`; suite members choose their own mode");
-    }
-    console.log(`[test] heavy (${options.network})`);
-    const started = Date.now();
-    await runLogged("heavy", started, async () => {
-      for (const profile of HEAVY_TEST_PROFILES) {
-        await runProfile(profile);
-      }
-    });
+  const suiteProfiles = testName && suites[testName];
+  if (suiteProfiles) {
+    await runSuite(testName, suiteProfiles);
     return;
   }
 

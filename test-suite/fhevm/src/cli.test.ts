@@ -331,6 +331,33 @@ describe("cli", () => {
     });
   });
 
+  test("heavy suite keeps its named-profile dispatch and suite flag rules", async () => {
+    await withState(bootstrappedState(), async (stateEnv) => {
+      const bin = path.join(stateEnv.FHEVM_STATE_DIR, "bin");
+      await mkdir(bin);
+      await writeFile(
+        path.join(bin, "docker"),
+        '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_DOCKER_ARGS"\nprintf "1 passing (1ms)\\n"\n',
+        { mode: 0o755 },
+      );
+      const argsFile = path.join(stateEnv.FHEVM_STATE_DIR, "docker-args");
+      const env = { ...stateEnv, PATH: `${bin}:${process.env.PATH}`, FAKE_DOCKER_ARGS: argsFile };
+      const result = await execCli(["test", "heavy"], env);
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stdout).toContain("[pass] operators");
+      expect(result.stdout).toContain("[pass] heavy");
+      const commands = await Bun.file(argsFile).text();
+      expect(commands).toContain("'./run-tests.sh' '--parallel'");
+      expect(commands).toContain(TEST_GREP.operators);
+
+      for (const suite of ["standard", "standard-shard-compute", "light", "rollout-standard", "heavy"]) {
+        const rejected = await execCli(["test", suite, "--parallel"], env);
+        expect(rejected.code).toBe(1);
+        expect(rejected.stderr).toContain(`fhevm-cli test ${suite}\` does not accept \`--parallel`);
+      }
+    });
+  });
+
   test("the E2E script preserves a quoted positional grep", async () => {
     await withTempStateDir(async (dir) => {
       const bin = path.join(dir, "bin");
