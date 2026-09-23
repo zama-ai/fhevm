@@ -86,9 +86,9 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
     for change in [
         "user_address = decode(repeat('00', 20), 'hex')",
         "user_pubkey = NULL",
-        "allowed_keys = NULL",
-        "host_program_id = NULL",
-        "encrypted_stores = ARRAY[encrypted_stores[1], encrypted_stores[1]]",
+        "handle_allowed_keys = NULL",
+        "verifying_program_id = NULL",
+        "handle_encrypted_stores = ARRAY[handle_encrypted_stores[1], handle_encrypted_stores[1]]",
         "allowed_contracts = ARRAY[decode(repeat('00', 20), 'hex')]",
     ] {
         let error = update(&endpoint.db, id, change).await.unwrap_err();
@@ -148,7 +148,7 @@ fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionReq
                 startTimestamp: permit.start_timestamp(),
                 durationSeconds: permit.duration_seconds(),
             },
-            hostProgramId: (*permit.verifying_program_id().as_bytes()).into(),
+            verifyingProgramId: (*permit.verifying_program_id().as_bytes()).into(),
             extraData: request.extra_data().into(),
         },
         signature: request.signature().as_bytes().to_vec().into(),

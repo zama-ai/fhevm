@@ -19,10 +19,10 @@ ALTER TABLE user_decryption_requests
     DROP COLUMN solana_request,
     ALTER COLUMN user_address DROP NOT NULL,
     ADD COLUMN user_pubkey BYTEA,
-    ADD COLUMN allowed_keys BYTEA[],
-    ADD COLUMN encrypted_stores BYTEA[],
+    ADD COLUMN handle_allowed_keys BYTEA[],
+    ADD COLUMN handle_encrypted_stores BYTEA[],
     ADD COLUMN allowed_scopes BYTEA[],
-    ADD COLUMN host_program_id BYTEA;
+    ADD COLUMN verifying_program_id BYTEA;
 
 ALTER TABLE user_decryption_requests
     ADD COLUMN attestation_type attestation_type NOT NULL GENERATED ALWAYS AS (
@@ -41,12 +41,13 @@ ALTER TABLE user_decryption_requests ADD CONSTRAINT user_decryption_requests_att
                 AND handle_contract_addresses IS NULL AND allowed_contracts IS NULL
                 AND signature IS NOT NULL AND start_timestamp IS NOT NULL
                 AND duration_seconds IS NOT NULL AND allowed_scopes IS NOT NULL
-                AND host_program_id IS NOT NULL AND ct_handles IS NOT NULL
-                AND allowed_keys IS NOT NULL AND encrypted_stores IS NOT NULL
-                AND cardinality(allowed_keys) = cardinality(ct_handles)
-                AND cardinality(encrypted_stores) = cardinality(ct_handles)
+                AND verifying_program_id IS NOT NULL AND ct_handles IS NOT NULL
+                AND handle_allowed_keys IS NOT NULL AND handle_encrypted_stores IS NOT NULL
+                AND cardinality(handle_allowed_keys) = cardinality(ct_handles)
+                AND cardinality(handle_encrypted_stores) = cardinality(ct_handles)
             ELSE
-                user_address IS NOT NULL AND allowed_keys IS NULL AND encrypted_stores IS NULL
-                AND allowed_scopes IS NULL AND host_program_id IS NULL
+                user_address IS NOT NULL AND handle_allowed_keys IS NULL
+                AND handle_encrypted_stores IS NULL AND allowed_scopes IS NULL
+                AND verifying_program_id IS NULL
         END
     );

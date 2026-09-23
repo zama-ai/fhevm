@@ -80,10 +80,10 @@ under `{attestationType, payload, signature}` with `attestationType` set to
 The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
 `chainId` field. This preserves the full chain ID in JavaScript clients.
 
-A Solana row has the typed columns `user_pubkey`, `allowed_keys`, `encrypted_stores`,
-`allowed_scopes` and `host_program_id`, and a NULL `user_address`. The generated
-`attestation_type` column (`legacy`, `eip712` or `solana`) follows from those columns, and a
-CHECK makes a row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row`
+A Solana row has the typed columns `user_pubkey`, `handle_allowed_keys`,
+`handle_encrypted_stores`, `allowed_scopes` and `verifying_program_id`, and a NULL
+`user_address`. The generated `attestation_type` column (`legacy`, `eip712` or `solana`)
+follows from those columns, and a CHECK makes a row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row`
 is the only reader; it rebuilds the signed permit, so the worker authorizes exactly what the
 user signed.
 

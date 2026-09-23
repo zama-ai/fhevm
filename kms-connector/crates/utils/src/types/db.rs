@@ -393,8 +393,8 @@ pub async fn insert_solana_user_decryption<'e>(
     Ok(sqlx::query!(
         "INSERT INTO user_decryption_requests AS existing (
             decryption_id, ct_handles, public_key, extra_data, signature, start_timestamp,
-            duration_seconds, user_pubkey, allowed_keys, encrypted_stores, allowed_scopes,
-            host_program_id, tx_hash, created_at, otlp_context, source
+            duration_seconds, user_pubkey, handle_allowed_keys, handle_encrypted_stores,
+            allowed_scopes, verifying_program_id, tx_hash, created_at, otlp_context, source
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (decryption_id) DO UPDATE SET

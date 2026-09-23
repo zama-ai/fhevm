@@ -317,7 +317,7 @@ async fn a_solana_request_checks_its_signed_kms_context() {
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
     user_pubkey: Vec<u8>,
-    host_program_id: Vec<u8>,
+    verifying_program_id: Vec<u8>,
     transport_key: Vec<u8>,
 }
 
@@ -337,7 +337,7 @@ impl Matcher for SolanaIdentity {
             && request.signing_metadata
                 == [SigningMetadata::solana(
                     self.user_pubkey.clone(),
-                    self.host_program_id.clone(),
+                    self.verifying_program_id.clone(),
                 )]
     }
 }
@@ -355,7 +355,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let scenario = Scenario::naming(B256::from_hex(S3_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
         user_pubkey: scenario.victim.pubkey().to_vec(),
-        host_program_id: PROGRAM_ID.to_vec(),
+        verifying_program_id: PROGRAM_ID.to_vec(),
         transport_key: scenario.event.publicKey.to_vec(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
