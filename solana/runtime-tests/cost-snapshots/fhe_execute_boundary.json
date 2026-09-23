@@ -73,16 +73,16 @@
   },
   "boundaries": {
     "fhe_execute_boundary/all_created_public": {
-      "max_ok": 31,
-      "first_fail": 32,
-      "limited_by": "heap",
+      "max_ok": 32,
+      "first_fail": 33,
+      "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 151553,
+        "compute_units": 135106,
         "unique_accounts": 9,
-        "instruction_data_bytes": 2848,
-        "cpi_instructions": 1,
-        "total_cpi_instruction_data_bytes": 2067,
-        "max_cpi_instruction_data_bytes": 2067
+        "instruction_data_bytes": 2938,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
       }
     },
     "fhe_execute_boundary/all_private_creates": {
@@ -90,7 +90,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 122312,
+        "compute_units": 121286,
         "unique_accounts": 9,
         "instruction_data_bytes": 2938,
         "cpi_instructions": 0,
@@ -103,7 +103,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 296126,
+        "compute_units": 295548,
         "unique_accounts": 9,
         "instruction_data_bytes": 3386,
         "cpi_instructions": 0,
@@ -112,16 +112,16 @@
       }
     },
     "fhe_execute_boundary/allow_heavy_public_creates": {
-      "max_ok": 25,
-      "first_fail": 26,
-      "limited_by": "heap",
+      "max_ok": 32,
+      "first_fail": 33,
+      "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 274538,
+        "compute_units": 322726,
         "unique_accounts": 9,
-        "instruction_data_bytes": 2707,
-        "cpi_instructions": 1,
-        "total_cpi_instruction_data_bytes": 1671,
-        "max_cpi_instruction_data_bytes": 1671
+        "instruction_data_bytes": 3386,
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
       }
     },
     "fhe_execute_boundary/attestation_per_step": {
@@ -129,7 +129,7 @@
       "first_fail": 18,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 553001,
+        "compute_units": 552984,
         "unique_accounts": 9,
         "instruction_data_bytes": 16376,
         "cpi_instructions": 0,
@@ -142,7 +142,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 68230,
+        "compute_units": 68194,
         "unique_accounts": 9,
         "instruction_data_bytes": 436,
         "cpi_instructions": 0,
@@ -155,7 +155,7 @@
       "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 96451,
+        "compute_units": 96342,
         "unique_accounts": 15,
         "instruction_data_bytes": 802,
         "cpi_instructions": 0,
@@ -168,7 +168,7 @@
       "first_fail": 8,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 143157,
+        "compute_units": 142991,
         "unique_accounts": 21,
         "instruction_data_bytes": 1192,
         "cpi_instructions": 0,
@@ -181,7 +181,7 @@
       "first_fail": 17,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 250713,
+        "compute_units": 250376,
         "unique_accounts": 39,
         "instruction_data_bytes": 2362,
         "cpi_instructions": 0,
@@ -194,12 +194,12 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 72451,
+        "compute_units": 65481,
         "unique_accounts": 9,
         "instruction_data_bytes": 1594,
-        "cpi_instructions": 1,
-        "total_cpi_instruction_data_bytes": 549,
-        "max_cpi_instruction_data_bytes": 549
+        "cpi_instructions": 0,
+        "total_cpi_instruction_data_bytes": 0,
+        "max_cpi_instruction_data_bytes": 0
       }
     },
     "fhe_execute_boundary/reduction_heavy": {
@@ -207,7 +207,7 @@
       "first_fail": 7,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 102526,
+        "compute_units": 102210,
         "unique_accounts": 9,
         "instruction_data_bytes": 690,
         "cpi_instructions": 0,
