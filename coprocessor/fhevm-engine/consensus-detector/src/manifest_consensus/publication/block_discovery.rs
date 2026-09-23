@@ -617,6 +617,9 @@ pub(crate) async fn discover_children(pool: &PgPool) -> Result<u64, ExecutionErr
     discover_children_for_consensus_epoch(pool, &consensus_epoch).await
 }
 
+// Finality of the parent alone does not prove its successor has arrived locally.
+// Close only after a finalized successor is durably discovered. The CTE snapshot
+// sees children inserted by an earlier poll, so closure may take one extra poll.
 pub(crate) async fn discover_children_for_consensus_epoch(
     pool: &PgPool,
     consensus_epoch: &str,
@@ -661,7 +664,23 @@ pub(crate) async fn discover_children_for_consensus_epoch(
                AND block.consensus_epoch = $1
                AND host.chain_id = block.host_chain_id
                AND host.block_hash = block.block_hash
-               AND host.block_status IN ('finalized', 'orphaned')
+               AND (
+                   host.block_status = 'orphaned'
+                   OR (
+                       host.block_status = 'finalized'
+                       AND EXISTS (
+                           SELECT 1
+                             FROM host_chain_blocks_valid child
+                             JOIN block_manifest_state discovered
+                               ON discovered.consensus_epoch = block.consensus_epoch
+                              AND discovered.host_chain_id = child.chain_id
+                              AND discovered.block_hash = child.block_hash
+                            WHERE child.chain_id = block.host_chain_id
+                              AND child.parent_hash = block.block_hash
+                              AND child.block_status = 'finalized'
+                       )
+                   )
+               )
             RETURNING 1
         )
         SELECT COUNT(*) AS "inserted!" FROM inserted
