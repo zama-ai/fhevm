@@ -40,6 +40,7 @@ export type StackSpec = {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsEpochMigration?: State["kmsEpochMigration"];
   kmsConnectorDeploymentByNodeId?: State["kmsConnectorDeploymentByNodeId"];
   overrides: State["overrides"];
   e2ePublicRuntime: boolean;
@@ -115,6 +116,7 @@ const stackSpecFromResolved = (input: {
   target: State["target"];
   versions: VersionBundle;
   kmsCoreVersionByNodeId?: State["kmsCoreVersionByNodeId"];
+  kmsEpochMigration?: State["kmsEpochMigration"];
   kmsConnectorDeploymentByNodeId?: State["kmsConnectorDeploymentByNodeId"];
   overrides: State["overrides"];
   e2ePublicRuntime?: boolean;
@@ -147,6 +149,7 @@ const stackSpecFromResolved = (input: {
       target: input.target,
       versions: input.versions,
       kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+      kmsEpochMigration: input.kmsEpochMigration,
       kmsConnectorDeploymentByNodeId: input.kmsConnectorDeploymentByNodeId,
       overrides: input.overrides,
       e2ePublicRuntime: input.e2ePublicRuntime ?? false,
@@ -162,6 +165,7 @@ const stackSpecFromResolved = (input: {
     target: input.target,
     versions: input.versions,
     kmsCoreVersionByNodeId: input.kmsCoreVersionByNodeId,
+    kmsEpochMigration: input.kmsEpochMigration,
     kmsConnectorDeploymentByNodeId: input.kmsConnectorDeploymentByNodeId,
     overrides: input.overrides,
     e2ePublicRuntime: input.e2ePublicRuntime ?? false,
@@ -174,13 +178,14 @@ const stackSpecFromResolved = (input: {
 
 /** Rebuilds a stack spec from persisted state. */
 export const stackSpecForState = (
-  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "kmsConnectorDeploymentByNodeId" | "overrides" | "e2ePublicRuntime" | "scenario">,
+  state: Pick<State, "requiresGitHub" | "target" | "versions" | "kmsCoreVersionByNodeId" | "kmsEpochMigration" | "kmsConnectorDeploymentByNodeId" | "overrides" | "e2ePublicRuntime" | "scenario">,
 ): StackSpec =>
   stackSpecFromResolved({
     requiresGitHub: state.requiresGitHub ?? true,
     target: state.target,
     versions: state.versions,
     kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
+    kmsEpochMigration: state.kmsEpochMigration,
     kmsConnectorDeploymentByNodeId: state.kmsConnectorDeploymentByNodeId,
     overrides: state.overrides,
     e2ePublicRuntime: state.e2ePublicRuntime,

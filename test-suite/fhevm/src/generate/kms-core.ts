@@ -26,6 +26,7 @@
  *     docker service name.
  */
 import path from "node:path";
+import { kmsCoreImageForVersion, supportsKmsEpochMigration } from "../compat/compat";
 
 import type { ComposeDoc } from "./compose";
 import {
@@ -37,11 +38,12 @@ import {
   kmsPublicPrefix,
   kmsServicePort,
 } from "../kms-party";
-import type { ResolvedKmsTopology } from "../types";
+import type { ResolvedKmsTopology, State } from "../types";
 import { GENERATED_CONFIG_DIR } from "../layout";
 
 /** Knobs the generator needs that come from the surrounding stack (S3, image tag). */
 export type KmsRenderOptions = {
+  coreVersion: string;
   coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
   s3Endpoint: string; // e.g. http://minio:9000
   s3Bucket: string; // e.g. kms-public
@@ -53,10 +55,11 @@ export type KmsRenderOptions = {
 /** Render options from the resolved core image version + fhevm minio defaults
  * (the static test credentials from templates/env/.env.minio).
  *
- * The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
+ * The test build allows no `[threshold.tls]` config; older releases used the unsuffixed image name.
  */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
-  coreImage: `ghcr.io/zama-ai/kms/core-service-insecure:${coreVersion}`,
+  coreVersion,
+  coreImage: kmsCoreImageForVersion(coreVersion),
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",
@@ -66,6 +69,12 @@ export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
 
 /** The committee threshold config filename (mounted into the `committeeSize` committee cores). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
+export const KMS_THRESHOLD_MIGRATION_CONFIG_NAME = "kms-core-threshold-migration.toml";
+
+export const renderEpochMigration = (associations: NonNullable<State["kmsEpochMigration"]>): string =>
+  associations.map(({ context_id, epoch_ids }) =>
+    `\n[[migration.context_associations]]\ncontext_id = ${JSON.stringify(context_id)}\nepoch_ids = ${JSON.stringify(epoch_ids)}\n`
+  ).join("");
 /** The spare threshold config filename: same template with NO peer roster (peers=None), so spare
  *  cores skip the `3t+1` startup validation and boot idle, joining a committee dynamically when a
  *  context names them. Mounted into cores with party id > committeeSize. */
@@ -207,6 +216,7 @@ export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
   opts: KmsRenderOptions,
   coreVersionByNodeId: Readonly<Record<string, string>> = {},
+  epochMigration?: State["kmsEpochMigration"],
 ): ComposeDoc => {
   if (topology.mode !== "threshold") {
     throw new Error("buildKmsThresholdOverride called for a non-threshold topology");
@@ -231,8 +241,12 @@ export const buildKmsThresholdOverride = (
   for (const partyId of kmsPartyIds(topology.parties)) {
     const name = kmsCoreName(partyId);
     // Cores beyond the committee boot as spares with the peers=None config (idle until a context names them).
+    const version = coreVersionByNodeId[partyId] ?? opts.coreVersion;
+    const migrateEpochs = epochMigration?.length && supportsKmsEpochMigration(version);
     const configName =
       partyId > topology.committeeSize ? KMS_THRESHOLD_SPARE_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
+    const selectedConfig = migrateEpochs && partyId <= topology.committeeSize
+      ? KMS_THRESHOLD_MIGRATION_CONFIG_NAME : configName;
     services[name] = {
       container_name: name,
       image: coreVersionByNodeId[partyId]
@@ -241,10 +255,10 @@ export const buildKmsThresholdOverride = (
       platform: CORE_PLATFORM,
       // No shell wrapper: per-party config comes from KMS_CORE__* env and AWS creds
       // come from the environment, so the core binary runs directly.
-      entrypoint: ["kms-server", "--config-file", `config/${configName}`],
+      entrypoint: ["kms-server", "--config-file", `config/${selectedConfig}`],
       // Per-party identity/ports/prefixes (override the template placeholders) + AWS creds.
       environment: thresholdCoreEnv(partyId, topology, opts),
-      volumes: [configMountFor(configName)],
+      volumes: [configMountFor(selectedConfig)],
       // No host port mapping: connectors and kms-init dial the cores over the docker network.
       healthcheck: {
         // The core image ships no grpc_health_probe; probe the metrics port.

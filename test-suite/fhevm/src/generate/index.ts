@@ -8,6 +8,8 @@ import type { StackSpec } from "../stack-spec/stack-spec";
 import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_MIGRATION_CONFIG_NAME,
+  renderEpochMigration,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   kmsRenderOptionsFor,
   kmsThresholdGenKeysConfigName,
@@ -142,6 +144,12 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       renderThresholdCoreConfig(thresholdTemplate, plan.kms),
     );
     const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
+    if (plan.kmsEpochMigration?.length) {
+      await writeWritableFile(
+        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_MIGRATION_CONFIG_NAME),
+        renderThresholdCoreConfig(thresholdTemplate, plan.kms) + renderEpochMigration(plan.kmsEpochMigration),
+      );
+    }
     for (let partyId = 1; partyId <= plan.kms.parties; partyId += 1) {
       await writeWritableFile(
         path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)),

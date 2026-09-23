@@ -941,6 +941,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       plan.kms,
       kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
       plan.kmsCoreVersionByNodeId,
+      plan.kmsEpochMigration,
     );
   }
   if (component === "kms-connector" && plan.kms.mode === "threshold") {

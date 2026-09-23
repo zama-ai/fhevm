@@ -11,6 +11,7 @@ import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
+  restagePromotedGreen as restageStackPromotedGreen,
   up,
   startDeferredGreen as startStackDeferredGreen,
   upgradeThresholdKmsOperator,
@@ -43,6 +44,7 @@ type RolloutKmsNodeUpgradeOptions = {
 };
 type RolloutKmsOperatorUpgradeOptions = RolloutKmsNodeUpgradeOptions & {
   overrides?: LocalOverride[];
+  epochMigration?: State["kmsEpochMigration"];
 };
 type RolloutVersionLockOptions = {
   allowedVersionKeys: string[];
@@ -92,6 +94,12 @@ export type RolloutRunContext = {
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   /** Starts a Green fleet after prerequisite material has converged on Blue. */
   startDeferredGreen(): Promise<void>;
+  /** Re-homes promoted Green as Blue and prepares a newer deferred Green fleet. */
+  restagePromotedGreen(options: {
+    source?: Extract<State["scenario"], { kind: "blue-green" }>["gcs"]["source"];
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  }): Promise<void>;
   resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
@@ -333,7 +341,7 @@ export const createRolloutContext = (
         } catch (error) {
           try {
             await receipt.record("upgrade-kms-operator-failed", `KMS operator ${operatorId}`, {
-              details: { error: error instanceof Error ? error.message : String(error), operatorId },
+              details: { error: error instanceof Error ? error.message : String(error), operatorId, epochMigration: options.epochMigration },
               docker: true,
               lockFile: options.lockFile,
             });
@@ -346,7 +354,7 @@ export const createRolloutContext = (
           throw error;
         }
         await receipt.record("upgrade-kms-operator", `KMS operator ${operatorId}`, {
-          details: { operatorId },
+          details: { operatorId, epochMigration: options.epochMigration },
           docker: true,
           lockFile: options.lockFile,
         });
@@ -425,6 +433,10 @@ export const createRolloutContext = (
     async startDeferredGreen() {
       await startStackDeferredGreen();
       await receipt.record("start-green", "started deferred Green fleet", { docker: true });
+    },
+    async restagePromotedGreen(options) {
+      await restageStackPromotedGreen(options);
+      await receipt.record("restage-green", "restaged promoted fleet before the next compiled release", { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;

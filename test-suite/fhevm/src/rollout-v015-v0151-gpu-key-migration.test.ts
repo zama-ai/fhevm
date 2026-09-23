@@ -1,0 +1,231 @@
+import { describe, expect, spyOn, test } from "bun:test";
+import * as processUtils from "./utils/process";
+import * as fsUtils from "./utils/fs";
+import type { RolloutRunContext } from "./commands/rollout-run";
+
+import {
+  type OperatorMaterial,
+  assertConnectorMigrationReady,
+  assertLocalConnectorUpgrade,
+  assertOperatorMaterialAgreement,
+} from "../rollouts/v0.14-to-v0.15-gpu-key-migration/checks";
+import {
+  adoptionScenario,
+  driveBlueGreenUpgrade,
+  gatewayContractUpgradePlan,
+  hostContractUpgradePlan,
+  predecessorImagePlan,
+} from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
+import {
+  connectorVersionKeys,
+  coprocessorVersionKeys,
+  listenerCoreVersionKeys,
+  migrationPhaseVersions,
+  migrationVersions,
+  relayerVersionKeys,
+} from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/versions";
+import { parseBlueGreenScenario } from "./scenario/resolve";
+
+const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial => ({
+  blockNumber: 10,
+  chainId: "12345",
+  compressed: true,
+  digest: "aa",
+  existingKeyId: "01",
+  keyId: "02",
+  legacy: true,
+  operator: 0,
+  status: "activated",
+  storedMatchesVerified: true,
+  ...overrides,
+});
+
+const greenCandidate = { RFC029_GREEN_SHA: "c9a9e929308973ed949dcea86c4c5f2f5e221c3a" };
+
+describe("RFC 029 rollout gates", () => {
+  test("drives one proposal and observes completed cutover on every operator without a dry-run gate", async () => {
+    const env = spyOn(fsUtils, "readEnvFile").mockResolvedValue({
+      CHAIN_ID_HOST: "12345", RPC_URL: "http://host:8545",
+      HOST_CHAIN_1_CHAIN_ID: "67890", HOST_CHAIN_1_RPC_URL: "http://host-1:8545",
+    });
+    const sql = spyOn(processUtils, "run").mockResolvedValue({ stdout: "complete\n", stderr: "", code: 0 });
+    const proposals: Array<{ command: string; env?: Record<string, string> }> = [];
+    const ctx = {
+      readState: async () => ({ scenario: { hostChains: [{}, {}] }, discovery: { endpoints: { gateway: { http: "http://gateway:8545" } } } }),
+      runHostContractTask: async (command: string, options: { env?: Record<string, string> }) => {
+        proposals.push({ command, env: options.env });
+      },
+      test: () => { throw new Error("Migration must not invoke the B/G test campaign"); },
+    } as unknown as RolloutRunContext;
+    try {
+      for (const [version, id] of [["0.15.0", "1"], ["0.15.1", "2"]] as const) {
+        sql.mockClear();
+        await driveBlueGreenUpgrade(ctx, version, id);
+        expect(sql.mock.calls.map(([args]) => args[args.indexOf("-d") + 1])).toEqual([
+          "coprocessor", "coprocessor_1", "coprocessor_2",
+        ]);
+        for (const [args] of sql.mock.calls) {
+          const query = args.at(-1)!;
+          expect(query).toContain("state='LIVE' AND status='completed'");
+          expect(query).toContain(`version='${version}'`);
+          expect(query).toContain(id.padStart(64, "0"));
+          expect(query).toContain("COUNT(*)=2");
+          expect(query).not.toContain("DryRunStarted");
+        }
+      }
+      expect(proposals.map(({ env }) => env?.PROPOSE_ID)).toEqual(["1", "2"]);
+      expect(proposals.every(({ command }) => command.includes("task:proposeCoprocessorUpgrade"))).toBe(true);
+      expect(JSON.parse(proposals[0]!.env!.LOCAL_HOST_CHAINS!)).toHaveLength(2);
+    } finally {
+      env.mockRestore();
+      sql.mockRestore();
+    }
+  });
+
+  test("requires an exact 0.15 Blue tag", () => {
+    expect(() => migrationVersions({})).toThrow("RFC029_BLUE_TAG is required");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "latest" })).toThrow("release tag or a full commit SHA");
+    expect(migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" }).blueTag).toBe("v0.15.0-0");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "04fb072" })).toThrow("full commit SHA");
+    const versions = migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c" });
+    expect(versions.blueRef).toBe("04fb072ac5f4d46e562c56f0f1ff1aea94df1c4c");
+    expect(versions.blueTag).toBe("04fb072");
+    expect(versions.greenTag).toBe("c9a9e92");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0" })).toThrow("RFC029_GREEN_SHA is required");
+    expect(() => migrationVersions({ RFC029_BLUE_TAG: "v0.15.0-0", RFC029_GREEN_SHA: "main" })).toThrow("full commit SHA");
+  });
+
+  test("uses the last published 0.14 images as the first rollout predecessor", () => {
+    const versions = migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" });
+    expect(versions.baselineTag).toBe("v0.14.1");
+    expect(versions.baseline.CORE_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.1");
+  });
+
+  test("starts exact 0.15 Green with the legacy safeguard", () => {
+    const scenario = parseBlueGreenScenario(
+      adoptionScenario("v0.14.1", "04fb072"),
+      "generated RFC 029 adoption scenario",
+    );
+    expect(scenario.bcs?.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
+    expect(scenario.gcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
+    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
+    expect(scenario.gcs.deferredStart).toBe(true);
+    expect(scenario.hostChains).toHaveLength(2);
+    expect(scenario.topology).toEqual({ count: 3, threshold: 2 });
+    expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
+  });
+
+  test("pulls every coprocessor image used by both cutovers", () => {
+    expect(predecessorImagePlan.map(({ image }) => image)).toEqual([
+      "db-migration",
+      "host-listener",
+      "gw-listener",
+      "tfhe-worker",
+      "zkproof-worker",
+      "sns-worker",
+      "tx-sender",
+      "consensus-detector",
+      "upgrade-controller",
+    ]);
+  });
+
+  test("uses the proven contract upgrade order", () => {
+    expect(gatewayContractUpgradePlan).toEqual([
+      ["task:upgradeDecryption", "Decryption"],
+      ["task:upgradeCiphertextCommits", "CiphertextCommits"],
+      ["task:upgradeInputVerification", "InputVerification"],
+      ["task:upgradeGatewayConfig", "GatewayConfig"],
+    ]);
+    expect(hostContractUpgradePlan).toEqual([["task:upgradeKMSGeneration", "KMSGeneration"]]);
+  });
+
+  test("changes only the intended deployment unit in each version lock", () => {
+    const baseline: Record<string, string> = {
+      ...migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" }).baseline,
+      LISTENER_CORE_VERSION: "baseline-listener",
+      RELAYER_VERSION: "baseline-relayer",
+      TEST_SUITE_VERSION: "baseline-test-suite",
+    };
+    const target = {
+      ...baseline,
+      TEST_SUITE_VERSION: "main-test-suite",
+      CORE_VERSION: "main-core",
+      HOST_VERSION: "main-host",
+      GATEWAY_VERSION: "main-gateway",
+      ...Object.fromEntries(connectorVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(relayerVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(listenerCoreVersionKeys.map((key) => [key, `main-${key}`])),
+      ...Object.fromEntries(coprocessorVersionKeys.map((key) => [key, `main-${key}`])),
+    };
+    const phases = migrationPhaseVersions(baseline, target, "v0.15.0-0");
+
+    expect(phases.contract.HOST_VERSION).toBe("main-host");
+    expect(phases.contract.GATEWAY_VERSION).toBe("main-gateway");
+    expect(phases.contract.RELAYER_VERSION).toBe(baseline.RELAYER_VERSION);
+    expect(phases.contract.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
+    expect(phases.contract.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.relayer.RELAYER_VERSION).toBe("main-RELAYER_VERSION");
+    expect(phases.relayer.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
+    expect(phases.connector.CONNECTOR_KMS_WORKER_VERSION).toBe("main-CONNECTOR_KMS_WORKER_VERSION");
+    expect(phases.connector.CORE_VERSION).toBe("main-core");
+    expect(phases.connector.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.listenerCore.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
+    expect(phases.listenerCore.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
+    expect(phases.blue.COPROCESSOR_TFHE_WORKER_VERSION).toBe("v0.15.0-0");
+    expect(phases.blue.CORE_VERSION).toBe("main-core");
+    expect(phases.blue.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
+    for (const phase of Object.values(phases)) {
+      expect(phase.TEST_SUITE_VERSION).toBe("baseline-test-suite");
+    }
+  });
+
+  test("blocks a mixed connector deployment", () => {
+    expect(() =>
+      assertConnectorMigrationReady(
+        [
+          { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a", "repo:target|sha-b"], party: 1 },
+          { cursor: 100, hasMigrationSchema: false, images: ["repo:legacy|sha-c", "repo:target|sha-b"], party: 2 },
+        ],
+        90,
+        ["repo:target|sha-a", "repo:target|sha-b"],
+      ),
+    ).toThrow("connector service images differ across parties");
+  });
+
+  test("requires the first connector party to run newly built local images", () => {
+    expect(() => assertLocalConnectorUpgrade(["repo:legacy|sha-a"], ["repo:target|sha-b"])).toThrow(
+      "locally built image",
+    );
+    expect(() => assertLocalConnectorUpgrade(["repo:legacy|sha-a"], ["repo:fhevm-local|sha-b"])).not.toThrow();
+  });
+
+  test("blocks a connector behind the deployment boundary", () => {
+    expect(() =>
+      assertConnectorMigrationReady(
+        [
+          { cursor: 89, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 1 },
+          { cursor: 100, hasMigrationSchema: true, images: ["repo:target|sha-a"], party: 2 },
+        ],
+        90,
+        ["repo:target|sha-a"],
+      ),
+    ).toThrow("listener cursor is before deployment block");
+  });
+
+  test("blocks incomplete or disagreeing operator material", () => {
+    expect(() =>
+      assertOperatorMaterialAgreement([material(), material({ compressed: false, operator: 1, status: "ready" })]),
+    ).toThrow("operator 1 is incomplete");
+    expect(() => assertOperatorMaterialAgreement([material(), material({ digest: "bb", operator: 1 })])).toThrow(
+      "applied material differs across operators",
+    );
+    expect(() => assertOperatorMaterialAgreement([material(), material({ keyId: "03", operator: 1 })])).toThrow(
+      "applied material differs across operators",
+    );
+    expect(() => assertOperatorMaterialAgreement([material({ storedMatchesVerified: false })])).toThrow(
+      "stored bytes differ from the verified download",
+    );
+  });
+});

@@ -13,6 +13,8 @@ import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
+  KMS_THRESHOLD_MIGRATION_CONFIG_NAME,
+  renderEpochMigration,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   THRESHOLD_PEERS_MARKER,
   buildKmsThresholdOverride,
@@ -39,11 +41,34 @@ import { testDefaultScenario } from "./test-fixtures";
 import { withTempStateDir } from "./test-state";
 import type { State } from "./types";
 import { readEnvFile, writeJson } from "./utils/fs";
+import { kmsEpochMigration } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
 
 const RENDER_OPTS = kmsRenderOptionsFor("c57f52f");
 const fourParty = resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1 });
 // 5 cores, 4-node committee (t=1), 1 spare — the node-swap substrate.
 const swapTopology = resolveKmsTopology({ mode: "threshold", parties: 5, threshold: 1, committeeSize: 4 });
+
+describe("KMS epoch migration", () => {
+  test("renders the upstream default context/epoch mapping", () => {
+    const config = Bun.TOML.parse(renderEpochMigration(kmsEpochMigration)) as {
+      migration: { context_associations: typeof kmsEpochMigration };
+    };
+    expect(config.migration.context_associations).toEqual(kmsEpochMigration);
+  });
+
+  test("only upgraded 0.15 cores receive migration config, never baseline or fresh cores", () => {
+    const mixed = buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor("v0.14.1"),
+      { 1: "v0.15.0-0" }, kmsEpochMigration);
+    expect(mixed.services["kms-core"].entrypoint).toContain(`config/${KMS_THRESHOLD_MIGRATION_CONFIG_NAME}`);
+    expect(mixed.services["kms-core-2"].entrypoint).toContain(`config/${KMS_THRESHOLD_CONFIG_NAME}`);
+    for (const version of ["v0.14.1", "v0.15.0-0", "v0.15.1", "v0.16.0", "b9087af"]) {
+      const fresh = buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor(version));
+      expect(fresh.services["kms-core"].entrypoint).toContain(`config/${KMS_THRESHOLD_CONFIG_NAME}`);
+    }
+    const upgraded = buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor("v0.15.0-0"), {}, kmsEpochMigration);
+    expect(upgraded.services["kms-core-4"].entrypoint).toContain(`config/${KMS_THRESHOLD_MIGRATION_CONFIG_NAME}`);
+  });
+});
 
 describe("resolveKmsTopology", () => {
   test("absent block keeps today's centralized single node", () => {
@@ -222,6 +247,22 @@ describe("buildKmsThresholdOverride", () => {
     expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service-insecure:target-core");
     expect(services["kms-core-3"].image).toBe(RENDER_OPTS.coreImage);
     expect(services["kms-core-gen-keys"].image).toBe(RENDER_OPTS.coreImage);
+  });
+
+  test.each(["v0.14.0-1", "v0.14.1"])("uses the legacy image family for %s", (version) => {
+    expect(kmsRenderOptionsFor(version).coreImage).toBe(`ghcr.io/zama-ai/kms/core-service:${version}`);
+  });
+
+  test.each(["v0.15.0-0", "v0.15.0", "main", "c57f52f"])("uses the modern test image family for %s", (version) => {
+    expect(kmsRenderOptionsFor(version).coreImage).toBe(`ghcr.io/zama-ai/kms/core-service-insecure:${version}`);
+  });
+
+  test("selects the image family per node during the KMS upgrade", () => {
+    const services = buildKmsThresholdOverride(fourParty, kmsRenderOptionsFor("v0.14.1"), { 2: "v0.15.0-0" }).services;
+    for (const name of ["kms-core", "kms-core-3", "kms-core-4", "kms-core-gen-keys", "kms-core-init"]) {
+      expect(services[name].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.1");
+    }
+    expect(services["kms-core-2"].image).toBe("ghcr.io/zama-ai/kms/core-service-insecure:v0.15.0-0");
   });
 
   test("cores publish no host ports (everything dials them over the docker network)", () => {
@@ -723,6 +764,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("keeps a reconstruction quorum ready and upgrades Core before its matching Connector", async () => {
     await withTempStateDir(async (stateDir) => {
       const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      versions.env.CORE_VERSION = "v0.14.1";
       const state: State = {
         target: "latest-main",
         lockPath: "/tmp/baseline.json",
@@ -737,7 +779,7 @@ describe("upgradeThresholdKmsOperator", () => {
       };
       const targetEnv = {
         ...versions.env,
-        CORE_VERSION: "target-core",
+        CORE_VERSION: "v0.15.0-0",
         CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
         CONNECTOR_GW_LISTENER_VERSION: "target-connector",
         CONNECTOR_KMS_WORKER_VERSION: "target-connector",
@@ -748,7 +790,9 @@ describe("upgradeThresholdKmsOperator", () => {
       const calls: string[] = [];
       let persisted = state;
 
-      await upgradeThresholdKmsOperator(2, { lockFile, overrides: [{ group: "kms-connector" }] }, {
+      await upgradeThresholdKmsOperator(2, {
+        lockFile, overrides: [{ group: "kms-connector" }], epochMigration: kmsEpochMigration,
+      }, {
         async loadState() {
           return persisted;
         },
@@ -765,7 +809,8 @@ describe("upgradeThresholdKmsOperator", () => {
           persisted = next;
           calls.push("save");
         },
-        async generateRuntime() {
+        async generateRuntime(_state, plan) {
+          expect(plan.kmsEpochMigration).toEqual(kmsEpochMigration);
           calls.push("generate");
         },
         async maybeBuild(component) {
@@ -805,7 +850,9 @@ describe("upgradeThresholdKmsOperator", () => {
       ]);
       expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
       expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe(versions.env.CONNECTOR_KMS_WORKER_VERSION);
-      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "target-core" });
+      expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "v0.15.0-0" });
+      expect(persisted.kmsEpochMigration).toEqual(kmsEpochMigration);
+      expect(stackSpecForState(persisted).kmsEpochMigration).toEqual(kmsEpochMigration);
       expect(persisted.kmsConnectorDeploymentByNodeId?.[2]).toEqual({
         locallyBuilt: true,
         versions: {
@@ -821,6 +868,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("moves global Core and Connector versions only after every operator reaches the target", async () => {
     await withTempStateDir(async (stateDir) => {
       const versions = presetBundle("latest-main", "abcdef0", "baseline.json");
+      versions.env.CORE_VERSION = "v0.14.1";
       let persisted: State = {
         target: "latest-main",
         lockPath: "/tmp/baseline.json",
@@ -835,7 +883,7 @@ describe("upgradeThresholdKmsOperator", () => {
       };
       const targetEnv = {
         ...versions.env,
-        CORE_VERSION: "target-core",
+        CORE_VERSION: "v0.15.0-0",
         CONNECTOR_DB_MIGRATION_VERSION: "target-connector",
         CONNECTOR_GW_LISTENER_VERSION: "target-connector",
         CONNECTOR_KMS_WORKER_VERSION: "target-connector",
@@ -864,6 +912,7 @@ describe("upgradeThresholdKmsOperator", () => {
       for (const operator of [1, 2, 3]) {
         await upgradeThresholdKmsOperator(operator, {
           lockFile,
+          epochMigration: operator === 1 ? kmsEpochMigration : undefined,
           overrides: [{ group: "kms-connector" }],
         }, operations);
         expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
@@ -871,6 +920,7 @@ describe("upgradeThresholdKmsOperator", () => {
           versions.env.CONNECTOR_KMS_WORKER_VERSION,
         );
         expect(Object.keys(persisted.kmsConnectorDeploymentByNodeId ?? {})).toHaveLength(operator);
+        expect(stackSpecForState(persisted).kmsEpochMigration).toEqual(kmsEpochMigration);
       }
 
       failHealth = true;
@@ -888,7 +938,8 @@ describe("upgradeThresholdKmsOperator", () => {
         lockFile,
         overrides: [{ group: "kms-connector" }],
       }, operations);
-      expect(persisted.versions.env.CORE_VERSION).toBe("target-core");
+      expect(persisted.versions.env.CORE_VERSION).toBe("v0.15.0-0");
+      expect(stackSpecForState(persisted).kmsEpochMigration).toEqual(kmsEpochMigration);
       expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe("target-connector");
       expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
       expect(persisted.kmsConnectorDeploymentByNodeId).toBeUndefined();
