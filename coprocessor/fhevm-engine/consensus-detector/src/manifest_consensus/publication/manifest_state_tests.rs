@@ -1008,9 +1008,58 @@ async fn discovers_all_direct_children_before_advancing_the_global_frontier() {
     .await
     .expect("load parent discovery state");
     assert!(
-        parent_closed,
-        "finalized parent discovery must close after copying children"
+        !parent_closed,
+        "pending children must not close discovery of a finalized parent"
     );
     assert!(manifest_state_exists(&pool, &grandchild).await);
     assert!(!manifest_state_exists(&pool, &orphan).await);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn discovery_recovers_closed_parent_and_waits_for_finalized_successor() {
+    let (_instance, pool) = setup_pool().await;
+    let parent = [0x80; 32];
+    let pending = [0x81; 32];
+    let canonical = [0x82; 32];
+    insert_host_block(&pool, 100, &parent, &[0x79; 32], "finalized").await;
+    insert_manifest_state(&pool, 100, &parent, &[0x79; 32]).await;
+    // Reproduce durable state left by the old publisher before applying recovery.
+    sqlx::query("UPDATE block_manifest_state SET child_block_discovery_closed = TRUE")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../../db-migration/migrations/20260923120000_reopen_manifest_child_discovery.sql"
+    ))
+    .execute(&pool)
+    .await
+    .expect("recover prematurely closed parents");
+    insert_host_block(&pool, 101, &pending, &parent, "pending").await;
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+    discover_children(&pool).await.unwrap();
+
+    // The first child is replaced after discovery; its finalized replacement
+    // must still be discovered even though the parent was finalized throughout.
+    sqlx::query("UPDATE host_chain_blocks_valid SET block_status = 'orphaned' WHERE chain_id = $1 AND block_hash = $2")
+        .bind(CHAIN_ID).bind(pending.as_slice()).execute(&pool).await.unwrap();
+    insert_host_block(&pool, 101, &canonical, &parent, "finalized").await;
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+    assert!(manifest_state_exists(&pool, &canonical).await);
+    discover_children(&pool).await.unwrap();
+    let closed = sqlx::query_scalar::<_, bool>(
+        "SELECT child_block_discovery_closed FROM block_manifest_state WHERE host_chain_id = $1 AND block_hash = $2")
+        .bind(CHAIN_ID).bind(parent.as_slice()).fetch_one(&pool).await.unwrap();
+    assert!(
+        closed,
+        "discovered finalized successor allows retiring the parent"
+    );
+    // Recovery is idempotent and must preserve correctly closed parents.
+    sqlx::raw_sql(include_str!(
+        "../../../../db-migration/migrations/20260923120000_reopen_manifest_child_discovery.sql"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(discover_children(&pool).await.unwrap(), 0);
 }

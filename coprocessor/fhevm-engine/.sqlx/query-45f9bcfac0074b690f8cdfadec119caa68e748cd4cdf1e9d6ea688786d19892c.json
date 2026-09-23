@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH inserted AS (\n            INSERT INTO block_manifest_state (\n                consensus_epoch,\n                host_chain_id,\n                block_number,\n                block_hash,\n                parent_block_hash,\n                publication_cadence\n            )\n            SELECT parent.consensus_epoch,\n                   child.chain_id,\n                   child.block_number,\n                   child.block_hash,\n                   child.parent_hash,\n                   parent.publication_cadence\n              FROM block_manifest_state parent\n              JOIN host_chain_blocks_valid parent_host\n                ON parent_host.chain_id = parent.host_chain_id\n               AND parent_host.block_hash = parent.block_hash\n              JOIN host_chain_blocks_valid child\n                ON child.chain_id = parent.host_chain_id\n               AND child.parent_hash = parent.block_hash\n             WHERE NOT parent.child_block_discovery_closed\n               AND parent.consensus_epoch = $1\n               AND parent_host.block_status <> 'orphaned'\n               AND child.block_status <> 'orphaned'\n               AND OCTET_LENGTH(child.parent_hash) = 32\n            ON CONFLICT (consensus_epoch, host_chain_id, block_hash) DO NOTHING\n            RETURNING 1\n        ), closed AS (\n            UPDATE block_manifest_state block\n               SET child_block_discovery_closed = TRUE,\n                   updated_at = NOW()\n              FROM host_chain_blocks_valid host\n             WHERE NOT block.child_block_discovery_closed\n               AND block.consensus_epoch = $1\n               AND host.chain_id = block.host_chain_id\n               AND host.block_hash = block.block_hash\n               AND (\n                   host.block_status = 'orphaned'\n                   OR (\n                       host.block_status = 'finalized'\n                       AND EXISTS (\n                           SELECT 1\n                             FROM host_chain_blocks_valid child\n                             JOIN block_manifest_state discovered\n                               ON discovered.consensus_epoch = block.consensus_epoch\n                              AND discovered.host_chain_id = child.chain_id\n                              AND discovered.block_hash = child.block_hash\n                            WHERE child.chain_id = block.host_chain_id\n                              AND child.parent_hash = block.block_hash\n                              AND child.block_status = 'finalized'\n                       )\n                   )\n               )\n            RETURNING 1\n        )\n        SELECT COUNT(*) AS \"inserted!\" FROM inserted\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inserted!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "45f9bcfac0074b690f8cdfadec119caa68e748cd4cdf1e9d6ea688786d19892c"
+}
