@@ -1,6 +1,6 @@
 {
   "toolchain": {
-    "anchor": "anchor-cli 1.1.2",
+    "anchor": "anchor-cli 1.2.0",
     "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
@@ -77,7 +77,7 @@
       "first_fail": 32,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 162676,
+        "compute_units": 151564,
         "unique_accounts": 9,
         "instruction_data_bytes": 2848,
         "cpi_instructions": 1,
@@ -90,7 +90,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 134509,
+        "compute_units": 122323,
         "unique_accounts": 9,
         "instruction_data_bytes": 2938,
         "cpi_instructions": 0,
@@ -103,7 +103,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 306195,
+        "compute_units": 296137,
         "unique_accounts": 9,
         "instruction_data_bytes": 3386,
         "cpi_instructions": 0,
@@ -116,7 +116,7 @@
       "first_fail": 26,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 281175,
+        "compute_units": 274549,
         "unique_accounts": 9,
         "instruction_data_bytes": 2707,
         "cpi_instructions": 1,
@@ -129,7 +129,7 @@
       "first_fail": 18,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 561539,
+        "compute_units": 553012,
         "unique_accounts": 9,
         "instruction_data_bytes": 16376,
         "cpi_instructions": 0,
@@ -142,7 +142,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 76076,
+        "compute_units": 68241,
         "unique_accounts": 9,
         "instruction_data_bytes": 436,
         "cpi_instructions": 0,
@@ -155,7 +155,7 @@
       "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 99543,
+        "compute_units": 96462,
         "unique_accounts": 15,
         "instruction_data_bytes": 802,
         "cpi_instructions": 0,
@@ -168,7 +168,7 @@
       "first_fail": 8,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 147893,
+        "compute_units": 143168,
         "unique_accounts": 21,
         "instruction_data_bytes": 1192,
         "cpi_instructions": 0,
@@ -181,7 +181,7 @@
       "first_fail": 17,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 264917,
+        "compute_units": 250724,
         "unique_accounts": 39,
         "instruction_data_bytes": 2362,
         "cpi_instructions": 0,
@@ -194,7 +194,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 76880,
+        "compute_units": 72462,
         "unique_accounts": 9,
         "instruction_data_bytes": 1594,
         "cpi_instructions": 1,
@@ -207,7 +207,7 @@
       "first_fail": 7,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 117283,
+        "compute_units": 102537,
         "unique_accounts": 9,
         "instruction_data_bytes": 690,
         "cpi_instructions": 0,

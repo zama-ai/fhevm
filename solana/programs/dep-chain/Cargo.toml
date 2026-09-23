@@ -18,6 +18,6 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
 
 [dependencies]
-anchor-lang = "1.1.2"
+anchor-lang = "1.2.0"
 zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }

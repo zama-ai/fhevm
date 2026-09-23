@@ -84,9 +84,9 @@ deployment. Mount paths into the container when using keypair files. Host bootst
 also requires the Gateway RPC and contract addresses; the complete environment is in
 `ci/preview-env/solana-host/values-solana-programs-e2e.yaml`.
 
-Build scripts install Anchor's pinned SBF tools v1.52 before compiling. This avoids
+Build scripts install Anchor's pinned SBF tools v1.57 before compiling. This avoids
 `cargo-build-sbf` selecting a different compiler from GitHub's mutable latest release.
-If an earlier build mixed tool versions, run `cargo clean --target sbpf-solana-solana`
+If an earlier build mixed tool versions, run `cargo clean --target sbpfv3-solana-solana`
 once from `solana/` before rebuilding; ordinary builds retain their cache.
 
 The image is built for one environment: `PROGRAM_ENVIRONMENT` selects

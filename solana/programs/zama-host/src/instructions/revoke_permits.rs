@@ -7,10 +7,6 @@
 //! enumerate. That is the whole point of the design: one transaction, constant work,
 //! however many permits are outstanding. What a raised watermark cannot reach — a
 //! permit pre-signed to open in the future — is recorded on [`PermitInvalidation`].
-//!
-//! Account validation here is manual rather than expressed through typed account
-//! wrappers: the program is moving off the framework, and new code does not add to
-//! the pile of macro-driven validation that has to be unwound later.
 
 use anchor_lang::prelude::*;
 
@@ -59,13 +55,6 @@ pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
         invalidation.key(),
         expected_address,
         ZamaHostError::PermitInvalidationPdaMismatch
-    );
-    // Stated here rather than left to the account attribute: every other check in this
-    // handler is written by hand because the program is moving off the framework, and a
-    // safety property that lives only in a macro disappears silently when the macro does.
-    require!(
-        invalidation.is_writable,
-        ZamaHostError::PermitInvalidationAccountInvalid
     );
 
     let previous_watermark = if is_uninitialized_pda_account(

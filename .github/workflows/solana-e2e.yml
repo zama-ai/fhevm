@@ -121,7 +121,7 @@ jobs:
           # avm+anchor from source and fetches dozens of crates from crates.io, which flaked (a
           # `chrono` download failed). One retried binary download, no compilation, no crates.io.
           mkdir -p "$HOME/.cargo/bin"
-          retry curl -sSfL https://github.com/solana-foundation/anchor/releases/download/v1.1.2/anchor-1.1.2-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
+          retry curl -sSfL https://github.com/solana-foundation/anchor/releases/download/v1.2.0/anchor-1.2.0-x86_64-unknown-linux-gnu -o "$HOME/.cargo/bin/anchor"
           chmod +x "$HOME/.cargo/bin/anchor"
           anchor --version
 

@@ -1,12 +1,12 @@
 {
   "toolchain": {
-    "anchor": "anchor-cli 1.1.2",
+    "anchor": "anchor-cli 1.2.0",
     "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
     "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
   },
   "measurements": {
     "deposit": {
-      "compute_units": 14839,
+      "compute_units": 14078,
       "unique_accounts": 10,
       "instruction_data_bytes": 16,
       "cpi_instructions": 2,
@@ -14,7 +14,7 @@
       "max_cpi_instruction_data_bytes": 10
     },
     "harvest": {
-      "compute_units": 7070,
+      "compute_units": 6608,
       "unique_accounts": 7,
       "instruction_data_bytes": 16,
       "cpi_instructions": 1,
@@ -22,7 +22,7 @@
       "max_cpi_instruction_data_bytes": 10
     },
     "withdraw": {
-      "compute_units": 14863,
+      "compute_units": 14094,
       "unique_accounts": 10,
       "instruction_data_bytes": 16,
       "cpi_instructions": 2,

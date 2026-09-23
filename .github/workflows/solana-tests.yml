@@ -18,7 +18,7 @@ env:
   # litesvm at 0.11 (see the comment at solana/runtime-tests/Cargo.toml). Both need
   # solana-account >= 4.3, which has moved to wincode 0.6 while anchor still pins the 3.x crates on
   # wincode 0.5. They move when that upstream split resolves, not when this pin changes.
-  ANCHOR_VERSION: "1.1.2"
+  ANCHOR_VERSION: "1.2.0"
   SOLANA_VERSION: "4.1.2"
 
 jobs:

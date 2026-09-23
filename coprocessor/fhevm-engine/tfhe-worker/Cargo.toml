@@ -49,8 +49,8 @@ latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
-anchor-lang = "1.0.2"
-anchor-spl = { version = "1.0.2", default-features = false, features = ["token", "token_2022", "associated_token"] }
+anchor-lang = "1.2.0"
+anchor-spl = { version = "1.2.0", default-features = false, features = ["token", "token_2022", "associated_token"] }
 confidential-token = { path = "../../../solana/programs/confidential-token", features = ["no-entrypoint"] }
 criterion = { version = "0.5.1", features = ["async_futures"] }
 host-listener = { path = "../host-listener", features = ["solana-reconstruct"] }
