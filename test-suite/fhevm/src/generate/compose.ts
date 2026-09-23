@@ -1040,85 +1040,62 @@ const buildExtraCoprocessorListenerOverride = async (
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
   const services: Record<string, Record<string, unknown>> = {};
   if (!plan.coprocessor) {
-    // Multi-chain overrides don't apply to blue-green (single chain).
     return { ...doc, services };
   }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
   const { suffix: chainSuffix } = hostChainNames(chain.key, defaultChain.key);
-  for (const instance of plan.coprocessor.instances) {
-    const localServices =
-      instance.source.mode === "local"
-        ? localServicesForInstance(instance)
-        : instance.source.mode === "inherit"
-          ? inheritedBuildServices
-          : new Set<string>();
-    const argPolicy = argPolicyForInstance(compat, instance);
-    const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
-    const envName = `coprocessor-${chain.key}.${instance.index}`;
-    const envFileValue = envPath(envName);
-    const instanceEnv = await readEnvFile(envFileValue);
-    for (const baseName of listenerServices) {
-      const suffix = baseName.replace(/^coprocessor-/, "");
-      const cloneName = `${prefix}${suffix}${chainSuffix}`;
-      const baseService = doc.services[baseName];
-      if (!baseService) continue;
-      const locallyBuilt = localServices.has(baseName);
-      const adjusted = applyInstanceAdjustments(
-        baseName,
-        baseService,
-        envFileValue,
-        instanceEnv,
-        instance,
-        locallyBuilt ? {} : argPolicy.coprocessorArgs,
-        locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
-      );
-      adjusted.container_name = cloneName;
-      // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
-      applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
-      delete adjusted.depends_on;
-      services[cloneName] = adjusted;
-    }
-  }
-
-  // Blue-green: clone the GCS host-listeners per extra chain too, so the
-  // GCS stack can ingest and dry-run each chain.
-  if (plan.blueGreen) {
-    const gcs = plan.blueGreen.gcs;
-    for (const instance of plan.coprocessor.instances) {
-      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
-      const gcsPrefix = `${prefix}gcs-`;
-      const envFileValue = envPath(`coprocessor-${chain.key}.${instance.index}`);
-      const instanceEnv = await readEnvFile(envFileValue);
-      const gcsInstance: ResolvedCoprocessorScenarioInstance = {
-        index: instance.index,
+  const fleets = [{ green: false, instances: plan.coprocessor.instances }];
+  const gcs = plan.blueGreen?.gcs;
+  if (gcs) {
+    fleets.push({
+      green: true,
+      instances: plan.coprocessor.instances.map(({ index }) => ({
+        index,
         source: gcs.source,
         env: gcs.env,
         args: gcs.args,
-      };
+      })),
+    });
+  }
+  for (const fleet of fleets) {
+    for (const instance of fleet.instances) {
+      const localServices = fleet.green
+        ? new Set<string>()
+        : instance.source.mode === "local"
+          ? localServicesForInstance(instance)
+          : instance.source.mode === "inherit"
+            ? inheritedBuildServices
+            : new Set<string>();
+      const argPolicy = argPolicyForInstance(compat, instance);
+      const prefix = instance.index === 0 ? "coprocessor-" : `coprocessor${instance.index}-`;
+      const fleetPrefix = fleet.green ? `${prefix}gcs-` : prefix;
+      const envFileValue = envPath(`coprocessor-${chain.key}.${instance.index}`);
+      const instanceEnv = await readEnvFile(envFileValue);
       for (const baseName of listenerServices) {
         const suffix = baseName.replace(/^coprocessor-/, "");
-        const cloneName = `${gcsPrefix}${suffix}${chainSuffix}`;
+        const cloneName = `${fleetPrefix}${suffix}${chainSuffix}`;
         const baseService = doc.services[baseName];
         if (!baseService) continue;
-        // GCS is always local-built, so — as in buildCoprocessorOverride — a built
-        // service speaks the working tree's flag contract and must not be shimmed to
-        // an older one.
-        const buildSpec = localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime);
-        const locallyBuilt = gcs.source.mode === "local" && Boolean(buildSpec);
-        const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
+        const buildSpec = fleet.green
+          ? localBuildSpecFor("coprocessor", baseName, plan.e2ePublicRuntime)
+          : undefined;
+        const locallyBuilt = fleet.green
+          ? instance.source.mode === "local" && Boolean(buildSpec)
+          : localServices.has(baseName);
+        // Local binaries use the working tree's flags, even when the bundle is older.
         const adjusted = applyInstanceAdjustments(
           baseName,
           baseService,
           envFileValue,
           instanceEnv,
-          gcsInstance,
-          locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,
-          locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
+          instance,
+          locallyBuilt ? {} : argPolicy.coprocessorArgs,
+          locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = cloneName;
-        applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
+        applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(baseService.image, "gcs-candidate");
           adjusted.build = buildSpec;
@@ -1128,7 +1105,6 @@ const buildExtraCoprocessorListenerOverride = async (
       }
     }
   }
-
   return { services };
 };
 

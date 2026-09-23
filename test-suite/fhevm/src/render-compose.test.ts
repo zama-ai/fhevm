@@ -858,6 +858,78 @@ gcs:
     });
   });
 
+  test.each(["local", "registry"] as const)("extra-chain Green preserves %s source, overrides and command compatibility", async (mode) => {
+    const bg = resolveBlueGreenScenario("/tmp/extra-chain-green.yaml", parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+topology: { count: 2, threshold: 2 }
+gcs:
+  source: { mode: local }
+`));
+    bg.hostChains = multiChainHostContractsState.scenario.hostChains;
+    bg.bcs.source = { mode: "registry", tag: "bcs-hotfix", compatTag: "v0.13.0" };
+    bg.bcs.env = { RUST_LOG: "warn" };
+    bg.gcs.source = mode === "local" ? { mode } : { mode, tag: "gcs-hotfix", compatTag: "v0.13.0" };
+    bg.gcs.env = { RUST_LOG: "debug" };
+    bg.gcs.args = { "host-listener": ["--polling-interval=77"] };
+    bg.gcs.deferredStart = true;
+    const bgState: State = { ...state, scenario: bg };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor-chain-b.0", "coprocessor-chain-b.1"]) {
+        await writeFile(envPath(name), "CONFIDENTIAL_BRIDGE_ADDRESS=0x1234\n");
+      }
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      const { services } = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8"));
+      expect(Object.keys(services)).toEqual([
+        "coprocessor-host-listener-chain-b", "coprocessor-host-listener-poller-chain-b",
+        "coprocessor1-host-listener-chain-b", "coprocessor1-host-listener-poller-chain-b",
+        "coprocessor-gcs-host-listener-chain-b", "coprocessor-gcs-host-listener-poller-chain-b",
+        "coprocessor1-gcs-host-listener-chain-b", "coprocessor1-gcs-host-listener-poller-chain-b",
+      ]);
+      for (const prefix of ["coprocessor-", "coprocessor1-"]) {
+        const primary = services[`${prefix}host-listener-chain-b`];
+        expect(primary.image).toEndWith(":bcs-hotfix");
+        expect(primary.build).toBeUndefined();
+        expect(primary.environment.RUST_LOG).toBe("warn");
+        expect(primary.command.some((arg: string) => arg.startsWith("--confidential-bridge-address"))).toBe(false);
+        for (const role of ["host-listener", "host-listener-poller"]) {
+          const name = `${prefix}gcs-${role}-chain-b`;
+          const green = services[name];
+          expect(green.container_name).toBe(name);
+          expect(green.image).toEndWith(mode === "local" ? ":gcs-candidate" : ":gcs-hotfix");
+          expect(Boolean(green.build)).toBe(mode === "local");
+          expect(green.environment.RUST_LOG).toBe("debug");
+          expect(green.depends_on).toBeUndefined();
+          expect(green.env_file).toEqual([envPath(`coprocessor-chain-b.${prefix === "coprocessor-" ? 0 : 1}`)]);
+        }
+        const command: string[] = services[`${prefix}gcs-host-listener-chain-b`].command;
+        expect(command).toContain("--polling-interval=77");
+        expect(command.some((arg) => arg.startsWith("--confidential-bridge-address"))).toBe(mode === "local");
+      }
+    });
+  });
+
+  test("extra-chain primary listeners preserve per-service local build selection", async () => {
+    const selective = structuredClone(scenario);
+    selective.hostChains = multiChainHostContractsState.scenario.hostChains;
+    const selectiveState: State = { ...state, scenario: selective };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor-chain-b.0", "coprocessor-chain-b.1"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(selectiveState, stackSpecForState(selectiveState));
+      const { services } = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8"));
+      expect(services["coprocessor1-host-listener-chain-b"].build).toBeDefined();
+      expect(services["coprocessor1-host-listener-chain-b"].image).toEndWith(":fhevm-local-i1");
+      expect(services["coprocessor1-host-listener-poller-chain-b"].build).toBeDefined();
+      expect(services["coprocessor1-host-listener-poller-chain-b"].image).toEndWith(":fhevm-local-i1");
+      expect(services["coprocessor-host-listener-chain-b"].build).toBeUndefined();
+      expect(services["coprocessor-host-listener-poller-chain-b"].build).toBeUndefined();
+    });
+  });
+
   test("deferred Green is omitted from startup until explicitly requested", () => {
     const deferredScenario = resolveBlueGreenScenario(
       path.join("/tmp", "blue-green-deferred-test.yaml"),
