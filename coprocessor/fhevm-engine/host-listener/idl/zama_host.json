@@ -1884,19 +1884,6 @@
         240,
         63
       ]
-    },
-    {
-      "name": "PublicOutputsProducedEvent",
-      "discriminator": [
-        42,
-        82,
-        34,
-        199,
-        238,
-        54,
-        106,
-        181
-      ]
     }
   ],
   "errors": [
@@ -3904,74 +3891,6 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "ProducedPublicOutput",
-      "docs": [
-        "One public persistent output produced by an `fhe_execute` execution."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "step_index",
-            "docs": [
-              "Zero-based step index within the execution."
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "encrypted_store",
-            "docs": [
-              "Host-owned persistent `EncryptedStore` account bound by the step."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "output_handle",
-            "docs": [
-              "Block-entropy-derived output handle written to the account."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "PublicOutputsProducedEvent",
-      "docs": [
-        "Emitted once for the public outputs produced by an `fhe_execute` execution."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "outputs",
-            "docs": [
-              "Produced public outputs in execution step order."
-            ],
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "ProducedPublicOutput"
-                }
-              }
-            }
           }
         ]
       }
