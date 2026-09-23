@@ -5,6 +5,7 @@ use block_manifest::{
     BlockCiphertextDescriptor, CiphertextFormat, CiphertextStatus, DetailedRange,
 };
 
+use super::quorum_coverage::{quorum_coverage, QuorumCoverage};
 use crate::manifest_consensus::manifest_archive::AuthenticatedManifest;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,6 +34,7 @@ pub(crate) struct QuorumEvaluation {
     pub outcome: VerificationOutcome,
     pub local_quorum_status: LocalQuorumStatus,
     pub scopes: Vec<ScopeEvaluation>,
+    pub coverage: QuorumCoverage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,8 +158,6 @@ struct CollectedCommitments {
 
 #[derive(Default)]
 struct EvaluationSummary {
-    local_scope_count: i32,
-    local_scope_without_quorum: bool,
     local_quorum_mismatch: bool,
     comparable_scope_count: i32,
     local_detailed_match: Option<bool>,
@@ -179,15 +179,12 @@ impl EvaluationSummary {
             self.local_detailed_group_count = Some(evaluation.groups.len());
         }
         if let Some(local_digest) = evaluation.local_digest {
-            self.local_scope_count += 1;
             if let Some(quorum_digest) = evaluation.quorum_digest {
                 self.comparable_scope_count += 1;
                 self.local_quorum_mismatch |= local_digest != quorum_digest;
                 if is_local_detailed_scope {
                     self.local_detailed_match = Some(local_digest == quorum_digest);
                 }
-            } else {
-                self.local_scope_without_quorum = true;
             }
         }
     }
@@ -209,10 +206,10 @@ impl EvaluationSummary {
         }
     }
 
-    fn local_quorum_status(&self) -> LocalQuorumStatus {
+    fn local_quorum_status(&self, coverage: &QuorumCoverage) -> LocalQuorumStatus {
         if self.local_quorum_mismatch {
             LocalQuorumStatus::DiffersFromQuorum
-        } else if self.local_scope_count > 0 && !self.local_scope_without_quorum {
+        } else if coverage.quorum_from_block.is_some() {
             LocalQuorumStatus::MatchesQuorum
         } else {
             LocalQuorumStatus::Inconclusive
@@ -252,10 +249,12 @@ pub(crate) fn evaluate_quorum_with_history(
     }
     scopes.sort_unstable_by(|left, right| left.scope.cmp(&right.scope));
 
+    let coverage = quorum_coverage(&scopes, collected.local_detailed_scope.as_ref());
     QuorumEvaluation {
         outcome: summary.outcome(),
-        local_quorum_status: summary.local_quorum_status(),
+        local_quorum_status: summary.local_quorum_status(&coverage),
         scopes,
+        coverage,
     }
 }
 

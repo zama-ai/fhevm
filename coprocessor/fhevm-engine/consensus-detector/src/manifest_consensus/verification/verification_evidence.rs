@@ -32,6 +32,23 @@ pub(super) async fn persist_verification_evidence(
         drifted_handle_count,
     } = evidence;
     let localization_cacheable = localization_is_cacheable(evaluation, localization_complete);
+    let coverage = &evaluation.coverage;
+    let quorum_from = coverage
+        .quorum_from_block
+        .map(|v| i64_from_u256("quorum start", v))
+        .transpose()?;
+    let quorum_through = coverage
+        .quorum_through_block
+        .map(|v| i64_from_u256("quorum end", v))
+        .transpose()?;
+    let prefix_from = coverage
+        .unverified_prefix_from_block
+        .map(|v| i64_from_u256("prefix start", v))
+        .transpose()?;
+    let prefix_through = coverage
+        .unverified_prefix_through_block
+        .map(|v| i64_from_u256("prefix end", v))
+        .transpose()?;
     sqlx::query!(
         r#"
         INSERT INTO block_manifest_verification_attempt (
@@ -43,8 +60,10 @@ pub(super) async fn persist_verification_evidence(
             drifted_block_count,
             drifted_handle_count,
             localization_complete,
-            localization_cacheable
-        ) VALUES ($8, $1, $2, $3, $4, $5, $6, $7, $9)
+            localization_cacheable,
+            quorum_from_block, quorum_through_block,
+            unverified_prefix_from_block, unverified_prefix_through_block
+        ) VALUES ($8, $1, $2, $3, $4, $5, $6, $7, $9, $10, $11, $12, $13)
         ON CONFLICT (consensus_epoch, task_id, attempt) DO NOTHING
         "#,
         task_id,
@@ -56,6 +75,10 @@ pub(super) async fn persist_verification_evidence(
         localization_complete,
         consensus_epoch,
         localization_cacheable,
+        quorum_from,
+        quorum_through,
+        prefix_from,
+        prefix_through,
     )
     .execute(trx.as_mut())
     .await?;

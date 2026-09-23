@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS block_manifest_verification_attempt
         'differs_from_quorum',
         'inconclusive'
     )),
+    -- matches_quorum is scoped to this contiguous suffix, not to an unavailable prefix.
+    quorum_from_block BIGINT NULL CHECK (quorum_from_block >= 0),
+    quorum_through_block BIGINT NULL CHECK (quorum_through_block >= quorum_from_block),
+    unverified_prefix_from_block BIGINT NULL CHECK (unverified_prefix_from_block >= 0),
+    unverified_prefix_through_block BIGINT NULL CHECK (unverified_prefix_through_block >= unverified_prefix_from_block),
+    CHECK ((quorum_from_block IS NULL) = (quorum_through_block IS NULL)),
+    CHECK ((unverified_prefix_from_block IS NULL) = (unverified_prefix_through_block IS NULL)),
+    CHECK (unverified_prefix_through_block < quorum_from_block),
     drifted_block_count BIGINT NULL CHECK (drifted_block_count >= 0),
     drifted_handle_count BIGINT NULL CHECK (drifted_handle_count >= 0),
     localization_complete BOOLEAN NOT NULL,

@@ -370,3 +370,107 @@ fn historical_range(start: u64, end: u64, scale: u32, end_hash: u8, digest: u8) 
         digest: B256::repeat_byte(digest),
     }
 }
+
+#[test]
+fn quorum_coverage_reports_matching_suffix_and_unverified_prefix() {
+    let local = Address::repeat_byte(1);
+    let older = historical_range(0, 31, 5, 0x91, 0x31);
+    let recent = historical_range(32, 39, 3, 0x92, 0x32);
+    let manifests = vec![
+        manifest(local, 40, 42, 0xaa, 0x11, vec![older, recent.clone()]),
+        manifest(Address::repeat_byte(2), 40, 42, 0xaa, 0x11, vec![recent]),
+    ];
+    let evaluation = evaluate_quorum(&manifests, local, 2);
+    assert_eq!(evaluation.outcome, VerificationOutcome::Consensus);
+    assert_eq!(
+        evaluation.local_quorum_status,
+        LocalQuorumStatus::MatchesQuorum
+    );
+    assert_eq!(
+        evaluation.coverage,
+        QuorumCoverage {
+            quorum_from_block: Some(U256::from(32)),
+            quorum_through_block: Some(U256::from(42)),
+            unverified_prefix_from_block: Some(U256::ZERO),
+            unverified_prefix_through_block: Some(U256::from(31)),
+        }
+    );
+}
+
+#[test]
+fn quorum_coverage_does_not_bridge_missing_or_unverified_middle_ranges() {
+    let local = Address::repeat_byte(1);
+    let older = historical_range(0, 31, 5, 0x91, 0x31);
+    let middle = historical_range(32, 39, 3, 0x92, 0x32);
+    for history in [vec![older.clone()], vec![older.clone(), middle]] {
+        let manifests = vec![
+            manifest(local, 40, 42, 0xaa, 0x11, history),
+            manifest(
+                Address::repeat_byte(2),
+                40,
+                42,
+                0xaa,
+                0x11,
+                vec![older.clone()],
+            ),
+        ];
+        let evaluation = evaluate_quorum(&manifests, local, 2);
+        assert_eq!(evaluation.coverage.quorum_from_block, Some(U256::from(40)));
+        assert_eq!(
+            evaluation.coverage.unverified_prefix_through_block,
+            Some(U256::from(39))
+        );
+    }
+}
+
+#[test]
+fn quorum_coverage_never_splits_a_range_at_a_peers_history_start() {
+    let local = Address::repeat_byte(1);
+    let manifests = vec![
+        manifest(
+            local,
+            40,
+            42,
+            0xaa,
+            0x11,
+            vec![historical_range(32, 39, 3, 0x91, 0x31)],
+        ),
+        manifest(
+            Address::repeat_byte(2),
+            40,
+            42,
+            0xaa,
+            0x11,
+            vec![historical_range(36, 39, 2, 0x91, 0x32)],
+        ),
+    ];
+    let evaluation = evaluate_quorum(&manifests, local, 2);
+    assert_eq!(evaluation.coverage.quorum_from_block, Some(U256::from(40)));
+    assert_eq!(
+        evaluation.coverage.unverified_prefix_from_block,
+        Some(U256::from(32))
+    );
+}
+
+#[test]
+fn quorum_coverage_requires_current_quorum_and_marks_complete_history() {
+    let local = Address::repeat_byte(1);
+    let history = vec![historical_range(32, 39, 3, 0x91, 0x31)];
+    let manifests = vec![
+        manifest(local, 40, 42, 0xaa, 0x11, history.clone()),
+        manifest(Address::repeat_byte(2), 40, 42, 0xaa, 0x11, history),
+    ];
+    let complete = evaluate_quorum(&manifests, local, 2);
+    assert_eq!(complete.coverage.quorum_from_block, Some(U256::from(32)));
+    assert_eq!(complete.coverage.unverified_prefix_from_block, None);
+    let insufficient = evaluate_quorum(&manifests, local, 3);
+    assert_eq!(
+        insufficient.local_quorum_status,
+        LocalQuorumStatus::Inconclusive
+    );
+    assert_eq!(insufficient.coverage.quorum_from_block, None);
+    assert_eq!(
+        insufficient.coverage.unverified_prefix_through_block,
+        Some(U256::from(42))
+    );
+}
