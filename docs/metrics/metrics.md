@@ -151,6 +151,12 @@ The listener resumes from its checkpoint only while the Yellowstone provider can
  - **Alarm**: If the counter increases repeatedly.
     - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
 
+#### Metric Name: `coprocessor_solana_host_listener_handle_check_failures_total`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Steps whose emitted result handle did not match the handle the listener re-derived. Each one is held back: its computation and every computation that depends on it end as errors, while the rest of the block is ingested. It means the listener's derivation or step decoding is wrong. The log line `solana handle check failed` names the slot, signature, step and both handles; the repair is in the host-listener README.
+ - **Alarm**: Any increase. Page on it.
+    - **Recommendation**: `increase(counter[5m]) > 0`.
+
 #### Container restarts
  - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a replay the provider can no longer serve, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
  - **Alarm**: Any restart.

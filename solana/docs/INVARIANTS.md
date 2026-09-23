@@ -189,9 +189,9 @@ instruction arguments without the SDK. Pinned by the `compile_fail` doctest on `
 **61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
 builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
 depends on the live Store size, the number of MMR peaks and the permissions sealed per output, none of which the builder
-can see. The gap is measurable: `the_builder_admits_mature_updates_the_host_heap_cannot_run` builds 17 updates, each
+can see. The gap is measurable: `the_builder_admits_mature_updates_the_host_heap_cannot_run` builds 16 updates, each
 to its own Store with 8 MMR peaks and the same eight viewers, while the runtime sweep
-`fhe_execute_boundary/mature_updates_peaks_8` runs 16 and exhausts the host heap at 17. The builder admits 22 such
+`fhe_execute_boundary/mature_updates_peaks_8` runs 15 and exhausts the host heap at 16. The builder admits 22 such
 updates at any peak count; the host runs 7 at 32 peaks. These are shape measurements, not an output cap. No
 host-side admission model exists; an app validates its shapes against the sweeps and budgets the whole transaction. Why
 no allocator was shipped is DD-046 (fhevm-internal#1872).
@@ -249,16 +249,21 @@ and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084).
 
 ## E. Reconstruction & off-chain services
 
-**28. [HOLDS]** Handles the listener re-derives are byte-identical to the
-on-chain ones, because the listener imports the program's own derivation
-functions and argument types rather than reimplementing them, and supplies
-the followed program id (`--program-id`) as `HandleDerivationContext.program_id`
-instead of hashing the crate's compiled `declare_id!` (fixtures and the e2e
-derivation check this too).
+**28. [HOLDS]** The handles the listener stores are the ones the host
+emitted in each execution's `FheExecutedEvent`, so its computation rows, leaves
+and allowed handles match the chain even if its own derivation drifts. It
+re-derives every handle as a check, with the program's own derivation functions
+and argument types and the followed program id (`--program-id`) rather than the
+crate's compiled `declare_id!`. A step that does not re-derive is held back as a
+terminal error, which ends its dependents too, and raises an alarm; the rest of
+the block is ingested (DD-056). The check detects a listener bug, not a lying
+provider, which can forge the event and the transaction consistently.
 
-**29. [HOLDS]** Every transaction is independently interpretable: replay from
-instruction bytes alone reconstructs full history with zero account reads
-(updates echo the previous handle and declare the new handle's allows).
+**29. [HOLDS]** Every transaction is independently interpretable: its
+instructions and inner instructions, including each execution's event,
+reconstruct its history with zero account reads and no sysvar state (updates
+echo the previous handle and declare the new handle's allows). A block from
+`getBlock` prepares into the same input as one from the stream.
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
@@ -272,13 +277,17 @@ scheduling can waste compute on a minority fork; it can never release
 plaintext.
 
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
-rolled back (safe only because of #31).
+rolled back (safe only because of #31). The operator repair of DD-056 does not
+unwind a fork either: it replays the same slots, and a replayed slot must
+reproduce the recorded leaves or the listener stops.
 
 **33. [RISK]** Nothing pins a deployed program build to the listener build.
 #28 now takes the followed program id as an input, so a listener compiled
 for one `declare_id!` can still derive another deployment's handles.
-Instruction layout and decoder types still silently assume matching crate
-revisions.
+Instruction layout and decoder types still assume matching crate revisions.
+#28's check catches a decoder drift in the steps, since every decoded step
+field feeds its handle; a drift in the effects (allows, Store slots, make
+public), which shape leaves rather than handles, stays silent.
 
 ## F. Admin, config & custody
 

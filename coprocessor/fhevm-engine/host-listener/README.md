@@ -119,11 +119,13 @@ cargo test -p host-listener --test host_listener_integration_tests \
 ### Solana bootstrap and restart
 
 `solana_host_listener` reconstructs compute rows and ACL leaves from confirmed
-Yellowstone blocks. On an empty database, `--start-slot <slot>` selects an
-existing confirmed block to replay **inclusively**. Choose a block before the
-host activity that must be reconstructed, within the provider's replay window.
-RPC supplies that block's hash; transactions and required sysvar context still
-come from Yellowstone. The first block must match the requested slot and hash.
+Yellowstone blocks. Each `fhe_execute` is paired with the `FheExecutedEvent` it
+emits: the listener stores the result handles in the event and re-derives each
+one as a check. On an empty database, `--start-slot <slot>` selects an existing
+confirmed block to replay **inclusively**. Choose a block before the host
+activity that must be reconstructed, within the provider's replay window. RPC
+supplies that block's hash; its transactions come from Yellowstone. The first
+block must match the requested slot and hash.
 
 Once a block's compute rows, leaves, and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies
@@ -133,13 +135,42 @@ Without a checkpoint or `--start-slot`, the listener starts at the stream tip;
 this cannot recover earlier leaves.
 
 This is bounded gRPC replay, not archival RPC recovery. The local configuration
-in `solana/geyser/yellowstone-config.json` retains **256 slots**. Replay must
-include the required historical sysvar context as well as sealed blocks; an
-unavailable anchor, gap, conflicting block, or missing context stops ingestion
-without advancing the checkpoint. Increasing retention is a provider concern.
+in `solana/geyser/yellowstone-config.json` retains **256 slots**. An unavailable
+anchor, gap or conflicting block stops ingestion without advancing the
+checkpoint. Increasing retention is a provider concern.
 The HTTP health routes check database availability, not reconstruction catch-up.
-Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag and
-reconnect alarms are in [`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).
+Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
+reconnect and handle-check alarms are in
+[`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).
+
+### Solana handle-check failures and repair
+
+A step whose emitted handle does not re-derive is held back. Its computation row
+is inserted as a terminal error, so the tfhe-worker never computes it and ends
+its dependents as errors. The rest of the block is ingested, and the ACL leaves
+keep the emitted handle. The listener logs `solana handle check failed` with the
+slot, signature, execution, step and both handles, and increments
+`coprocessor_solana_host_listener_handle_check_failures_total`. The mismatch is
+a listener bug: either the derivation or the step decoding is wrong (DD-056 in
+`solana/docs/DESIGN_DECISIONS.md`).
+
+Repair by replaying the affected slots with the fixed listener:
+
+1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that produced a block before the first
+   failing slot, and take its `blockhash` from `getBlock S`, decoded from base58
+   to hex.
+2. Run `db-migration/revert_coprocessor_db_state.sh` with `CHAIN_ID`,
+   `TO_BLOCK_NUMBER=S` and `SOLANA_BLOCK_HASH=<hex>`. It first moves the
+   listener checkpoint back to `S` (`rewind_solana_listener_checkpoint.sql`),
+   then deletes the computation rows after `S`, including the held steps and
+   their errored dependents. The revert alone refuses a Solana chain whose
+   checkpoint is still after `S`, since the listener would never re-ingest the
+   deleted rows.
+3. Restart the services with the fixed listener. It replays every slot after `S` and inserts the
+   rows again as new work. ACL leaves are kept: a replayed slot must reproduce
+   the recorded ones exactly, or the listener stops.
+
+`S` must still be inside the provider's replay window.
 
 ## Events in FHEVM
 
