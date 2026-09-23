@@ -772,7 +772,7 @@ async fn test_kms_context_cache_refresh_picks_up_invalidation() -> anyhow::Resul
             Err(e) => {
                 let err = RequestCheckError::record(e);
                 assert!(
-                    matches!(err, ProcessingError::Irrecoverable(_)),
+                    err.kind == ProcessingErrorKind::Irrecoverable,
                     "unexpected error: {err}"
                 );
                 return Ok(());
