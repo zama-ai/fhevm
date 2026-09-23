@@ -8,7 +8,7 @@
 //! evaluation calls `zama-host`'s own validators, so the oracle cannot drift from the program's
 //! admission rules.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anchor_lang::{AnchorDeserialize, Discriminator};
 use mollusk_svm::result::InstructionResult;
@@ -18,223 +18,14 @@ use solana_sdk::pubkey::Pubkey;
 use zama_host::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
     assert_sum_operand_types, assert_supported_fhe_type, assert_unary_operand_type,
-    assert_valid_bounded_rand_upper_bound, computed_eval_handle, computed_eval_is_in_handle,
-    computed_eval_mul_div_handle, computed_eval_sum_handle, computed_eval_ternary_handle,
-    computed_eval_trivial_handle, computed_eval_unary_handle, handle_fhe_type, FheBinaryOpCode,
-    FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
-    HandleDerivationContext,
+    assert_valid_bounded_rand_upper_bound, handle_fhe_type, FheBinaryOpCode, FheExecuteArgs,
+    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 use crate::{decode_fhe_execute_args, Ctx, BALANCE_FHE_TYPE};
 
 pub type Handle = [u8; 32];
 pub type ClearInputs = HashMap<Handle, TypedClearValue>;
-
-fn resolve_handle_operand(
-    operand: &FheExecuteOperand,
-    dictionary: &[[u8; 32]],
-    produced: &[Handle],
-) -> Option<Handle> {
-    match operand {
-        FheExecuteOperand::StoreSlot { handle_index, .. }
-        | FheExecuteOperand::TransientResult { handle_index, .. } => {
-            dictionary.get(*handle_index as usize).copied()
-        }
-        FheExecuteOperand::EarlierStep { producer_index } => {
-            produced.get(*producer_index as usize).copied()
-        }
-        FheExecuteOperand::VerifiedInput { attestation } => Some(attestation.input_handle),
-        FheExecuteOperand::Scalar { .. } => None,
-    }
-}
-
-fn resolve_handle_rhs(
-    operand: &FheExecuteOperand,
-    dictionary: &[[u8; 32]],
-    produced: &[Handle],
-) -> Option<(Handle, bool)> {
-    match operand {
-        FheExecuteOperand::Scalar { value_index } => dictionary
-            .get(*value_index as usize)
-            .copied()
-            .map(|value| (value, true)),
-        _ => resolve_handle_operand(operand, dictionary, produced).map(|value| (value, false)),
-    }
-}
-
-fn reconstruct_handles(
-    args: &FheExecuteArgs,
-    context: &HandleDerivationContext,
-    random_seeds: &[zama_host::FheExecuteRandomSeed],
-    produced_in_tx: &mut HashSet<Handle>,
-) -> Option<Vec<Handle>> {
-    let mut produced = Vec::with_capacity(args.steps.len());
-    for (step_index, step) in args.steps.iter().enumerate() {
-        let mask = |handles: &[Option<Handle>]| {
-            zama_host::operand_boundary_mask(
-                handles
-                    .iter()
-                    .map(|handle| handle.is_some_and(|h| !produced_in_tx.contains(&h))),
-            )
-            .ok()
-        };
-        let handle = match step {
-            FheExecuteStep::Binary {
-                op,
-                lhs,
-                rhs,
-                output_fhe_type,
-                ..
-            } => {
-                let lhs = resolve_handle_operand(lhs, &args.dictionary, &produced)?;
-                let (rhs, scalar) = resolve_handle_rhs(rhs, &args.dictionary, &produced)?;
-                computed_eval_handle(
-                    *op,
-                    lhs,
-                    rhs,
-                    scalar,
-                    *output_fhe_type,
-                    mask(&[Some(lhs), (!scalar).then_some(rhs)])?,
-                    context,
-                )
-            }
-            FheExecuteStep::Ternary {
-                op,
-                control,
-                if_true,
-                if_false,
-                output_fhe_type,
-                ..
-            } => {
-                let control = resolve_handle_operand(control, &args.dictionary, &produced)?;
-                let if_true = resolve_handle_operand(if_true, &args.dictionary, &produced)?;
-                let if_false = resolve_handle_operand(if_false, &args.dictionary, &produced)?;
-                computed_eval_ternary_handle(
-                    *op,
-                    control,
-                    if_true,
-                    if_false,
-                    *output_fhe_type,
-                    mask(&[Some(control), Some(if_true), Some(if_false)])?,
-                    context,
-                )
-            }
-            FheExecuteStep::TrivialEncrypt {
-                plaintext,
-                fhe_type,
-                ..
-            } => computed_eval_trivial_handle(*plaintext, *fhe_type, context),
-            FheExecuteStep::Unary {
-                op,
-                operand,
-                output_fhe_type,
-                ..
-            } => {
-                let operand = resolve_handle_operand(operand, &args.dictionary, &produced)?;
-                computed_eval_unary_handle(
-                    *op,
-                    operand,
-                    *output_fhe_type,
-                    mask(&[Some(operand)])?,
-                    context,
-                )
-            }
-            FheExecuteStep::Sum {
-                operands, fhe_type, ..
-            } => {
-                let operands = operands
-                    .iter()
-                    .map(|operand| resolve_handle_operand(operand, &args.dictionary, &produced))
-                    .collect::<Option<Vec<_>>>()?;
-                computed_eval_sum_handle(
-                    &operands,
-                    *fhe_type,
-                    zama_host::operand_boundary_mask(
-                        operands
-                            .iter()
-                            .map(|handle| !produced_in_tx.contains(handle)),
-                    )
-                    .ok()?,
-                    context,
-                )
-            }
-            FheExecuteStep::IsIn {
-                value,
-                set,
-                fhe_type,
-                ..
-            } => {
-                let set = set
-                    .iter()
-                    .map(|operand| resolve_handle_operand(operand, &args.dictionary, &produced))
-                    .collect::<Option<Vec<_>>>()?;
-                let value = resolve_handle_operand(value, &args.dictionary, &produced)?;
-                computed_eval_is_in_handle(
-                    value,
-                    &set,
-                    *fhe_type,
-                    zama_host::operand_boundary_mask(
-                        std::iter::once(&value)
-                            .chain(&set)
-                            .map(|handle| !produced_in_tx.contains(handle)),
-                    )
-                    .ok()?,
-                    context,
-                )
-            }
-            FheExecuteStep::MulDiv {
-                factor1,
-                factor2,
-                divisor,
-                output_fhe_type,
-                ..
-            } => {
-                let factor1 = resolve_handle_operand(factor1, &args.dictionary, &produced)?;
-                let (factor2, scalar) = resolve_handle_rhs(factor2, &args.dictionary, &produced)?;
-                computed_eval_mul_div_handle(
-                    factor1,
-                    factor2,
-                    *divisor,
-                    scalar,
-                    *output_fhe_type,
-                    mask(&[Some(factor1), (!scalar).then_some(factor2)])?,
-                    context,
-                )
-            }
-            FheExecuteStep::Rand { fhe_type } => {
-                let seed = random_seeds
-                    .iter()
-                    .find(|seed| usize::from(seed.step_index) == step_index)?
-                    .seed;
-                zama_host::computed_rand_handle(
-                    seed,
-                    *fhe_type,
-                    context.program_id,
-                    context.chain_id,
-                )
-            }
-            FheExecuteStep::RandBounded {
-                upper_bound,
-                fhe_type,
-            } => {
-                let seed = random_seeds
-                    .iter()
-                    .find(|seed| usize::from(seed.step_index) == step_index)?
-                    .seed;
-                zama_host::computed_rand_bounded_handle(
-                    *upper_bound,
-                    seed,
-                    *fhe_type,
-                    context.program_id,
-                    context.chain_id,
-                )
-            }
-        };
-        produced.push(handle);
-        produced_in_tx.insert(handle);
-    }
-    Some(produced)
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypedClearValue {
@@ -808,7 +599,6 @@ impl CleartextLedger {
             })
             .collect::<Vec<_>>();
 
-        let mut produced_in_tx = HashSet::new();
         let mut executions = 0;
         let mut persistent_outputs = 0;
         for instruction in host_instructions {
@@ -848,19 +638,8 @@ impl CleartextLedger {
                 event.unix_timestamp,
                 context.mollusk.sysvars.clock.unix_timestamp
             );
-            let handle_context = HandleDerivationContext {
-                program_id: zama_host::ID,
-                chain_id: zama_host::SOLANA_POC_CHAIN_ID,
-                previous_bank_hash: event.previous_bank_hash,
-                unix_timestamp: event.unix_timestamp,
-            };
-            let handles =
-                reconstruct_handles(&args, &handle_context, &event.seeds, &mut produced_in_tx)
-                    .expect("the executed event's seeds must reconstruct every result");
-            assert_eq!(
-                handles, event.results,
-                "re-derived handles must equal the emitted results"
-            );
+            assert_eq!(event.results.len(), args.steps.len(), "one result per step");
+            let handles = event.results;
             for (&handle, value) in handles.iter().zip(outputs) {
                 self.values.insert(handle, value);
             }

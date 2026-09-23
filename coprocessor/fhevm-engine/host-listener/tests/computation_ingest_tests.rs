@@ -242,7 +242,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
 
     // A held-back producer becomes the terminal error the tfhe-worker drains its
     // consumers for; its consumer is left for the worker to drain.
-    hold_back_computations(
+    let held = hold_back_computations(
         &mut tx,
         &[HeldBackComputation {
             transaction_id,
@@ -251,6 +251,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         }],
     )
     .await?;
+    assert_eq!(held, 1);
     let rows = sqlx::query("SELECT output_handle, is_error, is_completed, error_message FROM computations ORDER BY output_handle")
         .fetch_all(&mut *tx).await?;
     let states = rows
@@ -276,7 +277,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
             (4, false, false, None),
         ]
     );
-    let missing = hold_back_computations(
+    let held = hold_back_computations(
         &mut tx,
         &[HeldBackComputation {
             transaction_id,
@@ -284,8 +285,8 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
             reason: "solana handle check failed: test".to_owned(),
         }],
     )
-    .await;
-    assert!(missing.is_err(), "a held-back step always has its row");
+    .await?;
+    assert_eq!(held, 0, "a step without a row is reported, not held");
     tx.rollback().await?;
     Ok(())
 }

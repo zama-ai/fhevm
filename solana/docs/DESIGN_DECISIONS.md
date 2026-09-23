@@ -2105,9 +2105,11 @@ computation rows after `S` with the existing `revert_coprocessor_db_state.sql`, 
 rows and their errored dependents. The revert refuses a Solana chain whose checkpoint is still after
 `S`, since the listener would never re-ingest what it deleted; `revert_coprocessor_db_state.sh` runs
 both when given `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts the rows
-again as new work. Leaves are not reverted: a replayed slot must reproduce the recorded leaves
-exactly, or the listener stops. Until archive catch-up (fhevm-internal#2085), `S` must be inside the
-provider's replay window. The runbook is in the host-listener README.
+again as new work. Leaves are not reverted: a replayed write must reproduce the leaves recorded for
+it, or the listener stops. So a replay repairs computation rows, not a bug that recorded wrong
+leaves. Until archive catch-up (fhevm-internal#2085), `S` must be inside the provider's replay
+window, about a day on a hosted provider, and nothing checks that before the rows are deleted. The
+runbook is in the host-listener README.
 
 A `getBlock` response prepares into the same block the stream produces (`prepare_rpc_block`), so
 archive catch-up reuses one decoder. It requires inner instructions and loaded addresses, which a
@@ -2124,14 +2126,19 @@ Cost, from the committed cost snapshots: the event CPI adds 1,859 CU and 161 byt
 three-step execution that used to emit nothing, and 3,981 CU and 1,089 bytes at the 32-step limit. A
 confidential transfer costs 2,129 CU more. The event is built on the host heap, so two heap-bound
 shapes run one step fewer: `attestation_per_step` 16 instead of 17 and `mature_updates_peaks_8` 15
-instead of 16 (INVARIANTS #61).
+instead of 16 (INVARIANTS #61). The event CPI also runs one level below `fhe_execute`, which used to
+be true only of random executions. Under Solana's invoke stack limit of five (nine once SIMD-0268 is
+active), the host must now be invoked at height four or less: the top-level program and at most two
+programs between it and the host. The batcher's path (batcher, token, host, event) uses four.
 
 Consequences:
 
 `FheExecuteRandomSeedsEvent` is replaced. The listener no longer needs historical sysvar state from
 its provider, only blocks. A held step still gets its material request, since the Store write is
-real on chain. The automated drift revert, which runs the same revert SQL, now fails loudly on a
-Solana chain whose checkpoint is ahead; before, it deleted rows the listener would never re-ingest.
+real on chain. The automated drift revert, which runs the same revert SQL, now fails on a Solana
+chain whose checkpoint is ahead, which is always the case when drift is detected; before, it deleted
+rows the listener would never re-ingest. A failed revert signal stops every coprocessor service on
+that database from starting, including those of EVM chains, until an operator repairs by hand.
 
 ## Open product decisions
 

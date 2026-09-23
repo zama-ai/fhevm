@@ -197,10 +197,10 @@ mod tests {
     };
 
     use super::{prepare_rpc_block, resolve_rpc_transaction};
-    use crate::solana_grpc_listener::fhe_execute_acl_tests::{
+    use crate::solana_grpc_listener::resolve_transaction_instructions;
+    use crate::solana_grpc_listener::test_support::{
         encoded_execution, reconstruct, with_events, ZAMA_HOST,
     };
-    use crate::solana_grpc_listener::resolve_transaction_instructions;
     use crate::solana_reconstruct::DecodedInstruction;
 
     mod shared_fixtures {
@@ -405,6 +405,7 @@ mod tests {
         resolve_rpc_transaction(&decoded.message, &encoded.meta.unwrap())
     }
 
+    /// Both wire formats resolve every shared fixture as it expects.
     #[test]
     fn shared_transaction_decoding_contract() {
         let compiled =
@@ -439,33 +440,42 @@ mod tests {
                     })
                     .collect(),
             };
-            let decoded = rpc_resolution(&transaction);
-            match &fixture.expected {
-                ExpectedOutcome::Accept { instructions } => {
-                    let actual = decoded
-                        .unwrap_or_else(|error| {
-                            panic!("{}: {error:#}", fixture.name)
-                        })
-                        .into_iter()
-                        .map(|instruction| ExpectedInstruction {
-                            program: instruction.program_id,
-                            accounts: instruction.accounts,
-                            data: instruction.data,
-                            top_level_index: u32::try_from(
-                                instruction.top_level_index,
-                            )
-                            .unwrap(),
-                            stack_height: instruction.stack_height,
-                        })
-                        .collect::<Vec<_>>();
-                    let expected = instructions
-                        .iter()
-                        .map(|instruction| instruction.resolve())
-                        .collect::<Vec<_>>();
-                    assert_eq!(actual, expected, "{}", fixture.name);
-                }
-                ExpectedOutcome::Reject => {
-                    assert!(decoded.is_err(), "{}", fixture.name);
+            let (message, meta) = transaction.grpc();
+            for (wire, decoded) in [
+                ("gRPC", resolve_transaction_instructions(&message, &meta)),
+                ("getBlock", rpc_resolution(&transaction)),
+            ] {
+                match &fixture.expected {
+                    ExpectedOutcome::Accept { instructions } => {
+                        let actual = decoded
+                            .unwrap_or_else(|error| {
+                                panic!("{} ({wire}): {error:#}", fixture.name)
+                            })
+                            .into_iter()
+                            .map(|instruction| ExpectedInstruction {
+                                program: instruction.program_id,
+                                accounts: instruction.accounts,
+                                data: instruction.data,
+                                top_level_index: u32::try_from(
+                                    instruction.top_level_index,
+                                )
+                                .unwrap(),
+                                stack_height: instruction.stack_height,
+                            })
+                            .collect::<Vec<_>>();
+                        let expected = instructions
+                            .iter()
+                            .map(|instruction| instruction.resolve())
+                            .collect::<Vec<_>>();
+                        assert_eq!(
+                            actual, expected,
+                            "{} ({wire})",
+                            fixture.name
+                        );
+                    }
+                    ExpectedOutcome::Reject => {
+                        assert!(decoded.is_err(), "{} ({wire})", fixture.name);
+                    }
                 }
             }
         }

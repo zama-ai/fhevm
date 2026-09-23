@@ -528,6 +528,16 @@ fn state_leaf_output(
     })
 }
 
+/// `event`'s bytes as the host's event CPI carries them.
+#[cfg(test)]
+pub(crate) fn event_cpi_data(event: &FheExecutedEvent) -> Vec<u8> {
+    anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(anchor_lang::Event::data(event))
+        .collect()
+}
+
 /// The event a host would emit for `execution`: its results are this listener's own
 /// derivation, step by step, so tests can build consistent instructions without a runtime.
 /// `produced_in_tx` holds the results of earlier executions in the same transaction.
@@ -624,14 +634,6 @@ mod tests {
         event(vec![[0; 32]; execution.steps.len()], vec![])
     }
 
-    fn event_instruction_data(event: &FheExecutedEvent) -> Vec<u8> {
-        anchor_lang::event::EVENT_IX_TAG_LE
-            .iter()
-            .copied()
-            .chain(anchor_lang::Event::data(event))
-            .collect()
-    }
-
     #[test]
     fn decodes_state_public_args_from_program_type() {
         let args = zama_host::instruction::MakeStoreHandlePublic {
@@ -723,15 +725,13 @@ mod tests {
                 seed: [7; 16],
             }],
         };
-        let decoded =
-            decode_fhe_executed_event(&event_instruction_data(&event))
-                .expect("decode event");
+        let decoded = decode_fhe_executed_event(&event_cpi_data(&event))
+            .expect("decode event");
         assert_eq!(decoded.results, event.results);
         assert_eq!(decoded.seeds, event.seeds);
 
         event.version = EVENT_VERSION.wrapping_add(1);
-        assert!(decode_fhe_executed_event(&event_instruction_data(&event))
-            .is_none());
+        assert!(decode_fhe_executed_event(&event_cpi_data(&event)).is_none());
     }
 
     #[test]

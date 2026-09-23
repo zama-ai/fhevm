@@ -236,13 +236,14 @@ pub struct HeldBackComputation {
     pub reason: String,
 }
 
-/// Marks rows inserted in `tx` as terminal errors. Without a retry marker in the message the
-/// tfhe-worker treats them as dead boundaries and drains their dependents, so nothing derived
-/// from a held-back handle is computed.
+/// Marks rows inserted in `tx` as terminal errors and returns how many it found. Without a
+/// retry marker in the message the tfhe-worker treats them as dead boundaries and drains their
+/// dependents, so nothing derived from a held-back handle is computed.
 pub async fn hold_back_computations(
     tx: &mut Transaction<'_>,
     held_back: &[HeldBackComputation],
-) -> Result<(), SqlxError> {
+) -> Result<u64, SqlxError> {
+    let mut held_rows = 0;
     for held in held_back {
         let updated = sqlx::query!(
             r#"
@@ -256,15 +257,9 @@ pub async fn hold_back_computations(
         )
         .execute(tx.as_mut())
         .await?;
-        if updated.rows_affected() != 1 {
-            return Err(SqlxError::Protocol(format!(
-                "held-back computation {} in transaction {} has no row",
-                hex::encode(held.output_handle),
-                held.transaction_id
-            )));
-        }
+        held_rows += updated.rows_affected();
     }
-    Ok(())
+    Ok(held_rows)
 }
 
 fn solana_block_summary(block: SolanaBlockMeta) -> BlockSummary {

@@ -154,23 +154,33 @@ slot, signature, execution, step and both handles, and increments
 a listener bug: either the derivation or the step decoding is wrong (DD-056 in
 `solana/docs/DESIGN_DECISIONS.md`).
 
-Repair by replaying the affected slots with the fixed listener:
+Repair by replaying the affected slots with the fixed listener. The replay reads
+the provider's replay window, so it only works if `S` below is still inside it:
+about 24 hours on a hosted provider, and 256 slots (under two minutes) with the
+local Yellowstone configuration. Check that first: once the rows are deleted, a
+slot the provider no longer serves cannot be re-ingested until archive catch-up
+(fhevm-internal#2085) exists. Take a database backup before step 2.
 
-1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that produced a block before the first
-   failing slot, and take its `blockhash` from `getBlock S`, decoded from base58
-   to hex.
+1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that
+   produced a block before the first failing slot, and take its `blockhash` from
+   `getBlock S`, decoded from base58 to hex.
 2. Run `db-migration/revert_coprocessor_db_state.sh` with `CHAIN_ID`,
    `TO_BLOCK_NUMBER=S` and `SOLANA_BLOCK_HASH=<hex>`. It first moves the
    listener checkpoint back to `S` (`rewind_solana_listener_checkpoint.sql`),
    then deletes the computation rows after `S`, including the held steps and
-   their errored dependents. The revert alone refuses a Solana chain whose
-   checkpoint is still after `S`, since the listener would never re-ingest the
-   deleted rows.
-3. Restart the services with the fixed listener. It replays every slot after `S` and inserts the
-   rows again as new work. ACL leaves are kept: a replayed slot must reproduce
-   the recorded ones exactly, or the listener stops.
+   their errored dependents. The two run in separate transactions: if the
+   revert fails after the rewind, fix the cause and run the script again before
+   restarting anything. The rewind is safe to repeat, and a listener started in
+   between only re-ingests rows it already has. The revert alone refuses a
+   Solana chain whose checkpoint is still after `S`, since the listener would
+   never re-ingest the deleted rows.
+3. Restart the services with the fixed listener. It replays every slot after `S`
+   and inserts the rows again as new work. ACL leaves are kept: a replayed write
+   must reproduce the leaves recorded for it, or the listener stops.
 
-`S` must still be inside the provider's replay window.
+This repairs computation rows only. A bug that recorded wrong leaves cannot be
+repaired by a replay, since the fixed listener stops at the first recorded leaf
+it does not reproduce.
 
 ## Events in FHEVM
 

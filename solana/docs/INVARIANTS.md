@@ -278,16 +278,18 @@ plaintext.
 
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
 rolled back (safe only because of #31). The operator repair of DD-056 does not
-unwind a fork either: it replays the same slots, and a replayed slot must
-reproduce the recorded leaves or the listener stops.
+unwind a fork either: it replays the same slots, and a replayed write must
+reproduce the leaves recorded for it or the listener stops.
 
 **33. [RISK]** Nothing pins a deployed program build to the listener build.
 #28 now takes the followed program id as an input, so a listener compiled
 for one `declare_id!` can still derive another deployment's handles.
 Instruction layout and decoder types still assume matching crate revisions.
 #28's check catches a decoder drift in the steps, since every decoded step
-field feeds its handle; a drift in the effects (allows, Store slots, make
-public), which shape leaves rather than handles, stays silent.
+field feeds its handle. Two drifts stay silent: one in the effects (allows,
+Store slots, make public), which shape leaves rather than handles, and one in
+the adapter that maps a checked step to the tfhe-worker's operation, which runs
+after the check (its own unit tests pin that mapping).
 
 ## F. Admin, config & custody
 

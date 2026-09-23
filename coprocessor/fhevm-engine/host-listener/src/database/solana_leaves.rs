@@ -185,25 +185,26 @@ fn replay_write(
     let cursor = *replay_cursors
         .entry(account)
         .or_insert(write.previous_leaf_count);
-    let end = leaf_count_after(write, write.previous_leaf_count)?;
-    if write.previous_leaf_count != cursor || end > recorded.leaf_count {
+    if write.previous_leaf_count != cursor {
         return Err(LeafReduceError::PreviousLeafCountMismatch {
             encrypted_store: account,
             declared: write.previous_leaf_count,
-            recorded: if write.previous_leaf_count != cursor {
-                cursor
-            } else {
-                recorded.leaf_count
-            },
+            recorded: cursor,
+        });
+    }
+    let end = leaf_count_after(write, write.previous_leaf_count)?;
+    if end > recorded.leaf_count {
+        return Err(LeafReduceError::PreviousLeafCountMismatch {
+            encrypted_store: account,
+            declared: write.previous_leaf_count,
+            recorded: recorded.leaf_count,
         });
     }
     replay_cursors.insert(account, end);
     let leaves = reduction.replayed.entry(account).or_default();
     if recorded.history_complete {
-        let keyed = write.allowed_keys.iter().map(|key| Some(*key));
-        let public = write.make_public.then_some(None);
         for (leaf_index, key) in
-            (write.previous_leaf_count..).zip(keyed.chain(public))
+            (write.previous_leaf_count..).zip(leaf_keys(write))
         {
             leaves.push(staged(
                 account,
@@ -215,6 +216,15 @@ fn replay_write(
         }
     }
     Ok(())
+}
+
+/// The key of each leaf `write` seals, in order: one per allowed key, then `None` for the
+/// public-decrypt leaf.
+fn leaf_keys(
+    write: &EncryptedStoreWrite,
+) -> impl Iterator<Item = Option<[u8; 32]>> + '_ {
+    let keyed = write.allowed_keys.iter().map(|key| Some(*key));
+    keyed.chain(write.make_public.then_some(None))
 }
 
 fn leaf_count_after(
@@ -256,9 +266,7 @@ fn apply_write(
         state.leaf_count = leaf_count_after(write, state.leaf_count)?;
         return Ok(());
     }
-    let keyed = write.allowed_keys.iter().map(|key| Some(*key));
-    let public = write.make_public.then_some(None);
-    for key in keyed.chain(public) {
+    for key in leaf_keys(write) {
         let leaf = staged(
             account,
             state.leaf_count,

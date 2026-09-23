@@ -710,14 +710,14 @@ enum BlockIngestOutcome {
 async fn ingest_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    pending: &PreparedBlock,
+    prepared: &PreparedBlock,
     cancel: &CancellationToken,
 ) -> std::result::Result<BlockIngestOutcome, IngestFailure> {
     let result = tokio::select! {
         _ = cancel.cancelled() => return Ok(BlockIngestOutcome::Cancelled),
         result = tokio::time::timeout(
             SOLANA_GRPC_INGEST_TIMEOUT,
-            apply_block(db, config, pending),
+            apply_block(db, config, prepared),
         ) => result,
     };
     match result {
@@ -725,16 +725,16 @@ async fn ingest_block(
         Err(_) => {
             return Err(IngestFailure::retryable(anyhow!(
                 "timed out ingesting Solana block in slot {}",
-                pending.block.slot
+                prepared.block.slot
             )))
         }
     }
     info!(
-        slot = pending.block.slot,
-        parent_slot = pending.block.parent_slot,
-        block_height = ?pending.block.block_height,
-        executed_transaction_count = pending.block.executed_transaction_count,
-        matching_transaction_count = pending.matching_transaction_count,
+        slot = prepared.block.slot,
+        parent_slot = prepared.block.parent_slot,
+        block_height = ?prepared.block.block_height,
+        executed_transaction_count = prepared.block.executed_transaction_count,
+        matching_transaction_count = prepared.matching_transaction_count,
         "ingested sealed Solana block"
     );
     Ok(BlockIngestOutcome::Complete)
@@ -745,9 +745,9 @@ async fn ingest_block(
 async fn apply_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    pending: &PreparedBlock,
+    prepared: &PreparedBlock,
 ) -> std::result::Result<(), IngestFailure> {
-    let sealed_block = &pending.block;
+    let sealed_block = &prepared.block;
     // The deployment this listener follows, not the id the crate was compiled with: handles
     // hash the program id, so a listener built for one profile can still derive another's.
     let program_id: Pubkey = config.program_id.parse().map_err(|err| {
@@ -758,7 +758,7 @@ async fn apply_block(
     })?;
 
     let mut reconstructed = Vec::new();
-    for transaction in &pending.transactions {
+    for transaction in &prepared.transactions {
         let outcome = reconstruct_records_for_insert(
             config,
             program_id,
@@ -837,11 +837,18 @@ async fn apply_block(
             IngestFailure::retryable(err).context("insert_solana_block_records")
         })?
     };
-    hold_back_computations(&mut db_tx, &held_back)
+    let held_rows = hold_back_computations(&mut db_tx, &held_back)
         .await
         .map_err(|err| {
             IngestFailure::retryable(err).context("hold back computations")
         })?;
+    if held_rows != held_back.len() as u64 {
+        return Err(IngestFailure::fatal(anyhow!(
+            "slot {}: {} held-back steps but {held_rows} computation rows",
+            sealed_block.slot,
+            held_back.len()
+        )));
+    }
 
     let mut touched: Vec<[u8; 32]> = leaf_sources
         .iter()
@@ -902,13 +909,9 @@ async fn apply_block(
 
     for (signature, failure) in &check_failures {
         error!(
-            slot = sealed_block.slot,
             signature = %signature,
-            execution_index = failure.execution_index,
-            step_index = failure.mismatch.step_index,
-            emitted = %hex::encode(failure.mismatch.emitted),
-            derived = %hex::encode(failure.mismatch.derived),
-            "held back an fhe_execute step whose emitted handle this listener does not re-derive"
+            "{}; the step is held back",
+            failure.describe(sealed_block.slot)
         );
     }
     if !check_failures.is_empty() {
@@ -962,9 +965,9 @@ struct HandleCheckFailure {
 }
 
 impl HandleCheckFailure {
-    /// The held-back row's `error_message`. The row's `transaction_id` already names the
-    /// transaction; leaving the base58 signature out keeps the message from ever spelling
-    /// the tfhe-worker's retry marker, which would make the hold-back retryable.
+    /// The held-back row's `error_message` and the alert's log line. The row's `transaction_id`
+    /// already names the transaction; leaving the base58 signature out keeps the message from
+    /// ever spelling the tfhe-worker's retry marker, which would make the hold-back retryable.
     fn describe(&self, slot: u64) -> String {
         format!(
             "solana handle check failed: slot {slot}, execution {}, step {}: emitted 0x{}, re-derived 0x{}",
@@ -1145,120 +1148,17 @@ fn reconstruct_records_for_insert(
 mod account_resolution_tests {
     use super::{resolve_transaction_instructions, validated_account_keys};
     use yellowstone_grpc_proto::prelude::{
-        CompiledInstruction, InnerInstruction, InnerInstructions,
         Message as TransactionMessage, TransactionError, TransactionStatusMeta,
-    };
-
-    mod shared_fixtures {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../solana/test-fixtures/transaction_decoding.rs"
-        ));
-    }
-
-    use shared_fixtures::{
-        fixture_key, transaction_decoding_fixtures, ExpectedInstruction,
-        ExpectedOutcome,
     };
 
     #[test]
     fn rejects_malformed_account_key_length() {
-        let err =
-            validated_account_keys([&fixture_key(1).to_vec(), &vec![2; 31]])
-                .expect_err("short account keys must fail closed");
+        let err = validated_account_keys([&vec![1; 32], &vec![2; 31]])
+            .expect_err("short account keys must fail closed");
 
         assert!(err.to_string().contains(
             "account key 1 has invalid length 31, expected 32 bytes"
         ));
-    }
-
-    #[test]
-    fn shared_transaction_decoding_contract() {
-        for fixture in transaction_decoding_fixtures() {
-            let top_level: Vec<CompiledInstruction> = fixture
-                .top_level
-                .iter()
-                .map(|instruction| CompiledInstruction {
-                    program_id_index: instruction.program_id_index,
-                    accounts: instruction.accounts.clone(),
-                    data: instruction.data.clone(),
-                })
-                .collect();
-            let inner_groups: Vec<InnerInstructions> = fixture
-                .inner_groups
-                .iter()
-                .map(|group| InnerInstructions {
-                    index: group.index,
-                    instructions: group
-                        .instructions
-                        .iter()
-                        .map(|instruction| InnerInstruction {
-                            program_id_index: instruction.program_id_index,
-                            accounts: instruction.accounts.clone(),
-                            data: instruction.data.clone(),
-                            stack_height: instruction.stack_height,
-                        })
-                        .collect(),
-                })
-                .collect();
-
-            let message = TransactionMessage {
-                account_keys: fixture
-                    .static_account_tags
-                    .iter()
-                    .copied()
-                    .map(|tag| fixture_key(tag).to_vec())
-                    .collect(),
-                instructions: top_level,
-                ..Default::default()
-            };
-            let meta = TransactionStatusMeta {
-                inner_instructions: inner_groups,
-                loaded_writable_addresses: fixture
-                    .loaded_writable_account_tags
-                    .iter()
-                    .copied()
-                    .map(|tag| fixture_key(tag).to_vec())
-                    .collect(),
-                loaded_readonly_addresses: fixture
-                    .loaded_readonly_account_tags
-                    .iter()
-                    .copied()
-                    .map(|tag| fixture_key(tag).to_vec())
-                    .collect(),
-                ..Default::default()
-            };
-
-            let decoded = resolve_transaction_instructions(&message, &meta);
-            match &fixture.expected {
-                ExpectedOutcome::Accept { instructions } => {
-                    let actual: Vec<ExpectedInstruction> = decoded
-                        .unwrap_or_else(|error| {
-                            panic!("{}: {error}", fixture.name)
-                        })
-                        .into_iter()
-                        .map(|instruction| ExpectedInstruction {
-                            program: instruction.program_id,
-                            accounts: instruction.accounts,
-                            data: instruction.data,
-                            top_level_index: u32::try_from(
-                                instruction.top_level_index,
-                            )
-                            .unwrap(),
-                            stack_height: instruction.stack_height,
-                        })
-                        .collect();
-                    let expected = instructions
-                        .iter()
-                        .map(|instruction| instruction.resolve())
-                        .collect::<Vec<_>>();
-                    assert_eq!(actual, expected, "{}", fixture.name);
-                }
-                ExpectedOutcome::Reject => {
-                    assert!(decoded.is_err(), "{}", fixture.name);
-                }
-            }
-        }
     }
 
     #[test]
@@ -1279,12 +1179,12 @@ mod account_resolution_tests {
     }
 }
 
+/// Transactions and configuration shared by the listener's tests and the `getBlock` tests.
 #[cfg(test)]
-mod fhe_execute_acl_tests {
+mod test_support {
     use super::{
-        fhe_execute_dynamic_account, reconstruct_records_for_insert,
-        HandleCheckFailure, ReconstructedTransaction, ReconstructionOutcome,
-        SolanaGrpcListenerConfig, FHE_EXECUTE_REMAINING_BASE,
+        reconstruct_records_for_insert, ReconstructedTransaction,
+        ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
     use anchor_lang::prelude::Pubkey;
     use anchor_lang::{AnchorSerialize, Discriminator};
@@ -1294,10 +1194,9 @@ mod fhe_execute_acl_tests {
         FheExecuteRandomSeed, FheExecutedEvent, HandleDerivationContext,
     };
 
-    use crate::database::solana_leaves::EncryptedStoreWrite;
     use crate::solana_reconstruct::{
-        decode_fhe_execute_args, event_with_derived_results,
-        DecodedInstruction, HandleMismatch,
+        decode_fhe_execute_args, event_cpi_data, event_with_derived_results,
+        DecodedInstruction,
     };
 
     // A valid pubkey that is not the compiled-in `zama_host::ID`: derivation must follow the
@@ -1314,18 +1213,6 @@ mod fhe_execute_acl_tests {
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
             dependent_ops_max_per_chain: 0,
         }
-    }
-
-    #[test]
-    fn debug_redacts_yellowstone_x_token() {
-        let secret = "yellowstone-secret-token";
-        let config = SolanaGrpcListenerConfig {
-            x_token: Some(secret.to_owned()),
-            ..config()
-        };
-        let rendered = format!("{config:?}");
-        assert!(!rendered.contains(secret), "{rendered}");
-        assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
 
     pub(super) fn encoded_execution(args: FheExecuteArgs) -> Vec<u8> {
@@ -1349,16 +1236,11 @@ mod fhe_execute_acl_tests {
         event: &FheExecutedEvent,
     ) -> DecodedInstruction {
         DecodedInstruction {
-            data: anchor_lang::event::EVENT_IX_TAG_LE
-                .iter()
-                .copied()
-                .chain(anchor_lang::Event::data(event))
-                .collect(),
+            data: event_cpi_data(event),
             accounts: vec![],
             ..execution.clone()
         }
     }
-
     /// Follows every host `fhe_execute` with the event a host would emit for it.
     pub(super) fn with_events(
         instructions: impl IntoIterator<Item = DecodedInstruction>,
@@ -1412,6 +1294,35 @@ mod fhe_execute_acl_tests {
             ReconstructionOutcome::Complete(reconstructed) => Ok(reconstructed),
             other => panic!("expected a covered transaction, got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod fhe_execute_acl_tests {
+    use super::test_support::{
+        config, context, encoded_execution, event_instruction, reconstruct,
+        with_events, STATE, ZAMA_HOST,
+    };
+    use super::{
+        fhe_execute_dynamic_account, HandleCheckFailure,
+        SolanaGrpcListenerConfig, FHE_EXECUTE_REMAINING_BASE,
+    };
+    use anchor_lang::{AnchorSerialize, Discriminator};
+    use zama_host::state::{FheExecuteArgs, FheExecuteStep};
+
+    use crate::database::solana_leaves::EncryptedStoreWrite;
+    use crate::solana_reconstruct::{DecodedInstruction, HandleMismatch};
+
+    #[test]
+    fn debug_redacts_yellowstone_x_token() {
+        let secret = "yellowstone-secret-token";
+        let config = SolanaGrpcListenerConfig {
+            x_token: Some(secret.to_owned()),
+            ..config()
+        };
+        let rendered = format!("{config:?}");
+        assert!(!rendered.contains(secret), "{rendered}");
+        assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
 
     #[test]
@@ -1773,7 +1684,7 @@ mod fhe_execute_acl_tests {
 
 #[cfg(test)]
 mod apply_block_tests {
-    use super::fhe_execute_acl_tests::{
+    use super::test_support::{
         config, context, encoded_execution, event_instruction, with_events,
         STATE, ZAMA_HOST,
     };
@@ -1786,12 +1697,19 @@ mod apply_block_tests {
         decode_fhe_executed_event, DecodedInstruction,
     };
     use fhevm_engine_common::chain_id::ChainId;
+    use serial_test::serial;
     use solana_sdk::signature::Signature;
     use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
     use zama_host::state::{
         FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
     };
+
+    /// The value added to [`two_steps`]'s first result.
+    const SCALAR: [u8; 32] = [3; 32];
+
+    /// The handle a tampered event emits for the first step instead of the derived one.
+    const WRONG: [u8; 32] = [0xEE; 32];
 
     fn handle_check_failures() -> f64 {
         let label = config().chain_id.to_string();
@@ -1864,6 +1782,52 @@ mod apply_block_tests {
         instruction
     }
 
+    /// A trivial encryption of `plaintext` followed by its sum with [`SCALAR`], the first
+    /// dictionary entry.
+    fn two_steps(
+        plaintext: [u8; 32],
+        dictionary: Vec<[u8; 32]>,
+    ) -> DecodedInstruction {
+        assert_eq!(dictionary[0], SCALAR);
+        execution(
+            vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext,
+                    fhe_type: 5,
+                },
+                FheExecuteStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
+                    output_fhe_type: 5,
+                },
+            ],
+            dictionary,
+        )
+    }
+
+    /// Makes the event of a [`two_steps`] execution emit [`WRONG`] for its first step, and the
+    /// honest derivation of the sum from it. Returns the consumer's handle and the handle the
+    /// first step really derives to. The consumer's operand was produced in the transaction, so
+    /// its mask is zero.
+    fn tamper(instructions: &mut [DecodedInstruction]) -> ([u8; 32], [u8; 32]) {
+        let consumer = zama_host::computed_eval_handle(
+            FheBinaryOpCode::Add,
+            WRONG,
+            SCALAR,
+            true,
+            5,
+            [0; 32],
+            &context(),
+        );
+        let mut event =
+            decode_fhe_executed_event(&instructions[1].data).unwrap();
+        let derived = event.results[0];
+        event.results = vec![WRONG, consumer];
+        instructions[1] = event_instruction(&instructions[0], &event);
+        (consumer, derived)
+    }
+
     fn sealed(
         slot: u64,
         block_hash: [u8; 32],
@@ -1885,6 +1849,7 @@ mod apply_block_tests {
     /// scripts, then replay. The consumer the worker drained comes back as a fresh row, the
     /// replay reproduces the recorded leaves, and the checkpoint returns to the tip.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
     async fn a_reverted_slot_replays_with_fresh_rows_and_its_recorded_leaves() {
         let key = [0x33; 32];
         let slot_41 = PreparedBlock {
@@ -1908,40 +1873,12 @@ mod apply_block_tests {
             matching_transaction_count: 1,
         };
         let mut tampered = with_events([storing(
-            execution(
-                vec![
-                    FheExecuteStep::TrivialEncrypt {
-                        plaintext: [2; 32],
-                        fhe_type: 5,
-                    },
-                    FheExecuteStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheExecuteOperand::EarlierStep {
-                            producer_index: 0,
-                        },
-                        rhs: FheExecuteOperand::Scalar { value_index: 0 },
-                        output_fhe_type: 5,
-                    },
-                ],
-                vec![[3; 32], key],
-            ),
+            two_steps([2; 32], vec![SCALAR, key]),
             1,
             1,
             1,
         )]);
-        let wrong = [0xEE; 32];
-        let consumer = zama_host::computed_eval_handle(
-            FheBinaryOpCode::Add,
-            wrong,
-            [3; 32],
-            true,
-            5,
-            [0; 32],
-            &context(),
-        );
-        let mut event = decode_fhe_executed_event(&tampered[1].data).unwrap();
-        event.results = vec![wrong, consumer];
-        tampered[1] = event_instruction(&tampered[0], &event);
+        let (consumer, _) = tamper(&mut tampered);
         let slot_42 = PreparedBlock {
             block: sealed(42, [0x42; 32], [0x41; 32]),
             transactions: vec![PreparedTransaction {
@@ -2056,6 +1993,7 @@ mod apply_block_tests {
     /// is held back, its consumer and the other transaction are ingested, the checkpoint
     /// advances and the alert counter moves.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
     async fn a_wrong_emitted_handle_holds_back_only_its_step() {
         let honest = with_events([execution(
             vec![FheExecuteStep::TrivialEncrypt {
@@ -2064,46 +2002,13 @@ mod apply_block_tests {
             }],
             vec![],
         )]);
-        let mut tampered = with_events([execution(
-            vec![
-                FheExecuteStep::TrivialEncrypt {
-                    plaintext: [2; 32],
-                    fhe_type: 5,
-                },
-                FheExecuteStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
-                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
-                    output_fhe_type: 5,
-                },
-            ],
-            vec![[3; 32]],
-        )]);
-        let wrong = [0xEE; 32];
-        let consumer = zama_host::computed_eval_handle(
-            FheBinaryOpCode::Add,
-            wrong,
-            [3; 32],
-            true,
-            5,
-            [0; 32],
-            &context(),
-        );
-        let mut event = decode_fhe_executed_event(&tampered[1].data).unwrap();
-        let derived = event.results[0];
-        event.results = vec![wrong, consumer];
-        tampered[1] = event_instruction(&tampered[0], &event);
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
+        let (consumer, derived) = tamper(&mut tampered);
 
         let block = PreparedBlock {
             block: SealedBlock {
-                slot: 42,
-                block_hash: [5; 32],
-                parent_slot: 41,
-                parent_block_hash: [4; 32],
-                block_time: Some(1_700_000_000),
-                block_height: Some(40),
                 executed_transaction_count: 2,
-                transactions: vec![],
+                ..sealed(42, [5; 32], [4; 32])
             },
             transactions: vec![
                 PreparedTransaction {
@@ -2158,11 +2063,11 @@ mod apply_block_tests {
         assert_eq!(
             held,
             vec![(
-                wrong.to_vec(),
+                WRONG.to_vec(),
                 vec![2; 64],
                 format!(
                     "solana handle check failed: slot 42, execution 0, step 0: emitted 0x{}, re-derived 0x{}",
-                    hex::encode(wrong),
+                    hex::encode(WRONG),
                     hex::encode(derived)
                 )
             )]

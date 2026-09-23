@@ -168,5 +168,7 @@ smoke test is still required to validate provider delivery and internal routing 
 Every FHE handle hashes the host program id. The listener stores the handles the host
 emits and re-derives each as a check with the id it is configured to follow (`--program-id`),
 not the id its `zama-host` build was compiled with, so the listener image needs no
-environment. If the handle-check alarm fires after a deploy, compare the listener's
-`--program-id` with the deployed program first: a wrong id fails every check.
+environment. A wrong `--program-id` does not fail the check: the listener then sees no host
+instructions at all. If the handle-check alarm fires after a deploy, the listener's decoder
+or derivation disagrees with the deployed program; check that the listener build matches the
+program build (INVARIANTS #33).
