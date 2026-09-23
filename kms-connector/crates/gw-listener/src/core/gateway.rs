@@ -3,7 +3,7 @@ use crate::{
         Config,
         publish::{ChainName, publish_batch},
     },
-    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
+    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER, EVENT_REJECTED_COUNTER},
 };
 use alloy::{
     network::Ethereum,
@@ -12,6 +12,7 @@ use alloy::{
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
 };
+use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
@@ -185,7 +186,9 @@ where
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event_kind = match DecryptionEvents::decode_log(&log.inner)?.data {
+            let event = DecryptionEvents::decode_log(&log.inner)
+                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
+            let event_kind = match event.data {
                 DecryptionEvents::UserDecryptionRequest_4(event) => {
                     let decryption_id = event.decryptionId;
                     match SolanaUserDecryptionRequestV1::try_from(event) {
@@ -196,7 +199,9 @@ where
                                 tx_hash = ?log.transaction_hash,
                                 "Skipping Solana user decryption that does not decode: {e:#}"
                             );
-                            EVENT_LISTENING_ERRORS.with_label_values(&["gateway"]).inc();
+                            EVENT_REJECTED_COUNTER
+                                .with_label_values(&[EventType::UserDecryptionRequest.as_str()])
+                                .inc();
                             continue;
                         }
                     }

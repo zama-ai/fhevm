@@ -10,6 +10,15 @@ pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .expect("Failed to register kms_connector_gw_listener_event_received_counter metric")
 });
 
+pub static EVENT_REJECTED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_gw_listener_event_rejected_counter",
+        "Number of events the GatewayListener skipped because they do not form a valid request",
+        &["event_type"]
+    )
+    .expect("Failed to register kms_connector_gw_listener_event_rejected_counter metric")
+});
+
 pub static EVENT_LISTENING_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_gw_listener_event_listening_errors",
