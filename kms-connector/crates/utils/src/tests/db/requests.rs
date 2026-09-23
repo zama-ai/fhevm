@@ -248,9 +248,9 @@ pub async fn insert_rand_user_decryption_request_v2(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, already_sent, status, handle_owner_addresses,
             handle_contract_addresses, allowed_contracts, start_timestamp, duration_seconds,
-            signature, source, attestation_type
+            signature, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'eip712-unified-user-decrypt-v1')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         &ct_handles_db,

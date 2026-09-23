@@ -22,11 +22,10 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     delegation::{AuthorizedRow, DelegationFailure, check_delegation},
-    deployment::DeploymentIdentity,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding},
-    pipeline::AuthorizationContext,
+    pipeline::authorize_request,
     proof::LeafProofOutcome,
     scope::{ScopeFailure, check_scope},
     snapshot::{
@@ -47,13 +46,6 @@ fn direct_scenario() -> (Wallet, EncryptedStoreFixture, [u8; 32]) {
     (wallet, encrypted_store, handle)
 }
 
-fn context<'a>(deployment: &'a DeploymentIdentity) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
-}
-
 /// Every key the direct branch will ever look at is derivable from the request and the
 /// deployment alone, so authorizing a direct request costs exactly one account read.
 #[tokio::test]
@@ -67,17 +59,10 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call_count(),
@@ -109,17 +94,10 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     // less specific message.
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.clone(), world]);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     assert_eq!(
         reader.call_count(),
@@ -151,17 +129,10 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     let first = reader.call(0);
     let second = reader.call(1);
@@ -224,17 +195,10 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
         .with_delegation(&wildcard_row);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("one entry stands on its app row, the other on the wildcard row");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("one entry stands on its app row, the other on the wildcard row");
 
     let second = reader.call(1);
     let (app_key, _) = app_row.address();
@@ -268,19 +232,12 @@ async fn every_account_key_is_planned_before_the_first_read() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
+    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, PROGRAM_ID);
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call(0),
@@ -323,17 +280,10 @@ async fn the_deciding_read_drops_the_config_singleton() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     let (host_config_key, _) = host_config_address();
     assert!(
@@ -356,9 +306,8 @@ async fn repeated_encrypted_stores_are_read_once() {
         .direct(&encrypted_store, handle)
         .direct(&encrypted_store, handle)
         .typed();
-    let deployment = deployment();
 
-    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
+    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, PROGRAM_ID);
 
     assert_eq!(
         planned.len(),
@@ -388,17 +337,10 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(101)]);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("the deciding observation is the second read, not an agreement of the two");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("the deciding observation is the second read, not an agreement of the two");
 
     assert_eq!(reader.call_count(), 2);
 }
@@ -424,17 +366,10 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         .with_delegation(&delegation);
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(99)]);
     let proofs = ScriptedProofReader::unreachable();
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("a deciding read behind the discovery read decides nothing");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("a deciding read behind the discovery read decides nothing");
 
     assert!(
         matches!(
@@ -465,13 +400,11 @@ async fn two_reads_at_the_same_slot_authorize() {
         .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
-    let deployment = deployment();
 
-    authorize(
+    authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsContext,
         &ScriptedProofReader::constant(world.record()),
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -547,17 +480,10 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     // The record agrees with the deciding read.
     let proofs = ScriptedProofReader::constant(second.record());
     let reader = ScriptedReader::scripted(vec![first, second]);
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("the delegator holds no allow leaf at the deciding observation");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("the delegator holds no allow leaf at the deciding observation");
 
     assert!(
         matches!(
@@ -583,14 +509,12 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let world = World::running_at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
-    let deployment = deployment();
 
     let in_step = ScriptedProofReader::constant(world.record());
-    authorize(
+    authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsContext,
         &in_step,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -600,11 +524,10 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     // A record that has not yet sealed the allow leaf, then catches up.
     let behind = ProofRecord::of(&[&EncryptedStoreFixture::new(handle)]);
     let catches_up = ScriptedProofReader::scripted(vec![behind.clone(), world.record()]);
-    authorize(
+    authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsContext,
         &catches_up,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -617,11 +540,10 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
 
     // A record that stays behind: two reads, then a retryable rejection, never a third read.
     let stays_behind = ScriptedProofReader::scripted(vec![behind.clone(), behind]);
-    let failure = authorize(
+    let failure = authorize_request(
         &ScriptedReader::constant(world),
-        &ServableKmsContext,
         &stays_behind,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await

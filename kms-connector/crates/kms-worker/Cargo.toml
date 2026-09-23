@@ -16,13 +16,10 @@ kms-connector-api.workspace = true
 user-decryption-signature.workspace = true
 zama-solana-acl.workspace = true
 zama-solana-permit.workspace = true
-zama-solana-request.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
-base64.workspace = true
-borsh.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 humantime-serde.workspace = true
@@ -32,7 +29,6 @@ reqwest.workspace = true
 ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 sha3.workspace = true
 solana-rpc-client.workspace = true
 solana-commitment-config.workspace = true
@@ -51,13 +47,17 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+borsh.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
+sha2.workspace = true
 testcontainers.workspace = true
 toml.workspace = true
 tracing-test.workspace = true
+zama-solana-request.workspace = true
 
 [[bin]]
 name = "kms-worker"

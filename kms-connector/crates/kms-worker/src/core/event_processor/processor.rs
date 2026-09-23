@@ -36,7 +36,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     context_manager: C,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<GP, HP, C>,
+    decryption_processor: DecryptionProcessor<GP, HP>,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -116,7 +116,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     pub fn new(
         kms_client: KmsClient,
         context_manager: C,
-        decryption_processor: DecryptionProcessor<GP, HP, C>,
+        decryption_processor: DecryptionProcessor<GP, HP>,
         kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
         db_pool: Pool<Postgres>,
@@ -203,11 +203,20 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
-            ProtocolEventKind::SolanaUserDecryptionV1(req) => self
-                .decryption_processor
-                .check_solana_user_decryption_request(req)
-                .await
-                .map_err(RequestCheckError::record),
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
+                let extra_data = req.extra_data();
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.decryption_processor
+                            .check_solana_user_decryption_request(req)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(&extra_data),
+                )?;
+                Ok(())
+            }
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -262,7 +271,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
                 let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_v2(req);
+                    DecryptionProcessor::<GP, HP>::user_decryption_extra_data_for_v2(req);
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -273,20 +282,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::SolanaUserDecryptionV1(req) => {
-                let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP, C>::user_decryption_extra_data_for_solana(req);
-                let handles: Vec<B256> = req
-                    .request
-                    .handles()
-                    .iter()
-                    .map(|e| B256::from(e.handle()))
-                    .collect();
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryption_id,
-                        &handles,
-                        &req.request.permit().extra_data().to_extra_data().into(),
-                        Some(user_decrypt_data),
+                        &req.ct_handles(),
+                        &req.extra_data().into(),
+                        Some(UserDecryptionExtraData::new_solana(req.permit())),
                     )
                     .await
             }

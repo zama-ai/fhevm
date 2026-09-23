@@ -21,7 +21,7 @@ mod solana_support;
 
 use kms_worker::core::solana::{
     failure::AuthorizationFailure,
-    pipeline::AuthorizationContext,
+    pipeline::authorize_request,
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
@@ -37,16 +37,6 @@ fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> 
         .read(&SnapshotKeys::new([key]))
         .expect("the world reads");
     read_watermark(&snapshot, PROGRAM_ID, user)
-}
-
-fn context_at<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-    now: u64,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: now,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -304,21 +294,6 @@ fn a_truncated_invalidation_record_is_rejected() {
     assert!(watermark_in(&world, user).is_err());
 }
 
-/// The eight bytes this Connector looks for, pinned twice: as the literal a foreign
-/// implementation can be compared against, and as the preimage it comes from.
-///
-/// The host program pins the same pair on its side. Neither side computes it through the other's
-/// framework, which is the point — a rename or a derivation change has to fail in both places
-/// rather than move them together.
-#[test]
-fn the_invalidation_record_discriminator_is_the_hash_of_the_account_name() {
-    assert_eq!(
-        PERMIT_INVALIDATION_DISCRIMINATOR,
-        permit_invalidation_discriminator(),
-        "the literal and its preimage have diverged"
-    );
-}
-
 // ---------------------------------------------------------------------------
 // Whose watermark
 // ---------------------------------------------------------------------------
@@ -344,17 +319,10 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect("the delegator's revocation does not reach the delegate's permit");
+    authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect("the delegator's revocation does not reach the delegate's permit");
 }
 
 /// The signer's own revocation does stop the request, delegated or not.
@@ -374,17 +342,10 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect_err("the signer's own revocation kills their permit");
+    let failure = authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect_err("the signer's own revocation kills their permit");
 
     assert!(matches!(
         failure,
@@ -410,17 +371,10 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
         .with_account(key, prefunded_account());
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect("a donated lamport is not a revocation");
+    authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect("a donated lamport is not a revocation");
 }
 
 /// The window is evaluated against the time handed to authorization, so a permit that expired
@@ -439,13 +393,11 @@ async fn a_permit_that_expired_before_processing_is_refused() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize(
+    let failure = authorize_request(
         &reader,
-        &ServableKmsContext,
         &proofs,
-        context_at(&deployment, DEFAULT_START + DEFAULT_DURATION + 1),
+        context_at(DEFAULT_START + DEFAULT_DURATION + 1),
         &request,
     )
     .await

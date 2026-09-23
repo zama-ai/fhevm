@@ -80,17 +80,16 @@ under `{attestationType, payload, signature}` with `attestationType` set to
 The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
 `chainId` field. This preserves the full chain ID in JavaScript clients.
 
-The row stores the exact attestation type, common encryption key/handles/window/signature,
-and explicit Solana pubkey, allowed keys, encrypted stores, scopes and host program.
-`user_address` is an Ethereum address and is NULL for Solana. SQL constraints enforce the
-row shape; `from_user_decryption_row` returns the `SolanaUserDecryptionV1` enum variant.
+A Solana row has the typed columns `user_pubkey`, `allowed_keys`, `encrypted_stores`,
+`allowed_scopes` and `host_program_id`, and a NULL `user_address`. The generated
+`attestation_type` column (`legacy`, `eip712` or `solana`) follows from those columns, and a
+CHECK makes a row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row`
+is the only reader; it rebuilds the signed permit, so the worker authorizes exactly what the
+user signed.
 
-For the undeployed Solana preview, deploy the schema and all connector binaries together
-using fresh disposable connector state and an intentional Gateway replay/start block.
-The migration refuses existing Solana blobs; it does not decode or backfill them. Stop
-preview ingress and workers before replacing that disposable state. Preserve EVM rows
-where they must survive; the migration retains and tags them. Do not reset a shared or
-production database as part of this preview cutover.
+Solana is not deployed yet. The migration refuses rows in the earlier opaque `solana_request`
+format instead of converting them: clear that disposable preview state before upgrading. EVM
+rows are kept and tagged.
 
 ## Support
 

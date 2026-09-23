@@ -10,8 +10,6 @@ version.workspace = true
 connector-utils.workspace = true
 kms-connector-api = { workspace = true, features = ["endpoint"] }
 bc2wrap.workspace = true
-zama-solana-permit.workspace = true
-zama-solana-request.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
@@ -28,7 +26,6 @@ tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
-fhevm_gateway_bindings.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 rand.workspace = true
 rstest.workspace = true

@@ -12,10 +12,7 @@ use crate::{
             solana_public_decrypt::SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
-        solana::{
-            deployment::DeploymentIdentity, proof::CoprocessorProofClient,
-            snapshot::SolanaRpcClient,
-        },
+        solana::{proof::CoprocessorProofClient, snapshot::SolanaRpcClient},
     },
     monitoring::{
         health::{KmsHealthClient, State},
@@ -227,7 +224,7 @@ where
                         error.code,
                         &details,
                         &req.extraData,
-                        event,
+                        &event.otlp_context,
                     )
                     .await
             }
@@ -238,7 +235,7 @@ where
                         error.code,
                         &details,
                         &req.payload.extraData,
-                        event,
+                        &event.otlp_context,
                     )
                     .await
             }
@@ -248,8 +245,8 @@ where
                         req.decryption_id,
                         error.code,
                         &details,
-                        &req.request.permit().extra_data().to_extra_data(),
-                        event,
+                        &req.extra_data(),
+                        &event.otlp_context,
                     )
                     .await
             }
@@ -303,7 +300,6 @@ impl
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
-            context_manager.clone(),
             gateway_provider.clone(),
             host_chain_backends,
             ciphertext_manager,
@@ -379,13 +375,6 @@ async fn register_host_chain_backends(
                         host_chain.chain_id
                     )
                 })?;
-                let deployment = DeploymentIdentity::resolve(program_id, host_chain.chain_id)
-                    .map_err(|e| {
-                        anyhow!(
-                            "Solana host chain {} has an invalid deployment identity: {e}",
-                            host_chain.chain_id
-                        )
-                    })?;
                 let api_key = host_chain.solana_proof_api_key.clone().ok_or_else(|| {
                     anyhow!(
                         "Solana host chain {} requires solana_proof_api_key",
@@ -393,7 +382,7 @@ async fn register_host_chain_backends(
                     )
                 })?;
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
-                    deployment,
+                    program_id,
                     reader: SolanaRpcClient::new(
                         host_chain.url.clone(),
                         config.host_rpc_call_timeout,
@@ -543,7 +532,7 @@ mod tests {
         ));
         match backends.get(&solana_host_chain_id(2)) {
             Some(HostChainAclBackend::Solana(host)) => {
-                assert_eq!(host.deployment.program_id(), [7; 32])
+                assert_eq!(host.program_id, [7; 32])
             }
             _ => panic!("the Solana host chain should use the Solana backend"),
         }

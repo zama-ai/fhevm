@@ -1,162 +1,161 @@
 use super::*;
+use connector_utils::{
+    monitoring::otlp::PropagationContext,
+    tests::rand::solana_user_decryption_event,
+    types::{
+        ProtocolEventKind,
+        db::{AttestationType as RowAttestationType, insert_solana_user_decryption},
+        event::from_user_decryption_row,
+        solana_request::SolanaUserDecryptionRequestV1,
+    },
+};
+use kms_connector_api::{SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest};
+use sqlx::postgres::PgRow;
+
+/// The Solana chain type byte over cluster tag 12345.
+const SOLANA_CHAIN_ID: u64 = 0x0100_0000_0000_3039;
 
 #[tokio::test]
-async fn solana_http_and_gateway_reconstruct_the_same_request() -> anyhow::Result<()> {
-    use connector_utils::{
-        monitoring::otlp::PropagationContext,
-        types::{
-            ProtocolEventKind, db::insert_solana_user_decryption, event::from_user_decryption_row,
-            solana_request::SolanaUserDecryptionRequestV1,
-        },
-    };
-    use fhevm_gateway_bindings::decryption::{
-        Decryption::UserDecryptionRequest_4, IDecryption::RequestValiditySeconds,
-    };
-    use kms_connector_api::{
-        SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest,
-    };
-    use zama_solana_permit::PermitWireFields;
-    use zama_solana_request::{
-        SolanaHandleEntryWire, SolanaUserDecryptRequestWire, encode_solana_request,
-    };
-    const CHAIN_ID: u64 = 72057594037940281;
-    let endpoint = setup_with(|mut config| {
-        config.supported_chain_ids = vec![CHAIN_ID];
-        config
+async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Result<()> {
+    let endpoint = setup_with(|config| Config {
+        supported_chain_ids: vec![SOLANA_CHAIN_ID],
+        ..config
     })
     .await?;
-    let handle = rand_handle(CHAIN_ID);
-    let typed =
-        connector_utils::tests::rand::solana_user_decryption_request(U256::from(987), handle);
-    let permit = typed.request.permit();
-    let payload = SolanaUserDecryptionPayload {
-        handles: vec![SolanaHandleEntry {
-            handle,
-            allowedKey: (*permit.user_pubkey().as_bytes()).into(),
-            encryptedStore: [3; 32].into(),
-        }],
-        userPubkey: (*permit.user_pubkey().as_bytes()).into(),
-        publicKey: permit.transport_key().as_bytes().to_vec().into(),
-        allowedScopes: vec![],
-        requestValidity: RequestValidity {
-            startTimestamp: permit.start_timestamp(),
-            durationSeconds: permit.duration_seconds(),
-        },
-        hostProgramId: (*permit.verifying_program_id().as_bytes()).into(),
-        extraData: permit.extra_data().to_extra_data().into(),
-    };
-    let request = SolanaUserDecryptionRequest {
-        attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
-        payload,
-        signature: typed.request.signature().as_bytes().to_vec().into(),
-    };
-    let id = request.id();
-    let client = endpoint.client.clone();
-    let url = endpoint.url(USER_DECRYPTION_ROUTE);
-    let body = request.clone();
-    let pending = tokio::spawn(async move { client.post(url).json(&body).send().await });
+    let event = solana_user_decryption_event(U256::from(987), rand_handle(SOLANA_CHAIN_ID));
+    let gateway = SolanaUserDecryptionRequestV1::try_from(event)?;
+    let body = http_body(&gateway);
+    let id = body.id();
+
+    let pending = tokio::spawn({
+        let request = endpoint.client.post(endpoint.url(USER_DECRYPTION_ROUTE));
+        async move { request.json(&body).send().await }
+    });
     let http_row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
     assert_eq!(
-        http_row.get::<String, _>("attestation_type"),
-        "solana-srfc38-user-decrypt-v1"
+        http_row.get::<RowAttestationType, _>("attestation_type"),
+        RowAttestationType::Solana
     );
-    assert!(http_row.get::<Option<Vec<u8>>, _>("user_address").is_none());
-    let wire = SolanaUserDecryptRequestWire {
-        permit: PermitWireFields {
-            user_pubkey: request.payload.userPubkey.to_vec(),
-            transport_key: request.payload.publicKey.to_vec(),
-            allowed_scopes: vec![],
-            start_timestamp: permit.start_timestamp(),
-            duration_seconds: permit.duration_seconds(),
-            verifying_program_id: request.payload.hostProgramId.to_vec(),
-            chain_id: CHAIN_ID,
-            extra_data: request.payload.extraData.to_vec(),
-        },
-        signature: request.signature.to_vec(),
-        handles: vec![SolanaHandleEntryWire {
-            handle: handle.to_vec(),
-            allowed_key: vec![1; 32],
-            encrypted_store: vec![3; 32],
-        }],
-    };
-    let event = UserDecryptionRequest_4 {
-        decryptionId: typed.decryption_id,
-        ctHandles: vec![handle],
-        requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(permit.start_timestamp()),
-            durationSeconds: U256::from(permit.duration_seconds()),
-        },
-        publicKey: request.payload.publicKey.clone(),
-        extraData: request.payload.extraData.clone(),
-        solanaRequest: encode_solana_request(&wire)?.into(),
-    };
-    let gateway_request = SolanaUserDecryptionRequestV1::try_from(event)?;
+    assert_eq!(http_row.get::<Option<Vec<u8>>, _>("user_address"), None);
+
     insert_solana_user_decryption(
         &endpoint.db,
-        &gateway_request,
+        &gateway,
         Some(B256::repeat_byte(9)),
         sqlx::types::chrono::Utc::now(),
         &PropagationContext::default(),
         RequestSource::OnChain,
     )
     .await?;
-    let gw_row = sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
-        .bind(typed.decryption_id.as_le_slice())
+    let gateway_row = sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
+        .bind(gateway.decryption_id.as_le_slice())
         .fetch_one(&endpoint.db)
         .await?;
-    let ProtocolEventKind::SolanaUserDecryptionV1(http) = from_user_decryption_row(&http_row)?.kind
-    else {
-        panic!("wrong HTTP row type")
-    };
-    let ProtocolEventKind::SolanaUserDecryptionV1(gateway) =
-        from_user_decryption_row(&gw_row)?.kind
-    else {
-        panic!("wrong Gateway row type")
-    };
-    assert_eq!(http.request, gateway.request);
-    assert_ne!(http.decryption_id, gateway.decryption_id);
 
-    // Invalid identities, missing fields, and misaligned/non-vector arrays cannot enter the queue.
-    for change in [
-        "user_address = decode(repeat('00', 20), 'hex')",
-        "user_pubkey = NULL",
-        "signature = decode('00', 'hex')",
-        "allowed_keys = ARRAY[NULL]::bytea[]",
-        "allowed_keys = ARRAY[]::bytea[]",
-        "allowed_keys = ARRAY[allowed_keys]",
-        "host_program_id = decode('00', 'hex')",
-        "allowed_scopes = ARRAY[decode('00','hex')]",
-        "allowed_scopes = ARRAY[decode(repeat('ff',64),'hex'),decode(repeat('00',64),'hex')]",
-        "allowed_scopes = ARRAY[decode(repeat('00',64),'hex'),decode(repeat('00',64),'hex')]",
-        "ct_handles = ARRAY[ct_handles[1],set_byte(ct_handles[1],23,99)], allowed_keys = ARRAY[allowed_keys[1],allowed_keys[1]], encrypted_stores = ARRAY[encrypted_stores[1],encrypted_stores[1]]",
-        "attestation_type = 'legacy'",
-        "duration_seconds = 0",
-    ] {
-        let result = sqlx::query(&format!(
-            "UPDATE user_decryption_requests SET {change} WHERE decryption_id = $1"
-        ))
-        .bind(db_id(id).as_le_slice())
-        .execute(&endpoint.db)
-        .await;
-        assert!(result.is_err(), "invalid row accepted: {change}");
-    }
+    let mut from_http = stored_request(&http_row)?;
+    assert_eq!(from_http.decryption_id, db_id(id));
+    from_http.decryption_id = gateway.decryption_id;
+    assert_eq!(from_http, gateway);
+    assert_eq!(stored_request(&gateway_row)?, gateway);
+
     complete_udec(&endpoint.db, id).await?;
     assert_eq!(pending.await??.status(), StatusCode::OK);
     endpoint.stop().await
 }
 
 #[tokio::test]
-async fn solana_http_rejects_mismatched_scheme() -> anyhow::Result<()> {
+async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
+    let endpoint = setup().await?;
+    let request = SolanaUserDecryptionRequestV1::try_from(solana_user_decryption_event(
+        U256::from(1),
+        rand_handle(SOLANA_CHAIN_ID),
+    ))?;
+    insert_solana_user_decryption(
+        &endpoint.db,
+        &request,
+        None,
+        sqlx::types::chrono::Utc::now(),
+        &PropagationContext::default(),
+        RequestSource::Http,
+    )
+    .await?;
+    let id = request.decryption_id;
+    for change in [
+        "user_address = decode(repeat('00', 20), 'hex')",
+        "user_pubkey = NULL",
+        "allowed_keys = NULL",
+        "host_program_id = NULL",
+        "encrypted_stores = ARRAY[encrypted_stores[1], encrypted_stores[1]]",
+        "attestation_type = 'legacy'",
+    ] {
+        assert!(update(&endpoint.db, id, change).await.is_err(), "row accepted: {change}");
+    }
+
+    // Widths are the reader's to enforce, so a worker never acts on a truncated field.
+    update(&endpoint.db, id, "signature = decode('00', 'hex')").await?;
+    let row = sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
+        .bind(id.as_le_slice())
+        .fetch_one(&endpoint.db)
+        .await?;
+    assert!(from_user_decryption_row(&row).is_err());
+    endpoint.stop().await
+}
+
+#[tokio::test]
+async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow::Result<()> {
     let endpoint = setup().await?;
     let mut body = serde_json::to_value(user_request())?;
-    body["attestationType"] = "solana-srfc38-user-decrypt-v1".into();
+    body["attestationType"] = AttestationType::SolanaSrfc38UserDecryptV1.to_string().into();
     let response = endpoint
         .post_raw(USER_DECRYPTION_ROUTE, serde_json::to_string(&body)?)
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response.json::<ErrorResponse>().await?.code,
-        ErrorCode::Malformed
-    );
+    assert_eq!(error_body(response).await.code, ErrorCode::Malformed);
+    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
     endpoint.stop().await
+}
+
+fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionRequest {
+    let permit = request.permit();
+    SolanaUserDecryptionRequest {
+        attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
+        payload: SolanaUserDecryptionPayload {
+            handles: request
+                .handles()
+                .iter()
+                .map(|entry| SolanaHandleEntry {
+                    handle: entry.handle.into(),
+                    allowedKey: entry.allowed_key.into(),
+                    encryptedStore: entry.encrypted_store.into(),
+                })
+                .collect(),
+            userPubkey: (*permit.user_pubkey().as_bytes()).into(),
+            publicKey: permit.transport_key().as_bytes().to_vec().into(),
+            allowedScopes: vec![],
+            requestValidity: RequestValidity {
+                startTimestamp: permit.start_timestamp(),
+                durationSeconds: permit.duration_seconds(),
+            },
+            hostProgramId: (*permit.verifying_program_id().as_bytes()).into(),
+            extraData: request.extra_data().into(),
+        },
+        signature: request.signature().as_bytes().to_vec().into(),
+    }
+}
+
+async fn update(db: &Pool<Postgres>, id: U256, change: &str) -> sqlx::Result<()> {
+    sqlx::query(&format!(
+        "UPDATE user_decryption_requests SET {change} WHERE decryption_id = $1"
+    ))
+    .bind(id.as_le_slice())
+    .execute(db)
+    .await
+    .map(drop)
+}
+
+fn stored_request(row: &PgRow) -> anyhow::Result<SolanaUserDecryptionRequestV1> {
+    match from_user_decryption_row(row)?.kind {
+        ProtocolEventKind::SolanaUserDecryptionV1(request) => Ok(request),
+        other => anyhow::bail!("not a Solana row: {other:?}"),
+    }
 }

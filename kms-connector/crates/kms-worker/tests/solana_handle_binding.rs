@@ -26,7 +26,7 @@ use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
-    pipeline::AuthorizationContext,
+    pipeline::authorize_request,
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
     snapshot::SnapshotKeys,
 };
@@ -52,15 +52,6 @@ fn answer(
     key: SolanaPubkeyBytes,
 ) -> LeafProofOutcome {
     encrypted_store.outcome(&encrypted_store.allowed_query(handle, key))
-}
-
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -589,17 +580,10 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("the signer's own leaf authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("the signer's own leaf authorizes");
 
     assert_eq!(
         proofs.calls(),
@@ -613,10 +597,9 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     );
 }
 
-/// One batch for the request, one query per distinct leaf: two entries naming the same leaf cost
-/// one query, and two entries on two accounts cost two, in request order.
+/// One batch for the request, one query per entry in request order, so each result is its entry's.
 #[tokio::test]
-async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
+async fn the_pipeline_reads_one_batch_with_one_query_per_entry() {
     let wallet = Wallet::new(1);
     let first = handle(0x51, FHE_TYPE_UINT64);
     let second = handle(0x52, FHE_TYPE_UINT64);
@@ -637,17 +620,10 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("every entry holds a leaf");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("every entry holds a leaf");
 
     let calls = proofs.calls();
     assert_eq!(calls.len(), 1, "one batch");
@@ -656,8 +632,8 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
         vec![
             first_account.allowed_query(first, wallet.pubkey()),
             second_account.allowed_query(second, wallet.pubkey()),
-        ],
-        "distinct leaves in first-seen order, the repeat collapsed"
+            first_account.allowed_query(first, wallet.pubkey()),
+        ]
     );
 }
 
@@ -675,17 +651,10 @@ async fn an_unreachable_record_rejects_transiently() {
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &UnavailableProofReader,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("no record, no verdict");
+    let failure = authorize_request(&reader, &UnavailableProofReader, CONTEXT, &request)
+        .await
+        .expect_err("no record, no verdict");
 
     assert!(matches!(failure, AuthorizationFailure::ProofRead(_)));
     assert!(failure.is_recoverable());
@@ -708,17 +677,10 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("the second entry was never allowed");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("the second entry was never allowed");
 
     assert!(
         matches!(
@@ -767,15 +729,9 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
-    authorize(
-        &ScriptedReader::constant(world),
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment()),
-        &request,
-    )
-    .await
-    .expect("surviving peak needs no refresh");
+    authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
+        .await
+        .expect("surviving peak needs no refresh");
     assert_eq!(proofs.call_count(), 1);
 }
 
@@ -783,7 +739,7 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
 async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
     use kms_worker::core::solana::{
         handle_binding::verify_proofs_with_one_retry,
-        proof::{HostProofReader, ProofBatch, ProofReadError, ProofResponses},
+        proof::{HostProofReader, ProofReadError, ProofResponses},
     };
     use std::{collections::VecDeque, sync::Mutex};
 
@@ -819,7 +775,7 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
         handle: handle(0x64, FHE_TYPE_UINT64),
         ..query
     };
-    let batch = ProofBatch::new([(query, query.handle), (missing, missing.handle)]);
+    let batch = [(query, query.handle), (missing, missing.handle)];
     let valid = answer(&fixture, sealed, key);
     let invalid = LeafProofOutcome::Found {
         leaf_index: 0,
@@ -862,8 +818,7 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
 #[tokio::test]
 async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
     use kms_worker::core::solana::{
-        handle_binding::verify_proofs_with_one_retry,
-        proof::{CoprocessorProofClient, ProofBatch},
+        handle_binding::verify_proofs_with_one_retry, proof::CoprocessorProofClient,
     };
     use mocktail::{StatusCode, server::MockServer};
     let key = Wallet::new(1).pubkey();
@@ -871,7 +826,7 @@ async fn an_unavailable_peer_cannot_turn_no_leaf_into_a_terminal_denial() {
     let fixture = EncryptedStoreFixture::allowing(sealed, key);
     let account = resolved(&fixture);
     let query = fixture.allowed_query(sealed, key);
-    let batch = ProofBatch::new([(query, ())]);
+    let batch = [(query, ())];
     let mut absent = MockServer::new_http("no-leaf");
     absent.mock(|when, then| {
         when.post();

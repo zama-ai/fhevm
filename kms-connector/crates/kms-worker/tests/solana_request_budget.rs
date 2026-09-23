@@ -22,12 +22,15 @@
 //! every occurrence at its position, and a client whose list was silently changed can no longer
 //! reconstruct the binding of its own request.
 use connector_utils::types::solana_request::{
-    MAX_REQUEST_HANDLES, RequestFormError, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+    MAX_REQUEST_HANDLES, RequestFormError, SolanaUserDecryptRequestWire,
+    SolanaUserDecryptionRequestV1,
 };
 
 mod solana_support;
 
-use kms_worker::core::solana::pipeline::AuthorizationContext;
+use alloy::primitives::U256;
+
+use kms_worker::core::solana::pipeline::authorize_request;
 use solana_support::*;
 
 /// A handle distinguished by an index rather than a repeated byte, so a long list is a list of
@@ -52,15 +55,6 @@ fn request_naming(wallet: &Wallet, handles: &[[u8; 32]]) -> SolanaUserDecryptReq
     builder.wire()
 }
 
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // The list is passed through verbatim
 // ---------------------------------------------------------------------------
@@ -76,7 +70,7 @@ fn a_request_larger_than_the_on_chain_bit_budget_still_decodes_here() {
         .collect();
     let built = request_naming(&wallet, &handles);
 
-    let request = SolanaUserDecryptRequest::decode(&built)
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, &built)
         .expect("the bit budget is enforced on chain, before the request exists");
 
     assert_eq!(
@@ -97,12 +91,12 @@ fn a_request_past_the_handle_cap_is_rejected() {
         .collect();
     let built = request_naming(&wallet, &handles);
 
-    let failure = SolanaUserDecryptRequest::decode(&built)
+    let failure = SolanaUserDecryptionRequestV1::new(U256::ONE, &built)
         .expect_err("a list past the cap cannot be read in one snapshot");
 
     assert!(matches!(
         failure,
-        RequestFormError::TooManyHandles { handles } if handles == MAX_REQUEST_HANDLES + 1
+        RequestFormError::HandleCount(count) if count == MAX_REQUEST_HANDLES + 1
     ));
 }
 
@@ -115,14 +109,10 @@ fn the_handle_list_survives_decoding_in_order() {
         .map(|index| distinct_handle(index, FHE_TYPE_UINT64))
         .collect();
 
-    let request =
-        SolanaUserDecryptRequest::decode(&request_naming(&wallet, &handles)).expect("well formed");
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, &request_naming(&wallet, &handles))
+        .expect("well formed");
 
-    let decoded: Vec<[u8; 32]> = request
-        .handles()
-        .iter()
-        .map(|entry| entry.handle())
-        .collect();
+    let decoded: Vec<[u8; 32]> = request.handles().iter().map(|entry| entry.handle).collect();
     assert_eq!(decoded, handles);
 }
 
@@ -135,7 +125,7 @@ fn a_handle_of_an_exotic_type_is_not_refused_here() {
     let exotic_type = 200;
     let exotic = distinct_handle(0, exotic_type);
 
-    SolanaUserDecryptRequest::decode(&request_naming(&wallet, &[exotic]))
+    SolanaUserDecryptionRequestV1::new(U256::ONE, &request_naming(&wallet, &[exotic]))
         .expect("type support is decided upstream, not in the authorization path");
 }
 
@@ -146,10 +136,10 @@ fn an_empty_handle_list_is_rejected() {
     let wallet = Wallet::new(1);
     let wire = RequestBuilder::new(&wallet).wire();
 
-    let failure =
-        SolanaUserDecryptRequest::decode(&wire).expect_err("a request must name a handle");
+    let failure = SolanaUserDecryptionRequestV1::new(U256::ONE, &wire)
+        .expect_err("a request must name a handle");
 
-    assert!(matches!(failure, RequestFormError::EmptyHandles));
+    assert!(matches!(failure, RequestFormError::HandleCount(0)));
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +158,8 @@ fn a_duplicate_handle_is_legal() {
         .direct(&encrypted_store, repeated)
         .wire();
 
-    let request = SolanaUserDecryptRequest::decode(&wire).expect("duplicates are legal");
+    let request =
+        SolanaUserDecryptionRequestV1::new(U256::ONE, &wire).expect("duplicates are legal");
 
     assert_eq!(
         request.handles().len(),
@@ -193,15 +184,8 @@ async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a duplicate of an authorized handle is authorized");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a duplicate of an authorized handle is authorized");
 }

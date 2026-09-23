@@ -21,13 +21,13 @@
 //! 4. an append the record has not seen, which does not merge the proof's peak;
 //! 5. an append the record has not seen, which merges the proof's peak;
 //! 6. the record is ahead of this connector.
-use connector_utils::types::solana_request::SolanaUserDecryptRequest;
+use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 
 mod solana_support;
 
 use kms_worker::core::solana::{
     delegation::DelegationFailure, failure::AuthorizationFailure,
-    handle_binding::HandleBindingFailure, pipeline::AuthorizationContext,
+    handle_binding::HandleBindingFailure, pipeline::authorize_request,
 };
 use solana_support::*;
 
@@ -45,16 +45,12 @@ struct Reads {
 async fn observe_with_record(
     world: World,
     record: ProofRecord,
-    request: &SolanaUserDecryptRequest,
+    request: &SolanaUserDecryptionRequestV1,
 ) -> (Result<(), AuthorizationFailure>, Reads) {
     let proofs = ScriptedProofReader::constant(record);
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
-    let context = AuthorizationContext {
-        deployment: &deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    };
-    let outcome = authorize(&reader, &ServableKmsContext, &proofs, context, request).await;
+    let context = CONTEXT;
+    let outcome = authorize_request(&reader, &proofs, context, request).await;
     (
         outcome,
         Reads {
@@ -67,7 +63,7 @@ async fn observe_with_record(
 /// Authorizes a request against one world, with a leaf record in step with it.
 async fn observe(
     world: World,
-    request: &SolanaUserDecryptRequest,
+    request: &SolanaUserDecryptionRequestV1,
 ) -> (Result<(), AuthorizationFailure>, Reads) {
     let record = world.record();
     observe_with_record(world, record, request).await

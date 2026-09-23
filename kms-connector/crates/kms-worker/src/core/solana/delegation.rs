@@ -1,52 +1,19 @@
-//! Delegation freshness.
+//! Delegation records. A delegated entry needs a live `delegator → signer` record: either the row
+//! for the encrypted store's authority, or the delegator's wildcard row, as with the EVM ACL's
+//! wildcard delegation. Neither row can veto the other, so narrowing a delegation to fewer
+//! authorities means revoking the wildcard row too.
 //!
-//! A delegated entry needs a live delegation record `delegator → signer`. Two records can carry
-//! one: the row for the encrypted store's own authority, and the delegator's wildcard row —
-//! the same derivation with the reserved sentinel in place of an encrypted store
-//! authority, which is how a delegator grants across every authority of theirs at once.
-//! Either row being live authorizes the entry, which is the rule the EVM ACL applies to its own
-//! wildcard delegation.
-//!
-//! Live means, against the observed slot: not revoked, not expired, and not written after the
-//! observation. The last clause is what keeps a record "from the future" relative to the snapshot
-//! from authorizing anything — it would be a state the rest of the authorization never saw.
-//!
-//! The rows are tried authority-specific first, and neither can veto the other: an exact row that is
-//! revoked, expired or newer than the observation still leaves a live wildcard row authorizing, and
-//! the same holds the other way around.
-//!
-//! What follows from that is deliberate rather than incidental: revoking the authority-specific row
-//! does not stop a delegate who also holds a wildcard row. Scope by authority is a property of a
-//! row, not of the delegation as a whole, so a delegator narrowing one authority has to revoke the
-//! wildcard row as well — and the host program's revocation instruction takes one record per call, so that is two
-//! transactions rather than one.
-//!
-//! The record's `delegation_counter` takes no part in any of this. It is not signed and is pinned
-//! nowhere in the request: pinning it would kill mixed-delegator batches and permit reuse, because
-//! any update to any delegation record would invalidate requests already in flight. The counter
-//! still exists in the on-chain layout — decoding walks past it — but no check reads it and no
-//! signature commits to it.
-//!
-//! The authority comes from the validated encrypted store. That is
-//! what makes the delegated branch safe against an attacker naming an authority they do hold a
-//! delegation for: they cannot name it at all.
+//! Live means, at the observed slot: not revoked, not expired, and not written after the
+//! observation. The record's `delegation_counter` is not checked: pinning it would invalidate
+//! in-flight requests on every unrelated delegation update.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
 use crate::core::solana_acl::SolanaPubkeyBytes;
+use zama_solana_acl::WILDCARD_AUTHORITY;
 
-/// The sentinel a wildcard row carries in place of an encrypted store authority.
-/// Reserved by the host program, which is why no real encrypted store authority can
-/// collide with it.
-pub use crate::core::solana_acl::WILDCARD_AUTHORITY;
-
-/// The canonical delegation-record address for a `(delegator, delegate, authority)` tuple.
 pub use crate::core::solana_acl::user_decryption_delegation_address as delegation_address;
 
-/// The canonical address of the wildcard row of `(delegator, delegate)`.
-///
-/// One function rather than a sentinel passed by callers: the key planner and the rule have to
-/// derive the same address, and a sentinel spelled out at two call sites is a sentinel that can be
-/// spelled out differently at two call sites.
+/// The address of the wildcard row of `(delegator, delegate)`.
 pub fn wildcard_delegation_address(
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
@@ -55,25 +22,14 @@ pub fn wildcard_delegation_address(
     delegation_address(program_id, delegator, delegate, WILDCARD_AUTHORITY)
 }
 
-/// Which row carried a delegated authorization.
-///
-/// Either row authorizes identically — the distinction changes no outcome. It exists because an
-/// audit record of a delegated authorization has to tell an authority-scoped grant from a
-/// wildcard one, and only this module sees which row it read.
+/// Which row carried a delegated authorization, for the audit log.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum AuthorizedRow {
-    /// The row for the encrypted store's own authority.
     Exact,
-    /// The delegator's wildcard row.
     Wildcard,
 }
 
-/// Checks that `delegator` has a live delegation to `delegate` covering `authority` at this
-/// observation point: the row for that authority, or the delegator's wildcard row. Names the row
-/// that carried the grant.
-///
-/// Note the parameter list: a snapshot, three identities and a program id. No counter, and no
-/// reader — both records are read from the observation the rest of the authorization used.
+/// Checks that `delegator` has a live delegation to `delegate` covering `authority`.
 pub fn check_delegation(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
@@ -81,21 +37,19 @@ pub fn check_delegation(
     delegate: SolanaPubkeyBytes,
     authority: SolanaPubkeyBytes,
 ) -> Result<AuthorizedRow, DelegationFailure> {
-    let exact = match check_row(snapshot, program_id, delegator, delegate, authority)? {
-        RowOutcome::Live => return Ok(AuthorizedRow::Exact),
-        RowOutcome::NotLive(reason) => reason,
+    let Err(exact) = check_row(snapshot, program_id, delegator, delegate, authority)? else {
+        return Ok(AuthorizedRow::Exact);
     };
-    let wildcard = match check_row(
+    let Err(wildcard) = check_row(
         snapshot,
         program_id,
         delegator,
         delegate,
         WILDCARD_AUTHORITY,
-    )? {
-        RowOutcome::Live => return Ok(AuthorizedRow::Wildcard),
-        RowOutcome::NotLive(reason) => reason,
+    )?
+    else {
+        return Ok(AuthorizedRow::Wildcard);
     };
-
     if matches!(wildcard, DelegationFailure::Absent { .. }) && exact.is_recoverable() {
         return Err(exact);
     }
@@ -105,170 +59,90 @@ pub fn check_delegation(
     })
 }
 
-/// Whether one row authorizes, and if not, why.
-///
-/// Separate from the reason type because a lookup that cannot be made is not an outcome of the row:
-/// it is returned as an error, so it can never be folded into a pair of reasons and reported as
-/// "no live grant".
-enum RowOutcome {
-    /// The row exists and is live at this observation.
-    Live,
-    /// The row does not authorize. Only row-level reasons appear here.
-    NotLive(DelegationFailure),
-}
-
-/// Evaluates the single row at the canonical address of `(delegator, delegate, authority)`.
+/// The outer error is a lookup that could not be made; the inner one is why the row does not
+/// authorize, so the two can never be confused in [`DelegationFailure::NoLiveGrant`].
 fn check_row(
     snapshot: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
     authority: SolanaPubkeyBytes,
-) -> Result<RowOutcome, SnapshotError> {
+) -> Result<Result<(), DelegationFailure>, SnapshotError> {
     let (account_key, canonical_bump) =
         delegation_address(program_id, delegator, delegate, authority);
-
-    let Some(account) = snapshot.account(&account_key)? else {
-        // Includes the case of a delegation granted for another app: that record lives at another
-        // address, and the address derived from this encrypted store's app is simply empty.
-        return Ok(RowOutcome::NotLive(DelegationFailure::Absent {
-            account_key,
-        }));
+    let Some(account) = snapshot
+        .account(&account_key)?
+        .filter(|account| !account.is_uninitialized_pda())
+    else {
+        return Ok(Err(DelegationFailure::Absent { account_key }));
     };
-
-    if account.is_uninitialized_pda() {
-        return Ok(RowOutcome::NotLive(DelegationFailure::Absent {
-            account_key,
-        }));
-    }
-
     if account.owner != program_id {
-        return Ok(RowOutcome::NotLive(DelegationFailure::ForeignOwner {
+        return Ok(Err(DelegationFailure::ForeignOwner {
             account_key,
             owner: account.owner,
-            expected: program_id,
         }));
     }
-
     let Ok(record) = zama_solana_acl::decode_user_decryption_delegation(&account.data) else {
-        return Ok(RowOutcome::NotLive(
-            DelegationFailure::NotADelegationRecord { account_key },
-        ));
+        return Ok(Err(DelegationFailure::NotADelegationRecord { account_key }));
     };
-
-    // The address is not taken as proof of what the record says.
     if record.delegator != delegator || record.delegate != delegate || record.authority != authority
     {
-        return Ok(RowOutcome::NotLive(DelegationFailure::TupleMismatch {
-            account_key,
-        }));
+        return Ok(Err(DelegationFailure::TupleMismatch { account_key }));
     }
-
-    // The stored bump has to be the canonical one for this address. Not an attacker check — only
-    // the owning program can write these bytes, and the address was derived here — but a record
-    // whose bump is not the one this derivation produces is not the record this reader reads, and
-    // saying so here is cheaper than discovering it as a rule that mysteriously stopped matching.
     if record.bump != canonical_bump {
-        return Ok(RowOutcome::NotLive(
-            DelegationFailure::NotADelegationRecord { account_key },
-        ));
+        return Ok(Err(DelegationFailure::NotADelegationRecord { account_key }));
     }
-
     if record.revoked {
-        return Ok(RowOutcome::NotLive(DelegationFailure::Revoked));
+        return Ok(Err(DelegationFailure::Revoked));
     }
-
-    // Both slot bounds are inclusive, and both are against the observation rather than a local
-    // clock. The expiry boundary itself is the shared crate's `is_live_at` (revocation was
-    // excluded above, so not-live means exactly expired), not a re-spelling.
-    // `record.delegation_counter` is decoded by the call above and read by nothing here:
-    // pinning it would invalidate in-flight requests on every unrelated delegation update.
     let observed_slot = snapshot.observed_slot();
     if !record.is_live_at(observed_slot) {
-        return Ok(RowOutcome::NotLive(DelegationFailure::Expired {
+        return Ok(Err(DelegationFailure::Expired {
             expiration_slot: record.expiration_slot,
             observed_slot,
         }));
     }
     if record.last_update_slot > observed_slot {
-        return Ok(RowOutcome::NotLive(
-            DelegationFailure::NewerThanObservation {
-                last_update_slot: record.last_update_slot,
-                observed_slot,
-            },
-        ));
+        return Ok(Err(DelegationFailure::NewerThanObservation {
+            last_update_slot: record.last_update_slot,
+            observed_slot,
+        }));
     }
-
-    Ok(RowOutcome::Live)
+    Ok(Ok(()))
 }
 
-/// Why a delegated entry was not authorized.
-///
-/// Row-level reasons are retained together when either may affect whether a later observation succeeds.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DelegationFailure {
-    /// No delegation record exists for the tuple at this observation point.
     #[error("no delegation record at {account_key:?} at the observed slot")]
-    Absent {
-        /// The canonical address that was read.
-        account_key: SolanaPubkeyBytes,
-    },
-    /// The record exists but is not owned by the deployment's program.
-    #[error("delegation record {account_key:?} is owned by {owner:?}, expected {expected:?}")]
+    Absent { account_key: SolanaPubkeyBytes },
+    #[error("delegation record {account_key:?} is owned by {owner:?}")]
     ForeignOwner {
-        /// The address that was read.
         account_key: SolanaPubkeyBytes,
-        /// Who owns it.
         owner: SolanaPubkeyBytes,
-        /// The deployment's program id.
-        expected: SolanaPubkeyBytes,
     },
-    /// The account is host-owned but is not a delegation record: it does not decode, or it stores a
-    /// bump other than the canonical one for its address.
-    #[error("account {account_key:?} is not a decodable delegation record")]
-    NotADelegationRecord {
-        /// The address that was read.
-        account_key: SolanaPubkeyBytes,
-    },
-    /// The record's own fields name a different tuple than the address implies.
+    #[error("account {account_key:?} is not a canonical delegation record")]
+    NotADelegationRecord { account_key: SolanaPubkeyBytes },
     #[error("delegation record {account_key:?} names a different tuple")]
-    TupleMismatch {
-        /// The address that was read.
-        account_key: SolanaPubkeyBytes,
-    },
-    /// The delegator revoked this record; a separate wildcard grant may still authorize.
+    TupleMismatch { account_key: SolanaPubkeyBytes },
     #[error("delegation is revoked")]
     Revoked,
-    /// It expired at or before the observed slot.
     #[error("delegation expired: expiration slot {expiration_slot} < observed {observed_slot}")]
     Expired {
-        /// The record's expiration slot.
         expiration_slot: u64,
-        /// The observation point.
         observed_slot: u64,
     },
-    /// It was written after the observation point, so it is not part of the state this
-    /// authorization saw. A coherent node cannot produce this — a write lands at or before the
-    /// slot of the bank that holds it — so it reports an incoherent observation, not a dead record.
-    #[error(
-        "delegation is newer than the observation: written at {last_update_slot} > {observed_slot}"
-    )]
+    /// A coherent node cannot report this: the observation is behind the write.
+    #[error("delegation written at {last_update_slot}, after the observed slot {observed_slot}")]
     NewerThanObservation {
-        /// When the record was last written.
         last_update_slot: u64,
-        /// The observation point.
         observed_slot: u64,
     },
-    /// Both rows exist and neither authorizes, so both reasons are reported: naming only one would
-    /// send a delegator to fix a row that was not the one standing in the way.
-    #[error("no live delegation: authority-specific row: {exact}; wildcard row: {wildcard}")]
+    /// Both rows exist and neither authorizes, so both reasons are reported.
+    #[error("no live delegation: authority row: {exact}; wildcard row: {wildcard}")]
     NoLiveGrant {
-        /// Why the row for the encrypted store's authority did not authorize.
         exact: Box<DelegationFailure>,
-        /// Why the delegator's wildcard row did not authorize.
         wildcard: Box<DelegationFailure>,
     },
-    /// The snapshot was asked for an account it never read.
     #[error(transparent)]
     Snapshot(#[from] SnapshotError),
 }

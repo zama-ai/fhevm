@@ -207,9 +207,11 @@ async fn errors_preserve_the_shared_worker_lifecycle(
         let response = response.expect("HTTP failures produce a caller-visible response");
         assert_eq!(
             response.get::<String, _>("error_code"),
-            match failure {
-                Failure::Terminal => "unprocessable",
-                Failure::Transient | Failure::Stale => "upstream_transient",
+            match (failure, solana) {
+                (Failure::Terminal, false) => "unprocessable",
+                (Failure::Terminal, true) => "user_signature_rejected",
+                (Failure::Stale, true) => "acl_denied",
+                (Failure::Transient, _) | (Failure::Stale, false) => "upstream_transient",
             }
         );
         assert!(!response.get::<String, _>("error_details").is_empty());

@@ -32,7 +32,7 @@ use kms_worker::core::solana::proof::{CoprocessorProofClient, LeafProofOutcome, 
 use kms_worker::core::solana::snapshot::{SnapshotKeys, SolanaRpcClient};
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
-use solana_support::{EncryptedStoreFixture, deployment, handle};
+use solana_support::{EncryptedStoreFixture, PROGRAM_ID, handle};
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
 /// production constant.
@@ -118,7 +118,7 @@ fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHo
         })
         .collect();
     SolanaHost {
-        deployment: deployment(),
+        program_id: PROGRAM_ID,
         reader: SolanaRpcClient::new(
             rpc.base_url().expect("the mock RPC has a URL").clone(),
             std::time::Duration::from_secs(10),
@@ -453,7 +453,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             .build()
             .unwrap();
         let mut host = SolanaHost {
-            deployment: deployment(),
+            program_id: PROGRAM_ID,
             reader: SolanaRpcClient::new(
                 rpc.base_url().unwrap().clone(),
                 std::time::Duration::from_millis(100),

@@ -1,4 +1,14 @@
+use crate::types::{
+    handle::extract_chain_id_from_handle,
+    solana_request::{
+        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+        SolanaUserDecryptionRequestV1,
+    },
+};
 use alloy::primitives::{Address, FixedBytes, U256};
+use fhevm_gateway_bindings::decryption::{
+    Decryption::UserDecryptionRequest_4, IDecryption::RequestValiditySeconds,
+};
 use fhevm_host_bindings::protocol_config::{
     IProtocolConfig::KmsThresholds,
     ProtocolConfig::{KmsNodeParams, PcrValues},
@@ -55,23 +65,21 @@ pub fn rand_pcr_values() -> PcrValues {
     }
 }
 
-/// Well-formed Solana request data; the signature is a placeholder for storage/routing tests.
-pub fn solana_user_decryption_request(
+/// A well-formed Solana user decryption event. Its signature is a placeholder, so it only passes
+/// the checks that precede signature verification.
+pub fn solana_user_decryption_event(
     decryption_id: U256,
     handle: FixedBytes<32>,
-) -> crate::types::solana_request::SolanaUserDecryptionRequestV1 {
-    use crate::types::solana_request::{SolanaUserDecryptRequest, SolanaUserDecryptionRequestV1};
-    use zama_solana_permit::{PermitWireFields, TRANSPORT_KEY_LEN};
-    use zama_solana_request::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
-    let request = SolanaUserDecryptRequest::decode(&SolanaUserDecryptRequestWire {
+) -> UserDecryptionRequest_4 {
+    let wire = SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
             user_pubkey: vec![1; 32],
-            transport_key: vec![2; TRANSPORT_KEY_LEN],
+            transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
             allowed_scopes: vec![],
             start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
             duration_seconds: 3600,
             verifying_program_id: vec![7; 32],
-            chain_id: crate::types::handle::extract_chain_id_from_handle(&handle).unwrap(),
+            chain_id: extract_chain_id_from_handle(&handle).unwrap(),
             extra_data: [vec![2], vec![1; 64]].concat(),
         },
         signature: vec![0; 64],
@@ -80,10 +88,27 @@ pub fn solana_user_decryption_request(
             allowed_key: vec![1; 32],
             encrypted_store: vec![3; 32],
         }],
-    })
-    .unwrap();
-    SolanaUserDecryptionRequestV1 {
-        decryption_id,
-        request,
+    };
+    UserDecryptionRequest_4 {
+        decryptionId: decryption_id,
+        ctHandles: vec![handle],
+        requestValidity: RequestValiditySeconds {
+            startTimestamp: U256::from(wire.permit.start_timestamp),
+            durationSeconds: U256::from(wire.permit.duration_seconds),
+        },
+        publicKey: wire.permit.transport_key.clone().into(),
+        extraData: wire.permit.extra_data.clone().into(),
+        solanaRequest: zama_solana_request::encode_solana_request(&wire)
+            .unwrap()
+            .into(),
     }
+}
+
+pub fn solana_user_decryption_request(
+    decryption_id: U256,
+    handle: FixedBytes<32>,
+) -> SolanaUserDecryptionRequestV1 {
+    solana_user_decryption_event(decryption_id, handle)
+        .try_into()
+        .unwrap()
 }

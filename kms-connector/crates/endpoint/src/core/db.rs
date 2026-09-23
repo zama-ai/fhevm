@@ -142,9 +142,9 @@ pub async fn upsert_user_decryption_request<'e>(
         "INSERT INTO user_decryption_requests AS existing (
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
-            allowed_contracts, start_timestamp, duration_seconds, signature, source, attestation_type
+            allowed_contracts, start_timestamp, duration_seconds, signature, source
         )
-        VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, 'http', 'eip712-unified-user-decrypt-v1')
+        VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, 'http')
         ON CONFLICT (decryption_id) DO UPDATE SET
             status = 'pending',
             created_at = EXCLUDED.created_at,

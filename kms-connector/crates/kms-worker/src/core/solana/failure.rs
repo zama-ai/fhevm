@@ -1,7 +1,6 @@
-//! Authorization failure reasons and whether another observation may succeed.
+//! Why a Solana request was not authorized, and whether a later attempt may succeed.
 
 use super::delegation::DelegationFailure;
-use super::deployment::DeploymentFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
 use super::pause::PauseFailure;
@@ -9,71 +8,44 @@ use super::proof::ProofReadError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
+use crate::core::solana_acl::SolanaPubkeyBytes;
 use zama_solana_permit::PermitError;
 
-/// Why one request was not authorized.
-///
-/// The variants follow the pipeline: signature, deployment, window, then the
-/// state-dependent rules. Each carries the entry index where the rule is per handle,
-/// because "some handle failed scope" is not an actionable diagnostic for a batch.
+/// Per-entry rules carry the entry index: "some handle failed" is not actionable for a batch.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum AuthorizationFailure {
-    /// Internal batch planning omitted an entry or its verification result.
-    #[error("entry {index}: planned proof binding is missing")]
-    MissingProofBinding {
-        /// Which entry.
-        index: usize,
-    },
     #[error("signature: {0}")]
     Signature(PermitError),
-    /// The permit was signed for another deployment.
-    #[error("deployment: {0}")]
-    Deployment(#[from] DeploymentFailure),
-    /// The validity window rejects the permit.
     #[error("validity window: {0}")]
     Window(#[from] WindowFailure),
-    /// The invalidation watermark rejects the permit, or could not be read.
-    #[error("invalidation: {0}")]
-    Watermark(#[from] WatermarkFailure),
-    /// Host state could not be observed as one point.
+    #[error("permit names program {signed:?}, this host is {own:?}")]
+    ProgramIdMismatch {
+        signed: SolanaPubkeyBytes,
+        own: SolanaPubkeyBytes,
+    },
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    /// The host is paused, or its config singleton could not be read.
     #[error("host pause: {0}")]
     Pause(#[from] PauseFailure),
-    /// One entry's encrypted store could not be resolved.
+    #[error("invalidation: {0}")]
+    Watermark(#[from] WatermarkFailure),
     #[error("entry {index}: encrypted store: {source}")]
     EncryptedStore {
-        /// Which entry.
         index: usize,
-        /// Why.
         source: EncryptedStoreFailure,
     },
-    /// The leaf record could not be read at all.
+    #[error("entry {index}: scope: {source}")]
+    Scope { index: usize, source: ScopeFailure },
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),
-    /// One entry's handle is not bound to its key.
     #[error("entry {index}: handle binding: {source}")]
     HandleBinding {
-        /// Which entry.
         index: usize,
-        /// Why.
         source: HandleBindingFailure,
     },
-    /// One entry's encrypted store is outside the signed scope.
-    #[error("entry {index}: scope: {source}")]
-    Scope {
-        /// Which entry.
-        index: usize,
-        /// Why.
-        source: ScopeFailure,
-    },
-    /// One delegated entry has no live delegation.
     #[error("entry {index}: delegation: {source}")]
     Delegation {
-        /// Which entry.
         index: usize,
-        /// Why.
         source: DelegationFailure,
     },
 }
@@ -81,58 +53,42 @@ pub enum AuthorizationFailure {
 impl AuthorizationFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Signature(_) | Self::MissingProofBinding { .. } => false,
-            Self::Deployment(source) => source.is_recoverable(),
+            Self::Signature(_) | Self::ProgramIdMismatch { .. } => false,
             Self::Window(source) => source.is_recoverable(),
-            Self::Watermark(source) => source.is_recoverable(),
             Self::Snapshot(source) => source.is_recoverable(),
             Self::Pause(source) => source.is_recoverable(),
+            Self::Watermark(source) => source.is_recoverable(),
             Self::EncryptedStore { source, .. } => source.is_recoverable(),
+            Self::Scope { .. } => false,
             Self::ProofRead(source) => source.is_recoverable(),
             Self::HandleBinding { source, .. } => source.is_recoverable(),
-            Self::Scope { source, .. } => source.is_recoverable(),
             Self::Delegation { source, .. } => source.is_recoverable(),
-        }
-    }
-}
-
-impl DeploymentFailure {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::ProgramIdMismatch { .. } | Self::ChainIdMismatch { .. } => false,
         }
     }
 }
 
 impl WindowFailure {
     pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::NotYetValid { .. } => true,
-            Self::Expired { .. } => false,
-        }
+        matches!(self, Self::NotYetValid { .. })
     }
 }
 
 impl WatermarkFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
+            Self::Snapshot(source) => source.is_recoverable(),
             Self::Invalidated { .. }
             | Self::NotAnInvalidationRecord { .. }
             | Self::RecordNamesAnotherUser { .. }
             | Self::ForeignOwner { .. } => false,
-            Self::Snapshot(source) => source.is_recoverable(),
         }
     }
 }
 
 impl SnapshotError {
+    /// A missing key is a key-planning bug; every other failure is the node's.
     pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::Unavailable { .. }
-            | Self::ResponseLengthMismatch { .. }
-            | Self::DecidingReadOlderThanDiscovery { .. } => true,
-            Self::KeyNotInSnapshot { .. } => false,
-        }
+        !matches!(self, Self::KeyNotInSnapshot { .. })
     }
 }
 
@@ -147,6 +103,7 @@ impl PauseFailure {
 }
 
 impl EncryptedStoreFailure {
+    /// An absent store may not have reached the observed commitment yet.
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::Absent { .. } => true,
@@ -170,6 +127,7 @@ impl ProofReadError {
 }
 
 impl HandleBindingFailure {
+    /// A proof record that is behind the chain, or does not know the store yet, may catch up.
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::ProofRecordBehind { .. }
@@ -177,14 +135,6 @@ impl HandleBindingFailure {
             | Self::LeafIndexOutOfRange { .. }
             | Self::ProofDoesNotVerify { .. } => true,
             Self::NoLeaf { .. } | Self::HistoryIncomplete | Self::MmrStateInconsistent => false,
-        }
-    }
-}
-
-impl ScopeFailure {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::ScopeNotAllowed { .. } => false,
         }
     }
 }

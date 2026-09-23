@@ -1,12 +1,13 @@
-//! Confirmed host account reads for authorization.
+//! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot.
 //!
-//! The first read checks pause and discovers encrypted-store authorities. Direct requests
-//! authorize against that snapshot. Delegated requests then read the same accounts (except
-//! the already-checked host config) together with the derived delegation PDAs. All remaining
-//! checks use this second snapshot, whose slot must not precede the discovery slot.
-//! Proofs are fetched separately and verified against the deciding snapshot's MMR peaks.
+//! The first read covers the host config, the signer's invalidation record and the named
+//! encrypted stores. A delegated request then reads the same accounts, minus the already-checked
+//! host config, plus the delegation records the first read made derivable. Every rule after the
+//! pause switch uses that second read, which must not be older than the first.
 
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use super::watermark::permit_invalidation_address;
+use crate::core::solana_acl::{SolanaPubkeyBytes, host_config_address};
+use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
@@ -21,48 +22,28 @@ use std::{
 use tokio::sync::Semaphore;
 use url::Url;
 
-/// The System program's id, which is the all-zero pubkey. The owner every account has before a
-/// program takes it over, and the one this module reads as "nothing has been written here yet".
+/// The System program's id: the owner of an account no program has taken over.
 pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
 
-/// One account as the snapshot saw it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnapshotAccount {
-    /// The owning program.
     pub owner: SolanaPubkeyBytes,
-    /// The account data, verbatim — including any bytes beyond the decoded body, which are
-    /// legal for a realloc-grown account.
     pub data: Vec<u8>,
 }
 
 impl SnapshotAccount {
-    /// Whether this is an address the host program has never written to, despite an account
-    /// existing there: System-program-owned and empty.
-    ///
-    /// Every PDA address in this path is derivable by anyone, and a bare transfer to one creates
-    /// exactly this account. So an account in this state carries no claim about host state — the
-    /// only party who could have put data there is the program, and it has not.
-    ///
-    /// The host program applies the same rule when it reads an invalidation record it may have to
-    /// create. It additionally refuses the System-owned-and-empty-but-executable combination; that
-    /// is unreachable rather than unchecked here, because an executable account is owned by a
-    /// loader and carries its program's bytes, and turning a PDA back into an empty System-owned
-    /// account needs the PDA's own signature, which only its program can produce.
+    /// System-owned and empty: what a bare transfer to a derivable address leaves. Such an account
+    /// says nothing about host state.
     pub fn is_uninitialized_pda(&self) -> bool {
         self.owner == SYSTEM_PROGRAM_ID && self.data.is_empty()
     }
 }
 
-/// An ordered, duplicate-free set of account keys to read.
-///
-/// Ordering is fixed so a response can be zipped back onto its request positionally, and
-/// duplicates are collapsed so a request naming the same handle twice costs one account
-/// read rather than two.
+/// Account keys in read order, without repeats.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct SnapshotKeys(Vec<SolanaPubkeyBytes>);
 
 impl SnapshotKeys {
-    /// Collects keys, preserving first-seen order and dropping repeats.
     pub fn new(keys: impl IntoIterator<Item = SolanaPubkeyBytes>) -> Self {
         let mut seen = BTreeSet::new();
         let mut ordered = Vec::new();
@@ -74,33 +55,23 @@ impl SnapshotKeys {
         Self(ordered)
     }
 
-    /// The keys, in read order.
     pub fn as_slice(&self) -> &[SolanaPubkeyBytes] {
         &self.0
     }
 
-    /// Whether this set contains `key`.
     pub fn contains(&self, key: &SolanaPubkeyBytes) -> bool {
         self.0.contains(key)
     }
 
-    /// How many accounts will be read.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Whether there is nothing to read.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 }
 
-/// Host state at one observation point.
-///
-/// Every authorization check takes this by reference and has no other access to state. An
-/// account that does not exist is present as an explicit absence rather than missing from
-/// the map, so "we never asked for this key" and "this account does not exist" cannot be
-/// confused — the first is a bug in key planning, the second is rule h1.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct HostSnapshot {
     observed_slot: u64,
@@ -108,7 +79,6 @@ pub struct HostSnapshot {
 }
 
 impl HostSnapshot {
-    /// Assembles a snapshot from a read: `accounts` positionally matches `keys`.
     pub fn new(
         observed_slot: u64,
         keys: &SnapshotKeys,
@@ -126,16 +96,12 @@ impl HostSnapshot {
         })
     }
 
-    /// The slot this state was observed at. The one clock-like value in authorization, and
-    /// it comes from the response rather than from any local notion of time.
     pub fn observed_slot(&self) -> u64 {
         self.observed_slot
     }
 
-    /// The account at `key`, or `None` if it does not exist.
-    ///
-    /// Fails if `key` was never read: that is a key-planning bug, and answering "absent"
-    /// would turn it into a silent transient rejection.
+    /// An absent account is `Ok(None)`; a key that was never read is an error, so a key-planning
+    /// bug cannot pass as a missing account.
     pub fn account(
         &self,
         key: &SolanaPubkeyBytes,
@@ -146,20 +112,12 @@ impl HostSnapshot {
         }
     }
 
-    /// The keys this snapshot covers, in sorted order.
     pub fn keys(&self) -> Vec<SolanaPubkeyBytes> {
         self.accounts.keys().copied().collect()
     }
 
-    /// Takes this read as the deciding observation, given the discovery read that preceded it.
-    ///
-    /// The only condition is order: a deciding read older than the discovery read is a node that
-    /// has fallen behind rather than a later view of the chain, and judging a request on it would
-    /// terminally reject grants the discovery read already saw. Advancing is fine and expected;
-    /// no value of either read is compared.
-    ///
-    /// Consuming `self` is the point: the deciding snapshot is obtained by passing this gate, so
-    /// the sequence cannot be assembled without stating which read decides.
+    /// Takes this read as the deciding one. A read older than the discovery read comes from a
+    /// node that fell behind, and would reject grants the discovery read already saw.
     pub fn deciding_after(self, discovery: &HostSnapshot) -> Result<Self, SnapshotError> {
         if self.observed_slot < discovery.observed_slot() {
             return Err(SnapshotError::DecidingReadOlderThanDiscovery {
@@ -171,40 +129,21 @@ impl HostSnapshot {
     }
 }
 
-/// The single reader abstraction of the authorization path.
-///
-/// Authorization is generic over it, which is what lets a test drive the whole pipeline
-/// against canned state and count the reads. Production has exactly one implementation
-/// ([`SolanaRpcClient`]); nothing else in this module tree performs I/O.
 pub trait HostStateReader: Send + Sync {
-    /// Reads every key at `confirmed` commitment, returning one observed slot.
     fn read_accounts(
         &self,
         keys: &SnapshotKeys,
     ) -> impl Future<Output = Result<HostSnapshot, SnapshotError>> + Send;
 }
 
-/// Plans the first read: the deployment's config singleton, the invalidation record of the request
-/// signer, and one encrypted store per entry.
-///
-/// Pure, and total over any validated request: every key here is derivable from the request and the
-/// deployment alone. There is no scan in the authorization path, so the plan is the complete set of
-/// accounts the direct branch will ever look at.
-///
-/// The config singleton is one key however many entries a request names — it is the deployment's,
-/// not the request's — which is what lets the pause switch be read without a round trip of its own.
 pub fn plan_first_read(
-    request: &connector_utils::types::solana_request::SolanaUserDecryptRequest,
-    deployment: &super::deployment::DeploymentIdentity,
+    request: &SolanaUserDecryptionRequestV1,
+    program_id: SolanaPubkeyBytes,
 ) -> SnapshotKeys {
-    let program_id = deployment.program_id();
     let signer = *request.permit().user_pubkey().as_bytes();
-    let (host_config_key, _) = crate::core::solana_acl::host_config_address(program_id);
-    let (watermark_key, _) = super::watermark::permit_invalidation_address(program_id, signer);
-    let encrypted_stores = request
-        .handles()
-        .iter()
-        .map(|entry| entry.encrypted_store());
+    let (host_config_key, _) = host_config_address(program_id);
+    let (watermark_key, _) = permit_invalidation_address(program_id, signer);
+    let encrypted_stores = request.handles().iter().map(|entry| entry.encrypted_store);
     SnapshotKeys::new(
         [host_config_key, watermark_key]
             .into_iter()
@@ -212,27 +151,12 @@ pub fn plan_first_read(
     )
 }
 
-/// Plans the second read: the first read's key set minus the config singleton, plus the delegation
-/// records whose addresses the discovery read has just made computable.
-///
-/// The first set is carried over because the second read is the one every rule is evaluated
-/// against, so it has to hold the encrypted stores and the invalidation record too — not in
-/// order to compare the two reads, which this path deliberately does not do (see the module
-/// documentation). Starting from `first` is what makes the coverage a property of this function
-/// rather than a discipline of its callers.
-///
-/// The one key dropped is the config singleton, and it is dropped because it is already spent: the
-/// pause switch is decided on the first read ([`super::pause`]), which is the only rule that does
-/// not wait for the deciding observation. Carrying it anyway would cost the read an account it no
-/// longer uses, and the worst-case delegated request — three accounts per entry plus the signer's
-/// invalidation record — is sized to saturate the RPC's hundred-account limit exactly.
 pub fn plan_second_read(
     first: &SnapshotKeys,
-    deployment: &super::deployment::DeploymentIdentity,
+    program_id: SolanaPubkeyBytes,
     delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
 ) -> SnapshotKeys {
-    let (host_config_key, _) =
-        crate::core::solana_acl::host_config_address(deployment.program_id());
+    let (host_config_key, _) = host_config_address(program_id);
     SnapshotKeys::new(
         first
             .as_slice()
@@ -243,12 +167,11 @@ pub fn plan_second_read(
     )
 }
 
-/// Confirmed account reads through the asynchronous Solana RPC client.
 #[derive(Clone)]
 pub struct SolanaRpcClient {
     client: Arc<RpcClient>,
-    timeout: Duration,
     permits: Arc<Semaphore>,
+    timeout: Duration,
 }
 
 impl std::fmt::Debug for SolanaRpcClient {
@@ -267,8 +190,8 @@ impl SolanaRpcClient {
                 timeout,
                 CommitmentConfig::confirmed(),
             )),
-            timeout,
             permits: Arc::new(Semaphore::new(max_concurrent_calls.get())),
+            timeout,
         }
     }
 }
@@ -281,38 +204,34 @@ impl HostStateReader for SolanaRpcClient {
             .copied()
             .map(Pubkey::new_from_array)
             .collect();
-        // The UI-account method preserves malformed data as an error below, rather than
-        // collapsing a failed decode into a missing account (or panicking inside the SDK).
-        let response = tokio::time::timeout(self.timeout, async {
-            let _permit = self
-                .permits
-                .acquire()
-                .await
-                .expect("Solana RPC semaphore closed");
-            self.client
-                .get_multiple_ui_accounts_with_config(
-                    &pubkeys,
-                    RpcAccountInfoConfig {
-                        encoding: Some(UiAccountEncoding::Base64),
-                        commitment: Some(CommitmentConfig::confirmed()),
-                        ..Default::default()
-                    },
-                )
-                .await
-        })
-        .await
-        .map_err(|error| SnapshotError::Unavailable {
-            reason: format!("Solana account read timed out: {error}"),
-        })?
-        .map_err(|error| SnapshotError::Unavailable {
-            reason: error.to_string(),
-        })?;
-        if response.value.len() != keys.len() {
-            return Err(SnapshotError::ResponseLengthMismatch {
-                requested: keys.len(),
-                returned: response.value.len(),
-            });
-        }
+        // As for EVM host RPC, waiting for a concurrency permit does not count against the call
+        // timeout. The SDK retries a throttled call internally, so the deadline wraps the retries
+        // rather than being the HTTP client's alone.
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|error| SnapshotError::Unavailable {
+                reason: error.to_string(),
+            })?;
+        let call = self.client.get_multiple_ui_accounts_with_config(
+            &pubkeys,
+            RpcAccountInfoConfig {
+                encoding: Some(UiAccountEncoding::Base64),
+                commitment: Some(CommitmentConfig::confirmed()),
+                ..Default::default()
+            },
+        );
+        let response = tokio::time::timeout(self.timeout, call)
+            .await
+            .map_err(|_| SnapshotError::Unavailable {
+                reason: format!("Solana account read timed out after {:?}", self.timeout),
+            })?
+            .map_err(|error| SnapshotError::Unavailable {
+                reason: error.to_string(),
+            })?;
+        // The UI-account method reports undecodable data as an error instead of as a missing
+        // account.
         let accounts = response
             .value
             .into_iter()
@@ -348,43 +267,19 @@ impl HostStateReader for SolanaRpcClient {
     }
 }
 
-/// Why a snapshot could not be taken.
-///
-/// There is no variant for "the two reads disagreed": the rules are evaluated against the last
-/// read alone, so two reads are never compared and never combined. The one thing asked of the
-/// pair is their order, and that is the variant below.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum SnapshotError {
-    /// The RPC could not be reached, or answered with an error or an unparsable body.
     #[error("host state read failed: {reason}")]
-    Unavailable {
-        /// What went wrong, for the log.
-        reason: String,
-    },
-    /// The response did not carry one entry per requested key.
+    Unavailable { reason: String },
     #[error("host state read returned {returned} accounts for {requested} keys")]
-    ResponseLengthMismatch {
-        /// Keys requested.
-        requested: usize,
-        /// Accounts returned.
-        returned: usize,
-    },
-    /// A check asked for an account that was never planned. A bug in key planning, not a
-    /// property of chain state.
+    ResponseLengthMismatch { requested: usize, returned: usize },
     #[error("account {key:?} was never read")]
-    KeyNotInSnapshot {
-        /// The key that was asked for.
-        key: SolanaPubkeyBytes,
-    },
-    /// The deciding read observed an earlier slot than the discovery read that preceded it, so it
-    /// is a node that has fallen behind rather than a later state.
+    KeyNotInSnapshot { key: SolanaPubkeyBytes },
     #[error(
         "the deciding read observed slot {deciding_slot}, older than the discovery read's {discovery_slot}"
     )]
     DecidingReadOlderThanDiscovery {
-        /// Where the discovery read landed.
         discovery_slot: u64,
-        /// Where the deciding read landed.
         deciding_slot: u64,
     },
 }

@@ -24,7 +24,7 @@
 //! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
-use connector_utils::types::solana_request::SolanaUserDecryptRequest;
+use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 
 mod solana_support;
 
@@ -33,27 +33,24 @@ use kms_worker::core::solana::{
     encrypted_store::EncryptedStoreFailure,
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    pipeline::AuthorizationContext,
+    pipeline::authorize_request,
     snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
+use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
+use zama_solana_acl::WILDCARD_AUTHORITY;
 
 const OBSERVED_SLOT: u64 = 500;
 
 /// Authorizes a request against a world, returning the outcome and how many reads it cost.
 async fn authorize_in(
     world: World,
-    request: &SolanaUserDecryptRequest,
+    request: &SolanaUserDecryptionRequestV1,
 ) -> (Result<(), AuthorizationFailure>, usize) {
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
-    let context = AuthorizationContext {
-        deployment: &deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    };
-    let outcome = authorize(&reader, &ServableKmsContext, &proofs, context, request).await;
+    let context = CONTEXT;
+    let outcome = authorize_request(&reader, &proofs, context, request).await;
     (outcome, reader.call_count())
 }
 

@@ -1,160 +1,95 @@
-//! Solana public-decryption authorization, and the per-host handle both Solana paths read through.
-//!
-//! Public-ness has no live on-chain flag: it is a `PublicDecryptLeaf` sealed in the encrypted
-//! state's MMR, and the state holds only the peaks. The check here is the user-decrypt
-//! pipeline's last three steps on their own — read the account, fetch the leaf proof from the
-//! coprocessors' record, verify it against the account's peaks — with the same readers, the same
-//! resolution rule and the same binding rule. The one thing the request supplies is which
-//! state whose history contains the handle, carried in the version-`0x04` `extraData` blob.
-//!
-//! The external suite `kms-worker/tests/solana_public_decrypt_carrier.rs` pins the carrier and the
-//! whole path from outside the modules that make it up.
+//! Solana public decryption authorization: a handle is public when a public-decrypt leaf for it
+//! is proven against its encrypted store, named by the version-4 `extraData`.
 
 use crate::core::{
-    event_processor::{RequestCheckError, RequestCheckKind},
+    event_processor::RequestCheckError,
     solana::{
-        deployment::DeploymentIdentity,
         encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store},
         handle_binding::{
             HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
         },
-        proof::{
-            CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, ProofBatch,
-            ProofReadError,
-        },
+        proof::{CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, ProofReadError},
         snapshot::{HostStateReader, SnapshotError, SnapshotKeys, SolanaRpcClient},
     },
-    solana_acl::HandleBytes,
+    solana_acl::{HandleBytes, SolanaPubkeyBytes},
 };
-use anyhow::anyhow;
 use connector_utils::types::solana_extra_data::parse_solana_public_decrypt_extra_data;
-use kms_connector_api::ErrorCode;
 
-/// Per-chain Solana host: the deployment identity authorization is decided against, the
-/// `confirmed`-commitment account reader, and the leaf-proof reader over the coprocessors. Both
-/// Solana paths — user decrypt and public decrypt — go through these three and nothing else.
+/// The readers both Solana decryption paths authorize through, for one host chain.
 #[derive(Clone, Debug)]
 pub struct SolanaHost {
-    /// Which program and cluster this Connector authorizes against.
-    pub deployment: DeploymentIdentity,
-    /// The atomic `getMultipleAccounts` snapshot reader.
+    pub program_id: SolanaPubkeyBytes,
     pub reader: SolanaRpcClient,
-    /// The leaf-proof reader, fanning out to every configured coprocessor.
     pub proofs: CoprocessorProofClient,
 }
 
-/// The public-decrypt check as the event processor calls it.
 pub async fn check_solana_handles_public_decrypt(
     host: &SolanaHost,
     handles: &[HandleBytes],
     extra_data: &[u8],
 ) -> Result<(), RequestCheckError> {
     check_public_decrypt(
-        &host.deployment,
+        host.program_id,
         &host.reader,
         &host.proofs,
         handles,
         extra_data,
     )
     .await
-    .map_err(|failure| {
-        let message = anyhow!("Solana public-decryption authorization failed: {failure}");
-        match failure.is_recoverable() {
-            false => RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::Unprocessable,
-                message,
-            ),
-            true => RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::UpstreamTransient,
-                message,
-            ),
-        }
-    })
+    .map_err(Into::into)
 }
 
-/// Authorizes one public decryption, or says why not.
-///
-/// Generic over the two readers for the same reason the user-decrypt pipeline is: a test drives
-/// the whole path against canned state and canned proofs, and counts the reads.
-pub async fn check_public_decrypt<R, P>(
-    deployment: &DeploymentIdentity,
-    reader: &R,
-    proofs: &P,
+pub async fn check_public_decrypt(
+    program_id: SolanaPubkeyBytes,
+    reader: &impl HostStateReader,
+    proofs: &impl HostProofReader,
     handles: &[HandleBytes],
     extra_data: &[u8],
-) -> Result<(), PublicDecryptFailure>
-where
-    R: HostStateReader,
-    P: HostProofReader,
-{
-    // A `PublicDecryptLeaf` names one handle, and the carrier names one account: one handle per
-    // request.
-    let handle = match handles {
-        [single] => *single,
-        other => {
-            return Err(PublicDecryptFailure::NotSingleHandle {
-                handles: other.len(),
-            });
-        }
+) -> Result<(), PublicDecryptFailure> {
+    // A public-decrypt leaf names one handle, and the extra data names one store.
+    let [handle] = *handles else {
+        return Err(PublicDecryptFailure::NotSingleHandle {
+            handles: handles.len(),
+        });
     };
     let extra = parse_solana_public_decrypt_extra_data(extra_data)
         .ok_or(PublicDecryptFailure::MalformedExtraData)?;
-
-    let program_id = deployment.program_id();
-    let keys = SnapshotKeys::new([extra.encrypted_store]);
-    let observation = reader.read_accounts(&keys).await?;
-    let encrypted_store = resolve_encrypted_store(&observation, program_id, extra.encrypted_store)?;
-
-    let batch = ProofBatch::new([(
-        LeafQuery {
-            encrypted_store: encrypted_store.account_key(),
-            handle,
-            kind: LeafKind::Public,
-        },
-        (&encrypted_store, handle),
-    )]);
-    let bindings = verify_proofs_with_one_retry(proofs, &batch, |(account, handle), outcome| {
-        check_public_binding(account, *handle, outcome)
+    let observation = reader
+        .read_accounts(&SnapshotKeys::new([extra.encrypted_store]))
+        .await?;
+    let store = resolve_encrypted_store(&observation, program_id, extra.encrypted_store)?;
+    let query = LeafQuery {
+        encrypted_store: store.account_key(),
+        handle,
+        kind: LeafKind::Public,
+    };
+    verify_proofs_with_one_retry(proofs, &[(query, ())], |_, outcome| {
+        check_public_binding(&store, handle, outcome)
     })
-    .await?;
-    bindings[0].clone()?;
+    .await?
+    .into_iter()
+    .try_for_each(|binding| binding)?;
     Ok(())
 }
 
 /// Why a public decryption was not authorized.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum PublicDecryptFailure {
-    /// The request named a number of handles other than one.
     #[error("Solana public decryption authorizes exactly one handle per request, got {handles}")]
-    NotSingleHandle {
-        /// How many arrived.
-        handles: usize,
-    },
-    /// The `extraData` is not the version-4 carrier naming the encrypted store.
-    #[error(
-        "Solana public decryption requires the version-4 extraData naming the handle's encrypted \
-         state"
-    )]
+    NotSingleHandle { handles: usize },
+    #[error("Solana public decryption requires the version-4 extraData naming the store")]
     MalformedExtraData,
-    /// The account could not be observed.
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    /// The named account is not a valid encrypted store.
     #[error("encrypted store: {0}")]
     EncryptedStore(#[from] EncryptedStoreFailure),
-    /// The leaf record could not be read at all.
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),
-    /// No public-decrypt leaf binds the handle.
     #[error("handle binding: {0}")]
     HandleBinding(#[from] HandleBindingFailure),
 }
 
 impl PublicDecryptFailure {
-    /// Which action the failure implies, delegating to the taxonomy that produced it; the two
-    /// local variants describe a request that is wrong forever.
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::NotSingleHandle { .. } | Self::MalformedExtraData => false,

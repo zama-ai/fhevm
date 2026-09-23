@@ -7,7 +7,10 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEvent, ProtocolEventKind,
-        db::{ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
+        db::{
+            ParamsTypeDb, RequestSource, insert_solana_user_decryption, invalidate_kms_context,
+            invalidate_kms_epoch,
+        },
     },
 };
 // Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
@@ -96,15 +99,9 @@ async fn publish_event_inner<'e>(
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::SolanaUserDecryptionV1(e) => {
-            connector_utils::types::db::insert_solana_user_decryption(
-                executor,
-                &e,
-                tx_hash,
-                created_at,
-                &otlp_ctx,
-                connector_utils::types::db::RequestSource::OnChain,
-            )
-            .await
+            let source = RequestSource::OnChain;
+            insert_solana_user_decryption(executor, &e, tx_hash, created_at, &otlp_ctx, source)
+                .await
         }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -247,9 +244,9 @@ async fn publish_user_decryption_v2<'e>(
         "INSERT INTO user_decryption_requests(
             decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
             created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
-            allowed_contracts, start_timestamp, duration_seconds, signature, attestation_type
+            allowed_contracts, start_timestamp, duration_seconds, signature
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'eip712-unified-user-decrypt-v1')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT DO NOTHING",
         request.decryptionId.as_le_slice(),
         &ct_handles,

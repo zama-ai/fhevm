@@ -1,243 +1,191 @@
-//! Typed Solana user-decrypt data shared by ingress, persistence, and authorization.
+//! Solana user decryption: an sRFC-38 permit, its ed25519 signature, and the handles it is used
+//! for. Built by the Gateway listener, the HTTP endpoint and the row reader, authorized by the
+//! worker.
 
 use crate::types::handle::extract_chain_id_from_handle;
 use alloy::primitives::{B256, U256};
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
-use zama_solana_permit::{PermitFields, Signature};
+use zama_solana_permit::{PermitFields, SIGNATURE_LEN, Signature};
 
+pub use zama_solana_permit::PermitWireFields;
 pub use zama_solana_request::{
     MAX_REQUEST_HANDLES, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
 };
 
-/// One validated handle entry.
-#[derive(Clone, PartialEq, Eq, Debug)]
+/// One handle and the unsigned claims that authorize it: the key whose allow leaf covers the
+/// handle (the signer, or a delegator), and the encrypted store holding that leaf.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SolanaHandleEntry {
-    handle: [u8; 32],
-    allowed_key: [u8; 32],
-    encrypted_store: [u8; 32],
+    pub handle: [u8; 32],
+    pub allowed_key: [u8; 32],
+    pub encrypted_store: [u8; 32],
 }
 
-impl SolanaHandleEntry {
-    /// The exact handle this entry names. Never resolved to whatever is currently live.
-    pub fn handle(&self) -> [u8; 32] {
-        self.handle
-    }
-
-    /// The key whose allow leaf on the handle authorizes this entry. It selects the direct or
-    /// delegated branch — equal to the requester in the first, the delegator in the second — and
-    /// in both it is the key the leaf must name.
-    pub fn allowed_key(&self) -> [u8; 32] {
-        self.allowed_key
-    }
-
-    /// The encrypted store this entry qualifies under, as named by the request. Read
-    /// and validated before anything is taken from it.
-    pub fn encrypted_store(&self) -> [u8; 32] {
-        self.encrypted_store
-    }
-}
-
-/// A request whose typed form has been validated: identity widths, the permit's own typed
-/// rules, and a non-empty handle list.
+/// A Solana user decryption request whose fields have their typed form: a decoded permit, a
+/// 64-byte signature, and 1 to [`MAX_REQUEST_HANDLES`] handles of the permit's chain.
 ///
-/// No public constructor: [`SolanaUserDecryptRequest::decode`] is the only way in.
+/// The signature is not verified here: the worker verifies it on every attempt.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct SolanaUserDecryptRequest {
+pub struct SolanaUserDecryptionRequestV1 {
+    pub decryption_id: U256,
     permit: PermitFields,
     signature: Signature,
     handles: Vec<SolanaHandleEntry>,
 }
 
-impl SolanaUserDecryptRequest {
-    /// Strictly decodes the transport form.
-    ///
-    /// Covers the permit's own typed rules (delegated to the permit crate, so the Connector
-    /// cannot be softer or stricter than any other verifier), the widths of the entry
-    /// identities, and a non-empty handle list.
-    ///
-    /// What it deliberately does not do: verify the signature, or look at any clock or
-    /// account. Those are the authorization layer.
-    ///
-    pub fn decode(wire: &SolanaUserDecryptRequestWire) -> Result<Self, RequestFormError> {
+impl SolanaUserDecryptionRequestV1 {
+    pub fn new(
+        decryption_id: U256,
+        wire: &SolanaUserDecryptRequestWire,
+    ) -> Result<Self, RequestFormError> {
         let permit = PermitFields::decode(&wire.permit)?;
-        let signature: [u8; zama_solana_permit::SIGNATURE_LEN] = wire
+        let signature: [u8; SIGNATURE_LEN] = wire
             .signature
             .as_slice()
             .try_into()
-            .map_err(|_| RequestFormError::SignatureWidth {
-                len: wire.signature.len(),
-            })?;
-        if wire.handles.is_empty() {
-            return Err(RequestFormError::EmptyHandles);
-        }
-        if wire.handles.len() > MAX_REQUEST_HANDLES {
-            return Err(RequestFormError::TooManyHandles {
-                handles: wire.handles.len(),
-            });
+            .map_err(|_| RequestFormError::SignatureWidth(wire.signature.len()))?;
+        if !(1..=MAX_REQUEST_HANDLES).contains(&wire.handles.len()) {
+            return Err(RequestFormError::HandleCount(wire.handles.len()));
         }
         let handles = wire
             .handles
             .iter()
             .enumerate()
-            .map(|(index, entry)| decode_entry(index, entry))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let first_chain = extract_chain_id_from_handle(&B256::from(handles[0].handle))
-            .map_err(|e| RequestFormError::Handle(e.to_string()))?;
-        for (index, entry) in handles.iter().enumerate().skip(1) {
-            let found = extract_chain_id_from_handle(&B256::from(entry.handle))
+            .map(|(index, entry)| {
+                let field = |bytes: &[u8]| {
+                    <[u8; 32]>::try_from(bytes).map_err(|_| RequestFormError::EntryWidth(index))
+                };
+                Ok(SolanaHandleEntry {
+                    handle: field(&entry.handle)?,
+                    allowed_key: field(&entry.allowed_key)?,
+                    encrypted_store: field(&entry.encrypted_store)?,
+                })
+            })
+            .collect::<Result<Vec<_>, RequestFormError>>()?;
+        for entry in &handles {
+            let chain_id = extract_chain_id_from_handle(&B256::from(entry.handle))
                 .map_err(|e| RequestFormError::Handle(e.to_string()))?;
-            if found != first_chain {
-                return Err(RequestFormError::MixedEmbeddedChainIds {
-                    index,
-                    found,
-                    expected: first_chain,
+            if chain_id != permit.chain_id() {
+                return Err(RequestFormError::ChainId {
+                    permit: permit.chain_id(),
+                    handle: chain_id,
                 });
             }
         }
-        if first_chain != permit.chain_id() {
-            return Err(RequestFormError::ChainId {
-                declared: permit.chain_id(),
-                handle: first_chain,
-            });
-        }
         Ok(Self {
+            decryption_id,
             permit,
             signature: Signature::new(signature),
             handles,
         })
     }
 
-    /// The validated permit.
     pub fn permit(&self) -> &PermitFields {
         &self.permit
     }
 
-    /// The signature over the reconstructed envelope.
     pub fn signature(&self) -> &Signature {
         &self.signature
     }
 
-    /// The handle entries, in request order. Order and count are preserved verbatim:
-    /// duplicates are legal and each occurrence is authorized independently.
+    /// In request order; duplicates are kept and each one is authorized.
     pub fn handles(&self) -> &[SolanaHandleEntry] {
         &self.handles
     }
+
+    pub fn ct_handles(&self) -> Vec<B256> {
+        self.handles.iter().map(|e| B256::from(e.handle)).collect()
+    }
+
+    pub fn extra_data(&self) -> Vec<u8> {
+        self.permit.extra_data().to_extra_data()
+    }
 }
 
-/// Validates one entry's identities.
-fn decode_entry(
-    index: usize,
-    entry: &SolanaHandleEntryWire,
-) -> Result<SolanaHandleEntry, RequestFormError> {
-    Ok(SolanaHandleEntry {
-        handle: entry_identity(index, EntryField::Handle, &entry.handle)?,
-        allowed_key: entry_identity(index, EntryField::AllowedKey, &entry.allowed_key)?,
-        encrypted_store: entry_identity(index, EntryField::EncryptedStore, &entry.encrypted_store)?,
-    })
-}
-
-/// One 32-byte identity, named by its field so a wrong width says which one.
-fn entry_identity(
-    index: usize,
-    field: EntryField,
-    bytes: &[u8],
-) -> Result<[u8; 32], RequestFormError> {
-    bytes
-        .try_into()
-        .map_err(|_| RequestFormError::EntryIdentityWidth {
-            index,
-            field,
-            len: bytes.len(),
-        })
-}
-
-/// Why a request's typed form was rejected.
-#[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
-pub enum RequestFormError {
-    #[error("invalid handle: {0}")]
-    Handle(String),
-    #[error("signed chain id {declared} does not match handle chain id {handle}")]
-    ChainId { declared: u64, handle: u64 },
-    #[error("handle {index} embeds chain id {found}, an earlier handle embeds {expected}")]
-    MixedEmbeddedChainIds {
-        index: usize,
-        found: u64,
-        expected: u64,
-    },
-    /// A permit field violated its own typed rule.
-    #[error("permit field: {0}")]
-    Permit(#[from] zama_solana_permit::PermitError),
-    /// The signature was not 64 bytes.
-    #[error("signature is {len} bytes, expected 64")]
-    SignatureWidth {
-        /// The width that arrived.
-        len: usize,
-    },
-    /// An entry identity was not 32 bytes.
-    #[error("entry {index} field {field:?} is {len} bytes, expected 32")]
-    EntryIdentityWidth {
-        /// Which entry.
-        index: usize,
-        /// Which field of it.
-        field: EntryField,
-        /// The width that arrived.
-        len: usize,
-    },
-    /// The handle list was empty.
-    #[error("request names no handles")]
-    EmptyHandles,
-    /// The handle list exceeds what one atomic account snapshot can cover.
-    #[error("request names {handles} handles, exceeding the {MAX_REQUEST_HANDLES}-handle cap")]
-    TooManyHandles {
-        /// The count that arrived.
-        handles: usize,
-    },
-}
-
-/// Which field of a handle entry carried a wrong width.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EntryField {
-    /// The ciphertext handle.
-    Handle,
-    /// The key whose allow leaf authorizes the entry.
-    AllowedKey,
-    /// The encrypted store address.
-    EncryptedStore,
-}
-
-/// The connector request ID and the validated Solana attestation body.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SolanaUserDecryptionRequestV1 {
-    pub decryption_id: U256,
-    pub request: SolanaUserDecryptRequest,
-}
-
+/// The Gateway budgets and charges the event's cleartext handles, transport key, window and
+/// extra data, so those are the values stored. The worker verifies the signature over them.
 impl TryFrom<UserDecryptionRequest_4> for SolanaUserDecryptionRequestV1 {
     type Error = anyhow::Error;
 
     fn try_from(event: UserDecryptionRequest_4) -> anyhow::Result<Self> {
-        let wire = zama_solana_request::decode_solana_request(&event.solanaRequest)?;
-        let request = SolanaUserDecryptRequest::decode(&wire)?;
-        let permit = request.permit();
-        let handles: Vec<_> = event.ctHandles.iter().map(|h| h.0).collect();
-        zama_solana_request::check_handle_list_parity(&handles, &wire)?;
+        let request = zama_solana_request::decode_solana_request(&event.solanaRequest)?;
         anyhow::ensure!(
-            event.publicKey.as_ref() == permit.transport_key().as_bytes(),
-            "event publicKey does not match the signed transport key"
+            request.handles.len() == event.ctHandles.len(),
+            "event names {} handles, its Solana request {}",
+            event.ctHandles.len(),
+            request.handles.len()
         );
-        anyhow::ensure!(
-            event.requestValidity.startTimestamp == U256::from(permit.start_timestamp())
-                && event.requestValidity.durationSeconds == U256::from(permit.duration_seconds()),
-            "event requestValidity does not match the signed window"
+        let wire = SolanaUserDecryptRequestWire {
+            permit: PermitWireFields {
+                transport_key: event.publicKey.to_vec(),
+                start_timestamp: event.requestValidity.startTimestamp.try_into()?,
+                duration_seconds: event.requestValidity.durationSeconds.try_into()?,
+                extra_data: event.extraData.to_vec(),
+                ..request.permit
+            },
+            signature: request.signature,
+            handles: event
+                .ctHandles
+                .iter()
+                .zip(request.handles)
+                .map(|(handle, entry)| SolanaHandleEntryWire {
+                    handle: handle.to_vec(),
+                    ..entry
+                })
+                .collect(),
+        };
+        Ok(Self::new(event.decryptionId, &wire)?)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
+pub enum RequestFormError {
+    #[error("permit: {0}")]
+    Permit(#[from] zama_solana_permit::PermitError),
+    #[error("signature is {0} bytes, expected {SIGNATURE_LEN}")]
+    SignatureWidth(usize),
+    #[error("request names {0} handles, expected 1 to {MAX_REQUEST_HANDLES}")]
+    HandleCount(usize),
+    #[error("handle entry {0} has a field that is not 32 bytes")]
+    EntryWidth(usize),
+    #[error("invalid handle: {0}")]
+    Handle(String),
+    #[error("permit chain id {permit} does not match handle chain id {handle}")]
+    ChainId { permit: u64, handle: u64 },
+}
+
+#[cfg(all(test, feature = "tests"))]
+mod tests {
+    use super::*;
+    use crate::tests::rand::solana_user_decryption_event;
+    use zama_solana_request::{decode_solana_request, encode_solana_request};
+
+    #[test]
+    fn gateway_cleartext_replaces_the_request_copies() {
+        let mut event = solana_user_decryption_event(U256::from(1), B256::ZERO);
+        let mut request = decode_solana_request(&event.solanaRequest).unwrap();
+        request.permit.start_timestamp -= 1;
+        request.permit.transport_key[0] ^= 1;
+        request.handles[0].handle = vec![0xff; 32];
+        event.solanaRequest = encode_solana_request(&request).unwrap().into();
+
+        let stored = SolanaUserDecryptionRequestV1::try_from(event.clone()).unwrap();
+        assert_eq!(stored.ct_handles(), event.ctHandles);
+        assert_eq!(
+            U256::from(stored.permit().start_timestamp()),
+            event.requestValidity.startTimestamp
         );
-        anyhow::ensure!(
-            event.extraData.as_ref() == permit.extra_data().to_extra_data(),
-            "event extraData does not match the signed KMS routing"
+        assert_eq!(
+            &stored.permit().transport_key().as_bytes()[..],
+            event.publicKey.as_ref()
         );
-        Ok(Self {
-            decryption_id: event.decryptionId,
-            request,
-        })
+        assert_eq!(stored.extra_data(), event.extraData.to_vec());
+    }
+
+    #[test]
+    fn rejects_an_event_whose_request_names_another_handle_count() {
+        let mut event = solana_user_decryption_event(U256::from(1), B256::ZERO);
+        event.ctHandles.push(event.ctHandles[0]);
+        assert!(SolanaUserDecryptionRequestV1::try_from(event).is_err());
     }
 }

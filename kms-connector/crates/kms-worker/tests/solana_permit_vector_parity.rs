@@ -9,9 +9,9 @@
 //! Connector that accidentally accepted a domain list in the wrong order, or fed the crate a
 //! truncated transport key, would be a second authority on what a permit is.
 //!
-//! So the set is run through [`SolanaUserDecryptRequest::decode`] and [`check_signature`] — the
-//! same two functions the pipeline calls — and every outcome is compared against the outcome the
-//! set declares, by rule name.
+//! So the set is run through [`SolanaUserDecryptionRequestV1::new`] and [`verify_signature`] —
+//! the same two functions every stored request and the pipeline go through — and every outcome is
+//! compared against the outcome the set declares, by rule name.
 //!
 //! The rule names are the cross-implementation contract, and this file writes the Connector's own
 //! mapping onto them. It is deliberately not shared with the generator's mapping: two independent
@@ -21,8 +21,10 @@
 //! minimal request with one synthetic entry. A control test runs the whole set a second time with
 //! a different synthetic entry and requires identical outcomes, so the wrapper cannot be quietly
 //! deciding anything.
+use alloy::primitives::U256;
 use connector_utils::types::solana_request::{
-    RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+    PermitWireFields, RequestFormError, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+    SolanaUserDecryptionRequestV1,
 };
 
 mod solana_support;
@@ -34,11 +36,10 @@ mod solana_support;
 #[path = "../../../../solana/test-fixtures/permit/permit_vectors.rs"]
 mod schema;
 
-use kms_worker::core::solana::{failure::AuthorizationFailure, pipeline::check_signature};
 use schema::{PERMIT_VECTOR_SCHEMA, PermitVector, PermitVectorFile, VectorResult, from_hex, rule};
 use solana_support::*;
 use std::collections::BTreeSet;
-use zama_solana_permit::{PermitError, PermitWireFields};
+use zama_solana_permit::{PermitError, verify_signature};
 
 /// The committed set, embedded at compile time: a renamed or deleted file is a build failure
 /// rather than a suite that quietly stops checking anything.
@@ -77,25 +78,19 @@ fn rule_name_of_form_error(error: &RequestFormError) -> Option<&'static str> {
         }),
         // Rules of the request layer rather than the permit layer. A permit vector that lands here
         // is either malformed or the Connector is rejecting it for the wrong reason.
-        RequestFormError::Handle(_)
-        | RequestFormError::MixedEmbeddedChainIds { .. }
-        | RequestFormError::ChainId { .. }
-        | RequestFormError::SignatureWidth { .. }
-        | RequestFormError::EntryIdentityWidth { .. }
-        | RequestFormError::EmptyHandles
-        | RequestFormError::TooManyHandles { .. } => None,
+        RequestFormError::SignatureWidth(_)
+        | RequestFormError::HandleCount(_)
+        | RequestFormError::EntryWidth(_)
+        | RequestFormError::Handle(_)
+        | RequestFormError::ChainId { .. } => None,
     }
 }
 
 /// The Connector's mapping for the signature rule.
-fn rule_name_of_signature_failure(failure: &AuthorizationFailure) -> Option<&'static str> {
-    match failure {
-        AuthorizationFailure::Signature(PermitError::SignatureMismatch) => {
-            Some(rule::SIGNATURE_MISMATCH)
-        }
-        AuthorizationFailure::Signature(PermitError::UnusableUserPubkey) => {
-            Some(rule::UNUSABLE_USER_PUBKEY)
-        }
+fn rule_name_of_signature_error(error: &PermitError) -> Option<&'static str> {
+    match error {
+        PermitError::SignatureMismatch => Some(rule::SIGNATURE_MISMATCH),
+        PermitError::UnusableUserPubkey => Some(rule::UNUSABLE_USER_PUBKEY),
         _ => None,
     }
 }
@@ -168,19 +163,19 @@ enum Outcome {
 
 /// Runs one record through the Connector's permit path.
 fn outcome_of(record: &PermitVector, file: &PermitVectorFile, wrapper: Wrapper) -> Outcome {
-    match SolanaUserDecryptRequest::decode(&wire_of(record, file, wrapper)) {
+    match SolanaUserDecryptionRequestV1::new(U256::from(1), &wire_of(record, file, wrapper)) {
         Err(error) => Outcome::Rejected(rule_name_of_form_error(&error).unwrap_or_else(|| {
             panic!(
                 "record '{}' was rejected by a rule outside the permit dictionary: {error}",
                 record.name
             )
         })),
-        Ok(request) => match check_signature(&request) {
+        Ok(request) => match verify_signature(request.permit(), request.signature()) {
             Ok(()) => Outcome::Accepted,
-            Err(failure) => {
-                Outcome::Rejected(rule_name_of_signature_failure(&failure).unwrap_or_else(|| {
+            Err(error) => {
+                Outcome::Rejected(rule_name_of_signature_error(&error).unwrap_or_else(|| {
                     panic!(
-                        "record '{}' failed the signature rule with an unrelated failure: {failure}",
+                        "record '{}' failed the signature rule with an unrelated error: {error}",
                         record.name
                     )
                 }))
@@ -347,8 +342,11 @@ fn typed_form_rules_are_decided_before_the_signature() {
         if !typed_form_rules.contains(&declared) {
             continue;
         }
-        let error = SolanaUserDecryptRequest::decode(&wire_of(record, &file, Wrapper::First))
-            .expect_err("a typed-form violation is refused by decoding alone");
+        let error = SolanaUserDecryptionRequestV1::new(
+            U256::from(1),
+            &wire_of(record, &file, Wrapper::First),
+        )
+        .expect_err("a typed-form violation is refused by decoding alone");
         assert_eq!(
             rule_name_of_form_error(&error),
             Some(declared),

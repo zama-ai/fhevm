@@ -26,7 +26,7 @@ use kms_worker::core::solana::{
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    pipeline::AuthorizationContext,
+    pipeline::authorize_request,
     scope::{ScopeFailure, check_scope},
     snapshot::{SnapshotAccount, SnapshotKeys},
 };
@@ -52,15 +52,6 @@ fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
         encrypted_store.account_key,
     )
     .expect("a well-formed encrypted store resolves")
-}
-
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -435,17 +426,10 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
     let proofs = ScriptedProofReader::unreachable();
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("one out-of-scope entry rejects the request");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("one out-of-scope entry rejects the request");
 
     assert!(
         matches!(
@@ -482,17 +466,10 @@ async fn a_permissive_permit_does_not_widen_the_allow_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize(
-        &reader,
-        &ServableKmsContext,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("permissive does not allow a key nobody allowed");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("permissive does not allow a key nobody allowed");
 
     assert!(
         matches!(

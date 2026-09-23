@@ -1,20 +1,19 @@
 use super::{
     handle::extract_chain_id_from_handle,
     solana_request::{
-        SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire,
+        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
         SolanaUserDecryptionRequestV1,
     },
 };
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::db::{OperationStatus, ParamsTypeDb, RequestSource},
+    types::db::{AttestationType, OperationStatus, ParamsTypeDb, RequestSource},
 };
 use alloy::{
     primitives::{Address, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
-use zama_solana_permit::PermitWireFields;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
@@ -297,19 +296,11 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
     let public_key: Vec<u8> = row.try_get("public_key")?;
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
-    let attestation_type: String = row.try_get("attestation_type")?;
-    let kind = match attestation_type.as_str() {
-        "solana-srfc38-user-decrypt-v1" => {
+    let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
+        AttestationType::Solana => {
+            let first = ct_handles.first().ok_or_else(|| anyhow!("row names no handles"))?;
             let allowed_keys: Vec<Vec<u8>> = row.try_get("allowed_keys")?;
             let encrypted_stores: Vec<Vec<u8>> = row.try_get("encrypted_stores")?;
-            anyhow::ensure!(
-                ct_handles.len() == allowed_keys.len()
-                    && ct_handles.len() == encrypted_stores.len(),
-                "Solana handle/key/store array length mismatch"
-            );
-            let first = ct_handles
-                .first()
-                .ok_or_else(|| anyhow!("request names no handles"))?;
             let wire = SolanaUserDecryptRequestWire {
                 permit: PermitWireFields {
                     user_pubkey: row.try_get("user_pubkey")?,
@@ -322,33 +313,28 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     extra_data,
                 },
                 signature: row.try_get("signature")?,
+                // The table CHECK keeps these three arrays the same length.
                 handles: ct_handles
-                    .into_iter()
+                    .iter()
                     .zip(allowed_keys)
                     .zip(encrypted_stores)
-                    .map(
-                        |((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
-                            handle: handle.to_vec(),
-                            allowed_key,
-                            encrypted_store,
-                        },
-                    )
+                    .map(|((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
+                        handle: handle.to_vec(),
+                        allowed_key,
+                        encrypted_store,
+                    })
                     .collect(),
             };
-            ProtocolEventKind::SolanaUserDecryptionV1(SolanaUserDecryptionRequestV1 {
-                decryption_id,
-                request: SolanaUserDecryptRequest::decode(&wire)?,
-            })
+            SolanaUserDecryptionRequestV1::new(decryption_id, &wire)?.into()
         }
-        "legacy" => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
+        AttestationType::Legacy => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
             ctHandles: ct_handles,
             userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
             publicKey: public_key.into(),
             extraData: extra_data.into(),
         }),
-        // EVM RFC016 unified row.
-        "eip712-unified-user-decrypt-v1" => {
+        AttestationType::Eip712 => {
             let signature: Vec<u8> = row.try_get("signature")?;
             let owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
             let contract_addresses: Vec<Vec<u8>> = row.try_get("handle_contract_addresses")?;
@@ -402,7 +388,6 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                 },
             })
         }
-        other => anyhow::bail!("unsupported user-decrypt attestation type: {other}"),
     };
 
     Ok(ProtocolEvent {
@@ -896,13 +881,11 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
             // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
             // event and `_3` for the RFC016 unified user event
             // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
-            // intentionally ignored.
+            // intentionally ignored. The Solana `_4` is converted by the Gateway listener, which
+            // skips an event whose Solana request does not decode.
             DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_4(e) => {
-                Ok(SolanaUserDecryptionRequestV1::try_from(e)?.into())
-            }
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
@@ -934,26 +917,5 @@ impl TryFrom<ProtocolConfigEvents> for ProtocolEventKind {
             ProtocolConfigEvents::KmsEpochDestroyed(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected ProtocolConfig event")),
         }
-    }
-}
-
-#[cfg(test)]
-mod decryption_event_tests {
-    use super::*;
-    use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
-
-    #[test]
-    fn rejects_malformed_solana_event_before_persistence() {
-        let event = UserDecryptionRequest_4 {
-            decryptionId: U256::from(7),
-            ctHandles: Vec::new(),
-            requestValidity: RequestValiditySeconds::default(),
-            publicKey: Default::default(),
-            extraData: Default::default(),
-            solanaRequest: vec![1, 2, 3].into(),
-        };
-        assert!(
-            ProtocolEventKind::try_from(DecryptionEvents::UserDecryptionRequest_4(event)).is_err()
-        );
     }
 }

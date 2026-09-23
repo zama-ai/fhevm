@@ -1,6 +1,9 @@
 use crate::{
     monitoring::otlp::PropagationContext,
-    types::{ProtocolEventKind, solana_request::SolanaUserDecryptionRequestV1},
+    types::{
+        ProtocolEventKind,
+        solana_request::{SolanaHandleEntry, SolanaUserDecryptionRequestV1},
+    },
 };
 use alloy::{
     primitives::{B256, U256},
@@ -26,7 +29,7 @@ use fhevm_host_bindings::{
 };
 use sqlx::{
     PgExecutor,
-    postgres::PgNotification,
+    postgres::{PgNotification, PgQueryResult},
     types::chrono::{DateTime, Utc},
 };
 use std::{fmt::Display, str::FromStr};
@@ -126,6 +129,15 @@ impl Display for RequestSource {
             Self::Http => "http",
         })
     }
+}
+
+/// Struct representing the generated `attestation_type` column of `user_decryption_requests`.
+#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq, Eq)]
+#[sqlx(type_name = "attestation_type", rename_all = "lowercase")]
+pub enum AttestationType {
+    Legacy,
+    Eip712,
+    Solana,
 }
 
 /// Enum of all the events monitored by the KMS Connector.
@@ -354,7 +366,8 @@ pub async fn invalidate_kms_epoch<'e>(
     Ok(())
 }
 
-/// Both ingress paths store the same authorization columns. Only HTTP retries reset failed work.
+/// Stores a Solana user decryption from either ingress path. Only an HTTP retry resets a failed
+/// HTTP request, as `endpoint` does for EVM requests.
 pub async fn insert_solana_user_decryption<'e>(
     executor: impl PgExecutor<'e>,
     request: &SolanaUserDecryptionRequestV1,
@@ -362,20 +375,11 @@ pub async fn insert_solana_user_decryption<'e>(
     created_at: DateTime<Utc>,
     otlp_context: &PropagationContext,
     source: RequestSource,
-) -> anyhow::Result<sqlx::postgres::PgQueryResult> {
-    let body = &request.request;
-    let permit = body.permit();
-    let handles: Vec<Vec<u8>> = body.handles().iter().map(|e| e.handle().to_vec()).collect();
-    let keys: Vec<Vec<u8>> = body
-        .handles()
-        .iter()
-        .map(|e| e.allowed_key().to_vec())
-        .collect();
-    let stores: Vec<Vec<u8>> = body
-        .handles()
-        .iter()
-        .map(|e| e.encrypted_store().to_vec())
-        .collect();
+) -> anyhow::Result<PgQueryResult> {
+    let permit = request.permit();
+    let column = |field: fn(&SolanaHandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
+        request.handles().iter().map(|e| field(e).to_vec()).collect()
+    };
     let scopes: Vec<Vec<u8>> = permit
         .allowed_scopes()
         .as_slice()
@@ -384,18 +388,33 @@ pub async fn insert_solana_user_decryption<'e>(
         .collect();
     Ok(sqlx::query!(
         "INSERT INTO user_decryption_requests AS existing (
-            decryption_id, attestation_type, ct_handles, public_key, extra_data, signature,
-            start_timestamp, duration_seconds, user_pubkey, allowed_keys, encrypted_stores,
-            allowed_scopes, host_program_id, tx_hash, created_at, otlp_context, source
-        ) VALUES ($1, 'solana-srfc38-user-decrypt-v1', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            decryption_id, ct_handles, public_key, extra_data, signature, start_timestamp,
+            duration_seconds, user_pubkey, allowed_keys, encrypted_stores, allowed_scopes,
+            host_program_id, tx_hash, created_at, otlp_context, source
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         ON CONFLICT (decryption_id) DO UPDATE SET
-            status = 'pending', created_at = EXCLUDED.created_at, otlp_context = EXCLUDED.otlp_context
+            status = 'pending',
+            created_at = EXCLUDED.created_at,
+            otlp_context = EXCLUDED.otlp_context
         WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
-        request.decryption_id.as_le_slice(), &handles, permit.transport_key().as_bytes().as_slice(),
-        permit.extra_data().to_extra_data(), body.signature().as_bytes().as_slice(),
-        i64::try_from(permit.start_timestamp())?, i64::try_from(permit.duration_seconds())?,
-        permit.user_pubkey().as_bytes().as_slice(), &keys, &stores, &scopes,
-        permit.verifying_program_id().as_bytes().as_slice(), tx_hash.map(|h| h.to_vec()),
-        created_at, bc2wrap::serialize(otlp_context)?, source as RequestSource,
-    ).execute(executor).await?)
+        request.decryption_id.as_le_slice(),
+        &column(|e| e.handle),
+        permit.transport_key().as_bytes().as_slice(),
+        request.extra_data(),
+        request.signature().as_bytes().as_slice(),
+        i64::try_from(permit.start_timestamp())?,
+        i64::try_from(permit.duration_seconds())?,
+        permit.user_pubkey().as_bytes().as_slice(),
+        &column(|e| e.allowed_key),
+        &column(|e| e.encrypted_store),
+        &scopes,
+        permit.verifying_program_id().as_bytes().as_slice(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(otlp_context)?,
+        source as RequestSource,
+    )
+    .execute(executor)
+    .await?)
 }
