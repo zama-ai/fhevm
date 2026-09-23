@@ -138,6 +138,8 @@ include the required historical sysvar context as well as sealed blocks; an
 unavailable anchor, gap, conflicting block, or missing context stops ingestion
 without advancing the checkpoint. Increasing retention is a provider concern.
 The HTTP health routes check database availability, not reconstruction catch-up.
+Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag and
+reconnect alarms are in [`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).
 
 ## Events in FHEVM
 

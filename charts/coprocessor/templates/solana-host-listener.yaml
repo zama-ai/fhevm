@@ -50,6 +50,7 @@ spec:
             - --grpc-url=$(SOLANA_GRPC_URL)
             - --program-id=$(SOLANA_HOST_PROGRAM_ID)
             - --http-port={{ $listener.httpPort }}
+            - --metrics-addr=0.0.0.0:{{ $listener.metricsPort }}
             {{- with $listener.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -112,6 +113,8 @@ spec:
           ports:
             - name: http
               containerPort: {{ $listener.httpPort }}
+            - name: metrics
+              containerPort: {{ $listener.metricsPort }}
           # Database/HTTP health only. The rollout must also prove an ingested transaction.
           readinessProbe:
             httpGet:
@@ -133,6 +136,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
 spec:
   type: ClusterIP
   selector:
@@ -141,4 +146,22 @@ spec:
     - name: http
       port: {{ $listener.httpPort }}
       targetPort: http
+    - name: metrics
+      port: {{ $listener.metricsPort }}
+      targetPort: metrics
+{{- if $listener.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  endpoints:
+    - port: metrics
+{{- end }}
 {{- end }}

@@ -43,6 +43,11 @@ impl SealedBlock {
             block_hash: self.block_hash,
         }
     }
+
+    /// The block's Unix time: the cluster's stake-weighted block time, else its Clock sysvar.
+    pub(super) fn unix_timestamp(&self) -> Option<i64> {
+        self.block_time.or(self.clock_unix_timestamp)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

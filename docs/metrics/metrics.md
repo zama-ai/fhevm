@@ -125,6 +125,32 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: Any non-zero increase.
     - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
 
+### solana-host-listener
+
+The listener resumes from its checkpoint only while the Yellowstone provider can still replay it. Past that window it stops and needs manual recovery, so these alarms should fire within minutes, long before the window (about 24 hours for a hosted provider, 256 slots for the local plugin) closes. A fatal ingestion error exits the process, so it shows up as container restarts or a missing scrape target, not as a metric.
+
+#### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Unix time the cluster assigned to the last block the listener committed. `time()` minus this value is the ingestion lag in seconds. It grows both when the stream stalls and when the listener applies blocks slower than the cluster produces them.
+ - **Alarm**: If the lag grows, or the series disappears.
+    - **Recommendation**: more than 2 minutes behind for 2 minutes, i.e. `time() - gauge > 120`, and `absent_over_time(gauge[5m])` for a listener that is down.
+
+#### Metric Name: `coprocessor_solana_host_listener_applied_slot`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Slot of the last block the listener committed with its compute rows, leaves and checkpoint.
+
+#### Metric Name: `coprocessor_solana_host_listener_confirmed_slot`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: The cluster's confirmed slot, polled over RPC every 10 seconds. Minus `applied_slot`, it is the lag in slots, which compares directly with the provider's replay window. Between polls it reads up to about 25 slots low, so a healthy lag hovers around zero and can dip below it.
+ - **Alarm**: If the lag in slots grows, or the gauge stops moving (the RPC poll fails).
+    - **Recommendation**: more than 300 slots (about 2 minutes) for 2 minutes, i.e. `confirmed_slot - applied_slot > 300`, and `changes(confirmed_slot[1m]) == 0`.
+
+#### Metric Name: `coprocessor_solana_host_listener_reconnects_total`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: gRPC subscriptions the listener dropped and reopened from its checkpoint: a stream idle for 30 seconds, closed by the server, a transport error, or a retryable ingest failure.
+ - **Alarm**: If the counter increases repeatedly.
+    - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
+
 ### zkproof-worker
 
 Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.

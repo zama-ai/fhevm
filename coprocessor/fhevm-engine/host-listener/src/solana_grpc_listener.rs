@@ -55,6 +55,10 @@ use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
 };
 
+mod metrics;
+
+pub use metrics::track_confirmed_slot;
+
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const MAX_PENDING_CONTEXT_BLOCKS: usize = 256;
 // A single decoded gRPC message is capped at 64 MiB. Keeping the cumulative
@@ -244,6 +248,7 @@ pub async fn run(
         "Starting Solana host listener (Yellowstone gRPC transport)"
     );
     let mut progress = IngestionProgress::from(start);
+    metrics::init(config.chain_id);
 
     loop {
         if cancel.is_cancelled() {
@@ -260,6 +265,7 @@ pub async fn run(
                 }
                 Err(err) => {
                     error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
+                    metrics::inc_reconnects(config.chain_id);
                     tokio::select! {
                         _ = cancel.cancelled() => return Ok(()),
                         _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -668,6 +674,7 @@ async fn drain_pending_blocks(
                         .front()
                         .map(|pending| pending.block.checkpoint()),
                 );
+                metrics::record_applied(config.chain_id, &pending.block);
             }
             Ok(BlockIngestOutcome::Cancelled) => return Ok(()),
             Err(err) if err.kind() == IngestFailureKind::Retryable => {
@@ -1057,10 +1064,7 @@ fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
 }
 
 fn sealed_block_timestamp(block: &SealedBlock) -> Option<PrimitiveDateTime> {
-    block
-        .block_time
-        .or(block.clock_unix_timestamp)
-        .and_then(unix_to_pdt)
+    block.unix_timestamp().and_then(unix_to_pdt)
 }
 
 /// Builds the handle-derivation context for `slot` from the streamed sysvars.
