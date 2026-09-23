@@ -307,6 +307,57 @@ describe("cli", () => {
     ]);
   });
 
+  test("a successful Docker exec must report a matched test", async () => {
+    await withState(bootstrappedState(), async (stateEnv) => {
+      const bin = path.join(stateEnv.FHEVM_STATE_DIR, "bin");
+      await mkdir(bin);
+      await writeFile(
+        path.join(bin, "docker"),
+        '#!/bin/sh\nif [ -n "$FAKE_DOCKER_OUTPUT" ]; then printf "%s\\n" "$FAKE_DOCKER_OUTPUT"; fi\n',
+        { mode: 0o755 },
+      );
+      const env = { ...stateEnv, PATH: `${bin}:${process.env.PATH}` };
+      const args = ["test", "--grep", "audit-sentinel"];
+      const empty = await execCli(args, env);
+      expect(empty.code).toBe(1);
+      expect(empty.stderr).toContain("matched zero tests");
+
+      const passing = await execCli(args, { ...env, FAKE_DOCKER_OUTPUT: "1 passing (1ms)" });
+      expect(passing.code).toBe(0);
+      expect(passing.stdout).toContain("[pass] custom");
+
+      const pending = await execCli(args, { ...env, FAKE_DOCKER_OUTPUT: "0 passing (1ms)\n1 pending" });
+      expect(pending.code).toBe(0);
+    });
+  });
+
+  test("the E2E script preserves a quoted positional grep", async () => {
+    await withTempStateDir(async (dir) => {
+      const bin = path.join(dir, "bin");
+      await mkdir(bin);
+      await writeFile(
+        path.join(bin, "npx"),
+        '#!/usr/bin/env bun\nconsole.log(JSON.stringify(process.argv.slice(2)));\n',
+        { mode: 0o755 },
+      );
+      const script = path.resolve(CLI_DIR, "../e2e/run-tests.sh");
+      for (const args of [["test user input uint64"], ["-g", "test user input uint64"]]) {
+        const proc = Bun.spawn(["bash", script, ...args], {
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const [code, stdout, stderr] = await Promise.all([
+          proc.exited,
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]);
+        expect(code, stderr).toBe(0);
+        expect(stdout).toContain(JSON.stringify(["hardhat", "test", "--grep", "test user input uint64", "--network", "staging"]));
+      }
+    });
+  });
+
   test("db-state-revert targets the block before the seed range", () => {
     expect(dbRevertTargetBlock(370)).toBe(369);
     expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");

@@ -93,7 +93,7 @@ const TEST_PROFILE_NAMES = [
 // read as "the 2t+1 quorum held"; any other failure is an infra error, not a quorum proof.
 // Pass-expected probes use the same invocation, streamed and unbounded (runNamedE2e).
 const QUORUM_FLOOR_TIMEOUT_MS = 300_000;
-const ZERO_TESTS_RE = /\b0 passing\b/;
+const SOME_PASSING_RE = /\b[1-9]\d* passing\b/;
 // Mocha prints "N pending" when tests exist but were skipped. If any are pending,
 // the grep did match — don't treat all-skipped as "matched zero tests".
 const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
@@ -102,7 +102,7 @@ const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
 const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
 /** True when the grep actually matched tests (some passed, failed, or are pending). */
 const matchedTests = (output: string) =>
-  !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
+  SOME_PASSING_RE.test(output) || SOME_PENDING_RE.test(output) || SOME_FAILING_RE.test(output);
 const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-host-contracts": "host",
   "paused-gateway-contracts": "gateway",

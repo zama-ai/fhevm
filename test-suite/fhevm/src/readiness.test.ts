@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   backendSplit,
@@ -38,6 +41,35 @@ describe("waitForRpc", () => {
       globalThis.fetch = originalFetch;
     }
   });
+});
+
+test("service readiness requires a running container while one-shot completion accepts exit zero", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "fhevm-readiness-"));
+  try {
+    await writeFile(
+      path.join(dir, "docker"),
+      '#!/bin/sh\nif [ "$1" = inspect ]; then printf \'[{"Name":"worker","RestartCount":0,"State":{"Status":"%s","ExitCode":0,"Health":{"Status":"healthy"}}}]\\n\' "$READINESS_STATUS"; fi\n',
+      { mode: 0o755 },
+    );
+    const modulePath = new URL("./flow/readiness.ts", import.meta.url).pathname;
+    for (const [operation, status, expected] of [
+      ["healthy", "exited", 1],
+      ["gate", "exited", 1],
+      ["complete", "exited", 0],
+      ["healthy", "running", 0],
+      ["gate", "running", 0],
+    ] as const) {
+      const script = `import { waitForContainer, postBootHealthGate } from ${JSON.stringify(modulePath)};
+        if (${JSON.stringify(operation)} === "gate") await postBootHealthGate(["worker"], 0);
+        else await waitForContainer("worker", ${JSON.stringify(operation)});`;
+      const result = Bun.spawnSync([process.execPath, "-e", script], {
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, READINESS_STATUS: status },
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(expected);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 describe("ensureOneMaterial", () => {

@@ -102,7 +102,10 @@ export const waitForContainer = async (container: string, want: "running" | "hea
         const logs = await run(["docker", "logs", "--tail", "30", container], { allowFailure: true });
         throw new ContainerCrashed(container, inspect.State.ExitCode || -1, (logs.stdout + logs.stderr).trim());
       }
-      if (want === "healthy" && inspect.State.Health?.Status === "healthy") {
+      if (want !== "complete" && inspect.State.Status === "exited") {
+        throw new ContainerCrashed(container, inspect.State.ExitCode, `${container} exited before becoming ${want}`);
+      }
+      if (want === "healthy" && inspect.State.Status === "running" && inspect.State.Health?.Status === "healthy") {
         return;
       }
       if (want === "running" && inspect.State.Status === "running") {
@@ -196,7 +199,7 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
       crashed.push({ name, exitCode: -1, logs: "(container not found)" });
       continue;
     }
-    if (containerFailure(inspect)) {
+    if (containerFailure(inspect) || inspect.State.Status !== "running") {
       const result = await run(["docker", "logs", "--tail", "30", name], { allowFailure: true });
       crashed.push({ name, exitCode: inspect.State.ExitCode, logs: (result.stdout + result.stderr).trim() });
     }

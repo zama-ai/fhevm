@@ -33,7 +33,7 @@ show_help() {
 }
 
 # Parse options
-PARAMS=""
+POSITIONAL_GREP=""
 GREP_PARAM=""
 HARDHAT_PARALLEL=""
 while (( "$#" )); do
@@ -73,15 +73,16 @@ while (( "$#" )); do
       shift
       ;;
     *)
-      PARAMS="$PARAMS $1"
+      if [ -z "$POSITIONAL_GREP" ]; then
+        POSITIONAL_GREP="$1"
+      fi
       shift
       ;;
   esac
 done
 
-eval set -- "$PARAMS"
 # Priority: explicit grep parameter > positional argument > default
-GREP_TEXT=${GREP_PARAM:-${1:-"$DEFAULT_GREP"}}
+GREP_TEXT=${GREP_PARAM:-${POSITIONAL_GREP:-"$DEFAULT_GREP"}}
 NETWORK=${NETWORK:-"$DEFAULT_NETWORK"}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || {
