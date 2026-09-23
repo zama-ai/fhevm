@@ -684,10 +684,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view virtual returns (bool) {
-        // `_isLiveKmsContext` is used so a `Created` (not yet `Active`) context's nodes are readable during resharing.
-        if (!_isLiveKmsContext(kmsContextId)) {
-            revert InvalidKmsContext(kmsContextId);
-        }
         return _getProtocolConfigStorage().isKmsTxSenderForContext[kmsContextId][txSender];
     }
 
@@ -735,9 +731,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     /// @inheritdoc IProtocolConfig
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
-        if (!_isLiveKmsContext(kmsContextId)) {
-            revert InvalidKmsContext(kmsContextId);
-        }
         return _getProtocolConfigStorage().kmsGenThresholdForContext[kmsContextId];
     }
 

@@ -195,6 +195,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         extraData = $.requestExtraData[requestId];
         contextId = _extractContextIdFromExtraData(extraData);
+        // A `Created` (not yet `Active`) context must still accept responses during resharing.
+        if (!PROTOCOL_CONFIG.isLiveKmsContext(contextId)) {
+            revert IProtocolConfig.InvalidKmsContext(contextId);
+        }
         if (!PROTOCOL_CONFIG.isKmsTxSenderForContext(contextId, msg.sender)) {
             revert NotKmsTxSender(msg.sender);
         }

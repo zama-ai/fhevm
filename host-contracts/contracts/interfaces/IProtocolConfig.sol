@@ -556,6 +556,7 @@ interface IProtocolConfig {
 
     /**
      * @notice Checks whether an address is a tx sender in the given context.
+     * @dev Reads stored data regardless of context validity. Returns false for unknown contexts.
      * @param kmsContextId The context ID.
      * @param txSender The address to check.
      * @return True if the address is a KMS tx sender.
@@ -608,7 +609,7 @@ interface IProtocolConfig {
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
-     * @dev Returns a value for pending, created, and active contexts. Reverts for destroyed or unknown contexts.
+     * @dev Reads stored data regardless of context validity. Returns 0 for unknown contexts.
      * @param kmsContextId The context ID.
      * @return The kmsGen threshold for the context.
      */
