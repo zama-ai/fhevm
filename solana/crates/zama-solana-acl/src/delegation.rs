@@ -97,13 +97,13 @@ pub fn decode_user_decryption_delegation(
     })
 }
 
-fn bytes32(body: &[u8], offset: usize) -> [u8; 32] {
+pub(crate) fn bytes32(body: &[u8], offset: usize) -> [u8; 32] {
     let mut out = [0; 32];
     out.copy_from_slice(&body[offset..offset + 32]);
     out
 }
 
-fn u64_le(body: &[u8], offset: usize) -> u64 {
+pub(crate) fn u64_le(body: &[u8], offset: usize) -> u64 {
     let mut out = [0; 8];
     out.copy_from_slice(&body[offset..offset + 8]);
     u64::from_le_bytes(out)
