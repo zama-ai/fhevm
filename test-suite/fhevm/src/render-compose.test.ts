@@ -910,8 +910,11 @@ gcs:
     });
   });
 
-  test("extra-chain primary listeners preserve per-service local build selection", async () => {
+  test.each([true, false])("extra-chain primary listeners preserve per-service local build selection (selected=%s)", async (selected) => {
     const selective = structuredClone(scenario);
+    if (!selected) {
+      selective.instances[1].localServices = ["coprocessor-tfhe-worker"];
+    }
     selective.hostChains = multiChainHostContractsState.scenario.hostChains;
     const selectiveState: State = { ...state, scenario: selective };
     await withTempStateDir(async () => {
@@ -921,12 +924,18 @@ gcs:
       }
       await generateComposeOverrides(selectiveState, stackSpecForState(selectiveState));
       const { services } = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8"));
-      expect(services["coprocessor1-host-listener-chain-b"].build).toBeDefined();
-      expect(services["coprocessor1-host-listener-chain-b"].image).toEndWith(":fhevm-local-i1");
-      expect(services["coprocessor1-host-listener-poller-chain-b"].build).toBeDefined();
-      expect(services["coprocessor1-host-listener-poller-chain-b"].image).toEndWith(":fhevm-local-i1");
-      expect(services["coprocessor-host-listener-chain-b"].build).toBeUndefined();
-      expect(services["coprocessor-host-listener-poller-chain-b"].build).toBeUndefined();
+      for (const role of ["host-listener", "host-listener-poller"]) {
+        const inherited = services[`coprocessor-${role}-chain-b`];
+        const local = services[`coprocessor1-${role}-chain-b`];
+        expect(inherited.build).toBeUndefined();
+        if (selected) {
+          expect(local.build).toBeDefined();
+          expect(local.image).toEndWith(":fhevm-local-i1");
+        } else {
+          expect(local.build).toBeUndefined();
+          expect(local.image).toBe(inherited.image);
+        }
+      }
     });
   });
 
