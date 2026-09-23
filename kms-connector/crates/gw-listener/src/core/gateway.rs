@@ -204,7 +204,9 @@ where
                 event => event.try_into()?,
             };
             let event_type = EventType::from(&event_kind).as_str();
-            EVENT_RECEIVED_COUNTER.with_label_values(&[event_type]).inc();
+            EVENT_RECEIVED_COUNTER
+                .with_label_values(&[event_type])
+                .inc();
 
             let span = info_span!(
                 "handle_gateway_event",

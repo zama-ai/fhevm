@@ -219,8 +219,8 @@ impl From<Erc1271Error> for RequestCheckError {
 
 impl From<AuthorizationFailure> for RequestCheckError {
     /// The codes EVM uses for the same outcomes: a bad, expired or revoked permit is a rejected
-    /// signature, an unreadable host is transient, and host state that grants no access is an
-    /// ACL denial.
+    /// signature, a host that cannot be read now is transient, and host state that grants no
+    /// access is an ACL denial.
     fn from(failure: AuthorizationFailure) -> Self {
         let (kind, code) = match &failure {
             AuthorizationFailure::Signature(_)
@@ -230,10 +230,22 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 RequestCheckKind::Signature,
                 ErrorCode::UserSignatureRejected,
             ),
-            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
+            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_)
+                if failure.is_recoverable() =>
+            {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            _ => (RequestCheckKind::Acl, ErrorCode::AclDenied),
+            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
+                (RequestCheckKind::Network, ErrorCode::Unprocessable)
+            }
+            AuthorizationFailure::Pause(_)
+            | AuthorizationFailure::Watermark(_)
+            | AuthorizationFailure::EncryptedStore { .. }
+            | AuthorizationFailure::Scope { .. }
+            | AuthorizationFailure::HandleBinding { .. }
+            | AuthorizationFailure::Delegation { .. } => {
+                (RequestCheckKind::Acl, ErrorCode::AclDenied)
+            }
         };
         solana_check_error(kind, code, failure.is_recoverable(), failure)
     }
@@ -242,14 +254,20 @@ impl From<AuthorizationFailure> for RequestCheckError {
 impl From<PublicDecryptFailure> for RequestCheckError {
     fn from(failure: PublicDecryptFailure) -> Self {
         let (kind, code) = match &failure {
-            PublicDecryptFailure::NotSingleHandle { .. }
-            | PublicDecryptFailure::MalformedExtraData => {
+            PublicDecryptFailure::MalformedExtraData => {
                 (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
-            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
+            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_)
+                if failure.is_recoverable() =>
+            {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            _ => (RequestCheckKind::Acl, ErrorCode::AclDenied),
+            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
+                (RequestCheckKind::Network, ErrorCode::Unprocessable)
+            }
+            PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
+                (RequestCheckKind::Acl, ErrorCode::AclDenied)
+            }
         };
         solana_check_error(kind, code, failure.is_recoverable(), failure)
     }

@@ -49,8 +49,7 @@ async fn observe_with_record(
 ) -> (Result<(), AuthorizationFailure>, Reads) {
     let proofs = ScriptedProofReader::constant(record);
     let reader = ScriptedReader::constant(world);
-    let context = CONTEXT;
-    let outcome = authorize_request(&reader, &proofs, context, request).await;
+    let outcome = authorize_request(&reader, &proofs, CONTEXT, request).await;
     (
         outcome,
         Reads {
@@ -70,7 +69,7 @@ async fn observe(
 }
 
 /// Each authorization invocation uses exactly the planned account and proof reads.
-fn assert_planned_reads(_authorized: &(), reads: Reads, expected_account_reads: usize) {
+fn assert_planned_reads(reads: Reads, expected_account_reads: usize) {
     assert_eq!(
         reads.accounts, expected_account_reads,
         "one authorization attempt uses only its planned account reads"
@@ -104,11 +103,8 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
         &request,
     )
     .await;
-    assert_planned_reads(
-        &accepted.expect("before the update the leaf authorizes"),
-        reads,
-        1,
-    );
+    accepted.expect("before the update the leaf authorizes");
+    assert_planned_reads(reads, 1);
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
@@ -122,8 +118,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
 }
 
 /// What the update does change is which handle a key allowed on the *new* one can decrypt: the
-/// new handle needs its own leaf, and until it is sealed a request for it is refused terminally at
-/// that observation.
+/// new handle needs its own leaf, and until it is sealed a request for it is refused, retryably.
 #[tokio::test]
 async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed() {
     let signer = Wallet::new(1);
@@ -150,7 +145,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert!(!failure.is_recoverable());
+    assert!(failure.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -158,9 +153,8 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
 // ---------------------------------------------------------------------------
 
 /// A request racing the allow that would authorize it is refused at the earlier observation and
-/// authorized at the later one. The refusal is terminal *for that observation*: the record has the
-/// chain's history and no leaf, and nothing in the request can change that; what changes it is the
-/// application sealing the leaf, which is a new state and a new observation.
+/// authorized at the later one. The refusal is therefore retryable: the node this connector reads
+/// can be behind the allow the user saw, and a later attempt makes the later observation.
 #[tokio::test]
 async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it() {
     let signer = Wallet::new(1);
@@ -186,7 +180,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
             source: HandleBindingFailure::NoLeaf { .. }
         }
     ));
-    assert!(!failure.is_recoverable());
+    assert!(failure.is_recoverable());
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)
@@ -227,11 +221,8 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
         &request,
     )
     .await;
-    assert_planned_reads(
-        &accepted.expect("before the revocation the delegation is live"),
-        reads,
-        2,
-    );
+    accepted.expect("before the revocation the delegation is live");
+    assert_planned_reads(reads, 2);
 
     let (outcome, _) = observe(
         World::running_at_slot(AFTER)

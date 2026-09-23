@@ -8,8 +8,7 @@ use crate::{
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
             EventProcessor, HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
-            ProcessingError, ProcessingErrorKind, ProtocolConfigProcessor,
-            solana_public_decrypt::SolanaHost,
+            ProcessingError, ProcessingErrorKind, ProtocolConfigProcessor, SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
         solana::{proof::CoprocessorProofClient, snapshot::SolanaRpcClient},

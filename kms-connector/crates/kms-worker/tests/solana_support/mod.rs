@@ -15,27 +15,34 @@
 #![allow(dead_code)]
 
 use alloy::primitives::U256;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use connector_utils::types::solana_request::{
     PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
     SolanaUserDecryptionRequestV1,
 };
+use kms_worker::core::event_processor::SolanaHost;
+use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
     pipeline::AuthorizationContext,
     proof::{
-        HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
+        CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
+        ProofReadError, ProofResponses, leaf_proof_request_body,
     },
     snapshot::{
         HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
-        SnapshotKeys,
+        SnapshotKeys, SolanaRpcClient,
     },
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use mocktail::server::MockServer;
+use reqwest::Client;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::Mutex;
+use std::time::Duration;
 use zama_solana_acl::{
-    EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
+    DELEGATION_SEED, EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
     PERMIT_INVALIDATION_SEED, PermitInvalidationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
     WILDCARD_AUTHORITY, encode_host_config, encode_permit_invalidation,
     encrypted_store_discriminator, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
@@ -540,14 +547,18 @@ impl DelegationFixture {
         }
     }
 
-    /// Its canonical address and bump.
+    /// Its canonical address and bump, derived here rather than taken from the code under test.
     pub fn address(&self) -> (SolanaPubkeyBytes, u8) {
-        kms_worker::core::solana::delegation::delegation_address(
-            PROGRAM_ID,
-            self.delegator,
-            self.delegate,
-            self.authority,
-        )
+        let (address, bump) = Pubkey::find_program_address(
+            &[
+                DELEGATION_SEED,
+                &self.delegator,
+                &self.delegate,
+                &self.authority,
+            ],
+            &Pubkey::new_from_array(PROGRAM_ID),
+        );
+        (address.to_bytes(), bump)
     }
 
     /// The account as the host program would write it.
@@ -917,5 +928,137 @@ impl HostProofReader for UnavailableProofReader {
         Err(ProofReadError::Unavailable {
             reason: "no coprocessor answered".to_owned(),
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A host behind real HTTP
+// ---------------------------------------------------------------------------
+
+/// The route the connector reads leaf proofs from. A literal, so a moved route fails the tests.
+pub const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
+
+/// A Solana node and a coprocessor behind real HTTP, for tests that go through the production
+/// readers. Each answers only the exact request body it is scripted for, which pins the keys,
+/// encoding and commitment of a read, and the queries of a proof batch.
+pub struct HttpHost {
+    pub rpc: MockServer,
+    pub coprocessor: MockServer,
+}
+
+impl HttpHost {
+    pub async fn start() -> Self {
+        let rpc = MockServer::new_http("solana-rpc");
+        rpc.start().await.expect("the mock RPC starts");
+        let coprocessor = MockServer::new_http("coprocessor");
+        coprocessor
+            .start()
+            .await
+            .expect("the mock coprocessor starts");
+        Self { rpc, coprocessor }
+    }
+
+    /// Replaces the node's state: one `getMultipleAccounts` read of these keys, in this order.
+    pub fn serve_accounts(&mut self, accounts: &[(SolanaPubkeyBytes, Option<SnapshotAccount>)]) {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "getMultipleAccounts",
+            "params": [
+                accounts
+                    .iter()
+                    .map(|(key, _)| Pubkey::new_from_array(*key).to_string())
+                    .collect::<Vec<_>>(),
+                {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": null},
+            ],
+        });
+        let value: Vec<_> = accounts
+            .iter()
+            .map(|(_, account)| {
+                account.as_ref().map(|account| {
+                    serde_json::json!({
+                        "owner": Pubkey::new_from_array(account.owner).to_string(),
+                        "data": [BASE64_STANDARD.encode(&account.data), "base64"],
+                        "lamports": 1,
+                        "executable": false,
+                        "rentEpoch": 0,
+                    })
+                })
+            })
+            .collect();
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": { "context": { "slot": 1 }, "value": value },
+        });
+        self.rpc.mocks().clear();
+        self.rpc.mock(move |when, then| {
+            when.post().json(request.clone());
+            then.json(response.clone());
+        });
+    }
+
+    /// Replaces the coprocessor's record: one leaf-proof batch of these queries.
+    pub fn serve_proofs(&mut self, answers: &[(LeafQuery, LeafProofOutcome)]) {
+        serve_proofs(&mut self.coprocessor, answers);
+    }
+
+    pub fn host(&self) -> SolanaHost {
+        solana_host(&self.rpc, &[&self.coprocessor])
+    }
+}
+
+/// Scripts `coprocessor` to answer one leaf-proof batch.
+pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, LeafProofOutcome)]) {
+    let queries: Vec<_> = answers.iter().map(|(query, _)| *query).collect();
+    // Mocktail compares bytes; going through a `Value` would reorder the typed fields.
+    let request = serde_json::to_string(&leaf_proof_request_body(&queries)).unwrap();
+    let response = serde_json::json!({
+        "proofs": answers.iter().map(|(_, outcome)| wire_outcome(outcome)).collect::<Vec<_>>(),
+    });
+    coprocessor.mocks().clear();
+    coprocessor.mock(move |when, then| {
+        when.post().path(LEAF_PROOFS_ROUTE).text(request.clone());
+        then.json(response.clone());
+    });
+}
+
+/// A host of the fixture deployment reading from `rpc` and asking every one of `coprocessors`.
+pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
+    let endpoints: Vec<_> = coprocessors
+        .iter()
+        .map(|coprocessor| coprocessor.base_url().unwrap().clone())
+        .collect();
+    SolanaHost {
+        program_id: PROGRAM_ID,
+        reader: SolanaRpcClient::new(
+            rpc.base_url().unwrap().clone(),
+            Duration::from_secs(10),
+            NonZeroUsize::MIN,
+        ),
+        proofs: CoprocessorProofClient::new(&endpoints, "test-key".to_owned(), Client::new()),
+    }
+}
+
+/// A leaf-proof answer as the coprocessor route serializes it.
+pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+    match outcome {
+        LeafProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => serde_json::json!({
+            "status": "found",
+            "leafIndex": leaf_index,
+            "leafCount": leaf_count,
+            "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
+        }),
+        LeafProofOutcome::NotFound { leaf_count } => {
+            serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
+        }
+        LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
+        LeafProofOutcome::HistoryIncomplete => {
+            serde_json::json!({ "status": "historyIncomplete" })
+        }
     }
 }

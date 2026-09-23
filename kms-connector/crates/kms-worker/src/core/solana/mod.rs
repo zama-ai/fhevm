@@ -10,3 +10,48 @@ pub mod proof;
 pub mod scope;
 pub mod snapshot;
 pub mod watermark;
+
+use solana_pubkey::Pubkey;
+use zama_solana_acl::{
+    DELEGATION_SEED, HOST_CONFIG_SEED, PERMIT_INVALIDATION_SEED, WILDCARD_AUTHORITY,
+};
+
+pub type SolanaPubkeyBytes = [u8; 32];
+pub type HandleBytes = [u8; 32];
+
+pub fn host_config_address(program_id: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
+    find_address(program_id, &[HOST_CONFIG_SEED])
+}
+
+pub fn permit_invalidation_address(
+    program_id: SolanaPubkeyBytes,
+    user: SolanaPubkeyBytes,
+) -> (SolanaPubkeyBytes, u8) {
+    find_address(program_id, &[PERMIT_INVALIDATION_SEED, &user])
+}
+
+pub fn delegation_address(
+    program_id: SolanaPubkeyBytes,
+    delegator: SolanaPubkeyBytes,
+    delegate: SolanaPubkeyBytes,
+    authority: SolanaPubkeyBytes,
+) -> (SolanaPubkeyBytes, u8) {
+    find_address(
+        program_id,
+        &[DELEGATION_SEED, &delegator, &delegate, &authority],
+    )
+}
+
+/// The delegation row of `(delegator, delegate)` that covers every authority.
+pub fn wildcard_delegation_address(
+    program_id: SolanaPubkeyBytes,
+    delegator: SolanaPubkeyBytes,
+    delegate: SolanaPubkeyBytes,
+) -> (SolanaPubkeyBytes, u8) {
+    delegation_address(program_id, delegator, delegate, WILDCARD_AUTHORITY)
+}
+
+fn find_address(program_id: SolanaPubkeyBytes, seeds: &[&[u8]]) -> (SolanaPubkeyBytes, u8) {
+    let (address, bump) = Pubkey::find_program_address(seeds, &Pubkey::new_from_array(program_id));
+    (address.to_bytes(), bump)
+}

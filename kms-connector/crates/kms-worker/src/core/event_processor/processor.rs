@@ -270,14 +270,15 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             ProtocolEventKind::UserDecryptionV2(req) => {
                 let payload = &req.payload;
                 let handles: Vec<B256> = req.handles.iter().map(|h| h.handle).collect();
-                let user_decrypt_data =
-                    DecryptionProcessor::<GP, HP>::user_decryption_extra_data_for_v2(req);
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &handles,
                         &payload.extraData,
-                        Some(user_decrypt_data),
+                        Some(UserDecryptionExtraData::new(
+                            payload.userAddress,
+                            payload.publicKey.clone(),
+                        )),
                     )
                     .await
             }

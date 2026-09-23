@@ -2,7 +2,7 @@
 //! events; the account holds only the peaks. The record is a source of proofs, never of
 //! decisions: every candidate is verified against the observed peaks.
 
-use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use super::{HandleBytes, SolanaPubkeyBytes};
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -92,8 +92,6 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
 /// Why a batch could not be read at all. Every variant says nothing about any leaf.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
-    #[error("leaf proof request serialization failed: {reason}")]
-    RequestEncoding { reason: String },
     /// No coprocessor answered.
     #[error("leaf proof read failed: {reason}")]
     Unavailable { reason: String },
@@ -221,11 +219,8 @@ impl HostProofReader for CoprocessorProofClient {
                 count: queries.len(),
             });
         }
-        let body = serde_json::to_vec(&leaf_proof_request_body(queries)).map_err(|error| {
-            ProofReadError::RequestEncoding {
-                reason: error.to_string(),
-            }
-        })?;
+        let body = serde_json::to_vec(&leaf_proof_request_body(queries))
+            .expect("a leaf proof request has no map keys or fallible fields");
         let answers = join_all(
             self.routes
                 .iter()

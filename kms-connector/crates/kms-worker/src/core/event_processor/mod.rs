@@ -11,7 +11,7 @@ pub mod solana_public_decrypt;
 
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
-pub use decryption::{DecryptionProcessor, HostChainAclBackend};
+pub use decryption::{DecryptionProcessor, HostChainAclBackend, SolanaHost};
 pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};

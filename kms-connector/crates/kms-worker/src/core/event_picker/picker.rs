@@ -149,7 +149,8 @@ impl DbEventPicker {
                 RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
                 start_timestamp, duration_seconds,
-                attestation_type, user_pubkey, allowed_keys, encrypted_stores, allowed_scopes, host_program_id, source, tx_hash, already_sent, error_counter, created_at,
+                attestation_type, user_pubkey, allowed_keys, encrypted_stores, allowed_scopes,
+                host_program_id, source, tx_hash, already_sent, error_counter, created_at,
                 otlp_context
             ",
         )

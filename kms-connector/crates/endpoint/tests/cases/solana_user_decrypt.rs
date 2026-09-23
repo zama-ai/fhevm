@@ -9,7 +9,9 @@ use connector_utils::{
         solana_request::SolanaUserDecryptionRequestV1,
     },
 };
-use kms_connector_api::{SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest};
+use kms_connector_api::{
+    SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest,
+};
 use sqlx::postgres::PgRow;
 
 /// The Solana chain type byte over cluster tag 12345.
@@ -47,10 +49,11 @@ async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Re
         RequestSource::OnChain,
     )
     .await?;
-    let gateway_row = sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
-        .bind(gateway.decryption_id.as_le_slice())
-        .fetch_one(&endpoint.db)
-        .await?;
+    let gateway_row =
+        sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
+            .bind(gateway.decryption_id.as_le_slice())
+            .fetch_one(&endpoint.db)
+            .await?;
 
     let mut from_http = stored_request(&http_row)?;
     assert_eq!(from_http.decryption_id, db_id(id));
@@ -86,9 +89,16 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
         "allowed_keys = NULL",
         "host_program_id = NULL",
         "encrypted_stores = ARRAY[encrypted_stores[1], encrypted_stores[1]]",
-        "attestation_type = 'legacy'",
+        "allowed_contracts = ARRAY[decode(repeat('00', 20), 'hex')]",
     ] {
-        assert!(update(&endpoint.db, id, change).await.is_err(), "row accepted: {change}");
+        let error = update(&endpoint.db, id, change).await.unwrap_err();
+        assert_eq!(
+            error
+                .as_database_error()
+                .and_then(|error| error.constraint()),
+            Some("user_decryption_requests_attestation_columns"),
+            "{change}: {error}"
+        );
     }
 
     // Widths are the reader's to enforce, so a worker never acts on a truncated field.
@@ -105,7 +115,9 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
 async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow::Result<()> {
     let endpoint = setup().await?;
     let mut body = serde_json::to_value(user_request())?;
-    body["attestationType"] = AttestationType::SolanaSrfc38UserDecryptV1.to_string().into();
+    body["attestationType"] = AttestationType::SolanaSrfc38UserDecryptV1
+        .to_string()
+        .into();
     let response = endpoint
         .post_raw(USER_DECRYPTION_ROUTE, serde_json::to_string(&body)?)
         .await;

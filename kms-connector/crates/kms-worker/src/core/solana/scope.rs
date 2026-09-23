@@ -4,8 +4,8 @@
 //! entry. An empty list admits everything, as on EVM. The pair comes from the validated encrypted
 //! store, never from the request.
 
+use super::SolanaPubkeyBytes;
 use super::encrypted_store::ResolvedEncryptedStore;
-use crate::core::solana_acl::SolanaPubkeyBytes;
 use zama_solana_permit::{AllowedScopes, Identity};
 
 pub fn check_scope(

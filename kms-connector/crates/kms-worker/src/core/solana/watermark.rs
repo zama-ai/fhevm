@@ -2,21 +2,8 @@
 //! permit's start into `[last revocation, now]`.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::SolanaPubkeyBytes;
-use solana_pubkey::Pubkey;
-use zama_solana_acl::{PERMIT_INVALIDATION_SEED, decode_permit_invalidation};
-
-/// The canonical invalidation-record address for a user under this deployment.
-pub fn permit_invalidation_address(
-    program_id: SolanaPubkeyBytes,
-    user: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    let (address, bump) = Pubkey::find_program_address(
-        &[PERMIT_INVALIDATION_SEED, user.as_ref()],
-        &Pubkey::new_from_array(program_id),
-    );
-    (address.to_bytes(), bump)
-}
+use super::{SolanaPubkeyBytes, permit_invalidation_address};
+use zama_solana_acl::decode_permit_invalidation;
 
 /// Reads the watermark of the request signer. A user who never revoked has no record, which
 /// reads as zero.

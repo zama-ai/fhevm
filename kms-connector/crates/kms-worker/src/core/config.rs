@@ -1,4 +1,4 @@
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use crate::core::solana::SolanaPubkeyBytes;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{

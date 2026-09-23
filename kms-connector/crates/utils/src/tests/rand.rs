@@ -89,16 +89,28 @@ pub fn solana_user_decryption_event(
             encrypted_store: vec![3; 32],
         }],
     };
+    solana_user_decryption_event_for(decryption_id, &wire)
+}
+
+/// The Gateway event carrying `request`, with the cleartext copies the Gateway emits beside it.
+pub fn solana_user_decryption_event_for(
+    decryption_id: U256,
+    request: &SolanaUserDecryptRequestWire,
+) -> UserDecryptionRequest_4 {
     UserDecryptionRequest_4 {
         decryptionId: decryption_id,
-        ctHandles: vec![handle],
+        ctHandles: request
+            .handles
+            .iter()
+            .map(|entry| FixedBytes::from_slice(&entry.handle))
+            .collect(),
         requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(wire.permit.start_timestamp),
-            durationSeconds: U256::from(wire.permit.duration_seconds),
+            startTimestamp: U256::from(request.permit.start_timestamp),
+            durationSeconds: U256::from(request.permit.duration_seconds),
         },
-        publicKey: wire.permit.transport_key.clone().into(),
-        extraData: wire.permit.extra_data.clone().into(),
-        solanaRequest: zama_solana_request::encode_solana_request(&wire)
+        publicKey: request.permit.transport_key.clone().into(),
+        extraData: request.permit.extra_data.clone().into(),
+        solanaRequest: zama_solana_request::encode_solana_request(request)
             .unwrap()
             .into(),
     }

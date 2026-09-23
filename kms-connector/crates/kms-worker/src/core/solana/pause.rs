@@ -3,7 +3,7 @@
 //! the deployment, not about a handle, and the second read then fits the account budget.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::{SolanaPubkeyBytes, host_config_address};
+use super::{SolanaPubkeyBytes, host_config_address};
 use zama_solana_acl::decode_host_config;
 
 /// Refuses the request unless the deployment's own `HostConfig` says the host is running.

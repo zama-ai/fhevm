@@ -5,8 +5,7 @@
 //! host config, plus the delegation records the first read made derivable. Every rule after the
 //! pause switch uses that second read, which must not be older than the first.
 
-use super::watermark::permit_invalidation_address;
-use crate::core::solana_acl::{SolanaPubkeyBytes, host_config_address};
+use super::{SolanaPubkeyBytes, host_config_address, permit_invalidation_address};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
@@ -110,10 +109,6 @@ impl HostSnapshot {
             Some(account) => Ok(account.as_ref()),
             None => Err(SnapshotError::KeyNotInSnapshot { key: *key }),
         }
-    }
-
-    pub fn keys(&self) -> Vec<SolanaPubkeyBytes> {
-        self.accounts.keys().copied().collect()
     }
 
     /// Takes this read as the deciding one. A read older than the discovery read comes from a

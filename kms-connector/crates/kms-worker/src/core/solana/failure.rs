@@ -1,5 +1,6 @@
 //! Why a Solana request was not authorized, and whether a later attempt may succeed.
 
+use super::SolanaPubkeyBytes;
 use super::delegation::DelegationFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
@@ -8,7 +9,6 @@ use super::proof::ProofReadError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
-use crate::core::solana_acl::SolanaPubkeyBytes;
 use zama_solana_permit::PermitError;
 
 /// Per-entry rules carry the entry index: "some handle failed" is not actionable for a batch.
@@ -121,20 +121,22 @@ impl ProofReadError {
     pub fn is_recoverable(&self) -> bool {
         match self {
             Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => true,
-            Self::TooManyQueries { .. } | Self::RequestEncoding { .. } => false,
+            Self::TooManyQueries { .. } => false,
         }
     }
 }
 
 impl HandleBindingFailure {
-    /// A proof record that is behind the chain, or does not know the store yet, may catch up.
+    /// A proof record behind the chain may catch up, and so may the node this connector reads: a
+    /// missing leaf is recoverable, as an EVM ACL denial is.
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::ProofRecordBehind { .. }
+            Self::NoLeaf { .. }
+            | Self::ProofRecordBehind { .. }
             | Self::AccountUnknownToProofRecord
             | Self::LeafIndexOutOfRange { .. }
             | Self::ProofDoesNotVerify { .. } => true,
-            Self::NoLeaf { .. } | Self::HistoryIncomplete | Self::MmrStateInconsistent => false,
+            Self::HistoryIncomplete | Self::MmrStateInconsistent => false,
         }
     }
 }

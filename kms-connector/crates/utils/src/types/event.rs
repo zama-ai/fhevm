@@ -298,7 +298,9 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
     let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
         AttestationType::Solana => {
-            let first = ct_handles.first().ok_or_else(|| anyhow!("row names no handles"))?;
+            let first = ct_handles
+                .first()
+                .ok_or_else(|| anyhow!("row names no handles"))?;
             let allowed_keys: Vec<Vec<u8>> = row.try_get("allowed_keys")?;
             let encrypted_stores: Vec<Vec<u8>> = row.try_get("encrypted_stores")?;
             let wire = SolanaUserDecryptRequestWire {
@@ -318,11 +320,13 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     .iter()
                     .zip(allowed_keys)
                     .zip(encrypted_stores)
-                    .map(|((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
-                        handle: handle.to_vec(),
-                        allowed_key,
-                        encrypted_store,
-                    })
+                    .map(
+                        |((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
+                            handle: handle.to_vec(),
+                            allowed_key,
+                            encrypted_store,
+                        },
+                    )
                     .collect(),
             };
             SolanaUserDecryptionRequestV1::new(decryption_id, &wire)?.into()

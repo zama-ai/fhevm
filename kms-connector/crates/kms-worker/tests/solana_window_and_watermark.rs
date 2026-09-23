@@ -24,15 +24,14 @@ use kms_worker::core::solana::{
     pipeline::authorize_request,
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
-        WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
-        permit_invalidation_address, read_watermark,
+        WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },
 };
 use solana_support::*;
 
 /// Reads the watermark of `user` out of a world.
 fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let snapshot = world
         .read(&SnapshotKeys::new([key]))
         .expect("the world reads");
@@ -137,7 +136,7 @@ fn an_absent_invalidation_record_reads_as_zero() {
 #[test]
 fn a_prefunded_invalidation_address_reads_as_zero() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let world = World::running_at_slot(1).with_account(key, prefunded_account());
 
     let watermark = watermark_in(&world, user).expect("a pre-funded address is a zero");
@@ -150,7 +149,7 @@ fn a_prefunded_invalidation_address_reads_as_zero() {
 #[test]
 fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = SYSTEM_PROGRAM_ID;
     let world = World::running_at_slot(1).with_account(key, impostor);
@@ -209,7 +208,7 @@ fn a_permit_signed_at_or_after_the_revocation_is_unaffected() {
 fn an_invalidation_record_naming_another_user_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let other = Wallet::new(2).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     // A record for another user, placed at this user's address.
     let world =
         World::running_at_slot(1).with_account(key, invalidation_account(other, DEFAULT_START));
@@ -227,7 +226,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 #[test]
 fn an_account_that_is_not_an_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let encrypted_store = EncryptedStoreFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
     let world = World::running_at_slot(1).with_account(key, encrypted_store.account());
 
@@ -244,7 +243,7 @@ fn an_account_that_is_not_an_invalidation_record_is_rejected() {
 #[test]
 fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = [0xee; 32];
     let world = World::running_at_slot(1).with_account(key, impostor);
@@ -261,7 +260,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
 #[test]
 fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, canonical_bump) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, canonical_bump) = invalidation_address(user);
     let mut wrong_bump = invalidation_account(user, DEFAULT_START);
     let last = wrong_bump.data.len() - 1;
     assert_eq!(
@@ -283,7 +282,7 @@ fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
 #[test]
 fn a_truncated_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let full = invalidation_account(user, DEFAULT_START);
     let truncated = SnapshotAccount {
         owner: PROGRAM_ID,
@@ -365,7 +364,7 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, wallet.pubkey());
+    let (key, _) = invalidation_address(wallet.pubkey());
     let world = World::running_at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_account(key, prefunded_account());

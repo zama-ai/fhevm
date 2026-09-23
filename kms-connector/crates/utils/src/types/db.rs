@@ -378,7 +378,11 @@ pub async fn insert_solana_user_decryption<'e>(
 ) -> anyhow::Result<PgQueryResult> {
     let permit = request.permit();
     let column = |field: fn(&SolanaHandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
-        request.handles().iter().map(|e| field(e).to_vec()).collect()
+        request
+            .handles()
+            .iter()
+            .map(|e| field(e).to_vec())
+            .collect()
     };
     let scopes: Vec<Vec<u8>> = permit
         .allowed_scopes()

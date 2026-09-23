@@ -1,6 +1,6 @@
 //! Solana user decryption authorization. Every worker attempt reads fresh host state.
 
-use super::delegation::{check_delegation, delegation_address, wildcard_delegation_address};
+use super::delegation::check_delegation;
 use super::encrypted_store::resolve_encrypted_store;
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
@@ -9,7 +9,7 @@ use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use super::{SolanaPubkeyBytes, delegation_address, wildcard_delegation_address};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
 use tracing::info;

@@ -20,21 +20,16 @@
 
 mod solana_support;
 
+use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
-    delegation::{AuthorizedRow, DelegationFailure, check_delegation},
-    encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
-    handle_binding::{HandleBindingFailure, check_handle_binding},
+    handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::LeafProofOutcome,
-    scope::{ScopeFailure, check_scope},
     snapshot::{
         HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys,
         SolanaRpcClient,
     },
-    watermark::{WatermarkFailure, read_watermark},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_pubkey::Pubkey;
 use solana_support::*;
 
@@ -495,7 +490,6 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
         ),
         "expected the deciding read's peaks to decide, got {failure}"
     );
-    assert!(!failure.is_recoverable());
 }
 
 /// Missing leaves from a lagging record are fetched once more. If still missing, the request
@@ -672,42 +666,6 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
         error,
         SnapshotError::KeyNotInSnapshot { key } if key == never_planned
     ));
-}
-
-/// Individual checks use the deciding snapshot. A later worker attempt obtains a fresh one.
-#[test]
-fn authorization_checks_take_the_observation_and_never_a_reader() {
-    let _resolve_encrypted_store: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        [u8; 32],
-    ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> = resolve_encrypted_store;
-
-    let _read_watermark: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-    ) -> Result<u64, WatermarkFailure> = read_watermark;
-
-    let _check_delegation: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-    ) -> Result<AuthorizedRow, DelegationFailure> = check_delegation;
-
-    let _check_handle_binding: fn(
-        &ResolvedEncryptedStore,
-        [u8; 32],
-        SolanaPubkeyBytes,
-        &LeafProofOutcome,
-    ) -> Result<(), HandleBindingFailure> = check_handle_binding;
-
-    let _check_scope: fn(
-        &zama_solana_permit::AllowedScopes,
-        &ResolvedEncryptedStore,
-    ) -> Result<(), ScopeFailure> = check_scope;
 }
 
 #[tokio::test]

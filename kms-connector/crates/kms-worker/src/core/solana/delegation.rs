@@ -8,19 +8,8 @@
 //! in-flight requests on every unrelated delegation update.
 
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use super::{SolanaPubkeyBytes, delegation_address};
 use zama_solana_acl::WILDCARD_AUTHORITY;
-
-pub use crate::core::solana_acl::user_decryption_delegation_address as delegation_address;
-
-/// The address of the wildcard row of `(delegator, delegate)`.
-pub fn wildcard_delegation_address(
-    program_id: SolanaPubkeyBytes,
-    delegator: SolanaPubkeyBytes,
-    delegate: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    delegation_address(program_id, delegator, delegate, WILDCARD_AUTHORITY)
-}
 
 /// Which row carried a delegated authorization, for the audit log.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

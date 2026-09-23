@@ -2,8 +2,8 @@
 //! unsigned claim into a validated account. Program ownership is the trust anchor: only the host
 //! program can write data into an account it owns.
 
+use super::SolanaPubkeyBytes;
 use super::snapshot::{HostSnapshot, SnapshotError};
-use crate::core::solana_acl::SolanaPubkeyBytes;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::WILDCARD_AUTHORITY;
 use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
@@ -39,7 +39,7 @@ impl ResolvedEncryptedStore {
 }
 
 /// The address a store with these fields must live at: the PDA of its own seeds and stored bump.
-pub fn encrypted_store_address(
+fn encrypted_store_address(
     program_id: SolanaPubkeyBytes,
     state: &EncryptedStore,
 ) -> Option<SolanaPubkeyBytes> {

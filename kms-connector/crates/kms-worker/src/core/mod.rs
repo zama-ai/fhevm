@@ -4,7 +4,6 @@ pub mod event_processor;
 mod kms_response_publisher;
 mod kms_worker;
 pub mod solana;
-pub mod solana_acl;
 
 pub use config::Config;
 pub use event_picker::{DbEventPicker, EventPicker};

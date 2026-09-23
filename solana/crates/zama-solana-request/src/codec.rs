@@ -17,9 +17,7 @@
 //!
 //! There is one encoder and one decoder, and both consumers call them: a field added on
 //! either side is a compile error on the other, rather than a byte diff discovered by a
-//! fixture test. The committed vectors remain, and after the unification they pin this
-//! implementation against the borsh-js encoder on the client side — the cross-language
-//! agreement that no amount of shared Rust can establish.
+//! fixture test.
 //!
 //! The gateway event also carries the handles, transport key, window and KMS routing in
 //! cleartext. A consumer that authorizes an event uses those cleartext values in place of the
@@ -34,8 +32,7 @@ use zama_solana_permit::PermitWireFields;
 pub const SOLANA_REQUEST_VERSION: u8 = 0x03;
 
 /// The borsh body, mirroring [`SolanaUserDecryptRequestWire`] field for field over
-/// primitives. The field order below IS the canonical layout — the borsh-js schema on the
-/// client side is written against this struct.
+/// primitives. The field order below IS the canonical layout.
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBody {
     user_pubkey: Vec<u8>,

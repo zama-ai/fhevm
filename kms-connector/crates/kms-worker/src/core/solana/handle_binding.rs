@@ -3,12 +3,12 @@
 //!
 //! A proof is verified before its age is considered: an append merges only some peaks, so a proof
 //! built against an older leaf count often still verifies and must be accepted. Only when the
-//! record has no proof does its leaf count matter: a record at least as long as the chain proves
-//! the leaf was never granted, a shorter one may still catch up.
+//! record has no proof does its leaf count matter: a record at least as long as the observed store
+//! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
 use super::proof::{HostProofReader, LeafProofOutcome, LeafQuery, ProofReadError, check_length};
-use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use super::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
@@ -196,7 +196,7 @@ fn check_leaf(
 /// the observed account shows.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum HandleBindingFailure {
-    /// The record has sealed at least the chain's history: the permission was never granted.
+    /// The record has sealed at least the observed history, and no grant is in it.
     #[error("no leaf for this key and handle in {record_leaf_count} of {live_leaf_count} leaves")]
     NoLeaf {
         record_leaf_count: u64,

@@ -168,8 +168,7 @@ fn a_duplicate_handle_is_legal() {
     );
 }
 
-/// Both occurrences are authorized, and both appear in the accepted entry set — in order, so the
-/// response can bind each at its position.
+/// Both occurrences of an authorized handle are authorized.
 #[tokio::test]
 async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
     let wallet = Wallet::new(1);

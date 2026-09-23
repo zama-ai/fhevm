@@ -22,6 +22,7 @@
 
 mod solana_support;
 
+use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
@@ -30,7 +31,6 @@ use kms_worker::core::solana::{
     scope::{ScopeFailure, check_scope},
     snapshot::{SnapshotAccount, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
 

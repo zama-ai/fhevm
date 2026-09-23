@@ -28,15 +28,15 @@ use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 
 mod solana_support;
 
+use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
-    delegation::{AuthorizedRow, DelegationFailure, check_delegation, wildcard_delegation_address},
+    delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     encrypted_store::EncryptedStoreFailure,
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
     snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use zama_solana_acl::WILDCARD_AUTHORITY;
 
@@ -882,7 +882,8 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
     let delegator = Wallet::new(2).pubkey();
     let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
-    let (wildcard_key, _) = wildcard_delegation_address(PROGRAM_ID, delegator, delegate);
+    let (wildcard_key, _) =
+        DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT).address();
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]))

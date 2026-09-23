@@ -14,14 +14,16 @@
 //! a test per value is the only way to know all of them are in the preimage.
 //!
 //! The record's answer is classified only once it carries no proof, and the classification is the
-//! second half of this file: a record with the chain's history and no leaf is terminal; a record
-//! behind the chain, a record that does not know the account yet, and a proof from a record ahead
-//! of this observation are disagreements to retry; a record whose history has a gap is terminal.
+//! second half of this file: a record with the observed history and no leaf is an ACL denial to
+//! retry; a record behind the chain, a record that does not know the account yet, and a proof from
+//! a record ahead of this observation are disagreements to retry; a record whose history has a gap
+//! is terminal.
 //! Two accepts carry as much weight as the rejections: a proof from a record behind the chain still
 //! verifies when the append that followed left its peak alone, and it must be taken.
 
 mod solana_support;
 
+use kms_worker::core::solana::SolanaPubkeyBytes;
 use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
@@ -30,7 +32,6 @@ use kms_worker::core::solana::{
     proof::{LeafKind, LeafProofOutcome, LeafQuery},
     snapshot::SnapshotKeys,
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
@@ -120,13 +121,6 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
             live_leaf_count: 1
         }
     ));
-    assert!(
-        !AuthorizationFailure::HandleBinding {
-            index: 0,
-            source: failure
-        }
-        .is_recoverable()
-    );
 }
 
 /// Several keys allowed on one handle each hold their own leaf, and each is proven on its own.
@@ -306,10 +300,11 @@ fn a_tampered_sibling_path_does_not_verify() {
 // The record's answer when it carries no proof
 // ---------------------------------------------------------------------------
 
-/// A record that has sealed at least as much history as the chain shows and has no leaf: the
-/// permission was never granted, and repeating the request changes nothing.
+/// A record that has sealed at least the observed history and has no leaf: nothing grants the key
+/// yet. The node this connector reads can be behind the grant the user saw, so the request is
+/// retried within the attempt budget, as an EVM ACL denial is.
 #[test]
-fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
+fn no_leaf_in_a_record_with_the_observed_history_is_retried() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x30, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, Wallet::new(9).pubkey());
@@ -330,7 +325,7 @@ fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
         }
     ));
     assert!(
-        !AuthorizationFailure::HandleBinding {
+        AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
