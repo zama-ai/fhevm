@@ -2025,8 +2025,8 @@ Status: adopted
 
 Recorded in fhevm-internal#2094.
 
-Every program is written with Anchor v1, on its latest stable release (1.2.0), and builds with the
-platform tools and SBPF target that release selects (v1.57, SBPF v3). New code uses Anchor's typed
+Every program is written with Anchor v1, pinned to a stable release in `Anchor.toml`, and builds
+with the platform tools and SBPF target that release selects. New code uses Anchor's typed
 accounts and constraints where they express the check; a check written by hand is a local choice
 of that handler, not a step towards leaving the framework.
 

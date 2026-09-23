@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Anchor 1.2.0 requests v1.57. cargo-build-sbf 4.1.0 can silently substitute its
+# Anchor 1.2.0 requests v1.57. cargo-build-sbf can silently substitute its
 # default on a cold cache when GitHub's mutable "latest" release is older.
 version=v1.57
 tools_dir="$HOME/.cache/solana/$version/platform-tools"

@@ -23,7 +23,7 @@ for program in zama_host confidential_token confidential_batcher demo_vault; do
   mv "target/deploy/$program.so" "target/deploy/${program}_admin_sweep.so"
 done
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
-if rg -n 'Error:.*[Ss]tack offset' "$build_log"; then
+if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed frame space)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
   exit 1
 fi
