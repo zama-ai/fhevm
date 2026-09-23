@@ -1,26 +1,23 @@
-use super::registry::{CoprocessorRegistry, CoprocessorRegistrySnapshot};
+use super::{VerifiedCiphertexts, s3};
 use crate::core::{
     config::Config,
-    event_processor::{
-        ProcessingError, RequestCheckError, RequestCheckKind,
-        ciphertext::{COPROCESSOR_CONTEXT_ID, VerifiedCiphertexts, s3::BoundedClient},
-    },
+    event_processor::{ProcessingError, RequestCheckError, RequestCheckKind},
 };
 use alloy::{
-    primitives::{Address, B256, U256},
+    primitives::{B256, U256},
     providers::Provider,
 };
 use anyhow::anyhow;
 use ciphertext_attestation::{
-    CiphertextAttestation,
-    consensus::{self, Consensus, ConsensusMaterial},
+    BoundedClient, CoprocessorRegistry, CoprocessorRegistrySnapshot, CriticalFailurePolicy,
+    fetch_attestations_and_check_consensus,
 };
 use futures::future::try_join_all;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::TypedCiphertext;
-use tokio::task::JoinSet;
+use std::num::NonZeroUsize;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Manages the ciphertext materials of incoming decryption requests: off-chain attestation
 /// consensus verification and S3 retrieval.
@@ -33,6 +30,9 @@ pub struct CiphertextManager<P: Provider> {
 
     /// HTTP client for the attestation HEAD fan-out and the ciphertext retrieval.
     s3_client: BoundedClient,
+
+    /// Number of attempts of a ciphertext retrieval, per winning-group bucket.
+    retrieval_attempts: NonZeroUsize,
 }
 
 impl<P> CiphertextManager<P>
@@ -44,11 +44,19 @@ where
         config: &Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<Self> {
-        let registry = CoprocessorRegistry::connect(provider, config, cancel_token).await?;
+        let registry = CoprocessorRegistry::connect(
+            provider,
+            config.gateway_config_contract.address,
+            config.copro_registry_refresh,
+            cancel_token,
+            CriticalFailurePolicy::Shutdown,
+        )
+        .await?;
 
         Ok(Self {
             registry,
-            s3_client: BoundedClient::from_config(config)?,
+            s3_client: s3::s3_client_from_config(config)?,
+            retrieval_attempts: config.s3_ciphertext_retrieval_attempts,
         })
     }
 
@@ -90,11 +98,7 @@ where
         registry: &CoprocessorRegistrySnapshot,
         handle: B256,
     ) -> Result<ResolvedHandle, ProcessingError> {
-        let ResolvedConsensus {
-            consensus,
-            winning_buckets,
-        } = self
-            .fetch_attestations_and_check_consensus(handle, registry)
+        let consensus = fetch_attestations_and_check_consensus(&self.s3_client, handle, registry)
             .await
             .map_err(|e| {
                 RequestCheckError::recoverable(
@@ -109,95 +113,24 @@ where
             %handle,
             valid_signers = consensus.signers.len(),
             threshold = registry.threshold.get(),
-            winning_buckets = winning_buckets.len(),
+            winning_buckets = consensus.winning_buckets.len(),
             "Consensus reached for handle"
         );
 
-        let ciphertext = self
-            .s3_client
-            .retrieve_verified_ciphertext(handle, &consensus.material, &winning_buckets)
-            .await?;
+        let ciphertext = s3::retrieve_verified_ciphertext(
+            &self.s3_client,
+            handle,
+            &consensus.material,
+            &consensus.winning_buckets,
+            self.retrieval_attempts,
+        )
+        .await?;
 
         Ok(ResolvedHandle {
             key_id: consensus.material.key_id,
             ciphertext,
         })
     }
-
-    /// Fetches the attestation for a `handle` from the registered Coprocessor buckets concurrently
-    /// and evaluates the consensus.
-    ///
-    /// Tries to evaluate the consensus as soon as enough attestations are received, without waiting
-    /// for slow or unreachable buckets.
-    ///
-    /// On success returns the winning [`Consensus`] together with the URLs of the winning-group
-    /// buckets (those that served a valid attestation for the winning material) to fetch the
-    /// ciphertext from.
-    async fn fetch_attestations_and_check_consensus(
-        &self,
-        handle: B256,
-        registry: &CoprocessorRegistrySnapshot,
-    ) -> anyhow::Result<ResolvedConsensus> {
-        let mut fetch_attestation_tasks = JoinSet::new();
-        for (tx_sender, bucket) in registry.tx_sender_to_bucket.iter() {
-            let s3_client = self.s3_client.clone();
-            let (bucket, tx_sender) = (bucket.clone(), *tx_sender);
-            fetch_attestation_tasks.spawn(async move {
-                let result = s3_client.fetch_single_attestation(&bucket, handle).await;
-                (tx_sender, result)
-            });
-        }
-
-        let mut attestations: Vec<(Address, CiphertextAttestation)> = vec![];
-        let mut last_error = anyhow!("no attestation fetched yet");
-        while let Some(joined) = fetch_attestation_tasks.join_next().await {
-            match joined {
-                Err(e) => {
-                    warn!("Attestation fetch task panicked: {e}");
-                    continue;
-                }
-                Ok((tx_sender, Err(e))) => {
-                    warn!(%tx_sender, %handle, "Failed to fetch attestation: {e}");
-                    continue;
-                }
-                Ok((tx_sender, Ok(attestation))) => attestations.push((tx_sender, attestation)),
-            };
-
-            if attestations.len() < registry.threshold.get() {
-                last_error = anyhow!(
-                    "not enough attestations successfully fetched ({})",
-                    attestations.len()
-                );
-                continue;
-            }
-
-            match consensus::evaluate(
-                handle,
-                COPROCESSOR_CONTEXT_ID,
-                &attestations,
-                &registry.signers,
-                registry.threshold,
-            ) {
-                Ok(consensus) => {
-                    let winning_buckets =
-                        winning_group_buckets(&attestations, &consensus, registry);
-                    // Early-exit: dropping remaining tasks aborts the other in-flight HEAD requests.
-                    return Ok(ResolvedConsensus {
-                        consensus,
-                        winning_buckets,
-                    });
-                }
-                Err(e) => last_error = e.into(),
-            }
-        }
-        Err(last_error)
-    }
-}
-
-/// A reached consensus together with the buckets to fetch the ciphertext from.
-struct ResolvedConsensus {
-    consensus: Consensus,
-    winning_buckets: Vec<String>,
 }
 
 /// A handle resolved through consensus: the agreed key plus its verified ciphertext.
@@ -243,28 +176,6 @@ fn aggregate_resolved_handles(
     })
 }
 
-/// Collects the URLs of the buckets whose attestation vouches for the winning material.
-fn winning_group_buckets(
-    attestations: &[(Address, CiphertextAttestation)],
-    consensus: &Consensus,
-    registry: &CoprocessorRegistrySnapshot,
-) -> Vec<String> {
-    let mut buckets = Vec::new();
-    for (tx_sender, attestation) in attestations {
-        if ConsensusMaterial::from(attestation) != consensus.material
-            || !consensus.signers.contains(&attestation.signer)
-        {
-            continue;
-        }
-        if let Some(bucket) = registry.tx_sender_to_bucket.get(tx_sender)
-            && !buckets.contains(bucket)
-        {
-            buckets.push(bucket.clone());
-        }
-    }
-    buckets
-}
-
 #[cfg(test)]
 impl<P> CiphertextManager<P>
 where
@@ -273,8 +184,9 @@ where
     /// Test constructor: an empty registry and default config.
     pub fn for_test(provider: P) -> Self {
         Self {
-            registry: CoprocessorRegistry::empty(provider),
-            s3_client: BoundedClient::from_config(&Config::default()).expect("S3 client"),
+            registry: CoprocessorRegistry::for_test(provider),
+            s3_client: s3::s3_client_from_config(&Config::default()).expect("S3 client"),
+            retrieval_attempts: Config::default().s3_ciphertext_retrieval_attempts,
         }
     }
 }
@@ -283,12 +195,6 @@ where
 mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
-    use alloy::providers::{ProviderBuilder, mock::Asserter};
-    use std::{
-        collections::{HashMap, HashSet},
-        num::NonZeroUsize,
-        time::Duration,
-    };
 
     fn resolved(key_id: U256, handle_byte: u8) -> ResolvedHandle {
         ResolvedHandle {
@@ -331,53 +237,6 @@ mod tests {
     #[test]
     fn aggregate_rejects_empty() {
         let result = aggregate_resolved_handles(vec![]);
-        assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
-    }
-
-    // Checks that the CiphertextManager waits for a permit before sending a `HEAD` request.
-    #[tokio::test]
-    async fn s3_head_requests_wait_for_a_permit() {
-        const BUCKET: &str = "http://127.0.0.1:1";
-
-        let provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(Asserter::new());
-
-        // One `HEAD` permit for the whole bucket, whose address nothing listens on
-        let mut manager = CiphertextManager::for_test(provider);
-        let snapshot = CoprocessorRegistrySnapshot::new(
-            HashSet::from([Address::ZERO]),
-            HashMap::from([(Address::ZERO, BUCKET.to_string())]),
-            NonZeroUsize::MIN,
-        );
-        manager.registry = manager.registry.with_snapshot(snapshot);
-        manager.s3_client = BoundedClient::from_config(&Config {
-            s3_max_concurrent_heads_per_bucket: NonZeroUsize::MIN,
-            s3_max_concurrent_gets: NonZeroUsize::MIN,
-            ..Default::default()
-        })
-        .unwrap();
-
-        // The `HEAD` request is gated by a permit, so it should not be issued until the permit is
-        // dropped
-        let permit = manager.s3_client.acquire_head_for_test(BUCKET).await;
-        let gated = tokio::time::timeout(
-            Duration::from_millis(200),
-            manager.verify_and_retrieve(&[B256::ZERO]),
-        )
-        .await;
-        assert!(gated.is_err(), "resolution should not have started");
-
-        drop(permit);
-
-        // The bucket is unreachable, so consensus fails: reaching that error is the proof that the
-        // `HEAD` request was issued once the permit freed.
-        let result = tokio::time::timeout(
-            Duration::from_secs(5),
-            manager.verify_and_retrieve(&[B256::ZERO]),
-        )
-        .await
-        .expect("resolution should have resumed");
         assert!(matches!(result, Err(ref e) if e.kind == ProcessingErrorKind::Recoverable));
     }
 }

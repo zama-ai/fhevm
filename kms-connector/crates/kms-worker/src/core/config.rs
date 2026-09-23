@@ -85,7 +85,7 @@ pub struct Config {
 
     /// Number of attempts for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
-    pub s3_ciphertext_retrieval_attempts: u8,
+    pub s3_ciphertext_retrieval_attempts: NonZeroUsize,
     /// Timeout to connect to a S3 bucket.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
@@ -230,8 +230,8 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
-fn default_s3_ciphertext_retrieval_attempts() -> u8 {
-    3
+fn default_s3_ciphertext_retrieval_attempts() -> NonZeroUsize {
+    NonZeroUsize::new(3).unwrap()
 }
 
 fn default_s3_connect_timeout() -> Duration {
@@ -476,7 +476,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
-        assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
+        assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.s3_head_timeout.as_secs(), 6);
         assert_eq!(config.s3_get_timeout.as_secs(), 30);

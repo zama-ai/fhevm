@@ -27,7 +27,7 @@ kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.15.0-0", defa
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.15.0-0", default-features = true }
 tfhe = { version = "=1.8.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
-ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 
 #####################################################################
 #                       External dependencies                       #
