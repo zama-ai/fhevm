@@ -16,7 +16,7 @@ use super::harness::counted_bytes;
 use super::harness::{balance_handle, try_measure, ShapeBuilder, ADMITTED_FRONTIER_SHAPES};
 use super::shapes::*;
 
-/// Invariant #61: 17 updates to 8-peak Stores is one past the host's measured wall for that shape
+/// Invariant #61: 16 updates to 8-peak Stores is one past the host's measured wall for that shape
 /// (`fhe_execute_boundary/mature_updates_peaks_8`), yet the builder admits it.
 #[test]
 fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
@@ -26,9 +26,9 @@ fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
             Pubkey::new_unique(),
             [0xA5; 32],
         ),
-        shared_audience_mature_updates_shape(17, 8),
+        shared_audience_mature_updates_shape(16, 8),
     )
-    .expect("17 shared-audience updates to 8-peak Stores fit the builder");
+    .expect("16 shared-audience updates to 8-peak Stores fit the builder");
 }
 
 /// The pre-emptive heap protocol, proven adversarially: drive the heaviest per-step

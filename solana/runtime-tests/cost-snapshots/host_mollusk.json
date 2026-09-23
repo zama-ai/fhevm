@@ -6,20 +6,20 @@
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 111147,
+      "compute_units": 115128,
       "unique_accounts": 9,
       "instruction_data_bytes": 536,
-      "cpi_instructions": 0,
-      "total_cpi_instruction_data_bytes": 0,
-      "max_cpi_instruction_data_bytes": 0
+      "cpi_instructions": 1,
+      "total_cpi_instruction_data_bytes": 1089,
+      "max_cpi_instruction_data_bytes": 1089
     },
     "fhe_execute/three_steps": {
-      "compute_units": 60977,
+      "compute_units": 62836,
       "unique_accounts": 9,
       "instruction_data_bytes": 275,
-      "cpi_instructions": 0,
-      "total_cpi_instruction_data_bytes": 0,
-      "max_cpi_instruction_data_bytes": 0
+      "cpi_instructions": 1,
+      "total_cpi_instruction_data_bytes": 161,
+      "max_cpi_instruction_data_bytes": 161
     },
     "verify_public_decrypt/happy": {
       "compute_units": 37563,

@@ -6,11 +6,11 @@
   },
   "measurements": {
     "claim": {
-      "compute_units": 243734,
+      "compute_units": 247602,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 7,
-      "total_cpi_instruction_data_bytes": 1339,
+      "cpi_instructions": 9,
+      "total_cpi_instruction_data_bytes": 1661,
       "max_cpi_instruction_data_bytes": 342
     },
     "close_join_record": {
@@ -22,27 +22,27 @@
       "max_cpi_instruction_data_bytes": 0
     },
     "dispatch": {
-      "compute_units": 261897,
+      "compute_units": 264026,
       "unique_accounts": 21,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 9,
-      "total_cpi_instruction_data_bytes": 1051,
+      "cpi_instructions": 10,
+      "total_cpi_instruction_data_bytes": 1276,
       "max_cpi_instruction_data_bytes": 342
     },
     "join": {
-      "compute_units": 348699,
+      "compute_units": 352567,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
-      "cpi_instructions": 10,
-      "total_cpi_instruction_data_bytes": 2157,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 2479,
       "max_cpi_instruction_data_bytes": 737
     },
     "open_batch": {
-      "compute_units": 258233,
+      "compute_units": 261711,
       "unique_accounts": 24,
       "instruction_data_bytes": 16,
-      "cpi_instructions": 20,
-      "total_cpi_instruction_data_bytes": 1602,
+      "cpi_instructions": 22,
+      "total_cpi_instruction_data_bytes": 1796,
       "max_cpi_instruction_data_bytes": 242
     },
     "reclaim_batch_authority": {
@@ -54,11 +54,11 @@
       "max_cpi_instruction_data_bytes": 12
     },
     "redeem_claim": {
-      "compute_units": 279735,
+      "compute_units": 283603,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 7,
-      "total_cpi_instruction_data_bytes": 1339,
+      "cpi_instructions": 9,
+      "total_cpi_instruction_data_bytes": 1661,
       "max_cpi_instruction_data_bytes": 342
     },
     "redeem_close_join_record": {
@@ -70,27 +70,27 @@
       "max_cpi_instruction_data_bytes": 0
     },
     "redeem_dispatch": {
-      "compute_units": 194398,
+      "compute_units": 196527,
       "unique_accounts": 21,
       "instruction_data_bytes": 8,
-      "cpi_instructions": 9,
-      "total_cpi_instruction_data_bytes": 1051,
+      "cpi_instructions": 10,
+      "total_cpi_instruction_data_bytes": 1276,
       "max_cpi_instruction_data_bytes": 342
     },
     "redeem_join": {
-      "compute_units": 300700,
+      "compute_units": 304568,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
-      "cpi_instructions": 10,
-      "total_cpi_instruction_data_bytes": 2157,
+      "cpi_instructions": 12,
+      "total_cpi_instruction_data_bytes": 2479,
       "max_cpi_instruction_data_bytes": 737
     },
     "redeem_open_batch": {
-      "compute_units": 252234,
+      "compute_units": 255712,
       "unique_accounts": 24,
       "instruction_data_bytes": 16,
-      "cpi_instructions": 20,
-      "total_cpi_instruction_data_bytes": 1602,
+      "cpi_instructions": 22,
+      "total_cpi_instruction_data_bytes": 1796,
       "max_cpi_instruction_data_bytes": 242
     },
     "redeem_reclaim_batch_authority": {
@@ -102,19 +102,19 @@
       "max_cpi_instruction_data_bytes": 12
     },
     "redeem_settle": {
-      "compute_units": 337115,
+      "compute_units": 339685,
       "unique_accounts": 36,
       "instruction_data_bytes": 174,
-      "cpi_instructions": 13,
-      "total_cpi_instruction_data_bytes": 1536,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 1921,
       "max_cpi_instruction_data_bytes": 396
     },
     "settle": {
-      "compute_units": 320597,
+      "compute_units": 323167,
       "unique_accounts": 36,
       "instruction_data_bytes": 174,
-      "cpi_instructions": 13,
-      "total_cpi_instruction_data_bytes": 1536,
+      "cpi_instructions": 14,
+      "total_cpi_instruction_data_bytes": 1921,
       "max_cpi_instruction_data_bytes": 396
     }
   }
