@@ -911,9 +911,9 @@ async fn concurrent_workers_cover_five_copro_drift_populations_from_every_origin
                     let persisted = sqlx::query(
                         r#"
                     SELECT COUNT(*) AS finding_count,
-                           BOOL_OR(target_ct64_digest IS NOT NULL) AS has_quorum_backed_difference
+                           BOOL_OR(quorum_ct64_digest IS NOT NULL) AS has_quorum_backed_difference
                       FROM drifted_handle
-                     WHERE last_observed_task_id = $1
+                     WHERE last_quorum_task_id = $1
                     "#,
                     )
                     .bind(task_id)
@@ -1130,8 +1130,7 @@ async fn detailed_consensus_does_not_hide_localized_historical_drift() {
         SELECT block_number,
                block_hash,
                local_ct64_digest,
-               observed_ct64_digest,
-               target_ct64_digest
+               quorum_ct64_digest
           FROM drifted_handle
         "#,
     )
@@ -1152,12 +1151,8 @@ async fn detailed_consensus_does_not_hide_localized_historical_drift() {
     );
     assert_eq!(
         finding
-            .try_get::<Vec<u8>, _>("observed_ct64_digest")
+            .try_get::<Vec<u8>, _>("quorum_ct64_digest")
             .unwrap(),
-        B256::repeat_byte(0x32).to_vec()
-    );
-    assert_eq!(
-        finding.try_get::<Vec<u8>, _>("target_ct64_digest").unwrap(),
         B256::repeat_byte(0x32).to_vec()
     );
     for signer in &signers[1..] {
@@ -1855,24 +1850,24 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
                finding.handle,
                finding.status,
                finding.local_present,
-               finding.observed_present,
+               finding.quorum_present,
                finding.local_keyset_id,
-               finding.observed_keyset_id,
+               finding.quorum_keyset_id,
                finding.local_ct64_digest,
-               finding.observed_ct64_digest,
+               finding.quorum_ct64_digest,
                finding.local_ct128_digest,
-               finding.observed_ct128_digest,
+               finding.quorum_ct128_digest,
                finding.local_ct128_format,
-               finding.observed_ct128_format,
-               finding.target_ct64_digest,
-               finding.last_observed_task_id,
+               finding.quorum_ct128_format,
+               finding.quorum_ct64_digest,
+               finding.last_quorum_task_id,
                finding.resolved_task_id,
                finding.healed_at IS NULL AS resolution_missing,
                detected_manifest.revision AS detected_revision,
                detected.latest_outcome AS detected_outcome
           FROM drifted_handle finding
           JOIN block_manifest_verification_task detected
-            ON detected.id = finding.last_observed_task_id
+            ON detected.id = finding.last_quorum_task_id
           JOIN block_manifest detected_manifest
             ON detected_manifest.id = detected.local_manifest_id
          ORDER BY finding.block_number
@@ -1908,13 +1903,13 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "unresolved");
         assert!(row.try_get::<bool, _>("local_present").unwrap());
-        assert!(row.try_get::<bool, _>("observed_present").unwrap());
+        assert!(row.try_get::<bool, _>("quorum_present").unwrap());
         assert_eq!(
             row.try_get::<Vec<u8>, _>("local_keyset_id").unwrap(),
             drifted_keyset_id.to_be_bytes::<32>()
         );
         assert_eq!(
-            row.try_get::<Vec<u8>, _>("observed_keyset_id").unwrap(),
+            row.try_get::<Vec<u8>, _>("quorum_keyset_id").unwrap(),
             quorum_keyset_id.to_be_bytes::<32>()
         );
         assert_eq!(
@@ -1922,7 +1917,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
             B256::repeat_byte(block.material).to_vec()
         );
         assert_eq!(
-            row.try_get::<Vec<u8>, _>("observed_ct64_digest").unwrap(),
+            row.try_get::<Vec<u8>, _>("quorum_ct64_digest").unwrap(),
             B256::repeat_byte(block.material).to_vec()
         );
         assert_eq!(
@@ -1930,7 +1925,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
             B256::repeat_byte(block.material.wrapping_add(1)).to_vec()
         );
         assert_eq!(
-            row.try_get::<Vec<u8>, _>("observed_ct128_digest").unwrap(),
+            row.try_get::<Vec<u8>, _>("quorum_ct128_digest").unwrap(),
             B256::repeat_byte(block.material.wrapping_add(1)).to_vec()
         );
         assert_eq!(
@@ -1938,12 +1933,12 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
             CiphertextFormat::CompressedOnCpu as u8 as i16
         );
         assert_eq!(
-            row.try_get::<i16, _>("observed_ct128_format").unwrap(),
+            row.try_get::<i16, _>("quorum_ct128_format").unwrap(),
             CiphertextFormat::CompressedOnCpu as u8 as i16
         );
         assert_ne!(
             row.try_get::<Vec<u8>, _>("local_keyset_id").unwrap(),
-            row.try_get::<Vec<u8>, _>("observed_keyset_id").unwrap()
+            row.try_get::<Vec<u8>, _>("quorum_keyset_id").unwrap()
         );
         assert_eq!(row.try_get::<i64, _>("detected_revision").unwrap(), 0);
         assert_eq!(
@@ -1991,7 +1986,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         r#"
         SELECT finding.block_number,
                finding.status,
-               finding.last_observed_task_id,
+               finding.last_quorum_task_id,
                finding.resolved_task_id,
                finding.healed_at IS NULL AS healing_not_performed,
                resolved_manifest.revision AS resolved_revision,
@@ -2010,7 +2005,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
     assert_eq!(resolved_rows.len(), blocks.len());
     for row in &resolved_rows {
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "resolved");
-        let last_task_id = row.try_get::<i64, _>("last_observed_task_id").unwrap();
+        let last_task_id = row.try_get::<i64, _>("last_quorum_task_id").unwrap();
         assert_eq!(
             row.try_get::<i64, _>("resolved_task_id").unwrap(),
             last_task_id
@@ -2822,7 +2817,7 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
             .await
             .unwrap();
     // Inferred findings do not invent peer evidence or require completed SNS.
-    let inferred: i64 = sqlx::query_scalar("INSERT INTO drifted_handle (consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, handle, detection_kind, reason, local_present, observed_present)
+    let inferred: i64 = sqlx::query_scalar("INSERT INTO drifted_handle (consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, handle, detection_kind, reason, local_present, quorum_present)
         SELECT consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, $2, 'inferred', 'ct64_mismatch', TRUE, FALSE FROM drifted_handle WHERE id = $1 RETURNING id")
         .bind(id).bind(B256::repeat_byte(0xee).as_slice()).fetch_one(&pool).await.unwrap();
     let defaults = sqlx::query("SELECT demand_count, can_be_healed, healed_at IS NULL AS pending, next_retry_at IS NULL AS no_retry, claimed_by IS NULL AS unclaimed, target_evidence IS NULL AS no_evidence, peer_sources FROM drifted_handle WHERE id = $1")
@@ -2867,7 +2862,7 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     .unwrap()
     .unwrap();
     assert_eq!(result.outcome, VerificationOutcome::Consensus);
-    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, demand_count, claimed_by, target_ct64_digest FROM drifted_handle WHERE id = $1")
+    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, demand_count, claimed_by, quorum_ct64_digest FROM drifted_handle WHERE id = $1")
         .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(row.get::<String, _>("detection_kind"), "verified");
     assert!(row.get::<bool, _>("can_be_healed"));
@@ -2875,10 +2870,10 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     assert_eq!(row.get::<i64, _>("demand_count"), 3);
     assert_eq!(row.get::<String, _>("claimed_by"), "worker");
     assert_eq!(
-        row.get::<Vec<u8>, _>("target_ct64_digest"),
+        row.get::<Vec<u8>, _>("quorum_ct64_digest"),
         B256::repeat_byte(9).to_vec()
     );
-    sqlx::query("UPDATE drifted_handle SET target_ct64_digest = $2 WHERE id = $1")
+    sqlx::query("UPDATE drifted_handle SET quorum_ct64_digest = $2 WHERE id = $1")
         .bind(inferred)
         .bind(B256::repeat_byte(9).as_slice())
         .execute(&pool)
@@ -2912,7 +2907,7 @@ async fn later_verification_pins_existing_inferred_and_keeps_origin() {
         INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, observed_present
+            local_present, quorum_present
         ) VALUES ($1, $2, $3, $4, $5, $6, 'inferred', 'ct64_mismatch', TRUE, FALSE)
         RETURNING id
         "#,
@@ -2951,8 +2946,8 @@ async fn later_verification_pins_existing_inferred_and_keeps_origin() {
         .unwrap();
     assert_eq!(count, 1);
     let row = sqlx::query(
-        "SELECT detection_kind, can_be_healed, target_ct64_digest, target_keyset_id,
-                target_ct128_digest, target_ct128_format
+        "SELECT detection_kind, can_be_healed, quorum_ct64_digest, quorum_keyset_id,
+                quorum_ct128_digest, quorum_ct128_format
            FROM drifted_handle WHERE id = $1",
     )
     .bind(inferred)
@@ -2962,19 +2957,19 @@ async fn later_verification_pins_existing_inferred_and_keeps_origin() {
     assert_eq!(row.get::<String, _>("detection_kind"), "inferred");
     assert!(row.get::<bool, _>("can_be_healed"));
     assert_eq!(
-        row.get::<Vec<u8>, _>("target_ct64_digest"),
+        row.get::<Vec<u8>, _>("quorum_ct64_digest"),
         B256::repeat_byte(9).to_vec()
     );
     assert_eq!(
-        row.get::<Vec<u8>, _>("target_keyset_id"),
+        row.get::<Vec<u8>, _>("quorum_keyset_id"),
         U256::from(17).to_be_bytes::<32>().to_vec()
     );
     assert_eq!(
-        row.get::<Vec<u8>, _>("target_ct128_digest"),
+        row.get::<Vec<u8>, _>("quorum_ct128_digest"),
         B256::repeat_byte(10).to_vec()
     );
     assert_eq!(
-        row.get::<i16, _>("target_ct128_format"),
+        row.get::<i16, _>("quorum_ct128_format"),
         CiphertextFormat::CompressedOnCpu as u8 as i16
     );
 }
