@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { REPO_ROOT } from "../layout";
 
-test("Hardhat --no-compile preserves prebuilt artifacts during concurrent test invocations", async () => {
-  const e2e = path.join(REPO_ROOT, "test-suite/e2e");
+const e2e = path.join(REPO_ROOT, "test-suite/e2e");
+// Drives the real Hardhat CLI, so it needs the e2e package's dependencies
+// (`npm ci` in test-suite/e2e). A CLI-only checkout skips rather than fails.
+const hardhatInstalled = existsSync(path.join(e2e, "node_modules/hardhat/internal/cli/cli.js"));
+
+test.skipIf(!hardhatInstalled)("Hardhat --no-compile preserves prebuilt artifacts during concurrent test invocations", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "consensus-hardhat-artifacts-"));
   try {
     symlinkSync(path.join(e2e, "node_modules"), path.join(root, "node_modules"), "dir");

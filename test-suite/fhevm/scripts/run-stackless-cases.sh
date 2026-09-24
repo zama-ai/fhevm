@@ -44,6 +44,19 @@ bun_test() { (cd "$CLI_DIR" && bun test "$@"); }
 mocha_test_count() { sed -n 's/^ *\([0-9]\+\) passing.*/\1/p' <<<"$1" | tail -1; }
 # Rustup resolves the pinned toolchain from cwd, not --manifest-path.
 cargo_test() { (cd "$ENGINE_DIR" && SQLX_OFFLINE=true cargo test "$@"); }
+# exact_feature_test <package> <test path>: run one feature-gated unit test and
+# require its own `... ok` line, so a filter matching nothing cannot pass.
+exact_feature_test() {
+  local package="$1" name="$2" out
+  if out="$(cargo_test -p "$package" --features test-failpoints --lib "$name" -- --exact 2>&1)" &&
+     grep -Fxq "test $name ... ok" <<<"$out"; then
+    echo "$out" | tail -3
+  else
+    echo "$out"
+    echo "feature-gated control $package::$name did not pass" >&2
+    FAILURES=$((FAILURES + 1))
+  fi
+}
 broker_control_test() {
   (cd "$REPO_ROOT/listener" && SQLX_OFFLINE=true cargo test -p broker --features test-failpoints --lib test_ack_boundary::tests)
 }
@@ -206,6 +219,12 @@ rust_regression_leg() {
   if ! cargo_test -p tfhe-worker --features test-failpoints --lib test_failpoints::tests; then
     FAILURES=$((FAILURES + 1))
   fi
+  # The remaining opt-in controls are compiled only with the feature, so no
+  # ordinary `cargo test` ever runs them. Pin each exact test: a filter that
+  # selects nothing also exits 0.
+  exact_feature_test fhevm-engine-common reservation_test_control::tests::pressure_is_expiring_and_observed_only_for_real_admission
+  exact_feature_test consensus-detector test_host_report::tests::divergent_report_preserves_length_and_changes_the_commitment
+  exact_feature_test upgrade-controller tests::upgrade_hook_requires_matching_proposal_and_releases_once
   record_case FM-UPGRADE-CONTROLLER 42 controller_crash_test_count \
     "controller cutover, write fences, and recovery after a real process kill" "safety liveness" \
     -- cargo_test -p upgrade-controller --lib -- --test-threads=2

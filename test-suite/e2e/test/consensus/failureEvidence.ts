@@ -30,5 +30,5 @@ export function requireBacklogTargets(handles: string[], transactions: string[],
       [...handles, ...transactions].some(value => !/^0x[0-9a-f]{64}$/.test(value))) throw new Error('backlog needs twelve unique receipt-identified targets');
   if (blocks !== undefined && (!Array.isArray(blocks) || blocks.length !== 12 ||
       blocks.some((height, index) => !Number.isSafeInteger(height) || height < 1 || (index > 0 && height <= blocks[index - 1])) ||
-      blocks[11] - blocks[0] < 8)) throw new Error('backlog must span more than two four-block pages');
+      blocks[11] - blocks[0] < 8)) throw new Error('backlog must span at least nine host blocks so catch-up needs several pages');
 }

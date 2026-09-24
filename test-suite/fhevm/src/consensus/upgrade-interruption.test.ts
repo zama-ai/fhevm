@@ -41,7 +41,8 @@ docker(){
       const effects = readFileSync(path.join(dir, "restore.log"), "utf8");
       expect(effects).toContain("restored");
       expect(effects.includes("kill")).toBe(!["wrong-side", "parent-exit"].includes(mode));
-      expect(readFileSync(path.join(dir, "restore.log.sql"), "utf8")).toContain("DELETE FROM public.consensus_test_upgrade_fault");
+      // Cleanup drops the control table so the next boundary can run on this stack.
+      expect(readFileSync(path.join(dir, "restore.log.sql"), "utf8")).toContain("DROP TABLE IF EXISTS public.consensus_test_upgrade_fault");
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 }

@@ -39,7 +39,7 @@ test("a checkout SHA with published binaries cannot satisfy branch validation", 
   good.revision = "a".repeat(40);
   const images = [{ ref: "suite:local", id: `sha256:${"1".repeat(64)}`, group: "test-suite" }, { ref: "worker:local", id: `sha256:${"2".repeat(64)}`, group: "coprocessor" }];
   const observed = { "image_fhevm-test-suite-e2e-debug": `${images[0].id} (suite:local)`, "image_coprocessor-tfhe-worker": `${images[1].id} (worker:local)` };
-  good.artifactIdentities = { build_mode: "checkout", ...observed, ...receiptArtifacts({ revision: good.revision, mode: "checkout", startedAt: good.startedAt, completedAt: good.endedAt, images }, observed) };
+  good.artifactIdentities = { build_mode: "checkout", ...observed, ...receiptArtifacts({ revision: good.revision, mode: "checkout", features: "none", startedAt: good.startedAt, completedAt: good.endedAt, images }, observed) };
   expect(aggregate({ inventory, results: [good], selected: [entry], partial: true, requireBuildMode: "checkout" }).ok).toBe(true);
 });
 test("CI requires its planned backend; compatible alternatives are not additional coverage", () => {

@@ -47,7 +47,11 @@ cleanup_gpu_cases() {
   hc_cleanup_signals
   hc_begin_cleanup || { rs_finalize_results 1 failed; exit 1; }
   # Cancel a helper's whole host process group before retrying its restores.
-  if ! gpu_cancel_command || ! gpu02_stop_remote; then rs_finalize_results 1 failed; exit 1; fi
+  # A host child that survives cancellation may still be acting on a queue
+  # (GPU-01's child `docker start`s a CPU worker), so the contamination marker
+  # must be left for the next runner exactly as a surviving remote phase leaves it.
+  if ! gpu_cancel_command; then sp_mark_unquiesced; rs_finalize_results 1 failed; exit 1; fi
+  if ! gpu02_stop_remote; then rs_finalize_results 1 failed; exit 1; fi
   sc_run_restores || cleanup=failed
   if [[ -f "$GPU_BASELINE" ]]; then sc_restore_running "$GPU_BASELINE" || cleanup=failed; fi
   if [[ "$cleanup" == ok ]] && ! gpu02_dispose_remote; then cleanup=failed; fi
@@ -150,6 +154,26 @@ run_with_markers() {
   return 0
 }
 
+# The moment the child created its fault, taken from the child's own output.
+# Evaluating `cr_now` in the parent would stamp the fault after the child had
+# already restored the queue or unit, which inverts fault and recovery.
+fault_stamp() {
+  sed -n 's/^GPU_FAULT_OBSERVED_AT=\([0-9T:Z-]*\)$/\1/p' <<<"$CASE_OUT" | head -1
+}
+# record_from with the child's fault stamp, or INVALID when the child never
+# reported creating the fault it was asked to create.
+record_fault_case() {
+  local case_id="$1" status="$2" started="$3" missing="$4"; shift 4
+  local fault_at; fault_at="$(fault_stamp)"
+  if [[ "$status" -eq 0 && -z "$missing" && -z "$fault_at" ]]; then
+    cr_record "$case_id" INVALID started_at="$started" cleanup=ok \
+      detail="the child exited 0 without stamping GPU_FAULT_OBSERVED_AT, so the fault it reports cannot be placed before its recovery"
+    echo "[$case_id] INVALID: no fault stamp in the child's output"
+    FAILURES=$((FAILURES + 1))
+    return 1
+  fi
+  record_from "$case_id" "$status" "$started" "$missing" ${fault_at:+fault_observed_at="$fault_at"} "$@"
+}
 record_from() {
   local case_id="$1" status="$2" started="$3" missing="$4"; shift 4
   if [[ "$status" -ne 0 ]]; then
@@ -201,8 +225,7 @@ case_gpu01() {
     FAILURES=$((FAILURES + 1))
     return 1
   fi
-  record_from "$id" "$status" "$started" "${MISSING_MARKER:-}" \
-    fault_observed_at="$(cr_now)" \
+  record_fault_case "$id" "$status" "$started" "${MISSING_MARKER:-}" \
     workload="queue:operator-${OPERATOR}-tfhe" \
     assert="precondition=pass:baseline queues independently checked single-owner" \
     assert="fault=pass:the guard named the deliberately duplicated queue" \
@@ -270,11 +293,15 @@ case_gpu02() {
     FAILURES=$((FAILURES + 1))
     return 1
   done
+  # `sc_fleet_homogeneous` classifies a worker by the session marker and its
+  # container name, not by which process is alive, so it cannot see a CPU
+  # container relaunched beside a dead CUDA unit. The single-owner check above
+  # (queue-ownership.ts) is what actually refuses that fleet; the homogeneity
+  # loop stays as a coarse guard and is not recorded as evidence.
   cr_record_checked_pass "$id" started_at="$started" cleanup=ok \
-    assert="safety=pass:verified stopped writers before SQL and homogeneous fleet afterwards" \
+    assert="safety=pass:verified stopped writers before SQL and single-owner queues afterwards" \
     assert="cleanup=pass:remote SQL quiescence and restored single-owner fleet verified" \
-    assert="writers-restored-one-per-queue=pass" \
-    assert="fleet-homogeneous-after-restore=pass"
+    assert="writers-restored-one-per-queue=pass"
   echo "[$id] PASS"
 }
 
@@ -296,6 +323,7 @@ case_gpu03() {
       -u "GPU_CONSENSUS_WORK_ITEMS_BATCH_SIZE_${OPERATOR}" \
       -u "GPU_CONSENSUS_COMPONENTS_PER_BATCH_${OPERATOR}" \
       -u "GPU_CONSENSUS_ADAPTIVE_BATCH_EXECUTION_${OPERATOR}" \
+      -u "GPU_CONSENSUS_STREAMS_PER_DEVICE_${OPERATOR}" \
       -u "GPU_CONSENSUS_DEVICE_${OPERATOR}" \
       "$SCRIPT_DIR/gpu-consensus-workers.sh" verify-restore tfhe "$OPERATOR" || true
   if grep -qF 'cleanup failed for' <<<"$CASE_OUT"; then
@@ -306,8 +334,7 @@ case_gpu03() {
     FAILURES=$((FAILURES + 1))
     return 1
   fi
-  record_from "$id" "$status" "$started" "${MISSING_MARKER:-}" \
-    fault_observed_at="$(cr_now)" \
+  record_fault_case "$id" "$status" "$started" "${MISSING_MARKER:-}" \
     workload="unit:fhevm-gpu-consensus-tfhe-${OPERATOR}" \
     assert="safety=pass:identical configuration and invocation metadata checked by verify-restore" \
     assert="cleanup=pass:verify-restore completed and verified original owner restored" \

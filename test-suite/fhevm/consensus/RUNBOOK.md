@@ -353,7 +353,12 @@ and boot `blue-green-two-of-three-multi-chain`. On a fresh stack, run
 `BLUE_GREEN_INTERRUPT=before-cutover-commit ./fhevm-cli test blue-green`.
 The other supported values are `dry-run-started` and `after-cutover-commit`;
 each needs its own fresh stack. The controller reports its compiled protocol
-version and hook capability before the profile arms a fault. Production builds
+version and hook capability before the profile arms a fault. The profile now
+requires Green's compiled `CONSENSUS_PROTOCOL_VERSION` to be strictly newer
+than the active database's `consensus_version`: a software-only update takes
+the ordinary rolling path, so a Blue image built from the same protocol
+version as Green (for example `--bcs-tag` at a recent commit) is refused at
+preflight unless Green carries `consensus-version-override`. Production builds
 exclude the hooks.
 
 The supervisor installs a version-bound, once-only control in operator 1,
@@ -466,7 +471,11 @@ stack until recovery succeeds. Live execution of these new arms is pending.
 
 SCH-04 uses `GPU_CONSENSUS_TEST_FAILPOINTS=1` when building/starting the host
 workers. CI opts into this feature only when SCH-04 is selected; a standalone
-SCH-01 selection retains production features. The compiled hook reads an
+SCH-01 selection retains production features. When `full` or `gpu` selects
+both, the single GPU leg builds every host worker with the hook, so SCH-01's
+required verdict is then taken on fault-enabled binaries; every record carries
+`build_features` (and `gpu_test_features` for host workers) so the aggregate
+can tell the two apart. The compiled hook reads an
 expiring per-process zero-admission budget under `/tmp`; it neither allocates
 memory nor fabricates an execution error. The ordinary reservation loop must
 acknowledge a real nonzero admission and reach its real deadline. The worker's
@@ -677,7 +686,7 @@ example `GPU_CONSENSUS_STREAMS_PER_DEVICE_0=4`, `_1=1` and `_2=2` (use the full
 variable prefix for each). The launcher must observe these actual settings.
 
 The scheduler records `coprocessor_gpu_execution_permits` after each successful
-limiter acquisition, labelled with its actual device and capacity. SCH-01
+limiter acquisition, labeled with its actual device and capacity. SCH-01
 brackets the identified backlog with metric snapshots. Every worker must
 acquire permits, the capacity must match its observed launch setting, a
 one-permit worker must show only single occupancy, and a larger-capacity worker
@@ -744,7 +753,11 @@ Blue/green tests now seed a retained external input and a computed output on
 verified-input rows, key identities and original serving-object bytes/metadata,
 then user/public decryption of both retained values and computations combining
 them with a fresh verified input. Snapshots live under
-`runtime/retained-material`; reseeding an existing baseline is refused.
+`runtime/retained-material`; reseeding an existing baseline is refused, and
+`./fhevm-cli down` removes the snapshots together with the other generated
+runtime artifacts, so a fresh stack starts from a fresh seed. The profile also
+installs its dry-run evidence trigger with drop-and-recreate semantics, so a
+run killed before its cleanup does not block the next one.
 
 The `v0.14-to-v0.15-gpu-key-migration` rollout seeds an additional fixture while
 actual baseline release images are running. Its final CPU restart consumes that
@@ -809,8 +822,15 @@ The worker receives only a public CA through its normal trust
 store environment; verification is never disabled. Cleanup removes the override
 and restores the original poller environment as well as its command and image.
 The CA and private endpoint keys are unique to this test and expire after two
-days. Local proxy contracts exercise certificate rejection and recovery; live
-poller execution remains part of the deferred E2E campaign.
+days. Local proxy contracts exercise certificate rejection and recovery, and
+the live arm runs the real poller in the `host-rpc` leg
+(`FM-HOST-RPC-TLS-TRUST`). That arm depends on the poller honoring
+`SSL_CERT_FILE`. The poller's HTTP client is alloy's reqwest 0.13 with the
+`rustls` feature, whose default verifier is `rustls-platform-verifier`; on
+Linux that reads the native store through `rustls-native-certs`, which honors
+`SSL_CERT_FILE`. The runner fails closed before arming if the poller never
+accepts the trusted proxy, so a client that stopped reading that variable
+would surface as a precondition failure rather than a pass.
 
 SCH-04 now scopes its expiring reservation control to the actual heavy
 transaction ID. The scheduler carries that identity only for synchronous

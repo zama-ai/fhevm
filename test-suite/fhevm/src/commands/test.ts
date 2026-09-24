@@ -1565,15 +1565,18 @@ const runBlueGreenProfile = async (
   };
   const dryRunInstalled: string[] = [];
   const syntheticInstalled: string[] = [];
+  let profileFailure: unknown;
   try {
     // A fast successful upgrade can leave DryRunStarted between polls. Observe
     // its committed transition before proposing, and retain it through promotion.
+    // Register each database before installing so a partially applied install
+    // is still cleaned up; the cleanup statements are all IF EXISTS.
     for (const db of operatorDatabases) {
-      await psqlQuery(db, DRY_RUN_EVIDENCE_INSTALL_SQL);
       dryRunInstalled.push(db);
+      await psqlQuery(db, DRY_RUN_EVIDENCE_INSTALL_SQL);
       if (quietSynthetic) {
-        await psqlQuery(db, syntheticEvidenceAuditSql(gcsStackVersion));
         syntheticInstalled.push(db);
+        await psqlQuery(db, syntheticEvidenceAuditSql(gcsStackVersion));
       }
     }
     if (interruptDetector) return await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
@@ -1585,6 +1588,9 @@ const runBlueGreenProfile = async (
       BLUE_GREEN_INTERRUPT: interrupt, UPGRADE_FAULT_DATABASE: operatorDatabases[1]!,
       UPGRADE_FAULT_VERSION: gcsStackVersion, UPGRADE_FAULT_OLD_VERSION: "v0.14",
     }, completeUpgrade);
+  } catch (error) {
+    profileFailure = error;
+    throw error;
   } finally {
     // Attempt every installed object's cleanup, including after partial setup.
     const cleanup = await Promise.allSettled([
@@ -1592,7 +1598,13 @@ const runBlueGreenProfile = async (
       ...dryRunInstalled.map(db => psqlQuery(db, DRY_RUN_EVIDENCE_CLEANUP_SQL)),
     ]);
     const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "upgrade evidence cleanup failed");
+    if (failures.length) {
+      // A cleanup failure must not hide why the profile itself failed.
+      const reasons = failures.map(result => result.reason);
+      const cause = profileFailure instanceof Error ? profileFailure.message : profileFailure === undefined ? undefined : String(profileFailure);
+      throw new AggregateError(profileFailure === undefined ? reasons : [profileFailure, ...reasons],
+        cause === undefined ? "upgrade evidence cleanup failed" : `blue-green failed (${cause}); upgrade evidence cleanup also failed`);
+    }
   }
 };
 

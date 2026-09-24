@@ -17,7 +17,9 @@ TEST_CONTAINER="${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}"
 remote="/tmp/migration-download-${MIGRATION_KEY_HEX}"
 proxy_pid=""
 owned=()
-control() { docker exec "$TEST_CONTAINER" node -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({mode:process.argv[2],until:Date.now()+3600000}))' "$remote/control" "$1"; }
+# Written atomically: the proxy re-reads this file on every response and its
+# 250ms watch, so a truncate-then-write window would hand it an empty file.
+control() { docker exec "$TEST_CONTAINER" node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".new",JSON.stringify({mode:process.argv[2],until:Date.now()+3600000}));fs.renameSync(process.argv[1]+".new",process.argv[1])' "$remote/control" "$1"; }
 binary() { case "$1" in *-poller) echo /usr/local/bin/host_listener_poller ;; *-consumer) echo /usr/local/bin/host_listener_consumer ;; *) echo /usr/local/bin/host_listener ;; esac; }
 # docker cp creates the control as root; /tmp's sticky bit prevents the
 # normal worker uid from removing it. Only this fixed-path helper runs as root.
@@ -36,8 +38,17 @@ cleanup() {
   sc_run_restores || status=1
   if [[ -n "$proxy_pid" ]]; then
     control shutdown || status=1
-    wait "$proxy_pid" || status=1
+    # The proxy exits within its 250ms watch of the shutdown control. If the
+    # test container was recreated underneath it, the exec client can hang
+    # until its hour-long cap; bound the wait, then cancel the whole process
+    # group so the timeout and docker client die with the job, not just the
+    # job's shell.
+    local waited=0
+    while kill -0 "$proxy_pid" 2>/dev/null && (( waited < 30 )); do sleep 1; waited=$((waited + 1)); done
+    if kill -0 "$proxy_pid" 2>/dev/null; then kill -- "-$proxy_pid" 2>/dev/null || true; status=1; fi
+    wait "$proxy_pid" 2>/dev/null || status=1
   fi
+  docker exec "$TEST_CONTAINER" rm -rf "$remote" >/dev/null 2>&1 || true
   exit "$status"
 }
 trap cleanup EXIT
@@ -48,6 +59,7 @@ for target in "$@"; do
   private_control "$target" empty >/dev/null
 done
 [[ "$(sql "SELECT count(*) FROM keys WHERE key_id=decode('$MIGRATION_KEY_HEX','hex') AND compressed_xof_keyset IS NULL")" == 1 ]] || exit 1
+docker exec "$TEST_CONTAINER" rm -rf "$remote"
 docker exec "$TEST_CONTAINER" mkdir "$remote"
 docker cp "$SCRIPT_DIR/lib/key-download-proxy.cjs" "$TEST_CONTAINER:$remote/proxy.cjs"
 wrong_args=()
@@ -61,8 +73,19 @@ fi
 control "$MIGRATION_DOWNLOAD_MODE"
 # This client owns the proxy for generation, fault observation, and recovery.
 # The ordinary 120-second host-command cap expires before those phases finish.
-HC_COMMAND_TIMEOUT_SECONDS=3600 docker exec "$TEST_CONTAINER" node "$remote/proxy.cjs" http://minio:9000 "$MIGRATION_KEY_HEX" "$remote/control" "$remote/ready" "$remote/evidence" "${wrong_args[@]}" >&2 &
+# It runs as its own process group, bypassing the `docker` wrapper function:
+# `$!` of a wrapped call is only the subshell, and killing that orphans the
+# timeout/docker pair, which then lives on until the hour-long cap.
+setsid -w timeout --kill-after=2s 3600s docker exec "$TEST_CONTAINER" node "$remote/proxy.cjs" http://minio:9000 "$MIGRATION_KEY_HEX" "$remote/control" "$remote/ready" "$remote/evidence" "${wrong_args[@]}" >&2 &
 proxy_pid=$!
+# setsid does not fork for a non-leader child, so the job's pid becomes the
+# group id; wait for that to settle before trusting group cancellation.
+for ((attempt=0;attempt<50;attempt++)); do
+  [[ "$(ps -o pgid= -p "$proxy_pid" 2>/dev/null | tr -d ' ')" == "$proxy_pid" ]] && break
+  kill -0 "$proxy_pid" 2>/dev/null || { echo 'proxy client exited before starting' >&2; exit 1; }
+  sleep 0.1
+done
+[[ "$(ps -o pgid= -p "$proxy_pid" 2>/dev/null | tr -d ' ')" == "$proxy_pid" ]] || { echo 'proxy client did not become its own process group' >&2; exit 1; }
 ready=""
 for ((attempt=0;attempt<30;attempt++)); do
   ready="$(docker exec "$TEST_CONTAINER" cat "$remote/ready" 2>/dev/null)" || ready=""

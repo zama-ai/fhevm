@@ -21,7 +21,9 @@ cleanup() {
   hc_cleanup_signals
   hc_begin_cleanup || exit 1
   if [[ "$owned" == 1 ]]; then
-    sql "DELETE FROM public.consensus_test_upgrade_fault WHERE stage='$BLUE_GREEN_INTERRUPT' AND version='$UPGRADE_FAULT_VERSION'" >/dev/null || status=1
+    # Dropping (not emptying) the table is what lets the next boundary run on
+    # this stack, and stops the replacement controller probing an empty control.
+    sql "DROP TABLE IF EXISTS public.consensus_test_upgrade_fault" >/dev/null || status=1
   fi
   sc_run_restores || status=1
   exit "$status"
@@ -30,7 +32,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # A previous controller campaign must be reconciled before using this stack.
-[[ "$(sql "SELECT to_regclass('public.consensus_test_upgrade_fault') IS NULL")" == t ]] || { echo 'upgrade fault table already exists; use a fresh isolated stack' >&2; exit 1; }
+# Cleanup drops this table, so its presence means an earlier run died before
+# its cleanup; that run's boundary may still be held by a controller.
+[[ "$(sql "SELECT to_regclass('public.consensus_test_upgrade_fault') IS NULL")" == t ]] || { echo 'upgrade fault table already exists from an unrecovered run; inspect it, then DROP TABLE public.consensus_test_upgrade_fault or use a fresh isolated stack' >&2; exit 1; }
 sql "CREATE TABLE public.consensus_test_upgrade_fault(stage text PRIMARY KEY,version text NOT NULL,reached boolean NOT NULL DEFAULT false,observed_at timestamptz)" >/dev/null
 owned=1
 sql "INSERT INTO public.consensus_test_upgrade_fault(stage,version) VALUES('$BLUE_GREEN_INTERRUPT','$UPGRADE_FAULT_VERSION')" >/dev/null

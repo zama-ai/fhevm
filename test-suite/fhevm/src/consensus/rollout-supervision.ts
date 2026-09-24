@@ -30,6 +30,10 @@ export async function withRolloutSupervisor<T>(stateDir: string, script: string,
     ]);
     if (timer) clearTimeout(timer);
     console.log(`[rollout fault] supervisor=${script}; recovery ledger ${directory}`);
+    // Diagnostics the script printed in the same chunk as READY must not be lost.
+    const readyMarker = "ROLLOUT_HOLD_READY\n";
+    const trailing = ready.slice(ready.indexOf(readyMarker) + readyMarker.length);
+    if (trailing) process.stdout.write(trailing);
     output = (async () => {
       for (;;) {
         const next = await reader.read();

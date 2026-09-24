@@ -1027,6 +1027,8 @@ verify_restore() (
   trap 'exit 130' INT
   trap 'exit 143' TERM
   stop_unit "$kind" "$index"
+  # The lifecycle recorder reads this stamp as the fault time.
+  printf 'GPU_FAULT_OBSERVED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   restart_unit "$kind" "$index"
   wait_for_units || die "$unit did not become ready after restoration"
   restore_pending=false

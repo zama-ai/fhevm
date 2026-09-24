@@ -27,6 +27,45 @@ wait "$proxy_pid"
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }, 6000);
 
+test("the download proxy client is its own process group and cleanup cancels the whole group", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "key-proxy-group-"));
+  try {
+    const scripts = path.resolve(import.meta.dir, "../../scripts");
+    const source = readFileSync(path.join(scripts, "hold-key-download.sh"), "utf8").split("\n");
+    const launch = source.find(line => line.includes('docker exec "$TEST_CONTAINER" node "$remote/proxy.cjs"'));
+    const cancel = source.find(line => line.includes('kill -- "-$proxy_pid"'));
+    expect(launch).toBeDefined();
+    expect(cancel, "cleanup must cancel the client's process group, not only the job's shell").toBeDefined();
+    mkdirSync(path.join(directory, "bin"));
+    // A client that ignores the shutdown control: it only dies when killed.
+    writeFileSync(path.join(directory, "bin/docker"), "#!/bin/bash\nexec sleep 600\n", { mode: 0o755 });
+    const child = Bun.spawn(["bash", "-c", `set -euo pipefail
+source "$SCRIPT_DIR/lib/host-command.sh"
+TEST_CONTAINER=isolated; remote=/isolated; MIGRATION_KEY_HEX=group-test-$$; wrong_args=()
+${launch}
+proxy_pid=$!
+for ((attempt=0;attempt<50;attempt++)); do
+  [[ "$(ps -o pgid= -p "$proxy_pid" | tr -d ' ')" == "$proxy_pid" ]] && break; sleep 0.1
+done
+[[ "$(ps -o pgid= -p "$proxy_pid" | tr -d ' ')" == "$proxy_pid" ]] || { echo not-own-group >&2; exit 3; }
+until pgrep -f "sleep 600" >/dev/null; do sleep 0.1; done
+members_before="$(ps -o pid= -g "$proxy_pid" | wc -l)"
+kill -- "-$proxy_pid"
+wait "$proxy_pid" || true
+for ((attempt=0;attempt<30;attempt++)); do
+  [[ -z "$(ps -o pid= -g "$proxy_pid" 2>/dev/null)" ]] && break; sleep 0.1
+done
+echo "members_before=$members_before members_after=$(ps -o pid= -g "$proxy_pid" 2>/dev/null | wc -l)"
+`], { env: { ...process.env, SCRIPT_DIR: scripts, PATH: `${directory}/bin:${process.env.PATH}`,
+      HC_COMMAND_TIMEOUT_SECONDS: "1", CASE_DEADLINE_EPOCH: "", HC_CLEANUP_DEADLINE_EPOCH: "" },
+      stdout: "pipe", stderr: "pipe", timeout: 10_000 });
+    const [status, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(status, errors).toBe(0);
+    // timeout plus the docker client were in the group; nothing survives the cancel.
+    expect(output).toMatch(/members_before=[2-9] members_after=0/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}, 12_000);
+
 test("key download faults select one real GET and recovery returns the original body", async () => {
   const child = Bun.spawn(["node", "-e", `
     const assert=require('node:assert/strict'), http=require('node:http'), fs=require('node:fs'), os=require('node:os');

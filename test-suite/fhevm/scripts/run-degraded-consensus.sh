@@ -23,8 +23,12 @@
 # Read the full service set from the running topology so an unlisted ingestion
 # path cannot remain active and invalidate the operator-outage precondition.
 #
-#   run-degraded-consensus.sh [--case agreement|canary|same-block|outage|gw|core|all]
+#   run-degraded-consensus.sh --case agreement|canary|same-block|outage|gw|core
 #                             [--victim <index>]
+#
+# There is deliberately no `all`: the core cases require drift auto-revert
+# enabled on every gateway listener and `gw` requires it disabled, so no
+# single stack can establish both groups.
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,17 +76,22 @@ readonly TEST_CONTAINER="${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}"
 readonly TEST_NETWORK="${TEST_NETWORK:-staging}"
 readonly HANDSHAKE_DIR="${CONSENSUS_HANDSHAKE_DIR:-/tmp/consensus-handshake}"
 
-CASE=all
+CASE=""
 VICTIM="${DEGRADED_VICTIM_OPERATOR:-2}"
+usage() {
+  echo "usage: run-degraded-consensus.sh --case agreement|canary|same-block|outage|gw|core [--victim <index>]" >&2
+  echo "       (core and gw need opposite drift auto-revert settings, so there is no 'all')" >&2
+  exit 2
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --case) CASE="${2:?--case needs a value}"; shift 2 ;;
     --victim) VICTIM="${2:?--victim needs an operator index}"; shift 2 ;;
-    *) echo "usage: run-degraded-consensus.sh [--case agreement|canary|same-block|outage|gw|core|all] [--victim <index>]" >&2
-       exit 2 ;;
+    *) usage ;;
   esac
 done
-case "$CASE" in agreement|canary|same-block|outage|gw|core|all) ;; *) echo "unknown case $CASE" >&2; exit 2 ;; esac
+[[ -n "$CASE" ]] || usage
+case "$CASE" in agreement|canary|same-block|outage|gw|core) ;; *) echo "unknown case $CASE" >&2; usage ;; esac
 
 die() { RS_FINAL_FAILURE=1; echo "degraded-consensus: $*" >&2; exit 1; }
 log() { printf '\n=== %s\n' "$*"; }
@@ -272,12 +281,20 @@ case_outage() {
   log "taking operator $VICTIM fully offline (${#services[@]} service(s): ${services[*]})"
 
   local service
+  # One of the two outage cases is always declared under the other scenario;
+  # recording it here on this stack's scenario would make the aggregate report
+  # a bogus topology mismatch for the sibling.
+  record_outage_pair() {
+    local id
+    for id in DEG-03-MAJORITY-AVAILABLE DEG-04-UNANIMOUS-NO-QUORUM; do
+      cr_skip_wrong_scenario "$id" || cr_record "$id" "$@"
+    done
+  }
   for service in "${services[@]}"; do
     if ! sc_stop "$service"; then
-      sc_run_restores || true
-      cr_record DEG-03-MAJORITY-AVAILABLE INVALID started_at="$started" cleanup=ok \
-        detail="could not stop $service, so operator $VICTIM was never fully offline"
-      cr_record DEG-04-UNANIMOUS-NO-QUORUM INVALID started_at="$started" cleanup=ok \
+      local stop_cleanup=ok
+      sc_run_restores || stop_cleanup=failed
+      record_outage_pair INVALID started_at="$started" cleanup="$stop_cleanup" \
         detail="could not stop $service, so operator $VICTIM was never fully offline"
       FAILURES=$((FAILURES + 1))
       return 1
@@ -313,8 +330,7 @@ case_outage() {
     echo "$out" | tail -25
     local reason="${status:+the outage assertions failed: $(cr_failure_reason "$out")}"
     [[ -z "$exercised" ]] && reason="the suite did not report which quorum expectation the gateway's threshold implies"
-    cr_record DEG-03-MAJORITY-AVAILABLE FAIL "${record[@]}" detail="$reason"
-    cr_record DEG-04-UNANIMOUS-NO-QUORUM FAIL "${record[@]}" detail="$reason"
+    record_outage_pair FAIL "${record[@]}" detail="$reason"
     FAILURES=$((FAILURES + 1))
   else
     degraded_record_pass "$exercised" "${record[@]}" \
@@ -517,7 +533,9 @@ case_gw_body() {
   workloads="$(docker exec "$TEST_CONTAINER" cat "$HANDSHAKE_DIR/degraded-gw-event.json" 2>/dev/null \
     | grep -oE '0x[0-9a-f]{64}' | sort -u | tr '\n' ' ')"
 
-  local evidence_dir="${FHEVM_STATE_DIR:-$REPO_ROOT/.fhevm}/runtime/consensus-results/gateway-${CR_RUN_ID}"
+  # Publish beside the run's results file, wherever the caller configured that
+  # to be: a probe with its own CONSENSUS_RESULTS_DIR must not write here.
+  local evidence_dir="${RS_PUBLISH_RESULTS:-$(dirname "$(cr_results_file)")}/gateway-${CR_RUN_ID}"
   mkdir -p "$evidence_dir" || return 1
   docker cp "$TEST_CONTAINER:$HANDSHAKE_DIR/degraded-gw-event.json" "$evidence_dir/event.json" || return 1
   local warning_since; warning_since="$(cr_now)"
@@ -617,11 +635,11 @@ main() {
   "$SCRIPT_DIR/consensus-validity.sh" exclusivity --operators "$count" ||
     die "the fleet does not have exactly one worker per queue before any fault was injected"
 
-  [[ "$CASE" == all || "$CASE" == core || "$CASE" == agreement ]] && simple_case DEG-01-AGREEMENT-QUORUM agreement
-  [[ "$CASE" == all || "$CASE" == core || "$CASE" == canary ]] && simple_case MAT-04-CANARY-COMPUTE-DIGEST canary
-  [[ "$CASE" == all || "$CASE" == core || "$CASE" == same-block ]] && simple_case DEG-02-SAME-BLOCK-PAIR same-block
-  [[ "$CASE" == all || "$CASE" == core || "$CASE" == outage ]] && case_outage
-  [[ "$CASE" == all || "$CASE" == gw ]] && case_gw
+  [[ "$CASE" == core || "$CASE" == agreement ]] && simple_case DEG-01-AGREEMENT-QUORUM agreement
+  [[ "$CASE" == core || "$CASE" == canary ]] && simple_case MAT-04-CANARY-COMPUTE-DIGEST canary
+  [[ "$CASE" == core || "$CASE" == same-block ]] && simple_case DEG-02-SAME-BLOCK-PAIR same-block
+  [[ "$CASE" == core || "$CASE" == outage ]] && case_outage
+  [[ "$CASE" == gw ]] && case_gw
 
   # Gated, not merely reported: nothing here kills a worker, so a lease that
   # lapsed did so on its own, and these cases are about what a DEGRADED cluster

@@ -87,24 +87,39 @@ trap 'exit 143' TERM
 sc_register_restore "$container" stop-container || die "cannot record removal of the introduced worker"
 note "starting $container alongside $unit -- deliberately serving one queue twice"
 docker start "$container" >/dev/null 2>&1 || die "could not start $container"
+# The lifecycle recorder reads this stamp: the fault exists from this moment,
+# not from whenever the parent gets around to writing the record.
+printf 'GPU_FAULT_OBSERVED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # The guard polls container state, so give it a moment to observe the split
 # rather than racing it and reporting a pass for a split that had not landed.
+#
+# Only the launcher's own conflict line proves detection. A transient
+# `systemctl show` or `docker inspect` failure also exits non-zero and also
+# mentions workers and queues, so neither the exit status nor a loose keyword
+# match may stand in for the named queue.
+conflict_line="CONFLICT operator=${OPERATOR} kind=tfhe unit=${unit} container=${container}:"
 detected=0
-for _ in $(seq 1 15); do
-  if ! output="$("$SCRIPT_DIR/gpu-consensus-workers.sh" conflicts 2>&1)"; then
+output=""
+# Contract tests shorten the window; production keeps thirty seconds.
+poll_attempts="${MIXED_GUARD_POLL_ATTEMPTS:-15}"
+poll_seconds="${MIXED_GUARD_POLL_SECONDS:-2}"
+for _ in $(seq 1 "$poll_attempts"); do
+  if output="$("$SCRIPT_DIR/gpu-consensus-workers.sh" conflicts 2>&1)"; then
+    sleep "$poll_seconds"
+    continue
+  fi
+  if grep -qF -- "$conflict_line" <<<"$output"; then
     detected=1
     break
   fi
-  sleep 2
+  note "conflicts exited non-zero without naming the split yet: $(tail -1 <<<"$output")"
+  sleep "$poll_seconds"
 done
 
 if [[ "$detected" != 1 ]]; then
-  die "conflicts exited 0 while $container and $unit both served operator $OPERATOR's queue; the guard did not fire, so B-1 can recur undetected"
+  die "conflicts never printed '$conflict_line' while $container and $unit both served operator $OPERATOR's queue; the guard did not fire (last output: $(tail -3 <<<"$output" | tr '\n' ' ')), so B-1 can recur undetected"
 fi
-
-grep -qiE "tfhe|worker|queue|operator" <<<"$output" ||
-  die "conflicts failed but did not name the doubly-served queue, so an operator cannot tell what to fix: $output"
 note "guard fired and named the conflict:"
 sed 's/^/    /' <<<"$output"
 
@@ -112,9 +127,14 @@ sed 's/^/    /' <<<"$output"
 # starts through the readiness path, and B-1 got as far as producing disagreeing
 # ct128 because nothing on that path objected. Asserted while the split is still
 # in place, which is the only moment the answer means anything.
-if "$SCRIPT_DIR/consensus-validity.sh" exclusivity --operators "$(operator_count)" >/dev/null 2>&1; then
+# The same rule applies here: the gate must refuse BECAUSE of this queue. An
+# inspection error is also a non-zero exit and would otherwise count as refusal.
+refusal_line="${container}: both Docker and GPU unit serve its queue"
+if exclusivity_output="$("$SCRIPT_DIR/consensus-validity.sh" exclusivity --operators "$(operator_count)" 2>&1)"; then
   die "the readiness exclusivity gate reported one worker per queue while $container and $unit both served operator $OPERATOR; only the launcher command noticed, so an ordinary run would proceed into a split fleet"
 fi
+grep -qF -- "$refusal_line" <<<"$exclusivity_output" ||
+  die "the readiness exclusivity gate exited non-zero without naming the doubly-served queue ('$refusal_line'); that is an inspection failure, not a refusal: $(tail -3 <<<"$exclusivity_output" | tr '\n' ' ')"
 note "the readiness exclusivity gate refuses the split too, not only the launcher command"
 
 restore || die "could not restore the single-owner queue"

@@ -35,11 +35,11 @@ use crate::kms_generation::sks_key::{
     prepare_legacy_server_key_for_db, prepare_xof_key_set_for_db,
 };
 
-#[cfg(feature = "test-failpoints")]
-mod download_test_control;
 pub mod aws_s3;
 pub(crate) mod database;
 pub(crate) mod digest;
+#[cfg(feature = "test-failpoints")]
+mod download_test_control;
 pub(crate) mod metrics;
 pub(crate) mod sks_key;
 

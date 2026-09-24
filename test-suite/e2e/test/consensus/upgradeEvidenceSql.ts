@@ -2,8 +2,13 @@ const validateVersion = (version: string): void => {
   if (!/^[a-zA-Z0-9.+_-]+$/.test(version)) throw new Error('invalid synthetic evidence version/chain set');
 };
 
-/** Retain committed FSM transitions without delaying or otherwise gating promotion. */
+/** Retain committed FSM transitions without delaying or otherwise gating promotion.
+ * Installation replaces any objects a killed run left behind: stale evidence
+ * from an earlier proposal must not satisfy this run's readiness query.
+ */
 export const DRY_RUN_EVIDENCE_INSTALL_SQL = `BEGIN;
+  DROP FUNCTION IF EXISTS public.consensus_test_capture_dry_run() CASCADE;
+  DROP TABLE IF EXISTS public.consensus_test_dry_run_evidence;
   CREATE TABLE public.consensus_test_dry_run_evidence (
     host_chain_id bigint NOT NULL, version text NOT NULL, proposal_id bytea NOT NULL,
     proposal_block bigint NOT NULL,
@@ -49,6 +54,8 @@ export function dryRunEvidenceReadinessSql(version: string, chainIds: string[], 
 export function syntheticEvidenceAuditSql(version: string): string {
   validateVersion(version);
   return `BEGIN;
+    DROP FUNCTION IF EXISTS public.consensus_test_capture_synthetic() CASCADE;
+    DROP TABLE IF EXISTS public.consensus_test_synthetic_evidence;
     CREATE TABLE public.consensus_test_synthetic_evidence (
       version text NOT NULL, host_chain_id bigint NOT NULL, markers bytea NOT NULL,
       computations jsonb NOT NULL, PRIMARY KEY(version, host_chain_id));

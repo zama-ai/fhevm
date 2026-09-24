@@ -230,8 +230,9 @@ case_f4() {
   run_phase out f4-arm "[fork-consensus/F4-arm] CASE COMPLETE" || status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "$out" | tail -25
-    fork_restore_case || true
-    cr_record FORK-04-STRANDED-CHILD INVALID started_at="$started" cleanup=ok \
+    local arm_cleanup=ok
+    fork_restore_case || arm_cleanup=failed
+    cr_record FORK-04-STRANDED-CHILD INVALID started_at="$started" cleanup="$arm_cleanup" \
       fault_observed_at="$fault_observed" \
       detail="the gated child could not be constructed and observed: $(cr_failure_reason "$out")"
     FAILURES=$((FAILURES + 1))
@@ -263,12 +264,9 @@ case_f4() {
   )
   [[ -n "$child_chain" ]] && record+=(workload="chain:$child_chain")
   if [[ "$status2" -eq 0 && "$cleanup_state" == ok ]]; then
-    cr_record_checked_pass FORK-04-STRANDED-CHILD "${record[@]}" \
-      assert="child-observed-gated=pass" \
-      assert="repair-disabled-control=pass:an attempted repair could not complete the child" \
-      assert="repair-acquisition=pass:a committed repair claim completed the same child" \
-      assert="child-left-stranded-state=pass" \
-      assert="no-stranded-chain-remains=pass"
+    # The suite's own [consensus-assertion] receipts are the evidence; this
+    # host observed the process fault and recovery, nothing about the chain.
+    cr_record_checked_pass FORK-04-STRANDED-CHILD "${record[@]}"
     echo "[FORK-04-STRANDED-CHILD] PASS (child chain ${child_chain:-unknown})"
   else
     echo "$verify_out" | tail -25
@@ -333,8 +331,9 @@ case_f5() {
   run_phase out f5-arm "[fork-consensus/F5-arm] CASE COMPLETE" || status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "$out" | tail -25
-    fork_restore_case || true
-    cr_record FORK-05-REPLAY INVALID started_at="$started" cleanup=ok \
+    local arm_cleanup=ok
+    fork_restore_case || arm_cleanup=failed
+    cr_record FORK-05-REPLAY INVALID started_at="$started" cleanup="$arm_cleanup" \
       fault_observed_at="$fault_observed" \
       detail="the cursor could not be rewound over an identified range: $(cr_failure_reason "$out")"
     FAILURES=$((FAILURES + 1))
@@ -378,12 +377,9 @@ case_f5() {
   )
   [[ -n "$range" ]] && record+=(workload="blocks:$range")
   if [[ "$status2" -eq 0 && "$cleanup_state" == ok ]]; then
-    cr_record_checked_pass FORK-05-REPLAY "${record[@]}" \
-      assert="poller-restarted=pass" \
-      assert="identified-nonempty-range=pass:the selected computation graph and allow observations existed before replay" \
-      assert="range-rescanned=pass" \
-      assert="selected-events-delivered=pass:committed insert attempts attributed to the restarted poller" \
-      assert="no-duplicate-effects=pass"
+    # The suite's receipts carry the replay evidence; the host only observed
+    # the poller's process identity change, which is recorded above.
+    cr_record_checked_pass FORK-05-REPLAY "${record[@]}"
     echo "[FORK-05-REPLAY] PASS (range ${range:-unknown})"
   else
     echo "$verify_out" | tail -25

@@ -47,7 +47,7 @@ test("rerun uploads explicitly replace fixed-name artifacts and keep independent
   expect(count).toBe(5);
 });
 const id = (digit: string) => `sha256:${digit.repeat(64)}`;
-const receipt = { revision: "a".repeat(40), mode: "checkout" as const, startedAt: "2026-09-13T00:00:00Z", completedAt: "2026-09-13T00:01:00Z",
+const receipt = { revision: "a".repeat(40), mode: "checkout" as const, features: "none", startedAt: "2026-09-13T00:00:00Z", completedAt: "2026-09-13T00:01:00Z",
   images: [{ ref: "suite:branch", id: id("1"), group: "test-suite" }, { ref: "worker:branch", id: id("2"), group: "coprocessor" }] };
 const observed = { "image_fhevm-test-suite-e2e-debug": `${id("1")} (suite:branch)`, "image_coprocessor-tfhe-worker": `${id("2")} (worker:branch)` };
 test("checkout labels cannot substitute for immutable image build provenance", () => {

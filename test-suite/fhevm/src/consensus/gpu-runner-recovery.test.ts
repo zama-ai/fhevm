@@ -20,8 +20,18 @@ case "$1" in
  *) exit 1;;
 esac
 `, {mode: 0o755});
-    for (const helper of ["gpu-consensus-workers.sh", "consensus-validity.sh"]) writeFileSync(path.join(dir, helper), `#!/bin/bash
-if [[ $(cat "$FIXTURE/state") == running ]]; then echo 'worker queue operator conflict'; exit 1; fi
+    // The guard accepts only the launcher's own CONFLICT line and the readiness
+    // gate's named refusal, exactly as the real helpers print them.
+    writeFileSync(path.join(dir, "gpu-consensus-workers.sh"), `#!/bin/bash
+if [[ $(cat "$FIXTURE/state") == running ]]; then
+  echo 'CONFLICT operator=1 kind=tfhe unit=fhevm-gpu-consensus-tfhe-1 container=coprocessor1-tfhe-worker: both are serving the same queue'; exit 1
+fi
+`, {mode: 0o755});
+    writeFileSync(path.join(dir, "consensus-validity.sh"), `#!/bin/bash
+if [[ $(cat "$FIXTURE/state") == running ]]; then
+  echo 'validity: FAIL Queue ownership could not be established:' >&2
+  echo '  coprocessor1-tfhe-worker: both Docker and GPU unit serve its queue' >&2; exit 1
+fi
 `, {mode: 0o755});
     const source = readFileSync(path.join(scripts, "run-mixed-backend-guard.sh"), "utf8").replace(/^SCRIPT_DIR=.*$/m, `SCRIPT_DIR='${dir}'`);
     writeFileSync(path.join(dir, "runner.sh"), source);
@@ -30,6 +40,44 @@ if [[ $(cat "$FIXTURE/state") == running ]]; then echo 'worker queue operator co
     expect(readFileSync(path.join(dir, "stops"), "utf8").trim().split("\n").length).toBe(2);
     expect(readFileSync(path.join(dir, "state"), "utf8").trim()).toBe(retryWorks ? "stopped" : "running");
     expect(readFileSync(path.join(dir, "owners"), "utf8")).toBe(retryWorks ? "" : "coprocessor1-tfhe-worker|stop-container\n");
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});
+
+for (const failing of ["gpu-consensus-workers.sh", "consensus-validity.sh"]) test(`mixed guard does not count a ${failing} inspection error as detection`, () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "gpu-guard-inspect-"));
+  try {
+    mkdirSync(path.join(dir, "bin"));
+    symlinkSync(path.join(scripts, "lib"), path.join(dir, "lib"));
+    writeFileSync(path.join(dir, "state"), "stopped\n");
+    writeFileSync(path.join(dir, "bin/systemctl"), '#!/bin/bash\necho active\n', {mode: 0o755});
+    writeFileSync(path.join(dir, "bin/docker"), `#!/bin/bash
+case "$1" in
+ start) echo running > "$FIXTURE/state";;
+ stop) echo stopped > "$FIXTURE/state";;
+ inspect) [[ $(cat "$FIXTURE/state") == stopped ]] && echo 'false 0';;
+ *) exit 1;;
+esac
+`, {mode: 0o755});
+    // Both helpers exit non-zero while the split exists, but one of them only
+    // reports an inspection failure that also mentions workers and queues.
+    writeFileSync(path.join(dir, "gpu-consensus-workers.sh"), `#!/bin/bash
+if [[ $(cat "$FIXTURE/state") == running ]]; then
+  ${failing === "gpu-consensus-workers.sh"
+    ? "echo 'gpu-consensus-workers: cannot inspect fhevm-gpu-consensus-tfhe-1 for conflicts' >&2; exit 1"
+    : "echo 'CONFLICT operator=1 kind=tfhe unit=fhevm-gpu-consensus-tfhe-1 container=coprocessor1-tfhe-worker: both are serving the same queue'; exit 1"}
+fi
+`, {mode: 0o755});
+    writeFileSync(path.join(dir, "consensus-validity.sh"), `#!/bin/bash
+if [[ $(cat "$FIXTURE/state") == running ]]; then echo 'validity: FAIL Cannot enumerate host tfhe workers' >&2; exit 1; fi
+`, {mode: 0o755});
+    const source = readFileSync(path.join(scripts, "run-mixed-backend-guard.sh"), "utf8").replace(/^SCRIPT_DIR=.*$/m, `SCRIPT_DIR='${dir}'`);
+    writeFileSync(path.join(dir, "runner.sh"), source);
+    const run = Bun.spawnSync(["bash", path.join(dir, "runner.sh")], {env: {...process.env, FIXTURE: dir, FHEVM_STATE_DIR: dir, SC_RESTORE_LOG: path.join(dir, "owners"),
+      MIXED_GUARD_POLL_ATTEMPTS: "2", MIXED_GUARD_POLL_SECONDS: "0", PATH: `${dir}/bin:${process.env.PATH}`}, timeout: 5000});
+    expect(run.exitCode, run.stderr.toString()).toBe(1);
+    expect(run.stderr.toString()).toContain(failing === "gpu-consensus-workers.sh" ? "never printed" : "without naming the doubly-served queue");
+    expect(run.stdout.toString()).not.toContain("PASS");
+    expect(readFileSync(path.join(dir, "state"), "utf8").trim()).toBe("stopped");
   } finally { rmSync(dir, {recursive: true, force: true}); }
 });
 

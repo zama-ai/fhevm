@@ -421,8 +421,11 @@ describe('Service failure case', function () {
           if (Date.now() >= deadline) throw new Error('all twelve named transactions must be durable and pending before restart');
           await new Promise(resolve => setTimeout(resolve, 1_000));
         }
-        armed.detail = { count: 12, observedBatchLimit: 4 };
-        emitAssertions(CASE_ID, ['precondition'], 'Twelve unique named computation rows were durable and pending while the acknowledged worker was held; observed acquisition bound is four.');
+        // Only what this suite observed: twelve durable pending rows. The
+        // worker's acquisition bound is configuration this suite never reads,
+        // so it is not asserted here.
+        armed.detail = { count: 12 };
+        emitAssertions(CASE_ID, ['precondition'], 'Twelve unique named computation rows were durable and pending while the acknowledged worker was held.');
         break;
       }
 
@@ -445,7 +448,7 @@ describe('Service failure case', function () {
         }
         expect(new Set(armed.handles).size).to.eq(targets);
         const blockNumber = blocks[blocks.length - 1];
-        if (targets > 1) expect(blockNumber - blocks[0], 'backlog spans at least three observed four-block pages').to.be.at.least(8);
+        if (targets > 1) expect(blockNumber - blocks[0], 'backlog spans at least nine host blocks').to.be.at.least(8);
         armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks };
         expect(
           watermark === null || watermark < blockNumber,

@@ -26,7 +26,19 @@ cleanup() {
   sp_cancel_all && sp_recover_suite_state || ok=0
   sc_run_restores || ok=0
   if [[ "$CONTROL_OWNED" == 1 ]]; then
-    docker exec -u 0 "$TARGET" host_listener_consumer --consensus-test-control clear || ok=0
+    # The consumer may be mid-restart (its own back-off after the kill) when
+    # cleanup runs; a single failed exec would leave the control files in the
+    # container layer and every later run would refuse at the `empty` check.
+    local attempt cleared=0
+    for attempt in 1 2 3 4 5 6; do
+      if docker exec -u 0 "$TARGET" host_listener_consumer --consensus-test-control clear; then cleared=1; break; fi
+      sc_start "$TARGET" >/dev/null 2>&1 || true
+      sleep 5
+    done
+    if [[ "$cleared" != 1 ]]; then
+      echo "broker ACK control could not be cleared; recover with: docker exec -u 0 $TARGET host_listener_consumer --consensus-test-control clear" >&2
+      ok=0
+    fi
   fi
   [[ "$SP_FORCED_STOP" == 0 ]] || status=1
   if [[ "$ok" == 1 ]]; then rs_finalize_results "$status" ok || status=1; sp_dispose || status=1
@@ -71,7 +83,14 @@ cr_read_run_identity identity || fail 'missing build identity'
 command="$(docker inspect -f '{{range .Config.Cmd}}{{println .}}{{end}}' "$TARGET")" || fail 'consumer absent'
 grep -q -- '--url=redis://' <<<"$command" || fail 'this case requires the managed Redis stream backend'
 [[ "$(sc_state "$TARGET")" == running ]] || fail 'consumer is not healthy'
-docker exec "$TARGET" host_listener_consumer --consensus-test-control empty || fail 'prior ACK control requires recovery'
+control_status=0
+docker exec "$TARGET" host_listener_consumer --consensus-test-control empty || control_status=$?
+case "$control_status" in
+  0) ;;
+  # clap rejects the unknown flag with 2: the binary has no control at all.
+  2) fail 'the consumer image was built without host-listener/test-failpoints; this case needs the fault-enabled build' ;;
+  *) fail "prior ACK control requires recovery: docker exec -u 0 $TARGET host_listener_consumer --consensus-test-control clear" ;;
+esac
 if [[ "$(sc_restart_budget "$TARGET")" == exhausted ]]; then sc_reset_restart_budget "$TARGET" || fail 'cannot renew restart budget'; fi
 mkdir -p "$STATE_DIR/runtime/broker-redelivery" || fail 'cannot create evidence root'
 EVIDENCE="$(mktemp -d "$STATE_DIR/runtime/broker-redelivery/case.XXXXXX")" || fail 'cannot create evidence directory'

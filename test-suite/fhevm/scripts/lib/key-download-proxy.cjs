@@ -13,7 +13,15 @@ function keyProxy({upstream, key, control, observe, wrongKey}) {
       const chunks = [];
       incoming.on('data', chunk => chunks.push(chunk));
       incoming.on('end', () => {
-        const original = Buffer.concat(chunks), state = control();
+        const original = Buffer.concat(chunks);
+        // The control is rewritten by the holder while requests are in flight;
+        // an unreadable or half-written control must fail this one response,
+        // not the proxy that every later retry still routes through.
+        let state;
+        try { state = control(); } catch (error) {
+          observe({mode:'control-unreadable', key, error: String(error && error.message || error), at:new Date().toISOString()});
+          response.writeHead(503).end(); return;
+        }
         const mode = state.until > Date.now() ? state.mode : 'healthy';
         if (!original.length) { response.writeHead(502).end(); return; }
         if (mode === 'interrupt') {

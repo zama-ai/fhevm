@@ -29,7 +29,7 @@ BASELINE="${SC_CASE_BASELINE:-}"
 if [[ -z "$BASELINE" ]]; then BASELINE="$(mktemp)"; BASELINE_OWNED=1; fi
 SUITE_LOG="$(mktemp)"
 ack() {
-  docker exec -i "$TEST_CONTAINER" sh -c "cat > '$HANDSHAKE_DIR/request-fault.json'" <<JSON
+  docker exec -i "$TEST_CONTAINER" sh -c 'cat > "$1"' sh "$HANDSHAKE_DIR/request-fault.json" <<JSON
 {"name":"request-fault","ready":true,"payload":{"applied":$1,"detail":"$2"}}
 JSON
 }
@@ -87,7 +87,7 @@ fi
 # KMS is the durable downstream hold for both cases. The relayer remains live
 # long enough to accept and submit the request before its own crash is applied.
 sc_pause "$KMS" || fail 'cannot hold KMS processing'
-docker exec "$TEST_CONTAINER" sh -c "rm -f '$HANDSHAKE_DIR'/request-*.json"
+docker exec "$TEST_CONTAINER" sh -c 'rm -f "$1"/request-*.json' sh "$HANDSHAKE_DIR"
 sp_exec \
   -e RUN_REQUEST_RECOVERY=1 -e "FAILURE_CASE_ID=$CASE_ID" \
   -e "CONSENSUS_THRESHOLD=$CONSENSUS_THRESHOLD" -e COPROCESSOR_COUNT=3 -e CONSENSUS_WATCHDOG_DISABLED=0 -e CONSENSUS_WATCHDOG_STALL_MS=2400000 \

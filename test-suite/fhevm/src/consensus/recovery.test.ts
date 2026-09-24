@@ -134,7 +134,10 @@ test("degraded and fork abort paths restore their registered faults and preserve
         .replace(/^main\s*$/m, () => `sc_resume() { echo "restored $1"; }\nsc_register_restore victim resume\nkill -TERM $$`);
       const file = path.join(dir, name);
       writeFileSync(file, source);
-      const result = Bun.spawnSync(["bash", file], {cwd: cliDir});
+      // The degraded runner has no default case group (core and gw need
+      // opposite gateway settings), so name one to reach its main body.
+      const args = name === "run-degraded-consensus.sh" ? ["--case", "core"] : [];
+      const result = Bun.spawnSync(["bash", file, ...args], {cwd: cliDir});
       expect(result.exitCode, result.stderr.toString()).toBe(143);
       expect(result.stdout.toString()).toContain("restored victim");
     }

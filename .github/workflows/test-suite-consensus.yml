@@ -450,6 +450,7 @@ jobs:
           bun scripts/checkout-build-receipt.ts finish /tmp/consensus-build-receipt.json
           echo "CONSENSUS_BUILD_MODE=$build_mode" >> "$GITHUB_ENV"
           echo "CONSENSUS_SOFTWARE_CLASS=$build_mode:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "CONSENSUS_BUILD_FEATURES=${FHEVM_CONSENSUS_TEST_FEATURES:-none}" >> "$GITHUB_ENV"
 
       # What code this run actually executed. A checkout SHA alone would label
       # published-image results as branch-built code.
@@ -507,8 +508,12 @@ jobs:
         if: ${{ matrix.leg == 'backlog' }}
         working-directory: test-suite/fhevm
         run: |
-          ./scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE
-          ./scripts/run-failure-matrix.sh --case FM-DURABLE-BACKLOG
+          # Run both even if the first fails: a NOT_RUN second case would hide
+          # which of the two broke.
+          status=0
+          ./scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE || status=1
+          ./scripts/run-failure-matrix.sh --case FM-DURABLE-BACKLOG || status=1
+          exit "$status"
 
       - name: Bridge dependency byte agreement
         if: ${{ matrix.leg == 'bridge' }}
@@ -804,6 +809,9 @@ jobs:
           echo "CONSENSUS_SCENARIO=$SCENARIO" >> "$GITHUB_ENV"
           echo "CONSENSUS_BUILD_MODE=checkout" >> "$GITHUB_ENV"
           echo "CONSENSUS_SOFTWARE_CLASS=checkout:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          # Containers on this leg are production-feature builds; the host GPU
+          # workers' own feature set is recorded separately as gpu_test_features.
+          echo "CONSENSUS_BUILD_FEATURES=none" >> "$GITHUB_ENV"
 
       - name: Verify GPU02 cancellation across Docker and PostgreSQL
         working-directory: test-suite/fhevm

@@ -617,7 +617,7 @@ cases:
     assertions:
       - quorum: every recovered target handle reaches the required commitment from distinct authorized members
       - precondition: the chain is observed owned by the stalled worker
-      - fault: the process is verified stopped, and resumed afterwards
+      - fault: the process is verified stopped until its lease lapses, then killed so a different process must reclaim the chain
       - liveness: the chain is reclaimed and completes
       - bytes: the reclaimed output is byte-identical across operators
       - safety: the lock-loss event is recorded and attributed rather than disabling validity checks

@@ -1580,7 +1580,9 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
 
 /** Deletes generated runtime artifacts while keeping persisted stack state. */
 const pruneGeneratedRuntimeArtifacts = async () => {
-  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR];
+  // Retained-material baselines belong to the stack that seeded them; a new
+  // stack must reseed rather than verify against the previous stack's rows.
+  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR, path.join(STATE_DIR, "runtime", "retained-material")];
   await Promise.all(targets.map(async (target) => {
     if (await exists(target)) {
       await remove(target);

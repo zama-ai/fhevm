@@ -365,7 +365,14 @@ chain_state() {
 # underneath it; if it somehow did, the chain would be reclaimed and the case
 # reports INVALID rather than a false pass.
 main() {
-  CONSENSUS_SCENARIO="${CONSENSUS_SCENARIO:-three-of-three}"
+  # Early aborts still need a scenario label for their INVALID record, and the
+  # topology is only verified further down. Read the label from the stack that
+  # is actually up instead of assuming three-of-three; the observation below
+  # re-verifies it, and an unreadable state leaves cr_init to refuse.
+  if [[ -z "${CONSENSUS_SCENARIO:-}" ]]; then
+    CONSENSUS_SCENARIO="$(jq -r '(.scenarioSourcePath // .scenario.sourcePath // "") | split("/") | last | sub("\\.ya?ml$"; "")' \
+      "${FHEVM_STATE_DIR:-${REPO_ROOT:-.}/.fhevm}/state/state.json" 2>/dev/null || true)"
+  fi
   cr_init "${CONSENSUS_RUN_ID:-}" || die "cannot identify the source revision"
   CRASH_PUBLISH_RESULTS="$(dirname "$(cr_results_file)")"
   CRASH_STAGED_RESULTS="$(mktemp -d "$SP_RUNTIME_DIR/crash-results.XXXXXX")" || die "cannot stage crash evidence"
