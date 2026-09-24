@@ -90,7 +90,7 @@ hostChains:
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
 {{- /* The chain id's type byte (bits 56..64) names the kind, as in the connector. */}}
-{{- $solana := eq (div (int64 ($chain.chainId | default 0)) 72057594037959936) 1 }}
+{{- $solana := eq (div (int64 ($chain.chainId | default 0)) 0x0100000000000000) 1 }}
 {{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofRoutes") (list "url" "chainId" "aclAddress") $solana }}
 {{- range $field := $required }}
 {{- if not (index $chain $field) }}

@@ -98,6 +98,20 @@ class SolanaCharts(unittest.TestCase):
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
         self.assertIn("130140237723663404", ids.split(","))
 
+    def test_connector_reads_the_kind_from_the_type_byte_at_any_cluster_tag(self):
+        # The PoC chain id has cluster tag 12345: a wrong shift would read it as EVM.
+        documents = render("kms-connector-1", "kms-connector",
+                           [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
+                            VALUES / "values-solana-connector-e2e.yaml"],
+                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           "--set-string", "commonConfig.hostChains.solana.chainId=72057594037940281",
+                           "--set-json",
+                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
+        deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
+        env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
+        self.assertEqual(chains[72057594037940281]["solanaProofRoutes"], ROUTES)
+
     def test_program_keys_are_optional_but_deployer_is_required(self):
         for filename in ["values-solana-programs-e2e.yaml", "values-solana-demos-e2e.yaml"]:
             docs = render("solana", "contracts", [VALUES / filename])
