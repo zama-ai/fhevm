@@ -20,8 +20,6 @@ use fhevm_engine_common::types::{
 };
 use fhevm_engine_common::utils::HeartBeat;
 use std::collections::HashMap;
-#[cfg(feature = "gpu")]
-use std::sync::Arc;
 use std::time::Duration;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
@@ -32,47 +30,8 @@ use super::{DFComponentGraph, DFGOutput, DFGraph, OpNode};
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
-/// Process-wide GPU stream capacity shared by every concurrently scheduled
-/// batch. A scheduler-local bound alone would be insufficient if several
-/// schedulers ever run at once, and partitions must not oversubscribe a
-/// device's streams.
 #[cfg(feature = "gpu")]
-#[derive(Clone)]
-pub struct GpuExecutionLimiter {
-    devices: Arc<Vec<Arc<tokio::sync::Semaphore>>>,
-    streams_per_device: usize,
-}
-
-#[cfg(feature = "gpu")]
-impl GpuExecutionLimiter {
-    pub fn new(device_count: usize, streams_per_device: usize) -> Result<Self> {
-        if device_count == 0 || streams_per_device == 0 {
-            anyhow::bail!("GPU execution requires at least one device and stream");
-        }
-        Ok(Self {
-            devices: Arc::new(
-                (0..device_count)
-                    .map(|_| Arc::new(tokio::sync::Semaphore::new(streams_per_device)))
-                    .collect(),
-            ),
-            streams_per_device,
-        })
-    }
-
-    pub fn total_capacity(&self) -> usize {
-        self.devices.len().saturating_mul(self.streams_per_device)
-    }
-
-    pub async fn acquire(&self, device: usize) -> Result<tokio::sync::OwnedSemaphorePermit> {
-        self.devices
-            .get(device)
-            .ok_or_else(|| anyhow::anyhow!("GPU device {device} has no execution limiter"))?
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| anyhow::anyhow!("GPU execution limiter closed"))
-    }
-}
+pub use crate::gpu_execution::GpuExecutionLimiter;
 
 pub enum PartitionStrategy {
     MaxParallelism,
@@ -461,6 +420,9 @@ fn execute_partition(
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
+        #[cfg(feature = "test-failpoints")]
+        let _reservation_scope =
+            fhevm_engine_common::reservation_test_control::TransactionScope::enter(&tid);
         let txn_id_short = telemetry::short_hex_id(&tid);
 
         // Update the transaction inputs based on allowed handles so
@@ -1047,6 +1009,65 @@ fn run_computation(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Uses the actual production rerandomizer with fresh keys; no developer
+    /// fixture or historical serialization is substituted for this build.
+    #[cfg(not(feature = "gpu"))]
+    #[test]
+    fn rerandomization_binds_handle_opcode_and_ordered_ciphertexts() {
+        use fhevm_engine_common::keys::{
+            TFHE_COMPACT_PK_PARAMS, TFHE_PARAMS, TFHE_PKS_RERANDOMIZATION_PARAMS,
+        };
+        use tfhe::prelude::FheEncrypt;
+        let config = tfhe::ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
+            .use_dedicated_compact_public_key_parameters((
+                TFHE_COMPACT_PK_PARAMS.pke_params,
+                TFHE_COMPACT_PK_PARAMS.ksk_params,
+            ))
+            .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
+            .build();
+        let client = tfhe::ClientKey::generate(config);
+        let public = tfhe::CompactPublicKey::new(&client);
+        tfhe::set_server_key(tfhe::ServerKey::new(&client));
+        let encrypted =
+            |value: u8| SupportedFheCiphertexts::FheUint8(tfhe::FheUint8::encrypt(value, &client));
+        let inputs = vec![encrypted(17), encrypted(29)];
+        let evaluate = |operands: &[SupportedFheCiphertexts], handle: &[u8], opcode: i32| {
+            let mut result = operands.to_vec();
+            re_randomise_operation_inputs(&mut result, handle, opcode, &public).unwrap();
+            let bytes: Vec<_> = result
+                .iter()
+                .map(SupportedFheCiphertexts::serialize)
+                .collect();
+            let values: Vec<_> = result.iter().map(|ct| ct.decrypt(&client)).collect();
+            (bytes, values)
+        };
+        let handle = [1u8; 32];
+        let baseline = evaluate(&inputs, &handle, 1);
+        assert_eq!(
+            baseline,
+            evaluate(&inputs, &handle, 1),
+            "alias/replay uses the same transcript"
+        );
+        assert_eq!(baseline.1, ["17", "29"]);
+        for changed in [
+            evaluate(&inputs, &[2u8; 32], 1),
+            evaluate(&inputs, &handle, 2),
+            evaluate(&[inputs[1].clone(), inputs[0].clone()], &handle, 1),
+            evaluate(&[inputs[0].clone(), encrypted(29)], &handle, 1),
+        ] {
+            assert_ne!(
+                baseline.0, changed.0,
+                "each transcript coordinate must affect bytes"
+            );
+        }
+        // Scalars are bound through the output handle; they are not ciphertexts
+        // and must not consume a seed or be changed by rerandomization.
+        let mut mixed = vec![inputs[0].clone(), SupportedFheCiphertexts::Scalar(vec![9])];
+        re_randomise_operation_inputs(&mut mixed, &handle, 1, &public).unwrap();
+        assert_eq!(mixed[0].decrypt(&client), "17");
+        assert!(matches!(&mixed[1], SupportedFheCiphertexts::Scalar(bytes) if bytes == &[9]));
+    }
 
     fn output(type_byte: u8) -> DFGOutput {
         let mut handle = vec![0u8; 32];

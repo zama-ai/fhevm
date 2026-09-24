@@ -33,6 +33,14 @@ pub async fn create_s3_client(
     retry_policy: &S3Policy,
     url: &str,
 ) -> anyhow::Result<aws_sdk_s3::Client> {
+    configured_s3_client(retry_policy, url, false).await
+}
+
+async fn configured_s3_client(
+    retry_policy: &S3Policy,
+    url: &str,
+    force_path_style: bool,
+) -> anyhow::Result<aws_sdk_s3::Client> {
     // Configure the AWS Client to be Anonymous as it is only used to fetch files from public buckets
     // .no_credentials() is the Rust equivalent of --no-sign-request on the aws CLI
     let sdk_config = aws_config::defaults(BehaviorVersion::latest())
@@ -53,6 +61,7 @@ pub async fn create_s3_client(
         .timeout_config(timeout_config)
         .retry_config(retry_config)
         .endpoint_url(url)
+        .force_path_style(force_path_style)
         .build();
 
     Ok(Client::from_conf(config))
@@ -101,7 +110,17 @@ impl AwsS3Interface for AwsS3Client {
         key_suffix: &str,
     ) -> anyhow::Result<bytes::Bytes> {
         // pick the right key from all keys
-        let s3_client = create_s3_client(&S3Policy::DEFAULT, url).await?;
+        #[cfg(feature = "test-failpoints")]
+        let route = super::download_test_control::endpoint(key_suffix);
+        #[cfg(not(feature = "test-failpoints"))]
+        let route: Option<String> = None;
+        let s3_client = match route {
+            Some(endpoint) => {
+                configured_s3_client(&S3Policy::DEFAULT, &endpoint, true)
+                    .await?
+            }
+            None => create_s3_client(&S3Policy::DEFAULT, url).await?,
+        };
         let full_key = find_key(&s3_client, url, bucket, key_suffix).await?;
         Ok(s3_client
             .get_object()
