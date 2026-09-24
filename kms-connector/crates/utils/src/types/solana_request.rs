@@ -4,6 +4,7 @@
 
 use alloy::primitives::{B256, U256};
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
+use solana_pubkey::Pubkey;
 use zama_solana_permit::{PermitFields, SIGNATURE_LEN, Signature};
 use zama_solana_request::assemble_solana_request;
 
@@ -15,9 +16,9 @@ pub use zama_solana_request::{
 /// handle (the signer, or a delegator), and the encrypted store holding that leaf.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SolanaHandleEntry {
-    pub handle: [u8; 32],
-    pub owner_address: [u8; 32],
-    pub encrypted_store: [u8; 32],
+    pub handle: B256,
+    pub owner_address: Pubkey,
+    pub encrypted_store: Pubkey,
 }
 
 /// A Solana user decryption request whose fields have their typed form: a decoded permit, a
@@ -56,9 +57,9 @@ impl SolanaUserDecryptionRequestV1 {
                     <[u8; 32]>::try_from(bytes).map_err(|_| RequestFormError::EntryWidth(index))
                 };
                 Ok(SolanaHandleEntry {
-                    handle: field(&entry.handle)?,
-                    owner_address: field(&entry.owner_address)?,
-                    encrypted_store: field(&entry.encrypted_store)?,
+                    handle: B256::from(field(&entry.handle)?),
+                    owner_address: Pubkey::new_from_array(field(&entry.owner_address)?),
+                    encrypted_store: Pubkey::new_from_array(field(&entry.encrypted_store)?),
                 })
             })
             .collect::<Result<Vec<_>, RequestFormError>>()?;
@@ -84,7 +85,7 @@ impl SolanaUserDecryptionRequestV1 {
     }
 
     pub fn ct_handles(&self) -> Vec<B256> {
-        self.handles.iter().map(|e| B256::from(e.handle)).collect()
+        self.handles.iter().map(|e| e.handle).collect()
     }
 
     pub fn extra_data(&self) -> Vec<u8> {

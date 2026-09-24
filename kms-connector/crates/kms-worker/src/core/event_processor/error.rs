@@ -256,10 +256,13 @@ mod tests {
         snapshot::SnapshotError,
         watermark::{WatermarkFailure, WindowFailure},
     };
+    use solana_pubkey::Pubkey;
     use zama_solana_permit::PermitError;
 
     const KEY: [u8; 32] = [7; 32];
-    const INVALID: InvalidHostRecord = InvalidHostRecord { account_key: KEY };
+    const INVALID: InvalidHostRecord = InvalidHostRecord {
+        account_key: Pubkey::new_from_array(KEY),
+    };
 
     /// Signature family, `user_signature_rejected`.
     const SIGNATURE: (RequestCheckKind, ErrorCode) = (
@@ -336,8 +339,8 @@ mod tests {
             ),
             (
                 AuthorizationFailure::ProgramIdMismatch {
-                    signed: [1; 32],
-                    own: [2; 32],
+                    signed: Pubkey::new_from_array([1; 32]),
+                    own: Pubkey::new_from_array([2; 32]),
                 },
                 SIGNATURE,
                 TERMINAL,
@@ -381,26 +384,30 @@ mod tests {
                 TERMINAL,
             ),
             (
-                store(EncryptedStoreFailure::Absent { account_key: KEY }),
+                store(EncryptedStoreFailure::Absent {
+                    account_key: Pubkey::new_from_array(KEY),
+                }),
                 DENIED,
                 RETRY,
             ),
             (
                 store(EncryptedStoreFailure::ForeignOwner {
-                    account_key: KEY,
-                    owner: [1; 32],
+                    account_key: Pubkey::new_from_array(KEY),
+                    owner: Pubkey::new_from_array([1; 32]),
                 }),
                 DENIED,
                 TERMINAL,
             ),
             (
-                store(EncryptedStoreFailure::NotAnEncryptedStore { account_key: KEY }),
+                store(EncryptedStoreFailure::NotAnEncryptedStore {
+                    account_key: Pubkey::new_from_array(KEY),
+                }),
                 DENIED,
                 TERMINAL,
             ),
             (
                 store(EncryptedStoreFailure::AddressMismatch {
-                    account_key: KEY,
+                    account_key: Pubkey::new_from_array(KEY),
                     derived: None,
                 }),
                 DENIED,
@@ -414,8 +421,8 @@ mod tests {
             (
                 AuthorizationFailure::ScopeNotAllowed {
                     index: 0,
-                    program: [1; 32],
-                    scope: [2; 32],
+                    program: Pubkey::new_from_array([1; 32]),
+                    scope: Pubkey::new_from_array([2; 32]),
                 },
                 DENIED,
                 TERMINAL,
@@ -512,7 +519,7 @@ mod tests {
             ),
             (
                 PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::Absent {
-                    account_key: KEY,
+                    account_key: Pubkey::new_from_array(KEY),
                 }),
                 DENIED,
                 RETRY,

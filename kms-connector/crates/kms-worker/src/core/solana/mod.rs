@@ -15,50 +15,45 @@ use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{PERMIT_INVALIDATION_SEED, WILDCARD_APP, delegation_seeds};
 
-pub type SolanaPubkeyBytes = [u8; 32];
-pub type HandleBytes = [u8; 32];
-
 /// The readers both Solana decryption paths authorize through, for one host chain.
 #[derive(Clone, Debug)]
 pub struct SolanaHost {
-    pub program_id: SolanaPubkeyBytes,
+    pub program_id: Pubkey,
     pub reader: SolanaRpcClient,
     pub proofs: CoprocessorProofClient,
 }
 
-pub fn permit_invalidation_address(
-    program_id: SolanaPubkeyBytes,
-    user: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    find_address(program_id, &[PERMIT_INVALIDATION_SEED, &user])
+pub fn permit_invalidation_address(program_id: Pubkey, user: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &program_id)
 }
 
 /// The delegation row of `delegator → delegate` in the application `(app_program, app_scope)`.
 pub fn delegation_address(
-    program_id: SolanaPubkeyBytes,
-    delegator: SolanaPubkeyBytes,
-    delegate: SolanaPubkeyBytes,
-    app_program: SolanaPubkeyBytes,
-    app_scope: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    find_address(
-        program_id,
-        &delegation_seeds(&delegator, &delegate, &app_program, &app_scope),
+    program_id: Pubkey,
+    delegator: Pubkey,
+    delegate: Pubkey,
+    app_program: Pubkey,
+    app_scope: Pubkey,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &delegation_seeds(
+            delegator.as_array(),
+            delegate.as_array(),
+            app_program.as_array(),
+            app_scope.as_array(),
+        ),
+        &program_id,
     )
 }
 
 /// The delegation row of `delegator → delegate` that covers every application.
 pub fn wildcard_delegation_address(
-    program_id: SolanaPubkeyBytes,
-    delegator: SolanaPubkeyBytes,
-    delegate: SolanaPubkeyBytes,
-) -> (SolanaPubkeyBytes, u8) {
-    delegation_address(program_id, delegator, delegate, WILDCARD_APP, WILDCARD_APP)
-}
-
-fn find_address(program_id: SolanaPubkeyBytes, seeds: &[&[u8]]) -> (SolanaPubkeyBytes, u8) {
-    let (address, bump) = Pubkey::find_program_address(seeds, &Pubkey::new_from_array(program_id));
-    (address.to_bytes(), bump)
+    program_id: Pubkey,
+    delegator: Pubkey,
+    delegate: Pubkey,
+) -> (Pubkey, u8) {
+    let wildcard = Pubkey::new_from_array(WILDCARD_APP);
+    delegation_address(program_id, delegator, delegate, wildcard, wildcard)
 }
 
 #[cfg(test)]
@@ -70,22 +65,23 @@ mod tests {
     #[test]
     fn delegation_rows_derive_the_host_programs_addresses() {
         let program_id = Pubkey::from_str_const("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
-        let address = |(key, _)| Pubkey::new_from_array(key).to_string();
+        let address = |(key, _): (Pubkey, u8)| key.to_string();
+        let key = |byte| Pubkey::new_from_array([byte; 32]);
         assert_eq!(
             address(delegation_address(
-                program_id.to_bytes(),
-                [0x11; 32],
-                [0x22; 32],
-                [0x33; 32],
-                [0x44; 32],
+                program_id,
+                key(0x11),
+                key(0x22),
+                key(0x33),
+                key(0x44),
             )),
             "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
         );
         assert_eq!(
             address(wildcard_delegation_address(
-                program_id.to_bytes(),
-                [0x11; 32],
-                [0x22; 32],
+                program_id,
+                key(0x11),
+                key(0x22),
             )),
             "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
         );

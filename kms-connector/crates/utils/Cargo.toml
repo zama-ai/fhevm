@@ -14,6 +14,7 @@ bc2wrap.workspace = true
 tfhe.workspace = true
 zama-solana-permit.workspace = true
 zama-solana-request.workspace = true
+solana-pubkey.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true

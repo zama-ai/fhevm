@@ -389,8 +389,8 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let bucket = S3Instance::setup().await.unwrap();
     let scenario = Scenario::naming(B256::from_hex(S3_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        user_address: scenario.victim.pubkey().to_vec(),
-        verifying_program_id: PROGRAM_ID.to_vec(),
+        user_address: scenario.victim.pubkey().to_bytes().to_vec(),
+        verifying_program_id: PROGRAM_ID.to_bytes().to_vec(),
         transport_key: scenario.event.publicKey.to_vec(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");

@@ -14,13 +14,14 @@
 //! test produced.
 #![allow(dead_code)]
 
+use alloy::primitives::B256;
 use alloy::primitives::U256;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use connector_utils::types::solana_request::{
     SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::solana::{
-    SolanaHost, SolanaPubkeyBytes,
+    SolanaHost,
     pipeline::AuthorizationContext,
     proof::{
         CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
@@ -54,16 +55,16 @@ use zama_solana_permit::{
 use zama_solana_request::SolanaHandleEntryWire;
 
 /// The host deployment every fixture is built against.
-pub const PROGRAM_ID: SolanaPubkeyBytes = [7; 32];
+pub const PROGRAM_ID: Pubkey = Pubkey::new_from_array([7; 32]);
 /// Type byte `0x01` over a cluster tag, as every Solana host chain id.
 pub const CHAIN_ID: u64 = 0x0123_4567_89ab_cdef;
 
 /// The application program of the default encrypted store.
-pub const APP_PROGRAM: SolanaPubkeyBytes = [1; 32];
+pub const APP_PROGRAM: Pubkey = Pubkey::new_from_array([1; 32]);
 /// The encrypted store authority of the default encrypted store.
-pub const AUTHORITY: SolanaPubkeyBytes = [2; 32];
+pub const AUTHORITY: Pubkey = Pubkey::new_from_array([2; 32]);
 /// The program-declared scope of the default encrypted store.
-pub const SCOPE: SolanaPubkeyBytes = [3; 32];
+pub const SCOPE: Pubkey = Pubkey::new_from_array([3; 32]);
 /// The label of the default encrypted store.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
@@ -114,11 +115,8 @@ impl Wallet {
     }
 
     /// The wallet's public key, which is also the permit's user and its recipient.
-    pub fn pubkey(&self) -> SolanaPubkeyBytes {
-        self.keypair
-            .public_key()
-            .as_ref()
-            .try_into()
+    pub fn pubkey(&self) -> Pubkey {
+        Pubkey::try_from(self.keypair.public_key().as_ref())
             .expect("an Ed25519 public key is 32 bytes")
     }
 
@@ -135,9 +133,9 @@ impl Wallet {
 }
 
 /// One signed `program ‖ scope` entry in transport form.
-pub fn scope_entry(program: SolanaPubkeyBytes, scope: SolanaPubkeyBytes) -> Vec<u8> {
-    let mut entry = program.to_vec();
-    entry.extend_from_slice(&scope);
+pub fn scope_entry(program: Pubkey, scope: Pubkey) -> Vec<u8> {
+    let mut entry = program.to_bytes().to_vec();
+    entry.extend_from_slice(scope.as_ref());
     entry
 }
 
@@ -169,21 +167,21 @@ pub const fn context_at(now_unix_seconds: u64) -> AuthorizationContext {
     }
 }
 /// The KMS context of the default permit.
-pub const KMS_CONTEXT: SolanaPubkeyBytes = [0x11; 32];
+pub const KMS_CONTEXT: [u8; 32] = [0x11; 32];
 /// The KMS epoch of the default permit.
-pub const KMS_EPOCH: SolanaPubkeyBytes = [0x12; 32];
+pub const KMS_EPOCH: [u8; 32] = [0x12; 32];
 
 impl PermitBuilder {
     /// A permit for `user`, scoped to the fixture application.
-    pub fn new(user: SolanaPubkeyBytes) -> Self {
+    pub fn new(user: Pubkey) -> Self {
         Self {
             wire: PermitWireFields {
-                user_address: user.to_vec(),
+                user_address: user.to_bytes().to_vec(),
                 transport_key: vec![0xa5; TRANSPORT_KEY_LEN],
                 allowed_scopes: vec![scope_entry(APP_PROGRAM, SCOPE)],
                 start_timestamp: DEFAULT_START,
                 duration_seconds: DEFAULT_DURATION,
-                verifying_program_id: PROGRAM_ID.to_vec(),
+                verifying_program_id: PROGRAM_ID.to_bytes().to_vec(),
                 chain_id: CHAIN_ID,
                 extra_data: KmsRouting::ContextAndEpoch {
                     kms_context_id: Identity::new(KMS_CONTEXT),
@@ -202,7 +200,7 @@ impl PermitBuilder {
 
     /// Replaces the signed application scope with the given `(program, scope)` pairs, sorted
     /// into the canonical ascending order the typed form demands.
-    pub fn scope(mut self, pairs: &[(SolanaPubkeyBytes, SolanaPubkeyBytes)]) -> Self {
+    pub fn scope(mut self, pairs: &[(Pubkey, Pubkey)]) -> Self {
         let mut entries: Vec<Vec<u8>> = pairs
             .iter()
             .map(|(program, scope)| scope_entry(*program, *scope))
@@ -226,7 +224,7 @@ impl PermitBuilder {
     }
 
     /// Replaces the signed KMS routing pair.
-    pub fn kms_pair(mut self, context: SolanaPubkeyBytes, epoch: SolanaPubkeyBytes) -> Self {
+    pub fn kms_pair(mut self, context: [u8; 32], epoch: [u8; 32]) -> Self {
         self.wire.extra_data = KmsRouting::ContextAndEpoch {
             kms_context_id: Identity::new(context),
             kms_epoch_id: Identity::new(epoch),
@@ -282,7 +280,7 @@ impl<'a> RequestBuilder<'a> {
         self,
         encrypted_store: &EncryptedStoreFixture,
         handle: [u8; 32],
-        delegator: SolanaPubkeyBytes,
+        delegator: Pubkey,
     ) -> Self {
         self.entry(handle, delegator, encrypted_store.account_key)
     }
@@ -291,13 +289,13 @@ impl<'a> RequestBuilder<'a> {
     pub fn entry(
         mut self,
         handle: [u8; 32],
-        owner_address: SolanaPubkeyBytes,
-        encrypted_store: SolanaPubkeyBytes,
+        owner_address: Pubkey,
+        encrypted_store: Pubkey,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
-            owner_address: owner_address.to_vec(),
-            encrypted_store: encrypted_store.to_vec(),
+            owner_address: owner_address.to_bytes().to_vec(),
+            encrypted_store: encrypted_store.to_bytes().to_vec(),
         });
         self
     }
@@ -358,7 +356,7 @@ pub struct EncryptedStoreFixture {
     /// The encrypted store state.
     pub encrypted_store: EncryptedStore,
     /// Its canonical address.
-    pub account_key: SolanaPubkeyBytes,
+    pub account_key: Pubkey,
     /// Every leaf sealed so far, in leaf order, so proofs can be rebuilt.
     pub leaves: Vec<SealedLeaf>,
 }
@@ -372,21 +370,26 @@ impl EncryptedStoreFixture {
 
     /// An encrypted store of an arbitrary application, authority, scope and label.
     pub fn in_application(
-        program: SolanaPubkeyBytes,
-        authority: SolanaPubkeyBytes,
-        scope: SolanaPubkeyBytes,
+        program: Pubkey,
+        authority: Pubkey,
+        scope: Pubkey,
         label: [u8; 32],
         current_handle: [u8; 32],
     ) -> Self {
         let (account_key, bump) = Pubkey::find_program_address(
-            &[b"encrypted-state", &program, &authority, &scope],
-            &Pubkey::new_from_array(PROGRAM_ID),
+            &[
+                b"encrypted-state",
+                program.as_ref(),
+                authority.as_ref(),
+                scope.as_ref(),
+            ],
+            &PROGRAM_ID,
         );
         Self {
             encrypted_store: EncryptedStore {
-                program,
-                authority,
-                scope,
+                program: program.to_bytes(),
+                authority: authority.to_bytes(),
+                scope: scope.to_bytes(),
                 slots: vec![EncryptedSlot {
                     key: label,
                     handle: current_handle,
@@ -395,14 +398,14 @@ impl EncryptedStoreFixture {
                 peaks: Vec::new(),
                 bump,
             },
-            account_key: account_key.to_bytes(),
+            account_key,
             leaves: Vec::new(),
         }
     }
 
     /// An account holding `current_handle` with `key` already allowed on it: the state one
     /// write plus one allow leaves behind, and the reference state of most scenarios.
-    pub fn allowing(current_handle: [u8; 32], key: SolanaPubkeyBytes) -> Self {
+    pub fn allowing(current_handle: [u8; 32], key: Pubkey) -> Self {
         let mut fixture = Self::new(current_handle);
         fixture.allow(key);
         fixture
@@ -415,20 +418,24 @@ impl EncryptedStoreFixture {
 
     /// Seals an allow leaf naming `key` on the current handle — what the host program does when
     /// the application allows a key.
-    pub fn allow(&mut self, key: SolanaPubkeyBytes) {
+    pub fn allow(&mut self, key: Pubkey) {
         let handle = self.current_handle();
         self.allow_handle(handle, key);
     }
 
     /// Seals an allow leaf for an exact handle. The handle need not still occupy a slot.
-    pub fn allow_handle(&mut self, handle: [u8; 32], key: SolanaPubkeyBytes) {
+    pub fn allow_handle(&mut self, handle: [u8; 32], key: Pubkey) {
         let leaf_index = self.encrypted_store.leaf_count;
-        let commitment =
-            historical_access_leaf_commitment(self.account_key, leaf_index, handle, key);
+        let commitment = historical_access_leaf_commitment(
+            self.account_key.to_bytes(),
+            leaf_index,
+            handle,
+            key.to_bytes(),
+        );
         self.append(
             LeafQuery {
                 encrypted_store: self.account_key,
-                handle,
+                handle: B256::new(handle),
                 kind: LeafKind::Allowed { key },
             },
             commitment,
@@ -439,11 +446,12 @@ impl EncryptedStoreFixture {
     pub fn mark_public(&mut self) {
         let handle = self.current_handle();
         let leaf_index = self.encrypted_store.leaf_count;
-        let commitment = public_decrypt_leaf_commitment(self.account_key, leaf_index, handle);
+        let commitment =
+            public_decrypt_leaf_commitment(self.account_key.to_bytes(), leaf_index, handle);
         self.append(
             LeafQuery {
                 encrypted_store: self.account_key,
-                handle,
+                handle: B256::new(handle),
                 kind: LeafKind::Public,
             },
             commitment,
@@ -495,10 +503,10 @@ impl EncryptedStoreFixture {
     }
 
     /// The allow query for `key` on `handle` under this account.
-    pub fn allowed_query(&self, handle: [u8; 32], key: SolanaPubkeyBytes) -> LeafQuery {
+    pub fn allowed_query(&self, handle: [u8; 32], key: Pubkey) -> LeafQuery {
         LeafQuery {
             encrypted_store: self.account_key,
-            handle,
+            handle: B256::new(handle),
             kind: LeafKind::Allowed { key },
         }
     }
@@ -507,7 +515,7 @@ impl EncryptedStoreFixture {
     pub fn public_query(&self, handle: [u8; 32]) -> LeafQuery {
         LeafQuery {
             encrypted_store: self.account_key,
-            handle,
+            handle: B256::new(handle),
             kind: LeafKind::Public,
         }
     }
@@ -529,13 +537,13 @@ impl EncryptedStoreFixture {
 #[derive(Clone, Copy, Debug)]
 pub struct DelegationFixture {
     /// Who granted it.
-    pub delegator: SolanaPubkeyBytes,
+    pub delegator: Pubkey,
     /// Who received it.
-    pub delegate: SolanaPubkeyBytes,
+    pub delegate: Pubkey,
     /// The application's program, or the wildcard.
-    pub program: SolanaPubkeyBytes,
+    pub program: Pubkey,
     /// The application's scope, or the wildcard.
-    pub scope: SolanaPubkeyBytes,
+    pub scope: Pubkey,
     /// Unix second it ends at, exclusive; 0 once revoked.
     pub expires_at: u64,
     /// The counter no rule reads and no signature commits to.
@@ -546,7 +554,7 @@ pub struct DelegationFixture {
 
 impl DelegationFixture {
     /// A delegation live at [`HOST_NOW`] in the default encrypted store's application.
-    pub fn live(delegator: SolanaPubkeyBytes, delegate: SolanaPubkeyBytes) -> Self {
+    pub fn live(delegator: Pubkey, delegate: Pubkey) -> Self {
         Self {
             delegator,
             delegate,
@@ -560,10 +568,10 @@ impl DelegationFixture {
 
     /// A live wildcard row: the same grant with the sentinel in place of the application, which is
     /// how a delegator covers every application at once.
-    pub fn live_wildcard(delegator: SolanaPubkeyBytes, delegate: SolanaPubkeyBytes) -> Self {
+    pub fn live_wildcard(delegator: Pubkey, delegate: Pubkey) -> Self {
         Self {
-            program: WILDCARD_APP,
-            scope: WILDCARD_APP,
+            program: Pubkey::new_from_array(WILDCARD_APP),
+            scope: Pubkey::new_from_array(WILDCARD_APP),
             ..Self::live(delegator, delegate)
         }
     }
@@ -571,8 +579,8 @@ impl DelegationFixture {
     /// The same record in the application of `encrypted_store`.
     pub fn in_application_of(self, encrypted_store: &EncryptedStoreFixture) -> Self {
         Self {
-            program: encrypted_store.encrypted_store.program,
-            scope: encrypted_store.encrypted_store.scope,
+            program: Pubkey::new_from_array(encrypted_store.encrypted_store.program),
+            scope: Pubkey::new_from_array(encrypted_store.encrypted_store.scope),
             ..self
         }
     }
@@ -586,28 +594,27 @@ impl DelegationFixture {
     }
 
     /// Its canonical address and bump, derived here rather than taken from the code under test.
-    pub fn address(&self) -> (SolanaPubkeyBytes, u8) {
-        let (address, bump) = Pubkey::find_program_address(
+    pub fn address(&self) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
             &[
                 DELEGATION_SEED,
-                &self.delegator,
-                &self.delegate,
-                &self.program,
-                &self.scope,
+                self.delegator.as_ref(),
+                self.delegate.as_ref(),
+                self.program.as_ref(),
+                self.scope.as_ref(),
             ],
-            &Pubkey::new_from_array(PROGRAM_ID),
-        );
-        (address.to_bytes(), bump)
+            &PROGRAM_ID,
+        )
     }
 
     /// The account as the host program would write it.
     pub fn account(&self) -> SnapshotAccount {
         let (_, bump) = self.address();
         let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
-        data.extend_from_slice(&self.delegator);
-        data.extend_from_slice(&self.delegate);
-        data.extend_from_slice(&self.program);
-        data.extend_from_slice(&self.scope);
+        data.extend_from_slice(self.delegator.as_ref());
+        data.extend_from_slice(self.delegate.as_ref());
+        data.extend_from_slice(self.program.as_ref());
+        data.extend_from_slice(self.scope.as_ref());
         data.extend_from_slice(&self.expires_at.to_le_bytes());
         data.extend_from_slice(&self.delegation_counter.to_le_bytes());
         data.extend_from_slice(&self.last_update_slot.to_le_bytes());
@@ -628,28 +635,24 @@ pub fn clock_account(unix_timestamp: u64) -> SnapshotAccount {
     }
     data.extend_from_slice(&unix_timestamp.to_le_bytes());
     SnapshotAccount {
-        owner: SYSVAR_OWNER_ID,
+        owner: Pubkey::new_from_array(SYSVAR_OWNER_ID),
         data,
     }
 }
 
 /// The canonical invalidation-record address for a user, derived here rather than taken from
 /// the code under test.
-pub fn invalidation_address(user: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
-    let (address, bump) = Pubkey::find_program_address(
-        &[PERMIT_INVALIDATION_SEED, user.as_ref()],
-        &Pubkey::new_from_array(PROGRAM_ID),
-    );
-    (address.to_bytes(), bump)
+pub fn invalidation_address(user: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &PROGRAM_ID)
 }
 
 /// An invalidation record holding `watermark` for `user`.
-pub fn invalidation_account(user: SolanaPubkeyBytes, watermark: u64) -> SnapshotAccount {
+pub fn invalidation_account(user: Pubkey, watermark: u64) -> SnapshotAccount {
     let (_, bump) = invalidation_address(user);
     SnapshotAccount {
         owner: PROGRAM_ID,
         data: encode_permit_invalidation(&PermitInvalidationRecord {
-            user,
+            user: user.to_bytes(),
             invalidation_watermark: watermark,
             bump,
         }),
@@ -675,10 +678,10 @@ pub fn prefunded_account() -> SnapshotAccount {
 pub struct World {
     /// The slot a read of this world reports as its observation point.
     pub slot: u64,
-    accounts: BTreeMap<SolanaPubkeyBytes, SnapshotAccount>,
+    accounts: BTreeMap<Pubkey, SnapshotAccount>,
     /// The encrypted stores placed whole, so the leaf record that agrees with this world
     /// can be derived from it.
-    sealed: BTreeMap<SolanaPubkeyBytes, EncryptedStoreFixture>,
+    sealed: BTreeMap<Pubkey, EncryptedStoreFixture>,
 }
 
 impl World {
@@ -693,8 +696,10 @@ impl World {
 
     /// The same world with the Clock reading `unix_timestamp`.
     pub fn with_clock(mut self, unix_timestamp: u64) -> Self {
-        self.accounts
-            .insert(CLOCK_SYSVAR_ID, clock_account(unix_timestamp));
+        self.accounts.insert(
+            Pubkey::new_from_array(CLOCK_SYSVAR_ID),
+            clock_account(unix_timestamp),
+        );
         self
     }
 
@@ -725,7 +730,7 @@ impl World {
     }
 
     /// Places an invalidation record in the world.
-    pub fn with_watermark(mut self, user: SolanaPubkeyBytes, watermark: u64) -> Self {
+    pub fn with_watermark(mut self, user: Pubkey, watermark: u64) -> Self {
         let (key, _) = invalidation_address(user);
         self.accounts
             .insert(key, invalidation_account(user, watermark));
@@ -733,13 +738,13 @@ impl World {
     }
 
     /// Places an arbitrary account in the world, for the wrong-owner and wrong-type cases.
-    pub fn with_account(mut self, key: SolanaPubkeyBytes, account: SnapshotAccount) -> Self {
+    pub fn with_account(mut self, key: Pubkey, account: SnapshotAccount) -> Self {
         self.accounts.insert(key, account);
         self
     }
 
     /// Removes an account, for the absent cases.
-    pub fn without_account(mut self, key: &SolanaPubkeyBytes) -> Self {
+    pub fn without_account(mut self, key: &Pubkey) -> Self {
         self.accounts.remove(key);
         self
     }
@@ -751,7 +756,7 @@ impl World {
     }
 
     /// Projects the world onto the requested keys, exactly as an account read would.
-    pub fn read(&self, keys: &[SolanaPubkeyBytes]) -> AccountsRead {
+    pub fn read(&self, keys: &[Pubkey]) -> AccountsRead {
         AccountsRead {
             slot: self.slot,
             accounts: keys.iter().map(|key| self.account(key)).collect(),
@@ -759,7 +764,7 @@ impl World {
     }
 
     /// The account at `key`, if the world holds one.
-    pub fn account(&self, key: &SolanaPubkeyBytes) -> Option<SnapshotAccount> {
+    pub fn account(&self, key: &Pubkey) -> Option<SnapshotAccount> {
         self.accounts.get(key).cloned()
     }
 
@@ -775,12 +780,12 @@ impl World {
     /// Both delegation rows of a delegated entry, judged at this world's Clock.
     pub fn rows(&self, exact: DerivedAddress, wildcard: DerivedAddress) -> ObservedRows {
         let clock = self
-            .account(&CLOCK_SYSVAR_ID)
+            .account(&Pubkey::new_from_array(CLOCK_SYSVAR_ID))
             .expect("the world has a Clock");
         ObservedRows {
             exact: self.row(exact),
             wildcard: self.row(wildcard),
-            now: zama_solana_acl::decode_clock_unix_timestamp(&clock.owner, &clock.data)
+            now: zama_solana_acl::decode_clock_unix_timestamp(clock.owner.as_array(), &clock.data)
                 .expect("the world's Clock decodes"),
         }
     }
@@ -789,7 +794,7 @@ impl World {
 /// One host-state read as the reader was asked for it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ReadCall {
-    pub keys: Vec<SolanaPubkeyBytes>,
+    pub keys: Vec<Pubkey>,
     pub min_context_slot: Option<u64>,
 }
 
@@ -841,7 +846,7 @@ impl ScriptedReader {
 impl HostStateReader for ScriptedReader {
     async fn read_accounts(
         &self,
-        keys: &[SolanaPubkeyBytes],
+        keys: &[Pubkey],
         min_context_slot: Option<u64>,
     ) -> Result<AccountsRead, SnapshotError> {
         let index = {
@@ -875,7 +880,7 @@ impl HostStateReader for ScriptedReader {
 /// unknown to it. A record can also be given its answers outright, query by query.
 #[derive(Clone, Debug, Default)]
 pub struct ProofRecord {
-    accounts: BTreeMap<SolanaPubkeyBytes, EncryptedStoreFixture>,
+    accounts: BTreeMap<Pubkey, EncryptedStoreFixture>,
     answers: BTreeMap<LeafQuery, LeafProofOutcome>,
 }
 
@@ -895,7 +900,7 @@ impl ProofRecord {
     }
 
     /// Forgets an account, making it unknown to the record.
-    pub fn without(mut self, account_key: &SolanaPubkeyBytes) -> Self {
+    pub fn without(mut self, account_key: &Pubkey) -> Self {
         self.accounts.remove(account_key);
         self
     }
@@ -1046,7 +1051,7 @@ impl HttpHost {
     }
 
     /// Replaces the node's state: one `getMultipleAccounts` read of these keys, in this order.
-    pub fn serve_accounts(&mut self, accounts: &[(SolanaPubkeyBytes, Option<SnapshotAccount>)]) {
+    pub fn serve_accounts(&mut self, accounts: &[(Pubkey, Option<SnapshotAccount>)]) {
         let keys: Vec<_> = accounts.iter().map(|(key, _)| *key).collect();
         let request = multiple_accounts_request(&keys, None);
         let value: Vec<_> = accounts
@@ -1054,7 +1059,7 @@ impl HttpHost {
             .map(|(_, account)| {
                 account.as_ref().map(|account| {
                     serde_json::json!({
-                        "owner": Pubkey::new_from_array(account.owner).to_string(),
+                        "owner": account.owner.to_string(),
                         "data": [BASE64_STANDARD.encode(&account.data), "base64"],
                         "lamports": 1,
                         "executable": false,
@@ -1087,7 +1092,7 @@ impl HttpHost {
 
 /// The `getMultipleAccounts` body the connector sends for `keys`, at confirmed commitment.
 pub fn multiple_accounts_request(
-    keys: &[SolanaPubkeyBytes],
+    keys: &[Pubkey],
     min_context_slot: Option<u64>,
 ) -> serde_json::Value {
     serde_json::json!({
@@ -1096,7 +1101,7 @@ pub fn multiple_accounts_request(
         "method": "getMultipleAccounts",
         "params": [
             keys.iter()
-                .map(|key| Pubkey::new_from_array(*key).to_string())
+                .map(Pubkey::to_string)
                 .collect::<Vec<_>>(),
             {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": min_context_slot},
         ],

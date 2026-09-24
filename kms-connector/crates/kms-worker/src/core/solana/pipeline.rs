@@ -7,9 +7,7 @@ use super::handle_binding::{check_handle_binding, verify_proofs};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
-use super::{
-    SolanaPubkeyBytes, delegation_address, permit_invalidation_address, wildcard_delegation_address,
-};
+use super::{delegation_address, permit_invalidation_address, wildcard_delegation_address};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
 use tracing::info;
@@ -19,7 +17,7 @@ use zama_solana_permit::verify_signature;
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorizationContext {
     /// The host program this Connector serves on the request's chain.
-    pub program_id: SolanaPubkeyBytes,
+    pub program_id: Pubkey,
     /// The second the validity window is evaluated at.
     pub now_unix_seconds: u64,
 }
@@ -34,14 +32,14 @@ pub async fn authorize_request(
 ) -> Result<(), AuthorizationFailure> {
     let permit = request.permit();
     let program_id = context.program_id;
-    let signer = *permit.user_address().as_bytes();
+    let signer = Pubkey::new_from_array(*permit.user_address().as_bytes());
     verify_signature(permit, request.signature()).map_err(AuthorizationFailure::Signature)?;
     check_window(
         permit.start_timestamp(),
         permit.duration_seconds(),
         context.now_unix_seconds,
     )?;
-    let signed_program = *permit.verifying_program_id().as_bytes();
+    let signed_program = Pubkey::new_from_array(*permit.verifying_program_id().as_bytes());
     if signed_program != program_id {
         return Err(AuthorizationFailure::ProgramIdMismatch {
             signed: signed_program,
@@ -112,9 +110,9 @@ pub async fn authorize_request(
             .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
             delegated.push(format!(
                 "entry {index}: delegator {}, application ({}, {}), {row:?} row",
-                Pubkey::new_from_array(entry.owner_address),
-                Pubkey::new_from_array(store.program()),
-                Pubkey::new_from_array(store.scope()),
+                entry.owner_address,
+                store.program(),
+                store.scope(),
             ));
         }
         stores.push(store);
@@ -151,7 +149,7 @@ pub async fn authorize_request(
     // authorize identically.
     if !delegated.is_empty() {
         info!(
-            delegate = %Pubkey::new_from_array(signer),
+            delegate = %signer,
             observed_slot = observation.slot,
             entries = ?delegated,
             "Solana delegated user decryption entries authorized"
@@ -164,8 +162,8 @@ pub async fn authorize_request(
 /// applications of the first read.
 fn delegation_row_keys(
     first: &HostObservation,
-    program_id: SolanaPubkeyBytes,
-    signer: SolanaPubkeyBytes,
+    program_id: Pubkey,
+    signer: Pubkey,
     request: &SolanaUserDecryptionRequestV1,
 ) -> Result<Vec<DelegationRowKeys>, AuthorizationFailure> {
     let mut rows = Vec::new();

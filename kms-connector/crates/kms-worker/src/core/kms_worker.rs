@@ -376,6 +376,8 @@ async fn register_host_chains(
 mod tests {
     use super::*;
     use crate::core::config::{HostChainConfig, SolanaHostSettings, solana_host_chain_id};
+    use alloy::primitives::B256;
+    use solana_pubkey::Pubkey;
 
     fn evm_chain(chain_id: u64) -> HostChainConfig {
         HostChainConfig {
@@ -389,7 +391,7 @@ mod tests {
             url: endpoint.parse().unwrap(),
             chain_id: solana_host_chain_id(cluster_tag),
             host: HostSettings::Solana(SolanaHostSettings {
-                host_program_id: [7; 32],
+                host_program_id: Pubkey::new_from_array([7; 32]),
                 proof_routes: vec![
                     serde_json::from_value(serde_json::json!({
                         "url": endpoint, "api_key": "test-key"
@@ -416,7 +418,7 @@ mod tests {
         assert!(matches!(hosts.get(&1), Some(HostChain::Evm(_))));
         match hosts.get(&solana_host_chain_id(2)) {
             Some(HostChain::Solana(host)) => {
-                assert_eq!(host.program_id, [7; 32])
+                assert_eq!(host.program_id, Pubkey::new_from_array([7; 32]))
             }
             _ => panic!("the Solana host chain should use the Solana host"),
         }
@@ -443,10 +445,10 @@ mod tests {
         let HostChain::Solana(host) = &hosts[&solana_host_chain_id(2)] else {
             panic!("expected Solana host")
         };
-        let keys = [[1; 32]];
+        let keys = [Pubkey::new_from_array([1; 32])];
         let queries = [LeafQuery {
-            encrypted_store: [1; 32],
-            handle: [2; 32],
+            encrypted_store: Pubkey::new_from_array([1; 32]),
+            handle: B256::new([2; 32]),
             kind: LeafKind::Public,
         }];
         let (rpc, proofs) = tokio::join!(

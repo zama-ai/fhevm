@@ -1,4 +1,3 @@
-use crate::core::solana::SolanaPubkeyBytes;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
@@ -199,7 +198,7 @@ pub enum HostSettings {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SolanaHostSettings {
     /// The zama-host program id.
-    pub host_program_id: SolanaPubkeyBytes,
+    pub host_program_id: Pubkey,
     /// The coprocessors' leaf-proof routes, one per coprocessor, at least one. They are asked in
     /// this order, each only for the leaves the ones before it could not prove. A coprocessor
     /// that does not answer delays the next by up to `host_rpc_call_timeout`.
@@ -251,7 +250,7 @@ struct HostChainEntry {
         deserialize_with = "deserialize_optional_solana_pubkey",
         alias = "solanaHostProgramId"
     )]
-    solana_host_program_id: Option<SolanaPubkeyBytes>,
+    solana_host_program_id: Option<Pubkey>,
     #[serde(default, alias = "solanaProofRoutes")]
     solana_proof_routes: Vec<ProofRoute>,
 }
@@ -335,7 +334,7 @@ where
     Ok(host_chains)
 }
 
-fn deserialize_optional_solana_pubkey<'de, D>(d: D) -> Result<Option<SolanaPubkeyBytes>, D::Error>
+fn deserialize_optional_solana_pubkey<'de, D>(d: D) -> Result<Option<Pubkey>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -343,7 +342,7 @@ where
         return Ok(None);
     };
     let pubkey = Pubkey::from_str(&pubkey).map_err(serde::de::Error::custom)?;
-    Ok(Some(pubkey.to_bytes()))
+    Ok(Some(pubkey))
 }
 
 fn deserialize_non_empty<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
@@ -735,7 +734,7 @@ mod tests {
                 // RFC-021 Solana host id: type byte 0x01 | 31888.
                 chain_id: solana_host_chain_id(31888),
                 host: HostSettings::Solana(SolanaHostSettings {
-                    host_program_id: [0; 32],
+                    host_program_id: Pubkey::new_from_array([0; 32]),
                     proof_routes: vec![ProofRoute {
                         url: Url::from_str("http://coprocessor-1:8080").unwrap(),
                         api_key: ApiKey::from("first-key".to_owned()),

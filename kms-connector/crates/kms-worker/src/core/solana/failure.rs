@@ -1,7 +1,6 @@
 //! Why a Solana request was not authorized, and how the worker records it: one exhaustive
 //! [`FailureClass`] per failure.
 
-use super::SolanaPubkeyBytes;
 use super::delegation::DelegationFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
@@ -11,15 +10,16 @@ use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
 use crate::core::event_processor::RequestCheckKind;
 use kms_connector_api::ErrorCode;
+use solana_pubkey::Pubkey;
 use zama_solana_permit::PermitError;
 
 /// An account the Connector read at an address only the host program can write, or a store the
 /// host program owns, whose content the host program could never have written. The request is
 /// judged on nothing else: it fails closed, even when another row would authorize it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
-#[error("account {account_key:?} holds a record the host program could not have written")]
+#[error("account {account_key} holds a record the host program could not have written")]
 pub struct InvalidHostRecord {
-    pub account_key: SolanaPubkeyBytes,
+    pub account_key: Pubkey,
 }
 
 /// Per-entry rules carry the entry index: "some handle failed" is not actionable for a batch.
@@ -29,11 +29,8 @@ pub enum AuthorizationFailure {
     Signature(PermitError),
     #[error("validity window: {0}")]
     Window(#[from] WindowFailure),
-    #[error("permit names program {signed:?}, this host is {own:?}")]
-    ProgramIdMismatch {
-        signed: SolanaPubkeyBytes,
-        own: SolanaPubkeyBytes,
-    },
+    #[error("permit names program {signed}, this host is {own}")]
+    ProgramIdMismatch { signed: Pubkey, own: Pubkey },
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
     #[error("invalidation: {0}")]
@@ -43,11 +40,11 @@ pub enum AuthorizationFailure {
         index: usize,
         source: EncryptedStoreFailure,
     },
-    #[error("entry {index}: application ({program:?}, {scope:?}) is outside the signed scope")]
+    #[error("entry {index}: application ({program}, {scope}) is outside the signed scope")]
     ScopeNotAllowed {
         index: usize,
-        program: SolanaPubkeyBytes,
-        scope: SolanaPubkeyBytes,
+        program: Pubkey,
+        scope: Pubkey,
     },
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),

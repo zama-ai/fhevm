@@ -21,7 +21,6 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
@@ -165,7 +164,7 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let delegator = Wallet::new(2);
     let first_handle = handle(0x27, FHE_TYPE_UINT64);
     let second_handle = handle(0x28, FHE_TYPE_UINT64);
-    let other_scope: SolanaPubkeyBytes = [0x5a; 32];
+    let other_scope: Pubkey = Pubkey::new_from_array([0x5a; 32]);
     let first_encrypted_store = EncryptedStoreFixture::allowing(first_handle, delegator.pubkey());
     let mut second_encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
@@ -222,8 +221,13 @@ async fn the_largest_delegated_request_fits_one_account_read() {
     for index in 0..MAX_REQUEST_HANDLES as u8 {
         let delegator = Wallet::new(index + 2);
         let live = handle(index, FHE_TYPE_UINT64);
-        let mut store =
-            EncryptedStoreFixture::in_application(APP_PROGRAM, AUTHORITY, [index; 32], LABEL, live);
+        let mut store = EncryptedStoreFixture::in_application(
+            APP_PROGRAM,
+            AUTHORITY,
+            Pubkey::new_from_array([index; 32]),
+            LABEL,
+            live,
+        );
         store.allow(delegator.pubkey());
         world = world.with_encrypted_store(&store);
         request = request.delegated(&store, live, delegator.pubkey());
@@ -535,7 +539,7 @@ async fn a_coprocessor_behind_the_chain_hands_the_query_to_the_next() {
 
 /// A node answering `getMultipleAccounts` with `result` for exactly this body.
 async fn node_answering(
-    keys: &[SolanaPubkeyBytes],
+    keys: &[Pubkey],
     min_context_slot: Option<u64>,
     answer: serde_json::Value,
 ) -> (mocktail::server::MockServer, SolanaRpcClient) {
@@ -557,7 +561,7 @@ async fn node_answering(
 /// Exercise the actual SDK transport; the mock matches commitment, encoding, `minContextSlot` and
 /// ordered keys.
 async fn rpc_read(
-    keys: &[SolanaPubkeyBytes],
+    keys: &[Pubkey],
     value: serde_json::Value,
 ) -> Result<AccountsRead, SnapshotError> {
     let answer = serde_json::json!({"jsonrpc":"2.0","id":0,"result":{"context":{"slot":4242},"value":value}});
@@ -566,14 +570,17 @@ async fn rpc_read(
 }
 
 fn rpc_account() -> serde_json::Value {
-    serde_json::json!({"owner":Pubkey::new_from_array(PROGRAM_ID).to_string(),
+    serde_json::json!({"owner":PROGRAM_ID.to_string(),
         "data":["AQID","base64"],"lamports":1,"executable":false,"rentEpoch":0})
 }
 
 #[tokio::test]
 async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
     let read = rpc_read(
-        &[[5; 32], [6; 32]],
+        &[
+            Pubkey::new_from_array([5; 32]),
+            Pubkey::new_from_array([6; 32]),
+        ],
         serde_json::json!([rpc_account(), null]),
     )
     .await
@@ -598,7 +605,7 @@ async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
 /// read.
 #[tokio::test]
 async fn a_node_below_the_minimum_context_slot_is_reported_as_behind() {
-    let keys = [[5; 32]];
+    let keys = [Pubkey::new_from_array([5; 32])];
     let behind = serde_json::json!({"jsonrpc":"2.0","id":0,"error":{
         "code":-32016,"message":"Minimum context slot has not been reached","data":{"contextSlot":99}}});
     let (_server, client) = node_answering(&keys, Some(100), behind).await;
@@ -627,7 +634,11 @@ async fn malformed_rpc_accounts_are_errors_never_missing_accounts() {
     missing_owner.as_object_mut().unwrap().remove("owner");
     for account in [bad_base64, wrong_encoding, bad_owner, missing_owner] {
         assert!(matches!(
-            rpc_read(&[[5; 32]], serde_json::json!([account])).await,
+            rpc_read(
+                &[Pubkey::new_from_array([5; 32])],
+                serde_json::json!([account])
+            )
+            .await,
             Err(SnapshotError::Unavailable { .. })
         ));
     }
@@ -644,7 +655,7 @@ async fn an_rpc_answer_of_the_wrong_length_is_an_error(
     #[case] returned: usize,
 ) {
     assert_eq!(
-        rpc_read(&[[5; 32]], value).await,
+        rpc_read(&[Pubkey::new_from_array([5; 32])], value).await,
         Err(SnapshotError::ResponseLengthMismatch {
             requested: 1,
             returned,
@@ -654,7 +665,7 @@ async fn an_rpc_answer_of_the_wrong_length_is_an_error(
 
 #[tokio::test]
 async fn a_full_hundred_account_snapshot_is_one_rpc_call() {
-    let keys: Vec<_> = (0..100).map(|i| [i; 32]).collect();
+    let keys: Vec<_> = (0..100).map(|i| Pubkey::new_from_array([i; 32])).collect();
     let read = rpc_read(&keys, serde_json::json!(vec![None::<()>; 100]))
         .await
         .unwrap();
@@ -676,7 +687,7 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
     );
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(250),
-        client.read_accounts(&[[1; 32]], None),
+        client.read_accounts(&[Pubkey::new_from_array([1; 32])], None),
     )
     .await;
     assert!(
@@ -704,12 +715,20 @@ async fn rpc_limit_is_shared_across_clones_and_cancellation_releases_it() {
         NonZeroUsize::new(1).unwrap(),
     );
     let first_client = client.clone();
-    let first = tokio::spawn(async move { first_client.read_accounts(&[[1; 32]], None).await });
+    let first = tokio::spawn(async move {
+        first_client
+            .read_accounts(&[Pubkey::new_from_array([1; 32])], None)
+            .await
+    });
     let (_held, _) = timeout(Duration::from_secs(1), listener.accept())
         .await
         .unwrap()
         .unwrap();
-    let second = tokio::spawn(async move { client.read_accounts(&[[2; 32]], None).await });
+    let second = tokio::spawn(async move {
+        client
+            .read_accounts(&[Pubkey::new_from_array([2; 32])], None)
+            .await
+    });
     assert!(
         timeout(Duration::from_millis(100), listener.accept())
             .await

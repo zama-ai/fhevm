@@ -23,20 +23,20 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
 };
+use solana_pubkey::Pubkey;
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
 
 /// Resolves the account at `account_key` from a world.
 fn resolve_from(
     world: &World,
-    account_key: SolanaPubkeyBytes,
+    account_key: Pubkey,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
     resolve_encrypted_store(
         world.account(&account_key).as_ref(),
@@ -72,7 +72,7 @@ fn an_encrypted_store_named_by_its_address_resolves() {
     .expect("a well-formed encrypted store resolves");
 
     assert_eq!(resolved.account_key(), encrypted_store.account_key);
-    assert_eq!(resolved.encrypted_store().authority, AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY.to_bytes());
     assert_eq!(resolved.program(), APP_PROGRAM);
     assert_eq!(resolved.scope(), SCOPE);
 }
@@ -142,7 +142,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x12, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let mut impostor = encrypted_store.account();
-    impostor.owner = [0xee; 32];
+    impostor.owner = Pubkey::new_from_array([0xee; 32]);
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(encrypted_store.account_key, impostor),
@@ -152,7 +152,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
 
     assert!(matches!(
         failure,
-        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
+        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == Pubkey::new_from_array([0xee; 32])
     ));
     assert!(
         !AuthorizationFailure::EncryptedStore {
@@ -198,7 +198,7 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
     // An encrypted store of another authority, placed at the claimed account's address.
     let mut foreign = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        [0x33; 32],
+        Pubkey::new_from_array([0x33; 32]),
         SCOPE,
         LABEL,
         handle(0x14, FHE_TYPE_UINT64),
@@ -265,7 +265,7 @@ fn trailing_bytes_after_the_encrypted_store_body_are_accepted() {
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.encrypted_store().authority, AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY.to_bytes());
     assert_eq!(
         8 + borsh::to_vec(resolved.encrypted_store())
             .expect("the encrypted store serializes")
@@ -363,14 +363,14 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
 fn each_entry_takes_its_authority_from_its_own_encrypted_store() {
     let first = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        [0x51; 32],
+        Pubkey::new_from_array([0x51; 32]),
         SCOPE,
         LABEL,
         handle(0x19, FHE_TYPE_UINT64),
     );
     let second = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        [0x52; 32],
+        Pubkey::new_from_array([0x52; 32]),
         SCOPE,
         LABEL,
         handle(0x1a, FHE_TYPE_UINT64),
@@ -399,7 +399,7 @@ fn a_scoped_permit_admits_an_encrypted_store_of_a_signed_application() {
 /// value account's — the only place it exists.
 #[test]
 fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
-    let foreign_scope: SolanaPubkeyBytes = [0x61; 32];
+    let foreign_scope: Pubkey = Pubkey::new_from_array([0x61; 32]);
     let encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
         AUTHORITY,
@@ -419,7 +419,7 @@ fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
 /// application: a program cannot borrow a scope somebody signed for a different program.
 #[test]
 fn the_same_scope_under_another_program_is_rejected() {
-    let other_program: SolanaPubkeyBytes = [0x62; 32];
+    let other_program: Pubkey = Pubkey::new_from_array([0x62; 32]);
     let encrypted_store = EncryptedStoreFixture::in_application(
         other_program,
         AUTHORITY,
@@ -440,9 +440,9 @@ fn the_same_scope_under_another_program_is_rejected() {
 #[test]
 fn a_permissive_permit_admits_an_encrypted_store_of_any_application() {
     let encrypted_store = EncryptedStoreFixture::in_application(
-        [0x71; 32],
+        Pubkey::new_from_array([0x71; 32]),
         AUTHORITY,
-        [0x72; 32],
+        Pubkey::new_from_array([0x72; 32]),
         LABEL,
         handle(0x1e, FHE_TYPE_UINT64),
     );
@@ -470,7 +470,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     let out_of_scope_handle = handle(0x20, FHE_TYPE_UINT64);
     let in_scope = EncryptedStoreFixture::allowing(in_scope_handle, wallet.pubkey());
     let mut out_of_scope = EncryptedStoreFixture::in_application(
-        [0x81; 32],
+        Pubkey::new_from_array([0x81; 32]),
         AUTHORITY,
         SCOPE,
         LABEL,
@@ -500,7 +500,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
                 index: 1,
                 program,
                 scope: SCOPE,
-            } if program == [0x81; 32]
+            } if program == Pubkey::new_from_array([0x81; 32])
         ),
         "the rejection names the offending entry, got {failure}"
     );

@@ -23,8 +23,8 @@
 
 mod solana_support;
 
+use alloy::primitives::B256;
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
@@ -32,6 +32,7 @@ use kms_worker::core::solana::{
     proof::{LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
 };
 use rstest::rstest;
+use solana_pubkey::Pubkey;
 use solana_support::*;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
@@ -51,7 +52,7 @@ fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
 fn answer(
     encrypted_store: &EncryptedStoreFixture,
     handle: [u8; 32],
-    key: SolanaPubkeyBytes,
+    key: Pubkey,
 ) -> LeafProofOutcome {
     encrypted_store.outcome(&encrypted_store.allowed_query(handle, key))
 }
@@ -70,7 +71,7 @@ fn an_allow_leaf_the_record_serves_binds_the_handle_to_its_key() {
 
     check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &answer(&encrypted_store, live, key),
     )
@@ -90,7 +91,7 @@ fn a_leaf_outlives_the_handle_it_names_being_replaced() {
 
     check_handle_binding(
         &resolved(&encrypted_store),
-        sealed,
+        B256::new(sealed),
         key,
         &answer(&encrypted_store, sealed, key),
     )
@@ -109,7 +110,7 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        never_allowed,
+        B256::new(never_allowed),
         key,
         &answer(&encrypted_store, never_allowed, key),
     )
@@ -136,14 +137,14 @@ fn each_owner_address_holds_its_own_leaf() {
 
     check_handle_binding(
         &account,
-        live,
+        B256::new(live),
         first,
         &answer(&encrypted_store, live, first),
     )
     .expect("the first key's leaf verifies");
     check_handle_binding(
         &account,
-        live,
+        B256::new(live),
         second,
         &answer(&encrypted_store, live, second),
     )
@@ -159,17 +160,17 @@ fn each_owner_address_holds_its_own_leaf() {
 /// does not verify: the leaf is in the MMR, so the sibling path is right, and only the commitment
 /// is wrong — which is exactly the case the preimage check exists for.
 fn verdict_on_substituted_leaf(
-    substitute: impl Fn(SolanaPubkeyBytes, [u8; 32], SolanaPubkeyBytes) -> [u8; 32],
+    substitute: impl Fn([u8; 32], [u8; 32], [u8; 32]) -> [u8; 32],
 ) -> Result<(), HandleBindingFailure> {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x20, FHE_TYPE_UINT64);
     let mut encrypted_store = EncryptedStoreFixture::new(live);
-    let commitment = substitute(encrypted_store.account_key, live, key);
+    let commitment = substitute(encrypted_store.account_key.to_bytes(), live, key.to_bytes());
     encrypted_store.append(encrypted_store.allowed_query(live, key), commitment);
 
     check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &answer(&encrypted_store, live, key),
     )
@@ -202,7 +203,7 @@ fn a_leaf_committing_to_another_encrypted_store_does_not_verify() {
 #[test]
 fn a_leaf_committing_to_another_key_does_not_verify() {
     assert_does_not_verify(verdict_on_substituted_leaf(|account, handle, _| {
-        historical_access_leaf_commitment(account, 0, handle, Wallet::new(9).pubkey())
+        historical_access_leaf_commitment(account, 0, handle, Wallet::new(9).pubkey().to_bytes())
     }));
 }
 
@@ -252,7 +253,7 @@ fn a_tampered_sibling_path_does_not_verify() {
 
     assert_does_not_verify(check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::Found {
             leaf_index,
@@ -277,7 +278,7 @@ fn no_leaf_in_a_record_with_the_observed_history_is_retried() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::NotFound { leaf_count: 1 },
     )
@@ -309,7 +310,7 @@ fn no_leaf_in_a_record_ahead_of_the_chain_is_a_missing_leaf() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::NotFound { leaf_count: 3 },
     )
@@ -328,7 +329,7 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::NotFound { leaf_count: 0 },
     )
@@ -360,7 +361,7 @@ fn an_account_unknown_to_the_record_is_retryable() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::UnknownAccount,
     )
@@ -389,7 +390,7 @@ fn an_incomplete_history_is_terminal() {
 
     let failure = check_handle_binding(
         &resolved(&encrypted_store),
-        live,
+        B256::new(live),
         key,
         &LeafProofOutcome::HistoryIncomplete,
     )
@@ -424,8 +425,13 @@ fn a_proof_from_a_record_behind_the_chain_still_verifies_when_its_peak_survived(
     after.allow(Wallet::new(3).pubkey());
     assert_eq!(after.encrypted_store.leaf_count, 3);
 
-    check_handle_binding(&resolved(&after), sealed, key, &proof_from_behind)
-        .expect("the third leaf is its own peak; the proof of the first still reaches the second");
+    check_handle_binding(
+        &resolved(&after),
+        B256::new(sealed),
+        key,
+        &proof_from_behind,
+    )
+    .expect("the third leaf is its own peak; the proof of the first still reaches the second");
 }
 
 /// The proof case that cannot be accepted: the append merged the proof's peak, so the sibling
@@ -443,8 +449,13 @@ fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
     assert_eq!(after.encrypted_store.leaf_count, 2);
     before.allow(Wallet::new(9).pubkey());
 
-    let failure = check_handle_binding(&resolved(&after), sealed, key, &proof_from_behind)
-        .expect_err("the lone-leaf peak was merged into a two-leaf mountain");
+    let failure = check_handle_binding(
+        &resolved(&after),
+        B256::new(sealed),
+        key,
+        &proof_from_behind,
+    )
+    .expect_err("the lone-leaf peak was merged into a two-leaf mountain");
 
     assert!(matches!(
         failure,
@@ -472,8 +483,13 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
     let mut ahead = behind.clone();
     ahead.allow(key);
 
-    let failure = check_handle_binding(&resolved(&behind), live, key, &answer(&ahead, live, key))
-        .expect_err("the observation has no leaf zero yet");
+    let failure = check_handle_binding(
+        &resolved(&behind),
+        B256::new(live),
+        key,
+        &answer(&ahead, live, key),
+    )
+    .expect_err("the observation has no leaf zero yet");
 
     assert!(matches!(
         failure,
@@ -522,7 +538,7 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
             0,
             vec![LeafQuery {
                 encrypted_store: encrypted_store.account_key,
-                handle: live,
+                handle: B256::new(live),
                 kind: LeafKind::Allowed {
                     key: wallet.pubkey()
                 },
@@ -538,8 +554,9 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_entry() {
     let first = handle(0x51, FHE_TYPE_UINT64);
     let second = handle(0x52, FHE_TYPE_UINT64);
     let first_account = EncryptedStoreFixture::allowing(first, wallet.pubkey());
-    let mut other_authority = AUTHORITY;
+    let mut other_authority = AUTHORITY.to_bytes();
     other_authority[0] ^= 1;
+    let other_authority = Pubkey::new_from_array(other_authority);
     let mut second_account =
         EncryptedStoreFixture::in_application(APP_PROGRAM, other_authority, SCOPE, LABEL, second);
     second_account.allow(wallet.pubkey());
@@ -643,8 +660,13 @@ fn ahead_paths_verify_against_every_earlier_mountain() {
         for tag in 1..=index + 1 {
             let key = Wallet::new(tag as u8).pubkey();
             for ahead in &snapshots[index..] {
-                check_handle_binding(&account, sealed, key, &answer(ahead, sealed, key))
-                    .expect("ahead paths can be shortened to the observed peak");
+                check_handle_binding(
+                    &account,
+                    B256::new(sealed),
+                    key,
+                    &answer(ahead, sealed, key),
+                )
+                .expect("ahead paths can be shortened to the observed peak");
             }
         }
     }
@@ -701,7 +723,7 @@ async fn verify_with(
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let key = Wallet::new(1).pubkey();
     verify_proofs(reader, batch, |handle, outcome| {
-        check_handle_binding(account, *handle, key, outcome)
+        check_handle_binding(account, B256::new(*handle), key, outcome)
     })
     .await
 }
@@ -879,7 +901,7 @@ async fn an_unavailable_coprocessor_hands_the_batch_to_the_next() {
     let key = Wallet::new(1).pubkey();
 
     let results = verify_proofs(&client, &[entry], |handle, outcome| {
-        check_handle_binding(&account, *handle, key, outcome)
+        check_handle_binding(&account, B256::new(*handle), key, outcome)
     })
     .await
     .unwrap();

@@ -2,7 +2,6 @@
 //! unsigned claim into a validated account. Program ownership is the trust anchor: only the host
 //! program can write data into an account it owns.
 
-use super::SolanaPubkeyBytes;
 use super::failure::InvalidHostRecord;
 use super::snapshot::SnapshotAccount;
 use solana_pubkey::Pubkey;
@@ -13,21 +12,21 @@ use zama_solana_permit::{AllowedScopes, Identity};
 /// An encrypted store that passed [`resolve_encrypted_store`], its only constructor.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ResolvedEncryptedStore {
-    account_key: SolanaPubkeyBytes,
+    account_key: Pubkey,
     encrypted_store: EncryptedStore,
 }
 
 impl ResolvedEncryptedStore {
-    pub fn account_key(&self) -> SolanaPubkeyBytes {
+    pub fn account_key(&self) -> Pubkey {
         self.account_key
     }
 
-    pub fn program(&self) -> SolanaPubkeyBytes {
-        self.encrypted_store.program
+    pub fn program(&self) -> Pubkey {
+        Pubkey::new_from_array(self.encrypted_store.program)
     }
 
-    pub fn scope(&self) -> SolanaPubkeyBytes {
-        self.encrypted_store.scope
+    pub fn scope(&self) -> Pubkey {
+        Pubkey::new_from_array(self.encrypted_store.scope)
     }
 
     pub fn encrypted_store(&self) -> &EncryptedStore {
@@ -38,21 +37,19 @@ impl ResolvedEncryptedStore {
     /// the validated store, never from the request; an empty list admits every application, as
     /// on EVM.
     pub fn is_in(&self, scopes: &AllowedScopes) -> bool {
-        scopes.admits(&Identity::new(self.program()), &Identity::new(self.scope()))
+        scopes.admits(
+            &Identity::new(self.encrypted_store.program),
+            &Identity::new(self.encrypted_store.scope),
+        )
     }
 }
 
 /// The address a store with these fields must live at: the PDA of its own seeds and stored bump.
-fn encrypted_store_address(
-    program_id: SolanaPubkeyBytes,
-    state: &EncryptedStore,
-) -> Option<SolanaPubkeyBytes> {
+fn encrypted_store_address(program_id: Pubkey, state: &EncryptedStore) -> Option<Pubkey> {
     let bump = [state.bump];
     let mut seeds: Vec<&[u8]> = state.seeds().to_vec();
     seeds.push(&bump);
-    Pubkey::create_program_address(&seeds, &Pubkey::new_from_array(program_id))
-        .ok()
-        .map(|address| address.to_bytes())
+    Pubkey::create_program_address(&seeds, &program_id).ok()
 }
 
 /// The account must exist, be owned by the host program, decode as an encrypted store, live at
@@ -61,8 +58,8 @@ fn encrypted_store_address(
 /// fund the derivable address before the store is created there.
 pub fn resolve_encrypted_store(
     account: Option<&SnapshotAccount>,
-    program_id: SolanaPubkeyBytes,
-    account_key: SolanaPubkeyBytes,
+    program_id: Pubkey,
+    account_key: Pubkey,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
     let account = account
         .filter(|account| !account.is_uninitialized_pda())
@@ -102,19 +99,16 @@ pub fn resolve_encrypted_store(
 /// could not have written is an [`InvalidHostRecord`].
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum EncryptedStoreFailure {
-    #[error("encrypted store {account_key:?} does not exist at the observed slot")]
-    Absent { account_key: SolanaPubkeyBytes },
-    #[error("encrypted store {account_key:?} is owned by {owner:?}")]
-    ForeignOwner {
-        account_key: SolanaPubkeyBytes,
-        owner: SolanaPubkeyBytes,
-    },
-    #[error("account {account_key:?} is not an encrypted store")]
-    NotAnEncryptedStore { account_key: SolanaPubkeyBytes },
-    #[error("encrypted store {account_key:?} does not live at the address its fields derive")]
+    #[error("encrypted store {account_key} does not exist at the observed slot")]
+    Absent { account_key: Pubkey },
+    #[error("encrypted store {account_key} is owned by {owner}")]
+    ForeignOwner { account_key: Pubkey, owner: Pubkey },
+    #[error("account {account_key} is not an encrypted store")]
+    NotAnEncryptedStore { account_key: Pubkey },
+    #[error("encrypted store {account_key} does not live at the address its fields derive")]
     AddressMismatch {
-        account_key: SolanaPubkeyBytes,
-        derived: Option<SolanaPubkeyBytes>,
+        account_key: Pubkey,
+        derived: Option<Pubkey>,
     },
     #[error(transparent)]
     InvalidHostRecord(#[from] InvalidHostRecord),

@@ -377,7 +377,7 @@ pub async fn insert_solana_user_decryption<'e>(
     source: RequestSource,
 ) -> anyhow::Result<PgQueryResult> {
     let permit = request.permit();
-    let column = |field: fn(&SolanaHandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
+    let column = |field: fn(&SolanaHandleEntry) -> &[u8]| -> Vec<Vec<u8>> {
         request
             .handles()
             .iter()
@@ -403,15 +403,15 @@ pub async fn insert_solana_user_decryption<'e>(
             otlp_context = EXCLUDED.otlp_context
         WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
         request.decryption_id.as_le_slice(),
-        &column(|e| e.handle),
+        &column(|e| e.handle.as_slice()),
         permit.transport_key().as_bytes().as_slice(),
         request.extra_data(),
         request.signature().as_bytes().as_slice(),
         i64::try_from(permit.start_timestamp())?,
         i64::try_from(permit.duration_seconds())?,
         permit.user_address().as_bytes().as_slice(),
-        &column(|e| e.owner_address),
-        &column(|e| e.encrypted_store),
+        &column(|e| e.owner_address.as_ref()),
+        &column(|e| e.encrypted_store.as_ref()),
         &scopes,
         permit.verifying_program_id().as_bytes().as_slice(),
         tx_hash.map(|h| h.to_vec()),

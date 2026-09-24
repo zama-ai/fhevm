@@ -2,9 +2,10 @@
 //! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
 //! decisions: every answer is verified against the observed peaks.
 
-use super::{HandleBytes, SolanaPubkeyBytes};
 use crate::core::config::{ApiKey, ProofRoute};
+use alloy::primitives::B256;
 use serde::{Deserialize, Serialize};
+use solana_pubkey::Pubkey;
 use std::future::Future;
 use url::Url;
 
@@ -22,7 +23,7 @@ pub enum LeafKind {
     /// `key` was allowed on the handle.
     Allowed {
         #[serde(with = "alloy::hex::serde::no_prefix")]
-        key: SolanaPubkeyBytes,
+        key: Pubkey,
     },
     /// The handle was made public.
     Public,
@@ -32,9 +33,9 @@ pub enum LeafKind {
 #[serde(rename_all = "camelCase")]
 pub struct LeafQuery {
     #[serde(with = "alloy::hex::serde::no_prefix")]
-    pub encrypted_store: SolanaPubkeyBytes,
+    pub encrypted_store: Pubkey,
     #[serde(with = "alloy::hex::serde::no_prefix")]
-    pub handle: HandleBytes,
+    pub handle: B256,
     #[serde(flatten)]
     pub kind: LeafKind,
 }
@@ -243,13 +244,15 @@ mod tests {
         );
         let queries = [
             LeafQuery {
-                encrypted_store: [0xAC; 32],
-                handle: [0x10; 32],
-                kind: LeafKind::Allowed { key: [0xA1; 32] },
+                encrypted_store: Pubkey::new_from_array([0xAC; 32]),
+                handle: B256::new([0x10; 32]),
+                kind: LeafKind::Allowed {
+                    key: Pubkey::new_from_array([0xA1; 32]),
+                },
             },
             LeafQuery {
-                encrypted_store: [0xAC; 32],
-                handle: [0x11; 32],
+                encrypted_store: Pubkey::new_from_array([0xAC; 32]),
+                handle: B256::new([0x11; 32]),
                 kind: LeafKind::Public,
             },
         ];
@@ -305,8 +308,8 @@ mod tests {
                 .read_proofs(
                     0,
                     &[LeafQuery {
-                        encrypted_store: [1; 32],
-                        handle: [2; 32],
+                        encrypted_store: Pubkey::new_from_array([1; 32]),
+                        handle: B256::new([2; 32]),
                         kind: LeafKind::Public,
                     }],
                 )
@@ -347,8 +350,8 @@ mod tests {
             reqwest::Client::new(),
         );
         let query = [LeafQuery {
-            encrypted_store: [1; 32],
-            handle: [2; 32],
+            encrypted_store: Pubkey::new_from_array([1; 32]),
+            handle: B256::new([2; 32]),
             kind: LeafKind::Public,
         }];
 

@@ -25,11 +25,11 @@
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
+use solana_pubkey::Pubkey;
 
 mod solana_support;
 
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
     delegation::{AuthorizedRow, DeadRow, DelegationFailure, check_delegation},
     encrypted_store::EncryptedStoreFailure,
     failure::{AuthorizationFailure, InvalidHostRecord},
@@ -56,7 +56,7 @@ async fn authorize_in(
 
 /// Entry 0 failed closed on a delegation row the host program could not have written, at `key`.
 /// No later attempt reads it differently, so the failure is terminal.
-fn assert_invalid_row(failure: &AuthorizationFailure, key: SolanaPubkeyBytes) {
+fn assert_invalid_row(failure: &AuthorizationFailure, key: Pubkey) {
     assert_eq!(
         failure,
         &AuthorizationFailure::Delegation {
@@ -69,7 +69,7 @@ fn assert_invalid_row(failure: &AuthorizationFailure, key: SolanaPubkeyBytes) {
 
 /// A world holding an encrypted store, the signer's zero watermark, and whatever else is
 /// added.
-fn world_with(encrypted_store: &EncryptedStoreFixture, signer: SolanaPubkeyBytes) -> World {
+fn world_with(encrypted_store: &EncryptedStoreFixture, signer: Pubkey) -> World {
     World::at_slot(OBSERVED_SLOT)
         .with_encrypted_store(encrypted_store)
         .with_watermark(signer, 0)
@@ -171,12 +171,22 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
     let second = handle(0x22, FHE_TYPE_UINT64);
     let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
     let first_authority = [0xa1; 32];
-    let mut first_encrypted_store =
-        EncryptedStoreFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
+    let mut first_encrypted_store = EncryptedStoreFixture::in_application(
+        APP_PROGRAM,
+        Pubkey::new_from_array(first_authority),
+        SCOPE,
+        LABEL,
+        first,
+    );
     first_encrypted_store.allow(first_delegator.pubkey());
     let second_authority = [0xb1; 32];
-    let mut second_encrypted_store =
-        EncryptedStoreFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
+    let mut second_encrypted_store = EncryptedStoreFixture::in_application(
+        APP_PROGRAM,
+        Pubkey::new_from_array(second_authority),
+        SCOPE,
+        LABEL,
+        second,
+    );
     second_encrypted_store.allow(second_delegator.pubkey());
     let first_delegation = DelegationFixture::live(first_delegator.pubkey(), signer.pubkey())
         .in_application_of(&first_encrypted_store);
@@ -309,7 +319,7 @@ async fn a_deciding_read_without_the_clock_is_retried() {
             delegator.pubkey(),
             signer.pubkey(),
         ))
-        .without_account(&zama_solana_acl::CLOCK_SYSVAR_ID);
+        .without_account(&Pubkey::new_from_array(zama_solana_acl::CLOCK_SYSVAR_ID));
 
     let failure = authorize_in(world, &request)
         .await
@@ -476,7 +486,7 @@ async fn authorize_with_wildcard_account(
 #[tokio::test]
 async fn an_impostor_at_the_wildcard_address_fails_the_entry() {
     let mut impostor = live_wildcard().account();
-    impostor.owner = [0xee; 32];
+    impostor.owner = Pubkey::new_from_array([0xee; 32]);
 
     let failure = authorize_with_wildcard_account(impostor)
         .await
@@ -501,7 +511,7 @@ async fn an_invalid_row_fails_the_entry_even_beside_a_live_row() {
     let wildcard = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey());
     let foreign = |row: &DelegationFixture| {
         let mut account = row.account();
-        account.owner = [0xee; 32];
+        account.owner = Pubkey::new_from_array([0xee; 32]);
         (row.address().0, account)
     };
     let base = world_with(&encrypted_store, signer.pubkey());
@@ -659,7 +669,7 @@ async fn a_delegation_for_another_application_does_not_authorize() {
     let live = handle(0x32, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
-    elsewhere.scope = [0x77; 32];
+    elsewhere.scope = Pubkey::new_from_array([0x77; 32]);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -780,7 +790,7 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let (key, _) = delegation.address();
     let mut impostor = delegation.account();
-    impostor.owner = [0xee; 32];
+    impostor.owner = Pubkey::new_from_array([0xee; 32]);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -939,8 +949,13 @@ async fn a_sentinel_program_in_the_encrypted_store_rejects_a_delegated_entry() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x36, FHE_TYPE_UINT64);
-    let mut encrypted_store =
-        EncryptedStoreFixture::in_application(WILDCARD_APP, AUTHORITY, WILDCARD_APP, LABEL, live);
+    let mut encrypted_store = EncryptedStoreFixture::in_application(
+        Pubkey::new_from_array(WILDCARD_APP),
+        AUTHORITY,
+        Pubkey::new_from_array(WILDCARD_APP),
+        LABEL,
+        live,
+    );
     encrypted_store.allow(delegator.pubkey());
     let wildcard = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
@@ -976,8 +991,13 @@ async fn a_sentinel_program_in_the_encrypted_store_rejects_a_delegated_entry() {
 async fn a_sentinel_program_in_the_encrypted_store_rejects_a_direct_entry_too() {
     let signer = Wallet::new(1);
     let live = handle(0x37, FHE_TYPE_UINT64);
-    let mut encrypted_store =
-        EncryptedStoreFixture::in_application(WILDCARD_APP, AUTHORITY, SCOPE, LABEL, live);
+    let mut encrypted_store = EncryptedStoreFixture::in_application(
+        Pubkey::new_from_array(WILDCARD_APP),
+        AUTHORITY,
+        SCOPE,
+        LABEL,
+        live,
+    );
     encrypted_store.allow(signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .direct(&encrypted_store, live)
@@ -1013,12 +1033,22 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     let second = handle(0x43, FHE_TYPE_UINT64);
     let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
     let first_authority = [0xa2; 32];
-    let mut first_encrypted_store =
-        EncryptedStoreFixture::in_application(APP_PROGRAM, first_authority, SCOPE, LABEL, first);
+    let mut first_encrypted_store = EncryptedStoreFixture::in_application(
+        APP_PROGRAM,
+        Pubkey::new_from_array(first_authority),
+        SCOPE,
+        LABEL,
+        first,
+    );
     first_encrypted_store.allow(first_delegator.pubkey());
     let second_authority = [0xb2; 32];
-    let mut second_encrypted_store =
-        EncryptedStoreFixture::in_application(APP_PROGRAM, second_authority, SCOPE, LABEL, second);
+    let mut second_encrypted_store = EncryptedStoreFixture::in_application(
+        APP_PROGRAM,
+        Pubkey::new_from_array(second_authority),
+        SCOPE,
+        LABEL,
+        second,
+    );
     second_encrypted_store.allow(second_delegator.pubkey());
     let first_delegation = DelegationFixture::live(first_delegator.pubkey(), signer.pubkey())
         .in_application_of(&first_encrypted_store);
@@ -1088,7 +1118,7 @@ async fn prefunded_delegations_remain_absent_until_initialized() {
     let exact = live_delegation().revoked();
     let wildcard = live_wildcard();
     let empty = SnapshotAccount {
-        owner: [0; 32],
+        owner: Pubkey::new_from_array([0; 32]),
         data: vec![],
     };
     let base = world_with(&store, signer.pubkey());
@@ -1106,7 +1136,7 @@ async fn prefunded_delegations_remain_absent_until_initialized() {
     let invalid = base.clone().with_delegation(&exact).with_account(
         wildcard.address().0,
         SnapshotAccount {
-            owner: [0; 32],
+            owner: Pubkey::new_from_array([0; 32]),
             data: vec![1],
         },
     );

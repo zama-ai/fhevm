@@ -27,10 +27,11 @@ use kms_worker::core::solana::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },
 };
+use solana_pubkey::Pubkey;
 use solana_support::*;
 
 /// Reads the watermark of `user` out of a world.
-fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
+fn watermark_in(world: &World, user: Pubkey) -> Result<u64, WatermarkFailure> {
     read_watermark(&world.row(invalidation_address(user)), PROGRAM_ID, user)
 }
 
@@ -239,7 +240,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
-    impostor.owner = [0xee; 32];
+    impostor.owner = Pubkey::new_from_array([0xee; 32]);
     let world = World::at_slot(1).with_account(key, impostor);
 
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
@@ -426,7 +427,7 @@ async fn a_permit_for_another_host_program_is_refused_before_any_read() {
         &reader,
         &proofs,
         AuthorizationContext {
-            program_id: other_program,
+            program_id: Pubkey::new_from_array(other_program),
             ..CONTEXT
         },
         &request,
@@ -438,7 +439,7 @@ async fn a_permit_for_another_host_program_is_refused_before_any_read() {
         failure,
         AuthorizationFailure::ProgramIdMismatch {
             signed: PROGRAM_ID,
-            own: other_program,
+            own: Pubkey::new_from_array(other_program),
         }
     );
     assert!(!failure.is_recoverable());

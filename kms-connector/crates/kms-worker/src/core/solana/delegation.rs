@@ -10,9 +10,9 @@
 //! The record's `delegation_counter` is not checked: pinning it would invalidate in-flight
 //! requests on every unrelated delegation update.
 
-use super::SolanaPubkeyBytes;
 use super::failure::InvalidHostRecord;
 use super::snapshot::{ObservedRow, ObservedRows};
+use solana_pubkey::Pubkey;
 use zama_solana_acl::{EncryptedStore, WILDCARD_APP};
 
 /// Which row carried a delegated authorization, for the audit log.
@@ -27,9 +27,9 @@ pub enum AuthorizedRow {
 /// even when the other is live.
 pub fn check_delegation(
     rows: &ObservedRows,
-    program_id: SolanaPubkeyBytes,
-    delegator: SolanaPubkeyBytes,
-    delegate: SolanaPubkeyBytes,
+    program_id: Pubkey,
+    delegator: Pubkey,
+    delegate: Pubkey,
     store: &EncryptedStore,
 ) -> Result<AuthorizedRow, DelegationFailure> {
     let judge = |row, app_program, app_scope| {
@@ -40,8 +40,13 @@ pub fn check_delegation(
             [delegator, delegate, app_program, app_scope],
         )
     };
-    let exact = judge(&rows.exact, store.program, store.scope)?;
-    let wildcard = judge(&rows.wildcard, WILDCARD_APP, WILDCARD_APP)?;
+    let wildcard_app = Pubkey::new_from_array(WILDCARD_APP);
+    let exact = judge(
+        &rows.exact,
+        Pubkey::new_from_array(store.program),
+        Pubkey::new_from_array(store.scope),
+    )?;
+    let wildcard = judge(&rows.wildcard, wildcard_app, wildcard_app)?;
     match (exact, wildcard) {
         (None, _) => Ok(AuthorizedRow::Exact),
         (_, None) => Ok(AuthorizedRow::Wildcard),
@@ -57,9 +62,9 @@ pub fn check_delegation(
 /// or `None` when it is live.
 fn judge_row(
     row: &ObservedRow,
-    program_id: SolanaPubkeyBytes,
+    program_id: Pubkey,
     now: u64,
-    [delegator, delegate, app_program, app_scope]: [SolanaPubkeyBytes; 4],
+    [delegator, delegate, app_program, app_scope]: [Pubkey; 4],
 ) -> Result<Option<DeadRow>, InvalidHostRecord> {
     let Some(account) = row
         .account
@@ -76,7 +81,13 @@ fn judge_row(
     }
     let record =
         zama_solana_acl::decode_user_decryption_delegation(&account.data).map_err(|_| invalid)?;
-    if !record.names(&delegator, &delegate, &app_program, &app_scope) || record.bump != row.bump {
+    if !record.names(
+        delegator.as_array(),
+        delegate.as_array(),
+        app_program.as_array(),
+        app_scope.as_array(),
+    ) || record.bump != row.bump
+    {
         return Err(invalid);
     }
     Ok((!record.is_live_at(now)).then_some(DeadRow::NotLive {

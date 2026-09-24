@@ -16,7 +16,6 @@
 //! released against state the canonical chain no longer holds. That risk is accepted (INVARIANTS
 //! #46).
 
-use super::SolanaPubkeyBytes;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
@@ -32,11 +31,11 @@ use url::Url;
 use zama_solana_acl::{CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
 
 /// The System program's id: the owner of an account no program has taken over.
-pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
+pub const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::new_from_array([0; 32]);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnapshotAccount {
-    pub owner: SolanaPubkeyBytes,
+    pub owner: Pubkey,
     pub data: Vec<u8>,
 }
 
@@ -59,7 +58,7 @@ pub trait HostStateReader: Send + Sync {
     /// Reads `keys` at one slot no older than `min_context_slot`.
     fn read_accounts(
         &self,
-        keys: &[SolanaPubkeyBytes],
+        keys: &[Pubkey],
         min_context_slot: Option<u64>,
     ) -> impl Future<Output = Result<AccountsRead, SnapshotError>> + Send;
 }
@@ -67,7 +66,7 @@ pub trait HostStateReader: Send + Sync {
 /// Reads `keys` and holds the answer to one account per key, whichever reader served it.
 pub async fn read_positional(
     reader: &impl HostStateReader,
-    keys: &[SolanaPubkeyBytes],
+    keys: &[Pubkey],
     min_context_slot: Option<u64>,
 ) -> Result<AccountsRead, SnapshotError> {
     let read = reader.read_accounts(keys, min_context_slot).await?;
@@ -81,12 +80,12 @@ pub async fn read_positional(
 }
 
 /// An address the Connector derived, with its canonical bump.
-pub type DerivedAddress = (SolanaPubkeyBytes, u8);
+pub type DerivedAddress = (Pubkey, u8);
 
 /// An account read at an address the Connector derived.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ObservedRow {
-    pub key: SolanaPubkeyBytes,
+    pub key: Pubkey,
     pub bump: u8,
     pub account: Option<SnapshotAccount>,
 }
@@ -128,11 +127,11 @@ pub struct HostObservation {
 pub async fn observe(
     reader: &impl HostStateReader,
     watermark: DerivedAddress,
-    stores: &[SolanaPubkeyBytes],
+    stores: &[Pubkey],
     delegated: &[DelegationRowKeys],
     min_context_slot: Option<u64>,
 ) -> Result<HostObservation, SnapshotError> {
-    let clock = (!delegated.is_empty()).then_some(CLOCK_SYSVAR_ID);
+    let clock = (!delegated.is_empty()).then_some(Pubkey::new_from_array(CLOCK_SYSVAR_ID));
     let keys: Vec<_> = std::iter::once(watermark.0)
         .chain(clock)
         .chain(stores.iter().copied())
@@ -180,7 +179,7 @@ pub async fn observe(
 /// a read without a decodable one comes from a bad node.
 fn unix_timestamp(clock: Option<SnapshotAccount>) -> Result<u64, SnapshotError> {
     let clock = clock.ok_or(SnapshotError::MalformedClock)?;
-    decode_clock_unix_timestamp(&clock.owner, &clock.data)
+    decode_clock_unix_timestamp(clock.owner.as_array(), &clock.data)
         .map_err(|_| SnapshotError::MalformedClock)
 }
 
@@ -219,10 +218,9 @@ impl SolanaRpcClient {
 impl HostStateReader for SolanaRpcClient {
     async fn read_accounts(
         &self,
-        keys: &[SolanaPubkeyBytes],
+        keys: &[Pubkey],
         min_context_slot: Option<u64>,
     ) -> Result<AccountsRead, SnapshotError> {
-        let pubkeys: Vec<_> = keys.iter().copied().map(Pubkey::new_from_array).collect();
         // As for EVM host RPC, waiting for a concurrency permit does not count against the call
         // timeout.
         let _permit = self
@@ -231,7 +229,7 @@ impl HostStateReader for SolanaRpcClient {
             .await
             .expect("the permit semaphore is never closed");
         let call = self.client.get_multiple_ui_accounts_with_config(
-            &pubkeys,
+            keys,
             RpcAccountInfoConfig {
                 encoding: Some(UiAccountEncoding::Base64),
                 commitment: Some(CommitmentConfig::confirmed()),
@@ -273,11 +271,7 @@ impl HostStateReader for SolanaRpcClient {
                             return Err(malformed());
                         }
                         Ok(SnapshotAccount {
-                            owner: account
-                                .owner
-                                .parse::<Pubkey>()
-                                .map_err(|_| malformed())?
-                                .to_bytes(),
+                            owner: account.owner.parse::<Pubkey>().map_err(|_| malformed())?,
                             data: account.data.decode().ok_or_else(malformed)?,
                         })
                     })

@@ -145,9 +145,9 @@ fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionReq
                 .handles()
                 .iter()
                 .map(|entry| SolanaHandleEntry {
-                    handle: entry.handle.into(),
-                    ownerAddress: entry.owner_address.into(),
-                    encryptedStore: entry.encrypted_store.into(),
+                    handle: entry.handle,
+                    ownerAddress: entry.owner_address.to_bytes().into(),
+                    encryptedStore: entry.encrypted_store.to_bytes().into(),
                 })
                 .collect(),
             userAddress: (*permit.user_address().as_bytes()).into(),

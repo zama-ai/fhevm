@@ -8,7 +8,8 @@
 
 use super::encrypted_store::ResolvedEncryptedStore;
 use super::proof::{HostProofReader, LeafProofOutcome, LeafQuery, ProofReadError, check_length};
-use super::{HandleBytes, SolanaPubkeyBytes};
+use alloy::primitives::B256;
+use solana_pubkey::Pubkey;
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
@@ -90,16 +91,16 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
 /// resolved store means the proof is checked against validated peaks.
 pub fn check_handle_binding(
     encrypted_store: &ResolvedEncryptedStore,
-    handle: HandleBytes,
-    owner_address: SolanaPubkeyBytes,
+    handle: B256,
+    owner_address: Pubkey,
     outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_historical(
-            encrypted_store.account_key(),
+            encrypted_store.account_key().to_bytes(),
             state,
-            handle,
-            owner_address,
+            handle.0,
+            owner_address.to_bytes(),
             proof,
         )
     })
@@ -108,11 +109,16 @@ pub fn check_handle_binding(
 /// Establishes that `handle` was made public under this encrypted store.
 pub fn check_public_binding(
     encrypted_store: &ResolvedEncryptedStore,
-    handle: HandleBytes,
+    handle: B256,
     outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
-        authorize_state_public(encrypted_store.account_key(), state, handle, proof)
+        authorize_state_public(
+            encrypted_store.account_key().to_bytes(),
+            state,
+            handle.0,
+            proof,
+        )
     })
 }
 

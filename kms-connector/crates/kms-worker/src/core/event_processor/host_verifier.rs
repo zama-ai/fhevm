@@ -101,7 +101,7 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
                 HostChain::Solana(host) => {
                     // Public access is proven by a PublicDecryptLeaf MMR proof and verified
                     // against the encrypted store observed at confirmed commitment.
-                    Ok(check_public_decrypt(host, handle.0, extra_data).await?)
+                    Ok(check_public_decrypt(host, *handle, extra_data).await?)
                 }
                 HostChain::Evm(host_client) => {
                     if !host_client.is_allowed_for_decryption(*handle).await? {
@@ -587,6 +587,7 @@ mod tests {
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use solana_pubkey::Pubkey;
     use user_decryption_signature::{ERC1271_MAGIC_VALUE, default_user_decrypt_domain};
 
     enum ExpectedOutcome {
@@ -649,7 +650,7 @@ mod tests {
             TestHost::Solana => HashMap::from([(
                 chain_id,
                 HostChain::Solana(Box::new(SolanaHost {
-                    program_id: [7; 32],
+                    program_id: Pubkey::new_from_array([7; 32]),
                     reader: SolanaRpcClient::new(
                         config.host_chains[0].url.clone(),
                         config.host_rpc_call_timeout,

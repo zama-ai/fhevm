@@ -1,9 +1,9 @@
 //! The permit validity window and the per-user invalidation watermark. Together they pin a usable
 //! permit's start into `[last revocation, now]`.
 
-use super::SolanaPubkeyBytes;
 use super::failure::InvalidHostRecord;
 use super::snapshot::ObservedRow;
+use solana_pubkey::Pubkey;
 use zama_solana_acl::decode_permit_invalidation;
 
 /// Reads the watermark of the request signer. A user who never revoked has no record, which
@@ -15,8 +15,8 @@ use zama_solana_acl::decode_permit_invalidation;
 /// would resurrect revoked permits.
 pub fn read_watermark(
     row: &ObservedRow,
-    program_id: SolanaPubkeyBytes,
-    user: SolanaPubkeyBytes,
+    program_id: Pubkey,
+    user: Pubkey,
 ) -> Result<u64, WatermarkFailure> {
     let Some(account) = row
         .account
@@ -32,7 +32,7 @@ pub fn read_watermark(
         return Err(invalid.into());
     }
     let record = decode_permit_invalidation(&account.data).map_err(|_| invalid)?;
-    if record.user != user || record.bump != row.bump {
+    if record.user != user.to_bytes() || record.bump != row.bump {
         return Err(invalid.into());
     }
     Ok(record.invalidation_watermark)

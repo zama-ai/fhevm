@@ -17,6 +17,7 @@
 
 mod solana_support;
 
+use alloy::primitives::B256;
 use kms_worker::core::event_processor::{ProcessingError, ProcessingErrorKind, RequestCheckError};
 use kms_worker::core::solana::{
     SolanaHost,
@@ -25,6 +26,7 @@ use kms_worker::core::solana::{
     snapshot::SolanaRpcClient,
 };
 use mocktail::{StatusCode, server::MockServer};
+use solana_pubkey::Pubkey;
 use solana_support::{
     EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LEAF_PROOFS_ROUTE, PROGRAM_ID, handle,
     proof_route, serve_proofs, solana_host,
@@ -38,7 +40,7 @@ const CARRIER_VERSION: u8 = 0x04;
 fn carrier(fixture: &EncryptedStoreFixture) -> Vec<u8> {
     let mut blob = vec![CARRIER_VERSION];
     blob.extend_from_slice(&[0x11; 32]);
-    blob.extend_from_slice(&fixture.account_key);
+    blob.extend_from_slice(fixture.account_key.as_ref());
     blob
 }
 
@@ -69,7 +71,7 @@ async fn check(
     handle: [u8; 32],
     extra_data: &[u8],
 ) -> Result<(), ProcessingError> {
-    check_public_decrypt(host, handle, extra_data)
+    check_public_decrypt(host, B256::new(handle), extra_data)
         .await
         .map_err(|failure| RequestCheckError::from(failure).record())
 }
@@ -100,9 +102,9 @@ async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
 #[tokio::test]
 async fn an_allow_leaf_does_not_prove_public_ness() {
     let allowed = handle(0x30, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedStoreFixture::allowing(allowed, [0x42; 32]);
+    let mut fixture = EncryptedStoreFixture::allowing(allowed, Pubkey::new_from_array([0x42; 32]));
     fixture.update(handle(0x31, FHE_TYPE_UINT64));
-    let allow_query = fixture.allowed_query(allowed, [0x42; 32]);
+    let allow_query = fixture.allowed_query(allowed, Pubkey::new_from_array([0x42; 32]));
     // The record answers the public query with the allow leaf's proof.
     let host = host_answering(
         &fixture,
@@ -126,7 +128,7 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
 #[tokio::test]
 async fn a_handle_not_made_public_is_retried() {
     let private = handle(0x40, FHE_TYPE_UINT64);
-    let fixture = EncryptedStoreFixture::allowing(private, [0x42; 32]);
+    let fixture = EncryptedStoreFixture::allowing(private, Pubkey::new_from_array([0x42; 32]));
     let query = fixture.public_query(private);
     let host = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
@@ -229,7 +231,7 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
     let public = handle(0x80, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x81, FHE_TYPE_UINT64));
     let mut impostor = fixture.account();
-    impostor.owner = [0xee; 32];
+    impostor.owner = Pubkey::new_from_array([0xee; 32]);
     let mut host = HttpHost::start().await;
     host.serve_accounts(&[(fixture.account_key, Some(impostor))]);
 
