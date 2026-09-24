@@ -7,7 +7,10 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEvent, ProtocolEventKind,
-        db::{ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
+        db::{
+            ParamsTypeDb, RequestSource, insert_solana_user_decryption, invalidate_kms_context,
+            invalidate_kms_epoch,
+        },
     },
 };
 // Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
@@ -15,7 +18,6 @@ use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest_1 as PublicDecryptionRequest,
     UserDecryptionRequest_2 as UserDecryptionRequest,
     UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    UserDecryptionRequest_4 as UserDecryptionRequestV3,
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
@@ -96,8 +98,10 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::UserDecryptionV2(e) => {
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        ProtocolEventKind::UserDecryptionV3(e) => {
-            publish_user_decryption_v3(executor, e, tx_hash, created_at, otlp_ctx).await
+        ProtocolEventKind::SolanaUserDecryptionV1(e) => {
+            let source = RequestSource::OnChain;
+            insert_solana_user_decryption(executor, &e, tx_hash, created_at, &otlp_ctx, source)
+                .await
         }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
@@ -258,64 +262,6 @@ async fn publish_user_decryption_v2<'e>(
         start_timestamp,
         duration_seconds,
         payload.signature.as_ref(),
-    )
-    .execute(executor)
-    .await
-    .map_err(anyhow::Error::from)
-}
-
-/// Persists a Solana user-decryption request into the shared `user_decryption_requests` table.
-/// Only the fields the gateway itself consumed are typed columns (`ct_handles`, `public_key`,
-/// `extra_data`, validity window); everything else goes to the opaque `solana_request`.
-/// The EVM-shaped columns are placeholders on this path (zero `user_address`, empty
-/// `handle_*`/`allowed_contracts`, NULL `signature`); the row reader identifies a Solana row by
-/// `solana_request IS NOT NULL` and never reads them.
-async fn publish_user_decryption_v3<'e>(
-    executor: impl PgExecutor<'e>,
-    request: UserDecryptionRequestV3,
-    tx_hash: Option<FixedBytes<32>>,
-    created_at: DateTime<Utc>,
-    otlp_ctx: PropagationContext,
-) -> anyhow::Result<PgQueryResult> {
-    let ct_handles: Vec<Vec<u8>> = request.ctHandles.iter().map(|h| h.to_vec()).collect();
-
-    let start_timestamp: i64 = request
-        .requestValidity
-        .startTimestamp
-        .try_into()
-        .map_err(|_| anyhow!("V2 startTimestamp does not fit in i64"))?;
-    let duration_seconds: i64 = request
-        .requestValidity
-        .durationSeconds
-        .try_into()
-        .map_err(|_| anyhow!("V2 durationSeconds does not fit in i64"))?;
-
-    // EVM-shaped placeholders: unused on the Solana path (the reader keys on `solana_request`).
-    let zero_user_address = [0u8; 20];
-    let empty_addresses: Vec<Vec<u8>> = Vec::new();
-
-    sqlx::query!(
-        "INSERT INTO user_decryption_requests(
-            decryption_id, ct_handles, user_address, public_key, extra_data, tx_hash,
-            created_at, otlp_context, handle_owner_addresses, handle_contract_addresses,
-            allowed_contracts, start_timestamp, duration_seconds, solana_request
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        ON CONFLICT DO NOTHING",
-        request.decryptionId.as_le_slice(),
-        &ct_handles,
-        zero_user_address.as_slice(),
-        request.publicKey.as_ref(),
-        request.extraData.as_ref(),
-        tx_hash.map(|h| h.to_vec()),
-        created_at,
-        bc2wrap::serialize(&otlp_ctx)?,
-        &empty_addresses,
-        &empty_addresses,
-        &empty_addresses,
-        start_timestamp,
-        duration_seconds,
-        request.solanaRequest.as_ref(),
     )
     .execute(executor)
     .await

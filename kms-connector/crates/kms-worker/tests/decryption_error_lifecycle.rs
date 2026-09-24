@@ -43,7 +43,9 @@ impl Failure {
     fn error(self, solana: bool) -> ProcessingError {
         if solana {
             let failure = match self {
-                Self::Terminal => AuthorizationFailure::SignatureMismatch,
+                Self::Terminal => AuthorizationFailure::Signature(
+                    zama_solana_permit::PermitError::SignatureMismatch,
+                ),
                 Self::Transient => AuthorizationFailure::Snapshot(SnapshotError::Unavailable {
                     reason: "RPC unavailable".into(),
                 }),
@@ -84,7 +86,7 @@ impl EventProcessor for Processor {
         event: &mut ProtocolEvent,
     ) -> Result<Option<KmsResponseKind>, ProcessingError> {
         let id = match (&event.kind, self.solana) {
-            (ProtocolEventKind::UserDecryptionV3(request), true) => request.decryptionId,
+            (ProtocolEventKind::SolanaUserDecryptionV1(request), true) => request.decryption_id,
             (ProtocolEventKind::UserDecryptionV2(request), false) => request.decryptionId,
             _ => panic!("picker routed the request to the wrong protocol"),
         };
@@ -107,23 +109,29 @@ impl EventProcessor for Processor {
 }
 
 async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> anyhow::Result<()> {
-    insert_rand_request(
-        db,
-        TestEventType::UserDecryptionV2,
-        InsertRequestOptions::new()
-            .with_id(U256::from(id))
-            .with_source(source)
-            .with_status(OperationStatus::UnderProcess),
-    )
-    .await?;
     if solana {
-        // The processor is the injection boundary: only the picker needs the V3 discriminator.
-        sqlx::query(
-            "UPDATE user_decryption_requests SET solana_request = $1 WHERE decryption_id = $2",
+        let request = connector_utils::tests::rand::solana_user_decryption_request(
+            U256::from(id),
+            [0; 32].into(),
+        );
+        connector_utils::types::db::insert_solana_user_decryption(
+            db,
+            &request,
+            None,
+            sqlx::types::chrono::Utc::now(),
+            &connector_utils::monitoring::otlp::PropagationContext::default(),
+            source,
         )
-        .bind(b"{}".as_slice())
-        .bind(U256::from(id).to_le_bytes::<32>().as_slice())
-        .execute(db)
+        .await?;
+    } else {
+        insert_rand_request(
+            db,
+            TestEventType::UserDecryptionV2,
+            InsertRequestOptions::new()
+                .with_id(U256::from(id))
+                .with_source(source)
+                .with_status(OperationStatus::UnderProcess),
+        )
         .await?;
     }
     sqlx::query("UPDATE user_decryption_requests SET status = 'pending' WHERE decryption_id = $1")
@@ -164,7 +172,7 @@ async fn errors_preserve_the_shared_worker_lifecycle(
         db_fast_event_polling: Duration::from_millis(20),
         ..Default::default()
     };
-    // Insert before starting the picker, so the V3 discriminator update cannot race a claim.
+    // Insert before starting the picker so the initial state cannot race a claim.
     insert(&instance.db, 1, solana, source).await?;
     let picker = DbEventPicker::connect(instance.db.clone(), &config).await?;
     let attempts = Arc::new(AtomicUsize::new(0));
@@ -199,9 +207,11 @@ async fn errors_preserve_the_shared_worker_lifecycle(
         let response = response.expect("HTTP failures produce a caller-visible response");
         assert_eq!(
             response.get::<String, _>("error_code"),
-            match failure {
-                Failure::Terminal => "unprocessable",
-                Failure::Transient | Failure::Stale => "upstream_transient",
+            match (failure, solana) {
+                (Failure::Terminal, false) => "unprocessable",
+                (Failure::Terminal, true) => "user_signature_rejected",
+                (Failure::Stale, true) => "acl_denied",
+                (Failure::Transient, _) | (Failure::Stale, false) => "upstream_transient",
             }
         );
         assert!(!response.get::<String, _>("error_details").is_empty());

@@ -1,4 +1,10 @@
-use crate::types::ProtocolEventKind;
+use crate::{
+    monitoring::otlp::PropagationContext,
+    types::{
+        ProtocolEventKind,
+        solana_request::{SolanaHandleEntry, SolanaUserDecryptionRequestV1},
+    },
+};
 use alloy::{
     primitives::{B256, U256},
     sol_types::SolEvent,
@@ -8,8 +14,7 @@ use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
     PublicDecryptionRequest_1 as PublicDecryptionRequest,
     UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    UserDecryptionRequest_4 as UserDecryptionRequestV3,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequest_4,
 };
 use fhevm_host_bindings::{
     kms_generation::{
@@ -22,7 +27,11 @@ use fhevm_host_bindings::{
         KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
     },
 };
-use sqlx::{PgExecutor, postgres::PgNotification, types::chrono::Utc};
+use sqlx::{
+    PgExecutor,
+    postgres::{PgNotification, PgQueryResult},
+    types::chrono::{DateTime, Utc},
+};
 use std::{fmt::Display, str::FromStr};
 use tracing::info;
 
@@ -122,6 +131,15 @@ impl Display for RequestSource {
     }
 }
 
+/// Struct representing the generated `attestation_type` column of `user_decryption_requests`.
+#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq, Eq)]
+#[sqlx(type_name = "attestation_type", rename_all = "lowercase")]
+pub enum AttestationType {
+    Legacy,
+    Eip712,
+    Solana,
+}
+
 /// Enum of all the events monitored by the KMS Connector.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 pub enum EventType {
@@ -160,12 +178,10 @@ impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
             ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
-            // Legacy, RFC016 EVM and host-generic V2 variants share the same
-            // `user_decryption_requests` table and the same `UserDecryptionRequest` event type
-            // for `last_block_polled`.
+            // All user-decrypt attestations share one table and polling cursor.
             ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
-            | ProtocolEventKind::UserDecryptionV3(_) => Self::UserDecryptionRequest,
+            | ProtocolEventKind::SolanaUserDecryptionV1(_) => Self::UserDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
@@ -262,7 +278,7 @@ impl EventType {
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
-                UserDecryptionRequestV3::SIGNATURE_HASH,
+                UserDecryptionRequest_4::SIGNATURE_HASH,
             ],
             _ => vec![self.signature_hash()],
         }
@@ -348,4 +364,61 @@ pub async fn invalidate_kms_epoch<'e>(
 
     info!("KMS epoch #{epoch_id} marked as destroyed in DB");
     Ok(())
+}
+
+/// Stores a Solana user decryption from either ingress path. Only an HTTP retry resets a failed
+/// HTTP request, as `endpoint` does for EVM requests.
+pub async fn insert_solana_user_decryption<'e>(
+    executor: impl PgExecutor<'e>,
+    request: &SolanaUserDecryptionRequestV1,
+    tx_hash: Option<B256>,
+    created_at: DateTime<Utc>,
+    otlp_context: &PropagationContext,
+    source: RequestSource,
+) -> anyhow::Result<PgQueryResult> {
+    let permit = request.permit();
+    let column = |field: fn(&SolanaHandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
+        request
+            .handles()
+            .iter()
+            .map(|e| field(e).to_vec())
+            .collect()
+    };
+    let scopes: Vec<Vec<u8>> = permit
+        .allowed_scopes()
+        .as_slice()
+        .iter()
+        .map(|s| s.as_bytes().to_vec())
+        .collect();
+    Ok(sqlx::query!(
+        "INSERT INTO user_decryption_requests AS existing (
+            decryption_id, ct_handles, public_key, extra_data, signature, start_timestamp,
+            duration_seconds, user_pubkey, handle_allowed_keys, handle_encrypted_stores,
+            allowed_scopes, verifying_program_id, tx_hash, created_at, otlp_context, source
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            status = 'pending',
+            created_at = EXCLUDED.created_at,
+            otlp_context = EXCLUDED.otlp_context
+        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
+        request.decryption_id.as_le_slice(),
+        &column(|e| e.handle),
+        permit.transport_key().as_bytes().as_slice(),
+        request.extra_data(),
+        request.signature().as_bytes().as_slice(),
+        i64::try_from(permit.start_timestamp())?,
+        i64::try_from(permit.duration_seconds())?,
+        permit.user_pubkey().as_bytes().as_slice(),
+        &column(|e| e.allowed_key),
+        &column(|e| e.encrypted_store),
+        &scopes,
+        permit.verifying_program_id().as_bytes().as_slice(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(otlp_context)?,
+        source as RequestSource,
+    )
+    .execute(executor)
+    .await?)
 }

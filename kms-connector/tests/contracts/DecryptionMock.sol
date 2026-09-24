@@ -121,6 +121,15 @@ contract DecryptionMock {
         UserDecryptionRequestPayload payload
     );
 
+    event UserDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        RequestValiditySeconds requestValidity,
+        bytes publicKey,
+        bytes extraData,
+        bytes solanaRequest
+    );
+
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
         uint256 indexShare,
@@ -199,6 +208,20 @@ contract DecryptionMock {
         );
 
         emit UserDecryptionRequest(decryptionId, handles, payload);
+    }
+
+    // Solana overload: the Gateway forwards `solanaRequest` verbatim.
+    function userDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        RequestValiditySeconds calldata requestValidity,
+        bytes calldata publicKey,
+        bytes calldata extraData,
+        bytes calldata solanaRequest
+    ) external {
+        userDecryptionCounter++;
+        uint256 decryptionId = userDecryptionCounter;
+
+        emit UserDecryptionRequest(decryptionId, ctHandles, requestValidity, publicKey, extraData, solanaRequest);
     }
 
     function delegatedUserDecryptionRequest(

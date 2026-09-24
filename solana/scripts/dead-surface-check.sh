@@ -146,9 +146,8 @@ FHE_ROOTS=(
 )
 ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
 
-# What the `kms` scope adds to ALL: the connector crates, and the connector-auth fixture tree, which is
-# in no other root (the generator lives under kms-worker/tests but the vector constants and the
-# committed JSON do not). Named once here so the existence assertion below and check 7's trigger audit
+# What the `kms` scope adds to ALL: the connector crates, and the fixture tree their tests read, which
+# is in no other root. Named once here so the existence assertion below and check 7's trigger audit
 # both cover them.
 KMS_EXTRA_ROOTS=(
   kms-connector/crates
@@ -450,9 +449,8 @@ if run_check 3; then
       fhe)  roots=("${FHE_ROOTS[@]}") ;;
       core) roots=("${CORE_ROOTS[@]}") ;;
       all)  roots=("${ALL_ROOTS[@]}") ;;
-      # ALL plus the connector crates and the connector-auth fixtures, for a word whose only live
-      # occurrences are there. The fixture tree is in no other root: the generator lives under
-      # kms-worker/tests but the vector constants and the committed JSON do not.
+      # ALL plus the connector crates and the fixture tree, for a word whose only live occurrences
+      # are there.
       kms)  roots=("${ALL_ROOTS[@]}" "${KMS_EXTRA_ROOTS[@]}") ;;
       *) echo "check_alias: unknown scope '${scope}' for '${label}'" >&2; exit 2 ;;
     esac

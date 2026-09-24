@@ -52,6 +52,17 @@ export const centralizedKmsCorePlatform = (
   arch: string = process.arch,
 ): "linux/amd64" | undefined => (platform === "darwin" && arch === "arm64" ? "linux/amd64" : undefined);
 
+/**
+ * Template `platform` pins select amd64 from published images that list no other platform. A local
+ * build targets the host instead, and the generated override must say so: compose merges it over
+ * the template, so leaving the key out would keep the pin.
+ */
+const targetHostPlatformForLocalBuild = (service: Record<string, unknown>, arch: string = process.arch) => {
+  if (service.platform !== undefined) {
+    service.platform = arch === "arm64" ? "linux/arm64" : "linux/amd64";
+  }
+};
+
 /** Builds the environment passed to docker compose from resolved versions. */
 export const resolvedComposeEnv = (
   state: Pick<State, "versions" | "overrides" | "scenario">,
@@ -90,6 +101,7 @@ const retagLocal = (image: unknown, tag = LOCAL_BUILD_TAG) => rewriteImageTag(im
 const applyBuildPolicy = (service: Record<string, unknown>, isOverridden: boolean) => {
   if (isOverridden) {
     service.image = retagLocal(service.image);
+    targetHostPlatformForLocalBuild(service);
   } else {
     delete service.build;
   }
@@ -627,6 +639,7 @@ const applyCoprocessorSource = (
   if (locallyBuilt) {
     service.image = retagLocal(service.image, localInstanceTag(instance.index));
     service.build = localBuildSpecFor("coprocessor", serviceName, e2ePublicRuntime);
+    targetHostPlatformForLocalBuild(service);
   } else {
     if (instance.source.mode === "registry") {
       service.image = rewriteImageTag(service.image, instance.source.tag);
