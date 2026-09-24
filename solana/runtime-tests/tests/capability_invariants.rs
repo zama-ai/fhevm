@@ -8,17 +8,20 @@
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
 //!
 //! The oracles compare raw account bytes before and after each transaction against the
-//! transaction's signer flags; they call no program code. The only state they carry is who the
-//! admin is, which moves when a `set_admin` succeeds. Every instruction of the host IDL has a
-//! generator, and every generator also signs with keys that lack the role.
+//! transaction's signer flags. They find the guarded accounts by discriminator among every
+//! host-owned account, and fail on a host account type nobody classified. They read program
+//! layouts only for a Store's authority and `HostConfig.updated_slot`. The only state they carry
+//! is who the admin is, which moves when a `set_admin` succeeds. Every instruction of the host
+//! IDL has a generator, and every admin and Store-authority role is also filled by keys that lack
+//! it, signing or not.
 //! `scripts/check-planted-bugs.sh` rebuilds the host with each patch in `planted-bugs/` and
 //! requires this suite to fail.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use anchor_lang::prelude::system_program;
-use anchor_lang::{AccountDeserialize, InstructionData};
+use anchor_lang::{AccountDeserialize, Discriminator, InstructionData};
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, TestRunner};
@@ -134,6 +137,7 @@ enum Action {
     FheExecute {
         payer: usize,
         producer: usize,
+        authority: Role,
         target: usize,
         witness: Witness,
         make_public: bool,
@@ -246,10 +250,11 @@ fn action() -> impl Strategy<Value = Action> {
         1 => (role(), 0..KMS_CONTEXTS).prop_map(|(admin, context)| Action::DestroyKmsContext { admin, context }),
         2 => (wallet(), 0..STORES, role())
             .prop_map(|(payer, store, authority)| Action::CreateEncryptedStore { payer, store, authority }),
-        6 => (wallet(), 0..AUTHORITIES, 0..STORES, witness(), any::<bool>(), any::<bool>()).prop_map(
-            |(payer, producer, target, witness, make_public, allow_viewer)| Action::FheExecute {
+        6 => (wallet(), 0..AUTHORITIES, role(), 0..STORES, witness(), any::<bool>(), any::<bool>()).prop_map(
+            |(payer, producer, authority, target, witness, make_public, allow_viewer)| Action::FheExecute {
                 payer,
                 producer,
+                authority,
                 target,
                 witness,
                 make_public,
@@ -291,6 +296,60 @@ fn idl_discriminators() -> &'static HashMap<String, Vec<u8>> {
             })
             .collect()
     })
+}
+
+/// Host account types only the admin may change (H1).
+const TRUST_ROOTS: [&[u8]; 4] = [
+    host::HostConfig::DISCRIMINATOR,
+    host::KmsContext::DISCRIMINATOR,
+    host::DenyScopeRecord::DISCRIMINATOR,
+    host::HcuTrustedAppRecord::DISCRIMINATOR,
+];
+
+/// Host account types outside H1 and H2: transaction scratch, per-app counters that any
+/// execution of the app advances, and records owned by the user who signs for them.
+const UNGUARDED: [&[u8]; 5] = [
+    host::TransientStore::DISCRIMINATOR,
+    host::RandNonce::DISCRIMINATOR,
+    host::HcuBlockMeter::DISCRIMINATOR,
+    host::PermitInvalidation::DISCRIMINATOR,
+    host::UserDecryptionDelegation::DISCRIMINATOR,
+];
+
+/// Clears `key`'s signer flag in `ix` unless the role signs.
+fn unsign(mut ix: Instruction, key: Pubkey, signs: bool) -> Instruction {
+    if !signs {
+        for meta in ix.accounts.iter_mut().filter(|meta| meta.pubkey == key) {
+            meta.is_signer = false;
+        }
+    }
+    ix
+}
+
+type Snapshot = BTreeMap<Pubkey, Vec<u8>>;
+
+/// The data of host-owned accounts by address, split by the invariant that guards them.
+#[derive(Default)]
+struct HostAccounts {
+    trust_roots: Snapshot,
+    stores: Snapshot,
+}
+
+/// Every address whose data differs between two snapshots, with the data it had before and
+/// after; a created or closed account has only one.
+fn changed<'a>(before: &'a Snapshot, after: &'a Snapshot) -> Vec<(Pubkey, Vec<&'a [u8]>)> {
+    let addresses: BTreeSet<&Pubkey> = before.keys().chain(after.keys()).collect();
+    addresses
+        .into_iter()
+        .filter(|address| before.get(address) != after.get(address))
+        .map(|address| {
+            let versions = [before.get(address), after.get(address)];
+            (
+                *address,
+                versions.into_iter().flatten().map(Vec::as_slice).collect(),
+            )
+        })
+        .collect()
 }
 
 /// The deployment the sequences run against: one host config, a current and a rotated-out KMS
@@ -400,30 +459,28 @@ impl World {
         }
     }
 
-    fn trust_roots(&self) -> Vec<Pubkey> {
-        let mut roots = vec![host::host_config_address().0];
-        roots.extend(
-            (0..KMS_CONTEXTS).map(|index| host::kms_context_address(kms_context_id(index)).0),
-        );
-        roots.extend((0..APPS).map(|index| host::deny_scope_address(app(index)).0));
-        roots.extend((0..APPS).map(|index| host::hcu_trusted_app_address(app(index)).0));
-        roots
-    }
-
-    /// Owner and data of each account; lamports are left out because anyone may fund any account.
-    fn bytes(&self, addresses: &[Pubkey]) -> Vec<(Pubkey, Vec<u8>)> {
-        let store = self.context.account_store.borrow();
-        addresses
-            .iter()
-            .map(|address| match store.get(address) {
-                Some(account)
-                    if !(account.data.is_empty() && account.owner == system_program::ID) =>
-                {
-                    (account.owner, account.data.clone())
-                }
-                _ => (system_program::ID, Vec::new()),
-            })
-            .collect()
+    /// The data of every host-owned account. Lamports are left out because anyone may fund any
+    /// account. An account that leaves the host, by closing or reassignment, drops out.
+    fn host_accounts(&self) -> Result<HostAccounts, TestCaseError> {
+        let mut accounts = HostAccounts::default();
+        for (address, account) in self.context.account_store.borrow().iter() {
+            if account.owner != host::id() {
+                continue;
+            }
+            let has_type =
+                |types: &[&[u8]]| types.iter().any(|kind| account.data.starts_with(kind));
+            if has_type(&TRUST_ROOTS) {
+                accounts.trust_roots.insert(*address, account.data.clone());
+            } else if has_type(&[host::EncryptedStore::DISCRIMINATOR]) {
+                accounts.stores.insert(*address, account.data.clone());
+            } else {
+                prop_assert!(
+                    has_type(&UNGUARDED),
+                    "host account {address} has a type that neither H1 nor H2 classifies"
+                );
+            }
+        }
+        Ok(accounts)
     }
 
     /// The live config, read only to build instructions the host can accept.
@@ -462,14 +519,6 @@ impl World {
         let admin_role = |role: &Role| {
             let key = self.key(role.key, self.admin);
             (key, role.signs)
-        };
-        let unsign = |mut ix: Instruction, key: Pubkey, signs: bool| {
-            if !signs {
-                for meta in ix.accounts.iter_mut().filter(|meta| meta.pubkey == key) {
-                    meta.is_signer = false;
-                }
-            }
-            ix
         };
         let host_admin = |role: &Role, data: Vec<u8>| {
             let (admin, signs) = admin_role(role);
@@ -712,6 +761,7 @@ impl World {
             Action::FheExecute {
                 payer,
                 producer,
+                authority,
                 target,
                 witness,
                 make_public,
@@ -720,6 +770,7 @@ impl World {
                 return self.fhe_execute(
                     *payer,
                     *producer,
+                    *authority,
                     *target,
                     *witness,
                     *make_public,
@@ -840,20 +891,22 @@ impl World {
         vec![body]
     }
 
-    /// An execution by `producer` that writes the target Store's slot. The producing Store is the
-    /// producer's first-scope Store; a target under another authority carries that authority as
-    /// the witness says.
+    /// An execution over `producer`'s first-scope Store that writes the target Store's slot. The
+    /// role fills the execution's authority, the producer when it holds; a target under another
+    /// authority carries that authority as the witness says.
+    #[allow(clippy::too_many_arguments)]
     fn fhe_execute(
         &self,
         payer: usize,
         producer: usize,
+        role: Role,
         target: usize,
         witness: Witness,
         make_public: bool,
         allow_viewer: bool,
     ) -> Vec<Instruction> {
         let producer_store = producer * SCOPES;
-        let producer_authority = self.authorities[producer];
+        let authority = self.key(role.key, self.authorities[producer].key);
         let target_authority = self.store_authority(target);
         let mut remaining = vec![writable(self.store_address(producer_store))];
         let target_index = if target == producer_store {
@@ -862,7 +915,7 @@ impl World {
             remaining.push(writable(self.store_address(target)));
             1
         };
-        if target_authority.key != producer_authority.key {
+        if target_authority.key != authority {
             match witness {
                 Witness::Absent => {}
                 Witness::Unsigned => remaining.push(readonly(target_authority.key)),
@@ -898,26 +951,24 @@ impl World {
             make_public,
         );
         let payer = self.wallets[payer];
-        fhe_transaction(
+        let ix = fhe_execute_ix(
             payer,
-            [fhe_execute_ix(
-                payer,
-                producer_authority.key,
-                host::host_config_address().0,
-                FheExecuteArgs {
-                    execution_store_index: 0,
-                    effects: vec![effect],
-                    returned_results: vec![],
-                    account_count: 0,
-                    dictionary: dictionary.into_entries(),
-                    steps: vec![FheExecuteStep::TrivialEncrypt {
-                        plaintext: [7; 32],
-                        fhe_type: 5,
-                    }],
-                },
-                remaining,
-            )],
-        )
+            authority,
+            host::host_config_address().0,
+            FheExecuteArgs {
+                execution_store_index: 0,
+                effects: vec![effect],
+                returned_results: vec![],
+                account_count: 0,
+                dictionary: dictionary.into_entries(),
+                steps: vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext: [7; 32],
+                    fhe_type: 5,
+                }],
+            },
+            remaining,
+        );
+        fhe_transaction(payer, [unsign(ix, authority, role.signs)])
     }
 
     /// Sends one action, checks H1 and H2 on the accounts it changed, and reports whether the
@@ -945,23 +996,22 @@ impl World {
             .map(|meta| meta.pubkey)
             .collect();
 
-        let roots = self.trust_roots();
-        let stores: Vec<Pubkey> = (0..STORES).map(|store| self.store_address(store)).collect();
-        let roots_before = self.bytes(&roots);
-        let stores_before = self.bytes(&stores);
+        let before = self.host_accounts()?;
         let result = self.context.process_transaction_instructions(&transaction);
+        let after = self.host_accounts()?;
 
-        let roots_after = self.bytes(&roots);
-        for ((root, before), after) in roots.iter().zip(&roots_before).zip(&roots_after) {
-            if before != after {
-                prop_assert!(
-                    signers.contains(&self.admin),
-                    "H1: {action:?} changed trust root {root} without the admin {} signing",
-                    self.admin
-                );
-            }
+        let mut config_changed = false;
+        for (root, versions) in changed(&before.trust_roots, &after.trust_roots) {
+            prop_assert!(
+                signers.contains(&self.admin),
+                "H1: {action:?} changed trust root {root} without the admin {} signing",
+                self.admin
+            );
+            config_changed |= versions
+                .iter()
+                .any(|data| data.starts_with(host::HostConfig::DISCRIMINATOR));
         }
-        if roots_before[0] != roots_after[0] {
+        if config_changed {
             // #35: a config change stamps its slot and is announced through the event CPI.
             prop_assert_eq!(
                 self.config().updated_slot,
@@ -983,13 +1033,15 @@ impl World {
                 action
             );
         }
-        for (store, (before, after)) in stores_before.iter().zip(self.bytes(&stores)).enumerate() {
-            if *before != after {
-                let authority = self.store_authority(store).key;
+        for (store, versions) in changed(&before.stores, &after.stores) {
+            // The authority recorded before and after, so rewriting it needs both.
+            for mut data in versions {
+                let authority = host::EncryptedStore::try_deserialize(&mut data)
+                    .expect("Store decodes")
+                    .authority;
                 prop_assert!(
                     signers.contains(&authority),
-                    "H2: {action:?} changed Store {} without its authority {authority} signing",
-                    stores[store]
+                    "H2: {action:?} changed Store {store} without its authority {authority} signing"
                 );
             }
         }

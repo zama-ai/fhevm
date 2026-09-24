@@ -1,3 +1,5 @@
+Expect: H2: FheExecute
+
 diff --git a/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs b/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs
 index 69ea89926..4ed69e152 100644
 --- a/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs

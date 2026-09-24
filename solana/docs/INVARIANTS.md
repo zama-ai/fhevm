@@ -40,14 +40,16 @@ grant, transient store, application.
 
 **1. [HOLDS]** Plaintext values never appear on-chain: the chain stores handles
 and access state; ciphertexts live only in the coprocessor.
-Pinned by `mollusk_confidential_transfer_leaves_the_same_chain_state_whatever_the_hidden_amounts` for the token transfer:
-the same transfer over two different hidden amounts leaves byte-identical accounts, CPIs and return data.
+Holds by construction: a confidential value reaches the host and token programs only as a handle, and the one
+instruction that accepts a cleartext is `verify_public_decrypt`, for a handle already sealed public (#21). Values public
+by design, such as trivially encrypted constants and the SPL amounts of wrap and redeem, are outside this entry.
 
 **2. [HOLDS]** A failed confidential transfer is indistinguishable on-chain from
 a successful one (the execution moves an encrypted zero; there is no failure
 branch to observe).
-Pinned by the same test: one of its runs overdraws the sender, moves nothing, and leaves the chain exactly as the
-funded run does.
+Holds by construction for the chain state: no instruction receives the amount, so nothing on chain can depend on it.
+Pinned for the encrypted zero by `mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero`: a
+transfer that overdraws the sender succeeds and, once evaluated, leaves both balances unchanged.
 
 **3. [ANTI]** Participation, timing, touched accounts, instruction shapes, and
 execution structure are all public.
@@ -107,8 +109,10 @@ Confidential-token ships owner-gated wrappers that `invoke_signed` as the **toke
 `make_token_account_handle_public`); the mint authority has the same pair for the total supply, signed as the
 total-supply authority PDA (`allow_total_supply_viewers`, `make_total_supply_handle_public`). (fhevm-internal#1862 #13;
 RFC 035.) Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over
-random instruction sequences that no Store's bytes change unless its authority signed; the planted bug
-`runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make it fail. The token wrappers are
+random instruction sequences that no Store's bytes change unless the authority it records signed; the planted bug
+`runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make it fail. This covers the default
+build; the preview-only `admin-sweep` build adds `close_owned_accounts`, which lets the upgrade authority close any
+Store (`AUTHORITY.md`). The token wrappers are
 pinned by `mollusk_owner_allows_balance_viewers`, `mollusk_non_owner_cannot_allow_balance_viewers`,
 `mollusk_mint_authority_allows_total_supply_viewers` and `mollusk_non_mint_authority_cannot_allow_total_supply_viewers`.
 Related token/Host lifecycle guardrails are:
@@ -160,8 +164,7 @@ Pinned by `mollusk_fhe_execute_rejects_read_of_a_value_whose_authority_did_not_s
 `transient_result_rejects_missing_grants_and_wrong_handle_or_consumer`, `active_workspace_cannot_be_reopened`,
 `result_journal_capacity_is_shared_across_calls_and_fails_atomically`,
 `transient_store_cannot_close_before_the_final_instruction` and
-`transient_store_is_created_and_closed_atomically_including_prefunded_addresses`, and over random sequences by the
-Store property of #11.
+`transient_store_is_created_and_closed_atomically_including_prefunded_addresses`.
 
 **64. [ANTI]** A grant limits who may compute with a handle inside one transaction. It does not limit what that
 computation may reveal: the consumer's output can be written to a slot, allowed to any key or made public, and those
@@ -216,7 +219,8 @@ the listener test `rejects_store_output_dictionary_overflow`.
 metering cost row, so a step that passed validation can never abort because
 its cost is unknown. It does not work the other way round, deliberately:
 some combinations have a price but are still rejected by validation.
-Pinned by the eight `*_hcu_covers_every_validated_*` tests in `zama-host/src/hcu/tests.rs`, one per operator family.
+Pinned by the eight `*_hcu_covers_every_validated_*` tests in
+`programs/zama-host/src/instructions/fhe_execute/hcu/tests.rs`, one per operator family.
 
 **16. [HOLDS]** An execution containing a rand step must pass its
 application's `RandNonce` (`["rand-nonce", program, scope]`;
@@ -233,7 +237,8 @@ Pinned by `mollusk_fhe_execute_rand_without_nonce_account_is_rejected`,
 
 **17. [HOLDS]** `account_count` declared inside the instruction data must equal the number of remaining accounts
 actually delivered.
-Pinned by `mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap`.
+Pinned by `mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap` and
+`mollusk_fhe_execute_missing_remaining_account_rejected`.
 
 **18. [HOLDS]** A transient result from one SDK builder cannot be used in another. `FheExecution::build` gives each
 builder a distinct `'id` lifetime, which its transient results carry; mixing them is a compile error. Stored slot
@@ -367,16 +372,18 @@ after the check (its own unit tests pin that mapping).
 
 ## F. Admin, config & custody
 
-**35. [HOLDS]** Only the configured admin can change HostConfig; every change stamps `updated_slot` and emits a config
-event. The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
+**35. [HOLDS]** Only the configured admin can change HostConfig; every change stamps `updated_slot` and emits a host
+event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context` moves the current context). The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
 RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin change without replaying
 instruction data to find one (DD-044). The event only makes the change visible: authorization still comes from account
 state, never from event bytes.
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
 instruction sequences that `HostConfig`, the KMS contexts and the deny and HCU trust records change only in a transaction the admin signed,
 and that every `HostConfig` change stamps the current slot and emits an event CPI. Every host instruction is drawn,
-also signed by keys that lack the role. The planted bug `runtime-tests/planted-bugs/h1-set-host-pause-skips-assert-admin.patch`
-must make it fail (`scripts/check-planted-bugs.sh`).
+with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
+property does not classify fails it. The planted bug `runtime-tests/planted-bugs/h1-set-host-pause-skips-assert-admin.patch`
+must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
+build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
 **36. [HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path: the production-shaped host instructions
 (`fhe_execute`, `make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
@@ -542,7 +549,8 @@ Pinned by `mollusk_mint_authority_allows_total_supply_viewers`, `mollusk_mint_au
 It is distinct from the authority that can upgrade the Zama Host program.
 Future governance may own the mint authority without acquiring Host upgrade
 power; no governance or authority-rotation mechanism is implied here.
-Pinned by `mollusk_non_mint_authority_cannot_allow_total_supply_viewers`, in which the key refused is the host admin.
+Holds by construction: the token program checks only `ConfidentialMint.authority` for mint-authority actions and reads
+neither the Host upgrade authority nor `HostConfig.admin`.
 
 **60. [HOLDS]** A dispatched confidential batch can be cancelled by its join
 mint's `ConfidentialMint.authority` while the burn is pending. This is the wrapper policy

@@ -1,3 +1,5 @@
+Expect: H1: SetHostPause
+
 diff --git a/solana/programs/zama-host/src/instructions/set_host_pause.rs b/solana/programs/zama-host/src/instructions/set_host_pause.rs
 index c28ff9c51..fba5901dc 100644
 --- a/solana/programs/zama-host/src/instructions/set_host_pause.rs

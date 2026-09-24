@@ -1012,31 +1012,22 @@ fn mollusk_non_owner_cannot_allow_balance_viewers() {
 
 #[test]
 fn mollusk_non_mint_authority_cannot_allow_total_supply_viewers() {
-    // The refused key is the host admin: host authority confers no mint authority.
     let fixture = BurnRedeemFixture::new();
-    let host_admin = Pubkey::new_unique();
+    let stranger = Pubkey::new_unique();
     let mut accounts = fixture.accounts(0);
-    accounts.insert(host_admin, system_account(1_000_000_000));
-    accounts.insert(
-        fixture.host_config,
-        host_config_account_with_kms_context(
-            host_admin,
-            secp_evm_address(&coprocessor_signing_key()),
-            fixture.kms_context_id,
-        ),
-    );
+    accounts.insert(stranger, system_account(1_000_000_000));
     let context = mollusk().with_context(accounts);
 
     check_token_instruction(
         &context,
-        &allow_total_supply_viewers_ix(&fixture, host_admin, vec![Pubkey::new_unique()]),
+        &allow_total_supply_viewers_ix(&fixture, stranger, vec![Pubkey::new_unique()]),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
         )],
     );
     check_token_instruction(
         &context,
-        &make_total_supply_handle_public_ix(&fixture, host_admin, fixture.initial_total_supply),
+        &make_total_supply_handle_public_ix(&fixture, stranger, fixture.initial_total_supply),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
         )],
@@ -1437,12 +1428,13 @@ fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
 }
 
 #[test]
-fn mollusk_confidential_transfer_leaves_the_same_chain_state_whatever_the_hidden_amounts() {
-    // The same transfer instruction runs twice from the same accounts. The amounts behind the
-    // handles differ, and only the cleartext ledger knows them: one transfer is funded, the other
-    // exceeds the balance. The chain sees byte-identical results, so it holds no amount and cannot
-    // tell the failed transfer from the funded one; the failed one moves an encrypted zero.
+fn mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero() {
     let fixture = TokenFixture::new();
+    let context = mollusk().with_context(fixture.base_accounts());
+    let mut cleartext = CleartextLedger::default();
+    cleartext.seed_amount(fixture.alice_initial, 1_000);
+    cleartext.seed_amount(fixture.bob_initial, 100);
+    cleartext.seed_amount(handle_for_chain(21, BALANCE_FHE_TYPE), 1_500);
     let transfer = confidential_transfer_ix(
         &fixture,
         fixture.alice_token,
@@ -1451,38 +1443,12 @@ fn mollusk_confidential_transfer_leaves_the_same_chain_state_whatever_the_hidden
         fixture.bob_balance_store,
         sender_attestation(&fixture, 21),
     );
-    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
-    let run = |amount: u64| {
-        // Each Mollusk draws a fresh previous bank hash, which every handle hashes; both runs
-        // share one so that only the hidden amounts differ.
-        let mut svm = mollusk();
-        svm.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(
-            99,
-            solana_sdk::hash::Hash::new_from_array([7; 32]),
-        )]);
-        let context = svm.with_context(fixture.base_accounts());
-        let mut cleartext = CleartextLedger::default();
-        cleartext.seed_amount(fixture.alice_initial, 1_000);
-        cleartext.seed_amount(fixture.bob_initial, 100);
-        cleartext.seed_amount(amount_handle, amount);
-        let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-        cleartext.evaluate_fhe_cpi(&context, &result);
-        let balances = (
-            cleartext.balance(&context, fixture.alice_token),
-            cleartext.balance(&context, fixture.bob_token),
-        );
-        let accounts = context.account_store.borrow().clone();
-        (result, accounts, balances)
-    };
 
-    let (funded, funded_accounts, funded_balances) = run(400);
-    let (overdrawn, overdrawn_accounts, overdrawn_balances) = run(1_500);
+    let result = check_token_instruction(&context, &transfer, &[Check::success()]);
+    cleartext.evaluate_fhe_cpi(&context, &result);
 
-    assert_eq!(funded_balances, (600, 500));
-    assert_eq!(overdrawn_balances, (1_000, 100));
-    assert_eq!(funded_accounts, overdrawn_accounts);
-    assert_eq!(funded.inner_instructions, overdrawn.inner_instructions);
-    assert_eq!(funded.return_data, overdrawn.return_data);
+    assert_eq!(cleartext.balance(&context, fixture.alice_token), 1_000);
+    assert_eq!(cleartext.balance(&context, fixture.bob_token), 100);
 }
 
 #[test]

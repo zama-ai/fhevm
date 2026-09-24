@@ -45,4 +45,4 @@ solana-packet = "3.0.0"
 # Signs coprocessor EIP-712 input attestations in the secp256k1 input-bind test.
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 # Generates the random instruction sequences of `capability_invariants.rs`.
-proptest = "1.11"
+proptest = { version = "1.11", default-features = false, features = ["std"] }

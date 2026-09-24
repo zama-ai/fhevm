@@ -661,7 +661,7 @@ fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
     assert_eq!(updated.leaf_count, value.leaf_count + 1);
 
     let mut dictionary = ExecutionDictionary::default();
-    let mut effect = app.authority.store_output(
+    let effect = app.authority.store_output(
         &mut dictionary,
         0,
         updated.slots[0].key,
@@ -670,7 +670,6 @@ fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
         value.leaf_count,
         false,
     );
-    effect.result.step_index = 0;
     let args = FheExecuteArgs {
         execution_store_index: 0,
         effects: vec![effect],
@@ -689,7 +688,9 @@ fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
         &mollusk(),
         &ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::PreviousStoreMismatch)],
+        &[custom_error(
+            host::errors::ZamaHostError::PreviousStoreMismatch,
+        )],
     );
 }
 
@@ -4088,6 +4089,20 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
     let mut ix = fixture.block_cap_instruction(None, None);
     ix.accounts
         .push(AccountMeta::new_readonly(Pubkey::new_unique(), false));
+    check_host_context(
+        &fixture.context,
+        &ix,
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteAccountCountMismatch,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_fhe_execute_missing_remaining_account_rejected() {
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    let mut ix = fixture.block_cap_instruction(None, None);
+    ix.accounts.pop();
     check_host_context(
         &fixture.context,
         &ix,
