@@ -597,7 +597,7 @@ only as v0 + one address lookup table; a legacy settle never fits. Pinned by
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
 advisorily, Solana delegated entries: a delegation row that is dead at the
-slot of the read (absent, revoked, expired) is refused before the gateway
+host Clock of the read (absent, revoked, expired) is refused before the gateway
 fee (`relayer/src/host/solana_delegation_precheck.rs`); every ambiguity of
 data passes. A direct Solana entry is not pre-checked — its authorization
 is an allow leaf the connector fetches, and there is no cheaper reading of
