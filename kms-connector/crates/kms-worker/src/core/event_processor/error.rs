@@ -1,4 +1,5 @@
 use crate::core::solana::{
+    delegation::DelegationFailure, encrypted_store::EncryptedStoreFailure,
     failure::AuthorizationFailure, handle_binding::HandleBindingFailure,
     public_decrypt::PublicDecryptFailure, watermark::WatermarkFailure,
 };
@@ -237,9 +238,17 @@ impl From<AuthorizationFailure> for RequestCheckError {
             AuthorizationFailure::HandleBinding {
                 source: HandleBindingFailure::HistoryIncomplete,
                 ..
+            }
+            | AuthorizationFailure::Watermark(WatermarkFailure::InvalidHostRecord(_))
+            | AuthorizationFailure::EncryptedStore {
+                source: EncryptedStoreFailure::InvalidHostRecord(_),
+                ..
+            }
+            | AuthorizationFailure::Delegation {
+                source: DelegationFailure::InvalidHostRecord(_),
+                ..
             } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
-            AuthorizationFailure::Watermark(_)
-            | AuthorizationFailure::EncryptedStore { .. }
+            AuthorizationFailure::EncryptedStore { .. }
             | AuthorizationFailure::Scope { .. }
             | AuthorizationFailure::HandleBinding { .. }
             | AuthorizationFailure::Delegation { .. } => {
@@ -259,7 +268,8 @@ impl From<PublicDecryptFailure> for RequestCheckError {
             PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete) => {
+            PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete)
+            | PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::InvalidHostRecord(_)) => {
                 (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
             PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {

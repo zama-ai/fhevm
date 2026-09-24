@@ -3,6 +3,7 @@
 //! program can write data into an account it owns.
 
 use super::SolanaPubkeyBytes;
+use super::failure::InvalidHostRecord;
 use super::snapshot::SnapshotAccount;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::WILDCARD_APP;
@@ -61,9 +62,10 @@ pub fn resolve_encrypted_store(
             owner: account.owner,
         });
     }
+    let invalid = InvalidHostRecord { account_key };
     let encrypted_store = decode_encrypted_store(&account.data).map_err(|error| match error {
-        AclError::BadDiscriminator => EncryptedStoreFailure::WrongAccountType { account_key },
-        _ => EncryptedStoreFailure::Malformed { account_key },
+        AclError::BadDiscriminator => EncryptedStoreFailure::NotAnEncryptedStore { account_key },
+        _ => invalid.into(),
     })?;
     let derived = encrypted_store_address(program_id, &encrypted_store);
     if derived != Some(account_key) {
@@ -73,9 +75,10 @@ pub fn resolve_encrypted_store(
         });
     }
     // With the sentinel as program, the store's delegation row would be the wildcard row itself.
-    // No legal store names it: its authority must sign as a PDA of the program.
+    // No legal store names it: its authority must sign as a PDA of the program, and no one holds
+    // the key to deploy a program there.
     if encrypted_store.program == WILDCARD_APP {
-        return Err(EncryptedStoreFailure::SentinelProgram { account_key });
+        return Err(invalid.into());
     }
     Ok(ResolvedEncryptedStore {
         account_key,
@@ -83,6 +86,9 @@ pub fn resolve_encrypted_store(
     })
 }
 
+/// Why the account an entry names is not a usable encrypted store. The address is the user's
+/// claim, so a wrong account is the request's fault; only a host-owned store the host program
+/// could not have written is an [`InvalidHostRecord`].
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum EncryptedStoreFailure {
     #[error("encrypted store {account_key:?} does not exist at the observed slot")]
@@ -93,14 +99,12 @@ pub enum EncryptedStoreFailure {
         owner: SolanaPubkeyBytes,
     },
     #[error("account {account_key:?} is not an encrypted store")]
-    WrongAccountType { account_key: SolanaPubkeyBytes },
-    #[error("encrypted store {account_key:?} does not decode")]
-    Malformed { account_key: SolanaPubkeyBytes },
+    NotAnEncryptedStore { account_key: SolanaPubkeyBytes },
     #[error("encrypted store {account_key:?} does not live at the address its fields derive")]
     AddressMismatch {
         account_key: SolanaPubkeyBytes,
         derived: Option<SolanaPubkeyBytes>,
     },
-    #[error("encrypted store {account_key:?} names the wildcard sentinel as its program")]
-    SentinelProgram { account_key: SolanaPubkeyBytes },
+    #[error(transparent)]
+    InvalidHostRecord(#[from] InvalidHostRecord),
 }

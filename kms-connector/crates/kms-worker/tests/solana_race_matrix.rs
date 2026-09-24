@@ -26,8 +26,10 @@ use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::DelegationFailure, failure::AuthorizationFailure,
-    handle_binding::HandleBindingFailure, pipeline::authorize_request,
+    delegation::{DeadRow, DelegationFailure},
+    failure::AuthorizationFailure,
+    handle_binding::HandleBindingFailure,
+    pipeline::authorize_request,
 };
 use solana_support::*;
 
@@ -233,10 +235,17 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
 
     let failure = outcome.expect_err("after revocation the exact delegation is dead");
     assert!(failure.is_recoverable());
-    assert!(
-        matches!(failure, AuthorizationFailure::Delegation { index:0, source: DelegationFailure::NoLiveDelegation { exact, wildcard } }
-        if matches!(*exact, DelegationFailure::NotLive { expires_at: 0, .. }) && matches!(*wildcard, DelegationFailure::Absent { .. }))
-    );
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveDelegation {
+                exact: DeadRow::NotLive { expires_at: 0 },
+                wildcard: DeadRow::Absent,
+                ..
+            }
+        }
+    ));
 }
 
 /// The direct branch is untouched by a delegation revocation: the signer's own leaves are not

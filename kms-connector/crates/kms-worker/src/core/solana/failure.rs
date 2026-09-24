@@ -10,6 +10,15 @@ use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
 use zama_solana_permit::PermitError;
 
+/// An account the Connector read at an address only the host program can write, or a store the
+/// host program owns, whose content the host program could never have written. The request is
+/// judged on nothing else: it fails closed, even when another row would authorize it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
+#[error("account {account_key:?} holds a record the host program could not have written")]
+pub struct InvalidHostRecord {
+    pub account_key: SolanaPubkeyBytes,
+}
+
 /// Per-entry rules carry the entry index: "some handle failed" is not actionable for a batch.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum AuthorizationFailure {
@@ -72,10 +81,7 @@ impl WindowFailure {
 impl WatermarkFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Invalidated { .. }
-            | Self::NotAnInvalidationRecord { .. }
-            | Self::RecordNamesAnotherUser { .. }
-            | Self::ForeignOwner { .. } => false,
+            Self::Invalidated { .. } | Self::InvalidHostRecord(_) => false,
         }
     }
 }
@@ -86,10 +92,9 @@ impl EncryptedStoreFailure {
         match self {
             Self::Absent { .. } => true,
             Self::ForeignOwner { .. }
-            | Self::WrongAccountType { .. }
-            | Self::Malformed { .. }
+            | Self::NotAnEncryptedStore { .. }
             | Self::AddressMismatch { .. }
-            | Self::SentinelProgram { .. } => false,
+            | Self::InvalidHostRecord(_) => false,
         }
     }
 }
@@ -110,16 +115,11 @@ impl HandleBindingFailure {
 }
 
 impl DelegationFailure {
+    /// As on EVM, a delegation that is not live is an ACL denial a later attempt may clear.
     pub fn is_recoverable(&self) -> bool {
         match self {
-            // As on EVM, a delegation that is not live is an ACL denial a later attempt may clear.
-            Self::Absent { .. } | Self::NotLive { .. } => true,
-            Self::ForeignOwner { .. }
-            | Self::NotADelegationRecord { .. }
-            | Self::TupleMismatch { .. } => false,
-            Self::NoLiveDelegation { exact, wildcard } => {
-                exact.is_recoverable() || wildcard.is_recoverable()
-            }
+            Self::NoLiveDelegation { .. } => true,
+            Self::InvalidHostRecord(_) => false,
         }
     }
 }

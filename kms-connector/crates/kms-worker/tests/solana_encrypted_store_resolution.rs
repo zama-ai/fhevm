@@ -151,7 +151,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 
     assert!(matches!(
         failure,
-        EncryptedStoreFailure::WrongAccountType { account_key } if account_key == encrypted_store.account_key
+        EncryptedStoreFailure::NotAnEncryptedStore { account_key } if account_key == encrypted_store.account_key
     ));
 }
 
@@ -263,7 +263,10 @@ fn an_encrypted_store_with_a_truncated_body_is_rejected() {
     )
     .expect_err("a body that does not decode is not an encrypted store");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
 }
 
 /// An account holding only a discriminator is host-owned and of the right type, and still has no
@@ -284,7 +287,10 @@ fn an_encrypted_store_holding_only_its_discriminator_is_rejected() {
     )
     .expect_err("a discriminator alone is not an encrypted store");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
 }
 
 /// An account whose peak count does not match its leaf count is the host program's own
@@ -301,7 +307,10 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
     )
     .expect_err("two peaks for one leaf is not a valid state");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
     assert!(
         !AuthorizationFailure::EncryptedStore {
             index: 0,

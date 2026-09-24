@@ -1,14 +1,17 @@
 //! Delegation records. A delegated entry needs a live `delegator → signer` record: either the row
 //! for the encrypted store's application `(program, scope)`, or the delegator's wildcard row, as
-//! with the EVM ACL's wildcard delegation. Neither row can veto the other, so narrowing a
-//! delegation to fewer applications means revoking the wildcard row too.
+//! with the EVM ACL's wildcard delegation. A dead row cannot veto a live one, so narrowing a
+//! delegation to fewer applications means revoking the wildcard row too. A row the host program
+//! could not have written fails the entry whatever the other row says.
 //!
 //! Live means `expires_at` is after the Unix time of the deciding read's Clock, as EVM's
-//! `expirationDate > block.timestamp`. A revoked row holds 0, so it reads like one never granted.
+//! `expirationDate > block.timestamp`. A revoked row holds 0, so it authorizes no more than a row
+//! never granted.
 //! The record's `delegation_counter` is not checked: pinning it would invalidate in-flight
 //! requests on every unrelated delegation update.
 
 use super::SolanaPubkeyBytes;
+use super::failure::InvalidHostRecord;
 use super::snapshot::{ObservedRow, ObservedRows};
 use zama_solana_acl::{EncryptedStore, WILDCARD_APP};
 
@@ -20,7 +23,8 @@ pub enum AuthorizedRow {
 }
 
 /// Checks that `delegator` has a live delegation to `delegate` in the application of `store`, at
-/// the Clock of the read of `rows`.
+/// the Clock of the read of `rows`. Both rows are judged first: an invalid row fails the entry
+/// even when the other is live.
 pub fn check_delegation(
     rows: &ObservedRows,
     program_id: SolanaPubkeyBytes,
@@ -28,87 +32,83 @@ pub fn check_delegation(
     delegate: SolanaPubkeyBytes,
     store: &EncryptedStore,
 ) -> Result<AuthorizedRow, DelegationFailure> {
-    let check = |row, app_program, app_scope| {
-        check_row(
+    let judge = |row, app_program, app_scope| {
+        judge_row(
             row,
             program_id,
             rows.now,
             [delegator, delegate, app_program, app_scope],
         )
     };
-    let Err(exact) = check(&rows.exact, store.program, store.scope) else {
-        return Ok(AuthorizedRow::Exact);
-    };
-    let Err(wildcard) = check(&rows.wildcard, WILDCARD_APP, WILDCARD_APP) else {
-        return Ok(AuthorizedRow::Wildcard);
-    };
-    Err(DelegationFailure::NoLiveDelegation {
-        exact: Box::new(exact),
-        wildcard: Box::new(wildcard),
-    })
+    let exact = judge(&rows.exact, store.program, store.scope)?;
+    let wildcard = judge(&rows.wildcard, WILDCARD_APP, WILDCARD_APP)?;
+    match (exact, wildcard) {
+        (None, _) => Ok(AuthorizedRow::Exact),
+        (_, None) => Ok(AuthorizedRow::Wildcard),
+        (Some(exact), Some(wildcard)) => Err(DelegationFailure::NoLiveDelegation {
+            exact,
+            wildcard,
+            now: rows.now,
+        }),
+    }
 }
 
-/// Why the row the Connector derived for `[delegator, delegate, program, scope]` does not
-/// authorize at `now`, if it does not.
-fn check_row(
+/// Why the row the Connector derived for `[delegator, delegate, program, scope]` is dead at `now`,
+/// or `None` when it is live.
+fn judge_row(
     row: &ObservedRow,
     program_id: SolanaPubkeyBytes,
     now: u64,
-    tuple: [SolanaPubkeyBytes; 4],
-) -> Result<(), DelegationFailure> {
-    let account_key = row.key;
+    [delegator, delegate, app_program, app_scope]: [SolanaPubkeyBytes; 4],
+) -> Result<Option<DeadRow>, InvalidHostRecord> {
     let Some(account) = row
         .account
         .as_ref()
         .filter(|account| !account.is_uninitialized_pda())
     else {
-        return Err(DelegationFailure::Absent { account_key });
+        return Ok(Some(DeadRow::Absent));
+    };
+    let invalid = InvalidHostRecord {
+        account_key: row.key,
     };
     if account.owner != program_id {
-        return Err(DelegationFailure::ForeignOwner {
-            account_key,
-            owner: account.owner,
-        });
+        return Err(invalid);
     }
-    let Ok(record) = zama_solana_acl::decode_user_decryption_delegation(&account.data) else {
-        return Err(DelegationFailure::NotADelegationRecord { account_key });
-    };
-    let [delegator, delegate, app_program, app_scope] = tuple;
-    if !record.names(&delegator, &delegate, &app_program, &app_scope) {
-        return Err(DelegationFailure::TupleMismatch { account_key });
+    let record =
+        zama_solana_acl::decode_user_decryption_delegation(&account.data).map_err(|_| invalid)?;
+    if !record.names(&delegator, &delegate, &app_program, &app_scope) || record.bump != row.bump {
+        return Err(invalid);
     }
-    if record.bump != row.bump {
-        return Err(DelegationFailure::NotADelegationRecord { account_key });
+    Ok((!record.is_live_at(now)).then_some(DeadRow::NotLive {
+        expires_at: record.expires_at,
+    }))
+}
+
+/// Why one delegation row does not authorize. A revoked row holds 0, so it is `NotLive`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DeadRow {
+    Absent,
+    NotLive { expires_at: u64 },
+}
+
+impl std::fmt::Display for DeadRow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Absent => f.write_str("absent"),
+            Self::NotLive { expires_at } => write!(f, "expires at {expires_at}"),
+        }
     }
-    if !record.is_live_at(now) {
-        return Err(DelegationFailure::NotLive {
-            expires_at: record.expires_at,
-            now,
-        });
-    }
-    Ok(())
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum DelegationFailure {
-    #[error("no delegation record at {account_key:?}")]
-    Absent { account_key: SolanaPubkeyBytes },
-    #[error("delegation record {account_key:?} is owned by {owner:?}")]
-    ForeignOwner {
-        account_key: SolanaPubkeyBytes,
-        owner: SolanaPubkeyBytes,
-    },
-    #[error("account {account_key:?} is not a canonical delegation record")]
-    NotADelegationRecord { account_key: SolanaPubkeyBytes },
-    #[error("delegation record {account_key:?} names a different tuple")]
-    TupleMismatch { account_key: SolanaPubkeyBytes },
-    /// Expired or revoked; a revoked row holds 0.
-    #[error("delegation is not live: expires at {expires_at}, now {now}")]
-    NotLive { expires_at: u64, now: u64 },
     /// Neither row authorizes, so both reasons are reported.
-    #[error("no live delegation: application row: {exact}; wildcard row: {wildcard}")]
+    #[error("no live delegation at {now}: application row {exact}; wildcard row {wildcard}")]
     NoLiveDelegation {
-        exact: Box<DelegationFailure>,
-        wildcard: Box<DelegationFailure>,
+        exact: DeadRow,
+        wildcard: DeadRow,
+        now: u64,
     },
+    #[error(transparent)]
+    InvalidHostRecord(#[from] InvalidHostRecord),
 }

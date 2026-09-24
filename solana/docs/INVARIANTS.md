@@ -312,7 +312,8 @@ delegation record for the encrypted store's application `(program, scope)`, the 
 (`0xff×32` in both positions) and the Clock in the deciding read, which a node behind the first read refuses
 (`minContextSlot`). Either row authorizes the delegate if its
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
-A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
+A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
+the other row says. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
 Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
 `delegate_for_user_decryption` as a top-level instruction (`WalletDelegationThroughCpi`). A wallet's signature reaches

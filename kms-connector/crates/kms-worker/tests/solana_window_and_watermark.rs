@@ -20,7 +20,7 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::AuthorizationFailure,
+    failure::{AuthorizationFailure, InvalidHostRecord},
     pipeline::{AuthorizationContext, authorize_request},
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
     watermark::{
@@ -152,7 +152,7 @@ fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
     let failure =
         watermark_in(&world, user).expect_err("only an empty account reads as never written");
 
-    assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
+    assert!(matches!(failure, WatermarkFailure::InvalidHostRecord(_)));
 }
 
 /// A stored watermark is read as written.
@@ -212,7 +212,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::RecordNamesAnotherUser { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
@@ -229,7 +229,7 @@ fn an_account_that_is_not_an_invalidation_record_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::NotAnInvalidationRecord { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
@@ -244,7 +244,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
 
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
 
-    assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
+    assert!(matches!(failure, WatermarkFailure::InvalidHostRecord(_)));
 }
 
 /// A record storing a bump other than the canonical one for its address is not the record this
@@ -268,7 +268,7 @@ fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::NotAnInvalidationRecord { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
