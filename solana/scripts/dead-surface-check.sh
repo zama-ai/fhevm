@@ -501,8 +501,9 @@ if run_check 3; then
   # before a `u` so that "evaluate" and "evaluation" stay out of it, and it is case-sensitive so the
   # CamelCase forms are distinguishable at all. Exempt: the frozen tag, the helpers named after it,
   # the test whose subject is the derivation of that tag, and the shell builtin `eval`.
+  # `eval "$...` is the shell builtin, which main's consensus scripts under test-suite use.
   check_alias 'eval — say execution; evaluate is the verb' all \
-    'FHE_eval|computed_eval_|eval_handle_derivation|use `eval' --case-sensitive \
+    'FHE_eval|computed_eval_|eval_handle_derivation|use `eval|eval "\$' --case-sensitive \
     -E '(^|[^A-Za-z0-9])eval([^u]|$)|Eval[A-Z]'
   # Bare `born`, not just `born[-_ ]public`: the narrow pattern could not match the spellings that
   # actually survived — `*born* public` (asterisks between the two words), "are born with", "born in
@@ -608,8 +609,10 @@ if run_check 3; then
   # persistent <- durable. The proof store's durability vocabulary (a durably ingested checkpoint) is
   # a different axis from value persistence. Database commits and lifecycle markers use that
   # durability sense too; Solana's durable nonce is a protocol term.
+  # The consensus tooling from main uses the word in the same written-to-disk sense for its canary
+  # journal.
   check_alias 'durable — a persistent value is persistent' all \
-    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable' \
+    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal' \
     -iE '\bdurable\b|\bdurably\b'
   # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
   # the only ones matched, and "supersession" went on naming the thing in about thirty places —
