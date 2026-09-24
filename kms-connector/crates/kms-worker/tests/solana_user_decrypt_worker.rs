@@ -39,7 +39,9 @@ use kms_worker::core::{
         HostChainAclBackend, KMSGenerationProcessor, KmsClient, ProcessingErrorKind,
         ProtocolConfigProcessor, RequestCheckError, RequestCheckKind,
     },
-    solana::{failure::AuthorizationFailure, pause::PauseFailure, pipeline::authorize_request},
+    solana::{
+        failure::AuthorizationFailure, pipeline::authorize_request, watermark::WatermarkFailure,
+    },
 };
 use mocktail::{Request, matchers::Matcher, server::MockServer};
 use prost::Message;
@@ -95,19 +97,22 @@ impl Scenario {
             encrypted_store,
             chain_id,
         };
-        scenario.serve_host(false);
+        scenario.serve_host(None);
         scenario
             .host
             .serve_proofs(&[(query, scenario.encrypted_store.outcome(&query))]);
         scenario
     }
 
-    /// The first read of a direct request: the pause switch, the signer's invalidation record
-    /// (absent), and the entry's encrypted store.
-    fn serve_host(&mut self, paused: bool) {
+    /// The first read of a direct request: the signer's invalidation record, holding
+    /// `watermark` if the signer ever invalidated their permits, and the entry's encrypted store.
+    fn serve_host(&mut self, watermark: Option<u64>) {
+        let victim = self.victim.pubkey();
         self.host.serve_accounts(&[
-            (host_config_address().0, Some(host_config_account(paused))),
-            (invalidation_address(self.victim.pubkey()).0, None),
+            (
+                invalidation_address(victim).0,
+                watermark.map(|watermark| invalidation_account(victim, watermark)),
+            ),
             (
                 self.encrypted_store.account_key,
                 Some(self.encrypted_store.account()),
@@ -269,7 +274,7 @@ async fn a_handle_of_another_chain_fails_the_signature() {
     let wallet = Wallet::new(1);
     let live = handle(0x31, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let (mut gateway, blob) = RequestBuilder::new(&wallet)
@@ -291,8 +296,8 @@ async fn a_handle_of_another_chain_fails_the_signature() {
     assert!(!failure.is_recoverable());
 }
 
-/// A poll of a request already sent to the KMS authorizes it again, so a host paused after the
-/// send stops it.
+/// A poll of a request already sent to the KMS authorizes it again, so permits the signer
+/// invalidates after the send stop it.
 #[tokio::test]
 async fn a_poll_rechecks_the_host() {
     let mut scenario = Scenario::new().await;
@@ -304,7 +309,7 @@ async fn a_poll_rechecks_the_host() {
         .await
         .expect("the victim's permit authorizes the request");
 
-    scenario.serve_host(true);
+    scenario.serve_host(Some(Utc::now().timestamp() as u64));
     let mut event = protocol_event(request);
     event.already_sent = true;
     let error = scenario
@@ -312,11 +317,13 @@ async fn a_poll_rechecks_the_host() {
         .await
         .process(&mut event)
         .await
-        .expect_err("the poll must reject the newly paused host");
+        .expect_err("the poll must reject the newly invalidated permit");
 
     assert!(matches!(
         error.source.downcast_ref::<AuthorizationFailure>(),
-        Some(AuthorizationFailure::Pause(PauseFailure::Paused))
+        Some(AuthorizationFailure::Watermark(
+            WatermarkFailure::Invalidated { .. }
+        ))
     ));
     assert!(event.already_sent);
 }

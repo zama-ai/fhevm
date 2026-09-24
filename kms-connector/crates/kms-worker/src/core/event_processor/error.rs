@@ -1,6 +1,6 @@
 use crate::core::solana::{
     delegation::DelegationFailure, encrypted_store::EncryptedStoreFailure,
-    failure::AuthorizationFailure, handle_binding::HandleBindingFailure, pause::PauseFailure,
+    failure::AuthorizationFailure, handle_binding::HandleBindingFailure,
     public_decrypt::PublicDecryptFailure, watermark::WatermarkFailure,
 };
 use crate::monitoring::metrics::REQUEST_CHECK_ERRORS;
@@ -235,8 +235,7 @@ impl From<AuthorizationFailure> for RequestCheckError {
             AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            AuthorizationFailure::Pause(PauseFailure::UnreadAccount(_))
-            | AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(_))
+            AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(_))
             | AuthorizationFailure::EncryptedStore {
                 source: EncryptedStoreFailure::UnreadAccount(_),
                 ..
@@ -249,8 +248,7 @@ impl From<AuthorizationFailure> for RequestCheckError {
                 source: HandleBindingFailure::HistoryIncomplete,
                 ..
             } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
-            AuthorizationFailure::Pause(_)
-            | AuthorizationFailure::Watermark(_)
+            AuthorizationFailure::Watermark(_)
             | AuthorizationFailure::EncryptedStore { .. }
             | AuthorizationFailure::Scope { .. }
             | AuthorizationFailure::HandleBinding { .. }
@@ -318,11 +316,6 @@ mod tests {
     #[case::program_id_mismatch(
         AuthorizationFailure::ProgramIdMismatch { signed: [1; 32], own: [2; 32] },
         ErrorCode::UserSignatureRejected,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unread_host_config(
-        AuthorizationFailure::Pause(PauseFailure::UnreadAccount(UNREAD)),
-        ErrorCode::Unprocessable,
         ProcessingErrorKind::Irrecoverable
     )]
     #[case::unread_watermark(

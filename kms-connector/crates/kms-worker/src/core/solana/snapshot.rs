@@ -1,11 +1,10 @@
 //! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot.
 //!
-//! The first read covers the host config, the signer's invalidation record and the named
-//! encrypted stores. A delegated request then reads the same accounts, minus the already-checked
-//! host config, plus the delegation records the first read made derivable. Every rule after the
-//! pause switch uses that second read, which must not be older than the first.
+//! The first read covers the signer's invalidation record and the named encrypted stores. A
+//! delegated request then reads the same accounts plus the delegation records the first read made
+//! derivable. Every rule uses that second read, which must not be older than the first.
 
-use super::{SolanaPubkeyBytes, host_config_address, permit_invalidation_address};
+use super::{SolanaPubkeyBytes, permit_invalidation_address};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
@@ -130,30 +129,16 @@ pub fn plan_first_read(
     program_id: SolanaPubkeyBytes,
 ) -> SnapshotKeys {
     let signer = *request.permit().user_address().as_bytes();
-    let (host_config_key, _) = host_config_address(program_id);
     let (watermark_key, _) = permit_invalidation_address(program_id, signer);
     let encrypted_stores = request.handles().iter().map(|entry| entry.encrypted_store);
-    SnapshotKeys::new(
-        [host_config_key, watermark_key]
-            .into_iter()
-            .chain(encrypted_stores),
-    )
+    SnapshotKeys::new(std::iter::once(watermark_key).chain(encrypted_stores))
 }
 
 pub fn plan_second_read(
     first: &SnapshotKeys,
-    program_id: SolanaPubkeyBytes,
     delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
 ) -> SnapshotKeys {
-    let (host_config_key, _) = host_config_address(program_id);
-    SnapshotKeys::new(
-        first
-            .as_slice()
-            .iter()
-            .copied()
-            .filter(|key| key != &host_config_key)
-            .chain(delegation_keys),
-    )
+    SnapshotKeys::new(first.as_slice().iter().copied().chain(delegation_keys))
 }
 
 #[derive(Clone)]

@@ -4,7 +4,6 @@ use super::SolanaPubkeyBytes;
 use super::delegation::DelegationFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
-use super::pause::PauseFailure;
 use super::proof::ProofReadError;
 use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
@@ -25,8 +24,6 @@ pub enum AuthorizationFailure {
     },
     #[error("host state: {0}")]
     Snapshot(#[from] SnapshotError),
-    #[error("host pause: {0}")]
-    Pause(#[from] PauseFailure),
     #[error("invalidation: {0}")]
     Watermark(#[from] WatermarkFailure),
     #[error("entry {index}: encrypted store: {source}")]
@@ -56,7 +53,6 @@ impl AuthorizationFailure {
             Self::Signature(_) | Self::ProgramIdMismatch { .. } => false,
             Self::Window(source) => source.is_recoverable(),
             Self::Snapshot(_) => true,
-            Self::Pause(source) => source.is_recoverable(),
             Self::Watermark(source) => source.is_recoverable(),
             Self::EncryptedStore { source, .. } => source.is_recoverable(),
             Self::Scope { .. } => false,
@@ -81,16 +77,6 @@ impl WatermarkFailure {
             | Self::NotAnInvalidationRecord { .. }
             | Self::RecordNamesAnotherUser { .. }
             | Self::ForeignOwner { .. } => false,
-        }
-    }
-}
-
-impl PauseFailure {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::Paused | Self::Absent { .. } => true,
-            Self::ForeignOwner { .. } | Self::NotAHostConfig { .. } => false,
-            Self::UnreadAccount(_) => false,
         }
     }
 }

@@ -287,18 +287,13 @@ RPC provider cannot truncate the way it can truncate logs. A reader therefore se
 instruction data to find one (DD-044). The event only makes the change visible: authorization still comes from account
 state, never from event bytes.
 
-**36. [HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path: the production-shaped host instructions
-(`fhe_execute`, `make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
-connector user decryption — the KMS connector's authorization reads the `HostConfig` PDA in the account read it already
-makes and refuses while paused (transiently: the same request authorizes once the pause is lifted). One switch, on the
-host, and no gateway-side pause is involved. The connector decodes the singleton through `zama-solana-acl`'s shared
-decoder, the same crate the program's own `shared_crate_decoder_reads_what_the_program_serializes` test pins against its
-serializer, so the switch cannot be disarmed by layout drift. User abort levers stay open while paused, deliberately:
-`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. This
-asymmetry is deliberate. A pause stops the connector from serving delegated decryptions, so a delegator who could not
-revoke would be left with grants they can neither use nor withdraw, and a lever the operator can switch off is not the
-user's lever. Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal nothing new) and the admin
-setters, pause included.
+**36. [HOLDS]** `HostConfig.paused` freezes the production-shaped host instructions (`fhe_execute`,
+`make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f). It does not reach
+decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has its own pause: `Decryption.sol`
+`whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest` included. HTTP decryption has no
+pause on either chain, as on EVM; that gap belongs to the connector owners. User abort levers stay open while paused:
+`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. Not
+gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal nothing new) and the admin setters, pause included.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
