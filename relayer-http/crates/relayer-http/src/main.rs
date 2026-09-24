@@ -49,9 +49,17 @@ async fn main() -> ExitCode {
         }
         () = wait_for_signal() => {
             shutdown.cancel();
-            if let Err(e) = server.await {
-                error!(error = %e, "server task failed");
-                return ExitCode::FAILURE;
+            // Both layers: the task (panic, abort) and the server itself (bind or serve error).
+            match server.await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    error!(error = %e, "server failed");
+                    return ExitCode::FAILURE;
+                }
+                Err(e) => {
+                    error!(error = %e, "server task failed");
+                    return ExitCode::FAILURE;
+                }
             }
         }
     }

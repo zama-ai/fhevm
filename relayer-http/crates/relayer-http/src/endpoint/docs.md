@@ -155,7 +155,8 @@ every line of one request carries them once they are known.
 `main` cancels the process token on SIGINT or SIGTERM: `/healthz` answers 503 so Kubernetes stops routing to the
 pod, axum stops accepting connections and drains the in-flight requests, and every running aggregation ends with
 `Cancelled` (503 `shutting_down`). The drain is bounded by `call.timeout`. A client that disconnects drops its
-handler, which drops its aggregation and aborts the node calls.
+handler, which drops its aggregation and aborts the node calls. The process exits 0 only after a clean drain; a
+server or task error, before or after the signal, is logged and exits 1.
 
 ## 8. Probes
 
