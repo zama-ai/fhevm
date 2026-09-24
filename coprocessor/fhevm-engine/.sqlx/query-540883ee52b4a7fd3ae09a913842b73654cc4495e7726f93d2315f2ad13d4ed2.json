@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM public.drifted_handle\n            WHERE reason = 'ct64_mismatch' AND healed_at IS NULL AND is_contained = false",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "540883ee52b4a7fd3ae09a913842b73654cc4495e7726f93d2315f2ad13d4ed2"
+}
