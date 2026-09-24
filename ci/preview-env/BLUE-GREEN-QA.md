@@ -852,10 +852,10 @@ kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=1
 
 ### Edge case 4. The windows must line up across chains
 
-**Why it matters.** The proposal carries one block window per host chain, plus a start block for
-the gateway. They are worked out from each chain's current block rate, so they are estimates. If an
-estimate is wrong, the windows do not cover the same period of real time, and the chains can never
-agree.
+**Why it matters.** The proposal carries one block window per host chain, plus the gateway tip as
+the gateway start block. The host windows are worked out from each chain's current block rate, so
+they are estimates. If an estimate is wrong, the windows do not cover the same period of real time,
+and the chains can never agree.
 
 **What to do.** Before sending anything, print the plan. This is read-only and changes nothing:
 
