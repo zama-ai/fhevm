@@ -1,138 +1,102 @@
-# Blue/Green upgrade — QA runbook
+# Blue/Green upgrade, QA runbook
 
 How to test a coprocessor upgrade by hand in a preview environment.
 
 ---
 
-## 1. What you are testing, in plain words
+## 1. What you are testing
 
-The coprocessor is the service that does the encrypted maths. Upgrading it used to mean stopping
-it. Blue/Green lets us upgrade it **without stopping it**:
+Upgrading the coprocessor used to mean stopping it. Blue/Green upgrades it while it keeps running.
 
-- **Blue** is the old version. It is live and serving real traffic the whole time.
-- **Green** is the new version. It starts up next to Blue and does the same work in a private copy
-  of the database, without being in charge. This is called the **dry run**.
-- There are several **operators**, each running its own Blue and Green. A preview environment has
-  two. Green writes a fingerprint of its results for each block. If **all** operators produce the
-  **same** fingerprints, the upgrade is considered safe.
-- When they agree, the **cutover** happens: Green becomes live, Blue is switched off. This is one
-  database transaction and takes a moment.
-- The **window** is the block range during which all this is allowed to happen.
+- **Blue** is the old version, live and serving traffic throughout.
+- **Green** is the new version. It runs alongside Blue and redoes the same work in its own copy of
+  the database, in charge of nothing. That is the **dry run**.
+- Each **operator** runs its own Blue and Green. A preview environment has two. Green publishes a
+  fingerprint of its results per block, and the upgrade is only allowed if every operator's
+  fingerprints match.
+- On agreement the **cutover** happens in one database transaction: Green goes live, Blue stops.
+- The **window** is the block range in which all of that must happen.
 
-**Your job as QA:** run real token traffic through all of this and prove that no money is lost and
-no balance becomes unreadable. Concretely, an encrypted ERC-20 token is deployed, then transfers,
-mints and decryptions run continuously. Every balance must still decrypt to the expected number
-after the cutover.
+**Your job:** run real token traffic through it and show that no balance is lost or becomes
+unreadable. An encrypted ERC-20 is deployed, then transfers, mints and decryptions run continuously.
+Every balance must still decrypt to the right number after the cutover.
 
-**You must also test the opposite: an upgrade with no traffic at all.** A real upgrade may well
-happen on a quiet night. That case is not covered by the busy one, so it is a separate round. See
-**section 7**.
-
-### How long it takes
+An upgrade with no traffic is a separate round, see **section 7**.
 
 | Case | Time |
 | --- | --- |
-| Case A, new environment, contracts on v0.14 | ~1 h to create, then ~45 min of testing |
-| Case B, replay after a reset, contracts on v0.15 | ~25 min total |
-| Case C, the same again with no traffic | ~20 min, on top of A or B |
+| A, new environment, contracts on v0.14 | ~1 h to create, ~45 min to test |
+| B, replay after a reset, contracts on v0.15 | ~25 min |
+| C, the same with no traffic | ~20 min, on top of A or B |
 
-**Do not run two rounds at the same time in the same namespace.** They share one database.
+**Never run two rounds at once in one namespace.** They share a database.
 
 ---
 
 ## 2. Before you start
 
-You need:
-
-- `kubectl` access to the preview cluster.
-- A checkout of the repo on the branch under test.
-- These tools installed: `kubectl`, `helm`, `jq`, `yq`, `cast` (from Foundry).
-- The namespace of your environment. It looks like `fhevm-ci-<your-name>-<id>`.
-
-Find your namespace:
+You need `kubectl` access to the preview cluster, a checkout on the branch under test, and
+`kubectl`, `helm`, `jq`, `yq` and `cast` installed.
 
 ```bash
-kubectl get ns | grep fhevm-ci
+kubectl get ns | grep fhevm-ci          # find your namespace
+export NAMESPACE=fhevm-ci-<name>-<id>   # every command below assumes this
+cd /path/to/fhevm                       # all commands run from the repo root
+kubectl get pods -n $NAMESPACE | head   # check you can reach it
 ```
 
-Set it once. **Every command below assumes this is set**, so do it in each new terminal:
-
-```bash
-export NAMESPACE=fhevm-ci-<your-name>-<id>
-```
-
-Go to the repo root. All commands are run from there:
-
-```bash
-cd /path/to/fhevm
-```
-
-Check you can reach the environment:
-
-```bash
-kubectl get pods -n $NAMESPACE | head
-```
-
-You should see a list of running pods. If you see an error, stop here and fix access first.
+Set `NAMESPACE` again in each new terminal. If the last command errors, fix access before going on.
 
 ---
 
 ## 3. The scripts you will use
 
-All of them live in `ci/preview-env/scripts/bg/`. You never need to edit them.
+All in `ci/preview-env/scripts/bg/`, all take `NAMESPACE` from your environment. You never edit
+them.
 
 | Script | What it does |
 | --- | --- |
 | `bg-traffic.sh` | Deploys the test token and runs continuous traffic on it |
-| `bg-contracts.sh` | Upgrades the smart contracts from the old release to the new one |
-| `bg-stack.sh` | Upgrades relayer / KMS connector / test-suite to the new release |
-| `bg-green.sh` | Prepares and starts the Green coprocessor |
-| `bg-propose.sh` | Sends the on-chain proposal that starts the upgrade |
-| `bg-checkpoints.sh` | Runs all the checks and prints PASS / FAIL lines |
+| `bg-contracts.sh` | Upgrades the smart contracts to the new release |
+| `bg-stack.sh` | Upgrades relayer / KMS connector / test-suite |
+| `bg-green.sh` | Prepares and starts Green |
+| `bg-propose.sh` | Sends the proposal that starts the upgrade |
+| `bg-propose-raw.sh` | Same, with block numbers given literally (cases 8 to 12) |
+| `bg-checkpoints.sh` | Runs the checks and prints PASS / FAIL |
+| `bg-drift.sh` | Makes one operator publish wrong data on purpose (case 7) |
 | `bg-reset.sh` | Puts the environment back to Blue so you can run again |
 
-Every script takes `NAMESPACE` from the environment variable you exported.
-
-The checks have five phases, run at different moments:
-
-| Phase | When to run it |
-| --- | --- |
-| `baseline` | Before you change anything |
-| `window-timing` | Optional, any time after the proposal; reports block times and clock skew |
-| `cutover` | Straight after the version changes |
-| `post` | A few minutes after the cutover |
+`bg-checkpoints.sh` takes a phase: `baseline` before you change anything, `dry-run` once the window
+opens, `window-timing` any time after the proposal, `cutover` straight after the version changes,
+and `post` a few minutes later.
 
 ---
 
-## 4. One value you must know: the Green image tag
+## 4. The Green image tag
 
-Green needs to know which build of the new coprocessor to run. This is called `GCS_IMAGE_TAG`.
+Green needs to know which build to run, `GCS_IMAGE_TAG`, and the same value as `TARGET_TAG` in step
+A6. **The scripts work it out for you.** Read on only to check or override it.
 
-The coprocessor is only rebuilt when your branch changes something under `coprocessor/`. Check:
-
-```bash
-git diff --name-only $(git merge-base HEAD origin/main) HEAD | grep '^coprocessor/'
-```
-
-**Nothing printed** — use the base commit:
+The coprocessor is rebuilt only when your branch changes something under `coprocessor/`, so the tag
+is the merge-base's short SHA if it did not, and HEAD's if it did:
 
 ```bash
-git merge-base HEAD origin/main | cut -c1-7
+base=$(git merge-base HEAD origin/main)
+git diff --quiet $base HEAD -- coprocessor/ \
+  && git rev-parse --short=7 $base \
+  || git rev-parse --short=7 HEAD
 ```
 
-**Files printed** — use the tag the environment already runs:
+Pass it explicitly if your checkout is not the commit the environment was deployed from. A wrong tag
+fails to pull the image.
 
-```bash
-kubectl get deploy -n $NAMESPACE listener-1-host \
-  -o jsonpath='{.spec.template.spec.containers[0].image}' | sed 's/.*://'
-```
-
-Use that value in every `GCS_IMAGE_TAG=...` and `TARGET_TAG=...` command below. If it is wrong the
-Green migration just fails to pull the image — see *Problem 1*.
+**Do not use the `listener-1-host` tag.** The listener has its own change detection: a branch that
+touches `ci/` but not `coprocessor/` rebuilds the listener and not the coprocessor, so the tags
+differ and only the coprocessor's exists for the images being upgraded.
 
 ---
 
-## 5. CASE A — new environment, contracts on v0.14
+## 5. CASE A, new environment, contracts on v0.14
 
 Use this when the environment has just been created and the contracts are still on the **old**
 release (v0.14). This is the full path and matches what production will do.
@@ -272,7 +236,7 @@ TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-stack.sh upgrade
 **Expect:** all the KMS connector lines show the new tag.
 
 Relayer and test-suite usually stay on the old version and the command ends with a `401
-unauthorized` on their chart. **That is fine** — the connector is the one that matters, and it is
+unauthorized` on their chart. **That is fine.** The connector is the one that matters, and it is
 already upgraded by then.
 
 **Why this matters:** the old (v0.14) KMS connector checks decryption against a value recorded on
@@ -342,7 +306,7 @@ Read section 8 first so you know what this does. Then go to section 9.
 
 ---
 
-## 6. CASE B — after a reset, contracts already on v0.15
+## 6. CASE B, after a reset, contracts already on v0.15
 
 Use this when you have already run a round in this environment and want to run another. The
 contracts stay on v0.15 because **contract upgrades cannot be undone**, so this case skips the
@@ -451,155 +415,83 @@ Then read section 8 and go to section 9.
 
 ---
 
-## 7. CASE C — the same round with no traffic
+## 7. CASE C, the same round with no traffic
 
-Run this **as well as** Case A or Case B, as a separate round. It is short.
+A real upgrade may happen on a quiet night. With no traffic there is no real work for Green to
+copy, so the product injects a small **synthetic** piece of work when the window opens. This case
+checks that actually happens, a busy round would hide a broken injector completely.
 
-### Why it matters
-
-A real upgrade might happen when nothing is going on. With no traffic there is no real encrypted
-work for Green to copy, so there would be nothing to compare between operators, and on its own that
-would leave the system unable to tell a good upgrade from a bad one.
-
-The product handles this by injecting a small piece of **synthetic** work when the window opens, so
-there is always something to agree on. This case tests that this really happens. If synthetic work
-were ever broken, a busy round would hide it completely, because real traffic would paper over the
-gap.
-
-### What to do
-
-Follow Case A or Case B as normal **up to and including the snapshot**, with one change: after the
-snapshot, **do not restart the traffic loop**.
-
-So the order is:
+Follow Case A or Case B as normal up to the snapshot, then **do not restart traffic**:
 
 ```bash
-# a token and some starting balances
 bash ci/preview-env/scripts/bg/bg-traffic.sh setup
 bash ci/preview-env/scripts/bg/bg-traffic.sh start
-
-# let it run ~5 minutes only, just to create balances worth checking later
+# ~5 minutes, just to create balances worth checking later
 bash ci/preview-env/scripts/bg/bg-traffic.sh stop
 bash ci/preview-env/scripts/bg/bg-traffic.sh verify        # snapshot: every line OK
 
-# from here on, NO traffic
+# from here on, no traffic
 GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh migrate
 GCS_IMAGE_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-green.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh status        # expect: loop not running, both chains
 bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
-Confirm nothing is running before you propose:
+Then follow section 9 as usual.
 
-```bash
-bash ci/preview-env/scripts/bg/bg-traffic.sh status
-```
+**Expect:** the cutover still happens, that is what the case checks. If the version never reaches
+`v0.15.0`, that is a real bug. Afterwards the balances from before the quiet period must still
+decrypt (`bg-traffic.sh verify`, every line `OK`).
 
-**Expect:** `loop not running` for both chains.
-
-Then follow section 9 exactly as usual.
-
-### What to look for
-
-- The upgrade must still reach the cutover. **This is the whole point of the case.** If the version
-  never changes to `v0.15.0`, that is a real bug.
-- After the cutover, the balances you created before the quiet period must still decrypt:
-
-```bash
-bash ci/preview-env/scripts/bg/bg-traffic.sh verify
-```
-
-**Expect:** every line `OK`.
-
-### Optional: completely empty
-
-For the strictest version, skip the token entirely: no `setup`, no `start`, nothing at all. Then
-propose and check that the upgrade still cuts over. There will be no balances to verify afterwards,
-so the only result is whether the cutover happened and the checkpoints passed.
+For the strictest version, skip the token entirely: no `setup`, no `start`. There is nothing to
+verify afterwards, so the only result is whether the cutover happened.
 
 ---
 
-## 8. The proposal — what it is and what it does
+## 8. The proposal, what it is and what it does
 
-This is the step that actually starts the upgrade. It is worth understanding before you send it.
-
-### What it is
-
-One transaction on the **gateway chain**, sent to the **ProtocolConfig** contract, calling
-`proposeCoprocessorUpgrade`. In the preview environment the script signs it for you with the ACL
-owner key, taken from the environment's own wallet list. In production a person with that key
-signs it.
-
-### What is inside it
+One transaction on the **gateway chain**, to the **ProtocolConfig** contract, calling
+`proposeCoprocessorUpgrade`. The script signs it with the ACL owner key from the environment's
+wallet list; in production a person with that key signs it.
 
 | Field | Meaning |
 | --- | --- |
-| Proposal id | A number identifying this upgrade. It must not be zero, and it must be **different from the last completed one**. It does not have to be higher. The script uses the current time in seconds, so this is handled automatically. |
-| Target version | The version Green will become, for example `v0.15.0`. |
-| One window per host chain | A start block and an end block, for Sepolia and for Amoy. |
-| Gateway start block | The matching start point on the gateway chain. |
+| Proposal id | Identifies this upgrade. Not zero, and different from the last completed one, though it need not be higher. The script uses unix time, so this is automatic. |
+| Target version | What Green will become, e.g. `v0.15.0`. Must match the release Green is running, or the round is refused. |
+| One window per host chain | A start and end block, for each host chain. |
+| Gateway start block | The matching start point on the gateway. |
 
-The windows are worked out from the current block times of each chain, so that all chains and the
-gateway start at roughly the same moment. The script prints the difference, called the skew,
-usually a few seconds.
+A new proposal replaces an older one only if it arrives in a **later block** and the previous
+attempt failed or completed. While an attempt is in progress a new one is refused with
+`another proposal is active, completed, or newer`.
 
-**When a new proposal is allowed to replace an older one.** The operators accept it only if it
-arrives in a **later block** than the previous one, and the previous attempt either failed or
-completed with a different id. While an attempt is still in progress, a new proposal is refused
-with `another proposal is active, completed, or newer`. Sending the exact same proposal again is
-ignored, and sending the same id with different windows is rejected.
-
-### What it does NOT do
-
-**It does not upgrade anything by itself.** The contract only records the proposal and emits an
-event. There is no voting, no on-chain progress tracking, and no central coordinator. Everything
-after this point happens inside each operator, independently.
+**The contract records the proposal and emits an event, nothing more.** No voting, no on-chain
+progress, no coordinator. Everything after that happens inside each operator independently.
 
 ### What happens after you send it
 
-1. Each operator's Green stack sees the event and writes one row per host chain into a table called
-   `upgrade_state`, in state `UpgradeActivated`. Nothing else happens yet.
-2. When a chain reaches its start block, Green starts the **dry run** on that chain, and the state
-   becomes `DryRunStarted`. Green also injects a small **synthetic** piece of work, so there is
-   always something to compare even if real traffic is quiet.
-3. Green computes a fingerprint of its results for each block and publishes it.
-4. The **consensus detector** on each operator collects every operator's fingerprints and compares
-   them. If they all match, it signals agreement.
-5. On agreement, the **upgrade controller** performs the cutover in a single database transaction:
-   Green's data is merged into the main schema, the temporary Green copy is dropped, the version is
-   set to the new one, and Blue is paused.
-6. **If the operators disagree, nothing happens.** Blue stays live and keeps serving. The proposal
-   simply expires at the end block. You fix the problem and propose again with a new id. This is
-   the whole point of the design: a bad upgrade cannot land.
+1. Each operator's Green writes one `upgrade_state` row per host chain, state `UpgradeActivated`.
+2. At the start block, Green begins the **dry run** on that chain (`DryRunStarted`) and injects a
+   small synthetic piece of work, so there is something to compare even with no traffic.
+3. Green publishes a fingerprint of its results per block; the **consensus detector** on each
+   operator compares everyone's.
+4. On unanimous agreement the **upgrade controller** cuts over in one transaction: Green's data
+   merges into the main schema, the Green copy is dropped, the version moves, Blue is paused.
+5. **On disagreement nothing happens.** Blue keeps serving, the proposal expires at the end block,
+   and you fix the cause and propose again. A bad upgrade cannot land.
 
-### Timing you should expect
+### Timing
 
-- The window starts **5 minutes** after you send the proposal. That is a deliberate lead time.
-- The window is allowed to last **5 hours**. That is the deadline, **not** how long it takes.
-- In practice the cutover happens **within about a minute** of the window opening, because the
-  operators agree quickly.
+The window opens 5 minutes after you send, and is allowed to last 5 hours, that is a deadline, not
+a duration. In practice the cutover lands within about a minute of the window opening, so a longer
+`WINDOW_DURATION` costs nothing.
 
-So the useful summary is: 5 minutes of waiting, then everything happens in about a minute.
-
-### Preview it without sending
-
-You can print the whole plan, including the windows and the skew, without touching the chain:
-
-```bash
-bash ci/preview-env/scripts/bg/bg-propose.sh calldata
-```
-
-This is safe and read-only. It takes a few minutes because it starts a pod that compiles the
-contracts. Use it if you want to check the timing before committing.
-
-### Overriding the task parameters
+### Overriding the parameters
 
 `bg-propose.sh` wraps two hardhat tasks in `host-contracts`
-(`task:buildProposeCoprocessorUpgradeCalldata` for `calldata`,
-`task:proposeCoprocessorUpgrade` for `send`), filling in the RPCs, addresses and signing key from
-the namespace. For the task itself — the DAO path, failure modes, chain set — see
+(`task:buildProposeCoprocessorUpgradeCalldata` for `calldata`, `task:proposeCoprocessorUpgrade` for
+`send`). For the tasks themselves see
 [`host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md`](../../host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md).
-
-A normal round needs no overrides. To test something else:
 
 | Env var | Task parameter | Default |
 | --- | --- | --- |
@@ -611,33 +503,40 @@ A normal round needs no overrides. To test something else:
 | `TIMEOUT_SECS` | wrapper wait | `900` |
 
 ```bash
-# override a parameter
-WINDOW_DURATION=2m bash ci/preview-env/scripts/bg/bg-propose.sh send
+WINDOW_DURATION=20m bash ci/preview-env/scripts/bg/bg-propose.sh send
 
-# pass anything else straight to the task
+# anything else goes straight to the task
 bash ci/preview-env/scripts/bg/bg-propose.sh send -- --use-internal-proxy-address true
 ```
-
-A longer `WINDOW_DURATION` does **not** delay the cutover, which fires as soon as the operators
-agree.
 
 ---
 
 ## 9. Sending the proposal, the window, and the cutover
 
-Same for both cases. **Read it through before you start, the interesting part is short.**
+Same for both cases.
 
 ### Step 1. Turn on burst traffic, then send it
 
-The window is only open for about a minute. At the normal rate of one transaction per minute per
-chain, often nothing at all is written while it is open. Speed the loop up first:
+The window is open for about a minute, and at the normal rate of one transaction per minute per
+chain often nothing is written while it is. Speed the loop up first:
 
 ```bash
 bash ci/preview-env/scripts/bg/bg-traffic.sh burst on
 ```
 
 **Expect:** `burst on (10s between steps)` for each chain. The loop re-reads this every step, so it
-takes effect immediately without restarting anything. Turn it off again in step 5.
+takes effect immediately without restarting anything. Turn it off again in step 4.
+
+Preview what you are about to send. This is read-only:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-propose.sh calldata
+```
+
+Check every host chain is listed with a measured block time. **`block-time sampling failed` is the
+only thing worth stopping for**, the tool could not measure a chain and guessed, so the window may
+land far from where you asked. Ignore `start skew`: it is rounding from turning a time into a whole
+block number, so it is always about half a block time, which on the idle gateway is minutes.
 
 Then send the proposal:
 
@@ -645,17 +544,9 @@ Then send the proposal:
 bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
-**Expect:** a report of the windows and skew, then
-`Broadcast proposeCoprocessorUpgrade ... (tx: 0x...)`.
-
-It takes a few minutes because it starts a pod that compiles the contracts. The command then waits
-until the dry run has started on every chain.
-
-Make sure traffic is still running while all this happens:
-
-```bash
-bash ci/preview-env/scripts/bg/bg-traffic.sh status
-```
+**Expect:** `Broadcast proposeCoprocessorUpgrade ... (tx: 0x...)`. It takes a few minutes, it
+starts a pod that compiles the contracts, then waits until the dry run has started on every chain.
+Leave traffic running throughout.
 
 ### Step 2. Watch the upgrade state
 
@@ -670,19 +561,13 @@ watch -n 5 "kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
 
 You will see it move through these stages:
 
-1. `UpgradeActivated`, `anchors` 0 — the proposal arrived. Lasts about 5 minutes.
-2. `DryRunStarted`, `anchors` becomes 1 on each chain — the window is open. **This is your moment.**
-3. `LIVE` / `completed` — the cutover has happened.
+1. `UpgradeActivated`, `anchors` 0, the proposal arrived. Lasts about 5 minutes.
+2. `DryRunStarted`, `anchors` becomes 1 on each chain. The window is open, and this is your moment.
+3. `LIVE` / `completed`, the cutover has happened.
 
-### Step 3. Check the window timing (optional)
+### Step 3. Wait for the cutover
 
-```bash
-bash ci/preview-env/scripts/bg/bg-checkpoints.sh window-timing
-```
-
-Reports each chain's block times and how much of the window is left. Not time-critical.
-
-### Step 4. Wait for the cutover
+`bg-checkpoints.sh window-timing` reports block times and how much of the window is left, any time.
 
 Instead of watching, you can let the script wait for you:
 
@@ -701,7 +586,7 @@ kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
 
 **Expect:** `v0.15.0`. Before the cutover it says `0.14.0`.
 
-### Step 5. Turn burst off and confirm the cutover
+### Step 4. Turn burst off and confirm the cutover
 
 The window is closed, so put the traffic loop back to its normal rate:
 
@@ -718,7 +603,7 @@ bash ci/preview-env/scripts/bg/bg-checkpoints.sh cutover
 **Expect:** `cutover: all checks passed`. This confirms Green is live, Blue is paused, and the
 temporary Green database copy was removed.
 
-### Step 6. Check the system is healthy after the cutover
+### Step 5. Check the system is healthy after the cutover
 
 ```bash
 bash ci/preview-env/scripts/bg/bg-checkpoints.sh post
@@ -726,7 +611,7 @@ bash ci/preview-env/scripts/bg/bg-checkpoints.sh post
 
 **Expect:** `post: all checks passed`.
 
-### Step 7. THE MAIN TEST — every balance must still decrypt
+### Step 6. THE MAIN TEST, every balance must still decrypt
 
 ```bash
 bash ci/preview-env/scripts/bg/bg-traffic.sh stop
@@ -746,7 +631,7 @@ bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 
 Every balance handle the round wrote is decrypted here, not just the three current ones. Lines
 marked `[in upgrade window, before the flip]` are the handles written after the window opened and
-before the cutover completed — those are the ones a cutover can damage, and they are superseded
+before the cutover completed, those are the ones a cutover can damage, and they are superseded
 within seconds, so nothing else ever reads them again.
 
 This takes a few minutes: each handle is a separate user decryption.
@@ -760,23 +645,20 @@ investigated.
 
 ## 10. What a successful round looks like
 
-All of these must be true:
+Tick all of these before calling a round good.
 
-- [ ] `baseline` passed before you started.
-- [ ] Snapshot 1 (`verify` before the upgrade): every line `OK`.
-- [ ] Contracts upgraded without error — **Case A only**.
-- [ ] Relayer / KMS connector / test-suite on the new version **before** the cutover.
-- [ ] Green started, all its pods `Running` with 0 restarts, including the consensus detector.
-- [ ] Snapshot 2: every line `OK` — **Case A only**.
-- [ ] Traffic was running during the whole window, with burst on — **Case A and B**.
-- [ ] No traffic was running during the window, and the cutover still happened — **Case C**.
+- [ ] `baseline` passed, step A2 / B4.
+- [ ] `verify` before anything changed: every line `OK`, step A4 / B6.
+- [ ] Contracts upgraded without error, step A5, **Case A only**.
+- [ ] Relayer / KMS connector / test-suite on the new version **before** the cutover, step A6 / B5.
+- [ ] Green started, all pods `Running` with 0 restarts, consensus detector included, step A7 / B7.
+- [ ] `verify` again after the contract upgrade: every line `OK`, step A8, **Case A only**.
+- [ ] Traffic ran through the whole window with burst on, **Case A and B**.
+- [ ] No traffic ran during the window and the cutover still happened, **Case C**.
 - [ ] Version changed to `v0.15.0`.
-- [ ] `cutover` passed.
-- [ ] `post` passed.
-- [ ] Final `verify`: every line `OK` on both chains, including the handles marked
+- [ ] `cutover` and `post` both passed.
+- [ ] Final `verify`: every line `OK` on both chains, including handles marked
       `[in upgrade window, before the flip]`.
-
-If all of these are ticked, the upgrade is good.
 
 ---
 
@@ -789,6 +671,10 @@ Run one edge case per round. If you combine them and something fails, you will n
 caused it.
 
 ### Edge case 1. A balance created seconds before the cutover
+
+**Run this during case 5's round**, it is something you watch while a cutover happens, not a round
+of its own. Send case 5's proposal, keep traffic running, and do the checks below as the switch
+approaches.
 
 **Why it matters.** This is the riskiest moment of the round. Blue computes a ciphertext, uploads
 it to S3, and records it on the gateway. Moments later Green takes over and uploads its own copy to
@@ -815,10 +701,14 @@ it and leave the environment running.
 
 ### Edge case 2. Traffic that never stops
 
+**Run this during case 5's round too.** Cases 1, 2 and 5 are one round watched three ways: case 5
+checks the round completes, case 1 that a balance written just before the switch survives it, case 2
+that the traffic never stalls.
+
 **Why it matters.** In production nobody pauses the system to upgrade it. The proposal, the window
 and the cutover all have to work while transactions keep arriving.
 
-**What to do.** Start traffic before you send the proposal, and leave it running until step 7.
+**What to do.** Start traffic before you send the proposal, and leave it running until step 6.
 Check the counter before and after:
 
 ```bash
@@ -839,45 +729,32 @@ wait for it rather than going ahead without it.
 
 ```bash
 kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=0
-bash ci/preview-env/scripts/bg/bg-propose.sh send
+WINDOW_DURATION=20m bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
-**Expect:** no cutover. The version stays on `v0.14` for as long as that worker is off.
+**`WINDOW_DURATION=20m` matters.** The default is 5h, and a failure case only reaches its final
+state after the window closes, so without it you wait five hours. Use it for every case below that
+is meant to fail.
 
-Then turn it back on, and the round should finish normally:
+**Run one proposal at a time.** `bg-propose.sh` uses fixed names for the pod and Secret it creates,
+so starting a second one before the first has exited makes the first's cleanup delete the second's
+resources. It shows up as `CreateContainerConfigError` and `timed out waiting for the condition`,
+which looks like a broken environment but is the collision. Wait for the script to return.
+
+**Expect:** no cutover. Both operators reach `DryRunStarted`, readiness does not depend on the
+worker, but operator 2 can then produce nothing to agree on, so the window closes and the attempt
+ends `PAUSED` / `failed` with `unanimity_consensus_timeout`. The version stays on `v0.14`.
+
+Turn the worker back on afterwards:
 
 ```bash
 kubectl scale deploy -n "$NAMESPACE" coprocessor-2-gcs-tfhe-worker --replicas=1
 ```
 
-### Edge case 4. The windows must line up across chains
+This does **not** revive the failed attempt, that one is over. It makes the environment usable
+again, and the *next* proposal is the one that completes. That is exactly case 5.
 
-**Why it matters.** The proposal carries one block window per host chain, plus a start block for
-the gateway. They are worked out from each chain's current block rate, so they are estimates. If an
-estimate is wrong, the windows do not cover the same period of real time, and the chains can never
-agree.
-
-**What to do.** Before sending anything, print the plan. This is read-only and changes nothing:
-
-```bash
-bash ci/preview-env/scripts/bg/bg-propose.sh calldata
-```
-
-Look at the **Cross-chain alignment** part of the output.
-
-**Expect:** a start skew of a few seconds — a healthy two-chain round shows about 14s.
-
-`WARN: observed block time drifted >20% from fallback` is normal, ignore it. A skew of minutes, or
-`block-time sampling failed`, means the windows may not overlap: report it and do not send the
-proposal.
-
-After sending, check the real blocks matched the estimate:
-
-```bash
-bash ci/preview-env/scripts/bg/bg-checkpoints.sh window-timing
-```
-
-### Edge case 5. The target version does not match Green
+### Edge case 4. The target version does not match Green
 
 **Why it matters.** The proposal names the version the system should move to. If that name does not
 match what Green is actually running, nothing must happen. This is the protection against
@@ -886,69 +763,79 @@ upgrading to the wrong thing.
 **What to do.** Send a proposal naming a version nobody is running:
 
 ```bash
-GCS_VERSION=v0.99.0 bash ci/preview-env/scripts/bg/bg-propose.sh send
+GCS_VERSION=v0.99.0 WINDOW_DURATION=20m bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
-**Expect:** no cutover. The version stays on `v0.14`, and Blue keeps serving.
+**Expect:** it fails in about a minute, you do not need to wait for the window. The proposal *is*
+accepted and recorded with the bogus version, so `upgrade_state` briefly shows
+`UpgradeActivated` with `ver=v0.99.0`; that is not the cutover starting. It then ends:
+
+```
+PAUSED/failed  ver=v0.99.0
+err=proposal release "v0.99.0" does not match this service release "0.15.0"
+```
+
+The version stays on `v0.14` and Blue keeps serving.
 
 If the cutover happens anyway, that is a serious problem. Report it and leave the environment
 running.
 
 Afterwards, send a normal proposal with a new id and let the round finish as usual.
 
-### Edge case 6. The window is too short to agree
-
-**Why it matters.** If the operators cannot all agree before the window closes, the upgrade must be
-abandoned cleanly. A half-finished upgrade would be much worse than none.
-
-**What to do.** Send a proposal with a window far too short to reach agreement:
-
-```bash
-WINDOW_DURATION=2m bash ci/preview-env/scripts/bg/bg-propose.sh send
-```
-
-Then watch the state:
-
-```bash
-kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
-  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
-  "SELECT host_chain_id, state, status, last_error FROM upgrade_state ORDER BY host_chain_id;"
-```
-
-**Expect:** the state ends as `PAUSED` / `failed`, with `last_error` saying
-`unanimity_consensus_timeout`. The version stays on `v0.14` and Blue keeps serving.
-
-Anything else is a problem worth reporting — especially a state that stays stuck, or a version that
-moves to `v0.15.0` anyway.
-
-### Edge case 7. Proposing again after a failed window
+### Edge case 5. Proposing again after a failed window
 
 **Why it matters.** After a window closes without agreement, the environment has to be usable
 again. This is the recovery path, and it is the normal thing to do in production after a failed
 attempt.
 
-**What to do.** Straight after edge case 6, send a normal proposal with a new id:
+**What to do.** Start traffic first, this round is meant to cut over, and cases 1 and 2 are
+watched during it:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh burst on
+```
+
+Then send a normal proposal with a new id. Leave `WINDOW_DURATION` alone: the cutover happens when
+the operators agree, not when the window ends, so the 5h default costs nothing.
 
 ```bash
 PROPOSAL_ID=$(date +%s) bash ci/preview-env/scripts/bg/bg-propose.sh send
 ```
 
-**Expect:** the round runs normally from there — the window opens, the operators agree, the version
+**Expect:** the round runs normally from there: the window opens, the operators agree, the version
 becomes `v0.15.0`, and the final `verify` is all `OK`.
 
 If the second attempt cannot start, or the old failed attempt is still in the way, report it.
 
-### Edge case 8. The proposal sent twice
+### Edge case 6. The proposal sent twice
 
 **Why it matters.** Someone will eventually send it twice, by retrying or by mistake. That must not
 start two upgrades.
 
-**What to do.** Send the proposal, wait until it appears in the upgrade state, then send it again.
+**What to do.** Send a proposal, wait for it to appear, then send a second one with the same id:
 
-**Expect:** the second one is rejected or does nothing. There is still exactly one upgrade, and one
-cutover.
+```bash
+PROPOSAL_ID=$(date +%s)
+WINDOW_DURATION=20m PROPOSAL_ID=$PROPOSAL_ID bash ci/preview-env/scripts/bg/bg-propose.sh send
 
-### Edge case 9. Operators disagree
+# it has appeared once both chains have a row per operator
+kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
+  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+  "SELECT host_chain_id, state, status FROM upgrade_state ORDER BY host_chain_id;"
+
+WINDOW_DURATION=20m PROPOSAL_ID=$PROPOSAL_ID bash ci/preview-env/scripts/bg/bg-propose.sh send
+```
+
+**Expect:** the second send is refused, the listener logs `another proposal is active, completed,
+or newer`, and `upgrade_state` still holds exactly one proposal id, not two. You see this within a
+minute or two.
+
+The first proposal is a normal one, so the round then runs to a **cutover**, whether or not traffic
+is on, the dry run supplies its own work. Plan for that: case 6 costs a round and a `bg-reset.sh`,
+so run it with the other cutover cases rather than among the ones that leave Blue live.
+
+### Edge case 7. Operators disagree
 
 **Why it matters.** The cases above cover an operator being missing. This one covers operators
 being present and disagreeing, which is what the dry run exists to catch.
@@ -961,14 +848,17 @@ This corrupts data on one operator. Only run it on an environment you will destr
 bash ci/preview-env/scripts/bg/bg-drift.sh arm
 ```
 
-Send a normal proposal, then watch both sides:
+It prints raw SQL output including `NOTICE: trigger ... does not exist, skipping`. That is normal.
+The line that matters is the last one: `bg-drift armed on party 2`.
+
+Send a proposal with a short window, then watch both sides:
 
 ```bash
 kubectl logs -n $NAMESPACE deploy/coprocessor-1-gcs-consensus-detector | grep "state-hash divergence"
 bash ci/preview-env/scripts/bg/bg-drift.sh status
 ```
 
-**Expect:** `state-hash divergence - all operators responded but hashes disagree`, a rising
+**Expect:** `state-hash divergence, all operators responded but hashes disagree`, a rising
 `corrupted`, and **no cutover**. The version stays on `v0.14`, traffic keeps working, and the
 attempt ends `PAUSED` / `failed` with `unanimity_consensus_timeout`. Automatic revert is disabled,
 so no switch is the pass.
@@ -984,113 +874,136 @@ bash ci/preview-env/scripts/bg/bg-drift.sh disarm
 
 ---
 
-## 12. Known problems and what to do
+### Proposal window cases (8 to 12)
 
-### Problem 1: the Green migration fails to pull an image
+Cases 1 to 7 test the fleets. These five test the **block windows the proposal carries**: what
+happens when the numbers are wrong. Nothing checks a window against the chain's current height,
+neither `ProtocolConfig` nor the host-listener, so all of them are accepted on chain and only
+resolve later.
 
-You see `ImagePullBackOff` or `did not complete`, and the error mentions a `db-migration` image.
+**They need `bg-propose-raw.sh`**, not `bg-propose.sh`. The normal script refuses any `startBlock`
+behind the tip (`DAO buffer violated`), whatever `BUFFER` is set to. The raw one takes literal block
+numbers and lets the contract and the listener be the only validators.
 
-**Cause:** the coprocessor was not built for your branch, so that tag does not exist.
+Green must be up, as for any case. Traffic is optional, the dry run injects its own work. Run one
+proposal at a time.
 
-**Fix:** use the base commit as the Green tag and run the command again:
-
-```bash
-git merge-base HEAD origin/main | cut -c1-7
-```
-
-### Problem 2: a decryption hangs forever after the cutover
-
-The traffic loop stops advancing and `bg-traffic.sh status` shows the same iteration for many
-minutes.
-
-**Cause:** almost always the KMS connector is still on v0.14. See step A6.
-
-**Check:**
+**First, read the tips.** Every window below is built from them:
 
 ```bash
-bash ci/preview-env/scripts/bg/bg-stack.sh status
+for u in http://anvil-host-anvil-node:8545 \
+         http://anvil-host-polygon-anvil-node:8545 \
+         http://anvil-gateway-anvil-node:8546; do
+  bash ci/preview-env/scripts/deploy/cluster-rpc.sh "$u" \
+    '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' \
+    | sed 's/.*"result":"\([^"]*\)".*/\1/'
+done
 ```
 
-**Confirm it:**
+On testnets take the host URLs from the `rpc` Secret and the gateway from
+`http://gateway-rpc-node.blockchain-dev:8547`.
+
+Call the three tips `H`, `P` and `G`. The offsets below assume 1s blocks (anvil); scale them by the
+block time on testnets. Every proposal must carry a window for **both** host chains, because
+`ingest.rs` rejects a chain set that is not exactly equal to `host_chains`.
 
 ```bash
-kubectl logs -n $NAMESPACE deploy/kms-connector-1-kms-connector-kms-worker --tail=200 | grep -i "digest\|irrecoverable"
+bash ci/preview-env/scripts/bg/bg-propose-raw.sh \
+  --window <hostChainId>:<start>:<end> \
+  --window <polygonChainId>:<start>:<end> \
+  --gw-start <block>
 ```
 
-If you see `digest mismatch` or `All S3 retrieval attempts failed`, that is this problem. Report it
-with the handle shown in the log.
+Watch them with the usual query, and afterwards: a failed round leaves the environment usable, so
+just send the next one; a round that cuts over needs `bg-reset.sh` first.
 
-### Problem 3: the traffic loop will not stop
+### Edge case 8. Window entirely in the past
 
-`bg-traffic.sh stop` reports one chain stopped but the other keeps going.
+**Why it matters.** A proposal can name blocks the chain has already passed. Nothing rejects it, so
+the system has to notice and give up cleanly.
 
-**Cause:** the loop is stuck waiting for a decryption that will never finish, and the stop flag is
-only read between steps.
+**What to do.** `H-3000 : H-2400`, `P-3000 : P-2400`, `--gw-start G-3000`.
 
-**Fix:**
+**Expect:** no cutover. It fails in about **60 seconds**, not after the window length, a window
+already behind the chain satisfies "every chain reached its end" on the first check, so the round
+goes straight to the timeout. Ends `PAUSED` / `failed` with `unanimity_consensus_timeout`, version
+unchanged, Blue still serving.
+
+The chain must be older than the offset. On a young chain the projection goes negative and the tool
+fails with `value out-of-bounds (argument="startBlock")`.
+
+### Edge case 9. Zero-width window
+
+**Why it matters.** A plausible off-by-one in whatever builds the proposal. The contract only
+enforces `start <= end`, so a single-block window is accepted.
+
+**What to do.** `H+300 : H+300`, `P+300 : P+300`, `--gw-start G+300`.
+
+**Expect:** no cutover. The dry run injects its work at `start_block + 1`, which falls **outside** a
+window of one block, so nothing non-trivial is ever in range and no chain can anchor. Ends the same
+way as case 8.
+
+Cases 8 and 9 give the *same* `last_error`, for different reasons. Tell them apart in the detector:
 
 ```bash
-kubectl exec -n $NAMESPACE bg-traffic-amoy -- pkill -f erc20-traffic
+kubectl logs -n $NAMESPACE deploy/coprocessor-1-gcs-consensus-detector --since=20m \
+  | grep "timeout elapsed"
 ```
 
-Replace `bg-traffic-amoy` with `bg-traffic-sepolia` for the other chain.
+`nontrivial_anchored=true` means there was work but no agreement (case 8); `false` means the window
+was empty (case 9).
 
-### Problem 4: the cutover never happens
+### Edge case 10. Window starts in the past, ends in the future
 
-The state stays at `DryRunStarted` for a long time and the version never changes.
+**Why it matters.** The realistic version of a stale proposal: half the window has already gone by
+when it lands.
 
-**Cause:** the operators do not agree, which is the design working as intended, or one chain is not
-keeping up.
+**What to do.** `H-300 : H+420`, `P-300 : P+420`, `--gw-start G-300`.
 
-**Check:** run `bash ci/preview-env/scripts/bg/bg-checkpoints.sh dry-run` and look for a `[FAIL]` about
-state hashes differing across operators, or about a chain not ingesting.
+**Expect:** it behaves as a shorter window and **cuts over**. Readiness is satisfied immediately,
+the operators agree, the version reaches `v0.15.0`. A past `start_block` does not strand the
+synthetic work, the round still anchors on `start_block + 1`.
 
-Also check for computations that never settled in the 10000 blocks before `start_block` — one
-abandoned row, which edge case 3 can leave behind, stops the dry run ever becoming ready:
+### Edge case 11. Gateway start block in the past
+
+**Why it matters.** The gateway has its own start block, separate from the host chains, and it is
+easy to get wrong. A stale one must not block the upgrade.
+
+**What to do.** A normal, valid window on both host chains, but a gateway start block that has
+already gone by:
+
+`H+60 : H+600`, `P+60 : P+600`, `--gw-start G-300`.
+
+Watch the gateway flag while the round runs:
 
 ```bash
 kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
   env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
-  "SELECT count(*) FROM public.computations
-    WHERE is_completed = false AND (is_error = false OR error_message LIKE '%RETRYABLE%');"
+  "SELECT host_chain_id, gw_dry_run_started FROM upgrade_state ORDER BY host_chain_id;"
 ```
 
-**This is a real finding.** Report it with the checkpoint output. Blue is still live, so nothing is
-broken for users.
+**Expect:** `gw_dry_run_started` turns true within seconds, even though the block is hundreds behind
+the gateway's current one. The gateway does not refuse it, it starts at the next block it
+sees. The round then completes normally and the version reaches `v0.15.0`.
 
-### Problem 5: the proposal seems to be ignored
+Check the flag **while the round is running**. After a failed round it reads `false` again, because
+the rollback resets it, that is not the same as it never having turned true.
 
-No rows appear in `upgrade_state`.
+### Edge case 12. Windows misaligned across chains
 
-**Cause:** each proposal needs an id higher than the previous one. The script uses the current time
-by default, so this is rare. If you set an id by hand, make it larger than the last one.
+**Why it matters.** The windows are estimated per chain, so they can drift apart. This is the case
+that says whether that matters.
 
-### Problem 6: a proposal is stuck at `UpgradeActivated`
+**What to do.** `H+60 : H+180` and `P+500 : P+620`, so the first closes long before the second opens,
+with `--gw-start G+60`.
 
-Rows appear in `upgrade_state` but never move, and every later proposal is refused.
-
-**Cause:** the proposal was ingested while no Green was running. Only a Green fleet validates or
-expires an attempt, so with none deployed the row simply stays.
-
-**Fix:** start Green. Its controller picks the row up and fails it, after which a new proposal is
-accepted. `bg-green.sh` refuses to start while an attempt is in progress, so pass
-`ALLOW_ACTIVE_ATTEMPT=1`. No manual database edit is needed.
-
-### Problem 7: traffic fails with "insufficient funds"
-
-The wallets paying for transactions ran out.
-
-**Check:**
-
-```bash
-bash ci/preview-env/scripts/bg/bg-traffic.sh status
-```
-
-The bottom of the output prints the balances. Report it; the wallets need topping up.
+**Expect:** it **cuts over**. The round waits for the later chain rather than giving up when the
+first finishes, then upgrades both together in one step. **The windows do not have to overlap**;
+misalignment costs time, not correctness.
 
 ---
 
-## 13. Starting and destroying an environment
+## 12. Starting and destroying an environment
 
 The two commands you will use most often, in one place.
 
@@ -1148,7 +1061,7 @@ environment unless you want to test the contract upgrade step again.
 
 ---
 
-## 14. Reporting a problem
+## 13. Reporting a problem
 
 Include all of this:
 
@@ -1164,3 +1077,88 @@ kubectl logs -n $NAMESPACE deploy/kms-connector-1-kms-connector-kms-worker --tai
 ```
 
 **Do not reset or destroy the environment** after a real failure. The evidence is needed.
+
+---
+
+## Appendix A. The edge cases at a glance
+
+| # | Case | Pass = | Cutover? | How long |
+| --- | --- | --- | --- | --- |
+| 1 | A balance created seconds before the cutover | it still decrypts afterwards | **yes** | full round |
+| 2 | Traffic that never stops | no gap in the counters across the switch | **yes** | full round |
+| 3 | One operator's Green is missing | no switch while it is off | no | window + 1 min |
+| 4 | The target version does not match Green | refused, naming both versions | no | ~1 min |
+| 5 | Proposing again after a failed window | the next round completes normally | **yes** | full round |
+| 6 | The proposal sent twice | second one refused, one upgrade id only | **yes** | refusal in ~2 min, then a full round |
+| 7 | Operators disagree | divergence logged, no switch | no | window + 1 min |
+| 8 | Window entirely in the past | abandoned in ~60s | no | ~1 min |
+| 9 | Zero-width window | never anchors, abandoned | no | window + 1 min |
+| 10 | Window starts past, ends future | behaves as a shorter window | **yes** | full round |
+| 11 | Gateway start block in the past | the gateway starts anyway and the round completes | **yes** | full round |
+| 12 | Windows misaligned across chains | waits for the later chain, then switches | **yes** | full round |
+
+Cases 1 to 7 test the fleets; 8 to 12 test the block windows the proposal carries and need
+`bg-propose-raw.sh`.
+
+**Run them in this order: 4, 3, 7, 8, 9, then 6, 10, 11, 12, and 5 with 1 and 2.**
+
+- **4, 3, 7, 8, 9** leave the environment on Blue, so they follow one another freely.
+- **6, 10, 11 and 12 each cut over**, so each needs a `bg-reset.sh` before the next case that wants
+  Blue.
+- **5, 1 and 2 are one round watched three ways.** 5 checks that a round completes after an earlier
+  failure, 1 that a balance written seconds before the switch still decrypts, 2 that traffic never
+  stalls across it. Send one proposal and make all three observations.
+
+A cutover ends the environment for any case that needs Blue, so getting back means a `bg-reset.sh`
+round (~15 min).
+
+### Three rules for every case
+
+**Set a short window.** `bg-propose.sh` defaults to 5h, and a case that is meant to fail only
+reaches its final state once the window closes. Use `WINDOW_DURATION=20m` for cases 3, 6 and 7.
+Case 4 does not need it, it is refused in about a minute. Cases 8 to 12 set their blocks directly,
+so the setting does not apply.
+
+**Run one proposal at a time.** The script creates a pod and a Secret with fixed names, so starting
+a second proposal before the first has returned makes the first's cleanup delete the second's
+resources. It shows up as `CreateContainerConfigError`, which looks like a broken environment and
+is not.
+
+**Traffic is only needed for the cases that cut over**, 1, 2 and 5, because those check that real
+balances still decrypt across the switch, and that needs real balances.
+
+The failing cases do not need it: the dry run injects its own work at `start_block + 1`, and a round
+with no traffic at all still reached `all_host_anchored=true nontrivial_anchored=true` on both host
+chains. Traffic makes those rounds more realistic, not more valid.
+
+When you do want it:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-traffic.sh start
+bash ci/preview-env/scripts/bg/bg-traffic.sh burst on
+```
+
+and off again once the case has reached its final state:
+
+```bash
+bash ci/preview-env/scripts/bg/bg-traffic.sh burst off
+bash ci/preview-env/scripts/bg/bg-traffic.sh stop
+```
+
+On `--testnets` that is real gas, so do not leave it running between cases.
+
+### What a failing case looks like
+
+Cases 3, 6, 7, 8 and 9 all end the same way:
+
+```
+PAUSED / failed      last_error = unanimity_consensus_timeout
+versioning           still v0.14
+traffic              still working, mismatches 0
+```
+
+Case 4 is the one that differs: refused in about a minute, before the window matters, with
+`proposal release "<version>" does not match this service release "<version>"`.
+
+A state that stays `in_progress` long after the window closed, or a version that moves to `v0.15.0`
+in cases 3, 4, 7, 8 or 9, is a real problem, report it and leave the environment running.
