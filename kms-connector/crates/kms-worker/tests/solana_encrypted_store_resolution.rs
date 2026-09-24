@@ -29,7 +29,7 @@ use kms_worker::core::solana::{
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
     scope::{ScopeFailure, check_scope},
-    snapshot::{SnapshotAccount, SnapshotKeys},
+    snapshot::SnapshotAccount,
 };
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
@@ -39,8 +39,11 @@ fn resolve_from(
     world: &World,
     account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let snapshot = world.read(&SnapshotKeys::new([account_key]));
-    resolve_encrypted_store(&snapshot, PROGRAM_ID, account_key)
+    resolve_encrypted_store(
+        world.account(&account_key).as_ref(),
+        PROGRAM_ID,
+        account_key,
+    )
 }
 
 /// An encrypted store placed in a world, resolved.

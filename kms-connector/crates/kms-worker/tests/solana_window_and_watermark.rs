@@ -22,7 +22,7 @@ mod solana_support;
 use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     pipeline::{AuthorizationContext, authorize_request},
-    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
+    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },
@@ -31,9 +31,7 @@ use solana_support::*;
 
 /// Reads the watermark of `user` out of a world.
 fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
-    let (key, _) = invalidation_address(user);
-    let snapshot = world.read(&SnapshotKeys::new([key]));
-    read_watermark(&snapshot, PROGRAM_ID, user)
+    read_watermark(&world.row(invalidation_address(user)), PROGRAM_ID, user)
 }
 
 // ---------------------------------------------------------------------------

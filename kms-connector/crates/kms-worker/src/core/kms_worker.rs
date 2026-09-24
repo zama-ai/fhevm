@@ -541,7 +541,7 @@ mod tests {
     async fn registered_solana_backends_bound_rpc_and_proof_requests() {
         use crate::core::solana::{
             proof::{HostProofReader, LeafKind, LeafQuery},
-            snapshot::{HostStateReader, SnapshotKeys},
+            snapshot::HostStateReader,
         };
         use std::time::Duration;
         use tokio::{net::TcpListener, time::timeout};
@@ -561,14 +561,17 @@ mod tests {
         let HostChainAclBackend::Solana(host) = &backends[&solana_host_chain_id(2)] else {
             panic!("expected Solana backend")
         };
-        let keys = SnapshotKeys::new([[1; 32]]);
+        let keys = [[1; 32]];
         let queries = [LeafQuery {
             encrypted_store: [1; 32],
             handle: [2; 32],
             kind: LeafKind::Public,
         }];
         let (rpc, proofs) = tokio::join!(
-            timeout(Duration::from_secs(3), host.reader.read_accounts(&keys)),
+            timeout(
+                Duration::from_secs(3),
+                host.reader.read_accounts(&keys, None)
+            ),
             timeout(Duration::from_secs(3), host.proofs.read_proofs(&queries)),
         );
         assert!(rpc.expect("registered RPC client must time out").is_err());

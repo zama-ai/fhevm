@@ -309,7 +309,8 @@ signature, and the return layout together.
 
 **27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
 delegation record for the encrypted store's application `(program, scope)`, the delegator's wildcard row
-(`0xff×32` in both positions) and the Clock in the deciding snapshot. Either row authorizes the delegate if its
+(`0xff×32` in both positions) and the Clock in the deciding read, which a node behind the first read refuses
+(`minContextSlot`). Either row authorizes the delegate if its
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
@@ -498,11 +499,13 @@ Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
 `an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
 
 **46. [RISK]** The connector's ACL reads use confirmed (not finalized)
-commitment, and this component is the authorization gate. The choice is
-deliberate and documented at the site (`kms-worker/src/core/solana/snapshot.rs`
-module doc: a grant observed on a supermajority-confirmed fork is
-sufficient authorization even if that fork is exceptionally rolled back).
-This entry records that choice as accepted at the protocol level.
+commitment, and this component is the authorization gate. A grant observed on a
+supermajority-confirmed fork is sufficient authorization. If that fork is rolled back,
+the KMS may already have released a share against a delegation, allow leaf or
+permit state that no longer exists on the canonical chain. This risk is accepted at
+the protocol level; it is documented at the site (`kms-worker/src/core/solana/snapshot.rs`
+module doc). EVM host ACL reads take the same risk: they read at the node's latest block
+(`kms-worker/src/core/event_processor/rpc.rs`).
 
 **49. [ASSUMPTION]** The coprocessor's EVM-shaped event rows carry a zeroed
 `caller` for every Solana transaction (the 32-byte program does not fit

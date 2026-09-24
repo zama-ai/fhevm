@@ -72,7 +72,6 @@ impl WindowFailure {
 impl WatermarkFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::UnreadAccount(_) => false,
             Self::Invalidated { .. }
             | Self::NotAnInvalidationRecord { .. }
             | Self::RecordNamesAnotherUser { .. }
@@ -91,7 +90,6 @@ impl EncryptedStoreFailure {
             | Self::Malformed { .. }
             | Self::AddressMismatch { .. }
             | Self::SentinelProgram { .. } => false,
-            Self::UnreadAccount(_) => false,
         }
     }
 }
@@ -122,7 +120,6 @@ impl DelegationFailure {
             Self::NoLiveDelegation { exact, wildcard } => {
                 exact.is_recoverable() || wildcard.is_recoverable()
             }
-            Self::UnreadAccount(_) => false,
         }
     }
 }

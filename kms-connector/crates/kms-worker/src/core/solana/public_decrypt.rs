@@ -6,7 +6,7 @@ use super::handle_binding::{
     HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
 };
 use super::proof::{LeafKind, LeafQuery, ProofReadError};
-use super::snapshot::{HostStateReader, SnapshotError, SnapshotKeys};
+use super::snapshot::{SnapshotError, read_positional};
 use super::{HandleBytes, SolanaHost};
 use connector_utils::types::solana_extra_data::parse_solana_public_decrypt_extra_data;
 
@@ -17,11 +17,12 @@ pub async fn check_public_decrypt(
 ) -> Result<(), PublicDecryptFailure> {
     let extra = parse_solana_public_decrypt_extra_data(extra_data)
         .ok_or(PublicDecryptFailure::MalformedExtraData)?;
-    let observation = host
-        .reader
-        .read_accounts(&SnapshotKeys::new([extra.encrypted_store]))
-        .await?;
-    let store = resolve_encrypted_store(&observation, host.program_id, extra.encrypted_store)?;
+    let read = read_positional(&host.reader, &[extra.encrypted_store], None).await?;
+    let store = resolve_encrypted_store(
+        read.accounts[0].as_ref(),
+        host.program_id,
+        extra.encrypted_store,
+    )?;
     let query = LeafQuery {
         encrypted_store: store.account_key(),
         handle,

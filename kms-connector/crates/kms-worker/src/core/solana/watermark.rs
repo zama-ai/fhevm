@@ -1,8 +1,8 @@
 //! The permit validity window and the per-user invalidation watermark. Together they pin a usable
 //! permit's start into `[last revocation, now]`.
 
-use super::snapshot::{HostSnapshot, UnreadAccount};
-use super::{SolanaPubkeyBytes, permit_invalidation_address};
+use super::SolanaPubkeyBytes;
+use super::snapshot::ObservedRow;
 use zama_solana_acl::decode_permit_invalidation;
 
 /// Reads the watermark of the request signer. A user who never revoked has no record, which
@@ -13,12 +13,12 @@ use zama_solana_acl::decode_permit_invalidation;
 /// account at the address must be the host's record for this user, or reading zero from a foreign
 /// layout would resurrect revoked permits.
 pub fn read_watermark(
-    snapshot: &HostSnapshot,
+    row: &ObservedRow,
     program_id: SolanaPubkeyBytes,
     user: SolanaPubkeyBytes,
 ) -> Result<u64, WatermarkFailure> {
-    let (account_key, canonical_bump) = permit_invalidation_address(program_id, user);
-    let Some(account) = snapshot.account(&account_key)? else {
+    let account_key = row.key;
+    let Some(account) = &row.account else {
         return Ok(0);
     };
     if account.is_uninitialized_pda() {
@@ -35,7 +35,7 @@ pub fn read_watermark(
     if record.user != user {
         return Err(WatermarkFailure::RecordNamesAnotherUser { account_key });
     }
-    if record.bump != canonical_bump {
+    if record.bump != row.bump {
         return Err(not_a_record);
     }
     Ok(record.invalidation_watermark)
@@ -93,8 +93,6 @@ pub enum WatermarkFailure {
         account_key: SolanaPubkeyBytes,
         owner: SolanaPubkeyBytes,
     },
-    #[error(transparent)]
-    UnreadAccount(#[from] UnreadAccount),
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]

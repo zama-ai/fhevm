@@ -27,8 +27,8 @@ use kms_worker::core::solana::{
         ProofReadError, ProofResponses, leaf_proof_request_body,
     },
     snapshot::{
-        HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
-        SnapshotKeys, SolanaRpcClient,
+        AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows,
+        SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError, SolanaRpcClient,
     },
 };
 use mocktail::server::MockServer;
@@ -750,13 +750,46 @@ impl World {
     }
 
     /// Projects the world onto the requested keys, exactly as an account read would.
-    pub fn read(&self, keys: &SnapshotKeys) -> HostSnapshot {
-        let accounts = keys
-            .as_slice()
-            .iter()
-            .map(|key| (*key, self.accounts.get(key).cloned()));
-        HostSnapshot::new(self.slot, accounts)
+    pub fn read(&self, keys: &[SolanaPubkeyBytes]) -> AccountsRead {
+        AccountsRead {
+            slot: self.slot,
+            accounts: keys.iter().map(|key| self.account(key)).collect(),
+        }
     }
+
+    /// The account at `key`, if the world holds one.
+    pub fn account(&self, key: &SolanaPubkeyBytes) -> Option<SnapshotAccount> {
+        self.accounts.get(key).cloned()
+    }
+
+    /// The account at a derived address, as a read of this world observes it.
+    pub fn row(&self, (key, bump): DerivedAddress) -> ObservedRow {
+        ObservedRow {
+            key,
+            bump,
+            account: self.account(&key),
+        }
+    }
+
+    /// Both delegation rows of a delegated entry, judged at this world's Clock.
+    pub fn rows(&self, exact: DerivedAddress, wildcard: DerivedAddress) -> ObservedRows {
+        let clock = self
+            .account(&CLOCK_SYSVAR_ID)
+            .expect("the world has a Clock");
+        ObservedRows {
+            exact: self.row(exact),
+            wildcard: self.row(wildcard),
+            now: zama_solana_acl::decode_clock_unix_timestamp(&clock.owner, &clock.data)
+                .expect("the world's Clock decodes"),
+        }
+    }
+}
+
+/// One host-state read as the reader was asked for it.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ReadCall {
+    pub keys: Vec<SolanaPubkeyBytes>,
+    pub min_context_slot: Option<u64>,
 }
 
 /// A reader that answers from a script of worlds and records every call.
@@ -764,10 +797,11 @@ impl World {
 /// Reads are answered in order: the first call sees the first world, the second the second. A
 /// call beyond the script panics rather than repeating the last world — an authorization that
 /// reads state a third time is a defect, and it should surface as a loud failure in whichever
-/// test provoked it rather than as a passing assertion elsewhere.
+/// test provoked it rather than as a passing assertion elsewhere. Like a node, it refuses a read
+/// whose world is older than the read's `min_context_slot`.
 pub struct ScriptedReader {
     worlds: Vec<World>,
-    calls: Mutex<Vec<SnapshotKeys>>,
+    calls: Mutex<Vec<ReadCall>>,
 }
 
 impl ScriptedReader {
@@ -789,13 +823,13 @@ impl ScriptedReader {
         self.calls.lock().expect("reader lock").len()
     }
 
-    /// The key sets that were read, in order.
-    pub fn calls(&self) -> Vec<SnapshotKeys> {
+    /// The reads that were made, in order.
+    pub fn calls(&self) -> Vec<ReadCall> {
         self.calls.lock().expect("reader lock").clone()
     }
 
-    /// The keys of the read at `index`.
-    pub fn call(&self, index: usize) -> SnapshotKeys {
+    /// The read at `index`.
+    pub fn call(&self, index: usize) -> ReadCall {
         self.calls()
             .get(index)
             .cloned()
@@ -804,10 +838,17 @@ impl ScriptedReader {
 }
 
 impl HostStateReader for ScriptedReader {
-    async fn read_accounts(&self, keys: &SnapshotKeys) -> Result<HostSnapshot, SnapshotError> {
+    async fn read_accounts(
+        &self,
+        keys: &[SolanaPubkeyBytes],
+        min_context_slot: Option<u64>,
+    ) -> Result<AccountsRead, SnapshotError> {
         let index = {
             let mut calls = self.calls.lock().expect("reader lock");
-            calls.push(keys.clone());
+            calls.push(ReadCall {
+                keys: keys.to_vec(),
+                min_context_slot,
+            });
             calls.len() - 1
         };
         let world = self.worlds.get(index).unwrap_or_else(|| {
@@ -817,6 +858,9 @@ impl HostStateReader for ScriptedReader {
                 self.worlds.len()
             )
         });
+        if min_context_slot.is_some_and(|slot| world.slot < slot) {
+            return Err(SnapshotError::NodeBehind);
+        }
         Ok(world.read(keys))
     }
 }
@@ -989,7 +1033,7 @@ impl HttpHost {
     /// Replaces the node's state: one `getMultipleAccounts` read of these keys, in this order.
     pub fn serve_accounts(&mut self, accounts: &[(SolanaPubkeyBytes, Option<SnapshotAccount>)]) {
         let keys: Vec<_> = accounts.iter().map(|(key, _)| *key).collect();
-        let request = multiple_accounts_request(&keys);
+        let request = multiple_accounts_request(&keys, None);
         let value: Vec<_> = accounts
             .iter()
             .map(|(_, account)| {
@@ -1027,7 +1071,10 @@ impl HttpHost {
 }
 
 /// The `getMultipleAccounts` body the connector sends for `keys`, at confirmed commitment.
-pub fn multiple_accounts_request(keys: &[SolanaPubkeyBytes]) -> serde_json::Value {
+pub fn multiple_accounts_request(
+    keys: &[SolanaPubkeyBytes],
+    min_context_slot: Option<u64>,
+) -> serde_json::Value {
     serde_json::json!({
         "jsonrpc": "2.0",
         "id": 0,
@@ -1036,7 +1083,7 @@ pub fn multiple_accounts_request(keys: &[SolanaPubkeyBytes]) -> serde_json::Valu
             keys.iter()
                 .map(|key| Pubkey::new_from_array(*key).to_string())
                 .collect::<Vec<_>>(),
-            {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": null},
+            {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": min_context_slot},
         ],
     })
 }

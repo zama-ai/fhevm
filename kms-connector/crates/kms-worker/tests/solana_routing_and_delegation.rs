@@ -35,7 +35,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
+    snapshot::{SnapshotAccount, SnapshotError},
 };
 use solana_support::*;
 use zama_solana_acl::WILDCARD_APP;
@@ -883,21 +883,13 @@ fn a_live_application_row_is_named_as_the_exact_row() {
     let delegate = Wallet::new(1).pubkey();
     let delegator = Wallet::new(2).pubkey();
     let exact = DelegationFixture::live(delegator, delegate);
-    let (exact_key, _) = exact.address();
-    let (wildcard_key, _) = DelegationFixture::live_wildcard(delegator, delegate).address();
-    let snapshot = World::at_slot(OBSERVED_SLOT)
-        .with_delegation(&exact)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
+    let rows = World::at_slot(OBSERVED_SLOT).with_delegation(&exact).rows(
+        exact.address(),
+        DelegationFixture::live_wildcard(delegator, delegate).address(),
+    );
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        HOST_NOW,
-        delegator,
-        delegate,
-        &store(),
-    )
-    .expect("a live application row authorizes");
+    let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
+        .expect("a live application row authorizes");
 
     assert_eq!(row, AuthorizedRow::Exact);
 }
@@ -909,22 +901,13 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let delegate = Wallet::new(1).pubkey();
     let delegator = Wallet::new(2).pubkey();
     let wildcard = DelegationFixture::live_wildcard(delegator, delegate);
-    let (wildcard_key, _) = wildcard.address();
     let exact = DelegationFixture::live(delegator, delegate);
-    let (exact_key, _) = exact.address();
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let rows = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
+        .rows(exact.address(), wildcard.address());
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        HOST_NOW,
-        delegator,
-        delegate,
-        &store(),
-    )
-    .expect("a live wildcard row authorizes an application with no row of its own");
+    let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
+        .expect("a live wildcard row authorizes an application with no row of its own");
 
     assert_eq!(row, AuthorizedRow::Wildcard);
 }
@@ -938,22 +921,13 @@ fn with_both_rows_live_the_application_row_is_the_one_named() {
     let delegator = Wallet::new(2).pubkey();
     let exact = DelegationFixture::live(delegator, delegate);
     let wildcard = DelegationFixture::live_wildcard(delegator, delegate);
-    let (exact_key, _) = exact.address();
-    let (wildcard_key, _) = wildcard.address();
-    let snapshot = World::at_slot(OBSERVED_SLOT)
+    let rows = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
+        .rows(exact.address(), wildcard.address());
 
-    let row = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        HOST_NOW,
-        delegator,
-        delegate,
-        &store(),
-    )
-    .expect("two live rows authorize");
+    let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
+        .expect("two live rows authorize");
 
     assert_eq!(row, AuthorizedRow::Exact);
 }
@@ -1035,34 +1009,6 @@ async fn a_sentinel_program_in_the_encrypted_store_rejects_a_direct_entry_too() 
 // ---------------------------------------------------------------------------
 // What the delegated branch reads, and what it refuses to read
 // ---------------------------------------------------------------------------
-
-/// A delegation key the snapshot never read is an error of key planning, not a verdict about the
-/// delegation: it can never fold into "no live grant" and reach a client as a statement about the
-/// state of the world.
-#[test]
-fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
-    let delegate = Wallet::new(1).pubkey();
-    let delegator = Wallet::new(2).pubkey();
-    let revoked = DelegationFixture::live(delegator, delegate).revoked();
-    let (exact_key, _) = revoked.address();
-    // The application row is dead, so the rule proceeds to the wildcard row — whose key
-    // was never planned.
-    let snapshot = World::at_slot(OBSERVED_SLOT)
-        .with_delegation(&revoked)
-        .read(&SnapshotKeys::new([exact_key]));
-
-    let failure = check_delegation(
-        &snapshot,
-        PROGRAM_ID,
-        HOST_NOW,
-        delegator,
-        delegate,
-        &store(),
-    )
-    .expect_err("a missing key cannot authorize");
-
-    assert!(matches!(failure, DelegationFailure::UnreadAccount(_)));
-}
 
 /// In a batch where delegated entries have different outcomes, the failure names the index of the
 /// entry whose delegation is dead — in request coordinates, so the client can point at the

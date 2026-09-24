@@ -6,9 +6,11 @@ use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::scope::check_scope;
-use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
+use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
-use super::{SolanaPubkeyBytes, delegation_address, wildcard_delegation_address};
+use super::{
+    SolanaPubkeyBytes, delegation_address, permit_invalidation_address, wildcard_delegation_address,
+};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
 use tracing::info;
@@ -49,33 +51,41 @@ pub async fn authorize_request(
     }
 
     // A delegation record's address depends on the application of the entry's encrypted store, so
-    // a delegated request needs a second read. Every rule is evaluated against the last read alone.
-    let first_keys = plan_first_read(request, program_id);
-    let first = reader.read_accounts(&first_keys).await?;
-    let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
-    // `now` is the deciding read's Clock, which only a delegated request reads.
-    let (observation, now) = if delegation_keys.is_empty() {
-        (first, None)
+    // a delegated request needs a second read, no older than the first. Every rule is evaluated
+    // against the last read alone.
+    let watermark_address = permit_invalidation_address(program_id, signer);
+    let store_keys: Vec<_> = request
+        .handles()
+        .iter()
+        .map(|entry| entry.encrypted_store)
+        .collect();
+    let first = observe(reader, watermark_address, &store_keys, &[], None).await?;
+    let delegated = delegation_row_keys(&first, program_id, signer, request)?;
+    let observation = if delegated.is_empty() {
+        first
     } else {
-        let second_keys = plan_second_read(&first_keys, delegation_keys);
-        let second = reader
-            .read_accounts(&second_keys)
-            .await?
-            .deciding_after(&first)?;
-        let now = second.unix_timestamp()?;
-        (second, Some(now))
+        observe(
+            reader,
+            watermark_address,
+            &store_keys,
+            &delegated,
+            Some(first.slot),
+        )
+        .await?
     };
 
-    let watermark = read_watermark(&observation, program_id, signer)?;
+    let watermark = read_watermark(&observation.watermark, program_id, signer)?;
     check_not_invalidated(permit.start_timestamp(), watermark)?;
 
     let stores = request
         .handles()
         .iter()
+        .zip(&observation.entries)
         .enumerate()
-        .map(|(index, entry)| {
-            let store = resolve_encrypted_store(&observation, program_id, entry.encrypted_store)
-                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
+        .map(|(index, (entry, observed))| {
+            let store =
+                resolve_encrypted_store(observed.store.as_ref(), program_id, entry.encrypted_store)
+                    .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
             check_scope(permit.allowed_scopes(), &store)
                 .map_err(|source| AuthorizationFailure::Scope { index, source })?;
             Ok(store)
@@ -106,9 +116,10 @@ pub async fn authorize_request(
     .await?;
 
     let mut delegated = Vec::new();
-    for (index, ((entry, store), binding)) in request
+    for (index, (((entry, observed), store), binding)) in request
         .handles()
         .iter()
+        .zip(&observation.entries)
         .zip(&stores)
         .zip(bindings)
         .enumerate()
@@ -117,10 +128,13 @@ pub async fn authorize_request(
         if entry.owner_address == signer {
             continue;
         }
+        let rows = observed
+            .delegation
+            .as_ref()
+            .expect("the deciding read carries the rows of every delegated entry");
         let row = check_delegation(
-            &observation,
+            rows,
             program_id,
-            now.expect("a delegated entry forces the second read"),
             entry.owner_address,
             signer,
             store.encrypted_store(),
@@ -139,7 +153,7 @@ pub async fn authorize_request(
     if !delegated.is_empty() {
         info!(
             delegate = %Pubkey::new_from_array(signer),
-            observed_slot = observation.observed_slot(),
+            observed_slot = observation.slot,
             entries = ?delegated,
             "Solana delegated user decryption entries authorized"
         );
@@ -147,33 +161,37 @@ pub async fn authorize_request(
     Ok(())
 }
 
-/// The exact and wildcard delegation-record addresses of every delegated entry, derived from the
-/// store applications of the first read.
-fn discover_delegation_keys(
-    first: &HostSnapshot,
+/// The exact and wildcard delegation rows of every delegated entry, derived from the store
+/// applications of the first read.
+fn delegation_row_keys(
+    first: &HostObservation,
     program_id: SolanaPubkeyBytes,
     signer: SolanaPubkeyBytes,
     request: &SolanaUserDecryptionRequestV1,
-) -> Result<Vec<SolanaPubkeyBytes>, AuthorizationFailure> {
-    let mut keys = Vec::new();
-    for (index, entry) in request.handles().iter().enumerate() {
-        let delegator = entry.owner_address;
+) -> Result<Vec<DelegationRowKeys>, AuthorizationFailure> {
+    let mut rows = Vec::new();
+    for (entry, (claim, observed)) in request.handles().iter().zip(&first.entries).enumerate() {
+        let delegator = claim.owner_address;
         if delegator == signer {
             continue;
         }
-        let store = resolve_encrypted_store(first, program_id, entry.encrypted_store)
-            .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-        keys.push(
-            delegation_address(
+        let store =
+            resolve_encrypted_store(observed.store.as_ref(), program_id, claim.encrypted_store)
+                .map_err(|source| AuthorizationFailure::EncryptedStore {
+                    index: entry,
+                    source,
+                })?;
+        rows.push(DelegationRowKeys {
+            entry,
+            exact: delegation_address(
                 program_id,
                 delegator,
                 signer,
                 store.program(),
                 store.scope(),
-            )
-            .0,
-        );
-        keys.push(wildcard_delegation_address(program_id, delegator, signer).0);
+            ),
+            wildcard: wildcard_delegation_address(program_id, delegator, signer),
+        });
     }
-    Ok(keys)
+    Ok(rows)
 }

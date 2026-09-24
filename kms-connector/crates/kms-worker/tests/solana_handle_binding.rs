@@ -32,7 +32,6 @@ use kms_worker::core::solana::{
     proof::{
         HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
     },
-    snapshot::SnapshotKeys,
 };
 use rstest::rstest;
 use solana_support::*;
@@ -43,9 +42,12 @@ use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_com
 /// exercised against a validated account rather than a hand-made value.
 fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
     let world = World::at_slot(1).with_encrypted_store(encrypted_store);
-    let snapshot = world.read(&SnapshotKeys::new([encrypted_store.account_key]));
-    resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
-        .expect("the fixture encrypted store resolves")
+    resolve_encrypted_store(
+        world.account(&encrypted_store.account_key).as_ref(),
+        PROGRAM_ID,
+        encrypted_store.account_key,
+    )
+    .expect("the fixture encrypted store resolves")
 }
 
 /// The record's answer for `key` on `handle` when it has sealed exactly this account's leaves.

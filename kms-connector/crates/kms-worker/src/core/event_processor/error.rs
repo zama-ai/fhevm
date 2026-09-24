@@ -1,5 +1,4 @@
 use crate::core::solana::{
-    delegation::DelegationFailure, encrypted_store::EncryptedStoreFailure,
     failure::AuthorizationFailure, handle_binding::HandleBindingFailure,
     public_decrypt::PublicDecryptFailure, watermark::WatermarkFailure,
 };
@@ -235,16 +234,7 @@ impl From<AuthorizationFailure> for RequestCheckError {
             AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(_))
-            | AuthorizationFailure::EncryptedStore {
-                source: EncryptedStoreFailure::UnreadAccount(_),
-                ..
-            }
-            | AuthorizationFailure::Delegation {
-                source: DelegationFailure::UnreadAccount(_),
-                ..
-            }
-            | AuthorizationFailure::HandleBinding {
+            AuthorizationFailure::HandleBinding {
                 source: HandleBindingFailure::HistoryIncomplete,
                 ..
             } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
@@ -269,8 +259,7 @@ impl From<PublicDecryptFailure> for RequestCheckError {
             PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
                 (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
             }
-            PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(_))
-            | PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete) => {
+            PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete) => {
                 (RequestCheckKind::Acl, ErrorCode::Unprocessable)
             }
             PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
@@ -298,10 +287,8 @@ fn solana_check_error(
 mod tests {
     use super::*;
     use crate::core::solana::proof::ProofReadError;
-    use crate::core::solana::snapshot::{SnapshotError, UnreadAccount};
+    use crate::core::solana::snapshot::SnapshotError;
     use rstest::rstest;
-
-    const UNREAD: UnreadAccount = UnreadAccount { key: [0; 32] };
 
     fn coprocessors_down() -> ProofReadError {
         ProofReadError::Unavailable {
@@ -316,27 +303,6 @@ mod tests {
     #[case::program_id_mismatch(
         AuthorizationFailure::ProgramIdMismatch { signed: [1; 32], own: [2; 32] },
         ErrorCode::UserSignatureRejected,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unread_watermark(
-        AuthorizationFailure::Watermark(WatermarkFailure::UnreadAccount(UNREAD)),
-        ErrorCode::Unprocessable,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unread_encrypted_store(
-        AuthorizationFailure::EncryptedStore {
-            index: 0,
-            source: EncryptedStoreFailure::UnreadAccount(UNREAD),
-        },
-        ErrorCode::Unprocessable,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unread_delegation(
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::UnreadAccount(UNREAD),
-        },
-        ErrorCode::Unprocessable,
         ProcessingErrorKind::Irrecoverable
     )]
     #[case::incomplete_history(
@@ -374,11 +340,6 @@ mod tests {
     #[rstest]
     #[case::incomplete_history(
         PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete),
-        ErrorCode::Unprocessable,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unread_encrypted_store(
-        PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::UnreadAccount(UNREAD)),
         ErrorCode::Unprocessable,
         ProcessingErrorKind::Irrecoverable
     )]

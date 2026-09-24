@@ -3,7 +3,7 @@
 //! program can write data into an account it owns.
 
 use super::SolanaPubkeyBytes;
-use super::snapshot::{HostSnapshot, UnreadAccount};
+use super::snapshot::SnapshotAccount;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::WILDCARD_APP;
 use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
@@ -50,13 +50,11 @@ fn encrypted_store_address(
 /// the address its own fields derive, and name a real authority. Trailing bytes are legal: a
 /// store grows by realloc and never shrinks.
 pub fn resolve_encrypted_store(
-    snapshot: &HostSnapshot,
+    account: Option<&SnapshotAccount>,
     program_id: SolanaPubkeyBytes,
     account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let account = snapshot
-        .account(&account_key)?
-        .ok_or(EncryptedStoreFailure::Absent { account_key })?;
+    let account = account.ok_or(EncryptedStoreFailure::Absent { account_key })?;
     if account.owner != program_id {
         return Err(EncryptedStoreFailure::ForeignOwner {
             account_key,
@@ -105,6 +103,4 @@ pub enum EncryptedStoreFailure {
     },
     #[error("encrypted store {account_key:?} names the wildcard sentinel as its program")]
     SentinelProgram { account_key: SolanaPubkeyBytes },
-    #[error(transparent)]
-    UnreadAccount(#[from] UnreadAccount),
 }
