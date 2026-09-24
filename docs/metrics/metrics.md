@@ -247,6 +247,14 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
+#### Metric Name: `kms_connector_gw_listener_event_rejected_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the events the GW listener skipped because they do not form a valid request, such as a Solana user decryption whose request bytes do not decode. They are not counted as received and no request row is written.
+ - **Alarm**: If the counter increases over a period of time.
+   - **Recommendation**: any increase, i.e. `sum(increase(counter[5m])) > 0`.
+
 #### Metric Name: `kms_connector_gw_listener_event_listening_errors`
  - **Type**: Counter
  - **Labels**:
