@@ -536,11 +536,11 @@ signs it.
 | Proposal id | A number identifying this upgrade. It must not be zero, and it must be **different from the last completed one**. It does not have to be higher. The script uses the current time in seconds, so this is handled automatically. |
 | Target version | The version Green will become, for example `v0.15.0`. |
 | One window per host chain | A start block and an end block, for Sepolia and for Amoy. |
-| Gateway start block | The matching start point on the gateway chain. |
+| Gateway start block | The gateway tip when the proposal was built. The gateway mints blocks only when it receives transactions, so a projected future block might never exist. |
 
-The windows are worked out from the current block times of each chain, so that all chains and the
-gateway start at roughly the same moment. The script prints the difference, called the skew,
-usually a few seconds.
+The host windows are worked out from the current block times of each chain, so that all host chains
+start at roughly the same moment. The script prints the difference, called the skew, usually a few
+seconds. The gateway track opens as soon as the proposal is ingested.
 
 **When a new proposal is allowed to replace an older one.** The operators accept it only if it
 arrives in a **later block** than the previous one, and the previous attempt either failed or
