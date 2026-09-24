@@ -77,6 +77,11 @@ hostChains:
 {{- end }}
 {{- range $name, $presetChain := $presetChains }}
 {{- $chain := index $chains $name | default dict }}
+{{- range $field := list "solanaHostProgramId" "solanaProofRoutes" }}
+{{- if index $chain $field }}
+{{- fail (printf "commonConfig.hostChains.%s.%s does not apply to a preset chain: presets are EVM chains; set commonConfig.network to \"\" to configure a Solana chain" $name $field) }}
+{{- end }}
+{{- end }}
 {{- $url := $chain.url | default "" }}
 {{- if not $url }}
 {{- fail (printf "commonConfig.hostChains.%s.url must be set: %s is deployed on network %q" $name $name $network) }}
@@ -90,12 +95,19 @@ hostChains:
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
 {{- /* The chain id's type byte (bits 56..64) names the kind, as in the connector. */}}
-{{- $type := div (int64 ($chain.chainId | default 0)) 0x0100000000000000 }}
+{{- if not $chain.chainId }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId must be set when commonConfig.network is empty (no preset to default from)" $name) }}
+{{- end }}
+{{- $chainId := toString $chain.chainId }}
+{{- if not (and (regexMatch "^[0-9]+$" $chainId) (eq (toString (int64 $chainId)) $chainId)) }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId %q is not a decimal integer below 2^63; quote it, as YAML reads a large unquoted number as a float" $name $chainId) }}
+{{- end }}
+{{- $type := div (int64 $chainId) 0x0100000000000000 }}
 {{- if not (or (eq $type 0) (eq $type 1)) }}
-{{- fail (printf "commonConfig.hostChains.%s.chainId has type byte %d, which names no host kind" $name $type) }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId has type byte 0x%02x, which names no host kind" $name $type) }}
 {{- end }}
 {{- $solana := eq $type 1 }}
-{{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofRoutes") (list "url" "chainId" "aclAddress") $solana }}
+{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofRoutes") (list "url" "aclAddress") $solana }}
 {{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofRoutes") $solana }}
 {{- if index $chain $field }}
 {{- fail (printf "commonConfig.hostChains.%s.%s does not apply to %s chain" $name $field (ternary "a Solana" "an EVM" $solana)) }}
@@ -108,7 +120,7 @@ hostChains:
 {{- end }}
   {{ $name }}:
     url: {{ $chain.url | quote }}
-    chainId: {{ $chain.chainId | toString | quote }}
+    chainId: {{ $chainId | quote }}
 {{- if $solana }}
 {{- range $route := $chain.solanaProofRoutes }}
 {{- if not (and $route.url $route.apiKey) }}
