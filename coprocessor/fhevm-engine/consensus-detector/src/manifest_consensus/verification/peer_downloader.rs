@@ -780,7 +780,8 @@ async fn finish_claim(
         },
     )
     .await?;
-    persist_claim_outcome(&mut trx, claim, &evaluation).await?;
+    let missing_peer_manifests = missing_peer_manifest_count(claim, &manifests);
+    persist_claim_outcome(&mut trx, claim, &evaluation, missing_peer_manifests).await?;
     trx.commit().await?;
     info!(
         task_id = claim.task_id,
@@ -799,6 +800,7 @@ async fn finish_claim(
         unverified_prefix_through_block = ?evaluation.coverage.unverified_prefix_through_block,
         required_quorum = claim.required_quorum,
         archived_publishers = ?manifests.iter().map(|manifest| manifest.signed.payload.publisher).collect::<Vec<_>>(),
+        missing_peer_manifests,
         localization_complete = localization.complete,
         drifted_block_count = ?localization.drifted_block_count,
         drifted_handle_count = ?localization.drifted_handle_count,
@@ -1111,10 +1113,27 @@ async fn fail_claimed_task(
     Ok(())
 }
 
+/// Registered peers without an authenticated manifest at the task's exact height.
+fn missing_peer_manifest_count(
+    claim: &VerificationClaim,
+    manifests: &[AuthenticatedManifest],
+) -> usize {
+    claim
+        .peers
+        .iter()
+        .filter(|peer| {
+            !manifests
+                .iter()
+                .any(|manifest| manifest.signed.payload.publisher == peer.publisher)
+        })
+        .count()
+}
+
 async fn persist_claim_outcome(
     trx: &mut Transaction<'_, Postgres>,
     claim: &VerificationClaim,
     evaluation: &QuorumEvaluation,
+    missing_peer_manifests: usize,
 ) -> Result<(), ExecutionError> {
     let target = sqlx::query!(
         "SELECT max_attempts, retry_delay_secs FROM block_manifest_verification_task WHERE id = $1",
@@ -1126,11 +1145,15 @@ async fn persist_claim_outcome(
     let retry_delay_secs = target.retry_delay_secs;
     let state = if evaluation.outcome == VerificationOutcome::Consensus {
         "consensus"
+    } else if missing_peer_manifests == 0 {
+        // Every registered peer manifest was compared: another attempt would
+        // re-read the same immutable evidence. Drift is already recorded, and
+        // a historical difference stays in every later signed history.
+        "verified"
     } else if claim.attempt >= max_attempts {
         "retry_exhausted"
     } else {
-        // Drift is reportable immediately, but retries remain available so a
-        // newer peer revision can demonstrate remission.
+        // Only a missing peer manifest can still change the evidence.
         "pending"
     };
     sqlx::query!(
