@@ -133,7 +133,7 @@ not stored.
 | 2xx with a valid DTO | — | — |
 | 2xx with an unreadable body | `Body` | no |
 | any body above 4 MiB (declared `content-length`, or bytes received when the stream is cut) | `TooLarge(bytes)` | no |
-| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed` (400), `sender_authentication_failed` (401), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
+| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
 | non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408 and 5xx only |
 | connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
 

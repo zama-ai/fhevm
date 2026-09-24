@@ -218,9 +218,14 @@ pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpRepl
     }
 }
 
-/// The connector's error body at `code.http_status()`; `malformed` carries no id, like the real endpoint.
+/// The connector's error body at `code.http_status()`; the endpoint's validation codes (`malformed`,
+/// `unsupported_attestation_type`) carry no id, like the real endpoint.
 pub fn error_reply(route: &str, body: &[u8], code: ErrorCode) -> HttpReply {
-    let id = (code != ErrorCode::Malformed).then(|| request_facts(route, body).0);
+    let validation = matches!(
+        code,
+        ErrorCode::Malformed | ErrorCode::UnsupportedAttestationType
+    );
+    let id = (!validation).then(|| request_facts(route, body).0);
     let error = ErrorResponse::new(code, format!("mock {}", code.as_str()), id);
     HttpReply {
         status: code.http_status(),
