@@ -10,6 +10,8 @@ import {
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   kmsRenderOptionsFor,
+  kmsMigrationConfigName,
+  renderKmsMigration,
   kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
   renderThresholdGenKeysConfig,
@@ -141,6 +143,13 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
       renderThresholdCoreConfig(thresholdTemplate, plan.kms),
     );
+    for (const [nodeId, associations] of Object.entries(plan.kmsMigrationByNodeId ?? {})) {
+      const party = Number(nodeId);
+      if (!Number.isInteger(party) || party < 1 || party > plan.kms.parties) throw new Error(`Invalid KMS migration party ${nodeId}`);
+      const config = party > plan.kms.committeeSize
+        ? renderThresholdSpareConfig(thresholdTemplate) : renderThresholdCoreConfig(thresholdTemplate, plan.kms);
+      await writeWritableFile(path.join(GENERATED_CONFIG_DIR, kmsMigrationConfigName(party)), config + renderKmsMigration(associations));
+    }
     const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
     for (let partyId = 1; partyId <= plan.kms.parties; partyId += 1) {
       await writeWritableFile(

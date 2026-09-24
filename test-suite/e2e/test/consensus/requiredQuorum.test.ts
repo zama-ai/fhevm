@@ -29,7 +29,7 @@ function execute(statements: readonly ts.Statement[], bindings: Record<string, u
 
 const address = `0x${'ab'.repeat(20)}`;
 const configuration = { GATEWAY_RPC_URL: 'http://gateway:8546', GATEWAY_CONFIG_ADDRESS: address, CIPHERTEXT_COMMITS_ADDRESS: address };
-const suites = ['reorgConsensus.ts'];
+const suites = ['crashRetryConsensus.ts', 'reorgConsensus.ts', 'requestRecovery.ts'];
 
 describe('Required quorum is an executed suite gate', () => {
   for (const file of suites) {
@@ -40,9 +40,9 @@ describe('Required quorum is an executed suite gate', () => {
         const fields = { ...configuration, [missing]: '' };
         let failure: unknown;
         try {
-          await execute(callbackStatements(file, 'before'), {
+          await execute(callbackStatements(file, file === 'requestRecovery.ts' ? 'it' : 'before'), {
             ...fields, ENABLE: true, ENABLE_REORG_CONSENSUS: true, VICTIM: 1, COPROCESSOR_COUNT: 3,
-            process: { env: { ...fields } }, requireQuorumConfiguration,
+            process: { env: { ...fields, RUN_REQUEST_RECOVERY: '1' } }, requireQuorumConfiguration,
             getCoprocessorDbUrls: forbidden, require: forbidden,
           });
         } catch (error) { failure = error; }
@@ -53,10 +53,10 @@ describe('Required quorum is an executed suite gate', () => {
     }
   }
 
-  for (const file of suites) {
+  for (const file of suites.slice(0, 2)) {
     it(`${file} cannot publish completion while required quorum is pending or rejected`, async () => {
       const statements = callbackStatements(file, 'it');
-      const start = statements.findIndex((statement) => statement.getText().includes('readGatewayMembership('));
+      const start = statements.findIndex((statement) => /readGatewayMembership\(|assertGatewayTopology\(/.test(statement.getText()));
       expect(start).to.be.at.least(0);
       const receipts: unknown[] = [];
       const messages: unknown[] = [];
@@ -65,7 +65,7 @@ describe('Required quorum is an executed suite gate', () => {
       const pending = new Promise<never>((_, fail) => { reject = fail; });
       const run = execute(statements.slice(start), {
         ...configuration, BOUNDARY: 'before-commit', distinctHandles: ['handle'], firstHandle: 'handle', MARKER: 'COMPLETE',
-        process: { env: {} }, readGatewayMembership: async () => ({ txSenders: ['sender'], threshold: 2 }),
+        COPROCESSOR_COUNT: 3, process: { env: { CONSENSUS_THRESHOLD: '3' } }, assertGatewayTopology: async () => ({ txSenders: ['sender'], threshold: 3 }), readGatewayMembership: async () => ({ txSenders: ['sender'], threshold: 2 }),
         assertQuorumOutcome: async (input: { mode: string }) => { expect(input.mode).to.eq('required'); calls++; return pending; },
         emitAssertions: (...args: unknown[]) => receipts.push(args), console: { info: (...args: unknown[]) => messages.push(args) },
       });
@@ -81,4 +81,29 @@ describe('Required quorum is an executed suite gate', () => {
       expect(messages).to.have.length(0);
     });
   }
+});
+
+it('crash recovery requires the dependent quorum as well as the producer quorum', async () => {
+  const statements = callbackStatements('crashRetryConsensus.ts', 'it');
+  const start = statements.findIndex(statement => statement.getText().includes('assertGatewayTopology('));
+  const checked: string[] = [];
+  const receipts: unknown[] = [];
+  let failure: unknown;
+  try {
+    await execute(statements.slice(start), {
+      ...configuration, COPROCESSOR_COUNT: 3, BOUNDARY: 'before-commit',
+      distinctHandles: ['producer', 'dependent'], MARKER: 'COMPLETE',
+      process: { env: { CONSENSUS_THRESHOLD: '3' } },
+      assertGatewayTopology: async () => ({ txSenders: ['sender'], threshold: 3 }),
+      assertQuorumOutcome: async ({ handle }: { handle: string }) => {
+        checked.push(handle);
+        if (handle === 'dependent') throw new Error('dependent never committed');
+        return { detail: 'producer committed' };
+      },
+      emitAssertions: (...args: unknown[]) => receipts.push(args), console: { info() {} },
+    });
+  } catch (error) { failure = error; }
+  expect(checked).to.deep.eq(['producer', 'dependent']);
+  expect((failure as Error).message).to.eq('dependent never committed');
+  expect(receipts).to.have.length(0);
 });

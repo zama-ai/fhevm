@@ -38,6 +38,8 @@ use crate::kms_generation::sks_key::{
 pub mod aws_s3;
 pub(crate) mod database;
 pub(crate) mod digest;
+#[cfg(feature = "test-failpoints")]
+mod download_test_control;
 pub(crate) mod metrics;
 pub(crate) mod sks_key;
 

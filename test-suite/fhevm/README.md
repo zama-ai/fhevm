@@ -572,7 +572,194 @@ bootstrap:
 
 `--scenario` can be combined with `--override coprocessor` as long as the scenario only defines topology/env/args and leaves coprocessor source inherited. If the scenario explicitly pins coprocessor source (for example with `source.mode=local` or `source.mode=registry`), overlapping `--override coprocessor...` inputs fail fast.
 
+### GPU consensus workers
+
+GPU builds use the production `gpu` feature set by default. Crash-boundary tests
+require an explicit `GPU_CONSENSUS_TEST_FAILPOINTS=1` for `build`, `start` and
+`test-env`; ordinary GPU CI coverage leaves it unset. The build manifest records
+the feature set, and each invocation records its executable hash. Restoring a
+unit refuses a different executable, so rebuilding workers during a session
+requires a complete stop/build/start handover.
+
+
+`scripts/gpu-consensus-workers.sh` runs the TFHE, ZK-proof and SNS workers on the host with GPU features, for the three-operator consensus topology. `start` stops the container workers it displaces and records them; `stop` puts them back and clears that record.
+
+Only one worker may serve an operator's work queue. Each role claims rows with `FOR UPDATE SKIP LOCKED`, which is correct for one worker and silently wrong for two: each row is served by whichever process won it, so a host worker and a container split the queue between two different builds. For the SNS worker that leaves one operator holding a mix of CPU-squashed and GPU-squashed `ct128` for handles whose `ct64` is identical — it reads as a consensus defect, and telling it apart from one cost a full investigation. For the TFHE worker it would diverge `ct64` itself.
+
+The units are transient with `Restart=on-failure`, so they survive a stack teardown and restart themselves. Always end a session with `stop` rather than stopping the units by hand — otherwise the next `up` recreates the containers underneath them. Three guards enforce this:
+
+- `up` refuses to start while the restore record exists, and names the fix.
+- readiness refuses to call the stack ready if any worker process outside the stack's containers is running, or if operators disagree on `gpu_enabled`.
+- `gpu-consensus-workers.sh conflicts` reports any queue served by both a unit and a container, and `status` exits non-zero when it finds one.
+
+```sh
+./scripts/gpu-consensus-workers.sh start
+./scripts/gpu-consensus-workers.sh conflicts   # exits 0 when clean
+./scripts/gpu-consensus-workers.sh stop
+```
+
+A stopped unit is restored through the launcher, never through `systemctl
+start`: the units are transient (`systemd-run --collect`), so stopping one
+garbage-collects it and the name stops resolving. `stop-unit` keeps the unit's
+recorded invocation configuration and `restart-unit` restores from that record
+rather than re-resolving the tuning from the calling shell — a caller without
+the `GPU_CONSENSUS_*` overrides exported would otherwise bring a deliberately
+heterogeneous operator back on fleet defaults, or a second-GPU operator back on
+card 0. `verify-restore <kind> <index>` is the acceptance case for that path:
+it stops and restores one unit from a shell with no overrides set and requires
+the restored invocation to carry the identical recorded configuration. Unit
+replacement waits until the old process is gone and the transient unit is
+inactive or removed; `deactivating` is not a completed stop.
+
+The `coprocessor-db-state-revert` test profile uses the selected Hardhat network's
+canonical RPC head immediately before its seed workload as the revert boundary.
+The RPC chain ID must match `CHAIN_ID` (or the scenario's first host-chain ID).
+The profile requires completed computations above that boundary before changing
+SQL state. `DB_REVERT_ANCHOR_TIMEOUT_SECONDS` defaults to 60 seconds, including
+cold TypeScript/provider startup, with a further 15-second host cancellation
+allowance. A failed or mismatched probe aborts before the revert.
+The target must be an operator database in the active managed DB container;
+external `POSTGRES_CONTAINER`, `POSTGRES_HOST`, or `POSTGRES_DB` overrides are
+refused before seeding. All managed blue and green writers are stopped and
+restored according to their original state. Unmanaged writers or an existing
+paused owner abort the operation before any service is stopped.
+
+## Consensus coverage
+
+`consensus/inventory.yaml` is the inventory of what the consensus suite covers.
+One row per case, and the row is the contract: the property a green
+establishes, the topology and services it needs, the fault applied and the
+stage it is applied at, how that fault is independently observed, the expected
+quorum outcome, and the runner that executes it. Everything that selects, runs
+or reports on a case derives from it.
+
+```sh
+bun scripts/consensus-inventory.ts validate          # the inventory is well-formed
+bun scripts/consensus-inventory.ts list              # what exists
+bun scripts/consensus-inventory.ts show CR-01-INTERRUPT-BEFORE-COMMIT
+bun scripts/consensus-inventory.ts plan standard     # what a selection would run
+bun scripts/consensus-inventory.ts aggregate --run <id> --select full
+```
+
+Selections accept `leg:<name>` and `family:<name>` to distinguish dispatch legs
+from case families. For example, `leg:failure-matrix` excludes the crash-retry
+and Rust cases delegated by `family:failure-matrix`; unqualified names retain
+the union for compatibility.
+
+CI records immutable container image IDs per verdict. A cold-build receipt binds
+locally built image groups to the clean pre-boot checkout revision; the full
+branch gate rejects missing receipts, stale revisions and mismatching running
+image IDs. Published companion images are identified but are not attributed to
+the checkout. `build=false` still builds this checkout's test-suite image while
+using published runtime images, and remains partial coverage. Local runs without
+the CI receipt report only the identities their runner actually collected.
+
+Runners emit one structured result per case into
+`.fhevm/runtime/consensus-results/<run-id>.jsonl`, carrying the case contract
+plus the checkout revision, workload ids, process identities
+before and after the fault, observed fault/recovery timestamps, per-assertion
+outcomes and the cleanup outcome. `aggregate` is the verdict: it rejects a run
+that reported no result for a case it selected, a duplicate with a conflicting
+state, a result produced against a different revision or topology, and a PASS
+carrying a failed cleanup, an unobserved fault, or missing any declared assertion
+kind. Detailed runner outcomes accompany explicit summaries of the safety,
+liveness, bytes, quorum and other contracts actually checked. A run whose selection is a
+subset of the required set is labeled PARTIAL and cannot satisfy the full
+gate. Every required case needs a PASS; NOT_APPLICABLE cannot satisfy it. CI's
+final aggregate combines all job artifacts at the checked-out revision and
+requires every selected job to succeed, including its final validity gates. A
+missing, skipped or failed required job fails the full selection. Image evidence
+records each running container's immutable image ID rather than resolving its
+possibly reassigned tag. GPU coverage runs
+three operators on one H100. `--device-split` is deferred and exits before running: configured placement alone does not prove which GPU executed the selected work. It is excluded from CI.
+
+`topology.backends` lists compatible local execution backends. `ci.backend`
+identifies the backend covered by the planned CI job; `aggregate --ci` checks that
+backend. A CPU result never claims additional GPU coverage. `standard` selects all
+CPU and stackless cases, including Rust regressions, fork and isolated database
+jobs. `full` adds the GPU cases.
+
+With workflow `build=false`, published-stack results carry `build_mode=published`
+and a separate software label; the checkout revision identifies the harness.
+Cases that require local test features still build locally and say so. Such a
+workflow is partial and cannot satisfy the branch delivery gate. Branch validation
+uses `build=true` and aggregation with `--require-build-mode checkout`. Different
+selections and build modes have separate concurrency groups, so a harness dispatch
+does not cancel an active full run.
+
+Build manifests and result writers share one dirty-source definition: only the
+exact generated `E2ECoprocessorConfigLocal.sol` path is exempt. The running E2E
+suite's source hash still includes that generated file.
+
+For the stackless harness, install CLI dependencies with `bun install --frozen-lockfile` in `test-suite/fhevm`, and comparator dependencies with `npm ci --ignore-scripts --workspace @fhevm/e2e-suite` at the repository root. Then run `scripts/run-stackless-cases.sh --leg harness` from this directory; it needs no running stack.
+
+The runners:
+
+| Runner | Cases |
+|---|---|
+| `run-materialization-consensus.sh --suite materialization` | the byte oracle: raw bytes, digest bindings, provenance, transaction completion, quorum, plaintext |
+| `run-materialization-consensus.sh --suite reorg` | a block replaced by a distinct sibling |
+| `run-stackless-cases.sh --leg comparator` | the shared oracle's mismatch classes, against synthetic rows |
+| `run-degraded-consensus.sh --case core` | quorum with an operator removed and backlog convergence, with default auto-revert |
+| `run-degraded-consensus.sh --case gw` | the in-flight gateway event, with auto-revert disabled |
+| `run-fork-consensus.sh --case all` | competing branches, orphaned content, a stranded child, replay |
+| `run-crash-retry-consensus.sh --boundary ...` | interruption of identified in-flight work at three boundaries |
+| `run-failure-matrix.sh --column ...` | per-service faults with service-appropriate workloads |
+| `run-mixed-backend-guard.sh` | the guard against two builds on one queue |
+| `test-fault-contracts.sh` | the fault-control layer's fail-closed rules, with no stack |
+
+DEG06 (`--case gw`) requires drift auto-revert disabled on every
+gateway listener so its deliberately conflicting event cannot revert the fleet.
+Prepare the scenario before booting; CI gives DEG06 its own isolated job:
+
+```sh
+bun scripts/prepare-degraded-scenario.ts three-of-three > /tmp/consensus-degraded.yaml
+./fhevm-cli up --target latest-main --scenario /tmp/consensus-degraded.yaml --build
+```
+
+Use `two-of-three` in the first command for the majority-quorum topology. The
+helper preserves the topology, sources and runtime arguments and sets the existing
+per-instance `DRIFT_AUTO_REVERT_ENABLED` env override to `false`. Ordinary scenarios
+retain automatic drift recovery. Core degraded cases require that default, and
+results record the setting observed on the live listeners. Run the core and
+gateway cases on their respective configurations.
+
+The runners enforce these rules:
+
+- A suite's verdict is its process EXIT STATUS plus its own completion marker.
+  `1 passing` in mocha output survives an after-hook failure, and a suite that
+  skipped every test exits 0 too.
+- Every fault injection and every heal checks both the command's status and an
+  independent postcondition. A stopped process is confirmed stopped by reading
+  `/proc`, and a killed one is confirmed replaced by a changed process identity
+  — a successful signal proves only that the signal was sent.
+- Each case finishes cancellation, durable-journal recovery, and safe service
+  restoration before admitting a later case. A failed case can be followed by a
+  real next case; an unresolved cleanup prevents another fault. Matrix children
+  stage results until the parent has completed cleanup, so parent failure produces
+  one final failed verdict instead of conflicting PASS and FAIL records.
+- Failure-matrix phases share one inventory deadline. A supervisor inside the
+  E2E container owns each phase's process group; cleanup proves cancellation
+  before healing faults. If shutdown cannot be verified, runners refuse the
+  stack and retain the phase/restore records at
+  `.fhevm/runtime/failure-matrix/uncancelled-phase`. Recover those recorded
+  processes and faults before clearing that marker.
+
+The proof recovery case consumes the original interrupted request's encrypted
+input and requires durable verifier outcomes. The stranded-child case proves
+repair sensitivity with a scoped lost-decrement control. Replay requires
+committed insert attempts for the selected graph from the restarted poller.
+The gateway restart case identifies the exact event in each replacement's
+warning log against safely poisoned, already-published digests, then restores
+those digests. Watermark progress alone does not satisfy these recovery claims.
+
 ## Troubleshooting
+
+**A coprocessor service exits and comes back on its own**
+
+That is intended. The coprocessor runtime services carry `restart: "on-failure:10"`. They implement exit-for-restart — on a fatal error they log, flush telemetry and exit non-zero, expecting a supervisor — and without a policy the stack degraded permanently on any such path. `docker inspect -f '{{.RestartCount}}' <service>` tells you whether one has been recovering.
+
+`on-failure` and not `unless-stopped`: a clean exit 0 is a service that meant to finish (a retired stack after cutover, a `--stack-version` probe) and restarting it would loop. Docker also treats `docker kill` and `docker stop` as manual and suppresses the policy for both, so fault injection still holds a service down until you start it again. The bound of 10 limits automatic retry attempts; the harness resets the budget with an explicit stop/start before arming the next fault.
 
 **Services exit silently shortly after startup (e.g. `coprocessor-zkproof-worker`)**
 
@@ -591,25 +778,3 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
-
-
-## Consensus coverage
-
-The manual `test-suite-consensus` workflow runs the canonical byte/digest,
-materialization, alias, replacement-block, competing-branch and scheduling gates.
-`test-suite/fhevm/consensus/inventory.yaml` defines the cases in this layer.
-`smoke` selects CPU byte agreement, `standard` adds the harness, production
-regressions and fork cases, and `full` also requires single-GPU scheduling.
-See [the consensus suite documentation](../e2e/test/consensus/README.md).
-The [campaign runbook](consensus/RUNBOOK.md) explains each case's evidence and
-limits, CI backend coverage, recovery, and readiness changes affecting ordinary
-`fhevm-cli up` users.
-
-The GPU consensus launcher uses host systemd workers; the ordinary GPU E2E CI
-workflow uses GPU containers. Always restore a host-worker session with
-`scripts/gpu-consensus-workers.sh stop`. Ownership, readiness and writer-quiescence
-checks remain enabled for the launcher and database-revert command.
-
-Service fault campaigns, interrupted-work recovery, degraded availability,
-GPU lifecycle fault cases, and fork repair/replay are delivered separately.
-They are not counted as covered by this layer's `full` selection.

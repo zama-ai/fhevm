@@ -49,7 +49,7 @@ CR_RUN_ID=final; CR_REVISION=abc123; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLASS=cpu
 CR_SCENARIO=none; CR_OPERATORS=0; CR_THRESHOLD=0
 CONSENSUS_RESULTS_DIR='${directory}/results'; export CONSENSUS_RESULTS_DIR
 rs_stage_results
-cr_record_checked_pass HAR-03-READINESS-CONTRACTS assert=safety=pass:fixture cleanup=ok
+cr_record_checked_pass HAR-01-FAULT-CONTRACTS assert=safety=pass:fixture cleanup=ok
 HC_CLEANUP_TIMEOUT_SECONDS=1
 hc_begin_cleanup
 # Representative explicit SQL wrapper: the inner timeout must not reset budget.

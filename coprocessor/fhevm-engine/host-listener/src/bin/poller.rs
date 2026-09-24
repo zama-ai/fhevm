@@ -172,6 +172,10 @@ fn parse_optional_address(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "test-failpoints")]
+    if host_listener::consensus_test_control::key_download_cli()? {
+        return Ok(());
+    }
     // Handle `--stack-version` before clap parsing: it prints the compiled-in
     // STACK_VERSION and exits 0. Without this, clap rejects the unknown flag
     // with exit code 2, so the Helm `--stack-version` startupProbe would never

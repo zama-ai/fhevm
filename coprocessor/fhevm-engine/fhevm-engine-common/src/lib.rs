@@ -14,6 +14,8 @@ pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
+#[cfg(feature = "test-failpoints")]
+pub mod reservation_test_control;
 pub mod synthetic_input;
 pub mod telemetry;
 pub mod tfhe_ops;

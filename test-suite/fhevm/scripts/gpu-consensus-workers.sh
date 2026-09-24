@@ -53,7 +53,7 @@ the active three-coprocessor consensus topology. All operators use
 GPU_CONSENSUS_DEVICE (default 0) so the test has one homogeneous H100 class.
 
 Optional tuning variables:
-  GPU_CONSENSUS_TEST_FAILPOINTS=0  # this consensus layer uses production workers
+  GPU_CONSENSUS_TEST_FAILPOINTS=0  # use 1 explicitly for fault-hook campaigns
   GPU_CONSENSUS_DEVICE=0
   GPU_CONSENSUS_STREAMS_PER_DEVICE=16
   GPU_CONSENSUS_COMPONENTS_PER_BATCH=20
@@ -390,7 +390,6 @@ build() {
   test_features >/dev/null || return 1
   require cargo
   require nvidia-smi
-  require_three_operator_topology
   require_clean_source
   validate_tuning
   [[ -x "${CUDA_PATH:-/usr/local/cuda}/bin/nvcc" ]] || die "nvcc is unavailable under CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}"
@@ -412,10 +411,44 @@ build() {
   echo "gpu-consensus-workers: built source-matched GPU workers; metadata: $BUILD_MANIFEST"
 }
 
+# Package the exact native build for the two-operator migration continuation.
+# Building binaries is topology-independent; starting the ordinary host fleet
+# still requires its existing three-operator ownership checks.
+package_migration() {
+  require_clean_source
+  verify_build_manifest
+  local stage capability revision binary role image_id cuda_version
+  stage="$(mktemp -d "$GPU_RUNTIME_DIR/package.XXXXXX")"
+  cuda_version="$("${CUDA_PATH:-/usr/local/cuda}/bin/nvcc" --version | sed -n 's/.*V\([0-9][0-9.]*\).*/\1/p' | tail -1)"
+  [[ "$cuda_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "cannot identify the compiling CUDA toolkit"
+  capability="$(nvidia-smi --id="$DEVICE" --query-gpu=compute_cap --format=csv,noheader | tr -d '. ')"
+  revision="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  cp -L "${CUDA_PATH:-/usr/local/cuda}"/lib64/libcudart.so.12* "$stage/"
+  printf '{}\n' > "$stage/images.json"
+  for binary in tfhe_worker zkproof_worker sns_worker; do
+    role="${binary//_/-}"
+    cp "$BIN_DIR/$binary" "$stage/$binary"
+    ln -sfn "$binary" "$stage/worker"
+    docker build -f "$REPO_ROOT/coprocessor/fhevm-engine/Dockerfile.gpu" \
+      --build-arg "BINARY=$binary" --build-arg "COMPUTE_CAPABILITY=$capability" --build-arg "CUDA_VERSION=$cuda_version" \
+      --build-arg "RUNTIME_BASE=${GPU_RUNTIME_BASE:-cgr.dev/zama.ai/glibc-dynamic:15.2.0}" \
+      --label "org.opencontainers.image.revision=$revision" \
+      --label "ai.zama.fhevm.binary-sha256=$(binary_sha "$stage/$binary")" \
+      --iidfile "$stage/image-id" "$stage"
+    image_id="$(cat "$stage/image-id")"
+    jq --arg role "$role" --arg id "$image_id" '. + {($role): $id}' "$stage/images.json" > "$stage/images.next"
+    mv "$stage/images.next" "$stage/images.json"
+  done
+  jq --arg revision "$revision" --arg device "$(gpu_uuid)" --arg capability "$capability" \
+    '{revision:$revision, device:$device, capability:$capability, images:.}' "$stage/images.json" > "$GPU_RUNTIME_DIR/migration-images.json"
+  rm -rf "$stage"
+  echo "Migration image receipt: $GPU_RUNTIME_DIR/migration-images.json"
+}
+
 test_features() {
   case "$TEST_FAILPOINTS" in
     0) printf '' ;;
-    1) die "fault-hook builds are introduced by the subsequent failure-mode coverage branch" ;;
+    1) printf 'tfhe-worker/test-failpoints' ;;
     *) die "GPU_CONSENSUS_TEST_FAILPOINTS must be 0 (production) or 1 (fault hooks)" ;;
   esac
 }
@@ -994,6 +1027,8 @@ verify_restore() (
   trap 'exit 130' INT
   trap 'exit 143' TERM
   stop_unit "$kind" "$index"
+  # The lifecycle recorder reads this stamp as the fault time.
+  printf 'GPU_FAULT_OBSERVED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   restart_unit "$kind" "$index"
   wait_for_units || die "$unit did not become ready after restoration"
   restore_pending=false
@@ -1360,6 +1395,7 @@ case "${1:-}" in
     echo "gpu-consensus-workers: preflight OK (tree clean, nvcc present, $(gpu_count) GPU(s))"
     ;;
   build) build ;;
+  package-migration) package_migration ;;
   start) ensure_user_bus; start ;;
   stop)
     ensure_user_bus

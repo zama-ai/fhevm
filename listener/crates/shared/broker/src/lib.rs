@@ -47,6 +47,8 @@
 #![warn(clippy::suspicious, clippy::style, clippy::complexity, clippy::perf)]
 
 // Core trait definitions (absorbed from the `mq` crate)
+#[cfg(feature = "test-failpoints")]
+mod test_ack_boundary;
 pub mod traits;
 
 // Backend implementations (feature-gated)
