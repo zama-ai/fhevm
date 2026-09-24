@@ -7,7 +7,6 @@ use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
 use super::proof::ProofReadError;
 use super::public_decrypt::PublicDecryptFailure;
-use super::scope::ScopeFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
 use crate::core::event_processor::RequestCheckKind;
@@ -44,8 +43,12 @@ pub enum AuthorizationFailure {
         index: usize,
         source: EncryptedStoreFailure,
     },
-    #[error("entry {index}: scope: {source}")]
-    Scope { index: usize, source: ScopeFailure },
+    #[error("entry {index}: application ({program:?}, {scope:?}) is outside the signed scope")]
+    ScopeNotAllowed {
+        index: usize,
+        program: SolanaPubkeyBytes,
+        scope: SolanaPubkeyBytes,
+    },
     #[error("leaf proofs: {0}")]
     ProofRead(#[from] ProofReadError),
     #[error("entry {index}: handle binding: {source}")]
@@ -105,7 +108,7 @@ impl AuthorizationFailure {
             Self::Snapshot(source) => source.class(),
             Self::Watermark(source) => source.class(),
             Self::EncryptedStore { source, .. } => source.class(),
-            Self::Scope { source, .. } => source.class(),
+            Self::ScopeNotAllowed { .. } => ACL_REFUSED,
             Self::ProofRead(source) => source.class(),
             Self::HandleBinding { source, .. } => source.class(),
             Self::Delegation { source, .. } => source.class(),
@@ -192,14 +195,6 @@ impl EncryptedStoreFailure {
             | Self::NotAnEncryptedStore { .. }
             | Self::AddressMismatch { .. } => ACL_REFUSED,
             Self::InvalidHostRecord(source) => source.class(),
-        }
-    }
-}
-
-impl ScopeFailure {
-    pub fn class(&self) -> FailureClass {
-        match self {
-            Self::ScopeNotAllowed { .. } => ACL_REFUSED,
         }
     }
 }

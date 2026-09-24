@@ -8,6 +8,7 @@ use super::snapshot::SnapshotAccount;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::WILDCARD_APP;
 use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
+use zama_solana_permit::{AllowedScopes, Identity};
 
 /// An encrypted store that passed [`resolve_encrypted_store`], its only constructor.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -31,6 +32,13 @@ impl ResolvedEncryptedStore {
 
     pub fn encrypted_store(&self) -> &EncryptedStore {
         &self.encrypted_store
+    }
+
+    /// Whether a permit signed for `scopes` covers this store's application. The pair comes from
+    /// the validated store, never from the request; an empty list admits every application, as
+    /// on EVM.
+    pub fn is_in(&self, scopes: &AllowedScopes) -> bool {
+        scopes.admits(&Identity::new(self.program()), &Identity::new(self.scope()))
     }
 }
 

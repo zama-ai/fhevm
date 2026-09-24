@@ -7,7 +7,6 @@ pub mod handle_binding;
 pub mod pipeline;
 pub mod proof;
 pub mod public_decrypt;
-pub mod scope;
 pub mod snapshot;
 pub mod watermark;
 

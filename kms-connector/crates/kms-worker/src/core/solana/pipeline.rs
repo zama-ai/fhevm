@@ -5,7 +5,6 @@ use super::encrypted_store::resolve_encrypted_store;
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
-use super::scope::check_scope;
 use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
 use super::{
@@ -91,8 +90,13 @@ pub async fn authorize_request(
         let store =
             resolve_encrypted_store(observed.store.as_ref(), program_id, entry.encrypted_store)
                 .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-        check_scope(permit.allowed_scopes(), &store)
-            .map_err(|source| AuthorizationFailure::Scope { index, source })?;
+        if !store.is_in(permit.allowed_scopes()) {
+            return Err(AuthorizationFailure::ScopeNotAllowed {
+                index,
+                program: store.program(),
+                scope: store.scope(),
+            });
+        }
         if entry.owner_address != signer {
             let rows = observed
                 .delegation

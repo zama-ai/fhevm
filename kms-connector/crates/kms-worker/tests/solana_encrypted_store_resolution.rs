@@ -28,7 +28,6 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    scope::{ScopeFailure, check_scope},
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
 };
 use solana_support::*;
@@ -390,8 +389,10 @@ fn a_scoped_permit_admits_an_encrypted_store_of_a_signed_application() {
         EncryptedStoreFixture::allowing(handle(0x1b, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect("a signed application is in scope");
+    assert!(
+        resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "a signed application is in scope"
+    );
 }
 
 /// A scope outside the signed set is rejected, and the pair that gets tested is the encrypted
@@ -408,14 +409,10 @@ fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect_err("an unsigned scope is out of scope");
-
-    assert!(matches!(
-        failure,
-        ScopeFailure::ScopeNotAllowed { program, scope }
-            if program == APP_PROGRAM && scope == foreign_scope
-    ));
+    assert!(
+        !resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "an unsigned scope is out of scope"
+    );
 }
 
 /// The scope is only meaningful as a pair. The same scope bytes under another program are another
@@ -432,14 +429,10 @@ fn the_same_scope_under_another_program_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect_err("the pair is the identity, not the scope alone");
-
-    assert!(matches!(
-        failure,
-        ScopeFailure::ScopeNotAllowed { program, scope }
-            if program == other_program && scope == SCOPE
-    ));
+    assert!(
+        !resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "the pair is the identity, not the scope alone"
+    );
 }
 
 /// An empty signed list is permissive and the rule is skipped, which is parity with the EVM
@@ -459,8 +452,10 @@ fn a_permissive_permit_admits_an_encrypted_store_of_any_application() {
         permit.typed().allowed_scopes().is_permissive(),
         "the fixture really is permissive"
     );
-    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect("permissive skips the scope rule");
+    assert!(
+        resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "permissive skips the scope rule"
+    );
 }
 
 /// Scope is tested per handle, so a foreign-application handle mixed into a batch fails the whole
@@ -501,10 +496,11 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     assert!(
         matches!(
             failure,
-            AuthorizationFailure::Scope {
+            AuthorizationFailure::ScopeNotAllowed {
                 index: 1,
-                source: ScopeFailure::ScopeNotAllowed { .. }
-            }
+                program,
+                scope: SCOPE,
+            } if program == [0x81; 32]
         ),
         "the rejection names the offending entry, got {failure}"
     );

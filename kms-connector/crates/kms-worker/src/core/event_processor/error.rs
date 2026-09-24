@@ -253,7 +253,6 @@ mod tests {
         failure::InvalidHostRecord,
         handle_binding::HandleBindingFailure,
         proof::ProofReadError,
-        scope::ScopeFailure,
         snapshot::SnapshotError,
         watermark::{WatermarkFailure, WindowFailure},
     };
@@ -413,12 +412,10 @@ mod tests {
                 TERMINAL,
             ),
             (
-                AuthorizationFailure::Scope {
+                AuthorizationFailure::ScopeNotAllowed {
                     index: 0,
-                    source: ScopeFailure::ScopeNotAllowed {
-                        program: [1; 32],
-                        scope: [2; 32],
-                    },
+                    program: [1; 32],
+                    scope: [2; 32],
                 },
                 DENIED,
                 TERMINAL,
