@@ -17,31 +17,22 @@
 
 mod solana_support;
 
-use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use kms_worker::core::event_processor::{
-    ProcessingErrorKind,
-    solana_public_decrypt::{SolanaHost, check_solana_handles_public_decrypt},
-};
-use kms_worker::core::solana::proof::{HttpHostProofReader, LeafProofOutcome, LeafQuery};
-use kms_worker::core::solana::snapshot::{
-    RpcHostStateReader, SnapshotKeys, multiple_accounts_request_body,
+use kms_worker::core::event_processor::{ProcessingError, ProcessingErrorKind, RequestCheckError};
+use kms_worker::core::solana::{
+    SolanaHost,
+    proof::{CoprocessorProofClient, LeafProofOutcome, LeafQuery},
+    public_decrypt::check_public_decrypt,
+    snapshot::SolanaRpcClient,
 };
 use mocktail::{StatusCode, server::MockServer};
-use solana_pubkey::Pubkey;
-use solana_support::{EncryptedStoreFixture, deployment, handle};
+use solana_support::{
+    EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LEAF_PROOFS_ROUTE, PROGRAM_ID, handle,
+    serve_proofs, solana_host,
+};
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
 /// production constant.
 const CARRIER_VERSION: u8 = 0x04;
-
-/// The coprocessor route the connector reads leaf proofs from. A literal, for the same reason.
-const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
-
-/// The bearer key the mock coprocessor is configured with.
-const API_KEY: &str = "test-key";
-
-/// The FHE type byte of the fixture handles: any type will do, public-ness is per handle.
-const FHE_TYPE_UINT64: u8 = 5;
 
 /// The carrier as the client builds it: version, context id, the handle's encrypted store.
 fn carrier(fixture: &EncryptedStoreFixture) -> Vec<u8> {
@@ -60,124 +51,30 @@ fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedStor
     fixture
 }
 
-/// What the record answers for one query, as the coprocessor route serializes it.
-fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
-    match outcome {
-        LeafProofOutcome::Found {
-            leaf_index,
-            leaf_count,
-            siblings,
-        } => serde_json::json!({
-            "status": "found",
-            "leafIndex": leaf_index,
-            "leafCount": leaf_count,
-            "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
-        }),
-        LeafProofOutcome::NotFound { leaf_count } => {
-            serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
-        }
-        LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
-        LeafProofOutcome::HistoryIncomplete => {
-            serde_json::json!({ "status": "historyIncomplete" })
-        }
-    }
-}
-
-/// A host whose readers answer nothing: for requests that must be refused before any read. If the
-/// path under test unexpectedly reaches the network, the read fails and the assertions on the
-/// refusal shape catch it.
-async fn host_without_state() -> (MockServer, MockServer, SolanaHost) {
-    let rpc = MockServer::new_http("solana-rpc-empty");
-    rpc.start().await.expect("the mock RPC starts");
-    let coprocessor = MockServer::new_http("coprocessor-empty");
-    coprocessor
-        .start()
-        .await
-        .expect("the mock coprocessor starts");
-    let host = host_bound_to(&rpc, &coprocessor);
-    (rpc, coprocessor, host)
-}
-
-fn host_bound_to(rpc: &MockServer, coprocessor: &MockServer) -> SolanaHost {
-    host_bound_to_all(rpc, &[coprocessor])
-}
-
-fn host_bound_to_all(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
-    let client = reqwest::Client::new();
-    let routes: Vec<_> = coprocessors
-        .iter()
-        .map(|coprocessor| {
-            coprocessor
-                .base_url()
-                .expect("the mock coprocessor has a URL")
-                .clone()
-        })
-        .collect();
-    SolanaHost {
-        deployment: deployment(),
-        reader: RpcHostStateReader::new(
-            rpc.base_url().expect("the mock RPC has a URL").clone(),
-            client.clone(),
-        ),
-        proofs: HttpHostProofReader::new(&routes, API_KEY.to_owned(), client),
-    }
-}
-
-/// Starts a mock Solana RPC serving exactly one account, matched on the byte-exact
-/// `getMultipleAccounts` request the reader builds (which pins the key, base64 encoding and
-/// confirmed commitment), and a mock coprocessor answering `query` with `outcome` exactly,
-/// matched on the byte-exact leaf-proof request. Returns both servers (kept alive by the caller)
-/// and a host wired to them.
+/// A host serving `fixture`'s account and answering `query` with `outcome`.
 async fn host_answering(
     fixture: &EncryptedStoreFixture,
     query: LeafQuery,
     outcome: LeafProofOutcome,
-) -> (MockServer, MockServer, SolanaHost) {
-    let account = fixture.account();
-    let rpc_response = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "context": { "slot": 1 },
-            "value": [{
-                "owner": Pubkey::new_from_array(account.owner).to_string(),
-                "data": [BASE64_STANDARD.encode(&account.data), "base64"],
-                "lamports": 1,
-                "executable": false,
-                "rentEpoch": 0,
-            }],
-        },
-    });
-    let mut rpc = MockServer::new_http("solana-rpc");
-    let rpc_request = multiple_accounts_request_body(&SnapshotKeys::new([fixture.account_key]));
-    rpc.mock(move |when, then| {
-        when.post().json(rpc_request.clone());
-        then.json(rpc_response.clone());
-    });
-    rpc.start().await.expect("the mock RPC starts");
-
-    let proof_request = serde_json::to_string(
-        &kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
-    )
-    .unwrap();
-    let proof_response = serde_json::json!({ "proofs": [wire_outcome(&outcome)] });
-    let mut coprocessor = MockServer::new_http("coprocessor-leaf-proofs");
-    coprocessor.mock(move |when, then| {
-        when.post()
-            .path(LEAF_PROOFS_ROUTE)
-            .text(proof_request.clone());
-        then.json(proof_response.clone());
-    });
-    coprocessor
-        .start()
-        .await
-        .expect("the mock coprocessor starts");
-
-    let host = host_bound_to(&rpc, &coprocessor);
-    (rpc, coprocessor, host)
+) -> HttpHost {
+    let mut host = HttpHost::start().await;
+    host.serve_accounts(&[(fixture.account_key, Some(fixture.account()))]);
+    host.serve_proofs(&[(query, outcome)]);
+    host
 }
 
-fn irrecoverable_containing(err: kms_worker::core::event_processor::ProcessingError, needle: &str) {
+/// Authorizes `handle` and classifies a refusal as the worker records it.
+async fn check(
+    host: &SolanaHost,
+    handle: [u8; 32],
+    extra_data: &[u8],
+) -> Result<(), ProcessingError> {
+    check_public_decrypt(host, handle, extra_data)
+        .await
+        .map_err(|failure| RequestCheckError::from(failure).record())
+}
+
+fn irrecoverable_containing(err: ProcessingError, needle: &str) {
     assert_eq!(
         err.kind,
         ProcessingErrorKind::Irrecoverable,
@@ -191,9 +88,9 @@ async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
     let public = handle(0x20, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x21, FHE_TYPE_UINT64));
     let query = fixture.public_query(public);
-    let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+    let host = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
-    check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+    check(&host.host(), public, &carrier(&fixture))
         .await
         .expect("a public leaf proven against the account's own peaks authorizes");
 }
@@ -207,14 +104,14 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
     fixture.update(handle(0x31, FHE_TYPE_UINT64));
     let allow_query = fixture.allowed_query(allowed, [0x42; 32]);
     // The record answers the public query with the allow leaf's proof.
-    let (_rpc, _coprocessor, host) = host_answering(
+    let host = host_answering(
         &fixture,
         fixture.public_query(allowed),
         fixture.outcome(&allow_query),
     )
     .await;
 
-    let err = check_solana_handles_public_decrypt(&host, &[allowed], &carrier(&fixture))
+    let err = check(&host.host(), allowed, &carrier(&fixture))
         .await
         .expect_err("an allow leaf must not prove public-ness");
     assert_eq!(
@@ -224,19 +121,20 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
     );
 }
 
-/// No public leaf in a record that has sealed as much history as the chain shows: the handle was
-/// never made public, and no retry changes that.
+/// No public leaf in a record that has sealed the observed history: the handle is not public yet,
+/// which is retried as an EVM public decryption of a handle not yet public is.
 #[tokio::test]
-async fn a_handle_never_made_public_is_refused_terminally() {
+async fn a_handle_not_made_public_is_retried() {
     let private = handle(0x40, FHE_TYPE_UINT64);
     let fixture = EncryptedStoreFixture::allowing(private, [0x42; 32]);
     let query = fixture.public_query(private);
-    let (_rpc, _coprocessor, host) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+    let host = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
-    let err = check_solana_handles_public_decrypt(&host, &[private], &carrier(&fixture))
+    let err = check(&host.host(), private, &carrier(&fixture))
         .await
         .expect_err("a handle nobody made public is not public");
-    irrecoverable_containing(err, "no leaf");
+    assert_eq!(err.kind, ProcessingErrorKind::Recoverable, "got: {err}");
+    assert_eq!(err.code, kms_connector_api::ErrorCode::AclDenied);
 }
 
 /// Every configured coprocessor is asked and the answers are merged: one that fails the read
@@ -246,7 +144,7 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
     let public = handle(0x55, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x56, FHE_TYPE_UINT64));
     let query = fixture.public_query(public);
-    let (rpc, serving, _) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+    let serving = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
     let mut failing = MockServer::new_http("coprocessor-failing");
     failing.mock(|when, then| {
@@ -254,24 +152,15 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
         then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
     });
     failing.start().await.expect("the failing mock starts");
-    let proof_request = serde_json::to_string(
-        &kms_worker::core::solana::proof::leaf_proof_request_body(std::slice::from_ref(&query)),
-    )
-    .unwrap();
-    let behind_response = serde_json::json!({
-        "proofs": [wire_outcome(&LeafProofOutcome::NotFound { leaf_count: 0 })]
-    });
     let mut behind = MockServer::new_http("coprocessor-behind");
-    behind.mock(move |when, then| {
-        when.post()
-            .path(LEAF_PROOFS_ROUTE)
-            .text(proof_request.clone());
-        then.json(behind_response.clone());
-    });
+    serve_proofs(
+        &mut behind,
+        &[(query, LeafProofOutcome::NotFound { leaf_count: 0 })],
+    );
     behind.start().await.expect("the behind mock starts");
-    let host = host_bound_to_all(&rpc, &[&failing, &behind, &serving]);
+    let host = solana_host(&serving.rpc, &[&failing, &behind, &serving.coprocessor]);
 
-    check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+    check(&host, public, &carrier(&fixture))
         .await
         .expect("the one coprocessor that serves the proof authorizes the handle");
 }
@@ -283,14 +172,14 @@ async fn a_record_behind_the_chain_is_retried_not_refused() {
     let public = handle(0x50, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x51, FHE_TYPE_UINT64));
     let query = fixture.public_query(public);
-    let (_rpc, _coprocessor, host) = host_answering(
+    let host = host_answering(
         &fixture,
         query,
         LeafProofOutcome::NotFound { leaf_count: 0 },
     )
     .await;
 
-    let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+    let err = check(&host.host(), public, &carrier(&fixture))
         .await
         .expect_err("a record that has not sealed the leaf yet authorizes nothing yet");
     assert_eq!(
@@ -300,27 +189,12 @@ async fn a_record_behind_the_chain_is_retried_not_refused() {
     );
 }
 
-#[test]
-fn the_carrier_version_is_pinned_by_literal() {
-    // If this fails, the carrier's version byte changed while the public-decrypt path still
-    // depends on it.
-    let blob = connector_utils::types::solana_extra_data::encode_solana_public_decrypt_extra_data(
-        [0u8; 32], [9u8; 32],
-    );
-    assert_eq!(blob[0], CARRIER_VERSION);
-    assert_eq!(
-        blob.len(),
-        65,
-        "version, context id, account — and nothing else"
-    );
-}
-
 /// A carrier of another version, a carrier of another length, and no carrier at all: each is
 /// refused explicitly before reading any account, and never parsed under the wrong layout.
 #[tokio::test]
 async fn a_malformed_carrier_refuses_before_any_read() {
     let fixture = public_then_updated(handle(0x60, FHE_TYPE_UINT64), handle(0x61, FHE_TYPE_UINT64));
-    let (_rpc, _coprocessor, host) = host_without_state().await;
+    let host = HttpHost::start().await;
     let valid = carrier(&fixture);
 
     let mut other_version = valid.clone();
@@ -341,27 +215,11 @@ async fn a_malformed_carrier_refuses_before_any_read() {
         trailing,
         truncated,
     ] {
-        let err =
-            check_solana_handles_public_decrypt(&host, &[handle(0x60, FHE_TYPE_UINT64)], &blob)
-                .await
-                .expect_err("a carrier that is not the version-4 layout names no state");
+        let err = check(&host.host(), handle(0x60, FHE_TYPE_UINT64), &blob)
+            .await
+            .expect_err("a carrier that is not the version-4 layout names no state");
         irrecoverable_containing(err, "requires the version-4 extraData");
     }
-}
-
-#[tokio::test]
-async fn public_decrypt_authorizes_one_handle_per_request() {
-    let fixture = public_then_updated(handle(0x70, FHE_TYPE_UINT64), handle(0x71, FHE_TYPE_UINT64));
-    let (_rpc, _coprocessor, host) = host_without_state().await;
-
-    let err = check_solana_handles_public_decrypt(
-        &host,
-        &[handle(0x70, FHE_TYPE_UINT64), handle(0x71, FHE_TYPE_UINT64)],
-        &carrier(&fixture),
-    )
-    .await
-    .expect_err("a public decrypt names exactly one handle");
-    irrecoverable_containing(err, "exactly one handle");
 }
 
 /// The carrier names the account; the account still has to be the host program's. A foreign
@@ -372,35 +230,10 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
     let fixture = public_then_updated(public, handle(0x81, FHE_TYPE_UINT64));
     let mut impostor = fixture.account();
     impostor.owner = [0xee; 32];
-    let rpc_response = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "context": { "slot": 1 },
-            "value": [{
-                "owner": Pubkey::new_from_array(impostor.owner).to_string(),
-                "data": [BASE64_STANDARD.encode(&impostor.data), "base64"],
-                "lamports": 1,
-                "executable": false,
-                "rentEpoch": 0,
-            }],
-        },
-    });
-    let mut rpc = MockServer::new_http("solana-rpc");
-    let rpc_request = multiple_accounts_request_body(&SnapshotKeys::new([fixture.account_key]));
-    rpc.mock(move |when, then| {
-        when.post().json(rpc_request.clone());
-        then.json(rpc_response.clone());
-    });
-    rpc.start().await.expect("the mock RPC starts");
-    let coprocessor = MockServer::new_http("coprocessor-unreached");
-    coprocessor
-        .start()
-        .await
-        .expect("the mock coprocessor starts");
-    let host = host_bound_to(&rpc, &coprocessor);
+    let mut host = HttpHost::start().await;
+    host.serve_accounts(&[(fixture.account_key, Some(impostor))]);
 
-    let err = check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture))
+    let err = check(&host.host(), public, &carrier(&fixture))
         .await
         .expect_err("a foreign program's account is not an encrypted store");
     irrecoverable_containing(err, "is owned by");
@@ -415,7 +248,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
     let public = handle(0x91, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x92, FHE_TYPE_UINT64));
     let query = fixture.public_query(public);
-    let (rpc, good, _) = host_answering(&fixture, query, fixture.outcome(&query)).await;
+    let good = host_answering(&fixture, query, fixture.outcome(&query)).await;
     for send_headers in [false, true] {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let stalled: url::Url = format!("http://{}", listener.local_addr().unwrap())
@@ -442,25 +275,36 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             .build()
             .unwrap();
         let mut host = SolanaHost {
-            deployment: deployment(),
-            reader: RpcHostStateReader::new(rpc.base_url().unwrap().clone(), client.clone()),
-            proofs: HttpHostProofReader::new(
-                &[stalled.clone(), good.base_url().unwrap().clone()],
-                API_KEY.into(),
+            program_id: PROGRAM_ID,
+            reader: SolanaRpcClient::new(
+                good.rpc.base_url().unwrap().clone(),
+                Duration::from_millis(100),
+                std::num::NonZeroUsize::MIN,
+            ),
+            proofs: CoprocessorProofClient::new(
+                &[
+                    stalled.clone(),
+                    good.coprocessor.base_url().unwrap().clone(),
+                ],
+                "test-key".into(),
                 client.clone(),
             ),
         };
         timeout(
             Duration::from_secs(3),
-            check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),
+            check(&host, public, &carrier(&fixture)),
         )
         .await
         .expect("fanout must finish")
         .expect("healthy peer still authorizes");
-        host.reader = RpcHostStateReader::new(stalled, client);
+        host.reader = SolanaRpcClient::new(
+            stalled,
+            Duration::from_millis(100),
+            std::num::NonZeroUsize::MIN,
+        );
         let error = timeout(
             Duration::from_secs(3),
-            check_solana_handles_public_decrypt(&host, &[public], &carrier(&fixture)),
+            check(&host, public, &carrier(&fixture)),
         )
         .await
         .expect("RPC must finish")

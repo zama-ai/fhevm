@@ -367,11 +367,16 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::UserDecryptionV3(e) => {
-            // Solana rows store the opaque request blob, which is also what identifies them.
+        ProtocolEventKind::SolanaUserDecryptionV1(e) => {
+            // The reader must reconstruct the same typed request. The Gateway assigns the id.
             for r in rows {
-                if e.solanaRequest.to_vec() == r.try_get::<Vec<u8>, _>("solana_request")? {
-                    return Ok(());
+                if let ProtocolEventKind::SolanaUserDecryptionV1(mut stored) =
+                    connector_utils::types::event::from_user_decryption_row(r)?.kind
+                {
+                    stored.decryption_id = e.decryption_id;
+                    if stored == e {
+                        return Ok(());
+                    }
                 }
             }
         }

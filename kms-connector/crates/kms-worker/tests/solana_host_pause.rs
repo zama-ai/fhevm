@@ -9,21 +9,10 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::{AuthorizationFailure, FailureClass},
-    pause::PauseFailure,
-    pipeline::{AuthorizationContext, authorize_request},
+    failure::AuthorizationFailure, pause::PauseFailure, pipeline::authorize_request,
     snapshot::SnapshotAccount,
 };
 use solana_support::*;
-
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
-}
 
 /// A running world whose single direct entry every other rule authorizes, so a refusal in these
 /// tests can only be the pause rule.
@@ -45,14 +34,12 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, handle)
         .typed();
-    let deployment = deployment();
 
     let proofs = ScriptedProofReader::constant(running.record());
     let failure = authorize_request(
         &ScriptedReader::constant(running.clone().paused()),
-        &ServableKmsPair,
         &proofs,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -61,13 +48,12 @@ async fn a_paused_host_refuses_until_the_switch_is_lifted() {
         failure,
         AuthorizationFailure::Pause(PauseFailure::Paused)
     ));
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert!(failure.is_recoverable());
 
     authorize_request(
         &ScriptedReader::constant(running),
-        &ServableKmsPair,
         &proofs,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -93,19 +79,12 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
         .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
-    let deployment = deployment();
 
     let proofs = ScriptedProofReader::constant(running.record());
     let paused_first = ScriptedReader::scripted(vec![running.clone().paused(), running.clone()]);
-    let failure = authorize_request(
-        &paused_first,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("a paused first read refuses however the second read reads");
+    let failure = authorize_request(&paused_first, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("a paused first read refuses however the second read reads");
     assert!(matches!(
         failure,
         AuthorizationFailure::Pause(PauseFailure::Paused)
@@ -117,21 +96,17 @@ async fn the_switch_is_read_on_the_first_read_of_a_delegated_request() {
     );
 
     let running_first = ScriptedReader::scripted(vec![running.clone(), running.paused()]);
-    authorize_request(
-        &running_first,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("the switch was off when it was read; the deciding read does not carry it");
+    authorize_request(&running_first, &proofs, CONTEXT, &request)
+        .await
+        .expect("the switch was off when it was read; the deciding read does not carry it");
     assert_eq!(running_first.call_count(), 2);
 }
 
 /// Everything that is not this deployment's own singleton is a refusal, never a `false`. Absence
 /// is the sharpest case: the address is derivable by anyone, so both "nothing here" and "somebody
-/// funded it" must refuse rather than read as "not paused".
+/// funded it" must refuse rather than read as "not paused". An absent singleton may not have
+/// reached the node yet, so it is retried; another account at the address never becomes the
+/// switch.
 #[tokio::test]
 async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_running() {
     let (wallet, encrypted_store, handle, running) = direct_scenario();
@@ -139,7 +114,6 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
         .direct(&encrypted_store, handle)
         .typed();
     let (key, _) = host_config_address();
-    let deployment = deployment();
 
     let mut truncated = host_config_account(true);
     truncated.data.truncate(truncated.data.len() - 1);
@@ -152,16 +126,19 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
             "no account at the singleton address",
             running.clone().without_account(&key),
             PauseFailure::Absent { account_key: key },
+            true,
         ),
         (
             "a bare transfer to the address, before the program ever wrote there",
             running.clone().with_account(key, prefunded_account()),
             PauseFailure::Absent { account_key: key },
+            true,
         ),
         (
             "an account of another layout",
             running.clone().with_account(key, truncated),
             PauseFailure::NotAHostConfig { account_key: key },
+            false,
         ),
         (
             "another program's account",
@@ -169,17 +146,16 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
             PauseFailure::ForeignOwner {
                 account_key: key,
                 owner: [0x77; 32],
-                expected: PROGRAM_ID,
             },
+            false,
         ),
     ];
 
-    for (what, world, expected) in cases {
+    for (what, world, expected, recoverable) in cases {
         let outcome = authorize_request(
             &ScriptedReader::constant(world),
-            &ServableKmsPair,
             &ScriptedProofReader::unreachable(),
-            context(&deployment),
+            CONTEXT,
             &request,
         )
         .await;
@@ -187,5 +163,6 @@ async fn a_singleton_this_connector_cannot_read_refuses_rather_than_reading_as_r
             panic!("{what}: an unreadable switch is a closed switch");
         };
         assert_eq!(failure, AuthorizationFailure::Pause(expected), "{what}");
+        assert_eq!(failure.is_recoverable(), recoverable, "{what}");
     }
 }
