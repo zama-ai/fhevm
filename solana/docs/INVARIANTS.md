@@ -384,8 +384,8 @@ instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trus
 transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
 and that every `HostConfig` change stamps the current slot and emits an event CPI. Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
-property does not classify fails it. The planted bug `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`
-must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
+property does not classify fails it. The planted bugs `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`
+and `h1-pause-accepts-a-withdrawn-pauser.patch` must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
 build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;

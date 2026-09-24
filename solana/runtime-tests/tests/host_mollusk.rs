@@ -1521,11 +1521,24 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
         (flag(|f| f.verified_inputs = true), None, None),
         (flag(|f| f.public_decrypt = true), None, None),
     ];
-    for (paused, seal_error, execute_error) in cases {
+    for (paused, acl_write_error, execute_error) in cases {
         let payer = Pubkey::new_unique();
         let app = App::new();
         let (host_config, host_config_account) =
             host_config_account_with_flags(payer, paused, false);
+        let acl_write_check = || acl_write_error.map_or_else(Check::success, custom_error);
+
+        let address = app.address("pause-create");
+        let context = mollusk_execute_context(
+            payer,
+            vec![
+                (host_config, host_config_account.clone()),
+                (app.key(), empty_system_account()),
+                (address, empty_system_account()),
+            ],
+        );
+        let create_ix = create_encrypted_store_ix(payer, &app, address, host_config);
+        check_host_context(&context, &create_ix, &[acl_write_check()]);
 
         let (address, value) = app.value("pause-seal", handle_for_chain(55, 5));
         let seal_ix = make_handle_public_ix(
@@ -1546,8 +1559,7 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
             host_config,
             host_config_account.clone(),
         );
-        let seal_check = seal_error.map_or_else(Check::success, custom_error);
-        check_host_instruction(&mollusk(), &seal_ix, &accounts, &[seal_check]);
+        check_host_instruction(&mollusk(), &seal_ix, &accounts, &[acl_write_check()]);
 
         let (_, execute_ix, accounts) = create_case(
             payer,
@@ -3834,7 +3846,20 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
             (address, system_account(1)),
         ],
     );
-    let ix = anchor_ix(
+    let ix = create_encrypted_store_ix(payer, &app, address, host_config);
+    check_host_context(&context, &ix, &[Check::success()]);
+    let state = read_encrypted_store(&context, address);
+    assert!(state.slots.is_empty());
+}
+
+/// `create_encrypted_store` for `app`'s own value authority.
+fn create_encrypted_store_ix(
+    payer: Pubkey,
+    app: &App,
+    address: Pubkey,
+    host_config: Pubkey,
+) -> Instruction {
+    anchor_ix(
         host::id(),
         host::accounts::CreateEncryptedStore {
             payer,
@@ -3854,10 +3879,7 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
                 ],
             },
         },
-    );
-    check_host_context(&context, &ix, &[Check::success()]);
-    let state = read_encrypted_store(&context, address);
-    assert!(state.slots.is_empty());
+    )
 }
 
 #[test]

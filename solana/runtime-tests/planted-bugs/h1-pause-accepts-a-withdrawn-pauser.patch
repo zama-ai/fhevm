@@ -1,0 +1,12 @@
+Expect: H1: Pause
+
+--- a/solana/programs/zama-host/src/instructions/pause.rs
++++ b/solana/programs/zama-host/src/instructions/pause.rs
+@@ -16,7 +16,6 @@
+     #[account(
+         seeds = [PAUSER_SEED, pauser.key().as_ref()],
+         bump = pauser_record.bump,
+-        constraint = pauser_record.enabled @ ZamaHostError::NotPauser,
+     )]
+     pub pauser_record: Account<'info, PauserRecord>,
+     /// Singleton config PDA.

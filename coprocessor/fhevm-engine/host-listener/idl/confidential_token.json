@@ -2202,226 +2202,201 @@
     },
     {
       "code": 6003,
-      "name": "InvalidMintConfig",
-      "msg": "Confidential mint config is invalid"
-    },
-    {
-      "code": 6004,
       "name": "MintAuthorityMismatch",
       "msg": "Confidential mint authority does not match signer"
     },
     {
-      "code": 6005,
+      "code": 6004,
       "name": "UnexpectedRemainingAccounts",
       "msg": "instruction has unexpected remaining accounts"
     },
     {
-      "code": 6006,
+      "code": 6005,
       "name": "TokenAccountMismatch",
       "msg": "Confidential token account is not canonical"
     },
     {
-      "code": 6007,
-      "name": "AclNonceOverflow",
-      "msg": "ACL nonce overflow"
-    },
-    {
-      "code": 6008,
-      "name": "NonZeroInitialBalanceUnsupported",
-      "msg": "nonzero initial confidential balances are unsupported"
-    },
-    {
-      "code": 6009,
+      "code": 6006,
       "name": "UnderlyingMintMismatch",
       "msg": "Underlying mint does not match confidential mint"
     },
     {
-      "code": 6010,
+      "code": 6007,
       "name": "VaultAuthorityMismatch",
       "msg": "Vault token account authority does not match vault authority PDA"
     },
     {
-      "code": 6011,
+      "code": 6008,
       "name": "VaultAccountMismatch",
       "msg": "Vault token account is not the canonical mint vault"
     },
     {
-      "code": 6012,
+      "code": 6009,
       "name": "CurrentEncryptedStoreMismatch",
       "msg": "current encrypted value does not match token account state"
     },
     {
-      "code": 6013,
+      "code": 6010,
       "name": "AmountHandleTypeMismatch",
       "msg": "transfer amount handle type is invalid"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "AmountAclMismatch",
       "msg": "transfer amount ACL record is invalid"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "AttestationUserMismatch",
       "msg": "attested input user does not match owner"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "AttestationContractMismatch",
       "msg": "attested input contract does not match the token program"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "AmountSpendAuthorityMismatch",
       "msg": "amount value spender does not control the amount"
     },
     {
-      "code": 6018,
+      "code": 6015,
       "name": "TotalSupplyAuthorityMismatch",
       "msg": "total supply authority does not match mint"
     },
     {
-      "code": 6019,
+      "code": 6016,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6020,
+      "code": 6017,
       "name": "PublicDecryptProofInvalid",
       "msg": "public-decrypt MMR proof is invalid for this encrypted store"
     },
     {
-      "code": 6021,
+      "code": 6018,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6022,
+      "code": 6019,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6023,
-      "name": "MaterialCommitmentMismatch",
-      "msg": "material commitment witness does not match (retired)"
-    },
-    {
-      "code": 6024,
-      "name": "PublicDecryptNotReleased",
-      "msg": "handle is not released for public decrypt (retired)"
-    },
-    {
-      "code": 6025,
+      "code": 6020,
       "name": "InvalidFheExecution",
       "msg": "FHE execution is invalid"
     },
     {
-      "code": 6026,
+      "code": 6021,
       "name": "DuplicateFheExecuteAccount",
       "msg": "fhe_execute account list contains a duplicate account"
     },
     {
-      "code": 6027,
+      "code": 6022,
       "name": "UnexpectedFheExecuteAccount",
       "msg": "fhe_execute account list contains an unexpected account"
     },
     {
-      "code": 6028,
+      "code": 6023,
       "name": "MissingFheExecuteAccount",
       "msg": "FHE execution is missing a required dynamic account"
     },
     {
-      "code": 6029,
+      "code": 6024,
       "name": "FheExecuteAccountNotWritable",
       "msg": "fhe_execute dynamic account must be writable"
     },
     {
-      "code": 6030,
+      "code": 6025,
       "name": "DuplicateFheOutputAuthority",
       "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
-      "code": 6031,
+      "code": 6026,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
-      "code": 6032,
+      "code": 6027,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE execution is missing a required output authority"
     },
     {
-      "code": 6033,
+      "code": 6028,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6034,
+      "code": 6029,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     },
     {
-      "code": 6035,
+      "code": 6030,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
     },
     {
-      "code": 6036,
+      "code": 6031,
       "name": "PendingBurnAddressMismatch",
       "msg": "pending burn address does not match"
     },
     {
-      "code": 6037,
+      "code": 6032,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6038,
+      "code": 6033,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6039,
+      "code": 6034,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6040,
+      "code": 6035,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6041,
+      "code": 6036,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6042,
+      "code": 6037,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6043,
+      "code": 6038,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6044,
+      "code": 6039,
       "name": "EncryptedStoreAuthorityMismatch",
       "msg": "encrypted store authority does not match token account"
     },
     {
-      "code": 6045,
+      "code": 6040,
       "name": "TokenEncryptedStoreMismatch",
       "msg": "token encrypted store is not canonical"
     },
     {
-      "code": 6046,
+      "code": 6041,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
     },
     {
-      "code": 6047,
+      "code": 6042,
       "name": "ResultGrantMismatch",
       "msg": "invalid result grant accounts or self-transfer result request"
     }

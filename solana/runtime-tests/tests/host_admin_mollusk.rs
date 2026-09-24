@@ -416,6 +416,7 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
 fn mollusk_only_an_enabled_pauser_pauses() {
     let admin = Pubkey::new_unique();
     let withdrawn = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(
         admin,
@@ -423,6 +424,7 @@ fn mollusk_only_an_enabled_pauser_pauses() {
             (host_config, account),
             (withdrawn, funded_system_account()),
             zama_solana_test_kit::pauser_record_account(withdrawn, false),
+            zama_solana_test_kit::pauser_record_account(pauser, true),
         ],
     );
 
@@ -435,6 +437,15 @@ fn mollusk_only_an_enabled_pauser_pauses() {
         &pause_ix(admin, host_config, EXECUTION),
         &[anchor_framework_error_check(
             anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
+    // Nor by presenting another pauser's enabled record.
+    let mut borrowed = pause_ix(admin, host_config, EXECUTION);
+    borrowed.accounts[1].pubkey = host::pauser_address(pauser).0;
+    context.process_and_validate_instruction(
+        &borrowed,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::ConstraintSeeds,
         )],
     );
     assert_eq!(paused(&context, host_config), host::PauseFlags::default());

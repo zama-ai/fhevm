@@ -89,6 +89,8 @@ enum Action {
     },
     Pause {
         pauser: Role,
+        /// The wallet whose pauser record is presented, when not the pauser's own.
+        record_of: Option<usize>,
         areas: host::PauseFlags,
     },
     Unpause {
@@ -262,7 +264,8 @@ fn action() -> impl Strategy<Value = Action> {
         1 => (wallet(), role()).prop_map(|(payer, admin)| Action::InitializeHostConfig { payer, admin }),
         2 => (role(), key(), any::<bool>())
             .prop_map(|(admin, new_admin, cosign)| Action::SetAdmin { admin, new_admin, cosign }),
-        2 => (role(), areas()).prop_map(|(pauser, areas)| Action::Pause { pauser, areas }),
+        2 => (role(), prop::option::weighted(0.25, wallet()), areas())
+            .prop_map(|(pauser, record_of, areas)| Action::Pause { pauser, record_of, areas }),
         2 => (role(), areas()).prop_map(|(admin, areas)| Action::Unpause { admin, areas }),
         1 => (wallet(), role(), wallet(), any::<bool>())
             .prop_map(|(payer, admin, pauser, enabled)| Action::SetPauser { payer, admin, pauser, enabled }),
@@ -628,14 +631,16 @@ impl World {
             }
             Action::Pause {
                 pauser: role,
+                record_of,
                 areas,
             } => {
                 let pauser = self.key(role.key, self.wallets[GENESIS_PAUSER]);
+                let record_owner = record_of.map_or(pauser, |wallet| self.wallets[wallet]);
                 let ix = anchor_ix(
                     host::id(),
                     host::accounts::Pause {
                         pauser,
-                        pauser_record: host::pauser_address(pauser).0,
+                        pauser_record: host::pauser_address(record_owner).0,
                         host_config,
                         event_authority: event_authority(host::id()),
                         program: host::id(),

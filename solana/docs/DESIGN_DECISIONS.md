@@ -2202,16 +2202,22 @@ the admin behind a Squads vault with a time lock (fhevm-internal#1634), so an ad
 would wait out that time lock too. On EVM, `ACL.pause()` accepts any member of `PauserSet`, while
 `unpause()` is `onlyOwner`. The host ACL pause stops `allow`, `allowForDecryption`,
 `allowTransient` and both delegation calls, and so execution, which needs `allowTransient`. The
-gateway's `InputVerification` and `Decryption` contracts each pause on their own.
+gateway's `InputVerification` and `Decryption` contracts each pause on their own, and Solana requests
+enter the gateway through the same paused calls (`verifyProofRequestSolana` and both decryption
+requests), so the gateway pause already stops new input proofs and decryptions for Solana.
 
 Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
 | Flag | Stops | EVM counterpart |
 |---|---|---|
 | `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel through it | ACL pause |
-| `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | Gateway `InputVerification` pause |
+| `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
 | `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption` | ACL pause |
-| `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | Gateway `Decryption` pause |
+| `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | None: `KMSVerifier` cannot be paused; the gateway pause stops only new certificates |
+
+`verified_inputs` and `public_decrypt` act when a signed result is used, not when it is requested.
+They are the levers against compromised coprocessor or KMS signers, whose results the gateway pause
+cannot recall.
 
 A pauser is a `PauserRecord` PDA `("pauser", key)`, which the admin creates, enables or disables
 with `set_pauser`, as it does deny and HCU-trusted records. `pause` takes the pauser's signature and
@@ -2220,21 +2226,20 @@ EVM, the admin pauses only if it also holds a pauser record. Pausing an area alr
 changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
 whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
 
-`public_decrypt` has no host counterpart on EVM, where `KMSVerifier` checks KMS signatures without a
-pause. On Solana, programs act on KMS results only through `verify_public_decrypt`, so this flag is
-the host's lever when a KMS context is compromised: it stops forged redemptions while the context
-is destroyed (fhevm-internal#2082). It replaces the token's own pause check, which read the single
-flag; the token no longer reads the host config at all.
+Programs act on KMS results only through `verify_public_decrypt`, so `public_decrypt` stops forged
+redemptions while a compromised KMS context is destroyed (fhevm-internal#2082). It replaces the
+token's own pause check, which read the single flag; the token now reads no pause flag and passes
+the config through to the host.
 
 Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
 flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause. On EVM,
 `revokeDelegationForUserDecryption` is `whenNotPaused`; its Solana gate on `acl_writes` comes with
 the delegation-record change built on fhevm#4096, and until then revocation is not paused.
 
-Accepted gap: user decryption goes over HTTP through the relayer and the KMS connector, which read
-no host flag. During a host pause, user decryption of values already allowed continues, as it does
-on EVM while only the host ACL is paused. With the `acl_writes` gate in place, a delegator cannot
-revoke a delegation until the admin resumes ACL writes.
+Accepted gap: no host flag stops user decryption. During a host pause, user decryption of values
+already allowed continues, as it does on EVM while only the host ACL is paused; the gateway pause is
+what stops it. With the `acl_writes` gate in place, a delegator cannot revoke a delegation until the
+admin resumes ACL writes.
 
 Rejected alternatives:
 
