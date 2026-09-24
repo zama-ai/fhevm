@@ -161,8 +161,8 @@ contract Decryption is
      * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
      * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case read carries
      * 3 accounts per entry (its encrypted store plus the exact and wildcard delegation rows), the
-     * signer's permit-invalidation record and the Clock sysvar: `3 * N + 2 <= 100` gives
-     * `N <= 32`. Enforced at admission, before the fee, so a request the Connector cannot read in
+     * signer's permit-invalidation record and the Clock sysvar that delegation expiry is checked
+     * against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at admission, before the fee, so a request the Connector cannot read in
      * one snapshot is never accepted or paid for. Counts list entries, not distinct handles,
      * matching the Connector's own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
      */
@@ -1470,10 +1470,9 @@ contract Decryption is
      * registered host chain across the batch (derived from the first handle), a priced FHE type
      * for every handle, and the request bit budget. Shape-specific extractors reduce their
      * entries to `bytes32[]` and delegate here, so the checks cannot drift between paths.
-     * @dev For Solana requests this is the bit budget's ONE enforcer: the KMS Connector
-     * deliberately holds no copy of the width table, so the typed `ctHandles` must keep flowing
-     * through this check (and the Connector authorizes the opaque payload's handle list only
-     * when it matches the typed one) — otherwise the Connector has to take the check back.
+     * @dev For Solana requests this is the bit budget's one enforcer: the KMS Connector holds no
+     * copy of the width table, and the handles it authorizes are these typed `ctHandles`, so they
+     * must keep flowing through this check.
      */
     function _checkCtHandlesConformanceHostChain(bytes32[] memory ctHandles) internal view virtual {
         uint256 chainId = HandleOps.extractChainId(ctHandles[0]);

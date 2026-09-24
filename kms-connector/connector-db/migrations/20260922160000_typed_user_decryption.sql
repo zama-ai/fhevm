@@ -6,8 +6,9 @@
 --
 -- `attestation_type` is generated from the row, so EVM writers that predate it (gw-listener and
 -- endpoint during a rolling upgrade) still produce correctly typed rows. The CHECK makes a row
--- that mixes both shapes unwritable. Scalar widths are checked here; array element widths and
--- permit rules are enforced by the typed decoders before insertion and again when the row is read.
+-- that mixes both shapes unwritable. It also checks the widths of the three Solana key columns
+-- (user_address, verifying_program_id, signature); every other width and the permit rules are
+-- enforced by the typed decoders before insertion and again when the row is read.
 
 CREATE TYPE attestation_type AS ENUM ('legacy', 'eip712', 'solana');
 
@@ -27,7 +28,8 @@ ALTER TABLE user_decryption_requests
         END
     ) STORED;
 
--- A CHECK passes on NULL, so every width test is paired with an IS NOT NULL.
+-- A CHECK passes on NULL. user_address is NOT NULL and a non-NULL verifying_program_id is what
+-- tags a row solana, so signature is the one width test that needs an explicit IS NOT NULL.
 ALTER TABLE user_decryption_requests ADD CONSTRAINT user_decryption_requests_attestation_columns
     CHECK (
         CASE attestation_type

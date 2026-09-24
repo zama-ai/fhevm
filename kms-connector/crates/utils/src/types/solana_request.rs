@@ -47,9 +47,6 @@ impl SolanaUserDecryptionRequestV1 {
             .as_slice()
             .try_into()
             .map_err(|_| RequestFormError::SignatureWidth(wire.signature.len()))?;
-        if wire.handles.len() > MAX_REQUEST_HANDLES {
-            return Err(RequestFormError::HandleCount(wire.handles.len()));
-        }
         let handles = wire
             .handles
             .iter()
@@ -121,8 +118,6 @@ pub enum RequestFormError {
     Permit(#[from] zama_solana_permit::PermitError),
     #[error("signature is {0} bytes, expected {SIGNATURE_LEN}")]
     SignatureWidth(usize),
-    #[error("request names {0} handles, expected at most {MAX_REQUEST_HANDLES}")]
-    HandleCount(usize),
     #[error("handle entry {0} has a field that is not 32 bytes")]
     EntryWidth(usize),
 }
@@ -130,7 +125,7 @@ pub enum RequestFormError {
 #[cfg(all(test, feature = "tests"))]
 mod tests {
     use super::*;
-    use crate::tests::rand::{solana_user_decryption_event, solana_user_decryption_parts};
+    use crate::tests::rand::solana_user_decryption_event;
     use zama_solana_request::SolanaRequestAssemblyError;
 
     #[test]
@@ -163,27 +158,5 @@ mod tests {
                 }
             ))
         );
-    }
-
-    /// A list past the cap cannot be read in one `getMultipleAccounts` snapshot.
-    #[test]
-    fn rejects_a_handle_count_past_one_snapshot() {
-        let (mut gateway, mut blob) = solana_user_decryption_parts(B256::ZERO);
-        let count = MAX_REQUEST_HANDLES + 1;
-        gateway.handles = vec![gateway.handles[0].clone(); count];
-        blob.entries = vec![blob.entries[0].clone(); count];
-        assert_eq!(
-            SolanaUserDecryptionRequestV1::new(U256::ONE, gateway, blob),
-            Err(RequestFormError::HandleCount(count))
-        );
-    }
-
-    /// The permit's chain is the one the handles embed, so it is never claimed separately.
-    #[test]
-    fn the_permit_chain_is_the_handles_chain() {
-        let (gateway, blob) = solana_user_decryption_parts(B256::ZERO);
-        let handle_chain = u64::from_be_bytes(gateway.handles[0][22..30].try_into().unwrap());
-        let request = SolanaUserDecryptionRequestV1::new(U256::ONE, gateway, blob).unwrap();
-        assert_eq!(request.permit().chain_id(), handle_chain);
     }
 }

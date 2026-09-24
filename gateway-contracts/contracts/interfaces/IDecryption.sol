@@ -238,8 +238,8 @@ interface IDecryption {
      * a form change here is a protocol change, deliberately pinned by tests.
      * @param decryptionId The decryption request ID (shared counter with every other path).
      * @param ctHandles The requested ciphertext handles, in request order. The order and count
-     * are load-bearing: the KMS response linker binds them, and the Connector authorizes the
-     * `solanaRequest`'s own handle list only if it matches this one exactly. As with the EVM
+     * are load-bearing: the KMS response linker binds them, and `solanaRequest` carries exactly
+     * one entry per handle, in this order, so the handles are carried once. As with the EVM
      * unified event, consumers resolve ciphertext materials off-chain from the signed S3
      * attestations (RFC-023 Part 2).
      * @param requestValidity The permit validity window, gateway-checked at admission.
@@ -248,9 +248,10 @@ interface IDecryption {
      * the gateway's own response path validates against it.
      * @param extraData The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId).
      * Typed because the gateway pins the KMS context at request time.
-     * @param solanaRequest The Solana request material — permit fields, per-handle
-     * authorization evidence, the user's signature — in the canonical serialization owned by
-     * the protocol's normative fixtures. The gateway never interprets it.
+     * @param solanaRequest The Solana request fields this event does not type: the user address,
+     * allowed scopes, verifying program id, the user's signature, and one owner address and
+     * encrypted store per handle. Its canonical serialization is owned by the protocol's
+     * normative fixtures. The gateway never interprets it.
      * @dev Shares its name with the other user-decryption request events via Solidity event
      * overloading — the distinct parameter list produces a distinct `topic0`.
      */
@@ -602,9 +603,9 @@ interface IDecryption {
      * @param publicKey The transport public key, consumed by the gateway's response path.
      * @param extraData The signed KMS routing bytes: version `0x02` ‖ contextId ‖ epochId,
      * 65 bytes exactly; any other version or length is refused at admission.
-     * @param solanaRequest The Solana request material, opaque to the gateway. Its canonical
-     * serialization is owned by the protocol's normative fixtures; the Connector rejects a
-     * request whose handle list does not match `ctHandles` exactly.
+     * @param solanaRequest The Solana request fields not typed here, opaque to the gateway. Its
+     * canonical serialization is owned by the protocol's normative fixtures; the Connector
+     * rejects a request whose entry count does not match `ctHandles`.
      */
     function userDecryptionRequest(
         bytes32[] calldata ctHandles,

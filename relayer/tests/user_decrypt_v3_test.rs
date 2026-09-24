@@ -18,6 +18,7 @@ use crate::common::validation_helper::{
 use alloy::primitives::{Address, B256};
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
+use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_handle;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
@@ -140,6 +141,11 @@ mod helpers {
     /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
     /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
     pub fn create_srfc38_envelope() -> serde_json::Value {
+        create_srfc38_envelope_for(random_handle())
+    }
+
+    /// [`create_srfc38_envelope`] for one given handle, signed for the chain it embeds.
+    pub fn create_srfc38_envelope_for(handle: String) -> serde_json::Value {
         use ed25519_dalek::{Signer, SigningKey};
         use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
 
@@ -153,9 +159,11 @@ mod helpers {
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
-        let handle = random_handle();
-        let handle_bytes = hex::decode(handle.trim_start_matches("0x")).expect("hex handle");
-        let chain_id = u64::from_be_bytes(handle_bytes[22..30].try_into().unwrap());
+        let handle_bytes: [u8; 32] = hex::decode(handle.trim_start_matches("0x"))
+            .expect("hex handle")
+            .try_into()
+            .unwrap();
+        let chain_id = extract_chain_id_from_handle(&handle_bytes);
         let mut extra_data = vec![0x02u8];
         extra_data.extend_from_slice(&[0u8; 64]);
         let start_timestamp = now - 1;
@@ -252,6 +260,32 @@ async fn v3_accepts_solana_srfc38_request() {
         "expected 202, got {}: {:?}",
         response.status(),
         response.text().await
+    );
+
+    setup.shutdown().await;
+}
+
+/// v3 refuses a Solana request for a chain this relayer does not serve before anything else,
+/// although the request is consistently signed for that chain.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_request_for_an_unserved_chain() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let mut handle = [0x11u8; 32];
+    handle[22..30].copy_from_slice(&999_999u64.to_be_bytes());
+    let payload = helpers::create_srfc38_envelope_for(format!("0x{}", hex::encode(handle)));
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("JSON body");
+    assert_eq!(
+        body["error"]["label"].as_str(),
+        Some("host_chain_id_not_supported")
     );
 
     setup.shutdown().await;

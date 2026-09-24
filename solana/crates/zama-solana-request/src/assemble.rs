@@ -6,7 +6,8 @@
 //! connector's Gateway listener, HTTP endpoint and row reader, and the relayer — joins the two
 //! here, so no fact is carried twice and no copy can disagree with another.
 
-use crate::wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
+use crate::wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire, MAX_REQUEST_HANDLES};
+use borsh::{BorshDeserialize, BorshSerialize};
 use zama_solana_permit::PermitWireFields;
 
 /// The request fields the Gateway entry types itself: the handles it budgets, the transport key
@@ -27,8 +28,9 @@ pub struct SolanaGatewayFields {
 }
 
 /// What the opaque blob carries: the signed permit fields the Gateway does not type, the
-/// signature, and one claim per handle, in handle order.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+/// signature, and one claim per handle, in handle order. Its borsh encoding is the blob's
+/// canonical body ([`crate::codec`]), so the field order below is the layout.
+#[derive(Clone, PartialEq, Eq, Debug, Default, BorshSerialize, BorshDeserialize)]
 pub struct SolanaRequestBlob {
     /// Claimed 32-byte Ed25519 public key of the requester.
     pub user_address: Vec<u8>,
@@ -43,7 +45,7 @@ pub struct SolanaRequestBlob {
 }
 
 /// The unsigned claims for one handle.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, BorshSerialize, BorshDeserialize)]
 pub struct SolanaEntryClaims {
     /// See [`SolanaHandleEntryWire::owner_address`].
     pub owner_address: Vec<u8>,
@@ -57,6 +59,9 @@ pub enum SolanaRequestAssemblyError {
     /// A request authorizes at least one handle.
     #[error("solana request names no handles")]
     NoHandles,
+    /// More handles than one account snapshot can authorize.
+    #[error("solana request names {0} handles, expected at most {MAX_REQUEST_HANDLES}")]
+    TooManyHandles(usize),
     /// Each handle needs exactly one entry.
     #[error("solana request names {handles} handles but carries {entries} entries")]
     EntryCount {
@@ -109,6 +114,9 @@ pub fn assemble_solana_request(
         entries,
     } = blob;
 
+    if handles.len() > MAX_REQUEST_HANDLES {
+        return Err(SolanaRequestAssemblyError::TooManyHandles(handles.len()));
+    }
     if handles.len() != entries.len() {
         return Err(SolanaRequestAssemblyError::EntryCount {
             handles: handles.len(),
@@ -196,14 +204,14 @@ mod tests {
         };
         let entry = |seed: u8| SolanaEntryClaims {
             owner_address: vec![seed; 32],
-            encrypted_store: vec![seed + 1; 32],
+            encrypted_store: vec![seed.wrapping_add(1); 32],
         };
         let blob = SolanaRequestBlob {
             user_address: vec![1; 32],
             allowed_scopes: vec![vec![3; 64]],
             verifying_program_id: vec![6; 32],
             signature: vec![9; 64],
-            entries: (0..entries).map(|i| entry(10 * i as u8 + 10)).collect(),
+            entries: (0..entries).map(|i| entry(i as u8)).collect(),
         };
         (gateway, blob)
     }
@@ -237,6 +245,13 @@ mod tests {
     fn refuses_parts_that_do_not_make_one_request() {
         let cases = [
             (parts(vec![], 0), SolanaRequestAssemblyError::NoHandles),
+            (
+                parts(
+                    vec![handle(7, 1); MAX_REQUEST_HANDLES + 1],
+                    MAX_REQUEST_HANDLES + 1,
+                ),
+                SolanaRequestAssemblyError::TooManyHandles(MAX_REQUEST_HANDLES + 1),
+            ),
             (
                 parts(vec![handle(7, 1)], 2),
                 SolanaRequestAssemblyError::EntryCount {

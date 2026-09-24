@@ -143,10 +143,10 @@ export const runSolanaCurrentUserDecrypt = async (
       handle: bytes(handle, 'UD_HANDLE'),
       encryptedStore: bytes32(environment, 'UD_ENCRYPTED_STORE'),
       durationSeconds: BigInt(environment.UD_DURATION_SECONDS ?? '3600'),
-      // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
-      // key names whose allow on the handle is asked under.
-      ...(environment.UD_ALLOWED_KEY !== undefined && environment.UD_ALLOWED_KEY !== ''
-        ? { ownerAddress: bytes32(environment, 'UD_ALLOWED_KEY') }
+      // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the owner
+      // address names whose allow on the handle is asked under.
+      ...(environment.UD_OWNER_ADDRESS !== undefined && environment.UD_OWNER_ADDRESS !== ''
+        ? { ownerAddress: bytes32(environment, 'UD_OWNER_ADDRESS') }
         : {}),
     },
   });

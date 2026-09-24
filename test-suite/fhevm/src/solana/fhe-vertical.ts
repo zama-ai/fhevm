@@ -130,7 +130,7 @@ export const userDecryptExpect = (
     UD_GATEWAY_CHAIN_ID: config.gatewayChainId,
     UD_GATEWAY_DECRYPTION_CONTRACT: config.gatewayDecryptionContract,
     UD_EXPECTED: params.expected.toString(),
-    ...(params.ownerAddress === undefined ? {} : { UD_ALLOWED_KEY: addressHex(params.ownerAddress) }),
+    ...(params.ownerAddress === undefined ? {} : { UD_OWNER_ADDRESS: addressHex(params.ownerAddress) }),
   });
 
 /** The local stack's leaf-proof endpoint; a preview namespace passes its own. */

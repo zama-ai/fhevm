@@ -39,7 +39,7 @@ use kms_worker::core::{
         HostChainAclBackend, KMSGenerationProcessor, KmsClient, ProcessingErrorKind,
         ProtocolConfigProcessor, RequestCheckError, RequestCheckKind,
     },
-    solana::{failure::AuthorizationFailure, pause::PauseFailure},
+    solana::{failure::AuthorizationFailure, pause::PauseFailure, pipeline::authorize_request},
 };
 use mocktail::{Request, matchers::Matcher, server::MockServer};
 use prost::Message;
@@ -78,7 +78,7 @@ impl Scenario {
         let chain_id = extract_chain_id_from_handle(&B256::from(live)).unwrap();
         let encrypted_store = EncryptedStoreFixture::allowing(live, victim.pubkey());
         let now = Utc::now().timestamp() as u64;
-        let request = RequestBuilder::new(&victim)
+        let (gateway, blob) = RequestBuilder::new(&victim)
             .permit(
                 PermitBuilder::new(victim.pubkey())
                     .chain_id(chain_id)
@@ -89,7 +89,7 @@ impl Scenario {
         let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
-            event: solana_user_decryption_event_for(U256::ONE, &request.0, &request.1),
+            event: solana_user_decryption_event_for(U256::ONE, &gateway, &blob),
             host: HttpHost::start().await,
             victim,
             encrypted_store,
@@ -259,6 +259,36 @@ async fn a_field_the_relayer_changed_fails_the_signature(
         error.source.downcast_ref::<AuthorizationFailure>(),
         Some(AuthorizationFailure::Signature(_))
     ));
+}
+
+/// The permit's chain is the one the handles embed, so a handle moved to another chain changes the
+/// signed text. The worker refuses a chain it does not serve before authorizing, so this runs the
+/// authorization itself.
+#[tokio::test]
+async fn a_handle_of_another_chain_fails_the_signature() {
+    let wallet = Wallet::new(1);
+    let live = handle(0x31, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
+    let world = World::running_at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let (mut gateway, blob) = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, live)
+        .parts();
+    gateway.handles[0][22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, gateway, blob).unwrap();
+
+    let failure = authorize_request(
+        &ScriptedReader::constant(world.clone()),
+        &ScriptedProofReader::constant(world.record()),
+        CONTEXT,
+        &request,
+    )
+    .await
+    .expect_err("the signer never signed this chain");
+
+    assert!(matches!(failure, AuthorizationFailure::Signature(_)));
+    assert!(!failure.is_recoverable());
 }
 
 /// A poll of a request already sent to the KMS authorizes it again, so a host paused after the

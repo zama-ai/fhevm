@@ -1,9 +1,9 @@
 //! Routing and delegation: which identity an entry authorizes as, and what a delegation record has
 //! to say for a delegated entry to stand.
 //!
-//! Routing is per entry and decided by one comparison: the entry's allowed key against the
+//! Routing is per entry and decided by one comparison: the entry's owner address against the
 //! permit's signer. Equal means the signer's own allow leaf is what is proven; unequal means the
-//! allowed key is a delegator whose leaf is proven and who, additionally, has delegated to the
+//! owner address is a delegator whose leaf is proven and who, additionally, has delegated to the
 //! signer for the encrypted store's authority. One request mixes both freely, and
 //! different delegators freely — there is no delegated mode and no delegated route.
 //!

@@ -180,10 +180,10 @@ url = "http://localhost:8545"
 # Chain ID of the host chain (required)
 chain_id = 12345
 # ACL backend for this host chain (optional, defaults to "evm").
-# A Solana host chain is authorized by the connector itself: it reads the encrypted value account
-# at confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
-# verifies it against the peaks it read (RFC 035). A public decrypt names its account in the
-# version-3 extraData; a user decrypt names the allowed key and the account per entry.
+# A Solana host chain is authorized by the connector itself: it reads the encrypted store at
+# confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
+# verifies it against the peaks it read (RFC 035). A public decrypt names its store in the
+# version-4 extraData; a user decrypt names the owner address and the store per entry.
 chain_kind = "evm"
 # Address of the ACL contract (required for EVM chains, forbidden for Solana chains)
 # Format: hex string with 0x prefix

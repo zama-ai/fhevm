@@ -9,110 +9,18 @@
 //! bytes = SOLANA_REQUEST_VERSION (1 byte) ‖ borsh(body)
 //! ```
 //!
-//! where the body mirrors [`SolanaRequestBlob`] field for field over borsh primitives. The mirror
-//! exists only as the codec definition — its field order IS the layout — and the conversion in
-//! both directions destructures both structs exhaustively, so adding a field to the blob without
-//! deciding its place in the canon is a compile error here, never a silent omission.
+//! where the body is [`SolanaRequestBlob`] itself: its field order is the layout.
 //!
 //! The blob carries no field the gateway types, so the two can never disagree:
 //! [`crate::assemble_solana_request`] joins them into the full request.
 
-use crate::assemble::{SolanaEntryClaims, SolanaRequestBlob};
-use borsh::{BorshDeserialize, BorshSerialize};
+use crate::assemble::SolanaRequestBlob;
+use borsh::BorshDeserialize;
 
 /// The one known layout version byte. `0x01` carried client-built proofs, `0x02` named
 /// per-value accounts, and `0x03` repeated the fields the gateway types; no obsolete layout is
 /// decoded.
 pub const SOLANA_REQUEST_VERSION: u8 = 0x04;
-
-/// The borsh body, mirroring [`SolanaRequestBlob`] field for field over primitives. The field
-/// order below IS the canonical layout.
-#[derive(BorshSerialize, BorshDeserialize)]
-struct RequestBody {
-    user_address: Vec<u8>,
-    allowed_scopes: Vec<Vec<u8>>,
-    verifying_program_id: Vec<u8>,
-    signature: Vec<u8>,
-    entries: Vec<RequestBodyEntry>,
-}
-
-/// One entry of the body, mirroring [`SolanaEntryClaims`].
-#[derive(BorshSerialize, BorshDeserialize)]
-struct RequestBodyEntry {
-    owner_address: Vec<u8>,
-    encrypted_store: Vec<u8>,
-}
-
-impl From<&SolanaRequestBlob> for RequestBody {
-    fn from(blob: &SolanaRequestBlob) -> Self {
-        // Exhaustive destructuring on purpose: a field added to the blob fails to compile HERE,
-        // forcing a decision about its place in the canonical layout instead of a silent
-        // omission from it.
-        let SolanaRequestBlob {
-            user_address,
-            allowed_scopes,
-            verifying_program_id,
-            signature,
-            entries,
-        } = blob;
-
-        Self {
-            user_address: user_address.clone(),
-            allowed_scopes: allowed_scopes.clone(),
-            verifying_program_id: verifying_program_id.clone(),
-            signature: signature.clone(),
-            entries: entries.iter().map(RequestBodyEntry::from).collect(),
-        }
-    }
-}
-
-impl From<&SolanaEntryClaims> for RequestBodyEntry {
-    fn from(entry: &SolanaEntryClaims) -> Self {
-        let SolanaEntryClaims {
-            owner_address,
-            encrypted_store,
-        } = entry;
-
-        Self {
-            owner_address: owner_address.clone(),
-            encrypted_store: encrypted_store.clone(),
-        }
-    }
-}
-
-impl From<RequestBody> for SolanaRequestBlob {
-    fn from(body: RequestBody) -> Self {
-        let RequestBody {
-            user_address,
-            allowed_scopes,
-            verifying_program_id,
-            signature,
-            entries,
-        } = body;
-
-        Self {
-            user_address,
-            allowed_scopes,
-            verifying_program_id,
-            signature,
-            entries: entries.into_iter().map(SolanaEntryClaims::from).collect(),
-        }
-    }
-}
-
-impl From<RequestBodyEntry> for SolanaEntryClaims {
-    fn from(entry: RequestBodyEntry) -> Self {
-        let RequestBodyEntry {
-            owner_address,
-            encrypted_store,
-        } = entry;
-
-        Self {
-            owner_address,
-            encrypted_store,
-        }
-    }
-}
 
 /// Why a request blob was refused.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -157,9 +65,8 @@ pub enum SolanaRequestEncodeError {
 pub fn encode_solana_request(
     blob: &SolanaRequestBlob,
 ) -> Result<Vec<u8>, SolanaRequestEncodeError> {
-    let body = RequestBody::from(blob);
     let mut bytes = vec![SOLANA_REQUEST_VERSION];
-    borsh::to_writer(&mut bytes, &body).map_err(|source| {
+    borsh::to_writer(&mut bytes, blob).map_err(|source| {
         SolanaRequestEncodeError::BodySerialization {
             reason: source.to_string(),
         }
@@ -180,7 +87,7 @@ pub fn decode_solana_request(bytes: &[u8]) -> Result<SolanaRequestBlob, SolanaRe
         });
     }
 
-    let body = RequestBody::deserialize(&mut body_bytes).map_err(|decode_error| {
+    let blob = SolanaRequestBlob::deserialize(&mut body_bytes).map_err(|decode_error| {
         SolanaRequestDecodeError::MalformedBody {
             reason: decode_error.to_string(),
         }
@@ -191,12 +98,13 @@ pub fn decode_solana_request(bytes: &[u8]) -> Result<SolanaRequestBlob, SolanaRe
         });
     }
 
-    Ok(SolanaRequestBlob::from(body))
+    Ok(blob)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assemble::SolanaEntryClaims;
 
     /// Every field distinct and non-empty, so a field the encoder dropped changes nothing.
     fn blob() -> SolanaRequestBlob {

@@ -87,7 +87,7 @@
       ]
     },
     {
-      "name": "handle-entry-without-its-allowed-key",
+      "name": "handle-entry-without-its-owner-address",
       "comment": "No entry field is optional. A missing owner address cannot default to the signer: on a delegated entry that would silently ask for the wrong pubkey's value.",
       "rejected_by": "json-shape",
       "handles": [

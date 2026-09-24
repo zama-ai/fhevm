@@ -23,7 +23,6 @@
 mod permit_vectors;
 
 use fhevm_relayer::core::event::UserDecryptRequest;
-use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
 use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
 use serde_json::{json, Map, Value};
@@ -73,7 +72,6 @@ impl RejectedBy {
 struct PermitHalf {
     payload: Map<String, Value>,
     signature: String,
-    chain_id: u64,
     transport_key_hex: String,
     extra_data_hex: String,
 }
@@ -131,7 +129,6 @@ fn permit_half() -> PermitHalf {
     PermitHalf {
         payload,
         signature: format!("0x{}", record.signature),
-        chain_id: record.permit.chain_id.parse().expect("decimal u64"),
         transport_key_hex,
         extra_data_hex: record.permit.extra_data.clone(),
     }
@@ -250,32 +247,6 @@ fn every_accepted_record_becomes_a_solana_request() {
                 );
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),
-        }
-    }
-}
-
-/// Every accepted record's handles belong to the host chain the permit is signed for. The fixture's
-/// handles are hand-written, so this also keeps a typo in one of them from being read as a chain-id
-/// bug in the code under test.
-#[test]
-fn accepted_handles_belong_to_the_signed_host_chain() {
-    let fixture = Fixture::load();
-
-    for record in fixture.records("accepted") {
-        let name = name_of(record);
-        let parsed: UserDecryptV3RequestJson =
-            serde_json::from_value(fixture.compose(record)).expect("accepted record parses");
-        let UserDecryptV3RequestJson::SolanaSrfc38(parsed) = parsed else {
-            panic!("{name}: fixture records are Solana envelopes");
-        };
-        let request = UserDecryptRequest::try_from(parsed).expect("accepted record converts");
-
-        for handle in request.ct_handles() {
-            assert_eq!(
-                extract_chain_id_from_u256(handle),
-                fixture.permit.chain_id,
-                "{name}: a handle names another host chain"
-            );
         }
     }
 }

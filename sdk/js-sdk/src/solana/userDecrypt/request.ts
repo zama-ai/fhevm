@@ -41,7 +41,7 @@ export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
  */
 export const MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
 
-/** One handle to decrypt: the handle, the key it was allowed to, and the account it lives in. */
+/** One handle to decrypt: the handle, the owner address whose allow authorizes it, and its store. */
 export interface SolanaUserDecryptHandleEntry {
   /** The 32-byte ciphertext handle. */
   readonly handle: Uint8Array;

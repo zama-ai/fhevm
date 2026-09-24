@@ -50,7 +50,8 @@ use zama_solana_permit::PermitWireFields;
 /// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
 /// Solana RPC node serves at most 100 accounts per call. The worst-case read carries three
 /// accounts per entry (the encrypted store plus the exact and wildcard delegation rows), the
-/// signer's invalidation record and the Clock sysvar: `1 + 1 + N + 2N <= 100` gives 32.
+/// signer's invalidation record and the Clock sysvar that delegation expiry is checked against:
+/// `1 + 1 + N + 2N <= 100` gives 32.
 ///
 /// It lives here, next to the wire form, because both ends need the same number: the relayer
 /// refuses an oversized request before it submits one, and the connector refuses one that

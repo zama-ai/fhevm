@@ -27,8 +27,8 @@ const FORBIDDEN: ReadonlyArray<readonly [string, string]> = [
   ['deSigncryptSolanaUserDecrypt', 'the v0 de-signcryption entry point; response verification replaced it'],
   ['68ba21ba', 'the retired vendored TKMS blob; the host-generic path uses the newer one'],
   ['signing_message_v1.json', 'the v0 signing-message fixture; the permit and envelope sets replaced it'],
-  // RFC 035: the client fetches no proof and names nothing beyond the account and the allowed key;
-  // the Connector reads the account and asks the coprocessors for the allow leaf.
+  // RFC 035: the client fetches no proof and names nothing beyond the store and the owner address;
+  // the Connector reads the store and asks the coprocessors for the allow leaf.
   ['allowedAclDomainKeys', 'the retired per-request scope list; permits carry (program, scope) pairs now'],
   ['domainKeys', 'the retired chain-level default scope; a permit is permissive unless scoped'],
   ['proofServiceUrl', 'the standalone proof service is gone; the Connector fetches leaves itself'],

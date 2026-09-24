@@ -8,15 +8,16 @@
 //! connector reads them because it authorizes. Both call this crate, so the layout has one
 //! definition and a field added to it is a compile error on both sides.
 //!
-//! What this crate deliberately does not do: validate, verify a signature, read a clock or
-//! an account. The wire form is untrusted by construction, and the consumer that authorizes
-//! owns its own validated type and every rule about live state.
+//! What this crate checks is only whether the two carriers make one request: a handle count
+//! within the cap, one entry per handle, 32-byte handles, one chain. It does not type the permit,
+//! verify a signature, or read a clock or an account: the consumer that authorizes owns its own
+//! validated type and every rule about live state.
 
 /// Joining the gateway-typed fields and the blob into the full request.
 pub mod assemble;
 /// The canonical byte layout of the blob: version byte and borsh body.
 pub mod codec;
-/// The untyped request form as it arrives from a sender.
+/// The assembled request, before the consumer types it.
 pub mod wire;
 
 pub use assemble::{
