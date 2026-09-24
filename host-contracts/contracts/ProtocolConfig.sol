@@ -375,10 +375,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert EpochActivationUnauthorized(msg.sender, epochId);
         }
 
-        if ($.contextState[contextId] == ContextState.Pending) {
-            revert KmsContextNotCreated(contextId);
-        }
-
         if (!_isLiveKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
         }

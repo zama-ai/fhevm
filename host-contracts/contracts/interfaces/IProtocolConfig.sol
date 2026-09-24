@@ -245,10 +245,6 @@ interface IProtocolConfig {
     /// @param kmsContextId The context ID.
     error KmsContextNotPending(uint256 kmsContextId);
 
-    /// @notice The KMS context has not reached the created state.
-    /// @param kmsContextId The context ID.
-    error KmsContextNotCreated(uint256 kmsContextId);
-
     /// @notice A context switch or epoch rotation is still settling; settle it before opening another.
     /// @param kmsContextId The latest-issued context ID.
     /// @param epochId The latest-issued epoch ID.
