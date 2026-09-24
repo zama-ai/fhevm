@@ -40,7 +40,7 @@ describe('MultiSig', function () {
     await tx.wait();
 
     // now check that all 3 owners can user-decrypt the encryptedValue:
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = await this.instances.alice.generateKeypair();
     const aliceDecrypted = await userDecryptSingleHandle(
       encryptedValue.handles[0],
       this.contractAddress,
@@ -50,7 +50,7 @@ describe('MultiSig', function () {
       publicKeyAlice,
     );
     expect(aliceDecrypted).to.equal(clearValue);
-    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = await this.instances.bob.generateKeypair();
     const bobDecrypted = await userDecryptSingleHandle(
       encryptedValue.handles[0],
       this.contractAddress,
@@ -60,7 +60,7 @@ describe('MultiSig', function () {
       publicKeyBob,
     );
     expect(bobDecrypted).to.equal(clearValue);
-    const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = this.instances.carol.generateKeypair();
+    const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = await this.instances.carol.generateKeypair();
     const carolDecrypted = await userDecryptSingleHandle(
       encryptedValue.handles[0],
       this.contractAddress,
@@ -158,7 +158,7 @@ describe('MultiSig', function () {
     await this.multiSig.executeTx(1); // anyone can execute it finally
 
     // finally all owners can user-decrypt the result:
-    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
+    const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = await this.instances.alice.generateKeypair();
     const aliceDecrypted = await userDecryptSingleHandle(
       handleResult,
       await setter2.getAddress(),
@@ -169,7 +169,7 @@ describe('MultiSig', function () {
     );
     expect(aliceDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
 
-    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
+    const { publicKey: publicKeyBob, privateKey: privateKeyBob } = await this.instances.bob.generateKeypair();
     const bobDecrypted = await userDecryptSingleHandle(
       handleResult,
       await setter2.getAddress(),
@@ -180,7 +180,7 @@ describe('MultiSig', function () {
     );
     expect(bobDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
 
-    const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = this.instances.carol.generateKeypair();
+    const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = await this.instances.carol.generateKeypair();
     const carolDecrypted = await userDecryptSingleHandle(
       handleResult,
       await setter2.getAddress(),

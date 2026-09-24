@@ -13,15 +13,6 @@ import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { checkIsHardhatSigner } from './utils';
 
-const toHexString = (bytes: Uint8Array, with0x = false) =>
-  `${with0x ? '0x' : ''}${bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '')}`;
-
-const fromHexString = (hexString: string): Uint8Array => {
-  const arr = hexString.replace(/^(0x)/, '').match(/.{1,2}/g);
-  if (!arr) return new Uint8Array();
-  return Uint8Array.from(arr.map((byte) => parseInt(byte, 16)));
-};
-
 async function getCoprocessorSigners() {
   const coprocessorSigners = [];
   const numKMSSigners = getRequiredEnvVar('NUM_COPROCESSORS');
@@ -110,100 +101,72 @@ function createUintToUint8ArrayFunction(numBits: number) {
   };
 }
 
-export type HandleContractPair = {
-  ctHandle: Uint8Array | string;
-  contractAddress: string;
-};
-
-export type HandleContractPairRelayer = {
-  ctHandle: string;
-  contractAddress: string;
-};
-
-export const userDecryptRequestMocked =
-  (
-    kmsSigners: string[],
-    gatewayChainId: number,
-    chainId: number,
-    verifyingContractAddress: string,
-    aclContractAddress: string,
-    relayerUrl: string,
-    provider: ethers.JsonRpcProvider | ethers.BrowserProvider,
-  ) =>
-  async (
-    _handles: HandleContractPair[],
-    privateKey: string,
-    publicKey: string,
-    signature: string,
-    contractAddresses: string[],
-    userAddress: string,
-    startTimestamp: string | number,
-    durationDays: string | number,
-  ): Promise<bigint[]> => {
-    // Casting handles if string
-    const handles: HandleContractPairRelayer[] = _handles.map((h) => ({
-      ctHandle:
-        typeof h.ctHandle === 'string' ? toHexString(fromHexString(h.ctHandle), true) : toHexString(h.ctHandle, true),
-      contractAddress: h.contractAddress,
-    }));
-
-    // Signature checking:
-    const domain = {
-      name: 'Decryption',
-      version: '1',
-      chainId: hre.network.config.chainId,
-      verifyingContract: process.env.DECRYPTION_ADDRESS,
-    };
-    const types = {
-      UserDecryptRequestVerification: [
-        { name: 'publicKey', type: 'bytes' },
-        { name: 'contractAddresses', type: 'address[]' },
-        { name: 'startTimestamp', type: 'uint256' },
-        { name: 'durationDays', type: 'uint256' },
-        { name: 'extraData', type: 'bytes' },
-      ],
-    };
-    const value = {
-      publicKey: `0x${publicKey}`,
-      contractAddresses: contractAddresses,
-      startTimestamp: startTimestamp,
-      durationDays: durationDays,
-      extraData: '0x00',
-    };
-    const signerAddress = ethers.verifyTypedData(domain, types, value, `0x${signature}`);
-    const normalizedSignerAddress = ethers.getAddress(signerAddress);
-    const normalizedUserAddress = ethers.getAddress(userAddress);
-
-    if (normalizedSignerAddress !== normalizedUserAddress) {
-      throw new Error('Invalid EIP-712 signature!');
-    }
-
-    // ACL checking
-    const aclFactory = await hre.ethers.getContractFactory('ACL');
-    const acl = aclFactory.attach(aclAdd);
-    const verifications = handles.map(async ({ ctHandle, contractAddress }) => {
-      const userAllowed = await acl.persistAllowed(ctHandle, userAddress);
-      const contractAllowed = await acl.persistAllowed(ctHandle, contractAddress);
-      if (!userAllowed) {
-        throw new Error('User is not authorized to reencrypt this handle!');
-      }
-      if (!contractAllowed) {
-        throw new Error('dApp contract is not authorized to reencrypt this handle!');
-      }
-      if (userAddress === contractAddress) {
-        throw new Error('userAddress should not be equal to contractAddress when requesting reencryption!');
-      }
-    });
-
-    await Promise.all(verifications).catch((e) => {
-      throw e;
-    });
-    await awaitCoprocessor();
-
-    return Promise.all(
-      handles.map(async (handleContractPair) => await BigInt(await getClearText(handleContractPair.ctHandle))),
-    );
+// Signed (non-delegated) user decryption permit checked by the mocked KMS.
+export type MockedDecryptionPermit = {
+  readonly eip712: {
+    readonly domain: ethers.TypedDataDomain;
+    readonly types: Record<string, ethers.TypedDataField[]>;
+    readonly primaryType: string;
+    readonly message: Record<string, unknown>;
   };
+  readonly signature: string;
+  readonly signerAddress: string;
+};
+
+// Performs the checks the KMS applies to a user decryption request, then returns the cleartext
+// computed by the mocked coprocessor.
+export const userDecryptRequestMocked = async (
+  handle: ethers.BytesLike,
+  contractAddress: string,
+  permit: MockedDecryptionPermit,
+): Promise<bigint> => {
+  const { startTimestamp, durationDays } = permit.eip712.message;
+  if (Date.now() / 1000 > Number(startTimestamp) + Number(durationDays) * 24 * 3600) {
+    throw new Error('Decryption permit has expired!');
+  }
+
+  // Signature checking:
+  const { domain, types, primaryType, message } = permit.eip712;
+  if (
+    BigInt(domain.chainId!) !== BigInt(hre.network.config.chainId!) ||
+    ethers.getAddress(domain.verifyingContract!) !== ethers.getAddress(process.env.DECRYPTION_ADDRESS!)
+  ) {
+    throw new Error('Invalid EIP-712 domain!');
+  }
+  const signerAddress = ethers.verifyTypedData(
+    domain,
+    { [primaryType]: types[primaryType] },
+    message,
+    permit.signature,
+  );
+  if (ethers.getAddress(signerAddress) !== ethers.getAddress(permit.signerAddress)) {
+    throw new Error('Invalid EIP-712 signature!');
+  }
+  const contractAddresses = (message.contractAddresses as string[]).map((a) => ethers.getAddress(a));
+  if (!contractAddresses.includes(ethers.getAddress(contractAddress))) {
+    throw new Error('Contract address is not part of the decryption permit!');
+  }
+
+  // ACL checking
+  const userAddress = permit.signerAddress;
+  const ctHandle = ethers.hexlify(handle);
+  const aclFactory = await hre.ethers.getContractFactory('ACL');
+  const acl = aclFactory.attach(aclAdd);
+  const userAllowed = await acl.persistAllowed(ctHandle, userAddress);
+  const contractAllowed = await acl.persistAllowed(ctHandle, contractAddress);
+  if (!userAllowed) {
+    throw new Error('User is not authorized to reencrypt this handle!');
+  }
+  if (!contractAllowed) {
+    throw new Error('dApp contract is not authorized to reencrypt this handle!');
+  }
+  if (ethers.getAddress(userAddress) === ethers.getAddress(contractAddress)) {
+    throw new Error('userAddress should not be equal to contractAddress when requesting reencryption!');
+  }
+
+  await awaitCoprocessor();
+  return BigInt(await getClearText(ctHandle));
+};
 
 export const createEncryptedInputMocked = (contractAddress: string, userAddress: string) => {
   if (!isAddress(contractAddress)) {

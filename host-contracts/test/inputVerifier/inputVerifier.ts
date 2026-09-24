@@ -28,7 +28,7 @@ describe('InputVerifier', function () {
     signers = await getSigners();
     instances = await createInstances(signers);
     inputVerifierFactory = await ethers.getContractFactory('InputVerifier');
-    aliceKeys = instances.alice.generateKeypair();
+    aliceKeys = await instances.alice.generateKeypair();
   });
 
   beforeEach(async function () {
