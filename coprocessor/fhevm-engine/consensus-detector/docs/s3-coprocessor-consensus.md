@@ -424,7 +424,6 @@ canonical handle lists. A `drifted_handle` row represents:
 Descriptor findings retain local and observed keyset IDs, ct64 digests, ct128
 digests, and formats. `target_ct64_digest` is populated only from a computed
 descriptor in the unique threshold group; NULL means no ct64 target is established.
-A nullable `local_gateway_key_id` is retained only as legacy diagnostic provenance.
 
 Historical localization descends authenticated historical commitments only after
 a digest differs. Every block in an available selected detailed range is compared
