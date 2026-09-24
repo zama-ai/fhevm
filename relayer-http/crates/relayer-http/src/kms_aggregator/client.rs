@@ -89,9 +89,13 @@ pub enum AttemptError {
     /// A non-2xx status without a parsable error body (empty 404, HTML 502, a 3xx: never followed).
     #[error("http {0}")]
     Status(u16),
-    /// A 2xx whose body is unreadable or too large.
+    /// A 2xx whose body is unreadable.
     #[error("bad body: {0}")]
     Body(String),
+    /// A body bigger than `MAX_RESPONSE_BYTES`: the declared `content-length`, or the bytes received when the
+    /// stream was cut (a lower bound).
+    #[error("response too large: {0} bytes (max {MAX_RESPONSE_BYTES})")]
+    TooLarge(u64),
     /// Connection refused or reset, TLS failure, client-side timeout. Never contains the URL.
     #[error("transport: {0}")]
     Transport(String),
@@ -103,7 +107,7 @@ impl AttemptError {
         match self {
             Self::Api { error, .. } => error.code == ErrorCode::SenderAuthenticationFailed,
             Self::Status(status) => *status == 401,
-            Self::Body(_) | Self::Transport(_) => false,
+            Self::Body(_) | Self::TooLarge(_) | Self::Transport(_) => false,
         }
     }
 
@@ -114,7 +118,7 @@ impl AttemptError {
             Self::Api { error, .. } => error.code.retryable(),
             Self::Status(status) => *status == 408 || (500..600).contains(status),
             Self::Transport(_) => true,
-            Self::Body(_) => false,
+            Self::Body(_) | Self::TooLarge(_) => false,
         }
     }
 
@@ -125,7 +129,7 @@ impl AttemptError {
             Self::Api { error, .. } => error.code,
             Self::Status(401) => ErrorCode::SenderAuthenticationFailed,
             Self::Status(_) | Self::Transport(_) => ErrorCode::UpstreamTransient,
-            Self::Body(_) => ErrorCode::Unknown,
+            Self::Body(_) | Self::TooLarge(_) => ErrorCode::Unknown,
         }
     }
 }
@@ -213,17 +217,17 @@ impl ConnectorClient for HttpClient {
         }
         let mut response = request.send().await.map_err(transport)?;
         let status = response.status().as_u16();
-        let too_large = || AttemptError::Body("response too large".to_owned());
-        if response
+        if let Some(len) = response
             .content_length()
-            .is_some_and(|len| len > MAX_RESPONSE_BYTES as u64)
+            .filter(|len| *len > MAX_RESPONSE_BYTES as u64)
         {
-            return Err(too_large());
+            return Err(AttemptError::TooLarge(len));
         }
         let mut buf = BytesMut::new();
         while let Some(chunk) = response.chunk().await.map_err(transport)? {
-            if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
-                return Err(too_large());
+            let received = buf.len().saturating_add(chunk.len());
+            if received > MAX_RESPONSE_BYTES {
+                return Err(AttemptError::TooLarge(received as u64));
             }
             buf.extend_from_slice(&chunk);
         }
@@ -358,6 +362,7 @@ mod tests {
         assert!(!AttemptError::Status(403).is_auth());
         assert!(!AttemptError::Transport("x".into()).is_auth());
         assert!(!AttemptError::Body("x".into()).is_auth());
+        assert!(!AttemptError::TooLarge(1).is_auth());
     }
 
     #[test]
@@ -378,6 +383,7 @@ mod tests {
         assert!(!AttemptError::Status(307).is_retryable());
         assert!(AttemptError::Transport("x".into()).is_retryable());
         assert!(!AttemptError::Body("x".into()).is_retryable());
+        assert!(!AttemptError::TooLarge(1).is_retryable());
     }
 
     #[test]
@@ -396,6 +402,7 @@ mod tests {
             ErrorCode::UpstreamTransient
         );
         assert_eq!(AttemptError::Body("x".into()).code(), ErrorCode::Unknown);
+        assert_eq!(AttemptError::TooLarge(1).code(), ErrorCode::Unknown);
     }
 
     #[test]
@@ -601,9 +608,11 @@ mod tests {
             )
             .mount(&server)
             .await;
+        let err = post(&server, None).await.unwrap_err();
+        assert_eq!(err, AttemptError::TooLarge(MAX_RESPONSE_BYTES as u64 + 1));
         assert_eq!(
-            post(&server, None).await.unwrap_err(),
-            AttemptError::Body("response too large".into())
+            err.to_string(),
+            "response too large: 4194305 bytes (max 4194304)"
         );
     }
 

@@ -8,7 +8,7 @@ use kms_connector_api::ErrorCode;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{Instrument, debug, error, info, instrument, warn};
 
 use super::call::{CallError, Caller};
 use super::flows::Flow;
@@ -118,11 +118,15 @@ impl<F: Flow> Aggregator<F> {
             // The task must own its endpoint: it outlives this borrow.
             let endpoint = endpoint.clone();
             let (caller, body, cancel) = (self.caller.clone(), body.clone(), cancel.clone());
-            pending.spawn(async move {
-                caller
-                    .call::<F::Response>(&endpoint, F::ROUTE, body, deadline, cancel)
-                    .await
-            });
+            // The task carries the `aggregation` span: its attempt lines have the request's identifiers.
+            pending.spawn(
+                async move {
+                    caller
+                        .call::<F::Response>(&endpoint, F::ROUTE, body, deadline, cancel)
+                        .await
+                }
+                .in_current_span(),
+            );
         }
 
         // Tallies for the final log line: the node names behind every outcome, so one line names the culprits.
@@ -342,6 +346,25 @@ mod tests {
             .unwrap();
         assert_eq!(output.result.len(), 13);
         assert_eq!(started.elapsed(), ms(10));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn attempt_lines_carry_the_request_identifiers() {
+        let (_guard, sink) = crate::kms_aggregator::call::tests::capture_attempts().await;
+        let request = user_request();
+        let decryption_id = request.id().to_string();
+        user(&[(1, ACL), (12, OK)], 9)
+            .run("req-attempt", request)
+            .await
+            .unwrap();
+        let lines = sink.lines("attempt failed");
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let span = &lines[0]["span"];
+        assert_eq!(span["name"], "aggregation");
+        assert_eq!(span["request_id"], "req-attempt");
+        assert_eq!(span["flow"], "user_decrypt");
+        assert_eq!(span["decryption_id"], decryption_id);
+        assert_eq!(lines[0]["fields"]["code"], "acl_denied");
     }
 
     #[tokio::test(start_paused = true)]

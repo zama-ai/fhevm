@@ -131,7 +131,8 @@ not stored.
 | connector answer | `AttemptError` | retried? |
 |---|---|---|
 | 2xx with a valid DTO | — | — |
-| 2xx with an unreadable or oversized body (> 4 MiB) | `Body` | no |
+| 2xx with an unreadable body | `Body` | no |
+| any body above 4 MiB (declared `content-length`, or bytes received when the stream is cut) | `TooLarge(bytes)` | no |
 | non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed` (400), `sender_authentication_failed` (401), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
 | non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408 and 5xx only |
 | connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
@@ -215,16 +216,18 @@ kms_aggregator:
 
 ## 10. Logging
 
-Span `aggregation{flow, request_id, decryption_id, handles}` around `run`. Events:
+Span `aggregation{flow, request_id, decryption_id, handles}` around `run`; the node tasks run inside it, so their
+attempt lines carry the same identifiers. Events:
 
 | event | level | fields |
 |---|---|---|
 | `aggregation started` | info | nodes, threshold, timeout_ms |
 | `response accepted` | info | node, attempts, elapsed_ms, counted |
 | `response rejected` | warn | node, elapsed_ms, reason |
-| `call failed` | warn | node, attempts, elapsed_ms, error |
+| `attempt failed` | warn | node, attempt, elapsed_ms (this attempt), error, code, retry_in_ms (`null` when the call gives up): one line per failed attempt, retryable or final |
+| `call failed` | warn | node, attempts, elapsed_ms, error: the node's outcome after its last attempt |
 | `call cancelled at the deadline` | warn | node, attempts, elapsed_ms: the node was still running when the deadline passed (too slow, or hung) |
-| `retrying`, `giving up`, `call cancelled` (fail fast or shutdown), `deadline reached`, `threshold unreachable` | debug | node, attempts, delay_ms / pending |
+| `call cancelled` (fail fast or shutdown), `deadline reached`, `threshold unreachable` | debug | node, attempts / pending |
 | `node task failed` | error | a panic inside a node task (counted as failed, no node name available) |
 | `aggregation succeeded` / `aggregation failed` | info / warn | counted, accepted, rejected + rejected_nodes, failed + failed_nodes, cancelled + cancelled_nodes, deadline_hit, dominant, elapsed_ms |
 

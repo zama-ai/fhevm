@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, Instant, sleep};
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
+use tracing::warn;
 
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig};
@@ -120,6 +120,7 @@ impl Caller {
                 )));
             };
             *attempts += 1;
+            let attempt_started = Instant::now();
             let outcome = self
                 .client
                 .post(endpoint, route, body.clone())
@@ -135,33 +136,53 @@ impl Caller {
             let fits = delay < deadline.saturating_duration_since(Instant::now());
             // Never retry an authentication rejection (our key is wrong for that node), a non-retryable
             // error, past `max_retries`, or when the delay would end after the deadline.
-            if failure.is_auth()
+            let gives_up = failure.is_auth()
                 || !failure.is_retryable()
                 || *attempts > self.cfg.retries.max_retries
-                || !fits
-            {
-                debug!(node = %endpoint.name, error = %failure, attempts = *attempts, "giving up");
+                || !fits;
+            attempt_failed(
+                &endpoint.name,
+                *attempts,
+                attempt_started.elapsed(),
+                &failure,
+                (!gives_up).then_some(delay),
+            );
+            if gives_up {
                 return Err(CallError::Failed(failure));
             }
-            debug!(
-                node = %endpoint.name,
-                error = %failure,
-                attempts = *attempts,
-                delay_ms = delay.as_millis() as u64,
-                "retrying"
-            );
             sleep(delay).await;
         }
     }
 }
 
+/// One failed attempt, visible at the default level; the node task runs in the `aggregation` span, so the line
+/// also carries the request's identifiers. `delay` is `None` when the call gives up.
+pub(super) fn attempt_failed(
+    node: &str,
+    attempt: u32,
+    elapsed: Duration,
+    failure: &AttemptError,
+    delay: Option<Duration>,
+) {
+    warn!(
+        node,
+        attempt,
+        elapsed_ms = elapsed.as_millis() as u64,
+        error = %failure,
+        code = failure.code().as_str(),
+        retry_in_ms = delay.map(|d| d.as_millis() as u64),
+        "attempt failed"
+    );
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use kms_connector_api::{ErrorCode, USER_DECRYPTION_ROUTE, UserDecryptionResponse};
 
     use super::*;
     use crate::kms_aggregator::config::tests::valid;
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply, USER_REQUEST_JSON};
+    use crate::logging::capture::{Sink, capture};
 
     const OK: Reply = Reply::Fixed(Fixed::Ok);
     const HANG: Reply = Reply::Fixed(Fixed::Hang);
@@ -192,6 +213,33 @@ mod tests {
             )
             .await;
         (mock, result)
+    }
+
+    /// Captures the `attempt failed` lines of this thread.
+    pub(crate) async fn capture_attempts() -> (tracing::subscriber::DefaultGuard, Sink) {
+        capture("attempt failed", 1, || {
+            attempt_failed("probe", 1, Duration::ZERO, &AttemptError::Status(500), None);
+        })
+        .await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_failed_attempt_is_a_warn_with_its_decision() {
+        let (_guard, sink) = capture_attempts().await;
+        let (_, r) = run(vec![RATE, MALFORMED], 2).await;
+        assert_eq!(r.attempts, 2);
+        let lines = sink.lines("attempt failed");
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        for (line, attempt) in lines.iter().zip(1..) {
+            assert_eq!(line["level"], "WARN");
+            assert_eq!(line["fields"]["node"], "node-0");
+            assert_eq!(line["fields"]["attempt"], attempt);
+            assert_eq!(line["fields"]["elapsed_ms"], 10);
+        }
+        assert_eq!(lines[0]["fields"]["code"], "rate_limited");
+        assert!(lines[0]["fields"]["retry_in_ms"].as_u64().is_some());
+        assert_eq!(lines[1]["fields"]["code"], "malformed");
+        assert!(lines[1]["fields"]["retry_in_ms"].is_null(), "{}", lines[1]);
     }
 
     #[tokio::test(start_paused = true)]
