@@ -267,7 +267,9 @@ fn action() -> impl Strategy<Value = Action> {
         2 => (role(), prop::option::weighted(0.25, wallet()), areas())
             .prop_map(|(pauser, record_of, areas)| Action::Pause { pauser, record_of, areas }),
         2 => (role(), areas()).prop_map(|(admin, areas)| Action::Unpause { admin, areas }),
-        1 => (wallet(), role(), wallet(), any::<bool>())
+        // Half the grants and withdrawals target the genesis pauser, the key `Pause` signs with
+        // most, so a withdrawn pauser trying to pause is common rather than rare.
+        3 => (wallet(), role(), prop_oneof![Just(GENESIS_PAUSER), wallet()], any::<bool>())
             .prop_map(|(payer, admin, pauser, enabled)| Action::SetPauser { payer, admin, pauser, enabled }),
         2 => (role(), any::<bool>())
             .prop_map(|(admin, enabled)| Action::SetGrantDenyListEnabled { admin, enabled }),
