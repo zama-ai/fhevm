@@ -166,7 +166,7 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
             let HostChain::Evm(host_client) = self.host(ct_chain_id)? else {
-                return Err(wrong_host_kind(ct_chain_id, "EVM"));
+                return Err(wrong_host_kind(ct_chain_id, "EVM", "Solana"));
             };
             let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
@@ -341,7 +341,7 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
         }
 
         let HostChain::Evm(host_client) = self.host(chain_id)? else {
-            return Err(wrong_host_kind(chain_id, "EVM"));
+            return Err(wrong_host_kind(chain_id, "EVM", "Solana"));
         };
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
@@ -406,7 +406,7 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
     ) -> Result<(), RequestCheckError> {
         let chain_id = request.permit().chain_id();
         let HostChain::Solana(host) = self.host(chain_id)? else {
-            return Err(wrong_host_kind(chain_id, "Solana"));
+            return Err(wrong_host_kind(chain_id, "Solana", "EVM"));
         };
         let context = AuthorizationContext {
             program_id: host.program_id,
@@ -560,11 +560,11 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
 }
 
 /// A request whose handles name a host chain of the other kind.
-fn wrong_host_kind(chain_id: u64, required: &str) -> RequestCheckError {
+fn wrong_host_kind(chain_id: u64, required: &str, found: &str) -> RequestCheckError {
     RequestCheckError::irrecoverable(
         RequestCheckKind::Acl,
         ErrorCode::Unprocessable,
-        anyhow!("this request requires {required}, but host chain {chain_id} is of the other kind"),
+        anyhow!("host chain {chain_id} is a {found} host, but this request requires {required}"),
     )
 }
 

@@ -17,12 +17,13 @@ use kms_grpc::kms::v1::{
 use zama_solana_permit::PermitFields;
 
 #[derive(Clone)]
-/// The struct responsible of processing incoming decryption requests.
+/// Fetches the Gateway calldata of a legacy user decryption and builds the KMS request of every
+/// decryption. Whether a request is authorized is [`super::HostDecryptionVerifier`]'s.
 pub struct DecryptionProcessor<GP: Provider> {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712DomainMsg,
 
-    /// The instance of the `Decryption` contract used to check decryption were not already done.
+    /// The `Decryption` contract a legacy user decryption's transaction must be sent to.
     decryption_contract: DecryptionInstance<GP>,
 
     /// The entity used to verify and collect the ciphertexts of decryption requests.

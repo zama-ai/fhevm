@@ -36,7 +36,7 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to validate the KMS context referenced by a request.
     context_manager: C,
 
-    /// The entity used to process decryption requests.
+    /// The entity that fetches decryption calldata and builds the KMS request.
     decryption_processor: DecryptionProcessor<GP>,
 
     /// The entity that decides whether a decryption request is authorized on its host chain.
