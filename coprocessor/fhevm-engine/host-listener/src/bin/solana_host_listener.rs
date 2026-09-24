@@ -47,8 +47,14 @@ struct Args {
     #[arg(long, default_value = "http://127.0.0.1:10000")]
     grpc_url: String,
 
-    /// Existing confirmed block to replay inclusively on an empty database. Must be within
-    /// Yellowstone retention and precede the host activity to reconstruct. A saved checkpoint wins.
+    /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock`, the slots
+    /// Yellowstone can no longer replay. It may be another provider's. Defaults to `--url`.
+    #[arg(long, env = "SOLANA_ARCHIVE_URL")]
+    archive_url: Option<String>,
+
+    /// Existing confirmed block to replay inclusively on an empty database. Must precede the host
+    /// activity to reconstruct; if Yellowstone no longer retains it, the archive serves it.
+    /// A saved checkpoint wins.
     #[arg(long)]
     start_slot: Option<u64>,
 
@@ -164,7 +170,7 @@ async fn main() -> Result<()> {
         None => match args.start_slot {
             Some(slot) => {
                 // Anchor to an actual block, so a provider silently starting at the tip is rejected.
-                // RPC supplies only its identity; reconstruction still uses Yellowstone sysvars.
+                // RPC supplies only its identity; its transactions come from the stream or archive.
                 let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
                     slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
                 ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
@@ -214,8 +220,13 @@ async fn main() -> Result<()> {
         result
     });
 
+    let archive = RpcClient::new_with_timeout(
+        args.archive_url.unwrap_or(args.url),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+    );
     let listener_result = run(
         &db,
+        &archive,
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,

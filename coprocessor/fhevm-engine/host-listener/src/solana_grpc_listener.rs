@@ -12,6 +12,9 @@
 //!   `declare_id!`. Instruction layout still has no runtime handshake: deploy the listener from
 //!   the same rev as the program (INVARIANTS #33).
 //!
+//! A checkpoint older than the provider's replay window is caught up from an archive RPC with
+//! `getBlock` (`archive`), then the stream resumes from it.
+//!
 //! Each sealed block is applied in one database transaction: its compute rows, the
 //! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
 //! Compute rows and leaves both carry the result handles each `FheExecutedEvent`
@@ -25,10 +28,11 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::stream::StreamExt;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use anchor_lang::prelude::Pubkey;
 
@@ -59,8 +63,11 @@ use crate::solana_grpc_source::{
 };
 use crate::solana_reconstruct::HandleMismatch;
 
+mod archive;
 mod metrics;
 mod rpc_block;
+#[cfg(test)]
+mod wire_fixtures;
 
 pub use metrics::track_confirmed_slot;
 
@@ -231,9 +238,11 @@ impl IngestionProgress {
 }
 
 /// Connects, subscribes, and ingests until `cancel` fires. Reconnects with a
-/// `from_slot` cursor on stream errors; inserts are idempotent so replay is safe.
+/// `from_slot` cursor on stream errors; inserts are idempotent so replay is safe. When the
+/// stream can no longer replay from the checkpoint, catches up from `archive` first.
 pub async fn run(
     db: &Database,
+    archive: &RpcClient,
     config: &SolanaGrpcListenerConfig,
     start: StartPosition,
     cancel: CancellationToken,
@@ -251,23 +260,50 @@ pub async fn run(
             return Ok(());
         }
         let start = progress.subscription_start();
-        match subscribe_loop(db, config, start, &mut progress, &cancel).await {
-            Ok(()) => return Ok(()), // cancelled
-            Err(err) => match err.downcast::<FatalListenerError>() {
-                Ok(fatal) => {
-                    let err = fatal.into_inner();
-                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
-                    return Err(err);
+        let err = match subscribe_loop(
+            db,
+            config,
+            start,
+            &mut progress,
+            &cancel,
+        )
+        .await
+        {
+            Ok(StreamEnd::Cancelled) => return Ok(()),
+            Ok(StreamEnd::ReplayWindowPassed(status)) => {
+                warn!(%status, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "Yellowstone can no longer replay from the checkpoint; catching up from the archive RPC");
+                metrics::set_archive_catch_up(config.chain_id, true);
+                let caught_up = archive::catch_up(
+                    db,
+                    config,
+                    archive,
+                    &mut progress,
+                    &cancel,
+                )
+                .await;
+                metrics::set_archive_catch_up(config.chain_id, false);
+                match caught_up {
+                    Ok(true) => continue,
+                    Ok(false) => return Ok(()),
+                    Err(err) => err,
                 }
-                Err(err) => {
-                    error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC subscription dropped; reconnecting inclusively");
-                    metrics::inc_reconnects(config.chain_id);
-                    tokio::select! {
-                        _ = cancel.cancelled() => return Ok(()),
-                        _ = tokio::time::sleep(Duration::from_secs(2)) => {}
-                    }
+            }
+            Err(err) => err,
+        };
+        match err.downcast::<FatalListenerError>() {
+            Ok(fatal) => {
+                let err = fatal.into_inner();
+                error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "gRPC listener stopped on fail-closed ingestion error");
+                return Err(err);
+            }
+            Err(err) => {
+                error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "ingestion interrupted; resuming inclusively from the checkpoint");
+                metrics::inc_reconnects(config.chain_id);
+                tokio::select! {
+                    _ = cancel.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
                 }
-            },
+            }
         }
     }
 }
@@ -377,13 +413,21 @@ fn resolve_transaction_instructions(
     .map_err(anyhow::Error::from)
 }
 
+/// Why a subscription ended without an error.
+#[derive(Debug)]
+enum StreamEnd {
+    Cancelled,
+    /// The provider refused to replay from the checkpoint: it has left the replay window.
+    ReplayWindowPassed(tonic::Status),
+}
+
 async fn subscribe_loop(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
     start: StartPosition,
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
-) -> Result<()> {
+) -> Result<StreamEnd> {
     let endpoint = Channel::from_shared(config.grpc_url.clone())
         .context("invalid grpc url")?;
     // from_shared leaves tls unset. Attach rustls when the parsed URI is https so hosted
@@ -396,7 +440,7 @@ async fn subscribe_loop(
         endpoint
     };
     let channel = tokio::select! {
-        _ = cancel.cancelled() => return Ok(()),
+        _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
         result = endpoint.connect() => result.context("connect grpc endpoint")?,
     };
 
@@ -425,23 +469,26 @@ async fn subscribe_loop(
         .chain(futures_util::stream::pending::<SubscribeRequest>());
 
     let response = tokio::select! {
-        _ = cancel.cancelled() => return Ok(()),
+        _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
         result = client.subscribe(outbound) => result.context("subscribe")?,
     };
     let mut stream = response.into_inner();
 
     loop {
         tokio::select! {
-            _ = cancel.cancelled() => return Ok(()),
+            _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
             // Sealed blocks are emitted for every produced slot, including slots with zero
             // matching transactions. Prolonged silence therefore means the stream stalled.
             msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
                 let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
                 let msg = match msg {
                     Ok(message) => message,
-                    Err(status) if is_resume && is_terminal_replay_status(&status) => {
+                    Err(status) if is_resume && is_replay_window_passed(&status) => {
+                        return Ok(StreamEnd::ReplayWindowPassed(status));
+                    }
+                    Err(status) if is_resume && is_replay_unsupported(&status) => {
                         return Err(FatalListenerError::new(anyhow!(
-                            "inclusive Yellowstone replay unavailable: {status}"
+                            "Yellowstone provider cannot replay from a slot: {status}"
                         )).into());
                     }
                     Err(status) => return Err(anyhow!(status).context("grpc stream")),
@@ -475,7 +522,7 @@ async fn subscribe_loop(
                             )
                             .await?
                             {
-                                return Ok(());
+                                return Ok(StreamEnd::Cancelled);
                             }
                         }
                     }
@@ -564,38 +611,45 @@ async fn apply_prepared_block(
     }
 }
 
-fn is_terminal_replay_status(status: &tonic::Status) -> bool {
+/// The provider keeps no replay history at all, so catching up could never hand back to it.
+fn is_replay_unsupported(status: &tonic::Status) -> bool {
+    status.message() == "from_slot is not supported"
+}
+
+/// The requested slot is older than the provider's replay window.
+fn is_replay_window_passed(status: &tonic::Status) -> bool {
     let message = status.message();
-    message == "from_slot is not supported"
-        || message.starts_with("broadcast from ")
-            && message.contains(" is not available")
+    message.starts_with("broadcast from ")
+        && message.contains(" is not available")
 }
 
 #[cfg(test)]
 mod replay_status_tests {
     use super::{
-        is_terminal_replay_status, BlockCheckpoint, IngestionProgress,
+        is_replay_unsupported, is_replay_window_passed, BlockCheckpoint,
+        IngestionProgress,
     };
     use crate::solana_grpc_listener::StartPosition;
     use crate::solana_grpc_source::{BlockValidator, SealDecision};
     use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
     #[test]
-    fn classifies_replay_gaps_without_treating_transport_as_terminal() {
-        for message in [
-            "from_slot is not supported",
+    fn classifies_replay_refusals_without_treating_transport_as_one() {
+        let passed = tonic::Status::internal(
             "broadcast from 7 is not available, last available: 12",
+        );
+        assert!(is_replay_window_passed(&passed));
+        assert!(!is_replay_unsupported(&passed));
+        let unsupported = tonic::Status::internal("from_slot is not supported");
+        assert!(is_replay_unsupported(&unsupported));
+        assert!(!is_replay_window_passed(&unsupported));
+        for transport in [
+            tonic::Status::unavailable("connection reset"),
+            tonic::Status::internal("failed to send from_slot request"),
         ] {
-            assert!(is_terminal_replay_status(&tonic::Status::internal(
-                message
-            )));
+            assert!(!is_replay_window_passed(&transport));
+            assert!(!is_replay_unsupported(&transport));
         }
-        assert!(!is_terminal_replay_status(&tonic::Status::unavailable(
-            "connection reset"
-        )));
-        assert!(!is_terminal_replay_status(&tonic::Status::internal(
-            "failed to send from_slot request"
-        )));
     }
 
     #[test]

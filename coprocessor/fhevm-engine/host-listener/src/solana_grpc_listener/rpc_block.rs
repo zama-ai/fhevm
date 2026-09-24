@@ -6,7 +6,7 @@
 //! and `maxSupportedTransactionVersion: 0`.
 
 use anyhow::{anyhow, bail, Context, Result};
-use solana_sdk::message::VersionedMessage;
+use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
 use solana_transaction_status_client_types::{
     option_serializer::OptionSerializer, UiConfirmedBlock, UiInstruction,
     UiTransactionStatusMeta,
@@ -18,36 +18,45 @@ use zama_solana_transaction::{
 use super::{decoded_instructions, PreparedBlock, PreparedTransaction};
 use crate::solana_grpc_source::SealedBlock;
 
-/// Prepares the `getBlock` response for `slot`. Failed transactions are skipped, as on the
-/// stream; a transaction's index is its position in the response, which is block order.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "archive catch-up (fhevm-internal#2085) is its first production caller"
-    )
-)]
+/// Prepares the `getBlock` response for `slot`. As on the stream, only transactions naming
+/// `program` count as matching, and failed ones are then skipped. A transaction's index is its
+/// position in the response, which is block order.
 pub(super) fn prepare_rpc_block(
     slot: u64,
     block: UiConfirmedBlock,
+    program: &Pubkey,
 ) -> Result<PreparedBlock> {
     let transactions = block.transactions.ok_or_else(|| {
         anyhow!("getBlock response for slot {slot} has no transactions")
     })?;
-    let matching_transaction_count = transactions.len();
+    let executed_transaction_count = transactions.len() as u64;
+    let program_address = program.to_string();
+    let mut matching_transaction_count = 0;
     let mut prepared = Vec::new();
     for (index, encoded) in transactions.into_iter().enumerate() {
         let meta = encoded.meta.ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no status meta")
         })?;
-        if meta.err.is_some() {
-            continue;
-        }
         let transaction = encoded.transaction.decode().ok_or_else(|| {
             anyhow!(
                 "transaction {index} in slot {slot} is not a sanitized base64 transaction"
             )
         })?;
+        // Yellowstone's `account_include` matches static and lookup-table-loaded keys alike.
+        let names_program = transaction
+            .message
+            .static_account_keys()
+            .contains(program)
+            || matches!(&meta.loaded_addresses, OptionSerializer::Some(loaded)
+                    if loaded.writable.contains(&program_address)
+                        || loaded.readonly.contains(&program_address));
+        if !names_program {
+            continue;
+        }
+        matching_transaction_count += 1;
+        if meta.err.is_some() {
+            continue;
+        }
         let signature = *transaction.signatures.first().ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no signature")
         })?;
@@ -69,7 +78,7 @@ pub(super) fn prepare_rpc_block(
                 .context("getBlock previousBlockhash")?,
             block_time: block.block_time,
             block_height: block.block_height,
-            executed_transaction_count: matching_transaction_count as u64,
+            executed_transaction_count,
             transactions: Vec::new(),
         },
         transactions: prepared,
@@ -177,31 +186,18 @@ fn decode_hash(value: &str) -> Result<[u8; 32]> {
 mod tests {
     use base64::{prelude::BASE64_STANDARD, Engine};
     use serde_json::{json, Value};
-    use solana_sdk::{
-        hash::Hash,
-        message::{
-            compiled_instruction::CompiledInstruction as SdkCompiledInstruction,
-            v0::{self, MessageAddressTableLookup},
-            MessageHeader, VersionedMessage,
-        },
-        pubkey::Pubkey,
-        signature::Signature,
-        transaction::VersionedTransaction,
-    };
+    use solana_sdk::{signature::Signature, transaction::VersionedTransaction};
     use solana_transaction_status_client_types::{
         EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock,
     };
-    use yellowstone_grpc_proto::prelude::{
-        CompiledInstruction as GrpcCompiledInstruction, InnerInstruction,
-        InnerInstructions, Message as GrpcMessage, TransactionStatusMeta,
-    };
 
+    use super::super::wire_fixtures::{
+        app_transaction, block_json, foreign_transaction, Compiled,
+        Transaction, BLOCK_TIME,
+    };
     use super::{prepare_rpc_block, resolve_rpc_transaction};
     use crate::solana_grpc_listener::resolve_transaction_instructions;
-    use crate::solana_grpc_listener::test_support::{
-        encoded_execution, reconstruct, with_events, ZAMA_HOST,
-    };
-    use crate::solana_reconstruct::DecodedInstruction;
+    use crate::solana_grpc_listener::test_support::{reconstruct, ZAMA_HOST};
 
     mod shared_fixtures {
         include!(concat!(
@@ -214,176 +210,12 @@ mod tests {
         ExpectedOutcome,
     };
 
-    /// A compiled instruction as the fixtures and both wire formats describe it.
-    struct Compiled {
-        program_id_index: u8,
-        accounts: Vec<u8>,
-        data: Vec<u8>,
-        stack_height: Option<u32>,
+    fn hash(slot: u64) -> [u8; 32] {
+        [slot as u8; 32]
     }
 
-    /// One transaction, written once and rendered in both wire formats.
-    struct Transaction {
-        signature: [u8; 64],
-        static_keys: Vec<[u8; 32]>,
-        loaded_writable: Vec<[u8; 32]>,
-        loaded_readonly: Vec<[u8; 32]>,
-        top_level: Vec<Compiled>,
-        inner_groups: Vec<(u8, Vec<Compiled>)>,
-    }
-
-    impl Transaction {
-        /// `getBlock`'s JSON for the transaction, spelled as the RPC wire format.
-        fn rpc_json(&self, err: Value) -> Value {
-            let has_lookups = !self.loaded_writable.is_empty()
-                || !self.loaded_readonly.is_empty();
-            let message = v0::Message {
-                header: MessageHeader {
-                    num_required_signatures: 1,
-                    num_readonly_signed_accounts: 0,
-                    num_readonly_unsigned_accounts: 0,
-                },
-                account_keys: self
-                    .static_keys
-                    .iter()
-                    .map(|key| Pubkey::new_from_array(*key))
-                    .collect(),
-                recent_blockhash: Hash::new_from_array([9; 32]),
-                instructions: self
-                    .top_level
-                    .iter()
-                    .map(|instruction| SdkCompiledInstruction {
-                        program_id_index: instruction.program_id_index,
-                        accounts: instruction.accounts.clone(),
-                        data: instruction.data.clone(),
-                    })
-                    .collect(),
-                address_table_lookups: if has_lookups {
-                    vec![MessageAddressTableLookup {
-                        account_key: Pubkey::new_from_array([0xAA; 32]),
-                        writable_indexes: (0..self.loaded_writable.len() as u8)
-                            .collect(),
-                        readonly_indexes: (0..self.loaded_readonly.len() as u8)
-                            .collect(),
-                    }]
-                } else {
-                    vec![]
-                },
-            };
-            let transaction = VersionedTransaction {
-                signatures: vec![Signature::from(self.signature)],
-                message: VersionedMessage::V0(message),
-            };
-            let keys = |keys: &[[u8; 32]]| {
-                keys.iter()
-                    .map(|key| bs58::encode(key).into_string())
-                    .collect::<Vec<_>>()
-            };
-            let status = if err.is_null() {
-                json!({ "Ok": null })
-            } else {
-                json!({ "Err": err })
-            };
-            json!({
-                "transaction": [
-                    BASE64_STANDARD.encode(bincode::serialize(&transaction).unwrap()),
-                    "base64"
-                ],
-                "meta": {
-                    "err": err,
-                    "status": status,
-                    "fee": 5000,
-                    "preBalances": [],
-                    "postBalances": [],
-                    "innerInstructions": self.inner_groups.iter().map(|(index, instructions)| json!({
-                        "index": index,
-                        "instructions": instructions.iter().map(|instruction| json!({
-                            "programIdIndex": instruction.program_id_index,
-                            "accounts": instruction.accounts,
-                            "data": bs58::encode(&instruction.data).into_string(),
-                            "stackHeight": instruction.stack_height,
-                        })).collect::<Vec<_>>(),
-                    })).collect::<Vec<_>>(),
-                    "logMessages": [],
-                    "preTokenBalances": [],
-                    "postTokenBalances": [],
-                    "rewards": [],
-                    "loadedAddresses": {
-                        "writable": keys(&self.loaded_writable),
-                        "readonly": keys(&self.loaded_readonly),
-                    },
-                    "computeUnitsConsumed": 1000,
-                },
-                "version": 0,
-            })
-        }
-
-        fn grpc(&self) -> (GrpcMessage, TransactionStatusMeta) {
-            let message = GrpcMessage {
-                account_keys: self
-                    .static_keys
-                    .iter()
-                    .map(|key| key.to_vec())
-                    .collect(),
-                instructions: self
-                    .top_level
-                    .iter()
-                    .map(|instruction| GrpcCompiledInstruction {
-                        program_id_index: u32::from(
-                            instruction.program_id_index,
-                        ),
-                        accounts: instruction.accounts.clone(),
-                        data: instruction.data.clone(),
-                    })
-                    .collect(),
-                versioned: true,
-                ..Default::default()
-            };
-            let meta = TransactionStatusMeta {
-                inner_instructions: self
-                    .inner_groups
-                    .iter()
-                    .map(|(index, instructions)| InnerInstructions {
-                        index: u32::from(*index),
-                        instructions: instructions
-                            .iter()
-                            .map(|instruction| InnerInstruction {
-                                program_id_index: u32::from(
-                                    instruction.program_id_index,
-                                ),
-                                accounts: instruction.accounts.clone(),
-                                data: instruction.data.clone(),
-                                stack_height: instruction.stack_height,
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-                loaded_writable_addresses: self
-                    .loaded_writable
-                    .iter()
-                    .map(|key| key.to_vec())
-                    .collect(),
-                loaded_readonly_addresses: self
-                    .loaded_readonly
-                    .iter()
-                    .map(|key| key.to_vec())
-                    .collect(),
-                ..Default::default()
-            };
-            (message, meta)
-        }
-    }
-
-    fn block_json(slot: u64, transactions: Vec<Value>) -> UiConfirmedBlock {
-        serde_json::from_value(json!({
-            "previousBlockhash": bs58::encode([4; 32]).into_string(),
-            "blockhash": bs58::encode([5; 32]).into_string(),
-            "parentSlot": slot - 1,
-            "transactions": transactions,
-            "blockTime": 1_700_000_000,
-            "blockHeight": slot - 2,
-        }))
-        .expect("getBlock JSON")
+    fn block(slot: u64, transactions: Vec<Value>) -> UiConfirmedBlock {
+        block_json(slot, slot - 1, hash, transactions)
     }
 
     /// Resolves `transaction` from its `getBlock` JSON. The bytes are decoded without
@@ -392,7 +224,7 @@ mod tests {
     fn rpc_resolution(
         transaction: &Transaction,
     ) -> anyhow::Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
-        let block = block_json(9, vec![transaction.rpc_json(Value::Null)]);
+        let block = block(9, vec![transaction.rpc_json(Value::Null)]);
         let encoded = block.transactions.unwrap().pop().unwrap();
         let EncodedTransaction::Binary(blob, TransactionBinaryEncoding::Base64) =
             &encoded.transaction
@@ -481,69 +313,14 @@ mod tests {
         }
     }
 
-    /// An app program's top-level instruction CPIs into `fhe_execute`, which emits its event
-    /// through a self-CPI, as on chain.
-    fn app_transaction(signature: u8, plaintext: [u8; 32]) -> Transaction {
-        let host: [u8; 32] = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
-        let execution = DecodedInstruction {
-            program: ZAMA_HOST.to_owned(),
-            data: encoded_execution(zama_host::state::FheExecuteArgs {
-                execution_store_index: 0,
-                effects: vec![],
-                returned_results: vec![],
-                account_count: 0,
-                dictionary: vec![],
-                steps: vec![zama_host::state::FheExecuteStep::TrivialEncrypt {
-                    plaintext,
-                    fhe_type: 5,
-                }],
-            }),
-            accounts: vec![],
-            top_level_index: 0,
-            is_inner: true,
-        };
-        let [execution, event] = &with_events([execution])[..] else {
-            panic!("one execution, one event")
-        };
-        Transaction {
-            signature: [signature; 64],
-            // Payer, app program, host program, event authority.
-            static_keys: vec![[1; 32], [2; 32], host, [3; 32]],
-            loaded_writable: vec![[6; 32]],
-            loaded_readonly: vec![],
-            top_level: vec![Compiled {
-                program_id_index: 1,
-                accounts: vec![0, 4],
-                data: vec![0xA0],
-                stack_height: None,
-            }],
-            inner_groups: vec![(
-                0,
-                vec![
-                    Compiled {
-                        program_id_index: 2,
-                        accounts: vec![],
-                        data: execution.data.clone(),
-                        stack_height: Some(2),
-                    },
-                    Compiled {
-                        program_id_index: 2,
-                        accounts: vec![3],
-                        data: event.data.clone(),
-                        stack_height: Some(3),
-                    },
-                ],
-            )],
-        }
-    }
-
     #[test]
     fn rebuilds_a_slot_from_get_block_alone() {
         let failed = app_transaction(7, [1; 32]);
         let succeeded = app_transaction(8, [2; 32]);
-        let block = block_json(
+        let block = block(
             100,
             vec![
+                foreign_transaction(6).rpc_json(Value::Null),
                 failed.rpc_json(
                     json!({ "InstructionError": [0, { "Custom": 1 }] }),
                 ),
@@ -551,17 +328,22 @@ mod tests {
             ],
         );
 
-        let prepared = prepare_rpc_block(100, block).unwrap();
+        let prepared =
+            prepare_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
         assert_eq!(prepared.block.checkpoint().slot, 100);
-        assert_eq!(prepared.block.block_hash, [5; 32]);
-        assert_eq!(prepared.block.parent_block_hash, [4; 32]);
-        assert_eq!(prepared.block.block_time, Some(1_700_000_000));
-        assert_eq!(prepared.matching_transaction_count, 2);
+        assert_eq!(prepared.block.block_hash, hash(100));
+        assert_eq!(prepared.block.parent_block_hash, hash(99));
+        assert_eq!(prepared.block.block_time, Some(BLOCK_TIME));
+        assert_eq!(prepared.block.executed_transaction_count, 3);
+        assert_eq!(
+            prepared.matching_transaction_count, 2,
+            "the stream's account filter counts the failed transaction, not the foreign one"
+        );
         let [transaction] = &prepared.transactions[..] else {
             panic!("the failed transaction is skipped")
         };
         assert_eq!(transaction.signature, Signature::from([8; 64]));
-        assert_eq!(transaction.index, 1);
+        assert_eq!(transaction.index, 2);
 
         let (message, meta) = succeeded.grpc();
         assert_eq!(
@@ -585,8 +367,12 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("innerInstructions");
-        let error = prepare_rpc_block(100, block_json(100, vec![transaction]))
-            .unwrap_err();
+        let error = prepare_rpc_block(
+            100,
+            block(100, vec![transaction]),
+            &ZAMA_HOST.parse().unwrap(),
+        )
+        .unwrap_err();
         assert!(
             format!("{error:#}").contains("no inner instructions"),
             "{error:#}"
