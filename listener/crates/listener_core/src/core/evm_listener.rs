@@ -5,6 +5,7 @@ use thiserror::Error;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 use broker::{Broker, Publisher};
 
@@ -20,7 +21,10 @@ use crate::{
     },
     config::BlockFetcherStrategy,
     core::slot_buffer::{AsyncSlotBuffer, BufferError},
-    store::models::{BlockStatus, NewDatabaseBlock, NewFinalBlock, UpsertResult},
+    store::models::{
+        BlockStatus, CancelOutcome, CatchupFlow, CatchupStatus, CoverageMerge, NewCatchupRequest,
+        NewDatabaseBlock, NewFinalBlock, RequestAdmission, UpsertResult,
+    },
     store::repositories::Repositories,
 };
 
@@ -1038,10 +1042,13 @@ impl EvmListener {
 
         Ok(chunks
             .into_iter()
-            .map(|(start, end)| CatchupPayload {
+            .enumerate()
+            .map(|(seq, (start, end))| CatchupPayload {
                 consumer_id: payload.consumer_id.clone(),
                 block_start: start,
                 block_end: end,
+                catchup_id: payload.catchup_id,
+                sub_range_seq: Some(seq as i32),
             })
             .collect())
     }
@@ -1099,6 +1106,7 @@ impl EvmListener {
             range_start,
             range_length,
             payload.consumer_id.clone(),
+            payload.catchup_id,
         ));
 
         // Step 6 — join, classify like fetch_blocks_and_run_cursor.
@@ -1231,12 +1239,141 @@ impl EvmListener {
 
         Ok(chunks
             .into_iter()
-            .map(|(start, end)| CatchupPayload {
+            .enumerate()
+            .map(|(seq, (start, end))| CatchupPayload {
                 consumer_id: payload.consumer_id.clone(),
                 block_start: start,
                 block_end: end,
+                catchup_id: payload.catchup_id,
+                sub_range_seq: Some(seq as i32),
             })
             .collect())
+    }
+
+    /// Record a catchup request and decide whether *this* delivery of it should
+    /// fan its sub-ranges out.
+    ///
+    /// The row is written before anything is published, so a cancel that lands
+    /// mid-fanout has a row to flip and every sub-range published after it is
+    /// discarded at the fetcher by [`Self::catchup_request_status`].
+    ///
+    /// A `None` `catchup_id` comes from a consumer predating this field. Those
+    /// requests are untracked: nothing is written, the fanout proceeds, and the
+    /// behavior is exactly what it was before catchups had identity.
+    /// Takes the fanout itself rather than its length, because the completion
+    /// target has to come from it. `fanned_end` is the last sub-range's end —
+    /// `block_end` already clamped to the chain head by
+    /// [`Self::dispatch_catchup_range`]. Deriving it here rather than passing
+    /// it alongside is deliberate: the requested `block_end` is also in scope,
+    /// it is the wrong value, and substituting it would leave every request
+    /// reaching past the head permanently `ACTIVE` while still compiling and
+    /// passing every unit test (D16).
+    pub async fn admit_catchup_request(
+        &self,
+        request: &CatchupPayload,
+        flow: CatchupFlow,
+        sub_ranges: &[CatchupPayload],
+    ) -> Result<RequestAdmission, EvmListenerError> {
+        let Some(catchup_id) = request.catchup_id else {
+            return Ok(RequestAdmission::FanOut);
+        };
+
+        // An empty split means the whole range sat above the head. The request
+        // is finished on arrival, so record it terminal rather than leaving an
+        // ACTIVE row that nothing will ever retire.
+        let status = if sub_ranges.is_empty() {
+            CatchupStatus::Skipped
+        } else {
+            CatchupStatus::Active
+        };
+
+        self.repositories
+            .catchups
+            .admit_request(&NewCatchupRequest {
+                catchup_id,
+                flow,
+                consumer_id: request.consumer_id.clone(),
+                block_start: request.block_start,
+                block_end: request.block_end,
+                status,
+                sub_ranges: sub_ranges.len() as i32,
+                fanned_end: sub_ranges.last().map(|last| last.block_end),
+            })
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })
+    }
+
+    /// Mark a catchup request as fully fanned out.
+    ///
+    /// Runs only after every sub-range is published. A NULL `fanned_out_at`
+    /// means the orchestrator died mid-publish and a redelivery must start the
+    /// fanout over; setting it any earlier would silently truncate the range.
+    pub async fn mark_catchup_fanned_out(
+        &self,
+        catchup_id: Option<Uuid>,
+    ) -> Result<(), EvmListenerError> {
+        let Some(catchup_id) = catchup_id else {
+            return Ok(());
+        };
+
+        self.repositories
+            .catchups
+            .mark_fanned_out(catchup_id)
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })
+    }
+
+    /// Merge a published sub-range into its request's coverage set (D16).
+    ///
+    /// Takes a concrete id rather than an `Option`: a sub-range from a consumer
+    /// predating `catchup_id` has no request to credit, and folding that case
+    /// in here would make it indistinguishable from a request that is no longer
+    /// active. The caller drops untracked sub-ranges instead.
+    pub async fn record_catchup_coverage(
+        &self,
+        catchup_id: Uuid,
+        block_start: u64,
+        block_end: u64,
+    ) -> Result<CoverageMerge, EvmListenerError> {
+        self.repositories
+            .catchups
+            .record_coverage(catchup_id, block_start, block_end)
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })
+    }
+
+    /// Read the status of a catchup request, for the fetcher's guard.
+    ///
+    /// Keyed on the primary key alone. Deliberately **not** filtered by
+    /// `consumer_id`: a mismatch would return `None`, which the fetcher reads
+    /// as "no row, run it" — inverting the guard. Ownership is enforced on the
+    /// cancel path, where the id genuinely arrives from outside.
+    pub async fn catchup_request_status(
+        &self,
+        catchup_id: Uuid,
+    ) -> Result<Option<CatchupStatus>, EvmListenerError> {
+        self.repositories
+            .catchups
+            .request_status(catchup_id)
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })
+    }
+
+    /// Retire a catchup request.
+    ///
+    /// Writes a tombstone row when the cancel beats the orchestrator here, so a
+    /// request that arrives afterwards finds a terminal row and never fans out.
+    pub async fn cancel_catchup_request(
+        &self,
+        catchup_id: Uuid,
+        consumer_id: &str,
+        flow: CatchupFlow,
+    ) -> Result<CancelOutcome, EvmListenerError> {
+        self.repositories
+            .catchups
+            .cancel_request(catchup_id, consumer_id, flow)
+            .await
+            .map_err(|e| EvmListenerError::DatabaseError { source: e })
     }
 
     /// Fetch a single bounded sub-range of finalized blocks and publish it in
@@ -1296,6 +1433,7 @@ impl EvmListener {
             range_start,
             range_length,
             payload.consumer_id.clone(),
+            payload.catchup_id,
         ));
 
         // Join, classify like fetch_blocks_and_run_cursor.
@@ -1935,6 +2073,7 @@ async fn catchup_processing(
     range_start: u64,
     range_length: usize,
     consumer_id: String,
+    catchup_id: Option<Uuid>,
 ) -> Result<(), EvmListenerError> {
     let chain_id_u64 = listener.repositories.chain_id() as u64;
 
@@ -1962,7 +2101,10 @@ async fn catchup_processing(
             &listener.repositories,
             &fetched_block,
             chain_id_u64,
-            &consumer_id,
+            publisher::CatchupTarget {
+                consumer_id: &consumer_id,
+                catchup_id,
+            },
             &listener.broker,
             &listener.event_publisher,
             &listener.publish_config,
@@ -2010,6 +2152,7 @@ async fn final_catchup_processing(
     range_start: u64,
     range_length: usize,
     consumer_id: String,
+    catchup_id: Option<Uuid>,
 ) -> Result<(), EvmListenerError> {
     let chain_id_u64 = listener.repositories.chain_id() as u64;
 
@@ -2037,7 +2180,10 @@ async fn final_catchup_processing(
             &listener.repositories,
             &fetched_block,
             chain_id_u64,
-            &consumer_id,
+            publisher::CatchupTarget {
+                consumer_id: &consumer_id,
+                catchup_id,
+            },
             &listener.broker,
             &listener.event_publisher,
             &listener.publish_config,
