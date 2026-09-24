@@ -77,10 +77,10 @@ export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
 
    [http]
    urls = [
-       "https://kms-connector-1-proxy:8443",
-       "https://kms-connector-2-proxy:8443",
-       "https://kms-connector-3-proxy:8443",
-       "https://kms-connector-4-proxy:8443",
+      "https://kms-connector-1-kms-connector-proxy:8443",
+      "https://kms-connector-2-kms-connector-proxy:8443",
+      "https://kms-connector-3-kms-connector-proxy:8443",
+      "https://kms-connector-4-kms-connector-proxy:8443",
    ]
    api_key = "fhevm-e2e-kms-connector-api-key"
    danger_accept_invalid_certs = true
