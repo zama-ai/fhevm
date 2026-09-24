@@ -1031,7 +1031,7 @@ mod tests {
         tfhe::set_server_key(tfhe::ServerKey::new(&client));
         let encrypted =
             |value: u8| SupportedFheCiphertexts::FheUint8(tfhe::FheUint8::encrypt(value, &client));
-        let inputs = vec![encrypted(17), encrypted(29)];
+        let inputs = vec![encrypted(17), encrypted(29), encrypted(43)];
         let evaluate = |operands: &[SupportedFheCiphertexts], handle: &[u8], opcode: i32| {
             let mut result = operands.to_vec();
             re_randomise_operation_inputs(&mut result, handle, opcode, &public).unwrap();
@@ -1049,18 +1049,41 @@ mod tests {
             evaluate(&inputs, &handle, 1),
             "alias/replay uses the same transcript"
         );
-        assert_eq!(baseline.1, ["17", "29"]);
+        assert_eq!(baseline.1, ["17", "29", "43"]);
         for changed in [
             evaluate(&inputs, &[2u8; 32], 1),
             evaluate(&inputs, &handle, 2),
-            evaluate(&[inputs[1].clone(), inputs[0].clone()], &handle, 1),
-            evaluate(&[inputs[0].clone(), encrypted(29)], &handle, 1),
         ] {
             assert_ne!(
                 baseline.0, changed.0,
-                "each transcript coordinate must affect bytes"
+                "the output handle and opcode must each affect bytes"
             );
         }
+        // Keep the observed ciphertext and its seed-stream position unchanged:
+        // comparing the swapped outputs would differ just from their plaintexts.
+        let reordered = evaluate(
+            &[inputs[1].clone(), inputs[0].clone(), inputs[2].clone()],
+            &handle,
+            1,
+        );
+        assert_eq!(reordered.1, ["29", "17", "43"]);
+        assert_ne!(
+            baseline.0[2], reordered.0[2],
+            "operand order must affect the unchanged third operand's rerandomization"
+        );
+
+        // A fresh encryption can change its own output without changing the
+        // transcript seed, so observe the unchanged first operand instead.
+        let replaced = evaluate(
+            &[inputs[0].clone(), encrypted(29), inputs[2].clone()],
+            &handle,
+            1,
+        );
+        assert_eq!(replaced.1, baseline.1);
+        assert_ne!(
+            baseline.0[0], replaced.0[0],
+            "operand ciphertext bytes must affect the unchanged first operand's rerandomization"
+        );
         // Scalars are bound through the output handle; they are not ciphertexts
         // and must not consume a seed or be changed by rerandomization.
         let mut mixed = vec![inputs[0].clone(), SupportedFheCiphertexts::Scalar(vec![9])];
