@@ -731,30 +731,21 @@ async fn upsert_finding(
         .map(|format| format as u8 as i16);
     let context = payload.coprocessor_context_id.to_be_bytes::<32>();
     let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
-    let quorum = finding.observed_has_quorum.then_some(observed).flatten();
-    let target_ct64_digest = digest_bytes(quorum.and_then(BlockCiphertextDescriptor::ct64_digest));
-    let target_keyset_id = u256_bytes(quorum.and_then(BlockCiphertextDescriptor::keyset_id));
-    let target_ct128_digest =
-        digest_bytes(quorum.and_then(BlockCiphertextDescriptor::ct128_digest));
-    let target_ct128_format = quorum
-        .and_then(BlockCiphertextDescriptor::ct128_format)
-        .map(|format| format as u8 as i16);
     let reason = drift_reason(local, observed);
     sqlx::query!(
         r#"
         INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, status,
-            local_present, observed_present, local_keyset_id, observed_keyset_id,
-            local_ct64_digest, observed_ct64_digest,
-            local_ct128_digest, observed_ct128_digest, local_ct128_format,
-            observed_ct128_format, target_ct64_digest,
-            target_keyset_id, target_ct128_digest, target_ct128_format,
-            last_observed_task_id, reason
+            local_present, quorum_present, local_keyset_id, quorum_keyset_id,
+            local_ct64_digest, quorum_ct64_digest,
+            local_ct128_digest, quorum_ct128_digest, local_ct128_format,
+            quorum_ct128_format,
+            last_quorum_task_id, reason
         ) VALUES (
             $1, $2, $3, $4, $5, $6, 'unresolved',
-            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-            $18, $19, $20, $21, $22
+            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+            $17, $18
         )
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
@@ -772,54 +763,46 @@ async fn upsert_finding(
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.local_present
                 ELSE EXCLUDED.local_present
             END,
-            observed_present = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_present
-                ELSE EXCLUDED.observed_present
+            quorum_present = CASE
+                WHEN drifted_handle.can_be_healed THEN drifted_handle.quorum_present
+                ELSE EXCLUDED.quorum_present
             END,
             local_keyset_id = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.local_keyset_id
                 ELSE EXCLUDED.local_keyset_id
             END,
-            observed_keyset_id = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_keyset_id
-                ELSE EXCLUDED.observed_keyset_id
-            END,
             local_ct64_digest = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct64_digest
                 ELSE EXCLUDED.local_ct64_digest
             END,
-            observed_ct64_digest = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct64_digest
-                ELSE EXCLUDED.observed_ct64_digest
-            END,
+            quorum_ct64_digest = COALESCE(
+                drifted_handle.quorum_ct64_digest, EXCLUDED.quorum_ct64_digest
+            ),
             local_ct128_digest = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_digest
                 ELSE EXCLUDED.local_ct128_digest
             END,
-            observed_ct128_digest = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct128_digest
-                ELSE EXCLUDED.observed_ct128_digest
-            END,
+            quorum_ct128_digest = COALESCE(
+                drifted_handle.quorum_ct128_digest, EXCLUDED.quorum_ct128_digest
+            ),
             local_ct128_format = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_format
                 ELSE EXCLUDED.local_ct128_format
             END,
-            observed_ct128_format = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct128_format
-                ELSE EXCLUDED.observed_ct128_format
-            END,
-            target_ct64_digest = COALESCE(drifted_handle.target_ct64_digest, EXCLUDED.target_ct64_digest),
-            target_keyset_id = COALESCE(drifted_handle.target_keyset_id, EXCLUDED.target_keyset_id),
-            target_ct128_digest = COALESCE(drifted_handle.target_ct128_digest, EXCLUDED.target_ct128_digest),
-            target_ct128_format = COALESCE(drifted_handle.target_ct128_format, EXCLUDED.target_ct128_format),
-            last_observed_task_id = COALESCE(EXCLUDED.last_observed_task_id, drifted_handle.last_observed_task_id),
+            quorum_ct128_format = COALESCE(
+                drifted_handle.quorum_ct128_format, EXCLUDED.quorum_ct128_format
+            ),
+            quorum_keyset_id = COALESCE(
+                drifted_handle.quorum_keyset_id, EXCLUDED.quorum_keyset_id
+            ),
+            last_quorum_task_id = COALESCE(EXCLUDED.last_quorum_task_id, drifted_handle.last_quorum_task_id),
             resolved_task_id = CASE
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.resolved_task_id
                 ELSE NULL
             END
         WHERE drifted_handle.healed_at IS NULL
-          AND (drifted_handle.last_observed_task_id IS NULL
-               OR drifted_handle.last_observed_task_id <= EXCLUDED.last_observed_task_id)
+          AND (drifted_handle.last_quorum_task_id IS NULL
+               OR drifted_handle.last_quorum_task_id <= EXCLUDED.last_quorum_task_id)
         "#,
         finding.consensus_epoch,
         context.as_slice(), host_chain_id, finding.block_number,
@@ -828,7 +811,6 @@ async fn upsert_finding(
         local_ct64_digest, observed_ct64_digest,
         local_ct128_digest, observed_ct128_digest, local_ct128_format,
         observed_ct128_format,
-        target_ct64_digest, target_keyset_id, target_ct128_digest, target_ct128_format,
         task_id, reason,
     )
     .execute(trx.as_mut())
@@ -849,7 +831,7 @@ async fn resolve_covered_findings(
             r#"
             UPDATE drifted_handle
                    SET status = 'resolved',
-                   last_observed_task_id = $5,
+                   last_quorum_task_id = $5,
                    resolved_task_id = $5
              WHERE consensus_epoch = $1
                AND coprocessor_context_id = $2
@@ -859,7 +841,7 @@ async fn resolve_covered_findings(
                AND detection_kind <> 'inferred'
                AND NOT can_be_healed
                AND healed_at IS NULL
-               AND last_observed_task_id <= $5
+               AND last_quorum_task_id <= $5
             "#,
             payload.consensus_epoch.clone(),
             context.as_slice(),
