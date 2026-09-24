@@ -122,8 +122,14 @@ pod_source() {
       # The idle Job is wired to the first host chain: point the RPC, chain id and the HOST-chain
       # contract addresses at Polygon (gateway addresses stay as they are).
       local rpc
-      rpc=$(kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.polygon-rpc-url}' | base64 -d)
-      [[ -n "${rpc}" ]] || fail "chain 80002: the rpc Secret has no polygon-rpc-url"
+      # The rpc Secret only exists on testnets; elsewhere the polygon poller carries the same URL.
+      rpc=$(kubectl get secret -n "${NAMESPACE}" rpc -o jsonpath='{.data.polygon-rpc-url}' 2>/dev/null | base64 -d 2>/dev/null || true)
+      local poller
+      poller=$(kubectl get deploy -n "${NAMESPACE}" -o name 2>/dev/null \
+        | grep -m1 -E 'coprocessor-poller-polygon-[0-9]+-host-listener-poller' || true)
+      [[ -n "${rpc}" || -z "${poller}" ]] || rpc=$(kubectl get -n "${NAMESPACE}" "${poller}" \
+        -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ETHEREUM_RPC_HTTP_URL")].value}' 2>/dev/null)
+      [[ -n "${rpc}" ]] || fail "chain 80002: no polygon RPC in the rpc Secret or the polygon poller"
       jq --arg rpc "${rpc}" '
         .env = (.env | map(
           if .name == "RPC_URL" then {name: .name, value: $rpc}

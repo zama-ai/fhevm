@@ -43,6 +43,13 @@ host_http="${HOST_HTTP:-$(secret_val rpc ethereum-rpc-url)}"
 [[ -n "${host_http}" ]] || host_http=$(job_env RPC_URL)
 [[ -n "${host_http}" ]] || fail "could not resolve the host RPC (no rpc Secret and no test-suite Job RPC_URL)"
 polygon_http=$(secret_val rpc polygon-rpc-url)
+# The rpc Secret only exists on testnets; elsewhere the polygon poller carries the same URL.
+if [[ -z "${polygon_http}" ]]; then
+  polygon_poller=$(kubectl get deploy -n "${NAMESPACE}" -o name 2>/dev/null \
+    | grep -m1 -E 'coprocessor-poller-polygon-[0-9]+-host-listener-poller' || true)
+  [[ -z "${polygon_poller}" ]] || polygon_http=$(kubectl get -n "${NAMESPACE}" "${polygon_poller}" \
+    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="ETHEREUM_RPC_HTTP_URL")].value}' 2>/dev/null)
+fi
 # The coprocessor talks to the gateway over ws://<host>:8548; the tool needs the http port on the same host.
 # Any fleet's gw-listener carries the same URL, so take the first one: which slot is live moves
 # between rounds, and on a second round "coprocessor-1" may not exist at all.
@@ -56,7 +63,7 @@ gateway_http="${GATEWAY_HTTP:-$(sed -E 's#^ws://#http://#; s#:8548$#:8547#' <<<"
 chains=$(psql1 "SELECT chain_id FROM host_chains ORDER BY chain_id;" | tr '\n' ' ')
 deploy_polygon=false
 grep -qE '(^| )80002( |$)' <<<"${chains}" && deploy_polygon=true
-[[ "${deploy_polygon}" != "true" || -n "${polygon_http}" ]] || fail "host_chains has 80002 but the rpc Secret has no polygon-rpc-url"
+[[ "${deploy_polygon}" != "true" || -n "${polygon_http}" ]] || fail "host_chains has 80002 but no polygon RPC in the rpc Secret or the polygon poller"
 # The host chain is the one that is not Polygon; its id decides the chain mode the tool runs in.
 host_chain_id="${HOST_CHAIN_ID:-$(tr ' ' '\n' <<<"${chains}" | grep -E '^[0-9]+$' | grep -vx 80002 | head -1)}"
 [[ -n "${host_chain_id}" ]] || fail "could not determine the host chain from host_chains (chains: ${chains})"
@@ -67,7 +74,10 @@ case "${host_chain_id}" in
   *) fail "chain ${host_chain_id}: unknown host chain, cannot pick a chain mode" ;;
 esac
 
-mnemonic=$(secret_val preview-wallets-mnemonic mnemonic); [[ -n "${mnemonic}" ]] || fail "preview-wallets-mnemonic not found"
+# preview-wallets-mnemonic is generated only for external chains (EXTERNAL_CHAINS=true);
+# an Anvil preview is seeded with the well-known test mnemonic, whose index 9 is the ACL owner.
+mnemonic=$(secret_val preview-wallets-mnemonic mnemonic)
+mnemonic="${mnemonic:-test test test test test test test test test test test junk}"
 owner_key=$(cast wallet private-key --mnemonic "${mnemonic}" --mnemonic-index 9)
 # The hardhat task lives in the contracts that are on chain now, not the ones first deployed: on
 # the production path the deploy is pinned to the previous release and has no propose task.
