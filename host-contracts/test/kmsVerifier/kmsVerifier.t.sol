@@ -173,11 +173,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         assertEq(kmsVerifier.getKmsSigners(), protocolConfig.getKmsSignersForContext(currentCtx));
     }
 
-    function test_DelegationIsSigner() public {
-        assertEq(kmsVerifier.isSigner(signer0), protocolConfig.isKmsSigner(signer0));
-        assertEq(kmsVerifier.isSigner(address(0xdead)), protocolConfig.isKmsSigner(address(0xdead)));
-    }
-
     function test_DelegationGetCurrentKmsContextId() public {
         uint256 verifierCtx = kmsVerifier.getCurrentKmsContextId();
         (uint256 configCtx, ) = protocolConfig.getCurrentKmsContextAndEpoch();
@@ -202,8 +197,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         uint256 verifierCtxAfter = kmsVerifier.getCurrentKmsContextId();
         assertEq(verifierCtxAfter, nextCtx);
         assertEq(kmsVerifier.getKmsSigners(), protocolConfig.getKmsSignersForContext(nextCtx));
-        assertTrue(kmsVerifier.isSigner(signer3));
-        assertFalse(kmsVerifier.isSigner(signer0));
     }
 
     function test_GetSignersForKmsContextRevertsForInvalid() public {

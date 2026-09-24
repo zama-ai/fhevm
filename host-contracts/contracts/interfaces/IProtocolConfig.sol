@@ -527,13 +527,6 @@ interface IProtocolConfig {
     function getKmsSignersForContext(uint256 kmsContextId) external view returns (address[] memory);
 
     /**
-     * @notice Checks whether an address is a signer in the current active context.
-     * @param signer The address to check.
-     * @return True if the address is a signer in the current context.
-     */
-    function isKmsSigner(address signer) external view returns (bool);
-
-    /**
      * @notice Checks whether an address is a signer in the given context.
      * @param kmsContextId The context ID.
      * @param signer The address to check.

@@ -615,7 +615,6 @@ interface IProtocolConfig {
     function getVersion() external pure returns (string memory);
     function isActiveEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
     function isActiveKmsContext(uint256 kmsContextId) external view returns (bool);
-    function isKmsSigner(address signer) external view returns (bool);
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
     function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
@@ -1202,25 +1201,6 @@ interface IProtocolConfig {
         "name": "kmsContextId",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isKmsSigner",
-    "inputs": [
-      {
-        "name": "signer",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [
@@ -12062,158 +12042,6 @@ function isActiveKmsContext(uint256 kmsContextId) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isKmsSigner(address)` and selector `0x203d0114`.
-```solidity
-function isKmsSigner(address signer) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isKmsSignerCall {
-        #[allow(missing_docs)]
-        pub signer: alloy::sol_types::private::Address,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isKmsSigner(address)`](isKmsSignerCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isKmsSignerReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isKmsSignerCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isKmsSignerCall) -> Self {
-                    (value.signer,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isKmsSignerCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { signer: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isKmsSignerReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isKmsSignerReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isKmsSignerReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isKmsSignerCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isKmsSigner(address)";
-            const SELECTOR: [u8; 4] = [32u8, 61u8, 1u8, 20u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.signer,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isKmsSignerReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isKmsSignerReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isKmsSignerForContext(uint256,address)` and selector `0x9447cfd4`.
 ```solidity
 function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
@@ -13347,8 +13175,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         isActiveKmsContext(isActiveKmsContextCall),
         #[allow(missing_docs)]
-        isKmsSigner(isKmsSignerCall),
-        #[allow(missing_docs)]
         isKmsSignerForContext(isKmsSignerForContextCall),
         #[allow(missing_docs)]
         isKmsTxSenderForContext(isKmsTxSenderForContextCall),
@@ -13372,7 +13198,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [12u8, 238u8, 244u8, 124u8],
             [13u8, 142u8, 110u8, 44u8],
             [28u8, 227u8, 249u8, 188u8],
-            [32u8, 61u8, 1u8, 20u8],
             [40u8, 30u8, 139u8, 254u8],
             [42u8, 56u8, 137u8, 152u8],
             [49u8, 255u8, 65u8, 200u8],
@@ -13405,7 +13230,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(isActiveEpochForContext),
             ::core::stringify!(getVersion),
             ::core::stringify!(defineNewEpochForCurrentKmsContext),
-            ::core::stringify!(isKmsSigner),
             ::core::stringify!(getUserDecryptionThresholdForContext),
             ::core::stringify!(getPublicDecryptionThreshold),
             ::core::stringify!(getKmsNodeForContext),
@@ -13438,7 +13262,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <isActiveEpochForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <defineNewEpochForCurrentKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <isKmsSignerCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getUserDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getPublicDecryptionThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsNodeForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -13491,7 +13314,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 30usize;
+        const COUNT: usize = 29usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -13564,9 +13387,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::isActiveKmsContext(_) => {
                     <isActiveKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::isKmsSigner(_) => {
-                    <isKmsSignerCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::isKmsSignerForContext(_) => {
                     <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -13638,17 +13458,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     defineNewEpochForCurrentKmsContext
-                },
-                {
-                    fn isKmsSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::isKmsSigner)
-                    }
-                    isKmsSigner
                 },
                 {
                     fn getUserDecryptionThresholdForContext(
@@ -13996,17 +13805,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     defineNewEpochForCurrentKmsContext
-                },
-                {
-                    fn isKmsSigner(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <isKmsSignerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::isKmsSigner)
-                    }
-                    isKmsSigner
                 },
                 {
                     fn getUserDecryptionThresholdForContext(
@@ -14427,11 +14225,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::isKmsSigner(inner) => {
-                    <isKmsSignerCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::isKmsSignerForContext(inner) => {
                     <isKmsSignerForContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -14601,12 +14394,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::isActiveKmsContext(inner) => {
                     <isActiveKmsContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isKmsSigner(inner) => {
-                    <isKmsSignerCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16764,13 +16551,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     kmsContextId,
                 },
             )
-        }
-        ///Creates a new call builder for the [`isKmsSigner`] function.
-        pub fn isKmsSigner(
-            &self,
-            signer: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, isKmsSignerCall, N> {
-            self.call_builder(&isKmsSignerCall { signer })
         }
         ///Creates a new call builder for the [`isKmsSignerForContext`] function.
         pub fn isKmsSignerForContext(

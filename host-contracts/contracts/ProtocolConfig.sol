@@ -668,12 +668,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function isKmsSigner(address signer) external view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.isKmsSignerForContext[$.latestActiveKmsContextId][signer];
-    }
-
-    /// @inheritdoc IProtocolConfig
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view virtual returns (bool) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().isKmsSignerForContext[kmsContextId][signer];
