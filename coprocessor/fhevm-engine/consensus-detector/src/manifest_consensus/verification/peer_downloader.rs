@@ -912,18 +912,37 @@ async fn apply_claimed_db_error(
         DbErrorClass::Transient => {
             warn!(
                 task_id = claim.task_id,
+                attempt = claim.attempt,
+                host_chain_id = claim.scope.host_chain_id,
+                block_number = claim.scope.publication_block_number,
                 error = %error,
                 "Transient verification database error; retrying later without charging the budget"
             );
             release_claimed_task_uncharged(pool, claim, &error.to_string()).await
         }
         DbErrorClass::Integrity => {
+            error!(
+                task_id = claim.task_id,
+                attempt = claim.attempt,
+                host_chain_id = claim.scope.host_chain_id,
+                block_number = claim.scope.publication_block_number,
+                error = %error,
+                "Integrity verification database error"
+            );
             VERIFICATION_FAILURE
                 .with_label_values(&[&claim.scope.consensus_epoch])
                 .inc();
             fail_claimed_task(pool, claim, &error.to_string(), false).await
         }
         DbErrorClass::Definitive => {
+            error!(
+                task_id = claim.task_id,
+                attempt = claim.attempt,
+                host_chain_id = claim.scope.host_chain_id,
+                block_number = claim.scope.publication_block_number,
+                error = %error,
+                "Definitive verification database error"
+            );
             VERIFICATION_FAILURE
                 .with_label_values(&[&claim.scope.consensus_epoch])
                 .inc();
