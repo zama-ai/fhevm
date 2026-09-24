@@ -645,31 +645,27 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
     );
 }
 
+/// A proof built against a later tree is cut to the observed one. `MmrProof::for_leaf_count` is
+/// tested against every leaf and tree size in zama-solana-acl; this pins the wiring.
 #[test]
-fn ahead_paths_verify_against_every_earlier_mountain() {
+fn an_ahead_path_verifies_against_the_observed_tree() {
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x61, FHE_TYPE_UINT64);
-    let mut history = EncryptedStoreFixture::allowing(sealed, key);
-    let mut snapshots = vec![history.clone()];
-    for tag in 2..=16 {
-        history.allow(Wallet::new(tag).pubkey());
-        snapshots.push(history.clone());
+    let mut observed = EncryptedStoreFixture::allowing(sealed, key);
+    for tag in 2..=3 {
+        observed.allow(Wallet::new(tag).pubkey());
     }
-    for (index, snapshot) in snapshots.iter().enumerate() {
-        let account = resolved(snapshot);
-        for tag in 1..=index + 1 {
-            let key = Wallet::new(tag as u8).pubkey();
-            for ahead in &snapshots[index..] {
-                check_handle_binding(
-                    &account,
-                    B256::new(sealed),
-                    key,
-                    &answer(ahead, sealed, key),
-                )
-                .expect("ahead paths can be shortened to the observed peak");
-            }
-        }
+    let mut ahead = observed.clone();
+    for tag in 4..=16 {
+        ahead.allow(Wallet::new(tag).pubkey());
     }
+    check_handle_binding(
+        &resolved(&observed),
+        B256::new(sealed),
+        key,
+        &answer(&ahead, sealed, key),
+    )
+    .expect("the ahead path is cut to the observed peak");
 }
 
 /// A proof built against an older leaf count still verifies, so it resolves the query at the first

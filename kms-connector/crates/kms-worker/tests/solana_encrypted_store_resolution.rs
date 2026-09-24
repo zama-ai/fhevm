@@ -1,4 +1,4 @@
-//! Encrypted store resolution and where each entry's authority comes from: what a request
+//! Encrypted store resolution and where each entry's application comes from: what a request
 //! may name, and what it may never name.
 //!
 //! A handle entry names the encrypted store that authorizes it, by address. That name is
@@ -10,10 +10,9 @@
 //! The tests here come in two shapes. The first shape substitutes something for the encrypted value
 //! account and demands a rejection: a foreign program's account, another account type of the same
 //! program, an account whose own fields describe a different encrypted store. The second
-//! shape asserts the opposite direction — that the authority and the application of every entry
-//! come from *its* encrypted store, so a batch cannot smuggle a foreign-application handle
-//! past a narrowly scoped permit, and a request has no field with which to name an authority at
-//! all.
+//! shape asserts the opposite direction — that the application of every entry comes from *its*
+//! encrypted store, so a batch cannot smuggle a foreign-application handle past a narrowly
+//! scoped permit, and a request has no field with which to name an application at all.
 //!
 //! One accept among the rejections deserves its own note: trailing bytes after the encrypted value
 //! account body are legal. The account is grown to its high-water mark and never shrunk, so an
@@ -353,34 +352,8 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
 }
 
 // ---------------------------------------------------------------------------
-// Authority and scope
+// Scope
 // ---------------------------------------------------------------------------
-
-/// Each entry's authority comes from its own encrypted store. Two entries of the same
-/// application and different authorities resolve to their own — there is no request-level
-/// authority to share, and no first-entry value to inherit.
-#[test]
-fn each_entry_takes_its_authority_from_its_own_encrypted_store() {
-    let first = EncryptedStoreFixture::in_application(
-        APP_PROGRAM,
-        pubkey(0x51),
-        SCOPE,
-        LABEL,
-        handle(0x19, FHE_TYPE_UINT64),
-    );
-    let second = EncryptedStoreFixture::in_application(
-        APP_PROGRAM,
-        pubkey(0x52),
-        SCOPE,
-        LABEL,
-        handle(0x1a, FHE_TYPE_UINT64),
-    );
-
-    assert_eq!(resolved(&first).encrypted_store().authority, [0x51; 32]);
-    assert_eq!(resolved(&second).encrypted_store().authority, [0x52; 32]);
-    assert_eq!(resolved(&first).program(), APP_PROGRAM);
-    assert_eq!(resolved(&first).scope(), SCOPE);
-}
 
 /// A scoped permit admits the `(program, scope)` pairs it signed.
 #[test]

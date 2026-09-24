@@ -78,7 +78,7 @@ pub async fn authorize_request(
     // Every host rule is judged before a coprocessor is asked, so a host record the host program
     // could not have written fails the request whatever the proof read returns.
     let mut stores = Vec::with_capacity(observation.entries.len());
-    let mut delegated = Vec::new();
+    let mut audit = Vec::new();
     for (index, (entry, observed)) in request
         .handles()
         .iter()
@@ -108,7 +108,7 @@ pub async fn authorize_request(
                 store.encrypted_store(),
             )
             .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
-            delegated.push(format!(
+            audit.push(format!(
                 "entry {index}: delegator {}, application ({}, {}), {row:?} row",
                 entry.owner_address,
                 store.program(),
@@ -147,11 +147,11 @@ pub async fn authorize_request(
 
     // An auditor has to tell an application-scoped grant from a wildcard one, although both
     // authorize identically.
-    if !delegated.is_empty() {
+    if !audit.is_empty() {
         info!(
             delegate = %signer,
             observed_slot = observation.slot,
-            entries = ?delegated,
+            entries = ?audit,
             "Solana delegated user decryption entries authorized"
         );
     }
