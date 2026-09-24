@@ -51,8 +51,9 @@ pub async fn authorize_request(
     }
 
     // A delegation record's address depends on the application of the entry's encrypted store, so
-    // a delegated request needs a second read, no older than the first. Every rule is evaluated
-    // against the last read alone.
+    // a delegated request needs a second read, no older than the first. The first read only locates
+    // the rows (a store it cannot resolve fails the request there, as the request named it); every
+    // rule that authorizes is judged against the last read.
     let watermark_address = permit_invalidation_address(program_id, signer);
     let store_keys: Vec<_> = request
         .handles()
@@ -77,20 +78,43 @@ pub async fn authorize_request(
     let watermark = read_watermark(&observation.watermark, program_id, signer)?;
     check_not_invalidated(permit.start_timestamp(), watermark)?;
 
-    let stores = request
+    // Every host rule is judged before a coprocessor is asked, so a host record the host program
+    // could not have written fails the request whatever the proof read returns.
+    let mut stores = Vec::with_capacity(observation.entries.len());
+    let mut delegated = Vec::new();
+    for (index, (entry, observed)) in request
         .handles()
         .iter()
         .zip(&observation.entries)
         .enumerate()
-        .map(|(index, (entry, observed))| {
-            let store =
-                resolve_encrypted_store(observed.store.as_ref(), program_id, entry.encrypted_store)
-                    .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-            check_scope(permit.allowed_scopes(), &store)
-                .map_err(|source| AuthorizationFailure::Scope { index, source })?;
-            Ok(store)
-        })
-        .collect::<Result<Vec<_>, AuthorizationFailure>>()?;
+    {
+        let store =
+            resolve_encrypted_store(observed.store.as_ref(), program_id, entry.encrypted_store)
+                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
+        check_scope(permit.allowed_scopes(), &store)
+            .map_err(|source| AuthorizationFailure::Scope { index, source })?;
+        if entry.owner_address != signer {
+            let rows = observed
+                .delegation
+                .as_ref()
+                .expect("the deciding read carries the rows of every delegated entry");
+            let row = check_delegation(
+                rows,
+                program_id,
+                entry.owner_address,
+                signer,
+                store.encrypted_store(),
+            )
+            .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
+            delegated.push(format!(
+                "entry {index}: delegator {}, application ({}, {}), {row:?} row",
+                Pubkey::new_from_array(entry.owner_address),
+                Pubkey::new_from_array(store.program()),
+                Pubkey::new_from_array(store.scope()),
+            ));
+        }
+        stores.push(store);
+    }
 
     // The leaf must name the entry's owner address: the signer for a direct entry, the delegator for
     // a delegated one. Proving the signer's leaf instead would let a delegate decrypt handles the
@@ -115,37 +139,8 @@ pub async fn authorize_request(
     })
     .await?;
 
-    let mut delegated = Vec::new();
-    for (index, (((entry, observed), store), binding)) in request
-        .handles()
-        .iter()
-        .zip(&observation.entries)
-        .zip(&stores)
-        .zip(bindings)
-        .enumerate()
-    {
+    for (index, binding) in bindings.into_iter().enumerate() {
         binding.map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
-        if entry.owner_address == signer {
-            continue;
-        }
-        let rows = observed
-            .delegation
-            .as_ref()
-            .expect("the deciding read carries the rows of every delegated entry");
-        let row = check_delegation(
-            rows,
-            program_id,
-            entry.owner_address,
-            signer,
-            store.encrypted_store(),
-        )
-        .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
-        delegated.push(format!(
-            "entry {index}: delegator {}, application ({}, {}), {row:?} row",
-            Pubkey::new_from_array(entry.owner_address),
-            Pubkey::new_from_array(store.program()),
-            Pubkey::new_from_array(store.scope()),
-        ));
     }
 
     // An auditor has to tell an application-scoped grant from a wildcard one, although both
@@ -170,19 +165,16 @@ fn delegation_row_keys(
     request: &SolanaUserDecryptionRequestV1,
 ) -> Result<Vec<DelegationRowKeys>, AuthorizationFailure> {
     let mut rows = Vec::new();
-    for (entry, (claim, observed)) in request.handles().iter().zip(&first.entries).enumerate() {
-        let delegator = claim.owner_address;
+    for (index, (entry, observed)) in request.handles().iter().zip(&first.entries).enumerate() {
+        let delegator = entry.owner_address;
         if delegator == signer {
             continue;
         }
         let store =
-            resolve_encrypted_store(observed.store.as_ref(), program_id, claim.encrypted_store)
-                .map_err(|source| AuthorizationFailure::EncryptedStore {
-                    index: entry,
-                    source,
-                })?;
+            resolve_encrypted_store(observed.store.as_ref(), program_id, entry.encrypted_store)
+                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
         rows.push(DelegationRowKeys {
-            entry,
+            entry: index,
             exact: delegation_address(
                 program_id,
                 delegator,

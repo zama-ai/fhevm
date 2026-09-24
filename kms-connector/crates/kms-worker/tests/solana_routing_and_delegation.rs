@@ -486,7 +486,8 @@ async fn an_impostor_at_the_wildcard_address_fails_the_entry() {
 }
 
 /// An invalid row fails the entry even when the other row is live: a host record the host
-/// program could not have written means the read cannot be trusted, so it is not outvoted.
+/// program could not have written means the read cannot be trusted, so it is not outvoted. It is
+/// judged before any coprocessor is asked, so no proof read can turn it into a retry.
 #[tokio::test]
 async fn an_invalid_row_fails_the_entry_even_beside_a_live_row() {
     let signer = Wallet::new(1);
@@ -520,10 +521,14 @@ async fn an_invalid_row_fails_the_entry_even_beside_a_live_row() {
             wildcard_key,
         ),
     ] {
-        let failure = authorize_in(world, &request)
-            .await
-            .0
-            .expect_err("a live row does not outvote an invalid one");
+        let failure = authorize_request(
+            &ScriptedReader::constant(world),
+            &ScriptedProofReader::unreachable(),
+            CONTEXT,
+            &request,
+        )
+        .await
+        .expect_err("a live row does not outvote an invalid one");
         assert_invalid_row(&failure, invalid_key);
     }
 }
