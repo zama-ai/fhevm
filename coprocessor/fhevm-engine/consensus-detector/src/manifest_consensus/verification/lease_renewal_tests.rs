@@ -50,7 +50,7 @@ async fn verify_slow_downloads(missing_history: bool) {
     );
     assert_eq!(result.attempt, 1);
     assert_eq!(result.outcome, VerificationOutcome::Drift);
-    assert_target(&pool, "pending", "drift", 1).await;
+    assert_target(&pool, "verified", "drift", 1).await;
     let complete: bool =
         sqlx::query_scalar("SELECT localization_complete FROM block_manifest_verification_attempt")
             .fetch_one(&pool)
@@ -71,7 +71,7 @@ async fn renewal_allows_current_and_historical_downloads_beyond_one_lease() {
 }
 
 #[tokio::test]
-async fn renewal_lets_unavailable_history_consume_the_attempt_budget() {
+async fn renewal_completes_an_attempt_with_unavailable_history() {
     verify_slow_downloads(true).await;
 }
 
