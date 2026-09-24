@@ -350,8 +350,7 @@ async fn execution_stacks(trx: &mut Transaction<'_, Postgres>) -> Result<Vec<Exe
 pub async fn count_uncontained_ct64_drifted_handles(pool: &PgPool) -> Result<usize> {
     let n = sqlx::query_scalar!(
         r#"SELECT COUNT(*) FROM public.drifted_handle
-            WHERE reason = 'ct64_mismatch' AND healed_at IS NULL AND is_contained = false
-            ORDER BY id"#
+            WHERE reason = 'ct64_mismatch' AND healed_at IS NULL AND is_contained = false"#
     )
     .fetch_one(pool)
     .await?;
