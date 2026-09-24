@@ -34,11 +34,6 @@ pub use delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
     USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_AUTHORITY,
 };
-pub mod host_config;
-pub use host_config::{
-    decode_host_config, encode_host_config, HostConfigRecord, HOST_CONFIG_DISCRIMINATOR,
-    HOST_CONFIG_SEED,
-};
 pub mod permit_invalidation;
 pub use permit_invalidation::{
     decode_permit_invalidation, encode_permit_invalidation, PermitInvalidationRecord,

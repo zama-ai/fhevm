@@ -8,8 +8,8 @@
 //! record that disagree, not two moments — and they let the suite assert how many times
 //! authorization reads either source, which is otherwise an invisible property.
 //!
-//! Everything else here builds the three account layouts authorization reads (encrypted value
-//! account, delegation record, invalidation record), seals the leaves the record serves, and
+//! Everything else here builds the three account layouts authorization reads (encrypted store,
+//! delegation record, invalidation record), seals the leaves the record serves, and
 //! signs real permits with a real wallet key, so no test depends on a signature the code under
 //! test produced.
 #![allow(dead_code)]
@@ -41,11 +41,10 @@ use std::num::NonZeroUsize;
 use std::sync::Mutex;
 use std::time::Duration;
 use zama_solana_acl::{
-    DELEGATION_SEED, EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
-    PERMIT_INVALIDATION_SEED, PermitInvalidationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
-    WILDCARD_AUTHORITY, encode_host_config, encode_permit_invalidation,
-    encrypted_store_discriminator, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
-    public_decrypt_leaf_commitment,
+    DELEGATION_SEED, EncryptedSlot, EncryptedStore, MmrProof, PERMIT_INVALIDATION_SEED,
+    PermitInvalidationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_AUTHORITY,
+    encode_permit_invalidation, encrypted_store_discriminator, historical_access_leaf_commitment,
+    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, Signature, TRANSPORT_KEY_LEN, build_envelope,
@@ -585,24 +584,6 @@ impl DelegationFixture {
     }
 }
 
-/// The canonical config-singleton address of the fixture deployment, derived here rather than
-/// taken from the code under test.
-pub fn host_config_address() -> (SolanaPubkeyBytes, u8) {
-    let (address, bump) =
-        Pubkey::find_program_address(&[HOST_CONFIG_SEED], &Pubkey::new_from_array(PROGRAM_ID));
-    (address.to_bytes(), bump)
-}
-
-/// The config singleton as the host program would write it, through the shared crate's own
-/// encoder — the inverse of the decoder under test, so no field table is restated here.
-pub fn host_config_account(paused: bool) -> SnapshotAccount {
-    let (_, bump) = host_config_address();
-    SnapshotAccount {
-        owner: PROGRAM_ID,
-        data: encode_host_config(&HostConfigRecord { paused, bump }),
-    }
-}
-
 /// The canonical invalidation-record address for a user, derived here rather than taken from
 /// the code under test.
 pub fn invalidation_address(user: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
@@ -652,25 +633,12 @@ pub struct World {
 }
 
 impl World {
-    /// A world at `slot` holding a running host: the config singleton is present and unpaused, so
-    /// a scenario that says nothing about pause is a scenario in which pause is not the point.
-    /// Named for what it holds rather than for the slot, because it is not empty.
-    pub fn running_at_slot(slot: u64) -> Self {
-        let mut accounts = BTreeMap::new();
-        let (key, _) = host_config_address();
-        accounts.insert(key, host_config_account(false));
+    /// A world at `slot` holding no accounts yet.
+    pub fn at_slot(slot: u64) -> Self {
         Self {
             slot,
-            accounts,
-            sealed: BTreeMap::new(),
+            ..Self::default()
         }
-    }
-
-    /// The same world with the host paused.
-    pub fn paused(mut self) -> Self {
-        let (key, _) = host_config_address();
-        self.accounts.insert(key, host_config_account(true));
-        self
     }
 
     /// Places an encrypted store in the world.

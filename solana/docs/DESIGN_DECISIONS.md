@@ -2251,8 +2251,8 @@ Rejected alternatives:
 
 Consequences: `set_host_pause` is gone. `HostConfig` grows by three bytes, so every reader of its
 layout changes with it: the host listener decodes it with the program's type; the KMS connector's
-host-pause check and the `zama-solana-acl` decoder it used are removed with the connector's move to
-the gateway pause. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
+host-pause check and the `zama-solana-acl` decoder it used are deleted, so user decryption pauses at
+the gateway alone, as on EVM. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
 `NotPauser`, `PauserRecordMismatch`; `HostConfigPaused` is now `ExecutionPaused`.
 
 ## Open product decisions

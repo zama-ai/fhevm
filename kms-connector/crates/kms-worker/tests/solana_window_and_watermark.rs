@@ -120,8 +120,7 @@ fn a_permit_whose_window_has_not_opened_is_transient() {
 fn an_absent_invalidation_record_reads_as_zero() {
     let user = Wallet::new(1).pubkey();
 
-    let watermark =
-        watermark_in(&World::running_at_slot(1), user).expect("an absent record is a zero");
+    let watermark = watermark_in(&World::at_slot(1), user).expect("an absent record is a zero");
 
     assert_eq!(watermark, 0);
 }
@@ -135,7 +134,7 @@ fn an_absent_invalidation_record_reads_as_zero() {
 fn a_prefunded_invalidation_address_reads_as_zero() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = invalidation_address(user);
-    let world = World::running_at_slot(1).with_account(key, prefunded_account());
+    let world = World::at_slot(1).with_account(key, prefunded_account());
 
     let watermark = watermark_in(&world, user).expect("a pre-funded address is a zero");
 
@@ -150,7 +149,7 @@ fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
     let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = SYSTEM_PROGRAM_ID;
-    let world = World::running_at_slot(1).with_account(key, impostor);
+    let world = World::at_slot(1).with_account(key, impostor);
 
     let failure =
         watermark_in(&world, user).expect_err("only an empty account reads as never written");
@@ -162,7 +161,7 @@ fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
 #[test]
 fn a_stored_invalidation_record_reads_its_watermark() {
     let user = Wallet::new(1).pubkey();
-    let world = World::running_at_slot(1).with_watermark(user, DEFAULT_START + 10);
+    let world = World::at_slot(1).with_watermark(user, DEFAULT_START + 10);
 
     assert_eq!(
         watermark_in(&world, user).expect("a stored record reads"),
@@ -208,8 +207,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
     let other = Wallet::new(2).pubkey();
     let (key, _) = invalidation_address(user);
     // A record for another user, placed at this user's address.
-    let world =
-        World::running_at_slot(1).with_account(key, invalidation_account(other, DEFAULT_START));
+    let world = World::at_slot(1).with_account(key, invalidation_account(other, DEFAULT_START));
 
     let failure =
         watermark_in(&world, user).expect_err("a record must name the user it was read for");
@@ -226,7 +224,7 @@ fn an_account_that_is_not_an_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = invalidation_address(user);
     let encrypted_store = EncryptedStoreFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
-    let world = World::running_at_slot(1).with_account(key, encrypted_store.account());
+    let world = World::at_slot(1).with_account(key, encrypted_store.account());
 
     let failure =
         watermark_in(&world, user).expect_err("encrypted store bytes are not a watermark");
@@ -244,7 +242,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = [0xee; 32];
-    let world = World::running_at_slot(1).with_account(key, impostor);
+    let world = World::at_slot(1).with_account(key, impostor);
 
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
 
@@ -266,7 +264,7 @@ fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
         "the fixture writes the canonical bump, or this test proves nothing"
     );
     wrong_bump.data[last] = canonical_bump.wrapping_sub(1);
-    let world = World::running_at_slot(1).with_account(key, wrong_bump);
+    let world = World::at_slot(1).with_account(key, wrong_bump);
 
     let failure = watermark_in(&world, user).expect_err("a non-canonical bump is not this record");
 
@@ -286,7 +284,7 @@ fn a_truncated_invalidation_record_is_rejected() {
         owner: PROGRAM_ID,
         data: full.data[..full.data.len() - 1].to_vec(),
     };
-    let world = World::running_at_slot(1).with_account(key, truncated);
+    let world = World::at_slot(1).with_account(key, truncated);
 
     assert!(watermark_in(&world, user).is_err());
 }
@@ -309,7 +307,7 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
     // The delegator revoked everything they ever signed; the delegate revoked nothing.
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_watermark(delegator.pubkey(), DEFAULT_START + DEFAULT_DURATION)
@@ -333,7 +331,7 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), DEFAULT_START + 1)
         .with_delegation(&delegation);
@@ -363,7 +361,7 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
         .direct(&encrypted_store, live)
         .typed();
     let (key, _) = invalidation_address(wallet.pubkey());
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_account(key, prefunded_account());
     let proofs = ScriptedProofReader::constant(world.record());
@@ -385,7 +383,7 @@ async fn a_permit_that_expired_before_processing_is_refused() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
@@ -421,7 +419,7 @@ async fn a_permit_for_another_host_program_is_refused_before_any_read() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let world = World::running_at_slot(100).with_encrypted_store(&encrypted_store);
+    let world = World::at_slot(100).with_encrypted_store(&encrypted_store);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
     let other_program = [8; 32];

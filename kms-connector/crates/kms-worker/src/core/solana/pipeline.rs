@@ -4,7 +4,6 @@ use super::delegation::check_delegation;
 use super::encrypted_store::resolve_encrypted_store;
 use super::failure::AuthorizationFailure;
 use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
-use super::pause::check_not_paused;
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::scope::check_scope;
 use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
@@ -50,16 +49,14 @@ pub async fn authorize_request(
     }
 
     // A delegation record's address depends on the authority of the entry's encrypted store, so a
-    // delegated request needs a second read. Every rule after the pause switch is evaluated
-    // against the last read alone.
+    // delegated request needs a second read. Every rule is evaluated against the last read alone.
     let first_keys = plan_first_read(request, program_id);
     let first = reader.read_accounts(&first_keys).await?;
-    check_not_paused(&first, program_id)?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
     let observation = if delegation_keys.is_empty() {
         first
     } else {
-        let second_keys = plan_second_read(&first_keys, program_id, delegation_keys);
+        let second_keys = plan_second_read(&first_keys, delegation_keys);
         reader
             .read_accounts(&second_keys)
             .await?

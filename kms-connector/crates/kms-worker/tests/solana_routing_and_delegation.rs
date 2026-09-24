@@ -57,7 +57,7 @@ async fn authorize_in(
 /// A world holding an encrypted store, the signer's zero watermark, and whatever else is
 /// added.
 fn world_with(encrypted_store: &EncryptedStoreFixture, signer: SolanaPubkeyBytes) -> World {
-    World::running_at_slot(OBSERVED_SLOT)
+    World::at_slot(OBSERVED_SLOT)
         .with_encrypted_store(encrypted_store)
         .with_watermark(signer, 0)
 }
@@ -177,7 +177,7 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
         .delegated(&first_encrypted_store, first, first_delegator.pubkey())
         .delegated(&second_encrypted_store, second, second_delegator.pubkey())
         .typed();
-    let world = World::running_at_slot(OBSERVED_SLOT)
+    let world = World::at_slot(OBSERVED_SLOT)
         .with_encrypted_store(&own_encrypted_store)
         .with_encrypted_store(&first_encrypted_store)
         .with_encrypted_store(&second_encrypted_store)
@@ -915,7 +915,7 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
     let (exact_key, _) = exact.address();
     let (wildcard_key, _) =
         DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT).address();
-    let snapshot = World::running_at_slot(OBSERVED_SLOT)
+    let snapshot = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
@@ -935,7 +935,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let (wildcard_key, _) = wildcard.address();
     let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
-    let snapshot = World::running_at_slot(OBSERVED_SLOT)
+    let snapshot = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&wildcard)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
@@ -956,7 +956,7 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
     let wildcard = DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
     let (wildcard_key, _) = wildcard.address();
-    let snapshot = World::running_at_slot(OBSERVED_SLOT)
+    let snapshot = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .with_delegation(&wildcard)
         .read(&SnapshotKeys::new([exact_key, wildcard_key]));
@@ -1059,7 +1059,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     let (exact_key, _) = revoked.address();
     // The authority-specific row is dead, so the rule proceeds to the wildcard row — whose key
     // was never planned.
-    let snapshot = World::running_at_slot(OBSERVED_SLOT)
+    let snapshot = World::at_slot(OBSERVED_SLOT)
         .with_delegation(&revoked)
         .read(&SnapshotKeys::new([exact_key]));
 
@@ -1108,7 +1108,7 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
         .delegated(&first_encrypted_store, first, first_delegator.pubkey())
         .delegated(&second_encrypted_store, second, second_delegator.pubkey())
         .typed();
-    let world = World::running_at_slot(OBSERVED_SLOT)
+    let world = World::at_slot(OBSERVED_SLOT)
         .with_encrypted_store(&own_encrypted_store)
         .with_encrypted_store(&first_encrypted_store)
         .with_encrypted_store(&second_encrypted_store)
