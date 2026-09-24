@@ -215,7 +215,7 @@ pub(crate) async fn load_manifest_descriptors(
     )
     .fetch_all(trx.as_mut())
     .await?;
-    let keyset_ids = load_keyset_ids(trx, block.host_chain_id).await?;
+    let keyset_ids = load_keyset_ids(trx).await?;
 
     let mut descriptors = Vec::with_capacity(rows.len());
     let mut previous_handle: Option<Vec<u8>> = None;
@@ -277,7 +277,7 @@ pub(crate) async fn load_manifest_descriptors(
             .and_then(|gateway_key_id| keyset_ids.get(gateway_key_id))
             .ok_or_else(|| {
                 internal(format!(
-                    "no keyset ID maps manifest handle {} to its local Gateway key ID in chain {} block {}",
+                    "no keyset ID maps manifest handle {} to its Gateway key ID in chain {} block {}",
                     hex::encode(&row.handle),
                     block.host_chain_id,
                     block.block_number,
@@ -326,18 +326,21 @@ pub(crate) async fn load_manifest_descriptors(
     Ok(descriptors)
 }
 
+/// Maps each Gateway key id to its keyset id.
+///
+/// `keys.chain_id` records which host observed activation. The tfhe worker
+/// ignores it and computes every host chain under the latest row. Publication
+/// uses the same unscoped table, including older rows, because a handle keeps
+/// the Gateway key id it was computed with.
 async fn load_keyset_ids(
     trx: &mut Transaction<'_, Postgres>,
-    host_chain_id: i64,
 ) -> Result<HashMap<Vec<u8>, Vec<u8>>, ExecutionError> {
     let rows = sqlx::query!(
         r#"
         SELECT key_id_gw, key_id
           FROM keys
-         WHERE chain_id = $1
          ORDER BY sequence_number
         "#,
-        host_chain_id,
     )
     .fetch_all(trx.as_mut())
     .await?;
@@ -348,7 +351,7 @@ async fn load_keyset_ids(
         if let Some(previous) = keyset_ids.insert(gateway_key_id.clone(), keyset_id.clone()) {
             if previous != keyset_id {
                 return Err(internal(format!(
-                    "Gateway key ID {} maps to conflicting keyset IDs on chain {host_chain_id}",
+                    "Gateway key ID {} maps to conflicting keyset IDs",
                     hex::encode(gateway_key_id),
                 )));
             }
