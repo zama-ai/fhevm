@@ -15,13 +15,18 @@ name: preview-env-deploy
 #     gitops sync-secrets chart (no GitHub secrets). Implies deploy_polygon; slow (12s blocks), real testnet gas.
 # Both external modes leave this preview's own contracts on the shared chains after teardown.
 #
-# Four PR labels control deployment (see check-labels below):
+# Five PR labels control deployment (see check-labels below):
 #   - preview-env-e2e: deploy the PR branch. On PRs images are ALWAYS built
 #     fresh from the PR HEAD (only changed components; the rest resolve to the
 #     change-detection base commit's images). In-repo charts (charts/*) install
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
+#   - preview-env-e2e-tests-lv2: same as preview-env-e2e-tests, but the host
+#     side runs the listener v2 stack ONLY (listener-core producer -> Redis ->
+#     host-listener-consumer): the host-listener pollers (coprocessor-poller-<i>,
+#     coprocessor-poller-polygon-<i>) are not deployed. Not combinable with
+#     preview-env-blue-green (the RFC-021 flow drives Blue/Green pollers).
 #   - preview-env-gpu: with preview-env-e2e-tests, request one GPU for each FHE
 #     worker and place them on the coprocessor-gpu nodepool. Combines with
 #     preview-env-e2e (HEAD workers) or preview-env-blue-green (Green/GCS
@@ -207,6 +212,7 @@ jobs:
       github.event.action != 'labeled' ||
       github.event.label.name == 'preview-env-e2e' ||
       github.event.label.name == 'preview-env-e2e-tests' ||
+      github.event.label.name == 'preview-env-e2e-tests-lv2' ||
       github.event.label.name == 'preview-env-gpu' ||
       github.event.label.name == 'preview-env-blue-green'
     outputs:
@@ -217,6 +223,7 @@ jobs:
       gpu: ${{ steps.check.outputs.gpu }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
+      listener_v2_only: ${{ steps.check.outputs.listener_v2_only }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
       chain_mode: ${{ steps.check.outputs.chain_mode }}
       overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
@@ -278,12 +285,15 @@ jobs:
           # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
           # is two-party consensus). PRs: preview-env-blue-green label, N=2.
+          # listener_v2_only (skip the host-listener pollers) is PR-label only:
+          # preview-env-e2e-tests-lv2.
           {
             echo "build_test_suite_only=false"
             echo "automated_tests=false"
             echo "gpu=false"
             echo "observability=false"
             echo "blue_green=false"
+            echo "listener_v2_only=false"
             echo "nb_coprocessor=1"
             echo "chain_mode=anvil"
           } >> "$GITHUB_OUTPUT"
@@ -319,6 +329,7 @@ jobs:
           automated_tests=false
           gpu=false
           blue_green=false
+          listener_v2_only=false
           chain_mode=anvil
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
           # preview-env-e2e-tests: auto-run the e2e DAG AND deploy the env it needs,
@@ -326,6 +337,13 @@ jobs:
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests")' > /dev/null; then
             automated_tests=true
             should_deploy=true
+          fi
+          # preview-env-e2e-tests-lv2: same as preview-env-e2e-tests, on the
+          # listener v2 stack only (no host-listener pollers).
+          if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e-tests-lv2")' > /dev/null; then
+            automated_tests=true
+            should_deploy=true
+            listener_v2_only=true
           fi
           if [[ "${automated_tests}" == "true" ]] &&
              echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-gpu")' > /dev/null; then
@@ -342,6 +360,12 @@ jobs:
               nb_coprocessor=2
             fi
           fi
+          # The RFC-021 flow (deploy + bg-*.sh) starts, parks and checks the
+          # Blue/Green pollers, so it cannot run without them.
+          if [[ "${listener_v2_only}" == "true" && "${blue_green}" == "true" ]]; then
+            echo "::error::preview-env-e2e-tests-lv2 cannot be combined with preview-env-blue-green"
+            exit 1
+          fi
           # On PRs we always build fresh images from the PR branch: any preview
           # label that triggers a deploy also builds. There is no pinned-only PR
           # path anymore - use workflow_dispatch with build_images=false for that.
@@ -354,6 +378,7 @@ jobs:
             echo "automated_tests=${automated_tests}"
             echo "gpu=${gpu}"
             echo "blue_green=${blue_green}"
+            echo "listener_v2_only=${listener_v2_only}"
             echo "nb_coprocessor=${nb_coprocessor}"
             echo "chain_mode=${chain_mode}"
           } >> "$GITHUB_OUTPUT"
@@ -527,11 +552,13 @@ jobs:
       NAMESPACE: ${{ needs.resolve-tags.outputs.namespace }}
       TAGS_JSON: ${{ needs.resolve-tags.outputs.tags_json }}
       # Gate for the automated e2e test workflow (see the test-suite-workflow
-      # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
+      # deploy + report steps): dispatch input or a preview-env-e2e-tests* label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
       GPU: ${{ needs.check-labels.outputs.gpu }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
+      # preview-env-e2e-tests-lv2: skip the host-listener poller releases.
+      LISTENER_V2_ONLY: ${{ needs.check-labels.outputs.listener_v2_only }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
       # Overrides the workflow-level input default so the blue-green PR label
       # can force shared Geth/Nitro (inputs.* is empty on pull_request).
@@ -1086,6 +1113,9 @@ jobs:
         # fails "No keys found in database". Shares postgres-coprocessor-<i> with
         # the coprocessor-<i> release, which already ran dbMigration (this release
         # has dbMigration disabled).
+        #
+        # Skipped on preview-env-e2e-tests-lv2 (listener v2 stack only).
+        if: env.LISTENER_V2_ONLY != 'true'
         run: bash ci/preview-env/scripts/deploy/deploy-coprocessor-sidecars.sh poller
 
       - name: Deploy polygon coprocessor-poller (per-party Polygon finalization)
@@ -1093,8 +1123,9 @@ jobs:
         # as its OWN single-chain release (same separator-collision reason as the
         # Polygon consumer above). Finalizes Polygon blocks so the Polygon consumer's
         # block_status='finalized' gate is met. dbMigration disabled - coprocessor-<i>
-        # already seeded host_chains for both chains.
-        if: env.DEPLOY_POLYGON == 'true'
+        # already seeded host_chains for both chains. Skipped on
+        # preview-env-e2e-tests-lv2 (listener v2 stack only).
+        if: env.DEPLOY_POLYGON == 'true' && env.LISTENER_V2_ONLY != 'true'
         run: bash ci/preview-env/scripts/deploy/deploy-coprocessor-sidecars.sh poller-polygon
 
       - name: Create kms-connector-tx-sender secrets
@@ -1262,7 +1293,7 @@ jobs:
           body: |
             :rocket: **e2e preview environment deployed** in namespace `${{ env.NAMESPACE }}` on zws-dev.
 
-            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && format(' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled {0}) beside BCS (`{1}`). Gateway registration stays N.', env.GCS_VERSION, env.BCS_IMAGE_TAG) || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }} Chain mode: **${{ env.CHAIN_MODE }}** (host `${{ env.HOST_CHAIN_ID }}`, gateway `${{ env.GATEWAY_CHAIN_ID }}`).
+            Topology: **${{ env.NB_KMS_CORE }}** KMS core ${{ env.NB_KMS_CORE == '1' && 'party' || 'parties' }} · **${{ env.NB_COPROCESSOR }}** coprocessor ${{ env.NB_COPROCESSOR == '1' && 'party' || 'parties' }} (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, `listener` producer, Redis broker and host-listener-consumer).${{ env.BLUE_GREEN == 'true' && format(' **RFC-021 blue-green:** each party also runs a GCS fleet (`coprocessor-<i>-gcs`, compiled {0}) beside BCS (`{1}`). Gateway registration stays N.', env.GCS_VERSION, env.BCS_IMAGE_TAG) || '' }}${{ env.DEPLOY_POLYGON == 'true' && ' Plus a **second Polygon Amoy (80002)** host chain (reusing the ETH KMS key via canonical ProtocolConfig mirror).' || '' }}${{ env.LISTENER_V2_ONLY == 'true' && ' **Listener v2 only:** no host-listener pollers.' || '' }} Chain mode: **${{ env.CHAIN_MODE }}** (host `${{ env.HOST_CHAIN_ID }}`, gateway `${{ env.GATEWAY_CHAIN_ID }}`).
 
             Connect:
             ```bash
