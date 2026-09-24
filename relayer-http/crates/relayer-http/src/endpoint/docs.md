@@ -16,7 +16,7 @@ iterations, and the error mapping is a first version (section 5).
 | `GET` | `/liveness` | the process runs |
 | `GET` | `/healthz` | the pod is ready to serve (503 while shutting down) |
 
-Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max_body_bytes` (default 2 MiB),
+Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max_body_bytes` (default 1 MiB, the connector's limit),
 `supported_chain_ids` (host chain ids a handle may carry). One port for everything; no version endpoint yet.
 
 ## 2. Request payloads

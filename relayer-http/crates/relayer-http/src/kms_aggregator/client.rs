@@ -12,8 +12,9 @@ use url::Url;
 
 use super::config::{AuthConfig, ConfigError, EndpointConfig, KmsAggregatorConfig};
 
-/// Response bodies above this are dropped (a connector answer is a few KiB).
-pub const MAX_RESPONSE_BYTES: usize = 4 << 20;
+/// Response bodies above this are dropped. One user-decrypt share is ~1.4 KiB per handle, hex-encoded in JSON;
+/// the 2048-bit budget allows 1024 handles, so the largest valid answer is ~2.8 MiB.
+pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// One KMS node as the caller sees it. `auth` is the `authorization: Bearer <key>` value (marked sensitive),

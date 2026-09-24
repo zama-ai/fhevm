@@ -7,7 +7,7 @@ log:                        # optional: without this block the process logs JSON
   show_target: true
 http:
   endpoint: "0.0.0.0:8080"     # the API and the probes (/liveness, /healthz) on one port
-  max_body_bytes: 2097152      # 2 MiB; bigger request bodies are answered 400 malformed
+  max_body_bytes: 1048576      # 1 MiB, the connector's limit; bigger request bodies are answered 400 malformed
   supported_chain_ids: [1, 137]   # host chain ids a ciphertext handle may carry (bytes 22..30 of the handle)
 kms_aggregator:
   allow_insecure_http: false   # local/compose only: allows plain http and `auth: none` to non-loopback hosts (an api_key over http travels in clear)

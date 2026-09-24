@@ -33,8 +33,10 @@ pub struct HttpConfig {
     pub supported_chain_ids: Vec<u64>,
 }
 
+/// 1 MiB, the connector endpoint's and proxy's limit: a bigger body could never be forwarded. The largest valid
+/// request (1024 handles, the 2048-bit budget) is about 215 KiB.
 fn default_max_body_bytes() -> usize {
-    2 << 20
+    1024 * 1024
 }
 
 impl HttpConfig {
@@ -199,7 +201,7 @@ mod tests {
     fn http_config_is_loaded_and_validated() {
         let config = RelayerConfig::load(EXAMPLE).unwrap();
         assert_eq!(config.http.endpoint.port(), 8080);
-        assert_eq!(config.http.max_body_bytes, 2 << 20);
+        assert_eq!(config.http.max_body_bytes, 1024 * 1024);
         assert_eq!(config.http.supported_chain_ids, vec![1, 137]);
 
         let e = RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__MAX_BODY_BYTES", "10")]))
