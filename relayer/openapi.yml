@@ -1813,10 +1813,10 @@ components:
         from the coprocessors and verifies it against the state it reads.
       required:
       - handle
-      - allowedKey
+      - ownerAddress
       - encryptedStore
       properties:
-        allowedKey:
+        ownerAddress:
           type: string
           description: |-
             The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
@@ -1836,7 +1836,7 @@ components:
         The Solana-native user-decryption payload: the eight signed permit fields (§3.1) plus the
         per-handle entries. No `userAddress`, no `nonce`, no EVM per-handle addresses.
       required:
-      - userPubkey
+      - userAddress
       - transportKey
       - allowedScopes
       - requestValidity
@@ -1871,11 +1871,11 @@ components:
           description: |-
             The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
             (`0x` + hex). The exact length is enforced downstream by the permit decode.
-        userPubkey:
+        userAddress:
           type: string
           description: |-
             The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
-            hex). Not necessarily the allowed key of any entry — on a delegated entry the allowed
+            hex). Not necessarily the owner address of any entry — on a delegated entry the allowed
             key is the delegator, and this key is the delegate acting on their behalf.
         verifyingProgramId:
           type: string

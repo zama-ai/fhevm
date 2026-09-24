@@ -42,7 +42,7 @@ interface PermitCanon {
   readonly vectors: readonly {
     readonly name: string;
     readonly permit: {
-      readonly user_pubkey: string;
+      readonly user_address: string;
       readonly transport_key: string;
       readonly allowed_scopes: readonly string[];
       readonly start_timestamp: string;
@@ -76,7 +76,7 @@ const PERMIT_CHAIN_ID = BigInt(canonRecord.permit.chain_id);
 
 const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
-    userPubkey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
+    userAddress: hexToBytes(`0x${canonRecord.permit.user_address}`),
     transportKey: hexToBytes(`0x${transportKeyHex}`),
     allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => hexToBytes(`0x${scope}`)),
     startTimestamp: canonRecord.permit.start_timestamp,
@@ -95,7 +95,7 @@ const signedPermit = (): SolanaSignedPermit => ({
 const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
   attestationType: fixture.attestation_type,
   attestedPayload: {
-    userPubkey: `0x${canonRecord.permit.user_pubkey}`,
+    userAddress: `0x${canonRecord.permit.user_address}`,
     transportKey: `0x${transportKeyHex}`,
     allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => `0x${scope}`),
     requestValidity: {
@@ -114,7 +114,7 @@ const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
 const entriesOf = (record: (typeof fixture.accepted)[number]): readonly SolanaUserDecryptHandleEntry[] =>
   record.handles.map((entry) => ({
     handle: hexToBytes(entry.handle ?? '0x'),
-    allowedKey: hexToBytes(entry.allowedKey ?? '0x'),
+    ownerAddress: hexToBytes(entry.ownerAddress ?? '0x'),
     encryptedStore: hexToBytes(entry.encryptedStore ?? '0x'),
   }));
 
@@ -147,7 +147,7 @@ const entryFor = (
   overrides: Partial<SolanaUserDecryptHandleEntry> = {},
 ): SolanaUserDecryptHandleEntry => ({
   handle,
-  allowedKey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
+  ownerAddress: hexToBytes(`0x${canonRecord.permit.user_address}`),
   encryptedStore: new Uint8Array(32).fill(0xea),
   ...overrides,
 });
@@ -249,10 +249,10 @@ describe('the entry list', () => {
       failureOf(() =>
         buildSolanaUserDecryptRequest({
           signedPermit: permit,
-          entries: [entryFor(handle), entryFor(handle, { allowedKey: new Uint8Array(31) })],
+          entries: [entryFor(handle), entryFor(handle, { ownerAddress: new Uint8Array(31) })],
         }),
       ),
-    ).toEqual({ reason: 'entry-field-width', index: 1, field: 'allowedKey' });
+    ).toEqual({ reason: 'entry-field-width', index: 1, field: 'ownerAddress' });
 
     expect(
       failureOf(() =>

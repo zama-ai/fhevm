@@ -35,7 +35,7 @@ pub const SOLANA_REQUEST_VERSION: u8 = 0x03;
 /// primitives. The field order below IS the canonical layout.
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBody {
-    user_pubkey: Vec<u8>,
+    user_address: Vec<u8>,
     transport_key: Vec<u8>,
     allowed_scopes: Vec<Vec<u8>>,
     start_timestamp: u64,
@@ -51,7 +51,7 @@ struct RequestBody {
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBodyEntry {
     handle: Vec<u8>,
-    allowed_key: Vec<u8>,
+    owner_address: Vec<u8>,
     encrypted_store: Vec<u8>,
 }
 
@@ -66,7 +66,7 @@ impl From<&SolanaUserDecryptRequestWire> for RequestBody {
             handles,
         } = wire;
         let PermitWireFields {
-            user_pubkey,
+            user_address,
             transport_key,
             allowed_scopes,
             start_timestamp,
@@ -77,7 +77,7 @@ impl From<&SolanaUserDecryptRequestWire> for RequestBody {
         } = permit;
 
         Self {
-            user_pubkey: user_pubkey.clone(),
+            user_address: user_address.clone(),
             transport_key: transport_key.clone(),
             allowed_scopes: allowed_scopes.clone(),
             start_timestamp: *start_timestamp,
@@ -95,13 +95,13 @@ impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
     fn from(entry: &SolanaHandleEntryWire) -> Self {
         let SolanaHandleEntryWire {
             handle,
-            allowed_key,
+            owner_address,
             encrypted_store,
         } = entry;
 
         Self {
             handle: handle.clone(),
-            allowed_key: allowed_key.clone(),
+            owner_address: owner_address.clone(),
             encrypted_store: encrypted_store.clone(),
         }
     }
@@ -110,7 +110,7 @@ impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
 impl From<RequestBody> for SolanaUserDecryptRequestWire {
     fn from(body: RequestBody) -> Self {
         let RequestBody {
-            user_pubkey,
+            user_address,
             transport_key,
             allowed_scopes,
             start_timestamp,
@@ -124,7 +124,7 @@ impl From<RequestBody> for SolanaUserDecryptRequestWire {
 
         Self {
             permit: PermitWireFields {
-                user_pubkey,
+                user_address,
                 transport_key,
                 allowed_scopes,
                 start_timestamp,
@@ -146,13 +146,13 @@ impl From<RequestBodyEntry> for SolanaHandleEntryWire {
     fn from(entry: RequestBodyEntry) -> Self {
         let RequestBodyEntry {
             handle,
-            allowed_key,
+            owner_address,
             encrypted_store,
         } = entry;
 
         Self {
             handle,
-            allowed_key,
+            owner_address,
             encrypted_store,
         }
     }
@@ -249,12 +249,12 @@ mod tests {
     fn wire() -> SolanaUserDecryptRequestWire {
         let entry = |seed: u8| SolanaHandleEntryWire {
             handle: vec![seed; 32],
-            allowed_key: vec![seed + 1; 32],
+            owner_address: vec![seed + 1; 32],
             encrypted_store: vec![seed + 2; 32],
         };
         SolanaUserDecryptRequestWire {
             permit: PermitWireFields {
-                user_pubkey: vec![1; 32],
+                user_address: vec![1; 32],
                 transport_key: vec![2; 32],
                 allowed_scopes: vec![vec![3; 64]],
                 start_timestamp: 4,
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(decode_solana_request(&baseline), Ok(base.clone()));
 
         let mutations: [fn(&mut SolanaUserDecryptRequestWire); 12] = [
-            |w| w.permit.user_pubkey[0] ^= 1,
+            |w| w.permit.user_address[0] ^= 1,
             |w| w.permit.transport_key[0] ^= 1,
             |w| w.permit.allowed_scopes[0][0] ^= 1,
             |w| w.permit.start_timestamp += 1,
@@ -286,7 +286,7 @@ mod tests {
             |w| w.permit.extra_data[0] ^= 1,
             |w| w.signature[0] ^= 1,
             |w| w.handles[0].handle[0] ^= 1,
-            |w| w.handles[0].allowed_key[0] ^= 1,
+            |w| w.handles[0].owner_address[0] ^= 1,
             |w| w.handles[1].encrypted_store[0] ^= 1,
         ];
         for (index, mutate) in mutations.iter().enumerate() {
@@ -317,7 +317,7 @@ mod tests {
             decode_solana_request(&trailing),
             Err(SolanaRequestDecodeError::TrailingBytes { trailing: 1 })
         );
-        // The user pubkey's length prefix follows the version byte.
+        // The user address's length prefix follows the version byte.
         let mut length_lie = bytes.clone();
         length_lie[1..5].copy_from_slice(&u32::MAX.to_le_bytes());
         for malformed in [

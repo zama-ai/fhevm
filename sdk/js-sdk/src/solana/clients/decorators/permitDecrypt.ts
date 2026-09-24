@@ -97,7 +97,7 @@ export interface SolanaUserDecryptEntry {
    * The key whose allow on the handle this asks under: the delegator on a delegated entry.
    * Defaults to the permit's own user.
    */
-  readonly allowedKey?: Uint8Array | undefined;
+  readonly ownerAddress?: Uint8Array | undefined;
 }
 
 export interface SolanaUserDecryptParameters {
@@ -147,7 +147,7 @@ export function solanaPermitDecryptActions(
         invalidationWatermark,
       });
       const fields = decodeSolanaPermitFields({
-        userPubkey: Uint8Array.from(parameters.wallet.account.publicKey),
+        userAddress: Uint8Array.from(parameters.wallet.account.publicKey),
         transportKey: keyPair.publicKeyBytes,
         allowedScopes: sortedScopes(parameters.allowedScopes ?? []),
         startTimestamp,
@@ -166,10 +166,10 @@ export function solanaPermitDecryptActions(
     },
 
     async decryptValues(parameters: SolanaUserDecryptParameters): Promise<readonly TypedValue[]> {
-      const userPubkey = parameters.session.signedPermit.fields.userPubkey;
+      const userAddress = parameters.session.signedPermit.fields.userAddress;
       const entries: readonly SolanaUserDecryptHandleEntry[] = parameters.entries.map((entry) => ({
         handle: entry.handle,
-        allowedKey: entry.allowedKey ?? userPubkey,
+        ownerAddress: entry.ownerAddress ?? userAddress,
         encryptedStore: entry.encryptedStore,
       }));
 

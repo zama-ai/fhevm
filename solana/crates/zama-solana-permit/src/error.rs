@@ -68,8 +68,8 @@ pub enum PermitError {
     },
     /// The signature does not verify over the locally reconstructed envelope.
     SignatureMismatch,
-    /// The user pubkey is not a usable Ed25519 verifying key.
-    UnusableUserPubkey,
+    /// The user address is not a usable Ed25519 verifying key.
+    UnusableUserAddress,
 }
 
 /// Which identity field a width violation was found in.
@@ -80,7 +80,7 @@ pub enum PermitError {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum IdentityField {
     /// The signing user.
-    UserPubkey,
+    UserAddress,
     /// The deployment's program id.
     VerifyingProgramId,
 }
@@ -121,7 +121,7 @@ impl fmt::Display for PermitError {
                 "KMS routing field of version {version:#04x} is {len} bytes, which is not its length"
             ),
             Self::SignatureMismatch => f.write_str("signature does not verify over the reconstructed envelope"),
-            Self::UnusableUserPubkey => f.write_str("user pubkey is not a usable Ed25519 verifying key"),
+            Self::UnusableUserAddress => f.write_str("user address is not a usable Ed25519 verifying key"),
         }
     }
 }

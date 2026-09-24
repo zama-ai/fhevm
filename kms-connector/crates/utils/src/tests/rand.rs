@@ -78,7 +78,7 @@ pub fn solana_user_decryption_event(
 pub fn solana_user_decryption_wire(handle: FixedBytes<32>) -> SolanaUserDecryptRequestWire {
     SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
-            user_pubkey: vec![1; 32],
+            user_address: vec![1; 32],
             transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
             allowed_scopes: vec![],
             start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
@@ -90,7 +90,7 @@ pub fn solana_user_decryption_wire(handle: FixedBytes<32>) -> SolanaUserDecryptR
         signature: vec![0; 64],
         handles: vec![SolanaHandleEntryWire {
             handle: handle.to_vec(),
-            allowed_key: vec![1; 32],
+            owner_address: vec![1; 32],
             encrypted_store: vec![3; 32],
         }],
     }

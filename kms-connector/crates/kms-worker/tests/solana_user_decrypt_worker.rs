@@ -316,7 +316,7 @@ async fn a_solana_request_checks_its_signed_kms_context() {
 /// The identity a `UserDecrypt` call must carry for a Solana user.
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
-    user_pubkey: Vec<u8>,
+    user_address: Vec<u8>,
     verifying_program_id: Vec<u8>,
     transport_key: Vec<u8>,
 }
@@ -336,7 +336,7 @@ impl Matcher for SolanaIdentity {
             && request.enc_key == self.transport_key
             && request.signing_metadata
                 == [SigningMetadata::solana(
-                    self.user_pubkey.clone(),
+                    self.user_address.clone(),
                     self.verifying_program_id.clone(),
                 )]
     }
@@ -354,7 +354,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let bucket = S3Instance::setup().await.unwrap();
     let scenario = Scenario::naming(B256::from_hex(S3_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        user_pubkey: scenario.victim.pubkey().to_vec(),
+        user_address: scenario.victim.pubkey().to_vec(),
         verifying_program_id: PROGRAM_ID.to_vec(),
         transport_key: scenario.event.publicKey.to_vec(),
     };

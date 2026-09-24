@@ -46,7 +46,7 @@ interface PermitCanon {
   readonly vectors: readonly {
     readonly name: string;
     readonly permit: {
-      readonly user_pubkey: string;
+      readonly user_address: string;
       readonly transport_key: string;
       readonly allowed_scopes: readonly string[];
       readonly start_timestamp: string;
@@ -78,7 +78,7 @@ if (transportKeyHex === undefined) {
 
 /** The permit half of every request, derived from the canon exactly as the fixture states. */
 const permitPayload: Readonly<Record<string, unknown>> = {
-  userPubkey: `0x${canonRecord.permit.user_pubkey}`,
+  userAddress: `0x${canonRecord.permit.user_address}`,
   transportKey: `0x${transportKeyHex}`,
   allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => `0x${scope}`),
   requestValidity: {
@@ -99,7 +99,7 @@ const compose = (record: EnvelopeRecord): Record<string, unknown> => ({
 
 /** The keys the payload carries, and the only ones the endpoint's wire type admits. */
 const PAYLOAD_KEYS = [
-  'userPubkey',
+  'userAddress',
   'transportKey',
   'allowedScopes',
   'requestValidity',
@@ -110,7 +110,7 @@ const PAYLOAD_KEYS = [
 ] as const;
 
 /** The keys one handle entry carries. */
-const HANDLE_KEYS = ['handle', 'allowedKey', 'encryptedStore'] as const;
+const HANDLE_KEYS = ['handle', 'ownerAddress', 'encryptedStore'] as const;
 
 const named = <T extends { readonly name: string }>(records: readonly T[]): ReadonlyArray<readonly [string, T]> =>
   records.map((record) => [record.name, record] as const);
@@ -147,7 +147,7 @@ describe('an accepted record composed into a request', () => {
   // be there.
   it.each(named(fixture.accepted))('%s: writes hex as 0x-hex and every u64 as a decimal string', (_name, record) => {
     const payload = compose(record).attestedPayload as Record<string, unknown>;
-    for (const key of ['userPubkey', 'transportKey', 'verifyingProgramId', 'extraData']) {
+    for (const key of ['userAddress', 'transportKey', 'verifyingProgramId', 'extraData']) {
       expect(payload[key], key).toMatch(/^0x[0-9a-f]*$/);
     }
     expect(payload.chainId).toMatch(/^(0|[1-9][0-9]*)$/);
@@ -158,7 +158,7 @@ describe('an accepted record composed into a request', () => {
     for (const entry of record.handles) {
       expect(Object.keys(entry).sort()).toEqual([...HANDLE_KEYS].sort());
       expect(entry.handle).toMatch(/^0x[0-9a-f]{64}$/);
-      expect(entry.allowedKey).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(entry.ownerAddress).toMatch(/^0x[0-9a-f]{64}$/);
       expect(entry.encryptedStore).toMatch(/^0x[0-9a-f]{64}$/);
     }
   });
@@ -177,7 +177,7 @@ describe('an accepted record composed into a request', () => {
 
 describe('the permit the fixture is built on', () => {
   const wire = (): SolanaPermitWireFields => ({
-    userPubkey: hexToBytes(`0x${canonRecord.permit.user_pubkey}`),
+    userAddress: hexToBytes(`0x${canonRecord.permit.user_address}`),
     transportKey: hexToBytes(`0x${transportKeyHex}`),
     allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => hexToBytes(`0x${scope}`)),
     startTimestamp: canonRecord.permit.start_timestamp,

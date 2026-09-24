@@ -39,7 +39,7 @@ export function renderSolanaPermitText(fields: SolanaPermitFields): string {
     PERMIT_TEXT_HEADER,
     // Base58, Bitcoin alphabet: the encoding every Solana identity is displayed in, so the text
     // shows a signer the same string their explorer and their wallet do.
-    `User: ${base58.encode(fields.userPubkey)}`,
+    `User: ${base58.encode(fields.userAddress)}`,
     `Verifying program: ${base58.encode(fields.verifyingProgramId)}`,
     `Chain id: ${fields.chainId}`,
     // The key itself does not fit a wallet screen, so the text commits to a digest of it —

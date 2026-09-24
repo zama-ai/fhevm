@@ -1745,7 +1745,7 @@ Decision:
    (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked concurrently, the
    answers merged — a proof beats no proof, more history beats less — one retry when the record is
    behind the account's `leaf_count`) and verified against the peaks the connector read on chain.
-   A request names only the Store and, for a delegated entry, the delegator as allowed key; a
+   A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. Public-decrypt `extraData` names the Store (DD-049).
 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
    instruction stream and stored in the same database transaction as the compute rows, so the two

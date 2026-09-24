@@ -735,7 +735,7 @@ impl UserDecryptionExtraData {
             client_address: String::new(),
             public_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
             signing_metadata: vec![kms_grpc::kms::v1::SigningMetadata::solana(
-                permit.user_pubkey().as_bytes().to_vec(),
+                permit.user_address().as_bytes().to_vec(),
                 permit.verifying_program_id().as_bytes().to_vec(),
             )],
         }

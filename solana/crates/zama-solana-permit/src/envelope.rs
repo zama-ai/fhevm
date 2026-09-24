@@ -19,8 +19,8 @@
 //!
 //! * the signature scalar must be reduced, and neither `R` nor `A` may be of small
 //!   order — this is `verify_strict`, not the permissive entry point;
-//! * the user pubkey must be a point on the curve;
-//! * the user pubkey's encoding must be canonical, i.e. its y-coordinate below the field
+//! * the user address must be a point on the curve;
+//! * the user address's encoding must be canonical, i.e. its y-coordinate below the field
 //!   modulus. No attack rides on this one — the encoding sits inside the signed envelope,
 //!   so a re-encoded key changes the message — but libraries disagree about accepting it
 //!   and every real wallet key is canonical, so the disagreement is removed rather than
@@ -56,7 +56,7 @@ pub fn build_envelope(fields: &PermitFields) -> Vec<u8> {
     // The sole signer is the permit's own user, which is also what the text's `User:` line
     // names — so the screen a human read and the bytes their wallet signed cannot disagree
     // about who is consenting.
-    envelope.extend_from_slice(fields.user_pubkey().as_bytes());
+    envelope.extend_from_slice(fields.user_address().as_bytes());
     // No length prefix and no application domain: the text runs to the end of the message.
     envelope.extend_from_slice(text.as_bytes());
     envelope
@@ -67,7 +67,7 @@ pub fn build_envelope(fields: &PermitFields) -> Vec<u8> {
 /// The parameters are the whole contract: validated fields and a signature. There
 /// is deliberately no variant of this function accepting a text or an envelope.
 pub fn verify_signature(fields: &PermitFields, signature: &Signature) -> Result<(), PermitError> {
-    let verifying_key = usable_verifying_key(fields.user_pubkey())?;
+    let verifying_key = usable_verifying_key(fields.user_address())?;
 
     verifying_key
         .verify_strict(
@@ -77,20 +77,20 @@ pub fn verify_signature(fields: &PermitFields, signature: &Signature) -> Result<
         .map_err(|_| PermitError::SignatureMismatch)
 }
 
-/// Turns a permit's user pubkey into a key that can verify, or says it cannot.
+/// Turns a permit's user address into a key that can verify, or says it cannot.
 ///
 /// Three ways a key is unusable, all reported alike because they are all "this permit
 /// names something that is not a wallet key", none of them a statement about the
 /// signature that arrived with it.
-fn usable_verifying_key(user_pubkey: &Identity) -> Result<VerifyingKey, PermitError> {
-    let encoded = user_pubkey.as_bytes();
+fn usable_verifying_key(user_address: &Identity) -> Result<VerifyingKey, PermitError> {
+    let encoded = user_address.as_bytes();
 
     if !is_canonically_encoded(encoded) {
-        return Err(PermitError::UnusableUserPubkey);
+        return Err(PermitError::UnusableUserAddress);
     }
 
     let verifying_key =
-        VerifyingKey::from_bytes(encoded).map_err(|_| PermitError::UnusableUserPubkey)?;
+        VerifyingKey::from_bytes(encoded).map_err(|_| PermitError::UnusableUserAddress)?;
 
     // Small-order keys are checked here rather than left to `verify_strict`, which also
     // rejects them but cannot distinguish them from an ordinary mismatch. The difference
@@ -98,7 +98,7 @@ fn usable_verifying_key(user_pubkey: &Identity) -> Result<VerifyingKey, PermitEr
     // key, so a permit could carry the consent of a wallet nobody owns — that is a fact
     // about the permit, and every verifier has to report it the same way.
     if verifying_key.is_weak() {
-        return Err(PermitError::UnusableUserPubkey);
+        return Err(PermitError::UnusableUserAddress);
     }
 
     Ok(verifying_key)

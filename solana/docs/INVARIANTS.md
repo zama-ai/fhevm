@@ -234,7 +234,7 @@ through the returned context id; it is not enforced by the verifier.
 type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
-**27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
+**27. [HOLDS]** A delegated user-decryption entry names the delegator as its owner address. The KMS connector reads the
 delegation record for the encrypted store's authority and the delegator's wildcard row in the deciding snapshot. Either
 row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf

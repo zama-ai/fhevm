@@ -100,8 +100,8 @@ fn permit_half() -> PermitHalf {
 
     let mut payload = Map::new();
     payload.insert(
-        "userPubkey".to_string(),
-        json!(format!("0x{}", record.permit.user_pubkey)),
+        "userAddress".to_string(),
+        json!(format!("0x{}", record.permit.user_address)),
     );
     payload.insert(
         "transportKey".to_string(),
@@ -400,23 +400,23 @@ fn the_fixture_exercises_every_layer_it_documents() {
     );
 }
 
-/// Both entry kinds are represented among the accepted records: a direct entry, whose allowed key
-/// is the permit signer, and a delegated one, whose allowed key is another pubkey. A fixture that
+/// Both entry kinds are represented among the accepted records: a direct entry, whose owner address
+/// is the permit signer, and a delegated one, whose owner address is another pubkey. A fixture that
 /// lost one of them would still pass every assertion above while covering half the seam.
 #[test]
 fn the_accepted_records_cover_direct_and_delegated_entries() {
     let fixture = Fixture::load();
-    let signer = fixture.permit.payload["userPubkey"]
+    let signer = fixture.permit.payload["userAddress"]
         .as_str()
         .expect("the permit names its signer");
 
     let mut kinds = BTreeSet::new();
     for record in fixture.records("accepted") {
         for entry in record["handles"].as_array().expect("handles is a list") {
-            let allowed_key = entry["allowedKey"]
+            let owner_address = entry["ownerAddress"]
                 .as_str()
-                .expect("allowedKey is a string");
-            kinds.insert(allowed_key == signer);
+                .expect("ownerAddress is a string");
+            kinds.insert(owner_address == signer);
         }
     }
 

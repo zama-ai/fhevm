@@ -230,8 +230,8 @@ fn single_field_mutations(base: &PermitWireFields) -> Vec<(&'static str, PermitW
     let mut out = Vec::new();
 
     let mut user = base.clone();
-    user.user_pubkey[31] ^= 1;
-    out.push(("user pubkey", user));
+    user.user_address[31] ^= 1;
+    out.push(("user address", user));
 
     let mut program = base.clone();
     program.verifying_program_id[0] ^= 1;
@@ -318,7 +318,7 @@ fn the_mutation_set_covers_every_signed_field() {
         .collect();
 
     for expected in [
-        "user pubkey",
+        "user address",
         "transport key",
         "scopes",
         "start timestamp",

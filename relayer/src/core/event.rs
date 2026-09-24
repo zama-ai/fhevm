@@ -547,7 +547,7 @@ pub enum UserDecryptRequest {
     /// `userDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds, bytes publicKey,
     /// bytes extraData, bytes solanaRequest)` overload.
     /// Everything Solana-specific — the permit fields, the ed25519 signature, and the
-    /// per-handle entries (handle, allowed key, encrypted store) — is serialized into
+    /// per-handle entries (handle, owner address, encrypted store) — is serialized into
     /// the opaque `solana_request` by the builder (canonical `version ‖ borsh(body)`); the
     /// gateway never reads it, and each KMS party's connector decodes it, verifies the
     /// signature off-chain and fetches the allow leaves itself. The fields below are exactly
@@ -899,7 +899,7 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         // decode here IS the r1–r2 pre-check: a request the relayer accepts is one the connector
         // will not reject on form (same crate, so never softer or harder).
         let permit = PermitWireFields {
-            user_pubkey: parse_0x_hex(&payload.user_pubkey, "userPubkey")?,
+            user_address: parse_0x_hex(&payload.user_address, "userAddress")?,
             transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
             allowed_scopes: payload
                 .allowed_scopes
@@ -965,13 +965,13 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         let mut handle_wires = Vec::with_capacity(payload.handles.len());
         for (index, entry) in payload.handles.iter().enumerate() {
             let handle = parse_0x_hex_32(&entry.handle, "handle", index)?;
-            let allowed_key = parse_0x_hex_32(&entry.allowed_key, "allowedKey", index)?;
+            let owner_address = parse_0x_hex_32(&entry.owner_address, "ownerAddress", index)?;
             let encrypted_store = parse_0x_hex_32(&entry.encrypted_store, "encryptedStore", index)?;
 
             ct_handles.push(U256::from_be_bytes::<32>(handle));
             handle_wires.push(SolanaHandleEntryWire {
                 handle: handle.to_vec(),
-                allowed_key: allowed_key.to_vec(),
+                owner_address: owner_address.to_vec(),
                 encrypted_store: encrypted_store.to_vec(),
             });
         }
@@ -1466,7 +1466,7 @@ mod tests {
     }
 
     /// That wallet's pubkey in the payload's hex form.
-    fn solana_test_user_pubkey() -> String {
+    fn solana_test_user_address() -> String {
         format!(
             "0x{}",
             hex::encode(solana_test_wallet().verifying_key().to_bytes())
@@ -1481,7 +1481,7 @@ mod tests {
             SolanaHandleJson, SolanaSrfc38UserDecryptPayloadJson,
         };
         SolanaSrfc38UserDecryptPayloadJson {
-            user_pubkey: solana_test_user_pubkey(),
+            user_address: solana_test_user_address(),
             transport_key: format!("0x{}", "00".repeat(869)),
             allowed_scopes: vec![format!("0x{}{}", "05".repeat(32), "06".repeat(32))],
             request_validity: RequestValiditySecondsJson {
@@ -1493,7 +1493,7 @@ mod tests {
             extra_data: format!("0x02{}{}", "0a".repeat(32), "0b".repeat(32)),
             handles: vec![SolanaHandleJson {
                 handle: format!("0x{}", "11".repeat(32)),
-                allowed_key: solana_test_user_pubkey(),
+                owner_address: solana_test_user_address(),
                 encrypted_store: format!("0x{}", "22".repeat(32)),
             }],
         }
@@ -1514,7 +1514,7 @@ mod tests {
 
         let hex_field = |value: &str| parse_0x_hex(value, "fixture").unwrap_or_default();
         let wire = PermitWireFields {
-            user_pubkey: hex_field(&payload.user_pubkey),
+            user_address: hex_field(&payload.user_address),
             transport_key: hex_field(&payload.transport_key),
             allowed_scopes: payload
                 .allowed_scopes
@@ -1582,7 +1582,7 @@ mod tests {
         // signature, just not the one the named user could have produced.
         let stranger = ed25519_dalek::SigningKey::from_bytes(&[0x99; 32]);
         let wire = PermitWireFields {
-            user_pubkey: parse_0x_hex(&payload.user_pubkey, "fixture").expect("hex"),
+            user_address: parse_0x_hex(&payload.user_address, "fixture").expect("hex"),
             transport_key: parse_0x_hex(&payload.transport_key, "fixture").expect("hex"),
             allowed_scopes: payload
                 .allowed_scopes

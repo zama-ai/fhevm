@@ -17,7 +17,7 @@ pub use zama_solana_request::{
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SolanaHandleEntry {
     pub handle: [u8; 32],
-    pub allowed_key: [u8; 32],
+    pub owner_address: [u8; 32],
     pub encrypted_store: [u8; 32],
 }
 
@@ -57,7 +57,7 @@ impl SolanaUserDecryptionRequestV1 {
                 };
                 Ok(SolanaHandleEntry {
                     handle: field(&entry.handle)?,
-                    allowed_key: field(&entry.allowed_key)?,
+                    owner_address: field(&entry.owner_address)?,
                     encrypted_store: field(&entry.encrypted_store)?,
                 })
             })

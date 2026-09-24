@@ -101,8 +101,8 @@ describe("solana-current-user-decrypt", () => {
     });
   });
 
-  test("threads UD_ALLOWED_KEY through as the delegated entry's allowed key", async () => {
-    let received: { request?: { allowedKey?: Uint8Array } } | undefined;
+  test("threads UD_ALLOWED_KEY through as the delegated entry's owner address", async () => {
+    let received: { request?: { ownerAddress?: Uint8Array } } | undefined;
     await runSolanaCurrentUserDecrypt(
       { ...validEnvironment(), UD_ALLOWED_KEY: hex32("9") },
       {
@@ -113,11 +113,11 @@ describe("solana-current-user-decrypt", () => {
       },
     );
 
-    expect(received?.request?.allowedKey).toEqual(Uint8Array.from(Buffer.from("9".repeat(64), "hex")));
+    expect(received?.request?.ownerAddress).toEqual(Uint8Array.from(Buffer.from("9".repeat(64), "hex")));
   });
 
-  test("leaves the allowed key absent when UD_ALLOWED_KEY is not set — the direct entry", async () => {
-    let received: { request?: { allowedKey?: Uint8Array } } | undefined;
+  test("leaves the owner address absent when UD_ALLOWED_KEY is not set — the direct entry", async () => {
+    let received: { request?: { ownerAddress?: Uint8Array } } | undefined;
     await runSolanaCurrentUserDecrypt(validEnvironment(), {
       userDecrypt: async (input) => {
         received = input as never;
@@ -125,7 +125,7 @@ describe("solana-current-user-decrypt", () => {
       },
     });
 
-    expect(received?.request?.allowedKey).toBeUndefined();
+    expect(received?.request?.ownerAddress).toBeUndefined();
   });
 
   test("rejects an empty SDK result", async () => {

@@ -157,7 +157,7 @@ describe('signing a permit through the client', () => {
     expect(fields.allowedScopes).toEqual([scopeBytes(APP_PROGRAM, MINT_A)]);
     expect(fields.kmsRouting.kmsContextId).toEqual(hexToBytes32(CONTEXT_ID));
     expect(fields.kmsRouting.kmsEpochId).toEqual(hexToBytes32(EPOCH_ID));
-    expect(fields.userPubkey).toEqual(USER_PUBKEY);
+    expect(fields.userAddress).toEqual(USER_PUBKEY);
 
     // The permit commits to the real blob's transport key, generated for this session.
     expect(fields.transportKey).toEqual(session.keyPair.publicKeyBytes);
@@ -285,7 +285,7 @@ describe('running a user decryption through the client', () => {
     const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
 
     let capturedBody:
-      | { attestedPayload: { handles: readonly { allowedKey: string; encryptedStore: string }[] } }
+      | { attestedPayload: { handles: readonly { ownerAddress: string; encryptedStore: string }[] } }
       | undefined;
     vi.stubGlobal(
       'fetch',
@@ -313,14 +313,14 @@ describe('running a user decryption through the client', () => {
       decryptClient.decryptValues({
         session,
         entries: [
-          { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT, allowedKey: DELEGATOR },
+          { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT, ownerAddress: DELEGATOR },
           { handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT },
         ],
         attempts: 1,
       }),
     ).rejects.toThrow('refused');
 
-    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.allowedKey)).toEqual([
+    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.ownerAddress)).toEqual([
       hex(DELEGATOR),
       hex(USER_PUBKEY),
     ]);

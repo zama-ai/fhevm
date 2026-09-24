@@ -103,12 +103,12 @@ fn precedence(failure: &HandleBindingFailure) -> u8 {
     }
 }
 
-/// Establishes that `allowed_key` may decrypt `handle` under this encrypted store. Taking the
+/// Establishes that `owner_address` may decrypt `handle` under this encrypted store. Taking the
 /// resolved store means the proof is checked against validated peaks.
 pub fn check_handle_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: HandleBytes,
-    allowed_key: SolanaPubkeyBytes,
+    owner_address: SolanaPubkeyBytes,
     outcome: &LeafProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
@@ -116,7 +116,7 @@ pub fn check_handle_binding(
             encrypted_store.account_key(),
             state,
             handle,
-            allowed_key,
+            owner_address,
             proof,
         )
     })

@@ -137,11 +137,11 @@ fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionReq
                 .iter()
                 .map(|entry| SolanaHandleEntry {
                     handle: entry.handle.into(),
-                    allowedKey: entry.allowed_key.into(),
+                    ownerAddress: entry.owner_address.into(),
                     encryptedStore: entry.encrypted_store.into(),
                 })
                 .collect(),
-            userPubkey: (*permit.user_pubkey().as_bytes()).into(),
+            userAddress: (*permit.user_address().as_bytes()).into(),
             publicKey: permit.transport_key().as_bytes().to_vec().into(),
             allowedScopes: vec![],
             requestValidity: RequestValidity {

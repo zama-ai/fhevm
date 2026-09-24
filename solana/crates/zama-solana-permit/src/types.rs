@@ -227,7 +227,7 @@ impl KmsRouting {
 /// [`PermitFields::decode`].
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PermitFields {
-    user_pubkey: Identity,
+    user_address: Identity,
     transport_key: TransportKey,
     allowed_scopes: AllowedScopes,
     start_timestamp: u64,
@@ -239,8 +239,8 @@ pub struct PermitFields {
 
 impl PermitFields {
     /// The signing wallet, also the sole envelope signer and the recipient.
-    pub fn user_pubkey(&self) -> &Identity {
-        &self.user_pubkey
+    pub fn user_address(&self) -> &Identity {
+        &self.user_address
     }
 
     /// The full transport key.
@@ -282,7 +282,7 @@ impl PermitFields {
     /// strict decoding.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_validated(
-        user_pubkey: Identity,
+        user_address: Identity,
         transport_key: TransportKey,
         allowed_scopes: AllowedScopes,
         start_timestamp: u64,
@@ -292,7 +292,7 @@ impl PermitFields {
         extra_data: KmsRouting,
     ) -> Self {
         Self {
-            user_pubkey,
+            user_address,
             transport_key,
             allowed_scopes,
             start_timestamp,
@@ -312,8 +312,8 @@ impl PermitFields {
 /// rules are unrepresentable once the typed form is reached.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct PermitWireFields {
-    /// Claimed 32-byte user pubkey.
-    pub user_pubkey: Vec<u8>,
+    /// Claimed 32-byte user address.
+    pub user_address: Vec<u8>,
     /// Claimed transport key of any length.
     pub transport_key: Vec<u8>,
     /// Claimed 64-byte `program ‖ scope` entries, in the sender's order.

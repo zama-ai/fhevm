@@ -129,7 +129,7 @@ pub fn plan_first_read(
     request: &SolanaUserDecryptionRequestV1,
     program_id: SolanaPubkeyBytes,
 ) -> SnapshotKeys {
-    let signer = *request.permit().user_pubkey().as_bytes();
+    let signer = *request.permit().user_address().as_bytes();
     let (host_config_key, _) = host_config_address(program_id);
     let (watermark_key, _) = permit_invalidation_address(program_id, signer);
     let encrypted_stores = request.handles().iter().map(|entry| entry.encrypted_store);

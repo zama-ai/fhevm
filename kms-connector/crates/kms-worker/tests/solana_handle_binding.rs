@@ -75,7 +75,7 @@ fn an_allow_leaf_the_record_serves_binds_the_handle_to_its_key() {
         key,
         &answer(&encrypted_store, live, key),
     )
-    .expect("an allowed key decrypts its handle");
+    .expect("an owner address decrypts its handle");
 }
 
 /// A write replaces the current handle and seals nothing about the old one, and the old one stays
@@ -95,7 +95,7 @@ fn a_leaf_outlives_the_handle_it_names_being_replaced() {
         key,
         &answer(&encrypted_store, sealed, key),
     )
-    .expect("the old handle is still the allowed key's to decrypt");
+    .expect("the old handle is still the owner address's to decrypt");
 }
 
 /// Being allowed on the account's current handle says nothing about a handle that was never
@@ -127,7 +127,7 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
 
 /// Several keys allowed on one handle each hold their own leaf, and each is proven on its own.
 #[test]
-fn each_allowed_key_holds_its_own_leaf() {
+fn each_owner_address_holds_its_own_leaf() {
     let first = Wallet::new(1).pubkey();
     let second = Wallet::new(2).pubkey();
     let live = handle(0x15, FHE_TYPE_UINT64);

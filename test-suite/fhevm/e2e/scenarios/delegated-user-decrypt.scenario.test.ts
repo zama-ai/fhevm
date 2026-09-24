@@ -4,7 +4,7 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 // Two arcs over the same protocol surface:
 //
 //   [headless]  A wallet delegator: grant through the SDK builders -> the *delegate* decrypts the
-//               delegator's value (permit signed by the delegate, entry `allowedKey` = delegator) ->
+//               delegator's value (permit signed by the delegate, entry `ownerAddress` = delegator) ->
 //               identical repeat coalesces into one relayer job -> revoke -> the next request is
 //               terminally refused. The revocation lever is the delegator's; the delegate's own
 //               permit stays valid throughout.
@@ -68,7 +68,7 @@ const sdkSolana = async (): Promise<SdkSolanaModule> => {
   return (await import(solanaModule)) as SdkSolanaModule;
 };
 
-/** The delegate's decrypt of the delegator's value: the permit is the delegate's, `allowedKey` names whose allow. */
+/** The delegate's decrypt of the delegator's value: the permit is the delegate's, `ownerAddress` names whose allow. */
 const delegatedDecrypt = (
   setup: VerticalTestSetup,
   params: { readonly value: SpecimenValue; readonly handle: Uint8Array; readonly delegateSecretKey: string },
@@ -77,7 +77,7 @@ const delegatedDecrypt = (
     encryptedStore: params.value.encryptedStore,
     handle: params.handle,
     secretKey: params.delegateSecretKey,
-    allowedKey: params.value.owner,
+    ownerAddress: params.value.owner,
     expected: 42n,
   });
 
@@ -177,7 +177,7 @@ describe("solana delegated user-decrypt", () => {
       }) as typeof fetch;
       try {
         const entries = [
-          { handle, encryptedStore: addressBytes(value.encryptedStore), allowedKey: addressBytes(value.owner) },
+          { handle, encryptedStore: addressBytes(value.encryptedStore), ownerAddress: addressBytes(value.owner) },
         ];
         const first = await client.decryptValues({ session, entries });
         const second = await client.decryptValues({ session, entries });
@@ -308,7 +308,7 @@ describe("solana delegated user-decrypt", () => {
       }, { programAddress: hostProgram });
       expect(rows.exact?.delegator).toBe(vaultAddress);
 
-      // The delegate decrypts the DAO's value: allowedKey = the vault PDA.
+      // The delegate decrypts the DAO's value: ownerAddress = the vault PDA.
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
 
       // The DAO takes it back: a second proposal revokes, and the next request is refused.

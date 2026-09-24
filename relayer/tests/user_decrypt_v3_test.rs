@@ -148,7 +148,7 @@ mod helpers {
             .as_secs();
 
         let wallet = SigningKey::from_bytes(&[0x42; 32]);
-        let user_pubkey = wallet.verifying_key().to_bytes();
+        let user_address = wallet.verifying_key().to_bytes();
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
@@ -159,7 +159,7 @@ mod helpers {
         let duration_seconds = 604_800u64;
 
         let permit = PermitFields::decode(&PermitWireFields {
-            user_pubkey: user_pubkey.to_vec(),
+            user_address: user_address.to_vec(),
             transport_key: transport_key.clone(),
             allowed_scopes: vec![allowed_scope.clone()],
             start_timestamp,
@@ -174,7 +174,7 @@ mod helpers {
         json!({
             "attestationType": "solana-srfc38-user-decrypt-v1",
             "attestedPayload": {
-                "userPubkey": format!("0x{}", hex::encode(user_pubkey)),
+                "userAddress": format!("0x{}", hex::encode(user_address)),
                 "transportKey": format!("0x{}", hex::encode(&transport_key)),
                 "allowedScopes": [format!("0x{}", hex::encode(&allowed_scope))],
                 "requestValidity": {
@@ -187,8 +187,8 @@ mod helpers {
                 "extraData": format!("0x{}", hex::encode(&extra_data)),
                 "handles": [{
                     "handle": random_handle(),
-                    // The allowed key of a direct entry is the requester itself.
-                    "allowedKey": format!("0x{}", hex::encode(user_pubkey)),
+                    // The owner address of a direct entry is the requester itself.
+                    "ownerAddress": format!("0x{}", hex::encode(user_address)),
                     "encryptedStore": random_0x_hex(32),
                 }],
             },
@@ -201,7 +201,7 @@ mod helpers {
 // Happy-path accept tests (POST → 202)
 // ---------------------------------------------------------------------------
 
-/// v3 accepts a single direct-access handle (`allowedKey == userPubkey`).
+/// v3 accepts a single direct-access handle (`ownerAddress == userAddress`).
 #[tokio::test]
 async fn v3_accepts_direct_handle() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");

@@ -28,7 +28,7 @@
 //!   up passes rather than refusing. The two reads are therefore never two views of the chain
 //!   in the wrong order — the ordering the connector gets from its own `deciding_after` gate.
 //!
-//! Direct entries (`allowed_key == user_pubkey`) are not pre-checked at all: their
+//! Direct entries (`owner_address == user_address`) are not pre-checked at all: their
 //! authorization is an allow leaf the connector fetches from the coprocessors and verifies
 //! against the account, and there is no cheaper reading of it here than the connector's own.
 //!
@@ -70,7 +70,7 @@ pub(crate) struct EntryVerdictInputs<'a> {
     pub program_id: [u8; 32],
     /// The address of the encrypted store the entry names.
     pub encrypted_store_key: [u8; 32],
-    /// The entry's allowed key — the delegator whose access is asked for.
+    /// The entry's owner address — the delegator whose access is asked for.
     pub delegator: [u8; 32],
     /// The permit's signer — the delegate.
     pub delegate: [u8; 32],
@@ -206,7 +206,7 @@ fn names_tuple(
 /// for refusal attribution.
 pub(crate) struct DelegatedEntry {
     pub handle_hex: String,
-    /// The entry's allowed key, which on a delegated entry is the delegator.
+    /// The entry's owner address, which on a delegated entry is the delegator.
     pub delegator: [u8; 32],
     pub encrypted_store: [u8; 32],
 }

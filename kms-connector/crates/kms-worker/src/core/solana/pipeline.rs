@@ -34,7 +34,7 @@ pub async fn authorize_request(
 ) -> Result<(), AuthorizationFailure> {
     let permit = request.permit();
     let program_id = context.program_id;
-    let signer = *permit.user_pubkey().as_bytes();
+    let signer = *permit.user_address().as_bytes();
     verify_signature(permit, request.signature()).map_err(AuthorizationFailure::Signature)?;
     check_window(
         permit.start_timestamp(),
@@ -82,7 +82,7 @@ pub async fn authorize_request(
         })
         .collect::<Result<Vec<_>, AuthorizationFailure>>()?;
 
-    // The leaf must name the entry's allowed key: the signer for a direct entry, the delegator for
+    // The leaf must name the entry's owner address: the signer for a direct entry, the delegator for
     // a delegated one. Proving the signer's leaf instead would let a delegate decrypt handles the
     // delegator was never allowed on.
     let batch: Vec<_> = request
@@ -94,14 +94,14 @@ pub async fn authorize_request(
                 encrypted_store: store.account_key(),
                 handle: entry.handle,
                 kind: LeafKind::Allowed {
-                    key: entry.allowed_key,
+                    key: entry.owner_address,
                 },
             };
             (query, (store, entry))
         })
         .collect();
     let bindings = verify_proofs_with_one_retry(proofs, &batch, |(store, entry), outcome| {
-        check_handle_binding(store, entry.handle, entry.allowed_key, outcome)
+        check_handle_binding(store, entry.handle, entry.owner_address, outcome)
     })
     .await?;
 
@@ -114,20 +114,20 @@ pub async fn authorize_request(
         .enumerate()
     {
         binding.map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
-        if entry.allowed_key == signer {
+        if entry.owner_address == signer {
             continue;
         }
         let row = check_delegation(
             &observation,
             program_id,
-            entry.allowed_key,
+            entry.owner_address,
             signer,
             store.authority(),
         )
         .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
         delegated.push(format!(
             "entry {index}: delegator {}, authority {}, {row:?} row",
-            Pubkey::new_from_array(entry.allowed_key),
+            Pubkey::new_from_array(entry.owner_address),
             Pubkey::new_from_array(store.authority()),
         ));
     }
@@ -155,7 +155,7 @@ fn discover_delegation_keys(
 ) -> Result<Vec<SolanaPubkeyBytes>, AuthorizationFailure> {
     let mut keys = Vec::new();
     for (index, entry) in request.handles().iter().enumerate() {
-        let delegator = entry.allowed_key;
+        let delegator = entry.owner_address;
         if delegator == signer {
             continue;
         }

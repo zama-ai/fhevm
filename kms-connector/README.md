@@ -109,7 +109,7 @@ rows are kept and tagged.
 
 Every processing attempt, including an already-sent poll, checks the permit signature,
 window, deployment, KMS context, confirmed account snapshot, invalidation watermark,
-scope, allow leaf named by `allowed_key`, and any required delegation. A poll does not
+scope, allow leaf named by `owner_address`, and any required delegation. A poll does not
 prepare or resend the KMS request. KMS preparation, response publishing and retry limits
 use the existing user-decrypt flow.
 

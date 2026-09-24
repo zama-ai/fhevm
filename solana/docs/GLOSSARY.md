@@ -21,7 +21,7 @@ stack where one exists.
 | **slot key** | Application-defined 32-byte key locating a current handle inside Store; never a PDA seed. Examples: balance, total supply, burned amount, contribution. | encrypted value label | storage slot |
 | **StoreId** | Builder identity containing `(program, authority, scope)` and its canonical Store address. A slot is separately identified by its key. | `EncryptedValueId` | — |
 | **allow** | A historical decrypt permission binding Store, handle and allowed key. Fresh Store outputs may append allows without occupying a slot. Later permission changes for history-only handles are deferred to #2007. An allow does not itself admit compute in the current Solana model. | subject, subject list, `allow_subjects`, `remove_subject`, `persistAllowed` entry | `FHE.allow`, with re-sharing deferred on Solana |
-| **allowed key** | The viewer a user-decrypt entry names: the permit's user by default, or the delegator on a delegated entry. Bound into the allow leaf the connector verifies. | subject | the `account` of `isAllowed` |
+| **owner address** | The account a user-decrypt entry names as the one whose permission authorizes the handle: the permit's user for a direct entry, the delegator for a delegated one. It is the allowed key of the allow leaf the connector verifies. It is neither the Solana account-owner program nor the Store authority. | allowed key (the request field before #2096), subject | `ownerAddress` of an RFC016 `HandleEntry`, the `account` of `isAllowed` |
 
 ## Confidential token burn lifecycle
 

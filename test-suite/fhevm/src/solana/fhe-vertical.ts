@@ -102,7 +102,7 @@ export const certifiedPublicDecrypt = async (
 /**
  * Runs the permit-path user decrypt of `handle` (current or since replaced — the Connector proves
  * the allow leaf either way) as the wallet behind `secretKey`, and asserts the cleartext equals
- * `expected`. `allowedKey` names the delegator on a delegated entry.
+ * `expected`. `ownerAddress` names the delegator on a delegated entry.
  */
 export const userDecryptExpect = (
   config: FheVerticalConfig,
@@ -112,7 +112,7 @@ export const userDecryptExpect = (
     /** The signer's 32-byte ed25519 seed, 0x-hex. */
     readonly secretKey: string;
     readonly expected: bigint;
-    readonly allowedKey?: Address | undefined;
+    readonly ownerAddress?: Address | undefined;
   },
 ): Promise<bigint> =>
   runSolanaCurrentUserDecrypt({
@@ -130,7 +130,7 @@ export const userDecryptExpect = (
     UD_GATEWAY_CHAIN_ID: config.gatewayChainId,
     UD_GATEWAY_DECRYPTION_CONTRACT: config.gatewayDecryptionContract,
     UD_EXPECTED: params.expected.toString(),
-    ...(params.allowedKey === undefined ? {} : { UD_ALLOWED_KEY: addressHex(params.allowedKey) }),
+    ...(params.ownerAddress === undefined ? {} : { UD_ALLOWED_KEY: addressHex(params.ownerAddress) }),
   });
 
 /** The local stack's leaf-proof endpoint; a preview namespace passes its own. */

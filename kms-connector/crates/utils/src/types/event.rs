@@ -301,11 +301,11 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
             let first = ct_handles
                 .first()
                 .ok_or_else(|| anyhow!("row names no handles"))?;
-            let handle_allowed_keys: Vec<Vec<u8>> = row.try_get("handle_allowed_keys")?;
+            let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_allowed_keys")?;
             let handle_encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
             let wire = SolanaUserDecryptRequestWire {
                 permit: PermitWireFields {
-                    user_pubkey: row.try_get("user_pubkey")?,
+                    user_address: row.try_get("user_pubkey")?,
                     transport_key: public_key,
                     allowed_scopes: row.try_get("allowed_scopes")?,
                     start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
@@ -318,12 +318,12 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                 // The table CHECK keeps these three arrays the same length.
                 handles: ct_handles
                     .iter()
-                    .zip(handle_allowed_keys)
+                    .zip(handle_owner_addresses)
                     .zip(handle_encrypted_stores)
                     .map(
-                        |((handle, allowed_key), encrypted_store)| SolanaHandleEntryWire {
+                        |((handle, owner_address), encrypted_store)| SolanaHandleEntryWire {
                             handle: handle.to_vec(),
-                            allowed_key,
+                            owner_address,
                             encrypted_store,
                         },
                     )

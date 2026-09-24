@@ -112,7 +112,7 @@ pub fn validate_solana_user_decryption(
     validate_extra_data(&payload.extraData)?;
     let wire = SolanaUserDecryptRequestWire {
         permit: PermitWireFields {
-            user_pubkey: payload.userPubkey.to_vec(),
+            user_address: payload.userAddress.to_vec(),
             transport_key: payload.publicKey.to_vec(),
             allowed_scopes: payload.allowedScopes.iter().map(|s| s.to_vec()).collect(),
             start_timestamp: payload.requestValidity.startTimestamp,
@@ -127,7 +127,7 @@ pub fn validate_solana_user_decryption(
             .iter()
             .map(|e| SolanaHandleEntryWire {
                 handle: e.handle.to_vec(),
-                allowed_key: e.allowedKey.to_vec(),
+                owner_address: e.ownerAddress.to_vec(),
                 encrypted_store: e.encryptedStore.to_vec(),
             })
             .collect(),
@@ -425,10 +425,10 @@ pub(crate) mod tests {
             payload: SolanaUserDecryptionPayload {
                 handles: vec![SolanaHandleEntry {
                     handle: handle(1, EUINT64),
-                    allowedKey: B256::repeat_byte(0x01),
+                    ownerAddress: B256::repeat_byte(0x01),
                     encryptedStore: B256::repeat_byte(0x03),
                 }],
-                userPubkey: B256::repeat_byte(0x01),
+                userAddress: B256::repeat_byte(0x01),
                 publicKey: Bytes::from(vec![0x20; 32]),
                 allowedScopes: vec![],
                 requestValidity: RequestValidity {

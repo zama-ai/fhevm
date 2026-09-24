@@ -23,7 +23,7 @@
 //!
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
-//!     allowed_key: vec![0; 32],
+//!     owner_address: vec![0; 32],
 //!     encrypted_store: vec![0; 32],
 //!     authority: vec![0; 32],
 //! };
@@ -37,7 +37,7 @@
 //!
 //! let entry = SolanaHandleEntryWire {
 //!     handle: vec![0; 32],
-//!     allowed_key: vec![0; 32],
+//!     owner_address: vec![0; 32],
 //!     encrypted_store: vec![0; 32],
 //! };
 //! ```
@@ -82,7 +82,7 @@ pub struct SolanaHandleEntryWire {
     pub handle: Vec<u8>,
     /// Claimed 32-byte key whose allow leaf on the handle authorizes this entry: the
     /// requester itself for a direct entry, the delegator for a delegated one.
-    pub allowed_key: Vec<u8>,
+    pub owner_address: Vec<u8>,
     /// Claimed 32-byte address of the encrypted store whose history contains the handle.
     pub encrypted_store: Vec<u8>,
 }

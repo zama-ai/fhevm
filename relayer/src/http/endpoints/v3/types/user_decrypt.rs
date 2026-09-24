@@ -152,10 +152,10 @@ pub struct SolanaUserDecryptRequestJson {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaSrfc38UserDecryptPayloadJson {
     /// The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
-    /// hex). Not necessarily the allowed key of any entry — on a delegated entry the allowed
+    /// hex). Not necessarily the owner address of any entry — on a delegated entry the allowed
     /// key is the delegator, and this key is the delegate acting on their behalf.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub user_pubkey: String,
+    pub user_address: String,
 
     /// The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
     /// (`0x` + hex). The exact length is enforced downstream by the permit decode.
@@ -198,7 +198,7 @@ pub struct SolanaHandleJson {
     pub handle: String,
     /// The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
     /// itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
-    pub allowed_key: String,
+    pub owner_address: String,
     /// The 32-byte address of the `EncryptedStore` account whose history grants access
     /// (`0x` + 64 hex).
     pub encrypted_store: String,

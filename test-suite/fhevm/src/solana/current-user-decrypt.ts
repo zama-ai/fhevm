@@ -22,7 +22,7 @@ type CurrentUserDecryptSdkInput = {
     encryptedStore: Uint8Array;
     durationSeconds: bigint;
     /** The delegator's pubkey on a delegated entry; absent on a direct one. */
-    allowedKey?: Uint8Array | undefined;
+    ownerAddress?: Uint8Array | undefined;
   };
 };
 type CurrentUserDecryptSdkCall = (input: CurrentUserDecryptSdkInput) => Promise<readonly { value: unknown }[]>;
@@ -88,7 +88,7 @@ const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
       {
         handle: input.request.handle,
         encryptedStore: input.request.encryptedStore,
-        ...(input.request.allowedKey !== undefined ? { allowedKey: input.request.allowedKey } : {}),
+        ...(input.request.ownerAddress !== undefined ? { ownerAddress: input.request.ownerAddress } : {}),
       },
     ],
   });
@@ -146,7 +146,7 @@ export const runSolanaCurrentUserDecrypt = async (
       // Optional: the delegated form. The signer stays UD_SECRET_KEY (the delegate); the allowed
       // key names whose allow on the handle is asked under.
       ...(environment.UD_ALLOWED_KEY !== undefined && environment.UD_ALLOWED_KEY !== ''
-        ? { allowedKey: bytes32(environment, 'UD_ALLOWED_KEY') }
+        ? { ownerAddress: bytes32(environment, 'UD_ALLOWED_KEY') }
         : {}),
     },
   });

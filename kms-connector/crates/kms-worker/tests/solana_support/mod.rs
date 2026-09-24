@@ -174,7 +174,7 @@ impl PermitBuilder {
     pub fn new(user: SolanaPubkeyBytes) -> Self {
         Self {
             wire: PermitWireFields {
-                user_pubkey: user.to_vec(),
+                user_address: user.to_vec(),
                 transport_key: vec![0xa5; TRANSPORT_KEY_LEN],
                 allowed_scopes: vec![scope_entry(APP_PROGRAM, SCOPE)],
                 start_timestamp: DEFAULT_START,
@@ -287,12 +287,12 @@ impl<'a> RequestBuilder<'a> {
     pub fn entry(
         mut self,
         handle: [u8; 32],
-        allowed_key: SolanaPubkeyBytes,
+        owner_address: SolanaPubkeyBytes,
         encrypted_store: SolanaPubkeyBytes,
     ) -> Self {
         self.entries.push(SolanaHandleEntryWire {
             handle: handle.to_vec(),
-            allowed_key: allowed_key.to_vec(),
+            owner_address: owner_address.to_vec(),
             encrypted_store: encrypted_store.to_vec(),
         });
         self

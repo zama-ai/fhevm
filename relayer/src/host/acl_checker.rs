@@ -98,7 +98,7 @@ pub struct HostAclChecker {
     /// Direct entries and public decrypts are not pre-checked here — their authorization
     /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
     /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
-    /// the allowed key and the encrypted store, which is everything the advisory
+    /// the owner address and the encrypted store, which is everything the advisory
     /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
     /// delegation rows.
     solana_chains: HashMap<u64, SolanaHostChain>,
@@ -600,11 +600,11 @@ impl HostAclChecker {
         let Some(chain) = self.solana_chains.get(&chain_id) else {
             return Err(HostAclError::UnsupportedChain { chain_id });
         };
-        let Ok(user_pubkey) = <[u8; 32]>::try_from(wire.permit.user_pubkey.as_slice()) else {
+        let Ok(user_address) = <[u8; 32]>::try_from(wire.permit.user_address.as_slice()) else {
             warn!(
                 int_job_id = %job_id,
                 chain_id,
-                "Solana delegation pre-check saw a non-32-byte user pubkey; passing"
+                "Solana delegation pre-check saw a non-32-byte user address; passing"
             );
             return Ok(());
         };
@@ -613,12 +613,12 @@ impl HostAclChecker {
             .handles
             .iter()
             .filter_map(|entry| {
-                let allowed_key = <[u8; 32]>::try_from(entry.allowed_key.as_slice()).ok()?;
+                let owner_address = <[u8; 32]>::try_from(entry.owner_address.as_slice()).ok()?;
                 let encrypted_store =
                     <[u8; 32]>::try_from(entry.encrypted_store.as_slice()).ok()?;
-                (allowed_key != user_pubkey).then(|| DelegatedEntry {
+                (owner_address != user_address).then(|| DelegatedEntry {
                     handle_hex: format!("0x{}", hex::encode(&entry.handle)),
-                    delegator: allowed_key,
+                    delegator: owner_address,
                     encrypted_store,
                 })
             })
@@ -645,7 +645,7 @@ impl HostAclChecker {
 
         // Entries whose encrypted store this check cannot judge drop out of the plan
         // (indeterminate).
-        let plan = match plan_row_reads(chain.program_id, user_pubkey, delegated, encrypted_stores)
+        let plan = match plan_row_reads(chain.program_id, user_address, delegated, encrypted_stores)
         {
             Ok(plan) => plan,
             Err(defect) => {
@@ -691,7 +691,7 @@ impl HostAclChecker {
 
         let refusals = match judge_planned_entries(
             chain.program_id,
-            user_pubkey,
+            user_address,
             &plan.entries,
             &row_accounts,
             slot,
