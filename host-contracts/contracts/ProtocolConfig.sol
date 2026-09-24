@@ -891,11 +891,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * Used for historical reads (e.g. context anchors) that must remain accessible post-destruction.
      */
     function _kmsContextExists(uint256 kmsContextId) internal view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return
-            kmsContextId >= KMS_CONTEXT_COUNTER_BASE + 1 &&
-            kmsContextId <= $.currentKmsContextId &&
-            $.kmsNodesForContext[kmsContextId].length != 0;
+        return _getProtocolConfigStorage().kmsNodesForContext[kmsContextId].length != 0;
     }
 
     /**
