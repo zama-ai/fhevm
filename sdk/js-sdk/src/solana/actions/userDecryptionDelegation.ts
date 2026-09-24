@@ -270,7 +270,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
 // Reading a delegation before submitting is a convenience, not an authorization: the Connector
 // re-checks the record against its own atomic observation on every request, and only that check
 // decides. What this saves a dapp is paying for a relayer job that a revoked or expired
-// delegation would terminally reject.
+// delegation would only see denied.
 
 /** The delegation record's Anchor discriminator, `sha256("account:UserDecryptionDelegation")[..8]`. */
 const DELEGATION_RECORD_DISCRIMINATOR = new Uint8Array([0x25, 0x05, 0x8b, 0x21, 0x49, 0x35, 0x01, 0xf8]);

@@ -162,8 +162,8 @@ contract Decryption is
      * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case read carries
      * 3 accounts per entry (its encrypted store plus the exact and wildcard delegation rows), the
      * signer's permit-invalidation record and the Clock sysvar that delegation expiry is checked
-     * against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at admission, before the fee, so a request the Connector cannot read in
-     * one snapshot is never accepted or paid for. Counts list entries, not distinct handles,
+     * against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at admission, before the fee, so a
+     * request the Connector cannot read in one snapshot is never accepted or paid for. Counts list entries, not distinct handles,
      * matching the Connector's own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
      */
     uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = 32;

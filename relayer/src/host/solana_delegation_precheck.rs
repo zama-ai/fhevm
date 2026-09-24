@@ -26,7 +26,8 @@
 //!   merely *behind* is not that failure: the row read requires the encrypted-state read's slot
 //!   (`minContextSlot`) and is re-checked against it on arrival, and a node that never catches
 //!   up passes rather than refusing. The two reads are therefore never two views of the chain
-//!   in the wrong order — the ordering the connector gets from its own `deciding_after` gate.
+//!   in the wrong order — the ordering the connector gets from `minContextSlot` on its own second
+//!   read.
 //!
 //! Direct entries (`owner_address == user_address`) are not pre-checked at all: their
 //! authorization is an allow leaf the connector fetches from the coprocessors and verifies

@@ -13,11 +13,11 @@
 //! from the coprocessor's leaf record and verified against the account's own peaks; a proof
 //! a client could hand in would be a proof the verifier has to be talked into trusting.
 //!
-//! # The authority is not a request field
+//! # The application is not a request field
 //!
-//! Naming the authority in a request must stay a compile error, because the delegated branch
-//! is looked up by it: a request that could name one could name an authority the signer does
-//! hold a delegation for, against an encrypted store belonging to somebody else.
+//! Naming the store's `(program, scope)` in a request must stay a compile error, because the
+//! delegated branch is looked up by it: a request that could name one could name an application
+//! the signer does hold a delegation for, against an encrypted store belonging to another.
 //!
 //! ```compile_fail
 //! use zama_solana_request::SolanaHandleEntryWire;
@@ -26,7 +26,7 @@
 //!     handle: vec![0; 32],
 //!     owner_address: vec![0; 32],
 //!     encrypted_store: vec![0; 32],
-//!     authority: vec![0; 32],
+//!     program: vec![0; 32],
 //! };
 //! ```
 //!
