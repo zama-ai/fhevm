@@ -102,9 +102,9 @@ jobs:
             if (( remaining > 0 && remaining <= 7200 )) && [[ "${warned}" != "${expires}" ]]; then
               paris=$(TZ=Europe/Paris date -d "${expires}" +%H:%M)
               utc=$(date -u -d "${expires}" +%H:%M)
-              post_once "${ns}" "${expires}" "preview.zama.ai/warned-at" \
-                "Preview-env namespace ${ns} (launched by ${actor}) expires at ${paris} Paris (${utc} UTC).
-Keep it for 8 hours more with preview-env CLI: preview-env extend ${ns} 8"
+              text="Preview-env namespace ${ns} (launched by ${actor}) expires at ${paris} Paris (${utc} UTC)."
+              text+=$'\n'"Keep it for 8 hours more with preview-env CLI: preview-env extend ${ns} 8"
+              post_once "${ns}" "${expires}" "preview.zama.ai/warned-at" "${text}"
             fi
 
             if (( remaining <= 0 )); then
