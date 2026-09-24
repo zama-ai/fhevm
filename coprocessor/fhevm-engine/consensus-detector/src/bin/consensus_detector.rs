@@ -101,6 +101,10 @@ fn install_signal_handlers(cancel: CancellationToken) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().any(|arg| arg == "--test-failpoints") {
+        println!("{}", cfg!(feature = "test-failpoints"));
+        return Ok(());
+    }
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     fhevm_engine_common::handle_stack_version_flag();

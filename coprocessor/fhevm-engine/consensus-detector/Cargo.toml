@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
+test-failpoints = []
 # Test-box only: keep computing state_hash rows after cutover, past the
 # upgrade window, so the blue/green consensus test loop can keep verifying
 # operator agreement. Never enable in a production build.

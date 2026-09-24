@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   const instance = await createInstance();
 
   // One handle per gateway-stress ciphertext slot, each verified in its mode.
-  const generateHandle = async (label: string, value: bigint): Promise<string> => {
+  const generateHandle = async (label: string, value: bigint): Promise<`0x${string}`> => {
     console.log(`\n[${label}] encrypting input value=${value} ...`);
     const enc = await instance.encryptUint64({ contractAddress, userAddress: wallet.address, value });
 
@@ -165,8 +165,9 @@ async function main(): Promise<void> {
     if (receipt?.status !== 1) throw new Error(`[${label}] add42ToInput64 reverted (hash=${tx.hash})`);
 
     const handle: string = await contract.resUint64();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(handle)) throw new Error(`[${label}] invalid ciphertext handle`);
     console.log(`[${label}] result handle=${handle}`);
-    return handle;
+    return handle as `0x${string}`;
   };
 
   const expectedPublic = 7n + 42n;

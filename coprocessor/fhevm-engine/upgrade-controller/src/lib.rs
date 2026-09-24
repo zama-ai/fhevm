@@ -5,6 +5,9 @@
 //! `unanimity_consensus` channel is produced by `consensus-detector` once every
 //! operator publishes the same state commitment at the upgrade's `end_block`.
 
+#[cfg(feature = "test-failpoints")]
+mod test_failpoints;
+
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -895,6 +898,9 @@ async fn transition_to_dry_run_started(
         );
         return Ok(());
     }
+
+    #[cfg(feature = "test-failpoints")]
+    test_failpoints::hit(pool, "dry-run-started").await?;
 
     // Unpause the GCS-fleet workers, which stay parked until they observe the
     // GCS row in `DryRunStarted` (i.e. BCS has settled to start_block and
@@ -2353,7 +2359,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
+    #[cfg(feature = "test-failpoints")]
+    test_failpoints::hit(pool, "before-cutover-commit").await?;
     tx.commit().await?;
+    #[cfg(feature = "test-failpoints")]
+    test_failpoints::hit(pool, "after-cutover-commit").await?;
     info!(
         channel = EVENT_STACK_VERSION_UPGRADED,
         stack_version,
@@ -3109,6 +3119,58 @@ pub async fn run(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "test-failpoints")]
+    #[tokio::test]
+    async fn upgrade_hook_requires_matching_proposal_and_releases_once() {
+        let (_instance, pool) = test_pool().await;
+        test_failpoints::hit(&pool, "before-cutover-commit")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE public.consensus_test_upgrade_fault(stage text PRIMARY KEY, version text NOT NULL, reached boolean NOT NULL DEFAULT false, observed_at timestamptz)").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO public.consensus_test_upgrade_fault(stage,version) VALUES('before-cutover-commit','v0.15')").execute(&pool).await.unwrap();
+        test_failpoints::hit(&pool, "before-cutover-commit")
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO upgrade_state(stack_role,state,status,proposal_id,version,start_block,end_block,host_chain_id,proposal_block) VALUES('GCS','UpgradeAuthorized','in_progress',$1,'v0.15',100,200,12345,100)").bind(vec![7u8; 32]).execute(&pool).await.unwrap();
+        test_failpoints::hit(&pool, "after-cutover-commit")
+            .await
+            .unwrap();
+        let task = tokio::spawn({
+            let pool = pool.clone();
+            async move { test_failpoints::hit(&pool, "before-cutover-commit").await }
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if sqlx::query_scalar::<_, bool>(
+                    "SELECT reached FROM public.consensus_test_upgrade_fault",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!task.is_finished());
+        // The replacement does not hang at an already acknowledged boundary.
+        test_failpoints::hit(&pool, "before-cutover-commit")
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM public.consensus_test_upgrade_fault")
+            .execute(&pool)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
     #[test]
     fn parses_upgrade_activated_payload() {
         let json = r#"{
@@ -3807,6 +3869,146 @@ mod tests {
                 .await
                 .expect("versioning");
         assert_eq!(sv, fhevm_engine_common::STACK_VERSION);
+    }
+
+    // Run the actual reconciliation path in a separate OS process. The parent
+    // owns the database and the blocking lock, so killing this child cannot
+    // tear down its fixture or accidentally release the observation boundary.
+    #[tokio::test]
+    #[ignore = "subprocess helper invoked by cutover_recovers_after_process_kill"]
+    async fn cutover_process_helper() {
+        use std::str::FromStr;
+        let url = std::env::var("CONSENSUS_CUTOVER_TEST_DATABASE").expect("parent database");
+        let options = sqlx::postgres::PgConnectOptions::from_str(&url)
+            .unwrap()
+            .application_name("consensus-cutover-test-child");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect_with(options)
+            .await
+            .unwrap();
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            true,
+        )
+        .await
+        .expect("replacement reconciles durable state");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_recovers_after_process_kill() {
+        use tokio::time::{sleep, timeout, Duration};
+        let (instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+        create_gcs_schema(&pool).await.unwrap();
+        create_marker(&pool).await;
+
+        let mut fence = pool.begin().await.unwrap();
+        sqlx::query("LOCK TABLE versioning IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *fence)
+            .await
+            .unwrap();
+        let spawn = || {
+            let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "tests::cutover_process_helper",
+                    "--ignored",
+                    "--nocapture",
+                ])
+                .env("CONSENSUS_CUTOVER_TEST_DATABASE", instance.db_url())
+                .kill_on_drop(true)
+                .spawn()
+                .unwrap()
+        };
+        let wait_inside_cutover = || async {
+            timeout(Duration::from_secs(20), async {
+                loop {
+                    let held: bool = sqlx::query_scalar(
+                        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity a
+                         JOIN pg_locks held ON held.pid=a.pid AND held.locktype='advisory' AND held.granted
+                         JOIN pg_locks waiting ON waiting.pid=a.pid AND waiting.relation='versioning'::regclass AND NOT waiting.granted
+                         WHERE a.application_name='consensus-cutover-test-child')",
+                    )
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+                    if held { break; }
+                    sleep(Duration::from_millis(20)).await;
+                }
+            }).await.expect("child must enter cutover while holding the exclusive write fence");
+        };
+
+        let mut first = spawn();
+        let first_id = first.id().unwrap();
+        wait_inside_cutover().await;
+        // A real guarded writer needs this shared advisory lock. While cutover
+        // owns it exclusively, no such writer can enter its transaction.
+        let mut writer = pool.begin().await.unwrap();
+        let can_write: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock_shared($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+        assert!(!can_write, "cutover must fence concurrent writers");
+        writer.rollback().await.unwrap();
+
+        first.kill().await.unwrap();
+        assert!(!first.wait().await.unwrap().success());
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeAuthorized".into(), "in_progress".into())
+        );
+        assert!(
+            marker_exists(&pool).await,
+            "an interrupted cutover must not drop the green schema"
+        );
+        let version: String = sqlx::query_scalar("SELECT stack_version FROM versioning")
+            .fetch_one(&mut *fence)
+            .await
+            .unwrap();
+        assert_eq!(
+            version, "v0.14",
+            "interruption must not publish a partial version transition"
+        );
+
+        let mut replacement = spawn();
+        assert_ne!(replacement.id().unwrap(), first_id);
+        wait_inside_cutover().await;
+        fence.commit().await.unwrap();
+        assert!(timeout(Duration::from_secs(30), replacement.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success());
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+        let versions: (String, i64) =
+            sqlx::query_as("SELECT stack_version, consensus_version FROM versioning")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            versions,
+            (
+                fhevm_engine_common::STACK_VERSION.into(),
+                i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION)
+            )
+        );
+        assert!(
+            !marker_exists(&pool).await,
+            "successful cutover retires the green schema"
+        );
+        // Reconciliation after another restart is idempotent.
+        let mut again = spawn();
+        assert!(timeout(Duration::from_secs(30), again.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success());
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
 
     /// Reconcile cuts over on both latches when the unanimity NOTIFY was missed.

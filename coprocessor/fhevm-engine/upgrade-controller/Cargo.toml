@@ -26,5 +26,8 @@ test-harness = { path = "../test-harness" }
 name = "upgrade-controller"
 path = "src/bin/upgrade_controller.rs"
 
+[features]
+test-failpoints = []
+
 [lints]
 workspace = true
