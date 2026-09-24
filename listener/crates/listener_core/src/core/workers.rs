@@ -934,7 +934,8 @@ impl Handler for CatchupHandler {
         if !subranges.is_empty() {
             metrics::counter!(
                 "listener_catchup_subranges_total",
-                "chain_id" => self.listener.chain_id().to_string()
+                "chain_id" => self.listener.chain_id().to_string(),
+                "flow" => CatchupFlow::Catchup.metric_label()
             )
             .increment(subranges.len() as u64);
         }
@@ -1078,8 +1079,9 @@ impl Handler for FinalCatchupHandler {
         // semantics as the live catchup orchestrator.
         if !subranges.is_empty() {
             metrics::counter!(
-                "listener_final_catchup_subranges_total",
-                "chain_id" => self.listener.chain_id().to_string()
+                "listener_catchup_subranges_total",
+                "chain_id" => self.listener.chain_id().to_string(),
+                "flow" => CatchupFlow::FinalCatchup.metric_label()
             )
             .increment(subranges.len() as u64);
         }
