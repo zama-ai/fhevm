@@ -308,8 +308,9 @@ type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
 **27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
-delegation record for the encrypted store's authority and the delegator's wildcard row in the deciding snapshot. Either
-row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
+delegation record for the encrypted store's application `(program, scope)`, the delegator's wildcard row
+(`0xff×32` in both positions) and the Clock in the deciding snapshot. Either row authorizes the delegate if its
+`expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
 Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
@@ -390,14 +391,14 @@ build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHO
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
 `verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
-`make_store_handle_public` and `delegate_for_user_decryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
+`make_store_handle_public`, `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's
+ACL pause stops `revokeDelegationForUserDecryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
 stops only its own area. Any signer with an enabled `PauserRecord` sets flags; only the admin clears them, and only the
 admin creates, enables or disables pauser records. Admin setters are never paused, and `revoke_permits` takes no config
-account, so it runs under every flag. `revoke_delegation_for_user_decryption` is not paused yet; the delegation-record
-change gives it the `acl_writes` gate, as EVM's `revokeDelegationForUserDecryption` is `whenNotPaused`.
+account, so it runs under every flag.
 Pinned by `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt`,
 the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
-`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_succeeds` and, over random sequences, the H1 property
+`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected` and, over random sequences, the H1 property
 of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has
 its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest`
 included. HTTP decryption has no pause on either chain, as on EVM.

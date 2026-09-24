@@ -70,7 +70,7 @@ fn an_encrypted_store_named_by_its_address_resolves() {
     .expect("a well-formed encrypted store resolves");
 
     assert_eq!(resolved.account_key(), encrypted_store.account_key);
-    assert_eq!(resolved.authority(), AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY);
     assert_eq!(resolved.program(), APP_PROGRAM);
     assert_eq!(resolved.scope(), SCOPE);
 }
@@ -138,7 +138,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
     let delegator = Wallet::new(2);
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x13, FHE_TYPE_UINT64), signer.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(encrypted_store.account_key, delegation.account()),
@@ -230,7 +230,7 @@ fn trailing_bytes_after_the_encrypted_store_body_are_accepted() {
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.authority(), AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY);
     assert_eq!(
         8 + borsh::to_vec(resolved.encrypted_store())
             .expect("the encrypted store serializes")
@@ -332,8 +332,8 @@ fn each_entry_takes_its_authority_from_its_own_encrypted_store() {
         handle(0x1a, FHE_TYPE_UINT64),
     );
 
-    assert_eq!(resolved(&first).authority(), [0x51; 32]);
-    assert_eq!(resolved(&second).authority(), [0x52; 32]);
+    assert_eq!(resolved(&first).encrypted_store().authority, [0x51; 32]);
+    assert_eq!(resolved(&second).encrypted_store().authority, [0x52; 32]);
     assert_eq!(resolved(&first).program(), APP_PROGRAM);
     assert_eq!(resolved(&first).scope(), SCOPE);
 }

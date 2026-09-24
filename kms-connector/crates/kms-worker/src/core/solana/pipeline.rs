@@ -48,19 +48,22 @@ pub async fn authorize_request(
         });
     }
 
-    // A delegation record's address depends on the authority of the entry's encrypted store, so a
-    // delegated request needs a second read. Every rule is evaluated against the last read alone.
+    // A delegation record's address depends on the application of the entry's encrypted store, so
+    // a delegated request needs a second read. Every rule is evaluated against the last read alone.
     let first_keys = plan_first_read(request, program_id);
     let first = reader.read_accounts(&first_keys).await?;
     let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
-    let observation = if delegation_keys.is_empty() {
-        first
+    // `now` is the deciding read's Clock, which only a delegated request reads.
+    let (observation, now) = if delegation_keys.is_empty() {
+        (first, None)
     } else {
         let second_keys = plan_second_read(&first_keys, delegation_keys);
-        reader
+        let second = reader
             .read_accounts(&second_keys)
             .await?
-            .deciding_after(&first)?
+            .deciding_after(&first)?;
+        let now = second.unix_timestamp()?;
+        (second, Some(now))
     };
 
     let watermark = read_watermark(&observation, program_id, signer)?;
@@ -117,19 +120,21 @@ pub async fn authorize_request(
         let row = check_delegation(
             &observation,
             program_id,
+            now.expect("a delegated entry forces the second read"),
             entry.owner_address,
             signer,
-            store.authority(),
+            store.encrypted_store(),
         )
         .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
         delegated.push(format!(
-            "entry {index}: delegator {}, authority {}, {row:?} row",
+            "entry {index}: delegator {}, application ({}, {}), {row:?} row",
             Pubkey::new_from_array(entry.owner_address),
-            Pubkey::new_from_array(store.authority()),
+            Pubkey::new_from_array(store.program()),
+            Pubkey::new_from_array(store.scope()),
         ));
     }
 
-    // An auditor has to tell an authority-scoped grant from a wildcard one, although both
+    // An auditor has to tell an application-scoped grant from a wildcard one, although both
     // authorize identically.
     if !delegated.is_empty() {
         info!(
@@ -143,7 +148,7 @@ pub async fn authorize_request(
 }
 
 /// The exact and wildcard delegation-record addresses of every delegated entry, derived from the
-/// store authorities of the first read.
+/// store applications of the first read.
 fn discover_delegation_keys(
     first: &HostSnapshot,
     program_id: SolanaPubkeyBytes,
@@ -158,7 +163,16 @@ fn discover_delegation_keys(
         }
         let store = resolve_encrypted_store(first, program_id, entry.encrypted_store)
             .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-        keys.push(delegation_address(program_id, delegator, signer, store.authority()).0);
+        keys.push(
+            delegation_address(
+                program_id,
+                delegator,
+                signer,
+                store.program(),
+                store.scope(),
+            )
+            .0,
+        );
         keys.push(wildcard_delegation_address(program_id, delegator, signer).0);
     }
     Ok(keys)

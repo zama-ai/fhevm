@@ -2212,7 +2212,7 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 |---|---|---|
 | `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel through it | ACL pause |
 | `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
-| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption` | ACL pause |
+| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption`, `revoke_delegation_for_user_decryption` | ACL pause |
 | `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | None: `KMSVerifier` cannot be paused; the gateway pause stops only new certificates |
 
 `verified_inputs` and `public_decrypt` act when a signed result is used, not when it is requested.
@@ -2232,14 +2232,14 @@ token's own pause check, which read the single flag; the token now reads no paus
 the config through to the host.
 
 Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
-flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause. On EVM,
-`revokeDelegationForUserDecryption` is `whenNotPaused`; its Solana gate on `acl_writes` comes with
-the delegation-record change built on fhevm#4096, and until then revocation is not paused.
+flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause.
+`revoke_delegation_for_user_decryption` is gated on `acl_writes`, as EVM's
+`revokeDelegationForUserDecryption` is `whenNotPaused`.
 
 Accepted gap: no host flag stops user decryption. During a host pause, user decryption of values
 already allowed continues, as it does on EVM while only the host ACL is paused; the gateway pause is
-what stops it. With the `acl_writes` gate in place, a delegator cannot revoke a delegation until the
-admin resumes ACL writes.
+what stops it. While `acl_writes` is paused, a delegator cannot revoke a delegation until the admin
+resumes ACL writes.
 
 Rejected alternatives:
 

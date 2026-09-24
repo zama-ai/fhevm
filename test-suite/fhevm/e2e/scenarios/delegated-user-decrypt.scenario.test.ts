@@ -17,15 +17,23 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 //               value; a second proposal revokes it.
 //
 // The value under delegation is an `encrypted-counter` specimen value: the delegator owns the
-// counter, and the counter program's authority PDA is the value's `encrypted_value_account_authority`
-// — the third member of the delegation tuple. What the connector authorizes is identical in both
-// arcs — a live delegation row for (delegator, delegate, authority) plus the delegator's allow leaf
+// counter, and the value's application — the counter program and its counter PDA as the scope — is
+// the last member of the delegation tuple. What the connector authorizes is identical in both arcs
+// — a live delegation row for (delegator, delegate, program, scope) plus the delegator's allow leaf
 // on the handle — which is the point: a record granted by a vault PDA is indistinguishable from a
 // wallet's.
 
 import { describe, expect, test } from "bun:test";
 import { Connection } from "@solana/web3.js";
-import { createNoopSigner, getAddressEncoder, type Address } from "@solana/kit";
+import {
+  address,
+  assertAccountExists,
+  createNoopSigner,
+  fetchEncodedAccount,
+  getAddressEncoder,
+  getI64Decoder,
+  type Address,
+} from "@solana/kit";
 import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
@@ -58,8 +66,8 @@ const SCENARIO_TIMEOUT_MS = 15 * 60_000;
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(address));
 
-/** How far beyond the current slot every grant here lives. Hours of localnet, minutes of test. */
-const EXPIRATION_SLOTS_AHEAD = 100_000n;
+/** How long past the host's current time every grant here lives: well beyond one arc. */
+const EXPIRY_SECONDS_AHEAD = 3_600n;
 type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
 
 type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
@@ -81,8 +89,14 @@ const delegatedDecrypt = (
     expected: 42n,
   });
 
-const currentSlot = async (setup: VerticalTestSetup): Promise<bigint> =>
-  await setup.context.rpc.getSlot({ commitment: "confirmed" }).send();
+const CLOCK_SYSVAR = address("SysvarC1ock11111111111111111111111111111111");
+
+/** The host Clock's `unix_timestamp` (its last field), which a delegation's `expiresAt` is compared against. */
+const hostUnixTime = async (setup: VerticalTestSetup): Promise<bigint> => {
+  const clock = await fetchEncodedAccount(setup.context.rpc, CLOCK_SYSVAR, { commitment: "confirmed" });
+  assertAccountExists(clock);
+  return getI64Decoder().decode(clock.data, 32);
+};
 
 // The Squads fixtures are fetched, not committed (no executable binaries in the repo); when they
 // are absent the validator booted without the program and the squads arc cannot run.
@@ -108,8 +122,8 @@ describe("solana delegated user-decrypt", () => {
 
       // Two roles: the provisioning wallet is the delegator — it owns the counter, so the counter
       // program allows it on every handle it writes — and the delegate holds no access of its own;
-      // its key only signs the decrypt permits below. The third member of the delegation tuple is
-      // the counter program's authority PDA, the value's `encrypted_value_account_authority`.
+      // its key only signs the decrypt permits below. The last member of the delegation tuple is
+      // the value's application: the counter program and its counter PDA as the scope.
       const delegate = await generateSolanaKeypair();
       const delegateSecretKey = hex(delegate.bytes.subarray(0, 32));
 
@@ -118,7 +132,7 @@ describe("solana delegated user-decrypt", () => {
       const { value, handle } = await incrementCounter(context, wallet.signer, 42n);
       await stack.waitForSnsCommit(hex(handle));
 
-      // Grant: delegator -> delegate, scoped to the value's authority. The wallet-held path: the
+      // Grant: delegator -> delegate, scoped to the value's application. The wallet-held path: the
       // builder takes the signer itself, so the kit pipeline signs the instruction as built (the
       // Squads arc below is the bare-address path).
       const grant = await solana.buildDelegateForUserDecryptionInstruction({
@@ -126,8 +140,8 @@ describe("solana delegated user-decrypt", () => {
         payer: wallet.signer,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
-        expirationSlot: (await currentSlot(setup)) + EXPIRATION_SLOTS_AHEAD,
+        ...value.application,
+        expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
       await context.sendTransaction(wallet.signer, [grant]);
 
@@ -135,10 +149,10 @@ describe("solana delegated user-decrypt", () => {
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       }, { programAddress: hostProgram });
       expect(rows.exact).not.toBeNull();
-      expect(solana.isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await currentSlot(setup))).toBe(true);
+      expect(solana.isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await hostUnixTime(setup))).toBe(true);
 
       // The delegate decrypts the delegator's value.
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
@@ -190,23 +204,23 @@ describe("solana delegated user-decrypt", () => {
       expect(submissions[1]!.body).toBe(submissions[0]!.body);
       expect(submissions[1]!.jobId).toBe(submissions[0]!.jobId);
 
-      // Revoke — the delegator's lever. The delegate's permit is untouched. The record's
-      // revoked state is the on-chain fact; the fast client-visible refusal is the relayer's
+      // Revoke — the delegator's lever. The delegate's permit is untouched. The record's zeroed
+      // expiry is the on-chain fact; the fast client-visible refusal is the relayer's
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
         programAddress: hostProgram,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       });
       await context.sendTransaction(wallet.signer, [revoke]);
       const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       }, { programAddress: hostProgram });
-      expect(revokedRows.exact?.revoked).toBe(true);
+      expect(revokedRows.exact?.expiresAt).toBe(0n);
       // The typed label, not the message text: the label IS the relayer's contract, while the
       // message it is rendered into is prose. `kind` is deliberately left unpinned — it says
       // whether the client had seen the job queued before the refusal arrived, which is the
@@ -286,8 +300,8 @@ describe("solana delegated user-decrypt", () => {
         payer: vaultAddress,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
-        expirationSlot: (await currentSlot(setup)) + EXPIRATION_SLOTS_AHEAD,
+        ...value.application,
+        expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
       const grantIndex = await proposeThroughSquad(connection, squad, members[0]!, grant);
       await approveProposal(connection, squad, members[0]!, grantIndex);
@@ -304,7 +318,7 @@ describe("solana delegated user-decrypt", () => {
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       }, { programAddress: hostProgram });
       expect(rows.exact?.delegator).toBe(vaultAddress);
 
@@ -316,7 +330,7 @@ describe("solana delegated user-decrypt", () => {
         programAddress: hostProgram,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       });
       const revokeIndex = await proposeThroughSquad(connection, squad, members[0]!, revoke);
       await approveProposal(connection, squad, members[0]!, revokeIndex);
@@ -325,9 +339,9 @@ describe("solana delegated user-decrypt", () => {
       const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
-        encryptedStoreAuthority: value.authority,
+        ...value.application,
       }, { programAddress: hostProgram });
-      expect(revokedRows.exact?.revoked).toBe(true);
+      expect(revokedRows.exact?.expiresAt).toBe(0n);
       // Pinned the same way as the headless arc above: the label, not the rendered message.
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
         rejection: { label: "not_allowed_on_host_acl" },

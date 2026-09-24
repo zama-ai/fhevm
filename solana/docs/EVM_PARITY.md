@@ -57,8 +57,9 @@ batcher tests cover settlement rollback and the cancellation/refund lifecycle.
 The existing Gateway V2 route carries typed Solana user-decrypt requests. The relayer handles
 request shape and routing; each connector independently verifies the signed permit, scope,
 window, revocation watermark, deployment identity, KMS context and each Store's canonical
-address/owner/shape. Delegation uses an expiring PDA and a fresh deciding snapshot. The Store's
-authority scopes delegation; its app `(program, scope)` scopes the permit.
+address/owner/shape. Delegation uses a PDA that expires on the host's Unix clock and a fresh
+deciding snapshot. The Store's app `(program, scope)` scopes both the delegation, as EVM's
+`contractAddress` does, and the permit.
 
 The listener reconstructs all executed operations and permission leaves from transaction bytes,
 independently of return selection. Compute records, leaves and checkpoint commit atomically.

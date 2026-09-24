@@ -9,8 +9,8 @@
 //! addresses with its own solana-pubkey, all from the one `DELEGATION_SEED` below: the host
 //! program imports the seed and the wildcard sentinel from this crate rather than restating them.
 //!
-//! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 130-byte account:
-//! 8-byte Anchor discriminator + 122-byte body) and is pinned against the program's own
+//! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 161-byte account:
+//! 8-byte Anchor discriminator + 153-byte body) and is pinned against the program's own
 //! serializer by the host's `shared_crate_decoder_reads_what_the_program_serializes` state
 //! test, which feeds `try_serialize` output of a distinct-valued record through this decoder
 //! field by field; the runtime-test SDK fixtures additionally pin the seed order and the
@@ -18,44 +18,44 @@
 
 use crate::AclError;
 
-/// Seed of the delegation record PDA: `[seed, delegator, delegate, authority]`.
+/// Seed of the delegation record PDA: `[seed, delegator, delegate, program, scope]`.
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 
-/// The sentinel a wildcard row carries in place of an encrypted store authority.
-/// No real authority can collide with it: an encrypted store authority must sign
-/// `fhe_execute`, and the sentinel has no key — and the connector independently refuses any
-/// encrypted store naming it (its resolution guard), so an account carrying the
-/// sentinel never reaches a row read.
-pub const WILDCARD_AUTHORITY: [u8; 32] = [0xff; 32];
+/// The application a wildcard row carries in both its `program` and its `scope` position, as
+/// EVM's wildcard fills `contractAddress`. No encrypted store has this program: a store's
+/// authority must sign as a PDA of the store's program, and `0xff×32` is not a valid Ed25519
+/// point, so no program can be deployed at it. A real application therefore never equals the
+/// wildcard, even one that picked `scope = 0xff×32`.
+pub const WILDCARD_APP: [u8; 32] = [0xff; 32];
 
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
-const BODY_LEN: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
+const BODY_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1;
 
 /// One decoded delegation record, fields exactly as the host program wrote them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserDecryptionDelegationRecord {
     pub delegator: [u8; 32],
     pub delegate: [u8; 32],
-    pub authority: [u8; 32],
-    /// The last slot the delegation is live at, inclusive. Zeroed by a revocation.
-    pub expiration_slot: u64,
+    /// The application's program, or [`WILDCARD_APP`].
+    pub program: [u8; 32],
+    /// The application's scope, or [`WILDCARD_APP`].
+    pub scope: [u8; 32],
+    /// Unix second the delegation ends at, exclusive. Zeroed by a revocation.
+    pub expires_at: u64,
     /// Strictly monotonic across grants, re-grants and revocations. Authorizes nothing.
     pub delegation_counter: u64,
     /// The slot the record last changed in; a record mutates at most once per slot.
     pub last_update_slot: u64,
-    /// Whether the delegator revoked it. A re-grant reinstates.
-    pub revoked: bool,
     /// The record PDA's bump.
     pub bump: u8,
 }
 
 impl UserDecryptionDelegationRecord {
-    /// Whether the record authorizes at `slot`: not revoked, and the expiration slot has not
-    /// passed — the expiration slot itself is inside the life. This is one half of the
-    /// connector's freshness rule; the snapshot-consistency half (`last_update_slot` against
-    /// the observed slot) belongs to the reader's observation discipline, not to the record.
-    pub fn is_live_at(&self, slot: u64) -> bool {
-        !self.revoked && self.expiration_slot >= slot
+    /// Whether the record authorizes at `unix_timestamp`: live while `expires_at` is still ahead,
+    /// as EVM's `expirationDate > block.timestamp`. A revoked record holds 0, so it reads like
+    /// one never granted.
+    pub fn is_live_at(&self, unix_timestamp: u64) -> bool {
+        self.expires_at > unix_timestamp
     }
 }
 
@@ -67,9 +67,8 @@ pub const USER_DECRYPTION_DELEGATION_DISCRIMINATOR: [u8; ANCHOR_DISCRIMINATOR_LE
 
 /// Decodes an account's raw data, discriminator included, into a delegation record.
 ///
-/// Strict on both ends: the account is exactly discriminator + body (the record is never
-/// realloc-grown, unlike the encrypted store), and every field decodes or the whole
-/// account is refused.
+/// Strict: the account is exactly discriminator + body (the record is never realloc-grown,
+/// unlike the encrypted store).
 pub fn decode_user_decryption_delegation(
     data: &[u8],
 ) -> Result<UserDecryptionDelegationRecord, AclError> {
@@ -80,20 +79,15 @@ pub fn decode_user_decryption_delegation(
         return Err(AclError::BadDiscriminator);
     }
     let body = &data[ANCHOR_DISCRIMINATOR_LEN..];
-    let revoked = match body[120] {
-        0 => false,
-        1 => true,
-        _ => return Err(AclError::BadAccountData),
-    };
     Ok(UserDecryptionDelegationRecord {
         delegator: bytes32(body, 0),
         delegate: bytes32(body, 32),
-        authority: bytes32(body, 64),
-        expiration_slot: u64_le(body, 96),
-        delegation_counter: u64_le(body, 104),
-        last_update_slot: u64_le(body, 112),
-        revoked,
-        bump: body[121],
+        program: bytes32(body, 64),
+        scope: bytes32(body, 96),
+        expires_at: u64_le(body, 128),
+        delegation_counter: u64_le(body, 136),
+        last_update_slot: u64_le(body, 144),
+        bump: body[152],
     })
 }
 
@@ -117,11 +111,11 @@ mod tests {
         UserDecryptionDelegationRecord {
             delegator: [0x11; 32],
             delegate: [0x22; 32],
-            authority: [0x33; 32],
-            expiration_slot: 500,
+            program: [0x33; 32],
+            scope: [0x44; 32],
+            expires_at: 500,
             delegation_counter: 7,
             last_update_slot: 400,
-            revoked: false,
             bump: 254,
         }
     }
@@ -130,11 +124,11 @@ mod tests {
         let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
         data.extend_from_slice(&record.delegator);
         data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.authority);
-        data.extend_from_slice(&record.expiration_slot.to_le_bytes());
+        data.extend_from_slice(&record.program);
+        data.extend_from_slice(&record.scope);
+        data.extend_from_slice(&record.expires_at.to_le_bytes());
         data.extend_from_slice(&record.delegation_counter.to_le_bytes());
         data.extend_from_slice(&record.last_update_slot.to_le_bytes());
-        data.push(record.revoked as u8);
         data.push(record.bump);
         data
     }
@@ -186,26 +180,15 @@ mod tests {
         );
     }
 
+    /// The bound is exclusive, as on EVM, and a revoked record (0) is dead at every time.
     #[test]
-    fn rejects_a_boolean_that_is_neither() {
-        let mut data = encode(&record());
-        let revoked_offset = data.len() - 2;
-        data[revoked_offset] = 2;
-        assert_eq!(
-            decode_user_decryption_delegation(&data),
-            Err(AclError::BadAccountData)
-        );
-    }
-
-    /// The expiration slot is inclusive, and revocation wins over any expiration.
-    #[test]
-    fn liveness_matches_the_connector_boundary() {
+    fn liveness_ends_at_expires_at() {
         let live = record();
-        assert!(live.is_live_at(500));
-        assert!(!live.is_live_at(501));
+        assert!(live.is_live_at(499));
+        assert!(!live.is_live_at(500));
 
         let mut revoked = record();
-        revoked.revoked = true;
-        assert!(!revoked.is_live_at(100));
+        revoked.expires_at = 0;
+        assert!(!revoked.is_live_at(0));
     }
 }

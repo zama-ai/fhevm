@@ -24,12 +24,16 @@ pub struct DelegateForUserDecryption<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Creates or refreshes a delegation tuple for future KMS witness verification.
+/// Grants or renews `delegator → delegate` in the application `(program, scope)`, or in every
+/// application through [`AppScope::WILDCARD`], until `expires_at` (Unix seconds, exclusive). The
+/// checks are EVM's `delegateForUserDecryption`, with the application in place of
+/// `contractAddress`.
 pub fn delegate_for_user_decryption(
     ctx: Context<DelegateForUserDecryption>,
     delegate: Pubkey,
-    authority: Pubkey,
-    expiration_slot: u64,
+    program: Pubkey,
+    scope: [u8; 32],
+    expires_at: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(
@@ -38,7 +42,10 @@ pub fn delegate_for_user_decryption(
         ZamaHostError::AclWritesPaused,
     )?;
     let clock = Clock::get()?;
+    let now =
+        u64::try_from(clock.unix_timestamp).map_err(|_| error!(ZamaHostError::ClockBeforeEpoch))?;
     let delegator = ctx.accounts.delegator.key();
+    let app = AppScope { program, scope };
     // A wallet's signature reaches every CPI of the transaction it signed, so any program the
     // user calls could delegate the user's decryption rights. A PDA signs only through its own
     // program's `invoke_signed`, so a PDA delegator may still delegate through CPI.
@@ -47,22 +54,24 @@ pub fn delegate_for_user_decryption(
         ZamaHostError::WalletDelegationThroughCpi
     );
     require!(
-        delegate != Pubkey::default() && authority != Pubkey::default(),
+        delegate != Pubkey::default() && program != Pubkey::default(),
         ZamaHostError::InvalidDelegation
     );
     require!(
-        delegate.to_bytes() != WILDCARD_AUTHORITY_BYTES,
+        delegate.to_bytes() != WILDCARD_APP,
+        ZamaHostError::InvalidDelegation
+    );
+    // The sentinel fills the whole application or none of it.
+    require!(
+        (program.to_bytes() == WILDCARD_APP) == (scope == WILDCARD_APP),
         ZamaHostError::InvalidDelegation
     );
     require_keys_neq!(delegator, delegate, ZamaHostError::InvalidDelegation);
-    require_keys_neq!(delegator, authority, ZamaHostError::InvalidDelegation);
-    require_keys_neq!(delegate, authority, ZamaHostError::InvalidDelegation);
-    require!(
-        expiration_slot > clock.slot,
-        ZamaHostError::InvalidDelegation
-    );
+    require_keys_neq!(delegator, program, ZamaHostError::InvalidDelegation);
+    require_keys_neq!(delegate, program, ZamaHostError::InvalidDelegation);
+    require!(expires_at > now, ZamaHostError::InvalidDelegation);
 
-    let (expected, bump) = user_decryption_delegation_address(delegator, delegate, authority);
+    let (expected, bump) = user_decryption_delegation_address(delegator, delegate, app);
     require_keys_eq!(
         expected,
         ctx.accounts.delegation_record.key(),
@@ -79,21 +88,18 @@ pub fn delegate_for_user_decryption(
             crate::state::DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            authority.as_ref(),
+            program.as_ref(),
+            &scope,
             &[bump],
         ],
     )?;
     let delegation_counter = match current {
         Some(record) => {
-            require_keys_eq!(
-                record.delegator,
-                delegator,
-                ZamaHostError::InvalidDelegation
-            );
-            require_keys_eq!(record.delegate, delegate, ZamaHostError::InvalidDelegation);
-            require_keys_eq!(
-                record.authority,
-                authority,
+            require!(
+                record.delegator == delegator
+                    && record.delegate == delegate
+                    && record.program == program
+                    && record.scope == scope,
                 ZamaHostError::InvalidDelegation
             );
             require!(
@@ -101,7 +107,7 @@ pub fn delegate_for_user_decryption(
                 ZamaHostError::DelegationUpdatedInCurrentSlot
             );
             require!(
-                record.revoked || record.expiration_slot != expiration_slot,
+                record.expires_at != expires_at,
                 ZamaHostError::InvalidDelegation
             );
             record
@@ -116,11 +122,11 @@ pub fn delegate_for_user_decryption(
         &UserDecryptionDelegation {
             delegator,
             delegate,
-            authority,
-            expiration_slot,
+            program,
+            scope,
+            expires_at,
             delegation_counter,
             last_update_slot: clock.slot,
-            revoked: false,
             bump,
         },
     )?;

@@ -569,8 +569,8 @@ impl HostAclChecker {
     ///
     /// The rule lives in [`super::solana_delegation_precheck`]; this method is the transport:
     /// two batched `getMultipleAccounts` reads at `confirmed` — the encrypted stores
-    /// first (to learn each entry's encrypted store authority), then the delegation
-    /// rows, with the row read's own slot deciding liveness. That row read is ordered after the
+    /// first (to learn each entry's application), then the delegation rows with the Clock
+    /// sysvar, whose time decides liveness. That row read is ordered after the
     /// first: it requires the first read's slot as `minContextSlot` and is compared against it
     /// on arrival, so no verdict is reached on a view older than the plan was built from. A node
     /// that stays behind that slot passes to the connector; direct entries are never checked.
@@ -617,7 +617,7 @@ impl HostAclChecker {
         }
 
         // Round 1: the encrypted stores the entries name, to learn each entry's
-        // authority. Its slot is
+        // application. Its slot is
         // the floor the row read must be served at or after — otherwise a load-balanced RPC can
         // answer round 2 from a replica behind round 1, and a grant confirmed between the two
         // reads as absent.
@@ -642,7 +642,7 @@ impl HostAclChecker {
                     int_job_id = %job_id,
                     chain_id,
                     ?defect,
-                    "Solana delegation pre-check mispaired its own reads; passing"
+                    "Solana delegation pre-check cannot judge its own reads; passing"
                 );
                 return Ok(());
             }
@@ -651,9 +651,9 @@ impl HostAclChecker {
             return Ok(());
         }
 
-        // Round 2: the rows, whose read slot is the one liveness is decided at — required to be
-        // at or after round 1's, and checked again on arrival: this reader refuses only on an
-        // observation that is not older than the one the plan was built from.
+        // Round 2: the rows and the Clock, whose time liveness is decided at — required to be
+        // at or after round 1's slot, and checked again on arrival: this reader refuses only on
+        // an observation that is not older than the one the plan was built from.
         let (slot, row_accounts) = match self
             .solana_accounts_with_retry(
                 job_id,
@@ -683,7 +683,6 @@ impl HostAclChecker {
             user_address,
             &plan.entries,
             &row_accounts,
-            slot,
         ) {
             Ok(refusals) => refusals,
             Err(defect) => {
@@ -691,7 +690,7 @@ impl HostAclChecker {
                     int_job_id = %job_id,
                     chain_id,
                     ?defect,
-                    "Solana delegation pre-check mispaired its own reads; passing"
+                    "Solana delegation pre-check cannot judge its own reads; passing"
                 );
                 return Ok(());
             }

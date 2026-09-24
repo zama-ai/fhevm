@@ -29,10 +29,13 @@ pub use encrypted_store::{
     ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS,
 };
 
+pub mod clock;
+pub use clock::{decode_clock_unix_timestamp, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID};
+
 pub mod delegation;
 pub use delegation::{
     decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
-    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_AUTHORITY,
+    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP,
 };
 pub mod permit_invalidation;
 pub use permit_invalidation::{

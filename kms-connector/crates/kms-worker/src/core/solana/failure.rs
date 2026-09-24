@@ -90,7 +90,7 @@ impl EncryptedStoreFailure {
             | Self::WrongAccountType { .. }
             | Self::Malformed { .. }
             | Self::AddressMismatch { .. }
-            | Self::SentinelAuthority { .. } => false,
+            | Self::SentinelProgram { .. } => false,
             Self::UnreadAccount(_) => false,
         }
     }
@@ -114,13 +114,12 @@ impl HandleBindingFailure {
 impl DelegationFailure {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            Self::Absent { .. } | Self::NewerThanObservation { .. } => true,
+            // As on EVM, a delegation that is not live is an ACL denial a later attempt may clear.
+            Self::Absent { .. } | Self::NotLive { .. } => true,
             Self::ForeignOwner { .. }
             | Self::NotADelegationRecord { .. }
-            | Self::TupleMismatch { .. }
-            | Self::Revoked
-            | Self::Expired { .. } => false,
-            Self::NoLiveGrant { exact, wildcard } => {
+            | Self::TupleMismatch { .. } => false,
+            Self::NoLiveDelegation { exact, wildcard } => {
                 exact.is_recoverable() || wildcard.is_recoverable()
             }
             Self::UnreadAccount(_) => false,

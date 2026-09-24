@@ -12,7 +12,7 @@ import { base58 } from '@scure/base';
 
 import {
   SOLANA_USER_DECRYPTION_DELEGATION_SEED,
-  SOLANA_WILDCARD_AUTHORITY,
+  SOLANA_WILDCARD_APP,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   decodeSolanaUserDecryptionDelegation,
@@ -41,12 +41,16 @@ function hex(bytes: Iterable<number>): string {
 // breaks both suites on the same bytes.
 const delegator = addr(0x11);
 const delegate = addr(0x22);
-const authority = addr(0x33);
+const application = { program: addr(0x33), scope: new Uint8Array(32).fill(0x44) };
 const payer = addr(0x55);
-const RECORD_ADDRESS = 'GtmmNNN2djBNk8JaFbD2vER8eDzmE4CdL6SBz65cFwgo';
+const RECORD_ADDRESS = 'GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ';
+// The delegator's wildcard row, pinned by the relayer's cross-pin in the same Rust suite.
+const WILDCARD_RECORD_ADDRESS = 'J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1';
 const GRANT_DATA =
   'f0f8d7586df401672222222222222222222222222222222222222222222222222222222222222222' +
-  '3333333333333333333333333333333333333333333333333333333333333333f401000000000000';
+  '33'.repeat(32) +
+  '44'.repeat(32) +
+  'f401000000000000';
 const REVOKE_DATA = '931b7e35412576e1';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 
@@ -57,15 +61,31 @@ const HOST = { programAddress: ZAMA_HOST_PROGRAM_ADDRESS };
 describe('solanaUserDecryptionDelegationAddress', () => {
   it('derives the canonical record address the host program derives', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedStoreAuthority: authority },
+      { delegator, delegate, ...application },
       { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
     );
     expect(derived).toBe(RECORD_ADDRESS);
   });
 
+  it('derives the wildcard row from the wildcard application', async () => {
+    const derived = await solanaUserDecryptionDelegationAddress(
+      { delegator, delegate, ...SOLANA_WILDCARD_APP },
+      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
+    );
+    expect(derived).toBe(WILDCARD_RECORD_ADDRESS);
+  });
+
+  it('derives another row for another scope of the same program', async () => {
+    const derived = await solanaUserDecryptionDelegationAddress(
+      { delegator, delegate, ...application, scope: new Uint8Array(32).fill(0x45) },
+      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
+    );
+    expect(derived).not.toBe(RECORD_ADDRESS);
+  });
+
   it('derives under the configured program id', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedStoreAuthority: authority },
+      { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
     expect(derived).not.toBe(RECORD_ADDRESS);
@@ -79,8 +99,8 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer,
       delegator,
       delegate,
-      encryptedStoreAuthority: authority,
-      expirationSlot: 500n,
+      ...application,
+      expiresAt: 500n,
     });
 
   it('builds the exact bytes the host program decodes', async () => {
@@ -112,8 +132,8 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer: delegatorSigner,
       delegator: delegatorSigner,
       delegate,
-      encryptedStoreAuthority: authority,
-      expirationSlot: 500n,
+      ...application,
+      expiresAt: 500n,
     });
     const [payerMeta, delegatorMeta] = instruction.accounts as readonly SignerMeta[];
     expect(payerMeta?.signer).toBe(delegatorSigner);
@@ -127,8 +147,8 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer: payerSigner,
       delegator,
       delegate,
-      encryptedStoreAuthority: authority,
-      expirationSlot: 500n,
+      ...application,
+      expiresAt: 500n,
     });
     const [payerMeta, delegatorMeta] = instruction.accounts as readonly SignerMeta[];
     expect(payerMeta?.signer).toBe(payerSigner);
@@ -145,13 +165,13 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       payer,
       delegator,
       delegate,
-      encryptedStoreAuthority: authority,
-      expirationSlot: 500n,
+      ...application,
+      expiresAt: 500n,
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
     const record = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedStoreAuthority: authority },
+      { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
@@ -166,7 +186,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
       programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       delegator,
       delegate,
-      encryptedStoreAuthority: authority,
+      ...application,
     });
 
   it('builds the exact bytes the host program decodes', async () => {
@@ -191,7 +211,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
       programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       delegator: delegatorSigner,
       delegate,
-      encryptedStoreAuthority: authority,
+      ...application,
     });
     const meta = instruction.accounts?.[0] as { address: Address; signer?: TransactionSigner } | undefined;
     expect(meta?.signer).toBe(delegatorSigner);
@@ -201,12 +221,12 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
       delegator,
       delegate,
-      encryptedStoreAuthority: authority,
+      ...application,
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
     const record = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, encryptedStoreAuthority: authority },
+      { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
@@ -216,37 +236,40 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
 });
 
 describe('solanaDelegationWarnings', () => {
-  it('exports the sentinel the wildcard row carries in place of an authority', () => {
-    expect(SOLANA_WILDCARD_AUTHORITY).toBe(addr(0xff));
+  it('exports 0xff×32 in both positions as the wildcard application', () => {
+    expect(SOLANA_WILDCARD_APP.program).toBe(addr(0xff));
+    expect(hex(SOLANA_WILDCARD_APP.scope)).toBe('ff'.repeat(32));
   });
 
-  it('flags a wildcard-authority grant', () => {
-    const warnings = solanaDelegationWarnings({
-      encryptedStoreAuthority: SOLANA_WILDCARD_AUTHORITY,
-    });
+  it('flags a wildcard grant', () => {
+    const warnings = solanaDelegationWarnings(SOLANA_WILDCARD_APP);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.code).toBe('WildcardAuthority');
-    expect(warnings[0]!.message).toContain('every');
+    expect(warnings[0]!.code).toBe('WildcardApp');
+    expect(warnings[0]!.message).toContain('every application');
   });
 
-  it('is silent for an authority-scoped grant', () => {
-    expect(solanaDelegationWarnings({ encryptedStoreAuthority: authority })).toEqual([]);
+  it('is silent for a grant over one application', () => {
+    expect(solanaDelegationWarnings(application)).toEqual([]);
+  });
+
+  it('is silent for a half-wildcard, which the host refuses rather than widens', () => {
+    expect(solanaDelegationWarnings({ ...application, program: SOLANA_WILDCARD_APP.program })).toEqual([]);
   });
 });
 
 // The record bytes as the host program serializes them — the same literal is pinned in the Rust
-// cross-pin against the program's own serializer: discriminator, the tuple, expiration 500,
-// counter 7, last update slot 400, not revoked, bump 255 (the canonical bump of the record
-// address — the only value the program ever stores, and the one the fetch validates).
+// cross-pin against the program's own serializer: discriminator, the tuple, expiry 500, counter
+// 7, last update slot 400, bump 255 (the canonical bump of the record address — the only value
+// the program ever stores, and the one the fetch validates).
 const RECORD_BYTES_HEX =
   '25058b21493501f8' +
   '11'.repeat(32) +
   '22'.repeat(32) +
   '33'.repeat(32) +
+  '44'.repeat(32) +
   'f401000000000000' +
   '0700000000000000' +
   '9001000000000000' +
-  '00' +
   'ff';
 
 function bytesFromHex(hexString: string): Uint8Array {
@@ -262,11 +285,11 @@ describe('decodeSolanaUserDecryptionDelegation', () => {
     const record = decodeSolanaUserDecryptionDelegation(bytesFromHex(RECORD_BYTES_HEX), 'the fixture record');
     expect(record.delegator).toBe(delegator);
     expect(record.delegate).toBe(delegate);
-    expect(record.encryptedStoreAuthority).toBe(authority);
-    expect(record.expirationSlot).toBe(500n);
+    expect(record.program).toBe(application.program);
+    expect(hex(record.scope)).toBe('44'.repeat(32));
+    expect(record.expiresAt).toBe(500n);
     expect(record.delegationCounter).toBe(7n);
     expect(record.lastUpdateSlot).toBe(400n);
-    expect(record.revoked).toBe(false);
     expect(record.bump).toBe(255);
   });
 
@@ -278,32 +301,26 @@ describe('decodeSolanaUserDecryptionDelegation', () => {
 
   it('rejects a record of the wrong size', () => {
     const data = bytesFromHex(RECORD_BYTES_HEX).slice(0, -1);
-    expect(() => decodeSolanaUserDecryptionDelegation(data, 'the fixture record')).toThrow('130');
-  });
-
-  it('rejects a revoked byte that is not a borsh bool, exactly as the Rust twin does', () => {
-    const data = bytesFromHex(RECORD_BYTES_HEX);
-    data[128] = 2;
-    expect(() => decodeSolanaUserDecryptionDelegation(data, 'the fixture record')).toThrow('not a borsh bool');
+    expect(() => decodeSolanaUserDecryptionDelegation(data, 'the fixture record')).toThrow('161');
   });
 });
 
 describe('isSolanaUserDecryptionDelegationLiveAt', () => {
   const record = decodeSolanaUserDecryptionDelegation(bytesFromHex(RECORD_BYTES_HEX), 'the fixture record');
 
-  it('is live through the expiration slot, inclusive — the Connector boundary', () => {
-    expect(isSolanaUserDecryptionDelegationLiveAt(record, 500n)).toBe(true);
-    expect(isSolanaUserDecryptionDelegationLiveAt(record, 501n)).toBe(false);
+  it('is live until its expiry second, exclusive — the Connector boundary', () => {
+    expect(isSolanaUserDecryptionDelegationLiveAt(record, 499n)).toBe(true);
+    expect(isSolanaUserDecryptionDelegationLiveAt(record, 500n)).toBe(false);
   });
 
-  it('is dead once revoked, whatever the expiration says', () => {
-    const revoked = { ...record, revoked: true };
-    expect(isSolanaUserDecryptionDelegationLiveAt(revoked, 100n)).toBe(false);
+  it('is dead once revoked, which zeroes the expiry', () => {
+    const revoked = { ...record, expiresAt: 0n };
+    expect(isSolanaUserDecryptionDelegationLiveAt(revoked, 0n)).toBe(false);
   });
 });
 
 describe('fetchSolanaUserDecryptionDelegation', () => {
-  const tuple = { delegator, delegate, encryptedStoreAuthority: authority };
+  const tuple = { delegator, delegate, ...application };
 
   function rpcWith(accounts: Readonly<Record<string, string | { data: string; owner: string }>>): SolanaRpc {
     return {
@@ -330,7 +347,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     } as unknown as SolanaRpc;
   }
 
-  it('reads the authority-specific row', async () => {
+  it('reads the row of the application', async () => {
     const rows = await fetchSolanaUserDecryptionDelegation(
       rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX }),
       tuple,
@@ -340,7 +357,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     expect(rows.wildcard).toBeNull();
   });
 
-  // The wildcard row as the host program would write it: the sentinel authority in the tuple,
+  // The wildcard row as the host program would write it: the wildcard application in the tuple,
   // and the canonical bump of the wildcard address in the trailing byte.
   async function wildcardRowFixture(): Promise<{ address: Address; bytesHex: string }> {
     const encoder = getAddressEncoder();
@@ -350,23 +367,23 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
         SOLANA_USER_DECRYPTION_DELEGATION_SEED,
         encoder.encode(delegator),
         encoder.encode(delegate),
-        encoder.encode(SOLANA_WILDCARD_AUTHORITY),
+        encoder.encode(SOLANA_WILDCARD_APP.program),
+        SOLANA_WILDCARD_APP.scope,
       ],
     });
     const bytesHex =
       '25058b21493501f8' +
       '11'.repeat(32) +
       '22'.repeat(32) +
-      'ff'.repeat(32) +
+      'ff'.repeat(64) +
       'f401000000000000' +
       '0700000000000000' +
       '9001000000000000' +
-      '00' +
       bump.toString(16).padStart(2, '0');
     return { address: wildcardAddress, bytesHex };
   }
 
-  it('reads the wildcard row an authority-specific miss falls back to', async () => {
+  it('reads the wildcard row a miss on the application row falls back to', async () => {
     const wildcardRow = await wildcardRowFixture();
     const rows = await fetchSolanaUserDecryptionDelegation(
       rpcWith({ [wildcardRow.address]: wildcardRow.bytesHex }),
@@ -375,20 +392,24 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     );
     expect(rows.exact).toBeNull();
     expect(rows.wildcard?.delegationCounter).toBe(7n);
-    expect(rows.wildcard?.encryptedStoreAuthority).toBe(SOLANA_WILDCARD_AUTHORITY);
+    expect(rows.wildcard?.program).toBe(SOLANA_WILDCARD_APP.program);
   });
 
   // The Connector's rule, mirrored: the address is not taken as proof of what the record says.
   // Only the host program can write these bytes, so a contradiction is its defect — an error,
   // not a delegation of the queried tuple and not a silent absence.
   it('throws on a record naming a tuple other than the one its address derives from', async () => {
-    const wildcardAddress = await solanaUserDecryptionDelegationAddress(
-      { ...tuple, encryptedStoreAuthority: SOLANA_WILDCARD_AUTHORITY },
-      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
-    );
-    // The exact-tuple record (authority 0x33) sitting at the wildcard address.
+    // The application record (program 0x33, scope 0x44) sitting at the wildcard address.
     await expect(
-      fetchSolanaUserDecryptionDelegation(rpcWith({ [wildcardAddress]: RECORD_BYTES_HEX }), tuple, HOST),
+      fetchSolanaUserDecryptionDelegation(rpcWith({ [WILDCARD_RECORD_ADDRESS]: RECORD_BYTES_HEX }), tuple, HOST),
+    ).rejects.toThrow('tuple other than');
+  });
+
+  // The scope is the one field compared as bytes rather than as an address.
+  it('throws on a record naming another scope of the same program', async () => {
+    const otherScope = RECORD_BYTES_HEX.replace('44'.repeat(32), '45'.repeat(32));
+    await expect(
+      fetchSolanaUserDecryptionDelegation(rpcWith({ [RECORD_ADDRESS]: otherScope }), tuple, HOST),
     ).rejects.toThrow('tuple other than');
   });
 
@@ -427,7 +448,8 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
         SOLANA_USER_DECRYPTION_DELEGATION_SEED,
         encoder.encode(delegator),
         encoder.encode(delegate),
-        encoder.encode(authority),
+        encoder.encode(application.program),
+        application.scope,
       ],
     });
     const overriddenRecordBytes = RECORD_BYTES_HEX.slice(0, -2) + overriddenBump.toString(16).padStart(2, '0');

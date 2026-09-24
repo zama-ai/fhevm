@@ -5,7 +5,7 @@
 use super::SolanaPubkeyBytes;
 use super::snapshot::{HostSnapshot, UnreadAccount};
 use solana_pubkey::Pubkey;
-use zama_solana_acl::WILDCARD_AUTHORITY;
+use zama_solana_acl::WILDCARD_APP;
 use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
 
 /// An encrypted store that passed [`resolve_encrypted_store`], its only constructor.
@@ -18,11 +18,6 @@ pub struct ResolvedEncryptedStore {
 impl ResolvedEncryptedStore {
     pub fn account_key(&self) -> SolanaPubkeyBytes {
         self.account_key
-    }
-
-    /// The authority delegation records are read against.
-    pub fn authority(&self) -> SolanaPubkeyBytes {
-        self.encrypted_store.authority
     }
 
     pub fn program(&self) -> SolanaPubkeyBytes {
@@ -79,10 +74,10 @@ pub fn resolve_encrypted_store(
             derived,
         });
     }
-    // With the sentinel as authority, the authority-specific delegation address would be the
-    // wildcard row itself. No legal store names it.
-    if encrypted_store.authority == WILDCARD_AUTHORITY {
-        return Err(EncryptedStoreFailure::SentinelAuthority { account_key });
+    // With the sentinel as program, the store's delegation row would be the wildcard row itself.
+    // No legal store names it: its authority must sign as a PDA of the program.
+    if encrypted_store.program == WILDCARD_APP {
+        return Err(EncryptedStoreFailure::SentinelProgram { account_key });
     }
     Ok(ResolvedEncryptedStore {
         account_key,
@@ -108,8 +103,8 @@ pub enum EncryptedStoreFailure {
         account_key: SolanaPubkeyBytes,
         derived: Option<SolanaPubkeyBytes>,
     },
-    #[error("encrypted store {account_key:?} names the wildcard sentinel as its authority")]
-    SentinelAuthority { account_key: SolanaPubkeyBytes },
+    #[error("encrypted store {account_key:?} names the wildcard sentinel as its program")]
+    SentinelProgram { account_key: SolanaPubkeyBytes },
     #[error(transparent)]
     UnreadAccount(#[from] UnreadAccount),
 }

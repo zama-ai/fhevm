@@ -302,7 +302,7 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
     let delegator = Wallet::new(2);
     let live = handle(0x20, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -327,7 +327,7 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let delegator = Wallet::new(2);
     let live = handle(0x21, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();

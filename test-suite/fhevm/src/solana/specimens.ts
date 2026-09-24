@@ -43,6 +43,8 @@ export type SpecimenValue = {
   readonly key: Uint8Array;
   /** The program's authority PDA: the value's `encrypted_value_account_authority`. */
   readonly authority: Address;
+  /** The value's application, `(program, scope)`: what a delegation of it is keyed by. */
+  readonly application: { readonly program: Address; readonly scope: Uint8Array };
   /** The value's `EncryptedValue` account. */
   readonly encryptedStore: Address;
 };
@@ -65,6 +67,7 @@ const specimenValue = async (
   authority,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
+  application: { program, scope: addressBytes(state) },
   encryptedStore: await solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(program),
     authority: addressBytes(authority),

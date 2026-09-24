@@ -77,14 +77,16 @@ export type DelegateForUserDecryptionInstruction<
 export type DelegateForUserDecryptionInstructionData = {
   discriminator: ReadonlyUint8Array;
   delegate: Address;
-  authority: Address;
-  expirationSlot: bigint;
+  program: Address;
+  scope: ReadonlyUint8Array;
+  expiresAt: bigint;
 };
 
 export type DelegateForUserDecryptionInstructionDataArgs = {
   delegate: Address;
-  authority: Address;
-  expirationSlot: number | bigint;
+  program: Address;
+  scope: ReadonlyUint8Array;
+  expiresAt: number | bigint;
 };
 
 export function getDelegateForUserDecryptionInstructionDataEncoder(): FixedSizeEncoder<DelegateForUserDecryptionInstructionDataArgs> {
@@ -92,8 +94,9 @@ export function getDelegateForUserDecryptionInstructionDataEncoder(): FixedSizeE
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['delegate', getAddressEncoder()],
-      ['authority', getAddressEncoder()],
-      ['expirationSlot', getU64Encoder()],
+      ['program', getAddressEncoder()],
+      ['scope', fixEncoderSize(getBytesEncoder(), 32)],
+      ['expiresAt', getU64Encoder()],
     ]),
     (value) => ({
       ...value,
@@ -106,8 +109,9 @@ export function getDelegateForUserDecryptionInstructionDataDecoder(): FixedSizeD
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['delegate', getAddressDecoder()],
-    ['authority', getAddressDecoder()],
-    ['expirationSlot', getU64Decoder()],
+    ['program', getAddressDecoder()],
+    ['scope', fixDecoderSize(getBytesDecoder(), 32)],
+    ['expiresAt', getU64Decoder()],
   ]);
 }
 
@@ -138,8 +142,9 @@ export type DelegateForUserDecryptionAsyncInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
-  expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
+  program: DelegateForUserDecryptionInstructionDataArgs['program'];
+  scope: DelegateForUserDecryptionInstructionDataArgs['scope'];
+  expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export async function getDelegateForUserDecryptionInstructionAsync<
@@ -238,8 +243,9 @@ export type DelegateForUserDecryptionInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
-  expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
+  program: DelegateForUserDecryptionInstructionDataArgs['program'];
+  scope: DelegateForUserDecryptionInstructionDataArgs['scope'];
+  expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export function getDelegateForUserDecryptionInstruction<

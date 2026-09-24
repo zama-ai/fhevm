@@ -32,6 +32,7 @@ use kms_worker::core::solana::{
 };
 use solana_pubkey::Pubkey;
 use solana_support::*;
+use zama_solana_request::MAX_REQUEST_HANDLES;
 
 /// A direct request under a valid permit, against a world that authorizes it.
 fn direct_scenario() -> (Wallet, EncryptedStoreFixture, [u8; 32]) {
@@ -76,7 +77,7 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     let delegator = Wallet::new(2);
     let handle = handle(0x20, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
@@ -110,7 +111,7 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     let delegator = Wallet::new(2);
     let handle = handle(0x21, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
@@ -140,36 +141,35 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
     );
 }
 
-/// A delegated entry plans both rows that could carry its grant — the encrypted store's
-/// encrypted store authority and the delegator's wildcard row — in the same read. Fetching
-/// the wildcard row only when the authority-specific one is missing would be a third read, and nothing in
-/// this pipeline reads state after the deciding observation.
+/// A delegated entry plans both rows that could carry its grant — the row of the encrypted
+/// store's application and the delegator's wildcard row — in the same read. Fetching the wildcard
+/// row only when the application row is missing would be a third read, and nothing in this
+/// pipeline reads state after the deciding observation.
 ///
-/// Two entries under two authorities of one delegator show how the two kinds of row scale: an
-/// authority row per authority, and one wildcard row however many authorities there are, because
-/// its address does not mention an authority at all. The batch is also mixed by construction — the
-/// first entry is authorized by its authority row, the second only by the wildcard row.
+/// Two entries in two applications of one delegator show how the two kinds of row scale: a row
+/// per application, and one wildcard row however many applications there are, because its address
+/// names no application. The batch is also mixed by construction — the first entry is authorized
+/// by its application row, the second only by the wildcard row.
 #[tokio::test]
 async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let first_handle = handle(0x27, FHE_TYPE_UINT64);
     let second_handle = handle(0x28, FHE_TYPE_UINT64);
-    let other_authority: SolanaPubkeyBytes = [0x5a; 32];
-    let mut other_label = LABEL;
-    other_label[0] = b'a';
+    let other_scope: SolanaPubkeyBytes = [0x5a; 32];
     let first_encrypted_store = EncryptedStoreFixture::allowing(first_handle, delegator.pubkey());
     let mut second_encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        other_authority,
-        SCOPE,
-        other_label,
+        AUTHORITY,
+        other_scope,
+        LABEL,
         second_handle,
     );
     second_encrypted_store.allow(delegator.pubkey());
-    let app_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
-    let wildcard_row = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey(), 100);
+    let app_row = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
+    let wildcard_row = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
+        .permit(PermitBuilder::new(signer.pubkey()).permissive())
         .delegated(&first_encrypted_store, first_handle, delegator.pubkey())
         .delegated(&second_encrypted_store, second_handle, delegator.pubkey())
         .typed();
@@ -195,12 +195,44 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     );
     assert_eq!(
         second.len(),
-        // the invalidation record, two encrypted stores, one row per authority, one
-        // wildcard row for both
-        1 + 2 + 2 + 1,
-        "the wildcard row is per delegator, so a second authority adds its row and no second wildcard"
+        // the invalidation record, two encrypted stores, the Clock, one row per application,
+        // one wildcard row for both
+        1 + 2 + 1 + 2 + 1,
+        "the wildcard row is per delegator, so a second application adds its row and no second wildcard"
     );
     assert_eq!(reader.call_count(), 2, "still two reads, never a third");
+}
+
+/// The largest request the cap admits still fits one `getMultipleAccounts`: every entry
+/// delegated, each in its own application and from its own delegator, so no key is shared.
+#[tokio::test]
+async fn the_largest_delegated_request_fits_one_account_read() {
+    const RPC_MAX_MULTIPLE_ACCOUNTS: usize = 100;
+    let signer = Wallet::new(1);
+    let mut request =
+        RequestBuilder::new(&signer).permit(PermitBuilder::new(signer.pubkey()).permissive());
+    let mut world = World::at_slot(100).with_watermark(signer.pubkey(), 0);
+    for index in 0..MAX_REQUEST_HANDLES as u8 {
+        let delegator = Wallet::new(index + 2);
+        let live = handle(index, FHE_TYPE_UINT64);
+        let mut store =
+            EncryptedStoreFixture::in_application(APP_PROGRAM, AUTHORITY, [index; 32], LABEL, live);
+        store.allow(delegator.pubkey());
+        world = world.with_encrypted_store(&store);
+        request = request.delegated(&store, live, delegator.pubkey());
+    }
+    let request = request.typed();
+    let proofs = ScriptedProofReader::constant(world.record());
+    let reader = ScriptedReader::constant(world);
+
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("no delegation row exists");
+
+    let deciding = reader.call(1);
+    // the invalidation record, the Clock, and per entry its store and two rows
+    assert_eq!(deciding.len(), 1 + 1 + 3 * MAX_REQUEST_HANDLES);
+    assert!(deciding.len() <= RPC_MAX_MULTIPLE_ACCOUNTS);
 }
 
 /// There is no scan in the authorization path: the first read's key set is a pure function of the
@@ -269,7 +301,7 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
     let delegator = Wallet::new(2);
     let handle = handle(0x22, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
@@ -297,7 +329,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
     let delegator = Wallet::new(2);
     let handle = handle(0x25, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
@@ -334,7 +366,7 @@ async fn two_reads_at_the_same_slot_authorize() {
     let delegator = Wallet::new(2);
     let handle = handle(0x26, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, handle, delegator.pubkey())
         .typed();
@@ -365,7 +397,7 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     let allowed = EncryptedStoreFixture::allowing(handle, delegator.pubkey());
     let mut never_allowed = EncryptedStoreFixture::new(handle);
     never_allowed.allow(Wallet::new(9).pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&allowed, handle, delegator.pubkey())
         .typed();

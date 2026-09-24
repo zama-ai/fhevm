@@ -537,7 +537,7 @@ impl World {
         host::EncryptedStore::try_deserialize(&mut account.data.as_slice()).ok()
     }
 
-    /// A delegation from `delegator` to the last wallet over the first authority's Stores: one
+    /// A delegation from `delegator` to the last wallet in the first Store's application: one
     /// record per delegator, so a revoke can find what a delegate created.
     fn delegation(&self, delegator: usize) -> (Pubkey, Pubkey) {
         (self.wallets[delegator], self.wallets[WALLETS - 1])
@@ -897,7 +897,7 @@ impl World {
                 .expect("close"),
             Action::DelegateForUserDecryption { delegator } => {
                 let (delegator, delegate) = self.delegation(*delegator);
-                let authority = self.authorities[0].key;
+                let app = self.store_app(0);
                 anchor_ix(
                     host::id(),
                     host::accounts::DelegateForUserDecryption {
@@ -905,28 +905,30 @@ impl World {
                         delegator,
                         host_config,
                         delegation_record: host::user_decryption_delegation_address(
-                            delegator, delegate, authority,
+                            delegator, delegate, app,
                         )
                         .0,
                         system_program: system_program::ID,
                     },
                     host::instruction::DelegateForUserDecryption {
                         delegate,
-                        authority,
-                        expiration_slot: u64::MAX,
+                        program: app.program,
+                        scope: app.scope,
+                        expires_at: u64::MAX,
                     },
                 )
             }
             Action::RevokeDelegationForUserDecryption { delegator } => {
                 let (delegator, delegate) = self.delegation(*delegator);
-                let authority = self.authorities[0].key;
                 anchor_ix(
                     host::id(),
                     host::accounts::RevokeDelegationForUserDecryption {
                         delegator,
                         host_config,
                         delegation_record: host::user_decryption_delegation_address(
-                            delegator, delegate, authority,
+                            delegator,
+                            delegate,
+                            self.store_app(0),
                         )
                         .0,
                     },

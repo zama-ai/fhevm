@@ -68,8 +68,8 @@ export const ZAMA_HOST_ERROR__SCOPE_DENIED = 0x1788; // 6024
 export const ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH = 0x1789; // 6025
 /** InvalidDelegation: delegation tuple is invalid */
 export const ZAMA_HOST_ERROR__INVALID_DELEGATION = 0x178a; // 6026
-/** DelegationRevoked: delegation has already been revoked */
-export const ZAMA_HOST_ERROR__DELEGATION_REVOKED = 0x178b; // 6027
+/** NotDelegatedYet: delegation is not granted */
+export const ZAMA_HOST_ERROR__NOT_DELEGATED_YET = 0x178b; // 6027
 /** DelegationUpdatedInCurrentSlot: delegation was already updated in the current slot */
 export const ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT = 0x178c; // 6028
 /** PreviousBankHashUnavailable: previous bank hash is not available */
@@ -198,7 +198,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH
   | typeof ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED
   | typeof ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH
-  | typeof ZAMA_HOST_ERROR__DELEGATION_REVOKED
   | typeof ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISSING
@@ -257,6 +256,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION
   | typeof ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
+  | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
   | typeof ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
@@ -290,7 +290,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH]: `clock is before the unix epoch`,
     [ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED]: `current KMS context cannot be destroyed`,
     [ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH]: `delegation record does not match the canonical PDA`,
-    [ZAMA_HOST_ERROR__DELEGATION_REVOKED]: `delegation has already been revoked`,
     [ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT]: `delegation was already updated in the current slot`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH]: `deny-list account does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISSING]: `deny-list witness account is required`,
@@ -349,6 +348,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION]: `invalid execution return selection`,
     [ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION]: `input attestation payload is malformed`,
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
+    [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
     [ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH]: `pauser record mismatch`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,

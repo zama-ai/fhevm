@@ -549,12 +549,6 @@ if run_check 3; then
   # Solana permit (`allowed_acl_domain_keys` in the user-decryption specification) and of the v3 wire,
   # so the permit crate and the connector keep it deliberately.
   #
-  # The `UserDecryptionDelegation` witness in kms-connector used to be excluded by name: it holds the
-  # key a delegation is scoped over, and that was argued to be a different object from the ID
-  # component. It is not — the delegation PDA's third seed IS the encrypted value account authority,
-  # which is why one delegation covers that authority's values in every domain. The mirror is renamed
-  # and the exclusion is gone, so nothing here is exempt.
-  #
   # Scope is `kms` because `app_account` has no occurrence anywhere else: under plain `all` this entry
   # could not reach the word it documents, so it passed vacuously and its exception masked nothing.
   #
@@ -567,10 +561,9 @@ if run_check 3; then
     '' \
     -E '\bapp_account\b|\bapp_accounts\b|\bapp_account_authority\b|\bauthorized_app_accounts\b|\bappAccount\b|\bapp_authority\b|\bappAuthority\b|\bExecutionAppAuthority\b'
   # The same object under a third name, and the one the identifier sweep above could not see: prose
-  # and constants called the authority a request may not supply an "app context", including the
-  # reserved wildcard sentinel that stands in the authority's seed position. No spelling of it is
-  # legitimate — the delegation row is keyed by the authority, and where the phrase meant the
-  # authority *and* the domain, both are glossary terms with their own names.
+  # and constants called the authority a request may not supply an "app context". No spelling of it
+  # is legitimate — where the phrase meant the authority *and* the domain, both are glossary terms
+  # with their own names, and a delegation row is keyed by the application `(program, scope)`.
   check_alias 'app context — say encrypted value account authority' kms \
     '' \
     -iE '(^|[^[:alnum:]_])app[ _-]context'

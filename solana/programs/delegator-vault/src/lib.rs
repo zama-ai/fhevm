@@ -94,8 +94,9 @@ pub mod delegator_vault {
     pub fn grant_via_vault(
         ctx: Context<VaultDelegation>,
         delegate: Pubkey,
-        authority: Pubkey,
-        expiration_slot: u64,
+        program: Pubkey,
+        scope: [u8; 32],
+        expires_at: u64,
     ) -> Result<()> {
         let cpi_accounts = zama_host::cpi::accounts::DelegateForUserDecryption {
             payer: ctx.accounts.executor.to_account_info(),
@@ -109,8 +110,9 @@ pub mod delegator_vault {
             accounts: cpi_accounts.to_account_metas(None),
             data: zama_host::instruction::DelegateForUserDecryption {
                 delegate,
-                authority,
-                expiration_slot,
+                program,
+                scope,
+                expires_at,
             }
             .data(),
         };

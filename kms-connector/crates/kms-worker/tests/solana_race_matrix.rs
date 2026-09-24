@@ -205,10 +205,8 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
-    let mut revoked = granted;
-    revoked.revoked = true;
-    revoked.last_update_slot = AFTER;
+    let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
+    let revoked = granted.revoked();
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -236,8 +234,8 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let failure = outcome.expect_err("after revocation the exact delegation is dead");
     assert!(failure.is_recoverable());
     assert!(
-        matches!(failure, AuthorizationFailure::Delegation { index:0, source: DelegationFailure::NoLiveGrant { exact, wildcard } }
-        if matches!(*exact, DelegationFailure::Revoked) && matches!(*wildcard, DelegationFailure::Absent { .. }))
+        matches!(failure, AuthorizationFailure::Delegation { index:0, source: DelegationFailure::NoLiveDelegation { exact, wildcard } }
+        if matches!(*exact, DelegationFailure::NotLive { expires_at: 0, .. }) && matches!(*wildcard, DelegationFailure::Absent { .. }))
     );
 }
 
@@ -249,8 +247,7 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
     let delegator = Wallet::new(2);
     let own = handle(0x31, FHE_TYPE_UINT64);
     let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
-    let mut revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
-    revoked.revoked = true;
+    let revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey()).revoked();
     let request = RequestBuilder::new(&signer)
         .direct(&own_encrypted_store, own)
         .typed();

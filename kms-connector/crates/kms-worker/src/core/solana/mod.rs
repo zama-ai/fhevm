@@ -14,7 +14,7 @@ pub mod watermark;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
-use zama_solana_acl::{DELEGATION_SEED, PERMIT_INVALIDATION_SEED, WILDCARD_AUTHORITY};
+use zama_solana_acl::{DELEGATION_SEED, PERMIT_INVALIDATION_SEED, WILDCARD_APP};
 
 pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
@@ -34,25 +34,33 @@ pub fn permit_invalidation_address(
     find_address(program_id, &[PERMIT_INVALIDATION_SEED, &user])
 }
 
+/// The delegation row of `delegator → delegate` in the application `(app_program, app_scope)`.
 pub fn delegation_address(
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
-    authority: SolanaPubkeyBytes,
+    app_program: SolanaPubkeyBytes,
+    app_scope: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
     find_address(
         program_id,
-        &[DELEGATION_SEED, &delegator, &delegate, &authority],
+        &[
+            DELEGATION_SEED,
+            &delegator,
+            &delegate,
+            &app_program,
+            &app_scope,
+        ],
     )
 }
 
-/// The delegation row of `(delegator, delegate)` that covers every authority.
+/// The delegation row of `delegator → delegate` that covers every application.
 pub fn wildcard_delegation_address(
     program_id: SolanaPubkeyBytes,
     delegator: SolanaPubkeyBytes,
     delegate: SolanaPubkeyBytes,
 ) -> (SolanaPubkeyBytes, u8) {
-    delegation_address(program_id, delegator, delegate, WILDCARD_AUTHORITY)
+    delegation_address(program_id, delegator, delegate, WILDCARD_APP, WILDCARD_APP)
 }
 
 fn find_address(program_id: SolanaPubkeyBytes, seeds: &[&[u8]]) -> (SolanaPubkeyBytes, u8) {

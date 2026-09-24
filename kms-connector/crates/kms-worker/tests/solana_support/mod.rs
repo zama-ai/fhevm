@@ -40,10 +40,11 @@ use std::num::NonZeroUsize;
 use std::sync::Mutex;
 use std::time::Duration;
 use zama_solana_acl::{
-    DELEGATION_SEED, EncryptedSlot, EncryptedStore, MmrProof, PERMIT_INVALIDATION_SEED,
-    PermitInvalidationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_AUTHORITY,
-    encode_permit_invalidation, encrypted_store_discriminator, historical_access_leaf_commitment,
-    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
+    CLOCK_SYSVAR_ID, DELEGATION_SEED, EncryptedSlot, EncryptedStore, MmrProof,
+    PERMIT_INVALIDATION_SEED, PermitInvalidationRecord, SYSVAR_OWNER_ID,
+    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP, encode_permit_invalidation,
+    encrypted_store_discriminator, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
+    public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
@@ -155,6 +156,8 @@ pub const DEFAULT_START: u64 = 1_700_000_000;
 pub const DEFAULT_DURATION: u64 = 3_600;
 /// A time inside the default window.
 pub const NOW_INSIDE_WINDOW: u64 = DEFAULT_START + 60;
+/// The Unix time the host's Clock reads in every world, unless a test sets another.
+pub const HOST_NOW: u64 = NOW_INSIDE_WINDOW;
 /// The fixture deployment inside the default window.
 pub const CONTEXT: AuthorizationContext = context_at(NOW_INSIDE_WINDOW);
 
@@ -528,46 +531,56 @@ pub struct DelegationFixture {
     pub delegator: SolanaPubkeyBytes,
     /// Who received it.
     pub delegate: SolanaPubkeyBytes,
-    /// Which authority it covers.
-    pub authority: SolanaPubkeyBytes,
-    /// Last slot it is valid at.
-    pub expiration_slot: u64,
+    /// The application's program, or the wildcard.
+    pub program: SolanaPubkeyBytes,
+    /// The application's scope, or the wildcard.
+    pub scope: SolanaPubkeyBytes,
+    /// Unix second it ends at, exclusive; 0 once revoked.
+    pub expires_at: u64,
     /// The counter no rule reads and no signature commits to.
     pub delegation_counter: u64,
-    /// When it was last written.
+    /// When it was last written, which no rule reads.
     pub last_update_slot: u64,
-    /// Whether the delegator revoked it.
-    pub revoked: bool,
 }
 
 impl DelegationFixture {
-    /// A live delegation covering the fixture authority.
-    pub fn live(
-        delegator: SolanaPubkeyBytes,
-        delegate: SolanaPubkeyBytes,
-        observed_slot: u64,
-    ) -> Self {
+    /// A delegation live at [`HOST_NOW`] in the default encrypted store's application.
+    pub fn live(delegator: SolanaPubkeyBytes, delegate: SolanaPubkeyBytes) -> Self {
         Self {
             delegator,
             delegate,
-            authority: AUTHORITY,
-            expiration_slot: observed_slot + 100,
+            program: APP_PROGRAM,
+            scope: SCOPE,
+            expires_at: HOST_NOW + 3_600,
             delegation_counter: 1,
-            last_update_slot: observed_slot.saturating_sub(1),
-            revoked: false,
+            last_update_slot: 1,
         }
     }
 
-    /// A live wildcard row: the same grant with the reserved sentinel in place of an encrypted
-    /// value account authority, which is how a delegator covers every authority of theirs at once.
-    pub fn live_wildcard(
-        delegator: SolanaPubkeyBytes,
-        delegate: SolanaPubkeyBytes,
-        observed_slot: u64,
-    ) -> Self {
+    /// A live wildcard row: the same grant with the sentinel in place of the application, which is
+    /// how a delegator covers every application at once.
+    pub fn live_wildcard(delegator: SolanaPubkeyBytes, delegate: SolanaPubkeyBytes) -> Self {
         Self {
-            authority: WILDCARD_AUTHORITY,
-            ..Self::live(delegator, delegate, observed_slot)
+            program: WILDCARD_APP,
+            scope: WILDCARD_APP,
+            ..Self::live(delegator, delegate)
+        }
+    }
+
+    /// The same record in the application of `encrypted_store`.
+    pub fn in_application_of(self, encrypted_store: &EncryptedStoreFixture) -> Self {
+        Self {
+            program: encrypted_store.encrypted_store.program,
+            scope: encrypted_store.encrypted_store.scope,
+            ..self
+        }
+    }
+
+    /// The same record revoked, which zeroes its expiry.
+    pub fn revoked(self) -> Self {
+        Self {
+            expires_at: 0,
+            ..self
         }
     }
 
@@ -578,7 +591,8 @@ impl DelegationFixture {
                 DELEGATION_SEED,
                 &self.delegator,
                 &self.delegate,
-                &self.authority,
+                &self.program,
+                &self.scope,
             ],
             &Pubkey::new_from_array(PROGRAM_ID),
         );
@@ -591,16 +605,30 @@ impl DelegationFixture {
         let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
         data.extend_from_slice(&self.delegator);
         data.extend_from_slice(&self.delegate);
-        data.extend_from_slice(&self.authority);
-        data.extend_from_slice(&self.expiration_slot.to_le_bytes());
+        data.extend_from_slice(&self.program);
+        data.extend_from_slice(&self.scope);
+        data.extend_from_slice(&self.expires_at.to_le_bytes());
         data.extend_from_slice(&self.delegation_counter.to_le_bytes());
         data.extend_from_slice(&self.last_update_slot.to_le_bytes());
-        data.push(self.revoked as u8);
         data.push(bump);
         SnapshotAccount {
             owner: PROGRAM_ID,
             data,
         }
+    }
+}
+
+/// The Clock sysvar reading `unix_timestamp`, as a node returns it.
+pub fn clock_account(unix_timestamp: u64) -> SnapshotAccount {
+    let mut data = Vec::new();
+    // slot, epoch_start_timestamp, epoch, leader_schedule_epoch
+    for field in [0u64; 4] {
+        data.extend_from_slice(&field.to_le_bytes());
+    }
+    data.extend_from_slice(&unix_timestamp.to_le_bytes());
+    SnapshotAccount {
+        owner: SYSVAR_OWNER_ID,
+        data,
     }
 }
 
@@ -653,12 +681,20 @@ pub struct World {
 }
 
 impl World {
-    /// A world at `slot` holding no accounts yet.
+    /// A world at `slot` holding only the Clock, at [`HOST_NOW`].
     pub fn at_slot(slot: u64) -> Self {
         Self {
             slot,
             ..Self::default()
         }
+        .with_clock(HOST_NOW)
+    }
+
+    /// The same world with the Clock reading `unix_timestamp`.
+    pub fn with_clock(mut self, unix_timestamp: u64) -> Self {
+        self.accounts
+            .insert(CLOCK_SYSVAR_ID, clock_account(unix_timestamp));
+        self
     }
 
     /// Places an encrypted store in the world.

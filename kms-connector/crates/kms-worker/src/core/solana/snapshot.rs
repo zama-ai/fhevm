@@ -1,8 +1,9 @@
 //! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot.
 //!
 //! The first read covers the signer's invalidation record and the named encrypted stores. A
-//! delegated request then reads the same accounts plus the delegation records the first read made
-//! derivable. Every rule uses that second read, which must not be older than the first.
+//! delegated request then reads the same accounts plus the Clock and the delegation records the
+//! first read made derivable. Every rule uses that second read, which must not be older than the
+//! first.
 
 use super::{SolanaPubkeyBytes, permit_invalidation_address};
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
@@ -19,6 +20,7 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use url::Url;
+use zama_solana_acl::{CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID, decode_clock_unix_timestamp};
 
 /// The System program's id: the owner of an account no program has taken over.
 pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
@@ -104,6 +106,18 @@ impl HostSnapshot {
         }
     }
 
+    /// The Clock's Unix time at this read's slot, which delegation expiry is checked against.
+    pub fn unix_timestamp(&self) -> Result<u64, SnapshotError> {
+        let malformed = || SnapshotError::MalformedClock;
+        let clock = self
+            .accounts
+            .get(&CLOCK_SYSVAR_ID)
+            .and_then(Option::as_ref)
+            .filter(|clock| clock.owner == SYSVAR_OWNER_ID)
+            .ok_or_else(malformed)?;
+        decode_clock_unix_timestamp(&clock.data).map_err(|_| malformed())
+    }
+
     /// Takes this read as the deciding one. A read older than the discovery read comes from a
     /// node that fell behind, and would reject grants the discovery read already saw.
     pub fn deciding_after(self, discovery: &HostSnapshot) -> Result<Self, SnapshotError> {
@@ -138,7 +152,14 @@ pub fn plan_second_read(
     first: &SnapshotKeys,
     delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
 ) -> SnapshotKeys {
-    SnapshotKeys::new(first.as_slice().iter().copied().chain(delegation_keys))
+    SnapshotKeys::new(
+        first
+            .as_slice()
+            .iter()
+            .copied()
+            .chain(std::iter::once(CLOCK_SYSVAR_ID))
+            .chain(delegation_keys),
+    )
 }
 
 #[derive(Clone)]
@@ -253,6 +274,9 @@ pub enum SnapshotError {
     Unavailable { reason: String },
     #[error("host state read returned {returned} accounts for {requested} keys")]
     ResponseLengthMismatch { requested: usize, returned: usize },
+    /// The Clock sysvar always exists, so a read without a decodable one comes from a bad node.
+    #[error("host state read returned no decodable Clock sysvar")]
+    MalformedClock,
     #[error(
         "the deciding read observed slot {deciding_slot}, older than the discovery read's {discovery_slot}"
     )]

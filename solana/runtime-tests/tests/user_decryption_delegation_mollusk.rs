@@ -9,10 +9,10 @@
 //!
 //! Two behaviours are pinned deliberately rather than discovered:
 //!
-//! * a grant whose authority is the wildcard sentinel `[0xff; 32]` is legal and writes an
-//!   ordinary record — that row is the delegator's grant across every authority of theirs,
-//!   the same rule the EVM ACL applies to its wildcard delegation address;
-//! * both grant and revoke are pause-gated. During an incident pause the delegator's only
+//! * a grant whose application is the wildcard `[0xff; 32]` in both its program and its scope
+//!   position is legal and writes an ordinary record — that row is the delegator's grant across
+//!   every application, the same rule the EVM ACL applies to its wildcard delegation address;
+//! * both grant and revoke are gated by the `acl_writes` pause flag. During an incident pause the delegator's only
 //!   lever over existing delegations is blocked while those delegations keep authorizing
 //!   (the Connector's reads are pause-blind) — an asymmetry shared with the EVM side and
 //!   raised there as an open question; these tests pin the current parity, not endorse it.
@@ -32,7 +32,7 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
-use zama_host::{self as host, UserDecryptionDelegation};
+use zama_host::{self as host, AppScope, UserDecryptionDelegation};
 use zama_solana_test_kit::{
     anchor_framework_error_check, cost_snapshot, empty_system_account,
     funded_system_account as funded_wallet, host_config_account as host_config_account_from,
@@ -43,22 +43,20 @@ use zama_solana_test_kit::{
 // Harness
 // ---------------------------------------------------------------------------
 
-/// The slot every test runs at unless it says otherwise. Existing records are written at
-/// [`EARLIER_SLOT`], so the once-per-slot guard does not interfere with tests that are not
-/// about it.
+/// The slot every test runs at. Existing records are written at [`EARLIER_SLOT`], so the
+/// once-per-slot guard does not interfere with tests that are not about it.
 const CURRENT_SLOT: u64 = 100;
 const EARLIER_SLOT: u64 = 50;
-/// The expiration every grant asks for, comfortably above [`CURRENT_SLOT`].
-const EXPIRATION: u64 = 500;
-
-fn mollusk_at_slot(slot: u64) -> Mollusk {
-    let mut mollusk = zama_solana_test_kit::svm(&host::id(), "zama_host");
-    mollusk.sysvars.clock.slot = slot;
-    mollusk
-}
+/// The Unix second every test runs at.
+const NOW: u64 = 1_700_000_000;
+/// The expiry every grant asks for, an hour after [`NOW`].
+const EXPIRES_AT: u64 = NOW + 3_600;
 
 fn mollusk() -> Mollusk {
-    mollusk_at_slot(CURRENT_SLOT)
+    let mut mollusk = zama_solana_test_kit::svm(&host::id(), "zama_host");
+    mollusk.sysvars.clock.slot = CURRENT_SLOT;
+    mollusk.sysvars.clock.unix_timestamp = NOW as i64;
+    mollusk
 }
 
 fn anchor_ix<A, D>(accounts: A, args: D) -> Instruction
@@ -89,8 +87,8 @@ fn grant_ix(
     delegator: Pubkey,
     delegation_record: Pubkey,
     delegate: Pubkey,
-    authority: Pubkey,
-    expiration_slot: u64,
+    app: AppScope,
+    expires_at: u64,
 ) -> Instruction {
     let (host_config, _) = host::host_config_address();
     anchor_ix(
@@ -103,8 +101,9 @@ fn grant_ix(
         },
         host::instruction::DelegateForUserDecryption {
             delegate,
-            authority,
-            expiration_slot,
+            program: app.program,
+            scope: app.scope,
+            expires_at,
         },
     )
 }
@@ -129,22 +128,29 @@ struct Actors {
     payer: Pubkey,
     delegator: Pubkey,
     delegate: Pubkey,
-    authority: Pubkey,
+    app: AppScope,
     record_key: Pubkey,
     record_bump: u8,
+}
+
+fn app() -> AppScope {
+    AppScope {
+        program: Pubkey::new_unique(),
+        scope: [0x5c; 32],
+    }
 }
 
 fn actors() -> Actors {
     let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
-    let authority = Pubkey::new_unique();
+    let app = app();
     let (record_key, record_bump) =
-        host::user_decryption_delegation_address(delegator, delegate, authority);
+        host::user_decryption_delegation_address(delegator, delegate, app);
     Actors {
         payer: Pubkey::new_unique(),
         delegator,
         delegate,
-        authority,
+        app,
         record_key,
         record_bump,
     }
@@ -156,11 +162,11 @@ fn live_record(actors: &Actors) -> UserDecryptionDelegation {
     UserDecryptionDelegation {
         delegator: actors.delegator,
         delegate: actors.delegate,
-        authority: actors.authority,
-        expiration_slot: EXPIRATION,
+        program: actors.app.program,
+        scope: actors.app.scope,
+        expires_at: EXPIRES_AT,
         delegation_counter: 1,
         last_update_slot: EARLIER_SLOT,
-        revoked: false,
         bump: actors.record_bump,
     }
 }
@@ -221,8 +227,8 @@ fn a_grant_creates_the_record_at_the_canonical_pda() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[Check::success()],
@@ -245,11 +251,11 @@ fn a_grant_creates_the_record_at_the_canonical_pda() {
     let record = decode_record(&created.data);
     assert_eq!(record.delegator, actors.delegator);
     assert_eq!(record.delegate, actors.delegate);
-    assert_eq!(record.authority, actors.authority);
-    assert_eq!(record.expiration_slot, EXPIRATION);
+    assert_eq!(record.program, actors.app.program);
+    assert_eq!(record.scope, actors.app.scope);
+    assert_eq!(record.expires_at, EXPIRES_AT);
     assert_eq!(record.delegation_counter, 1, "the first grant counts one");
     assert_eq!(record.last_update_slot, CURRENT_SLOT);
-    assert!(!record.revoked);
     assert_eq!(record.bump, actors.record_bump);
 }
 
@@ -268,8 +274,8 @@ fn a_grant_whose_payer_is_the_delegator_creates_the_record() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &[
             (actors.delegator, funded_wallet()),
@@ -310,8 +316,8 @@ fn a_grant_survives_a_record_address_prefunded_by_a_third_party() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[Check::success()],
@@ -357,8 +363,8 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(
@@ -367,20 +373,27 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
     );
 }
 
-/// A grant whose authority is the wildcard sentinel is legal and writes an ordinary record:
-/// the delegator's grant across every authority of theirs. The sentinel is refused only in
-/// the delegate position — a real party has to be named on the receiving end.
+/// A grant over the wildcard application is legal and writes an ordinary record: the delegator's
+/// grant across every application. The sentinel is refused only in the delegate position — a
+/// real party has to be named on the receiving end.
 #[test]
-fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
+fn a_wildcard_grant_is_legal_and_writes_the_record() {
     let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
-    let (record_key, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
+    let (record_key, _) =
+        host::user_decryption_delegation_address(delegator, delegate, AppScope::WILDCARD);
     let payer = Pubkey::new_unique();
     let (host_config, host_config_acc) = host_config_account(false);
 
     let result = mollusk().process_and_validate_instruction(
-        &grant_ix(payer, delegator, record_key, delegate, wildcard, EXPIRATION),
+        &grant_ix(
+            payer,
+            delegator,
+            record_key,
+            delegate,
+            AppScope::WILDCARD,
+            EXPIRES_AT,
+        ),
         &[
             (payer, funded_wallet()),
             (delegator, funded_wallet()),
@@ -392,19 +405,55 @@ fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
     );
 
     let record = decode_record(&result.get_account(&record_key).expect("record").data);
-    assert_eq!(record.authority, wildcard);
+    assert_eq!(record.program.to_bytes(), host::WILDCARD_APP);
+    assert_eq!(record.scope, host::WILDCARD_APP);
     assert_eq!(record.delegation_counter, 1);
+}
+
+/// The sentinel fills the whole application or none of it. A half-wildcard would be a second
+/// spelling of "every application" that no reader looks up.
+#[test]
+fn a_half_wildcard_grant_is_rejected() {
+    let actors = actors();
+    let wildcard_program = Pubkey::new_from_array(host::WILDCARD_APP);
+    let halves = [
+        AppScope {
+            program: wildcard_program,
+            scope: actors.app.scope,
+        },
+        AppScope {
+            program: actors.app.program,
+            scope: host::WILDCARD_APP,
+        },
+    ];
+
+    for app in halves {
+        let (record_key, _) =
+            host::user_decryption_delegation_address(actors.delegator, actors.delegate, app);
+        let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+        accounts[3].0 = record_key;
+
+        mollusk().process_and_validate_instruction(
+            &grant_ix(
+                actors.payer,
+                actors.delegator,
+                record_key,
+                actors.delegate,
+                app,
+                EXPIRES_AT,
+            ),
+            &accounts,
+            &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        );
+    }
 }
 
 /// A default delegate names nobody.
 #[test]
 fn a_grant_to_the_default_pubkey_is_rejected() {
     let actors = actors();
-    let (record_key, _) = host::user_decryption_delegation_address(
-        actors.delegator,
-        Pubkey::default(),
-        actors.authority,
-    );
+    let (record_key, _) =
+        host::user_decryption_delegation_address(actors.delegator, Pubkey::default(), actors.app);
     let mut accounts = grant_accounts(&actors, empty_system_account(), false);
     accounts[3].0 = record_key;
 
@@ -414,23 +463,24 @@ fn a_grant_to_the_default_pubkey_is_rejected() {
             actors.delegator,
             record_key,
             Pubkey::default(),
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
-/// A default authority scopes nothing.
+/// No encrypted store belongs to the default program, so a grant over it scopes nothing.
 #[test]
-fn a_grant_over_the_default_authority_is_rejected() {
+fn a_grant_over_the_default_program_is_rejected() {
     let actors = actors();
-    let (record_key, _) = host::user_decryption_delegation_address(
-        actors.delegator,
-        actors.delegate,
-        Pubkey::default(),
-    );
+    let app = AppScope {
+        program: Pubkey::default(),
+        scope: actors.app.scope,
+    };
+    let (record_key, _) =
+        host::user_decryption_delegation_address(actors.delegator, actors.delegate, app);
     let mut accounts = grant_accounts(&actors, empty_system_account(), false);
     accounts[3].0 = record_key;
 
@@ -440,22 +490,22 @@ fn a_grant_over_the_default_authority_is_rejected() {
             actors.delegator,
             record_key,
             actors.delegate,
-            Pubkey::default(),
-            EXPIRATION,
+            app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
-/// The sentinel is refused in the delegate position: "everyone" cannot be a delegate, only a
-/// scope.
+/// The sentinel is refused in the delegate position: "everyone" cannot be a delegate, only an
+/// application.
 #[test]
 fn a_grant_to_the_wildcard_sentinel_is_rejected() {
     let actors = actors();
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
+    let wildcard = Pubkey::new_from_array(host::WILDCARD_APP);
     let (record_key, _) =
-        host::user_decryption_delegation_address(actors.delegator, wildcard, actors.authority);
+        host::user_decryption_delegation_address(actors.delegator, wildcard, actors.app);
     let mut accounts = grant_accounts(&actors, empty_system_account(), false);
     accounts[3].0 = record_key;
 
@@ -465,28 +515,32 @@ fn a_grant_to_the_wildcard_sentinel_is_rejected() {
             actors.delegator,
             record_key,
             wildcard,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
-/// Delegating to oneself is meaningless and refused, as are the two overlaps with the
-/// authority: the three tuple positions must name three different parties.
+/// EVM's `SenderCannotBeDelegate`, `SenderCannotBeContractAddress` and
+/// `DelegateCannotBeContractAddress`, with the application's program as the contract.
 #[test]
 fn a_grant_between_overlapping_parties_is_rejected() {
     let actors = actors();
     let overlaps = [
-        (actors.delegator, actors.authority), // delegate == delegator
-        (actors.delegate, actors.delegator),  // authority == delegator
-        (actors.delegate, actors.delegate),   // authority == delegate
+        (actors.delegator, actors.app.program), // delegate == delegator
+        (actors.delegate, actors.delegator),    // program == delegator
+        (actors.delegate, actors.delegate),     // program == delegate
     ];
 
-    for (delegate, authority) in overlaps {
+    for (delegate, program) in overlaps {
+        let app = AppScope {
+            program,
+            scope: actors.app.scope,
+        };
         let (record_key, _) =
-            host::user_decryption_delegation_address(actors.delegator, delegate, authority);
+            host::user_decryption_delegation_address(actors.delegator, delegate, app);
         let mut accounts = grant_accounts(&actors, empty_system_account(), false);
         accounts[3].0 = record_key;
 
@@ -496,8 +550,8 @@ fn a_grant_between_overlapping_parties_is_rejected() {
                 actors.delegator,
                 record_key,
                 delegate,
-                authority,
-                EXPIRATION,
+                app,
+                EXPIRES_AT,
             ),
             &accounts,
             &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
@@ -505,12 +559,11 @@ fn a_grant_between_overlapping_parties_is_rejected() {
     }
 }
 
-/// The expiration must lie strictly beyond the current slot: a grant expiring in the very
-/// slot it lands in was never live at any observation point.
+/// The expiry must lie strictly after the current second, as EVM's `ExpirationDateInThePast`
+/// requires: a grant ending now is dead on arrival, and one ending a second later is live.
 #[test]
-fn a_grant_expiring_at_the_current_slot_is_rejected() {
+fn a_grant_must_expire_after_now() {
     let actors = actors();
-    let accounts = grant_accounts(&actors, empty_system_account(), false);
 
     mollusk().process_and_validate_instruction(
         &grant_ix(
@@ -518,12 +571,27 @@ fn a_grant_expiring_at_the_current_slot_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            CURRENT_SLOT,
+            actors.app,
+            NOW,
         ),
-        &accounts,
+        &grant_accounts(&actors, empty_system_account(), false),
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
+
+    let result = mollusk().process_and_validate_instruction(
+        &grant_ix(
+            actors.payer,
+            actors.delegator,
+            actors.record_key,
+            actors.delegate,
+            actors.app,
+            NOW + 1,
+        ),
+        &grant_accounts(&actors, empty_system_account(), false),
+        &[Check::success()],
+    );
+    let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
+    assert_eq!(record.expires_at, NOW + 1);
 }
 
 /// Granting is pause-gated.
@@ -538,8 +606,8 @@ fn a_grant_while_paused_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
@@ -559,8 +627,8 @@ fn a_grant_with_remaining_accounts_is_rejected() {
         actors.delegator,
         actors.record_key,
         actors.delegate,
-        actors.authority,
-        EXPIRATION,
+        actors.app,
+        EXPIRES_AT,
     );
     instruction
         .accounts
@@ -590,8 +658,8 @@ fn a_grant_into_a_non_canonical_address_is_rejected() {
             actors.delegator,
             elsewhere,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(
@@ -610,8 +678,8 @@ fn a_grant_requires_the_delegators_signature() {
         actors.delegator,
         actors.record_key,
         actors.delegate,
-        actors.authority,
-        EXPIRATION,
+        actors.app,
+        EXPIRES_AT,
     );
     // The delegator is the second account of the instruction; clear its signer flag.
     instruction.accounts[1] = AccountMeta::new_readonly(actors.delegator, false);
@@ -646,8 +714,8 @@ fn a_grant_with_a_substituted_host_config_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[anchor_framework_error_check(
@@ -666,7 +734,7 @@ fn a_regrant_increments_the_counter_and_rewrites_the_fields() {
     let actors = actors();
     let existing = live_record(&actors);
     let accounts = grant_accounts(&actors, record_account(&existing), false);
-    let new_expiration = EXPIRATION + 100;
+    let new_expires_at = EXPIRES_AT + 100;
 
     let result = mollusk().process_and_validate_instruction(
         &grant_ix(
@@ -674,18 +742,17 @@ fn a_regrant_increments_the_counter_and_rewrites_the_fields() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            new_expiration,
+            actors.app,
+            new_expires_at,
         ),
         &accounts,
         &[Check::success()],
     );
 
     let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
-    assert_eq!(record.expiration_slot, new_expiration);
+    assert_eq!(record.expires_at, new_expires_at);
     assert_eq!(record.delegation_counter, 2, "a re-grant counts one more");
     assert_eq!(record.last_update_slot, CURRENT_SLOT);
-    assert!(!record.revoked);
 }
 
 /// A record mutates at most once per slot — that is what makes every
@@ -703,8 +770,8 @@ fn a_regrant_in_the_records_own_update_slot_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION + 100,
+            actors.app,
+            EXPIRES_AT + 100,
         ),
         &accounts,
         &[custom_error(
@@ -727,23 +794,21 @@ fn a_regrant_with_the_same_expiration_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
-/// Re-granting a revoked record reinstates it — same expiration allowed, because the change
-/// is the revocation flag itself. The counter still moves, so the two states are never
-/// confusable.
+/// Re-granting a revoked record reinstates it. The counter still moves, so the two states are
+/// never confusable.
 #[test]
 fn a_regrant_after_revocation_reinstates_the_delegation() {
     let actors = actors();
     let mut revoked = live_record(&actors);
-    revoked.revoked = true;
-    revoked.expiration_slot = 0;
+    revoked.expires_at = 0;
     revoked.delegation_counter = 2;
     let accounts = grant_accounts(&actors, record_account(&revoked), false);
 
@@ -753,16 +818,15 @@ fn a_regrant_after_revocation_reinstates_the_delegation() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION,
+            actors.app,
+            EXPIRES_AT,
         ),
         &accounts,
         &[Check::success()],
     );
 
     let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
-    assert!(!record.revoked, "the re-grant reinstates the delegation");
-    assert_eq!(record.expiration_slot, EXPIRATION);
+    assert_eq!(record.expires_at, EXPIRES_AT);
     assert_eq!(record.delegation_counter, 3);
 }
 
@@ -782,8 +846,8 @@ fn a_counter_at_the_maximum_cannot_be_regranted() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION + 100,
+            actors.app,
+            EXPIRES_AT + 100,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
@@ -807,8 +871,8 @@ fn an_existing_record_naming_another_tuple_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION + 100,
+            actors.app,
+            EXPIRES_AT + 100,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
@@ -830,8 +894,8 @@ fn an_existing_record_of_the_wrong_size_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION + 100,
+            actors.app,
+            EXPIRES_AT + 100,
         ),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
@@ -852,8 +916,8 @@ fn an_existing_record_with_a_non_canonical_bump_is_rejected() {
             actors.delegator,
             actors.record_key,
             actors.delegate,
-            actors.authority,
-            EXPIRATION + 100,
+            actors.app,
+            EXPIRES_AT + 100,
         ),
         &accounts,
         &[custom_error(
@@ -866,10 +930,10 @@ fn an_existing_record_with_a_non_canonical_bump_is_rejected() {
 // Revoke
 // ---------------------------------------------------------------------------
 
-/// Revocation flips the flag, zeroes the expiration, counts one more and stamps the slot —
-/// the exact state the Connector's freshness rule reads as terminally dead.
+/// Revocation zeroes the expiry, counts one more and stamps the slot. A revoked record then
+/// reads like one never granted, as on EVM.
 #[test]
-fn a_revocation_marks_the_record_revoked() {
+fn a_revocation_zeroes_the_expiry() {
     let actors = actors();
     let existing = live_record(&actors);
     let accounts = revoke_accounts(&actors, record_account(&existing), false);
@@ -881,8 +945,7 @@ fn a_revocation_marks_the_record_revoked() {
     );
 
     let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
-    assert!(record.revoked);
-    assert_eq!(record.expiration_slot, 0);
+    assert_eq!(record.expires_at, 0);
     assert_eq!(record.delegation_counter, 2);
     assert_eq!(record.last_update_slot, CURRENT_SLOT);
 }
@@ -907,20 +970,34 @@ fn a_stranger_cannot_revoke_a_delegation_they_did_not_grant() {
     );
 }
 
-/// A second revocation is refused rather than absorbed: the counter must not move for a
-/// state that did not change.
+/// A second revocation is refused rather than absorbed, as EVM's `NotDelegatedYet`: the counter
+/// must not move for a state that did not change.
 #[test]
 fn a_second_revocation_is_rejected() {
     let actors = actors();
     let mut revoked = live_record(&actors);
-    revoked.revoked = true;
-    revoked.expiration_slot = 0;
+    revoked.expires_at = 0;
     let accounts = revoke_accounts(&actors, record_account(&revoked), false);
 
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::DelegationRevoked)],
+        &[custom_error(host::errors::ZamaHostError::NotDelegatedYet)],
+    );
+}
+
+/// There is nothing to revoke at an address no grant created.
+#[test]
+fn a_revocation_of_a_record_never_granted_is_rejected() {
+    let actors = actors();
+    let accounts = revoke_accounts(&actors, empty_system_account(), false);
+
+    mollusk().process_and_validate_instruction(
+        &revoke_ix(actors.delegator, actors.record_key),
+        &accounts,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
     );
 }
 
@@ -981,25 +1058,18 @@ fn a_record_with_a_non_canonical_bump_is_rejected_on_revocation() {
     );
 }
 
-/// Revocation is not pause-gated, unlike granting. A pause stops the Connector from serving user
-/// decryptions at all, so the delegator's abort has to stay open while it lasts — otherwise a
-/// paused host would freeze live grants in place with no way to withdraw them. Same reasoning as
-/// `revoke_permits`, which carries no config account for exactly this.
+/// Revocation is paused with the other ACL writes, as EVM's `whenNotPaused` revocation is.
 #[test]
-fn a_revocation_while_paused_succeeds() {
+fn a_revocation_while_paused_is_rejected() {
     let actors = actors();
     let existing = live_record(&actors);
     let accounts = revoke_accounts(&actors, record_account(&existing), true);
 
-    let result = mollusk().process_and_validate_instruction(
+    mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[Check::success()],
+        &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
     );
-
-    let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
-    assert!(record.revoked);
-    assert_eq!(record.expiration_slot, 0);
 }
 
 /// The revoke account list is closed too.
@@ -1082,11 +1152,12 @@ fn substituted_program_accounts_are_refused_by_their_discriminators() {
 // A program-controlled delegator
 // ---------------------------------------------------------------------------
 
-/// A runtime holding both the wrapper and the host, at [`CURRENT_SLOT`].
+/// A runtime holding both the wrapper and the host, at [`CURRENT_SLOT`] and [`NOW`].
 fn mollusk_with_vault() -> Mollusk {
     let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "delegator_vault");
     mollusk.add_program(&host::id(), "zama_host");
     mollusk.sysvars.clock.slot = CURRENT_SLOT;
+    mollusk.sysvars.clock.unix_timestamp = NOW as i64;
     mollusk
 }
 
@@ -1096,7 +1167,7 @@ struct VaultActors {
     executor: Pubkey,
     vault: Pubkey,
     delegate: Pubkey,
-    authority: Pubkey,
+    app: AppScope,
     record_key: Pubkey,
 }
 
@@ -1104,13 +1175,13 @@ fn vault_actors() -> VaultActors {
     let executor = Pubkey::new_unique();
     let (vault_pda, _) = vault::vault_address(executor);
     let delegate = Pubkey::new_unique();
-    let authority = Pubkey::new_unique();
-    let (record_key, _) = host::user_decryption_delegation_address(vault_pda, delegate, authority);
+    let app = app();
+    let (record_key, _) = host::user_decryption_delegation_address(vault_pda, delegate, app);
     VaultActors {
         executor,
         vault: vault_pda,
         delegate,
-        authority,
+        app,
         record_key,
     }
 }
@@ -1141,7 +1212,7 @@ fn vault_accounts(actors: &VaultActors, record: Account) -> Vec<(Pubkey, Account
     ]
 }
 
-fn grant_via_vault_ix(actors: &VaultActors, expiration_slot: u64) -> Instruction {
+fn grant_via_vault_ix(actors: &VaultActors, expires_at: u64) -> Instruction {
     let (host_config, _) = host::host_config_address();
     zama_solana_test_kit::anchor_ix(
         vault::id(),
@@ -1155,8 +1226,9 @@ fn grant_via_vault_ix(actors: &VaultActors, expiration_slot: u64) -> Instruction
         },
         vault::instruction::GrantViaVault {
             delegate: actors.delegate,
-            authority: actors.authority,
-            expiration_slot,
+            program: actors.app.program,
+            scope: actors.app.scope,
+            expires_at,
         },
     )
 }
@@ -1187,7 +1259,7 @@ fn a_vault_pda_grants_a_delegation_via_cpi() {
     let accounts = vault_accounts(&actors, empty_system_account());
 
     let result = mollusk_with_vault().process_and_validate_instruction(
-        &grant_via_vault_ix(&actors, EXPIRATION),
+        &grant_via_vault_ix(&actors, EXPIRES_AT),
         &accounts,
         &[Check::success()],
     );
@@ -1198,9 +1270,9 @@ fn a_vault_pda_grants_a_delegation_via_cpi() {
         "the delegator is the vault PDA, not the executor"
     );
     assert_eq!(record.delegate, actors.delegate);
-    assert_eq!(record.authority, actors.authority);
+    assert_eq!(record.program, actors.app.program);
+    assert_eq!(record.scope, actors.app.scope);
     assert_eq!(record.delegation_counter, 1);
-    assert!(!record.revoked);
 }
 
 /// The vault revokes what it granted, through the same seeds.
@@ -1208,15 +1280,15 @@ fn a_vault_pda_grants_a_delegation_via_cpi() {
 fn a_vault_pda_revokes_its_delegation_via_cpi() {
     let actors = vault_actors();
     let (_, record_bump) =
-        host::user_decryption_delegation_address(actors.vault, actors.delegate, actors.authority);
+        host::user_decryption_delegation_address(actors.vault, actors.delegate, actors.app);
     let existing = UserDecryptionDelegation {
         delegator: actors.vault,
         delegate: actors.delegate,
-        authority: actors.authority,
-        expiration_slot: EXPIRATION,
+        program: actors.app.program,
+        scope: actors.app.scope,
+        expires_at: EXPIRES_AT,
         delegation_counter: 1,
         last_update_slot: EARLIER_SLOT,
-        revoked: false,
         bump: record_bump,
     };
     let accounts = vault_accounts(&actors, record_account(&existing));
@@ -1228,8 +1300,7 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
     );
 
     let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
-    assert!(record.revoked);
-    assert_eq!(record.expiration_slot, 0);
+    assert_eq!(record.expires_at, 0);
     assert_eq!(record.delegation_counter, 2);
 }
 
@@ -1244,8 +1315,8 @@ fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
         actors.delegator,
         actors.record_key,
         actors.delegate,
-        actors.authority,
-        EXPIRATION,
+        actors.app,
+        EXPIRES_AT,
     );
     let mut forwarded = zama_solana_test_kit::anchor_ix(
         vault::id(),
@@ -1277,7 +1348,7 @@ fn an_executor_cannot_use_another_executors_vault() {
     let (strangers_vault, _) = vault::vault_address(stranger);
     let mut accounts = vault_accounts(&actors, empty_system_account());
     accounts[1].0 = strangers_vault;
-    let mut instruction = grant_via_vault_ix(&actors, EXPIRATION);
+    let mut instruction = grant_via_vault_ix(&actors, EXPIRES_AT);
     instruction.accounts[1] = AccountMeta::new_readonly(strangers_vault, false);
 
     mollusk_with_vault().process_and_validate_instruction(
@@ -1306,24 +1377,29 @@ fn fixture_hex(bytes: &[u8]) -> String {
 fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let delegator = Pubkey::new_from_array([0x11; 32]);
     let delegate = Pubkey::new_from_array([0x22; 32]);
-    let authority = Pubkey::new_from_array([0x33; 32]);
+    let app = AppScope {
+        program: Pubkey::new_from_array([0x33; 32]),
+        scope: [0x44; 32],
+    };
 
-    let (address, _) = host::user_decryption_delegation_address(delegator, delegate, authority);
+    let (address, _) = host::user_decryption_delegation_address(delegator, delegate, app);
     assert_eq!(
         address.to_string(),
-        "GtmmNNN2djBNk8JaFbD2vER8eDzmE4CdL6SBz65cFwgo"
+        "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
     );
 
     let grant = host::instruction::DelegateForUserDecryption {
         delegate,
-        authority,
-        expiration_slot: 500,
+        program: app.program,
+        scope: app.scope,
+        expires_at: 500,
     }
     .data();
     assert_eq!(
         fixture_hex(&grant),
         "f0f8d7586df401672222222222222222222222222222222222222222222222222222222222222222\
-         3333333333333333333333333333333333333333333333333333333333333333f401000000000000"
+         3333333333333333333333333333333333333333333333333333333333333333\
+         4444444444444444444444444444444444444444444444444444444444444444f401000000000000"
     );
 
     let revoke = host::instruction::RevokeDelegationForUserDecryption {}.data();
@@ -1332,17 +1408,16 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     // The record as the program serializes it, for the SDK's hand-rolled account decoder. The
     // bump is the canonical one of the address above — the only value the program ever stores,
     // and the SDK's fetch now validates it against its own derivation.
-    let (_, canonical_bump) =
-        host::user_decryption_delegation_address(delegator, delegate, authority);
+    let (_, canonical_bump) = host::user_decryption_delegation_address(delegator, delegate, app);
     assert_eq!(canonical_bump, 255);
     let record = serialized(UserDecryptionDelegation {
         delegator,
         delegate,
-        authority,
-        expiration_slot: 500,
+        program: app.program,
+        scope: app.scope,
+        expires_at: 500,
         delegation_counter: 7,
         last_update_slot: 400,
-        revoked: false,
         bump: canonical_bump,
     });
     assert_eq!(
@@ -1350,24 +1425,23 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
         "25058b21493501f81111111111111111111111111111111111111111111111111111111111111111\
          2222222222222222222222222222222222222222222222222222222222222222\
          3333333333333333333333333333333333333333333333333333333333333333\
-         f4010000000000000700000000000000900100000000000000ff"
+         4444444444444444444444444444444444444444444444444444444444444444\
+         f40100000000000007000000000000009001000000000000ff"
     );
 }
 
 /// The relayer's advisory pre-check derives the same addresses from raw seeds
-/// (`relayer/src/host/acl_checker.rs`), where these literals are asserted against the same
-/// inputs — a seed-order drift on either side breaks both suites on the same bytes. The
-/// authority-specific row shares the `5bK6ZBSp…` literal of the SDK fixture above.
+/// (`relayer/src/host/solana_delegation_precheck.rs`), where these literals are asserted against
+/// the same inputs — a seed-order drift on either side breaks both suites on the same bytes.
 #[test]
 fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {
     let delegator = Pubkey::new_from_array([0x11; 32]);
     let delegate = Pubkey::new_from_array([0x22; 32]);
-    let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
-
-    let (wildcard_row, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
+    let (wildcard_row, _) =
+        host::user_decryption_delegation_address(delegator, delegate, AppScope::WILDCARD);
     assert_eq!(
         wildcard_row.to_string(),
-        "F5qWQMxdZTvH4QFYHepDM2k8jgVZUDXW3atJe9qSDFKm"
+        "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
     );
 
     let (value_address, _) =
@@ -1402,14 +1476,17 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 fn cost_snapshot_delegate_for_user_decryption() {
     let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
     let delegate = Pubkey::new_from_array([0x43; 32]);
-    let authority = Pubkey::new_from_array([0x44; 32]);
+    let app = AppScope {
+        program: Pubkey::new_from_array([0x44; 32]),
+        scope: [0x45; 32],
+    };
     let (record_key, record_bump) =
-        host::user_decryption_delegation_address(delegator, delegate, authority);
+        host::user_decryption_delegation_address(delegator, delegate, app);
     let actors = Actors {
         payer: Pubkey::new_from_array([0x42; 32]),
         delegator,
         delegate,
-        authority,
+        app,
         record_key,
         record_bump,
     };
@@ -1418,8 +1495,8 @@ fn cost_snapshot_delegate_for_user_decryption() {
         actors.delegator,
         actors.record_key,
         actors.delegate,
-        actors.authority,
-        EXPIRATION,
+        actors.app,
+        EXPIRES_AT,
     );
 
     let result = mollusk().process_and_validate_instruction(

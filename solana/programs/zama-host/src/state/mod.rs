@@ -498,6 +498,12 @@ pub struct AppScope {
 }
 
 impl AppScope {
+    /// The application of a wildcard delegation row, which covers every application.
+    pub const WILDCARD: Self = Self {
+        program: Pubkey::new_from_array(WILDCARD_APP),
+        scope: WILDCARD_APP,
+    };
+
     fn address(&self, prefix: &[u8]) -> (Pubkey, u8) {
         Pubkey::find_program_address(&[prefix, self.program.as_ref(), &self.scope], &crate::ID)
     }
@@ -533,18 +539,19 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &crate::ID)
 }
 
-/// Returns the canonical user-decryption delegation address.
+/// Returns the canonical user-decryption delegation address of `delegator → delegate` in `app`.
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    authority: Pubkey,
+    app: AppScope,
 ) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             DELEGATION_SEED,
             delegator.as_ref(),
             delegate.as_ref(),
-            authority.as_ref(),
+            app.program.as_ref(),
+            &app.scope,
         ],
         &crate::ID,
     )
