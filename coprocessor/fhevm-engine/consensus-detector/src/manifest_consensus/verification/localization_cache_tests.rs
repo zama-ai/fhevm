@@ -101,10 +101,13 @@ async fn completed_history_requires_the_exact_scope_and_compared_evidence() {
     let source = FakePeerSource::default();
     seed_history_task(&pool, &source, &signers, 0xa9).await;
     run_once(&pool, &source).await;
-    sqlx::query("UPDATE block_manifest_verification_task SET next_attempt_at = NOW()")
-        .execute(&pool)
-        .await
-        .unwrap();
+    // Reopen the verified task to inspect a later claim of the same comparison.
+    sqlx::query(
+        "UPDATE block_manifest_verification_task SET state = 'pending', next_attempt_at = NOW()",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let claim = claim_due_task(
         &pool,
         "next-worker",
@@ -362,47 +365,43 @@ async fn inconsistent_history_remains_unresolved(peer_content: u8) {
             source.set_manifests(signer.address(), &[previous, current]);
         }
     }
-    for attempt in 1..=2 {
-        run_once(&pool, &source).await;
-        assert_target(
-            &pool,
-            if attempt == 1 {
-                "pending"
-            } else {
-                "retry_exhausted"
-            },
-            "drift",
-            attempt,
-        )
-        .await;
-        let (complete, cacheable): (bool, bool) = sqlx::query_as(
-            "SELECT localization_complete, localization_cacheable FROM block_manifest_verification_attempt WHERE attempt = $1",
-        ).bind(attempt).fetch_one(&pool).await.unwrap();
-        assert!(!complete, "contradictory commitments remain unresolved");
+    run_once(&pool, &source).await;
+    // Every peer manifest was compared: the unchanged evidence is not retried.
+    assert_target(&pool, "verified", "drift", 1).await;
+    let (complete, cacheable): (bool, bool) = sqlx::query_as(
+        "SELECT localization_complete, localization_cacheable FROM block_manifest_verification_attempt",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!complete, "contradictory commitments remain unresolved");
+    assert!(
+        !cacheable,
+        "contradictory commitments cannot populate the cache"
+    );
+    let findings: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM drifted_handle")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    if peer_content == 1 {
+        assert_eq!(findings, 0, "equal handles must not create drift findings");
+    } else {
         assert!(
-            !cacheable,
-            "contradictory commitments cannot populate the cache"
+            findings > 0,
+            "retain handle differences despite inconsistent roots"
         );
-        let findings: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM drifted_handle")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        if peer_content == 1 {
-            assert_eq!(findings, 0, "equal handles must not create drift findings");
-        } else {
-            assert!(
-                findings > 0,
-                "retain handle differences despite inconsistent roots"
-            );
-        }
-        sqlx::query("UPDATE block_manifest_verification_task SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE state = 'pending'")
-            .execute(&pool).await.unwrap();
     }
+    sqlx::query(
+        "UPDATE block_manifest_verification_task SET next_attempt_at = NOW() - INTERVAL '1 second'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     assert!(
         run_peer_manifest_download_once(
             &pool,
             &source,
-            "after-exhaustion",
+            "after-verification",
             Duration::from_secs(60),
             CONSENSUS_EPOCH
         )
@@ -414,7 +413,7 @@ async fn inconsistent_history_remains_unresolved(peer_content: u8) {
 }
 
 #[tokio::test]
-async fn inconsistent_history_with_equal_handles_exhausts_without_findings() {
+async fn inconsistent_history_with_equal_handles_is_verified_without_findings() {
     inconsistent_history_remains_unresolved(1).await;
 }
 
