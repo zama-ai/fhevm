@@ -6,7 +6,7 @@ at the indicated lower layer, not accepted by a live E2E run.** Live campaigns
 are deliberately a separate step. The older 13-case validation report must not
 be used as evidence for the expanded branch.
 
-The source audit files supplied alongside the checkout are:
+The original 17 September source audit files supplied alongside the checkout had the following hashes. These identify the historical planning inputs, not the subsequently updated reports:
 
 | Source | SHA-256 |
 | --- | --- |
@@ -24,7 +24,7 @@ records or substitutes for case evidence.
 
 | Package | Implemented checks | Boundary of the claim |
 | --- | --- | --- |
-| D0: identity | Checkout build receipts, observed running images and GPU worker settings; explicit candidate SHA and baseline tag for key migration. | Published-image mode is partial. A historical baseline is not automatically the latest supported release. Cold-start receipt execution remains pending. |
+| D0: identity | Checkout build receipts, observed running images and GPU worker settings; explicit candidate SHA and baseline tag for key migration. | Published-image mode is partial. A historical baseline is not automatically the latest supported release. Cold-start receipt evidence is included in the later completion audit; see the execution update below. |
 | D1: compact input | INPUT-01/02/03 compare verified input-list storage before computation; bool and unsigned widths through 256 bits, selected zero/max/repeated values, replay, independent blobs, wrong user and invalid proof; plaintext oracle. | Bounded representatives, not every proof/parameter combination. CPU is the required inventory backend; do not claim an unexecuted GPU input campaign. |
 | D2: typed operations and bridge | MAT-06 covers typed pairwise local and persisted dependencies with expected intermediate values. MAT-08 covers real two-chain bridge source/destination associations and values. REG-04 generates real keys and checks rerandomization transcript sensitivity. | Supported operations only; no exhaustive Cartesian matrix or public multi-output operation. Transcript regression is lower-layer coverage. |
 | D3: upgrades | Quiet synthetic-progress control, per-host retained verified inputs, immutable serving objects and new dependent values before/after promotion, withheld and divergent eligible host reports, ordinary threshold-two service during failed unanimity, exact failed-proposal reset and fresh-proposal success. | Divergence changes published commitments through a test-only hook; it does not demonstrate divergent FHE computation. An optional actual-release software-only replacement requires matching compiled legacy protocol identities, changed binary bytes, unchanged versioning and retained material before the distinct numeric-protocol promotion. Retired TFHE/SNS probes must reject prepared work without canonical or serving-object publication. |
@@ -41,8 +41,7 @@ records or substitutes for case evidence.
 The previously implementable gaps now have explicit prepared checks: retained
 inputs and release-produced objects, migrated-key GPU consumption, compatible
 software replacement and retired writers, actual key HTTP faults, same-worker
-progress under pressure, and HTTPS trust recovery. Their live execution is still
-pending. Parser rejection with a matching digest and decoded activation replay
+progress under pressure, and HTTPS trust recovery. Their subsequent live completion is recorded in [VALIDATION-2026-09-24.md](VALIDATION-2026-09-24.md). Parser rejection with a matching digest and decoded activation replay
 are required lower-layer database regressions (REG-06), not additional live
 transport or broker campaigns.
 
@@ -73,8 +72,7 @@ SDK locally and fixing ERC20 clear-value narrowing and generated-handle typing.
 The local SDK runtime and declarations were built; this does not substitute for
 the eventual source-built E2E container or its cold-start receipt.
 
-No live CPU/GPU consensus campaign, blue/green rollout, key migration or
-cold-start checkout receipt campaign has been run for these additions. Acceptance
+At the preparation checkpoint described above, no live CPU/GPU consensus campaign, blue/green rollout, key migration or cold-start checkout receipt campaign had run for these additions. The later completion update below supersedes that status. Acceptance
 requires a new revision-bound report, including every selected required case,
 intended fault/negative-control evidence and successful restoration. Unit checks
 and a successful inventory plan cannot substitute for that report.
@@ -86,3 +84,19 @@ parser/replay regression against a fresh disposable PostgreSQL container.
 Focused GPU scheduler/worker and host-listener clippy checks and workflow lint
 also passed. These preparation results do not claim execution of the newly
 prepared live fault, software-replacement, retirement or GPU migration arms.
+
+## Execution update — 24 September 2026
+
+The campaign owner reports **70/70 required inventory cases, 8/8 blue/green
+modes and 7/7 key-migration modes PASS**, with a clean final evidence audit.
+See the [completion report](VALIDATION-2026-09-24.md) for source-equivalence
+provenance, affected download-mode reruns, archived failure/cleanup history and
+evidence filenames. Rebased commit hashes alone do not invalidate that report.
+
+Execution was local with public runtime images, a pinned compatible service
+bundle, locally built coprocessor targets and one H100. Hosted CI/private pulls,
+separate operator suites and optional two-GPU attribution were not exercised.
+GPU Default-key generation used the documented disposable test-only setup.
+These limits and the existing Gateway/multi-output exclusions remain; full
+completion does not extend the tested scope. This documentation refresh did not
+rerun or independently inspect the remote campaign artifacts.

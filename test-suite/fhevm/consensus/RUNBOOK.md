@@ -1,4 +1,4 @@
-# Consensus campaign runbook
+# Consensus and failure-mode campaign runbook
 
 This campaign checks agreement, correctness and bounded recovery across
 case-specific coprocessor topologies. Byte agreement is within one software,
@@ -10,7 +10,35 @@ coprocessor fleet. Campaign results are recorded separately from these contracts
 see the [validation notes for e9180f14c](VALIDATION-e9180f14c.md) for the older
 13-case campaign. Those results do not validate this branch's expanded cases.
 The [delivery ledger](COVERAGE-DELIVERY.md) maps the audit packages to prepared
-checks, declared exclusions and pending execution.
+checks and declared exclusions. The [24 September completion report](VALIDATION-2026-09-24.md) records 70/70 required inventory, 8/8 blue/green and 7/7 migration modes passing, with the execution environment and limits.
+
+## Release campaign checklist
+
+There are three separate acceptance records. Completing one does not complete
+the other two. All campaigns below use disposable stacks and require evidence
+from the candidate revision; the historical validation report is not a substitute.
+
+| Campaign | Entry point | Completion boundary |
+| --- | --- | --- |
+| Inventory consensus and failure modes | Manually dispatch `test-suite-consensus` on the candidate ref with `selection=full` and `build=true`. For local runs, follow [preparation](#preparing-and-running-a-campaign) and the workflow's build-receipt and aggregation sequence. | Every required inventory case at its required backend, including GPU and lower-layer gates, with successful cleanup. `standard`, `smoke`, or `build=false` cannot provide the full verdict. |
+| Blue/green continuity and faults | Fresh `blue-green-two-of-three-multi-chain` stack for the ordinary flow and each [quiet-success](#bluegreen-continuity-and-quiet-hosts), [host-withholding](#one-missing-host-upgrade-report), [host-divergence](#divergent-host-commitment-during-upgrade), [detector-interruption](#detector-interruption-before-report-publication) and [controller-boundary](#upgrade-interruption-boundaries-separate-stateful-runs) arm. | Eight receipts: ordinary flow, quiet success, both host-report faults, detector interruption, and each of the three controller boundaries. These are outside inventory `full`. |
+| Existing-key migration and retained material | Stateful migration runbook with [explicit candidate pins](#key-migration-lagging-recipient-and-candidate-selection). Run the healthy software-replacement/retired-writer/GPU continuation, then separate fresh rollouts for lagging recipient, application interruption and each of the four [download faults](#key-download-faults). | Rollout receipts, original key/input/object preservation, each observed fault and recovery, and GPU continuation evidence. REG-06 supplies separate parser/replay database coverage, not another live rollout. |
+
+Before provisioning, record the exact baseline, candidate, companion versions,
+topology and build features. Fault-hook builds are campaign artifacts; they are
+not the production release images. Check the prerequisites in each linked arm,
+including GPU capacity and baseline-compatible KMS keys. The GPU migration
+continuation uses disposable insecure test key generation and does not establish
+secure distributed key-generation coverage or authorize changing production's
+legacy-serving policy.
+
+After execution, retain the aggregate and individual rollout receipts, image and
+build identities, selected-work/fault evidence and verified restoration. Record
+missing or invalid arms explicitly. Current exclusions are Gateway-specific new
+fault campaigns, multi-device attribution, and public multi-output operations;
+see the [delivery ledger](COVERAGE-DELIVERY.md#deliberate-exclusions-and-prerequisites).
+Other uncovered properties need an explicit release decision, not an inferred
+waiver from a successful `full` inventory run.
 
 ## Local object-store routing
 
@@ -256,7 +284,7 @@ independent decryption supplies the usable-key check. Input continuity across a
 protocol upgrade is a separate upgrade campaign. This is a single-chain matrix,
 not an exhaustive mixed-type/maximum-size proof stress test.
 
-These tests have static/unit validation only; live acceptance remains pending.
+Live inventory execution is recorded in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Typed transaction boundaries
 
@@ -374,8 +402,7 @@ commit side or missing replacement fails the profile.
 The post-commit arm proves interruption after durable promotion. It does not
 claim to freeze every listener before it consumes the atomic notification;
 that ordering is not under the controller's ownership. These stateful upgrade
-runs remain outside the consensus workflow inventory. Their live execution,
-like the other new feature cases, is pending.
+runs remain outside the consensus workflow inventory. Their completed execution is recorded separately in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Key migration: lagging recipient and candidate selection
 
@@ -465,7 +492,7 @@ signer with a valid key cannot attest to bad material. This covers the current
 RFC023 object layout, not compatibility with an older release's layout. Cleanup
 restores and reads back every original, including after partial injection.
 Failed recovery preserves the journal and fails the run; discard the isolated
-stack until recovery succeeds. Live execution of these new arms is pending.
+stack until recovery succeeds. Completed execution is recorded in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Single-GPU reservation pressure
 
@@ -489,8 +516,7 @@ scenario after starting hook-enabled GPU workers. It is single-device coverage,
 not an OOM experiment or proof of fairness within one fully blocked reservation
 pool. The control expires in at most ten minutes even if the runner dies; a
 changed worker PID, missing acknowledgment, or expired negative checkpoint fails
-the case. Admission/retry receipts survive for CI artifacts. Live execution is
-pending, including confirmation of the configured reservation/lease margins.
+the case. Admission/retry receipts survive for CI artifacts. The completed live reservation-pressure run is recorded in the [completion report](VALIDATION-2026-09-24.md), within its bounded workload and environment.
 
 ## Key application interrupted inside its transaction
 
@@ -510,13 +536,14 @@ catch-up, not a claim about interruption in the middle of an HTTP download.
 The lock-owning session releases on EOF; trigger removal and service recovery
 are mandatory cleanup. The trigger SQL is executed against an isolated disposable
 PostgreSQL database in the harness, with termination/rollback/replay assertions.
-Live migration execution remains pending. This mode does not require weakening
+Live migration completion is recorded in the [completion report](VALIDATION-2026-09-24.md). This mode does not require weakening
 key validation or adding hooks to production listener binaries.
 
 ## Host RPC retry and catch-up
 
-The CPU `host-rpc` leg runs five separate cases on `three-of-three-backlog`:
-`./scripts/run-host-rpc-recovery.sh 429` (or `503`, `408`, `reset`, `stall`). An owned
+The CPU `host-rpc` leg runs six separate cases on `three-of-three-backlog`:
+`./scripts/run-host-rpc-recovery.sh 429` (or `503`, `408`, `reset`, `stall`,
+`tls-trust`). The HTTPS trust arm is detailed below. An owned
 HTTP proxy receives only operator 1's explicit poller route. Alternate
 listener paths stay stopped through verification. Actual `eth_getLogs` failures
 must be observed both before arming and after all twelve receipt-identified
@@ -536,9 +563,8 @@ The other RPC methods pass through so health/chain identity traffic alone cannot
 satisfy fault evidence. The original poller command and immutable image must be
 restored, then the proxy and alternate listener holds must be cleaned up.
 Recovery configuration stays in a private directory; CI uploads request/phase
-evidence without container environment or connection credentials. Live execution
-is pending. TLS trust changes and all Gateway-specific transport/reorg campaigns
-are outside this selection.
+evidence without container environment or connection credentials. Live execution is recorded in the [completion report](VALIDATION-2026-09-24.md). Gateway-specific transport/reorg campaigns are outside this
+selection; the `tls-trust` arm covers the host poller only.
 
 ## Committed broker redelivery
 
@@ -571,8 +597,7 @@ the shared recovery oracle, which also checks the poller cursor. A live/final
 duplicate, a separately republished message or a fresh transaction cannot
 substitute for the pending entry. The hook expires automatically and is
 absent from production builds. This covers the managed Redis backend, not AMQP.
-Live broker execution remains pending; lower-layer hook checks do not establish
-that the complete redelivery path has run.
+The [completion report](VALIDATION-2026-09-24.md) records live broker execution; lower-layer hook checks alone do not establish that result.
 
 ## Generated-key SNS determinism
 
@@ -588,7 +613,7 @@ This checks fixed-input/key CPU reconstruction and thread-policy invariance.
 It does not compare different keysets, CPU with GPU, or two GPU models, and it
 does not claim full-stack SNS delivery. The older ignored extracted-key
 experiments remain optional diagnostics. The generated-key regression has
-passed locally; live SNS fault and recovery cases remain pending.
+passed locally; the later live campaign is recorded in the [completion report](VALIDATION-2026-09-24.md).
 
 ## One missing host upgrade report
 
@@ -614,8 +639,7 @@ active. The supervisor then drops the control, and fresh proposal 2 must pass
 the existing full promotion and per-chain continuity checks. Parent exit,
 unobserved fault, mismatched peer evidence and failed cleanup cannot pass.
 This does not test withholding a Gateway report, a forged report, a software-only
-upgrade, or a post-retirement writer. Those are separate properties. Unit SQL
-and cleanup contracts pass; live blue/green execution remains pending.
+upgrade, or a post-retirement writer. Those are separate properties. Unit SQL and cleanup contracts complement the live blue/green results in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Detector interruption before report publication
 
@@ -632,7 +656,7 @@ The receipt identifies the selected chain/block and old/new process identities.
 It proves interruption of a pending report and recovery of the upgrade, not
 that the final unanimity anchor must use this particular block: choosing a later
 eligible anchor is legitimate. Cleanup contracts cover replacement failure and
-parent exit. Actual detector/cutover execution remains for the live campaign.
+parent exit. Completed detector/cutover execution is recorded in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Bounded storage write backpressure
 
@@ -657,7 +681,7 @@ This models a bounded storage-capacity response through the real upload client.
 It does not fill the host disk or claim enforcement of a specific MinIO quota
 configuration. The original worker image, command and environment must be
 restored; private recovery snapshots are excluded from public artifacts. The
-proxy/route contracts pass locally; live storage recovery remains pending.
+proxy/route contracts complement the completed live storage recovery in the [completion report](VALIDATION-2026-09-24.md).
 
 ## Compute versus submission participation
 
@@ -675,7 +699,7 @@ an asymmetric rejoin. It does not partition host or Gateway networking, forge
 signatures, or make Byzantine-safety claims. The no-quorum oracle rejects any
 additional sender outside the declared partition. Per-phase logs and original
 receipts are retained, and both senders must be restored before PASS publication.
-Live execution is pending; existing quorum observation contracts cover the
+Live execution is recorded in the [completion report](VALIDATION-2026-09-24.md); existing quorum observation contracts cover the
 negative-window validity checks.
 
 ## One versus multiple GPU execution permits
@@ -805,7 +829,7 @@ nor successful container startup is the GPU-use oracle: the compressed loading
 logs, completed computations and GPU-only squash format are required.
 
 These rollout checks remain outside the consensus inventory's `full` verdict.
-They are prepared coverage until the corresponding live rollout completes.
+Their separate completed rollout evidence is recorded in the [completion report](VALIDATION-2026-09-24.md).
 
 `./scripts/run-host-rpc-recovery.sh tls-trust` adds the HTTPS arm. It first
 requires successful log polling with an isolated trusted CA, then replaces the
@@ -915,7 +939,7 @@ finish and decrypt both original workloads. Retired probes are stopped; promoted
 services are restored on normal completion or parent loss. These are retirement
 checks for compute and object publication, not Gateway submission faults.
 
-For the deferred rollout validation, use a fresh stack for each download fault.
+For repeat rollout validation, use a fresh stack for each download fault.
 One healthy rollout should enable software replacement, retired-writer checks
 and the GPU continuation together. Run the lagging-recipient,
 application-interruption and four download fault modes separately. The required
