@@ -853,7 +853,7 @@ async fn finish_claim(
     ) {
         info!(?claim, total_findings, "Quorum is met for all new handles");
     } else {
-        for mismatch in &localization.findings[..1000] {
+        for mismatch in localization.findings.iter().take(1000) {
             warn!(?mismatch, "Observed difference");
         }
         if total_findings > 1000 {
